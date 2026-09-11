@@ -11,6 +11,9 @@ rootProject.name = 'medscribe-platform'
 // Application Module
 include 'medscribe-ai'
 
+// Provider-neutral LLM library (Groq / OpenAI / Anthropic / Bedrock adapters)
+include 'elioo-llm'
+
 // AWS Library Modules
 include 'elioo-aws-common'
 include 'elioo-aws-textract'

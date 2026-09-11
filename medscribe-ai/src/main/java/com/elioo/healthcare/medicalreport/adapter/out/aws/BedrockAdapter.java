@@ -2,8 +2,8 @@ package com.elioo.healthcare.medicalreport.adapter.out.aws;
 
 import com.elioo.healthcare.aws.bedrock.api.BedrockService;
 import com.elioo.healthcare.aws.bedrock.health.api.BedrockHealthService;
-import com.elioo.healthcare.aws.bedrock.model.LlmRequest;
-import com.elioo.healthcare.aws.bedrock.model.LlmResponse;
+import com.elioo.healthcare.llm.model.LlmRequest;
+import com.elioo.healthcare.llm.model.LlmResponse;
 import com.elioo.healthcare.aws.bedrock.health.dto.ClinicalFinding;
 import com.elioo.healthcare.aws.bedrock.health.dto.ClinicalInsightRequest;
 import com.elioo.healthcare.aws.bedrock.health.dto.ClinicalInsightResponse;

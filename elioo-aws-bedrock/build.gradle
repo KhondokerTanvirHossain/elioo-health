@@ -22,6 +22,9 @@ version = '0.1.0'
 description = 'AWS Bedrock LLM library for Elioo Healthcare'
 
 dependencies {
+    // Provider-neutral LLM contract and records
+    api project(':elioo-llm')
+
     // Common AWS infrastructure
     api project(':elioo-aws-common')
 

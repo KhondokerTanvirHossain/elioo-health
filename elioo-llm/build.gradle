@@ -1,0 +1,45 @@
+/*
+ * Elioo LLM Module
+ *
+ * Provider-neutral LLM layer: one LlmClient interface, request/response records,
+ * the clinical prompt layer, and clients for Anthropic and any OpenAI-compatible
+ * API (OpenAI, Groq, ...). No cloud-vendor SDK other than the Anthropic client.
+ */
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+version = '0.1.0'
+description = 'Provider-neutral LLM library for Elioo Healthcare'
+
+dependencies {
+    api 'io.projectreactor:reactor-core'
+    api 'com.fasterxml.jackson.core:jackson-databind'
+    api 'com.anthropic:anthropic-java:2.62.0'
+    api 'org.springframework:spring-webflux'
+    implementation 'io.projectreactor.netty:reactor-netty-http'
+    api 'org.slf4j:slf4j-api'
+
+    compileOnly 'org.springframework.boot:spring-boot-autoconfigure'
+    annotationProcessor 'org.springframework.boot:spring-boot-autoconfigure-processor'
+    annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'io.projectreactor:reactor-test'
+}
+
+java {
+    withSourcesJar()
+    withJavadocJar()
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.java
+            groupId = 'com.elioo.healthcare'
+            artifactId = 'elioo-llm'
+        }
+    }
+}

@@ -3,7 +3,7 @@ package com.elioo.healthcare.aws.bedrock.handler;
 import com.elioo.healthcare.aws.bedrock.api.BedrockService;
 import com.elioo.healthcare.aws.bedrock.dto.InvokeClaudeRequest;
 import com.elioo.healthcare.aws.bedrock.dto.InvokeModelRequest;
-import com.elioo.healthcare.aws.bedrock.model.LlmRequest;
+import com.elioo.healthcare.llm.model.LlmRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;

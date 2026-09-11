@@ -1,9 +1,9 @@
 package com.elioo.healthcare.aws.bedrock.service;
 
 import com.elioo.healthcare.aws.bedrock.config.BedrockProperties;
-import com.elioo.healthcare.aws.bedrock.model.LlmRequest;
-import com.elioo.healthcare.aws.bedrock.model.LlmResponse;
-import com.elioo.healthcare.aws.bedrock.model.TokenUsage;
+import com.elioo.healthcare.llm.model.LlmRequest;
+import com.elioo.healthcare.llm.model.LlmResponse;
+import com.elioo.healthcare.llm.model.TokenUsage;
 import com.elioo.healthcare.aws.common.exception.AwsServiceException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;

@@ -1,8 +1,8 @@
 package com.elioo.healthcare.aws.bedrock.service;
 
 import com.elioo.healthcare.aws.bedrock.config.BedrockProperties;
-import com.elioo.healthcare.aws.bedrock.model.LlmRequest;
-import com.elioo.healthcare.aws.bedrock.model.LlmResponse;
+import com.elioo.healthcare.llm.model.LlmRequest;
+import com.elioo.healthcare.llm.model.LlmResponse;
 import com.elioo.healthcare.aws.common.exception.AwsServiceException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -204,7 +204,7 @@ class BedrockServiceImplTest {
     @Test
     void testInvokeModel_InvalidRequest_NullPrompt() {
         // Arrange
-        LlmRequest request = new LlmRequest(null, null, null, null, null, null, null, null);
+        LlmRequest request = new LlmRequest(null, null, null, null, null, null, null, null, false);
 
         // Act & Assert
         StepVerifier.create(service.invokeModel(request))

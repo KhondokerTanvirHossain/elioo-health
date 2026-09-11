@@ -1,7 +1,7 @@
 package com.elioo.healthcare.aws.bedrock.api;
 
-import com.elioo.healthcare.aws.bedrock.model.LlmRequest;
-import com.elioo.healthcare.aws.bedrock.model.LlmResponse;
+import com.elioo.healthcare.llm.model.LlmRequest;
+import com.elioo.healthcare.llm.model.LlmResponse;
 import reactor.core.publisher.Mono;
 
 /**
