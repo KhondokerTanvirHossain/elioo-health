@@ -90,8 +90,9 @@ job deploy (needs: build, if: github.ref == 'refs/heads/main' && event == push):
 ```
 
 Repository secrets: `EC2_HOST`, `EC2_USER`, `EC2_SSH_KEY` (contents of the
-.pem), `GHCR_PULL_TOKEN` (fine-grained PAT, read:packages only, used by the
-server to pull the private image).
+.pem). No personal access token: the deploy job passes its short-lived
+`GITHUB_TOKEN` to the server over SSH for `docker login ghcr.io`, runs the
+deploy, then logs out.
 
 ### 4. Server-side files
 
@@ -154,6 +155,5 @@ developer push → GitHub Actions build (tests vs throwaway Postgres)
 ## Open items handed to the user
 
 - Set the `medscribe` role password in Supabase and share it only via the env files.
-- Create the GHCR pull PAT (read:packages) in GitHub settings.
 - Confirm the EC2 security group allows inbound TCP 8086 from the internet (and 22 from GitHub runners; `0.0.0.0/0` on 22 is acceptable for now since the key is required).
 - `gh auth login` once so secrets can be set from the CLI.
