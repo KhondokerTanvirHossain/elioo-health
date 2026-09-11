@@ -1,7 +1,9 @@
 package com.elioo.healthcare.medicalreport.adapter.out.aws;
 
+import com.elioo.healthcare.aws.bedrock.api.BedrockService;
 import com.elioo.healthcare.aws.bedrock.health.api.BedrockHealthService;
 import com.elioo.healthcare.aws.bedrock.health.dto.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.elioo.healthcare.aws.bedrock.health.dto.RiskAssessment;
 import com.elioo.healthcare.aws.bedrock.health.dto.TrendAnalysisRequest;
 import com.elioo.healthcare.aws.bedrock.health.dto.TrendAnalysisResponse;
@@ -35,6 +37,9 @@ class BedrockAdapterIntegrationTest {
     @Mock
     private BedrockHealthService healthService;
 
+    @Mock
+    private BedrockService bedrockService;
+
     private ClinicalInsightPort insightPort;
 
     private static final Map<String, Object> SAMPLE_MEDICAL_DATA = Map.of(
@@ -55,7 +60,7 @@ class BedrockAdapterIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        insightPort = new BedrockAdapter(healthService);
+        insightPort = new BedrockAdapter(healthService, bedrockService, new ObjectMapper());
     }
 
     @Test

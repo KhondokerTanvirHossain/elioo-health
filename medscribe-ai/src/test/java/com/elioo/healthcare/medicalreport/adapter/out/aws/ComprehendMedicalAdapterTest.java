@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
@@ -41,6 +42,12 @@ class ComprehendMedicalAdapterTest {
     @BeforeEach
     void setUp() {
         comprehendMedicalAdapter = new ComprehendMedicalAdapter(comprehendMedicalService);
+        // These are @Value-injected by Spring; outside a context they default to 0,
+        // which makes every request "exceed maximum length". Mirror the property defaults.
+        ReflectionTestUtils.setField(comprehendMedicalAdapter, "minConfidenceThreshold", 0.70);
+        ReflectionTestUtils.setField(comprehendMedicalAdapter, "maxTextLength", 20000);
+        ReflectionTestUtils.setField(comprehendMedicalAdapter, "maxCodesPerConcept", 3);
+        ReflectionTestUtils.setField(comprehendMedicalAdapter, "maxEntities", 50);
     }
 
     @Test
@@ -103,8 +110,11 @@ class ComprehendMedicalAdapterTest {
         StepVerifier.create(resultMono)
                 .assertNext(result -> {
                     assertThat(result.entities()).hasSize(2);
-                    assertThat(result.entities().get(0).text()).contains("hypertension");
-                    assertThat(result.entities().get(1).text()).contains("metformin");
+                    // Adapter orders entities by confidence (desc); assert membership, not position
+                    assertThat(result.entities())
+                            .extracting(MedicalClassificationPort.MedicalEntity::text)
+                            .containsExactlyInAnyOrder("hypertension", "metformin");
+                    assertThat(result.entities().get(0).text()).isEqualTo("metformin");
                     assertThat(result.overallConfidence()).isGreaterThan(0.9);
                 })
                 .verifyComplete();

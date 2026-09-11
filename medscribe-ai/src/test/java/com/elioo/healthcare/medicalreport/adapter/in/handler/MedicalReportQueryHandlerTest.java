@@ -107,7 +107,8 @@ class MedicalReportQueryHandlerTest {
                 .expectStatus().isOk()
                 .expectBody()
                 .jsonPath("$[0].ocrResult.patientId").isEqualTo("PAT-1")
-                .jsonPath("$[1].classificationResult.classificationResult.Entities[0].Text").isEqualTo("Blood")
+                // Lombok getters (getEntities/getText) make Jackson emit lower-case property names
+                .jsonPath("$[1].classificationResult.classificationResult.entities[0].text").isEqualTo("Blood")
                 .jsonPath("$[2].suggestionsResult.riskLevel").isEqualTo("HIGH");
     }
 }

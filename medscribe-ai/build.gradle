@@ -22,6 +22,12 @@ dependencies {
     runtimeOnly 'org.postgresql:postgresql'
     runtimeOnly 'org.postgresql:r2dbc-postgresql'
 
+    // Schema migrations: Flyway runs over JDBC at startup (spring.flyway.url),
+    // independent of the R2DBC connection the app uses at runtime.
+    implementation 'org.flywaydb:flyway-core'
+    implementation 'org.flywaydb:flyway-database-postgresql'
+    implementation 'org.springframework:spring-jdbc'
+
     // Utilities
     implementation 'com.google.code.gson:gson:2.10.1'
     implementation 'org.modelmapper:modelmapper:3.1.1'

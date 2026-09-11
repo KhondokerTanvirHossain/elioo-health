@@ -6,6 +6,7 @@ import com.elioo.healthcare.medicalreport.domain.TestStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
@@ -46,6 +47,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @SpringBootTest
 @ActiveProfiles({"local", "aws"})  // Use local + aws profiles
+@EnabledIfEnvironmentVariable(named = "RUN_AWS_INTEGRATION_TESTS", matches = "true",
+        disabledReason = "Calls real AWS Textract; set RUN_AWS_INTEGRATION_TESTS=true to run")
 @DisplayName("OCR Integration Test - AWS Textract Adapter")
 class TextractAdapterIntegrationTest {
 

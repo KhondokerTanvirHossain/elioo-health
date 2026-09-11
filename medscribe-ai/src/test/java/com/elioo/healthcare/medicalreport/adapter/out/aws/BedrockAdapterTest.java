@@ -1,7 +1,9 @@
 package com.elioo.healthcare.medicalreport.adapter.out.aws;
 
+import com.elioo.healthcare.aws.bedrock.api.BedrockService;
 import com.elioo.healthcare.aws.bedrock.health.api.BedrockHealthService;
 import com.elioo.healthcare.aws.bedrock.health.dto.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.elioo.healthcare.aws.bedrock.health.dto.RiskAssessment;
 import com.elioo.healthcare.medicalreport.application.port.out.ClinicalInsightPort;
 import com.elioo.healthcare.medicalreport.application.port.out.ClinicalInsightPort.*;
@@ -28,11 +30,14 @@ class BedrockAdapterTest {
     @Mock
     private BedrockHealthService healthService;
 
+    @Mock
+    private BedrockService bedrockService;
+
     private BedrockAdapter bedrockAdapter;
 
     @BeforeEach
     void setUp() {
-        bedrockAdapter = new BedrockAdapter(healthService);
+        bedrockAdapter = new BedrockAdapter(healthService, bedrockService, new ObjectMapper());
     }
 
     @Test

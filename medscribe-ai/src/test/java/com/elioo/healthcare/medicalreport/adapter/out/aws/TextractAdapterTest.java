@@ -16,8 +16,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
-import software.amazon.awssdk.services.textract.model.Relationship;
-import software.amazon.awssdk.services.textract.model.RelationshipType;
+import com.elioo.healthcare.aws.textract.model.BlockRelationship;
 
 import java.util.List;
 import java.util.Map;
@@ -113,10 +112,7 @@ class TextractAdapterTest {
                 "CELL",
                 null,
                 95.0f,
-                List.of(Relationship.builder()
-                        .type(RelationshipType.CHILD)
-                        .ids("word-1")
-                        .build()),
+                List.of(new BlockRelationship("CHILD", List.of("word-1"))),
                 null,
                 1,
                 1,
@@ -128,10 +124,7 @@ class TextractAdapterTest {
                 "TABLE",
                 null,
                 92.0f,
-                List.of(Relationship.builder()
-                        .type(RelationshipType.CHILD)
-                        .ids("cell-1")
-                        .build()),
+                List.of(new BlockRelationship("CHILD", List.of("cell-1"))),
                 null,
                 null,
                 null,

@@ -1,0 +1,29 @@
+# Local development dependencies for MedScribe AI.
+#
+#   docker compose up -d        # start Postgres on localhost:5433
+#   docker compose down         # stop (data kept in the named volume)
+#   docker compose down -v      # stop and wipe data
+#
+# Port 5433 is used on purpose so this never collides with a Postgres
+# already installed on the host at 5432. The app's `local2` profile
+# points at 5433 by default.
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: medscribe-postgres
+    environment:
+      POSTGRES_DB: medscribe
+      POSTGRES_USER: medscribe
+      POSTGRES_PASSWORD: medscribe
+    ports:
+      - "5433:5432"
+    volumes:
+      - medscribe-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U medscribe -d medscribe"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  medscribe-pgdata:

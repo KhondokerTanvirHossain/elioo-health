@@ -1,7 +1,7 @@
 package com.elioo.healthcare.gcp.common.config;
 
-import com.elioo.healthcare.gcp.common.exception.GcpConfigurationException;
 import com.google.auth.Credentials;
+import com.google.auth.oauth2.AccessToken;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.auth.oauth2.ServiceAccountCredentials;
 import lombok.extern.slf4j.Slf4j;
@@ -86,8 +86,7 @@ public class GcpCommonAutoConfiguration {
      * </ul>
      *
      * @param properties GCP common properties from configuration
-     * @return Configured GCP credentials
-     * @throws GcpConfigurationException if credential loading fails
+     * @return Configured GCP credentials, or placeholder credentials if none could be loaded
      */
     @Bean
     @ConditionalOnMissingBean(name = "gcpCredentials")
@@ -116,10 +115,23 @@ public class GcpCommonAutoConfiguration {
             return GoogleCredentials.getApplicationDefault();
 
         } catch (IOException e) {
-            String errorMsg = "Failed to load GCP credentials: " + e.getMessage();
-            log.error(errorMsg, e);
-            throw new GcpConfigurationException(errorMsg, e);
+            // Do not fail application startup: the rest of the system (AWS pipeline, DB,
+            // query API, UI) is usable without GCP. Every GCP call will fail with an
+            // authentication error until real credentials are supplied.
+            log.warn("GCP credentials could not be loaded ({}). Starting with PLACEHOLDER credentials: "
+                            + "Vision OCR and Translation calls WILL FAIL until gcp.credentials-path, "
+                            + "gcp.credentials-json or Application Default Credentials are configured.",
+                    e.getMessage());
+            return placeholderCredentials();
         }
+    }
+
+    /**
+     * Credentials that satisfy client construction but are rejected by every GCP API.
+     * Used only when real credentials are unavailable so the application can still boot.
+     */
+    static Credentials placeholderCredentials() {
+        return GoogleCredentials.create(new AccessToken("gcp-credentials-not-configured", null));
     }
 
     /**

@@ -4,6 +4,7 @@ import com.elioo.healthcare.medicalreport.application.port.out.MedicalClassifica
 import com.elioo.healthcare.medicalreport.application.port.out.MedicalClassificationPort.*;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
@@ -36,6 +37,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @SpringBootTest
 @ActiveProfiles({"local", "aws"})  // Use local + aws profiles
+@EnabledIfEnvironmentVariable(named = "RUN_AWS_INTEGRATION_TESTS", matches = "true",
+        disabledReason = "Calls real AWS Comprehend Medical; set RUN_AWS_INTEGRATION_TESTS=true to run")
 @DisplayName("Medical Classification Integration Test - AWS Comprehend Medical Adapter")
 class ComprehendMedicalAdapterIntegrationTest {
 
@@ -285,21 +288,10 @@ class ComprehendMedicalAdapterIntegrationTest {
                 .assertNext(result -> {
                     System.out.println("\n=== Entity Relationships ===");
                     System.out.println("Entities: " + result.entities().size());
-                    System.out.println("Relationships: " + result.relationships().size());
-
-                    result.relationships().forEach(rel -> {
-                        System.out.println(String.format(
-                                "Relationship: %s (%.2f confidence) between entity %d and %d",
-                                rel.type(),
-                                rel.score(),
-                                rel.sourceId(),
-                                rel.targetId()
-                        ));
-                    });
 
                     assertThat(result.entities()).isNotEmpty();
-                    assertThat(result.relationships()).isNotNull();
-                    // Relationships may or may not be present depending on text complexity
+                    // Relationships are no longer part of ClassificationResult; they are
+                    // derived on demand via MedicalClassificationPort.extractRelationships()
                 })
                 .verifyComplete();
     }
@@ -357,8 +349,7 @@ class ComprehendMedicalAdapterIntegrationTest {
                     System.out.println("\n=== Complete Classification Workflow ===");
                     System.out.println("Step 1: Entity Extraction - " + result.entities().size() + " entities");
                     System.out.println("Step 2: Medical Codes - " + result.medicalCodes().size() + " code systems");
-                    System.out.println("Step 3: Relationships - " + result.relationships().size() + " relationships");
-                    System.out.println("Step 4: Overall Confidence - " + result.overallConfidence());
+                    System.out.println("Step 3: Overall Confidence - " + result.overallConfidence());
                 });
 
         // Then: Verify complete workflow
@@ -367,7 +358,7 @@ class ComprehendMedicalAdapterIntegrationTest {
                     // Verify all components are present
                     assertThat(result.entities()).isNotEmpty();
                     assertThat(result.overallConfidence()).isGreaterThan(0.0);
-                    assertThat(result.metadata()).isNotNull();
+                    assertThat(result.medicalCodes()).isNotNull();
 
                     // Log summary
                     long conditions = result.entities().stream()
