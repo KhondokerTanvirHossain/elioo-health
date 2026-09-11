@@ -40,7 +40,8 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
 
     public OpenAiCompatibleLlmClient(String providerName, LlmProperties.OpenAiCompatible cfg,
                                      LlmProperties defaults, WebClient webClient, ObjectMapper mapper) {
-        this(providerName, cfg, defaults, webClient, mapper, Retry.backoff(2, Duration.ofSeconds(1)));
+        // Rate limits (429) on free tiers ask for 10-20 s waits: 3 attempts, 5 s base, capped at 30 s
+        this(providerName, cfg, defaults, webClient, mapper, Retry.backoff(3, Duration.ofSeconds(5)).maxBackoff(Duration.ofSeconds(30)));
     }
 
     OpenAiCompatibleLlmClient(String providerName, LlmProperties.OpenAiCompatible cfg, LlmProperties defaults,
