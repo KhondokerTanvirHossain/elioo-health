@@ -848,72 +848,93 @@ public class LlmInsightAdapter implements ClinicalInsightPort {
      * Format report context for prompt.
      * Includes OCR results, classification, insights, risk assessment, etc.
      */
-    private String formatReportContext(Map<String, Object> reportContext) {
+    /** Upper bound for the report digest embedded in every chat prompt (keeps Groq free tier and cost in check). */
+    static final int CHAT_CONTEXT_MAX_CHARS = 6000;
+
+    /**
+     * Compact, human-readable digest of the report for chat prompts. Deliberately NOT the raw
+     * JSON: raw OCR text and entity offsets are irrelevant to a patient question and blew the
+     * prompt past 8k tokens.
+     */
+    String formatReportContext(Map<String, Object> reportContext) {
         StringBuilder sb = new StringBuilder();
-
-        // OCR Results (extracted test data)
-        if (reportContext.containsKey("ocrResults") || reportContext.containsKey("extractedData")) {
+        com.fasterxml.jackson.databind.JsonNode ocr = node(reportContext.getOrDefault("ocrResults", reportContext.get("extractedData")));
+        com.fasterxml.jackson.databind.JsonNode tests = ocr.isArray() ? ocr : ocr.path("extractedData");
+        if (tests.isArray() && !tests.isEmpty()) {
             sb.append("**Test Results:**\n");
-            Object ocrData = reportContext.getOrDefault("ocrResults", reportContext.get("extractedData"));
-            sb.append(formatAsJson(ocrData));
-            sb.append("\n\n");
+            int n = 0;
+            for (com.fasterxml.jackson.databind.JsonNode t : tests) {
+                if (n++ >= 60) { sb.append("- ... (").append(tests.size() - 60).append(" more)\n"); break; }
+                sb.append("- ").append(t.path("testName").asText("?")).append(": ")
+                        .append(t.path("testValue").asText("")).append(' ').append(t.path("unit").asText(""));
+                if (!t.path("referenceRange").asText("").isBlank()) sb.append(" (ref ").append(t.path("referenceRange").asText()).append(')');
+                if (!t.path("status").asText("").isBlank()) sb.append(" [").append(t.path("status").asText()).append(']');
+                sb.append('\n');
+            }
+            sb.append('\n');
         }
+        appendCodes(sb, "Diagnosis codes (ICD-10)", node(reportContext.get("icd10Codes")));
+        appendCodes(sb, "Medication codes (RxNorm)", node(reportContext.get("rxnormCodes")));
 
-        // Classification Results (medical entities)
-        if (reportContext.containsKey("classificationResults") || reportContext.containsKey("classificationResult")) {
-            sb.append("**Medical Entity Classification:**\n");
-            Object classificationData = reportContext.getOrDefault("classificationResults",
-                    reportContext.get("classificationResult"));
-            sb.append(formatAsJson(classificationData));
-            sb.append("\n\n");
-        }
-
-        // ICD-10 Codes
-        if (reportContext.containsKey("icd10Codes")) {
-            sb.append("**Diagnosis Codes (ICD-10):**\n");
-            sb.append(formatAsJson(reportContext.get("icd10Codes")));
-            sb.append("\n\n");
-        }
-
-        // RxNorm Codes
-        if (reportContext.containsKey("rxnormCodes")) {
-            sb.append("**Medication Codes (RxNorm):**\n");
-            sb.append(formatAsJson(reportContext.get("rxnormCodes")));
-            sb.append("\n\n");
-        }
-
-        // Clinical Insights
-        if (reportContext.containsKey("clinicalInsights") || reportContext.containsKey("insights")) {
+        com.fasterxml.jackson.databind.JsonNode ins = node(reportContext.getOrDefault("clinicalInsights", reportContext.get("insights")));
+        if (ins.isObject()) {
             sb.append("**Clinical Insights:**\n");
-            Object insights = reportContext.getOrDefault("clinicalInsights", reportContext.get("insights"));
-            sb.append(formatAsJson(insights));
-            sb.append("\n\n");
+            String summary = ins.path("summary").asText(ins.path("insight").asText(""));
+            if (!summary.isBlank()) sb.append(summary).append('\n');
+            for (com.fasterxml.jackson.databind.JsonNode kf : ins.path("keyFindings")) {
+                sb.append("- ").append(kf.path("finding").asText("")).append(" [").append(kf.path("severity").asText("")).append("]: ")
+                        .append(kf.path("interpretation").asText("")).append('\n');
+            }
+            if (!ins.path("riskLevel").asText("").isBlank()) sb.append("Overall risk level: ").append(ins.path("riskLevel").asText()).append('\n');
+            sb.append('\n');
         }
-
-        // Risk Assessment
-        if (reportContext.containsKey("riskAssessment") || reportContext.containsKey("risk")) {
-            sb.append("**Risk Assessment:**\n");
-            Object risk = reportContext.getOrDefault("riskAssessment", reportContext.get("risk"));
-            sb.append(formatAsJson(risk));
-            sb.append("\n\n");
+        com.fasterxml.jackson.databind.JsonNode risk = node(reportContext.getOrDefault("riskAssessment", reportContext.get("risk")));
+        if (risk.isObject()) {
+            sb.append("**Risk Assessment:** ").append(risk.path("overallRisk").asText("n/a")).append('\n');
+            for (com.fasterxml.jackson.databind.JsonNode f : risk.path("riskFactors")) sb.append("- risk factor: ").append(f.asText()).append('\n');
+            if (!risk.path("assessment").asText("").isBlank()) sb.append(risk.path("assessment").asText()).append('\n');
+            sb.append('\n');
         }
-
-        // Recommendations
-        if (reportContext.containsKey("recommendations")) {
+        com.fasterxml.jackson.databind.JsonNode recs = node(reportContext.get("recommendations"));
+        if (recs.isArray() && !recs.isEmpty()) {
             sb.append("**Recommendations:**\n");
-            sb.append(formatAsJson(reportContext.get("recommendations")));
-            sb.append("\n\n");
+            int n = 0;
+            for (com.fasterxml.jackson.databind.JsonNode r : recs) {
+                if (n++ >= 10) break;
+                sb.append("- [").append(r.path("priority").asText("")).append("] ").append(r.path("recommendation").asText("")).append('\n');
+            }
+            sb.append('\n');
         }
-
-        // Educational Content
-        if (reportContext.containsKey("educationalContent") || reportContext.containsKey("educational")) {
-            sb.append("**Educational Content:**\n");
-            Object educational = reportContext.getOrDefault("educationalContent", reportContext.get("educational"));
-            sb.append(formatAsJson(educational));
-            sb.append("\n\n");
+        com.fasterxml.jackson.databind.JsonNode edu = node(reportContext.getOrDefault("educationalContent", reportContext.get("educational")));
+        if (edu.isObject() && !edu.path("title").asText("").isBlank()) {
+            sb.append("**Patient education topic:** ").append(edu.path("title").asText()).append("\n\n");
         }
-
+        if (sb.isEmpty()) sb.append("(No report data available)\n");
+        if (sb.length() > CHAT_CONTEXT_MAX_CHARS) {
+            sb.setLength(CHAT_CONTEXT_MAX_CHARS);
+            sb.append("\n... (report digest truncated)\n");
+        }
         return sb.toString();
+    }
+
+    private void appendCodes(StringBuilder sb, String title, com.fasterxml.jackson.databind.JsonNode codes) {
+        if (!codes.isArray() || codes.isEmpty()) return;
+        sb.append("**").append(title).append(":**\n");
+        int n = 0;
+        for (com.fasterxml.jackson.databind.JsonNode c : codes) {
+            if (n++ >= 10) { sb.append("- ... (").append(codes.size() - 10).append(" more)\n"); break; }
+            sb.append("- ").append(c.path("code").asText("")).append(": ").append(c.path("description").asText("")).append('\n');
+        }
+        sb.append('\n');
+    }
+
+    private com.fasterxml.jackson.databind.JsonNode node(Object value) {
+        if (value == null) return objectMapper.nullNode();
+        try {
+            return objectMapper.valueToTree(value);
+        } catch (Exception e) {
+            return objectMapper.nullNode();
+        }
     }
 
     /**

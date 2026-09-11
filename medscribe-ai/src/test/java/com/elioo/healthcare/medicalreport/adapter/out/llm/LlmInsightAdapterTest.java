@@ -1,6 +1,8 @@
 package com.elioo.healthcare.medicalreport.adapter.out.llm;
 
 import com.elioo.healthcare.llm.api.LlmClient;
+import com.elioo.healthcare.llm.model.LlmRequest;
+import com.elioo.healthcare.llm.model.LlmResponse;
 import com.elioo.healthcare.llm.health.api.HealthInsightService;
 import com.elioo.healthcare.llm.health.dto.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -103,6 +105,38 @@ class LlmInsightAdapterTest {
                     assertThat(result.riskLevel()).isNotNull();
                 })
                 .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Chat prompt embeds a compact report digest, not raw JSON")
+    void testChatPromptIsCompact() {
+        when(llmClient.invoke(any())).thenReturn(Mono.just(LlmResponse.simple("The RDW value is the one to discuss.")));
+
+        // a realistic context: many test rows, a long raw OCR text, and full classification output
+        StringBuilder rawText = new StringBuilder();
+        for (int i = 0; i < 400; i++) rawText.append("line ").append(i).append(" of OCR noise that must not reach the prompt\n");
+        List<Map<String, Object>> rows = new java.util.ArrayList<>();
+        for (int i = 0; i < 40; i++) {
+            rows.add(Map.of("testName", "Test" + i, "testValue", "1." + i, "unit", "g/dL", "referenceRange", "1-2", "status", "NORMAL"));
+        }
+        Map<String, Object> context = Map.of(
+                "ocrResults", Map.of("extractedData", rows, "rawText", rawText.toString()),
+                "classificationResults", Map.of("classificationResult", Map.of("entities", rows)),
+                "icd10Codes", List.of(Map.of("code", "D75.9", "description", "Disease of blood", "score", 0.4)),
+                "clinicalInsights", Map.of("summary", "Mostly normal CBC.", "riskLevel", "LOW",
+                        "keyFindings", List.of(Map.of("finding", "RDW 16.7%", "severity", "MODERATE", "interpretation", "Variation in red cell size"))));
+
+        StepVerifier.create(adapter.chatAboutReport("RPT-1", "Which value is most concerning?", List.of(), context, null))
+                .assertNext(answer -> assertThat(answer).contains("RDW"))
+                .verifyComplete();
+
+        org.mockito.ArgumentCaptor<LlmRequest> captor = org.mockito.ArgumentCaptor.forClass(LlmRequest.class);
+        org.mockito.Mockito.verify(llmClient).invoke(captor.capture());
+        String prompt = captor.getValue().userPrompt();
+        assertThat(prompt).doesNotContain("OCR noise");
+        assertThat(prompt).doesNotContain("entities");
+        assertThat(prompt).contains("Test0: 1.0 g/dL").contains("D75.9").contains("RDW 16.7%").contains("Mostly normal CBC.");
+        assertThat(prompt.length()).isLessThan(LlmInsightAdapter.CHAT_CONTEXT_MAX_CHARS + 3000);
     }
 
     @Test
