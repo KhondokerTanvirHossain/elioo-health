@@ -60,6 +60,10 @@ Or point at Supabase instead: copy `medscribe.env.example` to `.env.local`, fill
 ./gradlew :medscribe-ai:bootRun      # http://localhost:8086 (UI, /actuator/health)
 ```
 
+Clinical insights and chat use the provider named by `LLM_PROVIDER` (`groq` default, `anthropic`,
+`openai`, or `bedrock`) with the matching `*_API_KEY`. Switch providers by changing the variable and
+restarting; no rebuild needed. See `medscribe.env.example` for every variable.
+
 Flyway applies `medscribe-ai/src/main/resources/db/migration/V*.sql` automatically.
 Without GCP credentials the app starts in degraded mode (OCR and translation fail, everything
 else works). AWS calls need valid keys in `~/.aws` or `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`.

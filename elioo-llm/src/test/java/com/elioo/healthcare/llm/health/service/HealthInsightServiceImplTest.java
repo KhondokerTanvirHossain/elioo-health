@@ -3,6 +3,7 @@ package com.elioo.healthcare.llm.health.service;
 import com.elioo.healthcare.llm.api.LlmClient;
 import com.elioo.healthcare.llm.health.dto.RecommendationRequest;
 import com.elioo.healthcare.llm.health.dto.SummaryOptions;
+import com.elioo.healthcare.llm.health.dto.TargetAudience;
 import com.elioo.healthcare.llm.health.dto.SummaryRequest;
 import com.elioo.healthcare.llm.health.exception.HealthInsightException;
 import com.elioo.healthcare.llm.health.prompt.DefaultPromptTemplateEngine;
@@ -53,6 +54,19 @@ class HealthInsightServiceImplTest {
         assertThat(captor.getValue().jsonOutput()).isTrue();
         assertThat(captor.getValue().systemPrompt()).isNotBlank();
         assertThat(captor.getValue().userPrompt()).contains("7.8%");
+    }
+
+    @Test
+    void summaryOptionsWithOnlyAudienceUseDefaultsForTheRest() {
+        when(llm.invoke(any())).thenReturn(Mono.just(LlmResponse.simple("{\"summary\":\"ok\",\"keyPoints\":[]}")));
+
+        // what an API caller typically sends: just the audience
+        SummaryOptions partial = new SummaryOptions(TargetAudience.PATIENT, null, null);
+        SummaryRequest req = new SummaryRequest(Map.of("HbA1c", "7.8%"), null, partial);
+
+        StepVerifier.create(service.generateSummary(req))
+                .assertNext(r -> assertThat(r.summary()).isEqualTo("ok"))
+                .verifyComplete();
     }
 
     @Test

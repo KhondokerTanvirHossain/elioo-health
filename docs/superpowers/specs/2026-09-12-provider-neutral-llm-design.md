@@ -1,7 +1,7 @@
 # Provider-Neutral LLM Layer (Groq / Anthropic / OpenAI / Bedrock) — Design
 
 **Date:** 2026-09-12
-**Status:** Approved (first item of phase 3: make every part work)
+**Status:** Implemented 2026-09-12 (first item of phase 3: make every part work). Verified live on Groq (`openai/gpt-oss-120b`) and Anthropic (`claude-opus-5`).
 
 ## Goal
 

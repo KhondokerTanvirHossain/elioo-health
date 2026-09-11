@@ -458,7 +458,7 @@ public class DefaultPromptTemplateEngine implements PromptTemplateEngine {
 
     @Override
     public String getSystemPrompt(TargetAudience audience) {
-        return switch (audience) {
+        return switch (audience == null ? TargetAudience.PATIENT : audience) {
             case PATIENT -> """
                     You are a medical AI assistant helping patients understand their medical information.
                     Use clear, simple language that is easy to understand for non-medical professionals.
@@ -486,7 +486,7 @@ public class DefaultPromptTemplateEngine implements PromptTemplateEngine {
     // Helper methods
 
     private String getAudienceInstruction(TargetAudience audience) {
-        return switch (audience) {
+        return switch (audience == null ? TargetAudience.PATIENT : audience) {
             case PATIENT -> "**Target Audience:** Patient (use clear, simple language)";
             case PROVIDER -> "**Target Audience:** Healthcare Provider (use medical terminology)";
             case RESEARCHER -> "**Target Audience:** Researcher (use scientific terminology)";
@@ -494,7 +494,7 @@ public class DefaultPromptTemplateEngine implements PromptTemplateEngine {
     }
 
     private String getLengthInstruction(SummaryLength length) {
-        return switch (length) {
+        return switch (length == null ? SummaryLength.STANDARD : length) {
             case BRIEF -> "**Length:** Brief (1-2 sentences)";
             case STANDARD -> "**Length:** Standard (1 paragraph, 3-5 sentences)";
             case DETAILED -> "**Length:** Detailed (multiple paragraphs with comprehensive details)";
@@ -502,7 +502,7 @@ public class DefaultPromptTemplateEngine implements PromptTemplateEngine {
     }
 
     private String getReadingLevelInstruction(ReadingLevel level) {
-        return switch (level) {
+        return switch (level == null ? ReadingLevel.INTERMEDIATE : level) {
             case SIMPLE -> "Reading level: Simple (6th-8th grade)";
             case INTERMEDIATE -> "Reading level: Intermediate (high school)";
             case ADVANCED -> "Reading level: Advanced (college/professional)";
@@ -510,7 +510,7 @@ public class DefaultPromptTemplateEngine implements PromptTemplateEngine {
     }
 
     private String getFormatInstruction(ContentFormat format) {
-        return switch (format) {
+        return switch (format == null ? ContentFormat.TEXT : format) {
             case TEXT -> "Format: Narrative paragraphs";
             case BULLET_POINTS -> "Format: Bulleted list";
             case FAQ -> "Format: Question-answer (FAQ) style";

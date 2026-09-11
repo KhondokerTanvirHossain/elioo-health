@@ -3,6 +3,9 @@ package com.elioo.healthcare.llm.health.service;
 import com.elioo.healthcare.llm.api.LlmClient;
 import com.elioo.healthcare.llm.health.api.HealthInsightService;
 import com.elioo.healthcare.llm.health.dto.ClinicalInsightRequest;
+import com.elioo.healthcare.llm.health.dto.ContentFormat;
+import com.elioo.healthcare.llm.health.dto.ReadingLevel;
+import com.elioo.healthcare.llm.health.dto.SummaryLength;
 import com.elioo.healthcare.llm.health.dto.ClinicalInsightResponse;
 import com.elioo.healthcare.llm.health.dto.EducationalContentOptions;
 import com.elioo.healthcare.llm.health.dto.EducationalContentRequest;
@@ -31,6 +34,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
 
+import java.util.List;
 import java.util.function.Supplier;
 
 /**
@@ -65,9 +69,7 @@ public class HealthInsightServiceImpl implements HealthInsightService {
         if (request == null || !request.isValid()) {
             return Mono.error(new HealthInsightException("Invalid summary request: medical data is required"));
         }
-        SummaryOptions options = request.options() != null && request.options().targetAudience() != null
-                ? request.options()
-                : SummaryOptions.defaultPatient();
+        SummaryOptions options = normalize(request.options());
         return run("summary",
                 () -> promptEngine.buildSummaryPrompt(request.medicalData(), request.patientContext(), options),
                 promptEngine.getSystemPrompt(options.targetAudience()), SummaryResponse.class);
@@ -78,7 +80,7 @@ public class HealthInsightServiceImpl implements HealthInsightService {
         if (request == null || !request.isValid()) {
             return Mono.error(new HealthInsightException("Invalid risk assessment request: medical data is required"));
         }
-        RiskAssessmentOptions options = request.options() != null ? request.options() : RiskAssessmentOptions.defaultOptions();
+        RiskAssessmentOptions options = normalize(request.options());
         return run("riskAssessment",
                 () -> promptEngine.buildRiskAssessmentPrompt(request.medicalData(), request.patientContext(), options),
                 promptEngine.getSystemPrompt(TargetAudience.PROVIDER), RiskAssessmentResponse.class);
@@ -89,7 +91,7 @@ public class HealthInsightServiceImpl implements HealthInsightService {
         if (request == null || !request.isValid()) {
             return Mono.error(new HealthInsightException("Invalid recommendation request: medical findings are required"));
         }
-        RecommendationOptions options = request.options() != null ? request.options() : RecommendationOptions.defaultOptions();
+        RecommendationOptions options = normalize(request.options());
         return run("recommendations",
                 () -> promptEngine.buildRecommendationPrompt(request.medicalFindings(), request.patientContext(), options),
                 promptEngine.getSystemPrompt(TargetAudience.PROVIDER), RecommendationResponse.class);
@@ -100,7 +102,7 @@ public class HealthInsightServiceImpl implements HealthInsightService {
         if (request == null || !request.isValid()) {
             return Mono.error(new HealthInsightException("Invalid trend analysis request: valid historical data is required"));
         }
-        TrendAnalysisOptions options = request.options() != null ? request.options() : TrendAnalysisOptions.defaultOptions();
+        TrendAnalysisOptions options = normalize(request.options());
         return run("trendAnalysis",
                 () -> promptEngine.buildTrendAnalysisPrompt(request.historicalData(), request.patientContext(), options),
                 promptEngine.getSystemPrompt(TargetAudience.PROVIDER), TrendAnalysisResponse.class);
@@ -111,7 +113,7 @@ public class HealthInsightServiceImpl implements HealthInsightService {
         if (request == null || !request.isValid()) {
             return Mono.error(new HealthInsightException("Invalid educational content request: topic is required"));
         }
-        EducationalContentOptions options = request.options() != null ? request.options() : EducationalContentOptions.defaultPatient();
+        EducationalContentOptions options = normalize(request.options());
         return run("educationalContent",
                 () -> promptEngine.buildEducationalContentPrompt(request.topic(), request.patientContext(), options),
                 promptEngine.getSystemPrompt(TargetAudience.PATIENT), EducationalContentResponse.class);
@@ -123,6 +125,45 @@ public class HealthInsightServiceImpl implements HealthInsightService {
             return Mono.error(new HealthInsightException("Prompt cannot be null or empty"));
         }
         return run("custom:" + responseClass.getSimpleName(), () -> prompt, null, responseClass);
+    }
+
+    // --- option normalisation: API callers often send only the fields they care about ---
+
+    private static SummaryOptions normalize(SummaryOptions o) {
+        if (o == null) return SummaryOptions.defaultPatient();
+        return new SummaryOptions(
+                o.targetAudience() != null ? o.targetAudience() : TargetAudience.PATIENT,
+                o.length() != null ? o.length() : SummaryLength.STANDARD,
+                o.focusArea());
+    }
+
+    private static RiskAssessmentOptions normalize(RiskAssessmentOptions o) {
+        if (o == null) return RiskAssessmentOptions.defaultOptions();
+        return new RiskAssessmentOptions(
+                o.riskCategories() != null ? o.riskCategories() : List.of(),
+                o.includePreventionStrategies(), o.timeHorizon());
+    }
+
+    private static RecommendationOptions normalize(RecommendationOptions o) {
+        if (o == null) return RecommendationOptions.defaultOptions();
+        return new RecommendationOptions(
+                o.categories() != null ? o.categories() : List.of(),
+                o.includeEvidenceLevels(), o.maxRecommendations(), o.priorityFilter());
+    }
+
+    private static TrendAnalysisOptions normalize(TrendAnalysisOptions o) {
+        if (o == null) return TrendAnalysisOptions.defaultOptions();
+        return new TrendAnalysisOptions(
+                o.testsToAnalyze() != null ? o.testsToAnalyze() : List.of(),
+                o.detectAnomalies(), o.predictFutureValues(), o.predictionHorizon());
+    }
+
+    private static EducationalContentOptions normalize(EducationalContentOptions o) {
+        if (o == null) return EducationalContentOptions.defaultPatient();
+        return new EducationalContentOptions(
+                o.readingLevel() != null ? o.readingLevel() : ReadingLevel.INTERMEDIATE,
+                o.format() != null ? o.format() : ContentFormat.TEXT,
+                o.maxLength(), o.includeDiagrams());
     }
 
     private <T> Mono<T> run(String operation, Supplier<String> userPrompt, String systemPrompt, Class<T> type) {
