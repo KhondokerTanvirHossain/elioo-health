@@ -25,6 +25,16 @@ else
   log "WARNING: no GCP credentials file; OCR/translation will be degraded"
 fi
 
+# Reverse proxy: join the edge network Caddy (n8n stack) lives on, so it can reach us as "medscribe-ai:8086"
+EDGE_NETWORK="${EDGE_NETWORK:-n8n_edge}"
+NETWORK_OPT=()
+if docker network inspect "$EDGE_NETWORK" >/dev/null 2>&1; then
+  NETWORK_OPT=(--network "$EDGE_NETWORK")
+  log "Attaching to network $EDGE_NETWORK (Caddy reverse proxy)"
+else
+  log "WARNING: network $EDGE_NETWORK not found; container only reachable on host port ${PORT}"
+fi
+
 log "Pulling ${IMAGE}:${IMAGE_TAG}"
 docker pull "${IMAGE}:${IMAGE_TAG}"
 
@@ -38,6 +48,7 @@ docker run -d \
   --name "$CONTAINER_NAME" \
   --restart unless-stopped \
   --memory=1200m \
+  "${NETWORK_OPT[@]}" \
   -p "${PORT}:${PORT}" \
   --env-file "$ENV_FILE" \
   -e GCP_CREDENTIALS_PATH=/secrets/gcp-credentials.json \
