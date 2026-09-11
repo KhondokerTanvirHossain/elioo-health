@@ -15,6 +15,7 @@ COPY gradlew.bat gradlew.bat
 COPY gradle gradle
 
 # Copy all library modules (needed for building medscribe-ai)
+COPY elioo-llm elioo-llm
 COPY elioo-aws-common elioo-aws-common
 COPY elioo-aws-textract elioo-aws-textract
 COPY elioo-aws-comprehend-medical elioo-aws-comprehend-medical
