@@ -8,6 +8,7 @@
 /out/
 /medscribe-ai/build/
 /medscribe-ai/bin/
+/elioo-llm/build/
 /elioo-aws-common/build/
 /elioo-aws-textract/build/
 /elioo-aws-comprehend-medical/build/

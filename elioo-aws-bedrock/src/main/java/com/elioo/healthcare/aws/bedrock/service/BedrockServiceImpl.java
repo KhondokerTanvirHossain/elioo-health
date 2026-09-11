@@ -37,7 +37,7 @@ import java.util.*;
  * @see com.elioo.healthcare.aws.bedrock.api.BedrockService
  * @since 0.1.0
  */
-public class BedrockServiceImpl implements com.elioo.healthcare.aws.bedrock.api.BedrockService {
+public class BedrockServiceImpl implements com.elioo.healthcare.aws.bedrock.api.BedrockService, com.elioo.healthcare.llm.api.LlmClient {
 
     private static final Logger log = LoggerFactory.getLogger(BedrockServiceImpl.class);
 
@@ -418,5 +418,17 @@ public class BedrockServiceImpl implements com.elioo.healthcare.aws.bedrock.api.
                 "Failed to invoke Bedrock model: " + error.getMessage(),
                 error
         );
+    }
+
+    // --- LlmClient (provider-neutral contract) ---
+
+    @Override
+    public Mono<LlmResponse> invoke(LlmRequest request) {
+        return invokeModel(request);
+    }
+
+    @Override
+    public String providerName() {
+        return "bedrock";
     }
 }

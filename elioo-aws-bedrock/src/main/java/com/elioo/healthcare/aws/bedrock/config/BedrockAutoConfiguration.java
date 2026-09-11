@@ -118,4 +118,13 @@ public class BedrockAutoConfiguration {
 
         return new BedrockServiceImpl(bedrockClient, properties, objectMapper);
     }
+
+    /** Exposes Bedrock as the application's LlmClient only when llm.provider=bedrock. */
+    @Bean
+    @ConditionalOnProperty(name = "llm.provider", havingValue = "bedrock")
+    @ConditionalOnMissingBean(com.elioo.healthcare.llm.api.LlmClient.class)
+    public com.elioo.healthcare.llm.api.LlmClient bedrockLlmClient(BedrockService bedrockService) {
+        log.info("LLM provider: bedrock");
+        return (com.elioo.healthcare.llm.api.LlmClient) bedrockService;
+    }
 }
