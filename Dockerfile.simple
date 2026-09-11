@@ -1,0 +1,50 @@
+# Simpler Dockerfile - Runs Spring Boot JAR directly without extraction
+# Use this if the layered approach has classpath issues
+
+# ============================================
+# Stage 1: Builder - Build all modules
+# ============================================
+FROM gradle:8.12.1-jdk21 AS builder
+WORKDIR /workspace
+
+# Copy root project configuration
+COPY settings.gradle settings.gradle
+COPY build.gradle build.gradle
+COPY gradlew gradlew
+COPY gradlew.bat gradlew.bat
+COPY gradle gradle
+
+# Copy all library modules (needed for building medscribe-ai)
+COPY elioo-aws-common elioo-aws-common
+COPY elioo-aws-textract elioo-aws-textract
+COPY elioo-aws-comprehend-medical elioo-aws-comprehend-medical
+COPY elioo-aws-bedrock elioo-aws-bedrock
+COPY elioo-aws-spring-boot-starter elioo-aws-spring-boot-starter
+
+# Copy main application module
+COPY medscribe-ai medscribe-ai
+
+# Build the entire multi-module project
+RUN --mount=type=cache,target=/root/.gradle gradle clean :medscribe-ai:build -x test
+
+# ============================================
+# Stage 2: Runtime - Minimal JRE image
+# ============================================
+FROM eclipse-temurin:21-jre
+WORKDIR /app
+
+# Create log directory for application logs
+RUN mkdir -p /var/log/pfh/
+
+# Copy the Spring Boot executable JAR directly
+COPY --from=builder /workspace/medscribe-ai/build/libs/medscribe-ai-*-SNAPSHOT.jar app.jar
+
+# Expose application port
+EXPOSE 8086
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+  CMD curl -f http://localhost:8086/actuator/health || exit 1
+
+# Run the Spring Boot JAR directly
+ENTRYPOINT ["java", "-jar", "app.jar"]

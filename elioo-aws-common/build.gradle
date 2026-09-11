@@ -1,0 +1,56 @@
+/*
+ * Elioo AWS Common Module
+ *
+ * Shared AWS infrastructure for all Elioo AWS service libraries.
+ * Provides:
+ * - AWS credentials configuration
+ * - Region configuration
+ * - Retry policies
+ * - Base exception classes
+ * - Common utilities (JSON parsing, response handling)
+ */
+
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+description = 'Common AWS infrastructure for Elioo Healthcare libraries'
+
+dependencies {
+    // AWS SDK Core (BOM managed in parent)
+    api 'software.amazon.awssdk:sdk-core'
+    api 'software.amazon.awssdk:auth'
+    api 'software.amazon.awssdk:regions'
+
+    // Spring Boot (for auto-configuration support)
+    compileOnly 'org.springframework.boot:spring-boot-autoconfigure'
+    annotationProcessor 'org.springframework.boot:spring-boot-autoconfigure-processor'
+    annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
+
+    // Reactive support
+    api 'io.projectreactor:reactor-core'
+
+    // JSON processing
+    api 'com.fasterxml.jackson.core:jackson-databind'
+
+    // Testing
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'io.projectreactor:reactor-test'
+}
+
+// Publishing configuration for JitPack
+java {
+    withSourcesJar()
+    withJavadocJar()
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.java
+            groupId = 'com.elioo.healthcare'
+            artifactId = 'elioo-aws-common'
+        }
+    }
+}

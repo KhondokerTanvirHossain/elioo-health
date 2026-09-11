@@ -1,0 +1,67 @@
+{
+  "groups": [
+    {
+      "name": "aws",
+      "type": "com.elioo.healthcare.aws",
+      "description": "AWS service integration properties"
+    },
+    {
+      "name": "aws.textract",
+      "type": "com.elioo.healthcare.aws.textract.config.TextractProperties",
+      "sourceType": "com.elioo.healthcare.aws.textract.config.TextractProperties",
+      "description": "AWS Textract OCR service configuration"
+    },
+    {
+      "name": "aws.comprehend-medical",
+      "type": "com.elioo.healthcare.aws.comprehendmedical.config.ComprehendMedicalProperties",
+      "sourceType": "com.elioo.healthcare.aws.comprehendmedical.config.ComprehendMedicalProperties",
+      "description": "AWS Comprehend Medical NLP service configuration"
+    },
+    {
+      "name": "aws.bedrock",
+      "type": "com.elioo.healthcare.aws.bedrock.config.BedrockProperties",
+      "sourceType": "com.elioo.healthcare.aws.bedrock.config.BedrockProperties",
+      "description": "AWS Bedrock LLM service configuration"
+    }
+  ],
+  "properties": [
+    {
+      "name": "aws.region",
+      "type": "java.lang.String",
+      "description": "AWS region for all services (e.g., us-east-1)"
+    },
+    {
+      "name": "aws.access-key-id",
+      "type": "java.lang.String",
+      "description": "AWS access key ID (optional, uses IAM roles if not provided)"
+    },
+    {
+      "name": "aws.secret-access-key",
+      "type": "java.lang.String",
+      "description": "AWS secret access key (optional, uses IAM roles if not provided)"
+    }
+  ],
+  "hints": [
+    {
+      "name": "aws.region",
+      "values": [
+        {
+          "value": "us-east-1",
+          "description": "US East (N. Virginia)"
+        },
+        {
+          "value": "us-west-2",
+          "description": "US West (Oregon)"
+        },
+        {
+          "value": "eu-west-1",
+          "description": "Europe (Ireland)"
+        },
+        {
+          "value": "ap-southeast-1",
+          "description": "Asia Pacific (Singapore)"
+        }
+      ]
+    }
+  ]
+}

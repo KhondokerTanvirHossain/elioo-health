@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- Load properties from application.properties or environment variables -->
+    <property resource="application.properties"/>
+    <springProperty scope="context" name="appName" source="spring.application.name"/>
+    <springProperty scope="context" name="slackWebhookUrl" source="slack.webhook.url" defaultValue="undefined"/>
+    <property name="LOG_DIR" value="${LOG_DIR:-/var/log/spring}/${appName}"/>
+    <property name="MAX_FILE_SIZE" value="${MAX_FILE_SIZE:-10MB}"/>
+    <property name="MAX_HISTORY" value="${MAX_HISTORY:-30}"/>
+    <property name="SLACK_WEBHOOK_URL" value="${slack.webhook.url}" />
+
+    <!-- Console Appender with Color -->
+    <appender name="Console" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>
+                %d{yyyy-MM-dd HH:mm:ss.SSS} [%highlight(%-5level)] [%cyan(${spring.application.name}, %X{spanId:-}, %X{traceId:-}, %X{Method}, %X{Uri})] [Request-Trace-Id: %X{Request-Trace-Id}] [%thread] %boldYellow(%class{0}) - %msg%n%throwable
+            </pattern>
+        </encoder>
+    </appender>
+
+    <!-- JSON Appender for Structured Logging -->
+    <appender name="JsonFile" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/app-json.log</file>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <!-- Add custom fields for JSON logging -->
+            <customFields>{"appName":"${spring.application.name}","environment":"${spring.profiles.active:-default}"}</customFields>
+            <fieldNames>
+                <level>severity</level>
+                <logger>logger_name</logger>
+                <thread>thread</thread>
+                <message>message</message>
+                <exception>exception</exception>
+                <timestamp>timestamp</timestamp>
+            </fieldNames>
+            <mdcIncludes>
+                spanId, traceId, Method, Uri, Request-Trace-Id
+            </mdcIncludes>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/archived/app-json-%d{yyyy-MM-dd_HH}.log.gz</fileNamePattern>
+            <maxHistory>${MAX_HISTORY}</maxHistory>
+            <maxFileSize>${MAX_FILE_SIZE}</maxFileSize>
+        </rollingPolicy>
+    </appender>
+    <!-- Rolling File Appender for Plain Logs -->
+    <appender name="RollingFile" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/app.log</file>
+        <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+            <pattern>
+                %d{yyyy-MM-dd HH:mm:ss.SSS} [ ${spring.application.name}, %X{spanId:-}, %X{traceId:-}, %X{Method} %X{Uri} ] [Request-Trace-Id: %X{Trace-Id}] [%t] %-5level %class{0} - %msg%n%throwable
+            </pattern>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/archived/app-%d{yyyy-MM-dd_HH}.log.gz</fileNamePattern>
+            <maxHistory>${MAX_HISTORY}</maxHistory>
+            <maxFileSize>${MAX_FILE_SIZE}</maxFileSize>
+        </rollingPolicy>
+    </appender>
+
+    <!-- Error File Appender -->
+    <appender name="ErrorFile" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/error.log</file>
+        <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+            <pattern>
+                %d{yyyy-MM-dd HH:mm:ss.SSS} [ ${spring.application.name}, %X{spanId:-}, %X{traceId:-}, %X{Method} %X{Uri} ] [Request-Trace-Id: %X{Trace-Id}] [%t] %-5level %class{0} - %msg%n%throwable
+            </pattern>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/archived/error-%d{yyyy-MM-dd_HH}.log.gz</fileNamePattern>
+            <maxHistory>${MAX_HISTORY}</maxHistory>
+            <maxFileSize>${MAX_FILE_SIZE}</maxFileSize>
+        </rollingPolicy>
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>ERROR</level>
+        </filter>
+    </appender>
+
+    <!-- Slack Appender for Error Notifications -->
+    <appender name="Slack" class="com.github.maricn.logback.SlackAppender">
+        <webhookUri>${slackWebhookUrl}</webhookUri>
+        <username>${appName} Error Bot</username>
+        <channel>#pfh-spring-admin-notification</channel>
+        <iconEmoji>:warning:</iconEmoji>
+        <layout class="ch.qos.logback.classic.PatternLayout">
+            <pattern>
+                [%d{yyyy-MM-dd HH:mm:ss.SSS}] [${spring.application.name}, %X{spanId:-}, %X{traceId:-}] %-5level %class{0} - %msg%n%throwable
+            </pattern>
+        </layout>
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>ERROR</level>
+        </filter>
+    </appender>
+    <!-- Asynchronous Appender for Slack to Avoid Blocking -->
+    <appender name="AsyncSlack" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>500</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <includeCallerData>true</includeCallerData>
+        <appender-ref ref="Slack"/>
+    </appender>
+    <!-- Asynchronous Appender -->
+    <appender name="Async" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>5000</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <includeCallerData>true</includeCallerData>
+        <appender-ref ref="RollingFile"/>
+    </appender>
+
+    <!-- Root Logger -->
+    <root level="${LOG_LEVEL_ROOT:-info}">
+        <appender-ref ref="Console"/>
+        <appender-ref ref="Async"/>
+        <appender-ref ref="ErrorFile"/>
+        <!-- Uncomment below for JSON logs in production -->
+        <appender-ref ref="JsonFile"/>
+<!--        <appender-ref ref="AsyncSlack"/>-->
+    </root>
+</configuration>

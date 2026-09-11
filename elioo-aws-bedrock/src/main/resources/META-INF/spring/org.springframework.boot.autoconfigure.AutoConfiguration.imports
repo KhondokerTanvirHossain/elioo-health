@@ -1,0 +1,2 @@
+com.elioo.healthcare.aws.bedrock.config.BedrockAutoConfiguration
+com.elioo.healthcare.aws.bedrock.health.config.BedrockHealthAutoConfiguration

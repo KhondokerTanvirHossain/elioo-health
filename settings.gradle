@@ -1,0 +1,29 @@
+/*
+ * Multi-Module MedScribe Platform
+ *
+ * This root settings file defines all modules in the platform:
+ * - medscribe-ai: Main application module
+ * - Future AWS library modules will be added here
+ */
+
+rootProject.name = 'medscribe-platform'
+
+// Application Module
+include 'medscribe-ai'
+
+// AWS Library Modules
+include 'elioo-aws-common'
+include 'elioo-aws-textract'
+include 'elioo-aws-comprehend-medical'
+include 'elioo-aws-bedrock'
+
+// AWS Spring Boot Starter (aggregates all AWS libraries)
+include 'elioo-aws-spring-boot-starter'
+
+// GCP Library Modules
+include 'elioo-gcp-common'
+include 'elioo-gcp-vision'
+include 'elioo-gcp-translate'
+
+// GCP Spring Boot Starter (aggregates all GCP libraries)
+include 'elioo-gcp-spring-boot-starter'

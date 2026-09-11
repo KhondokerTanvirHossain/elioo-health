@@ -1,0 +1,67 @@
+/*
+ * Elioo AWS Bedrock Module
+ *
+ * Generic LLM library for Amazon Bedrock integration.
+ * Provides:
+ * - LLM invocation (Claude, Titan, Jurassic, Llama, etc.)
+ * - Request/response handling
+ * - JSON parsing and formatting
+ * - Model configuration
+ *
+ * This library is domain-agnostic and can be used for any LLM use case.
+ * Domain-specific prompting and response interpretation should be implemented
+ * in the consuming application.
+ */
+
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+version = '0.1.0'
+description = 'AWS Bedrock LLM library for Elioo Healthcare'
+
+dependencies {
+    // Common AWS infrastructure
+    api project(':elioo-aws-common')
+
+    // AWS Bedrock SDK (BOM managed in parent)
+    api 'software.amazon.awssdk:bedrockruntime'
+    implementation 'software.amazon.awssdk:netty-nio-client'
+
+    // Spring Boot (for auto-configuration support)
+    compileOnly 'org.springframework.boot:spring-boot-autoconfigure'
+    annotationProcessor 'org.springframework.boot:spring-boot-autoconfigure-processor'
+    annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
+
+    // Reactive support (from common module)
+    api 'io.projectreactor:reactor-core'
+
+    // JSON processing (from common module)
+    api 'com.fasterxml.jackson.core:jackson-databind'
+
+    // Caching support (for Health API)
+    compileOnly 'org.springframework.boot:spring-boot-starter-cache'
+    compileOnly 'com.github.ben-manes.caffeine:caffeine'
+
+    // Testing
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'io.projectreactor:reactor-test'
+    testImplementation project(':elioo-aws-common')
+}
+
+// Publishing configuration for JitPack
+java {
+    withSourcesJar()
+    withJavadocJar()
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.java
+            groupId = 'com.elioo.healthcare'
+            artifactId = 'elioo-aws-bedrock'
+        }
+    }
+}

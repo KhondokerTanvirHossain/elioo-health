@@ -1,0 +1,84 @@
+### MedScribe AI - Query API Testing (Phase 3)
+### All query endpoints with example requests
+### Base URL: http://localhost:8086/api/v1/medical-report/query
+
+########################################
+# 1. PROCESS STATUS QUERIES
+########################################
+
+### Get Processing Status
+GET http://localhost:8086/api/v1/medical-report/query/status/RPT-B34BBA34
+
+### Get Complete Processing Details
+GET http://localhost:8086/api/v1/medical-report/query/details/RPT-B34BBA34
+
+### Get All Reports for Patient
+
+GET http://localhost:8086/api/v1/medical-report/query/patient/P12345/reports
+
+########################################
+# 2. RESULT QUERIES
+########################################
+
+### Get OCR Results
+
+GET http://localhost:8086/api/v1/medical-report/query/results/RPT-3580339B/ocr
+
+### Get Classification Results
+GET http://localhost:8086/api/v1/medical-report/query/results/RPT-05B43572/classification
+
+### Get ICD-10 Results
+GET  http://localhost:8086/api/v1/medical-report/query/results/RPT-7A246971/icd10
+
+### Get RX-NORMS Results
+GET  http://localhost:8086/api/v1/medical-report/query/results/RPT-7A246971/rxnorm
+
+### Get Risk Assessment
+GET http://localhost:8086/api/v1/medical-report/query/results/RPT-7A246971/risk-assessment
+
+### Get Recommendations
+GET http://localhost:8086/api/v1/medical-report/query/results/RPT-7A246971/recommendations
+
+### Get Clinical Insights
+GET http://localhost:8086/api/v1/medical-report/query/results/RPT-05B43572/insights
+
+### Get All Results
+GET http://localhost:8086/api/v1/medical-report/query/results/RPT-C8CB49FA/all
+
+### Get High-Risk Reports
+GET http://localhost:8086/api/v1/medical-report/query/high-risk
+
+### Get Educational Content
+GET http://localhost:8086/api/v1/medical-report/query/results/RPT-4F094060/educational-content
+########################################
+# 3. ERROR QUERIES
+########################################
+
+### Get Report Errors
+GET http://localhost:8086/api/v1/medical-report/query/errors/RPT-B34BBA34
+
+### Get Recent Errors (Last 24 hours)
+GET http://localhost:8086/api/v1/medical-report/query/errors/recent?since=2024-01-15T00:00:00
+
+########################################
+# 4. ANALYTICS QUERIES
+########################################
+
+### Get Processing Metrics (Last 7 days)
+GET http://localhost:8086/api/v1/medical-report/query/analytics/metrics?since=2024-01-01T00:00:00
+
+### Get Stage Statistics
+GET http://localhost:8086/api/v1/medical-report/query/analytics/stage-stats?since=2024-01-01T00:00:00
+
+### Get Error Patterns
+GET http://localhost:8086/api/v1/medical-report/query/analytics/error-patterns?since=2024-01-01T00:00:00
+
+########################################
+# NOTES
+########################################
+
+# 1. Replace RPT-B34BBA34 with actual report IDs from database
+# 2. Replace P001 with actual patient IDs
+# 3. Adjust date parameters in query strings as needed
+# 4. Default date range for analytics: last 7 days
+# 5. All timestamps use ISO-8601 format: 2024-01-15T00:00:00

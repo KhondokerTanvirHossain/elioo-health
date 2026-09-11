@@ -1,0 +1,65 @@
+# Docker ignore file for multi-module Gradle project
+# Excludes unnecessary files from Docker build context
+
+# Gradle build output
+.gradle/
+build/
+**/build/
+bin/
+out/
+
+# IDE files
+.idea/
+.vscode/
+.settings/
+.project
+.classpath
+*.iml
+*.ipr
+*.iws
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation
+README.md
+CLAUDE.md
+docs/
+*.md
+
+# CI/CD
+.gitlab-ci.yml
+.github/
+
+# Test reports
+**/test-results/
+**/jacoco/
+**/reports/
+
+# Logs
+*.log
+logs/
+/tmp/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.local
+*.env
+
+# Firebase credentials (security)
+**/firebase/firebase-adminsdk.json
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+*~
+
+# Spring Boot DevTools
+**/spring-boot-devtools.properties

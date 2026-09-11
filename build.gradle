@@ -1,0 +1,76 @@
+/*
+ * Parent Build Configuration for MedScribe Platform
+ *
+ * This file defines common configuration shared across all modules:
+ * - Java toolchain version
+ * - Common dependencies (Lombok, testing frameworks)
+ * - Repository configuration
+ * - Plugin versions
+ */
+
+plugins {
+    id 'java'
+    // Spring Boot plugin is only applied to medscribe-ai module, not root
+    id 'io.spring.dependency-management' version '1.1.7'
+    id "org.sonarqube" version "7.0.1.6134"
+}
+
+// Common configuration for all modules
+allprojects {
+    group = 'com.elioo.healthcare'
+    version = '0.0.1-SNAPSHOT'
+
+    repositories {
+        mavenCentral()
+    }
+}
+
+// Configuration for all subprojects (modules)
+subprojects {
+    apply plugin: 'java'
+    apply plugin: 'io.spring.dependency-management'
+
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(21)
+        }
+    }
+
+    configurations {
+        compileOnly {
+            extendsFrom annotationProcessor
+        }
+    }
+
+    // Common dependency management (BOM)
+    dependencyManagement {
+        imports {
+            mavenBom 'software.amazon.awssdk:bom:2.21.26'
+            mavenBom 'org.springframework.boot:spring-boot-dependencies:3.4.2'
+        }
+    }
+
+    // Common dependencies for all modules
+    dependencies {
+        // Lombok for all modules
+        compileOnly 'org.projectlombok:lombok'
+        annotationProcessor 'org.projectlombok:lombok'
+
+        // Testing dependencies for all modules
+        testImplementation 'org.junit.jupiter:junit-jupiter'
+        testImplementation 'org.assertj:assertj-core'
+        testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    }
+
+    tasks.named('test') {
+        useJUnitPlatform()
+    }
+}
+sonar {
+    properties {
+        property "sonar.projectKey", "healthcare_medscribe_ai"
+        property "sonar.projectName", "healthcare_medscribe_ai"
+        property "sonar.qualitygate.wait", true
+    }
+}
+

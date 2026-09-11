@@ -1,0 +1,67 @@
+/*
+ * Elioo GCP Common Module
+ *
+ * Shared GCP infrastructure for all Elioo Healthcare GCP services.
+ * Provides:
+ * - GCP credentials configuration (service account or application default)
+ * - GCP project ID configuration
+ * - Common exception handling
+ * - Retry policies
+ * - Utilities
+ *
+ * This library is domain-agnostic and can be used for any GCP service integration.
+ */
+
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+version = '0.1.0'
+description = 'Common GCP infrastructure for Elioo Healthcare libraries'
+
+dependencies {
+    // Google Cloud Core & Authentication
+    // Version managed by com.google.cloud:libraries-bom in parent
+    api platform('com.google.cloud:libraries-bom:26.32.0')
+    api 'com.google.cloud:google-cloud-core'
+    api 'com.google.auth:google-auth-library-oauth2-http'
+
+    // Reactive support
+    api 'io.projectreactor:reactor-core'
+
+    // JSON processing
+    api 'com.fasterxml.jackson.core:jackson-databind'
+
+    // Lombok
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+
+    // Spring Boot (optional - for auto-configuration support)
+    compileOnly 'org.springframework.boot:spring-boot-autoconfigure'
+    annotationProcessor 'org.springframework.boot:spring-boot-autoconfigure-processor'
+    annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
+
+    // Logging
+    api 'org.slf4j:slf4j-api'
+
+    // Testing
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'io.projectreactor:reactor-test'
+}
+
+// Publishing configuration for JitPack
+java {
+    withSourcesJar()
+    withJavadocJar()
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.java
+            groupId = 'com.elioo.healthcare'
+            artifactId = 'elioo-gcp-common'
+        }
+    }
+}

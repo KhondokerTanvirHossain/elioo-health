@@ -1,0 +1,51 @@
+/*
+ * Elioo GCP Spring Boot Starter
+ *
+ * Aggregator module for all Elioo Healthcare GCP services.
+ * Simplifies dependency management by providing a single dependency
+ * that transitively includes all GCP library modules.
+ *
+ * Usage in medscribe-ai:
+ *   implementation project(':elioo-gcp-spring-boot-starter')
+ *
+ * This brings in:
+ * - elioo-gcp-common (GCP credentials, configuration)
+ * - elioo-gcp-vision (OCR service)
+ * - elioo-gcp-translate (Translation service)
+ * - Future GCP services (Speech-to-Text, Natural Language, etc.)
+ */
+
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+version = '0.1.0'
+description = 'Spring Boot Starter for all Elioo Healthcare GCP libraries'
+
+dependencies {
+    // Aggregate all GCP library modules
+    api project(':elioo-gcp-common')
+    api project(':elioo-gcp-vision')
+    api project(':elioo-gcp-translate')
+
+    // Note: Future GCP services can be added here
+    // api project(':elioo-gcp-speech')
+    // api project(':elioo-gcp-language')
+}
+
+// Publishing configuration for JitPack
+java {
+    withSourcesJar()
+    withJavadocJar()
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.java
+            groupId = 'com.elioo.healthcare'
+            artifactId = 'elioo-gcp-spring-boot-starter'
+        }
+    }
+}

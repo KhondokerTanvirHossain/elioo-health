@@ -1,0 +1,84 @@
+# ============================================
+# Gradle / build output
+# Anchored to real build dirs only - must NOT match
+# hexagonal source packages like src/**/adapter/out/
+# ============================================
+/build/
+/bin/
+/out/
+/medscribe-ai/build/
+/medscribe-ai/bin/
+/elioo-aws-common/build/
+/elioo-aws-textract/build/
+/elioo-aws-comprehend-medical/build/
+/elioo-aws-bedrock/build/
+/elioo-aws-spring-boot-starter/build/
+/elioo-gcp-common/build/
+/elioo-gcp-vision/build/
+/elioo-gcp-translate/build/
+/elioo-gcp-spring-boot-starter/build/
+.gradle/
+*.class
+*.war
+*.ear
+
+# ============================================
+# SECRETS - never commit these
+# ============================================
+.env
+.env.local
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+**/resources/firebase/*.json
+**/resources/gcp/*.json
+gcp-service-account*.json
+*-service-account.json
+*credentials*.json
+
+# ============================================
+# IDE
+# ============================================
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.classpath
+.project
+.settings/
+.factorypath
+.apt_generated/
+.springBeans
+.sts4-cache/
+nbproject/private/
+.nb-gradle/
+
+# ============================================
+# Logs / runtime
+# ============================================
+logs/
+log/
+*.log
+*.rdb
+files/
+__pycache__/
+pyenv/
+
+# ============================================
+# Analysis tools
+# ============================================
+.sonarlint/
+.sonar/
+.scannerwork/
+
+# ============================================
+# OS
+# ============================================
+.DS_Store
+Thumbs.db
+.dbeaver
+RemoteSystemsTempFiles/
+HELP.md

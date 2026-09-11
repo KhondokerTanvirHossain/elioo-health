@@ -1,0 +1,64 @@
+/*
+ * Elioo GCP Translate Module
+ *
+ * Google Cloud Translation API library for text translation.
+ * Provides:
+ * - Text translation between 100+ languages
+ * - Language detection
+ * - Mixed-language text handling (translate only non-English portions)
+ * - Batch translation support
+ * - Reactive programming with Project Reactor
+ *
+ * This library is domain-agnostic and can be used for any translation use case.
+ * Medical-specific translation logic should be implemented in the consuming application.
+ */
+
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+version = '0.1.0'
+description = 'GCP Translation API library for Elioo Healthcare'
+
+dependencies {
+    // Common GCP infrastructure
+    api project(':elioo-gcp-common')
+
+    // Google Cloud Translation API (BOM managed by parent via elioo-gcp-common)
+    api 'com.google.cloud:google-cloud-translate'
+
+    // Spring Boot (for auto-configuration support)
+    compileOnly 'org.springframework.boot:spring-boot-autoconfigure'
+    compileOnly 'jakarta.annotation:jakarta.annotation-api'
+    annotationProcessor 'org.springframework.boot:spring-boot-autoconfigure-processor'
+    annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
+
+    // Reactive support (from common module)
+    api 'io.projectreactor:reactor-core'
+
+    // Lombok
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+
+    // Testing
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'io.projectreactor:reactor-test'
+    testImplementation project(':elioo-gcp-common')
+}
+
+// Publishing configuration for JitPack
+java {
+    withSourcesJar()
+    withJavadocJar()
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.java
+            groupId = 'com.elioo.healthcare'
+            artifactId = 'elioo-gcp-translate'
+        }
+    }
+}

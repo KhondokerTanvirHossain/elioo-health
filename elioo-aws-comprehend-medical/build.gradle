@@ -1,0 +1,59 @@
+/*
+ * Elioo AWS Comprehend Medical Module
+ *
+ * Generic medical NLP library for Amazon Comprehend Medical integration.
+ * Provides:
+ * - Medical entity detection (conditions, medications, anatomy, tests, PHI)
+ * - Medical code inference (ICD-10-CM, RxNorm)
+ * - Entity relationship extraction
+ * - Text validation
+ *
+ * This library is domain-agnostic and can be used for any medical NLP use case.
+ * Domain-specific interpretation and business logic should be implemented
+ * in the consuming application.
+ */
+
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+version = '0.1.0'
+description = 'AWS Comprehend Medical NLP library for Elioo Healthcare'
+
+dependencies {
+    // Common AWS infrastructure
+    api project(':elioo-aws-common')
+
+    // AWS Comprehend Medical SDK (BOM managed in parent)
+    api 'software.amazon.awssdk:comprehendmedical'
+
+    // Spring Boot (for auto-configuration support)
+    compileOnly 'org.springframework.boot:spring-boot-autoconfigure'
+    annotationProcessor 'org.springframework.boot:spring-boot-autoconfigure-processor'
+    annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
+
+    // Reactive support (from common module)
+    api 'io.projectreactor:reactor-core'
+
+    // Testing
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'io.projectreactor:reactor-test'
+    testImplementation project(':elioo-aws-common')
+}
+
+// Publishing configuration for JitPack
+java {
+    withSourcesJar()
+    withJavadocJar()
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.java
+            groupId = 'com.elioo.healthcare'
+            artifactId = 'elioo-aws-comprehend-medical'
+        }
+    }
+}

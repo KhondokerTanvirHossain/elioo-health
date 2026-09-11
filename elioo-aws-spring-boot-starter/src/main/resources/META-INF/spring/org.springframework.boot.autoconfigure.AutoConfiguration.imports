@@ -1,0 +1,3 @@
+com.elioo.healthcare.aws.textract.config.TextractAutoConfiguration
+com.elioo.healthcare.aws.comprehendmedical.config.ComprehendMedicalAutoConfiguration
+com.elioo.healthcare.aws.bedrock.config.BedrockAutoConfiguration

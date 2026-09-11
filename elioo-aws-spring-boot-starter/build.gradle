@@ -1,0 +1,56 @@
+/*
+ * Elioo AWS Spring Boot Starter
+ *
+ * Aggregated Spring Boot starter for AWS service libraries.
+ * Provides a single dependency to include all AWS integrations:
+ * - Textract (OCR)
+ * - Comprehend Medical (Medical NLP)
+ * - Bedrock (LLM)
+ *
+ * Usage:
+ *   dependencies {
+ *       implementation 'com.elioo.healthcare:elioo-aws-spring-boot-starter:0.1.0'
+ *   }
+ *
+ * This automatically includes all AWS service libraries and their auto-configurations.
+ */
+
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+version = '0.1.0'
+description = 'Spring Boot starter for Elioo AWS service libraries'
+
+dependencies {
+    // Aggregate all AWS service libraries
+    api project(':elioo-aws-textract')
+    api project(':elioo-aws-comprehend-medical')
+    api project(':elioo-aws-bedrock')
+
+    // Spring Boot auto-configuration (optional dependency for starter)
+    compileOnly 'org.springframework.boot:spring-boot-autoconfigure'
+    annotationProcessor 'org.springframework.boot:spring-boot-autoconfigure-processor'
+    annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
+
+    // Testing
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation project(':elioo-aws-common')
+}
+
+// Publishing configuration for JitPack
+java {
+    withSourcesJar()
+    withJavadocJar()
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.java
+            groupId = 'com.elioo.healthcare'
+            artifactId = 'elioo-aws-spring-boot-starter'
+        }
+    }
+}
