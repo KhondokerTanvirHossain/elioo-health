@@ -1,7 +1,7 @@
 # GitHub Actions → EC2 CI/CD with Supabase — Design
 
 **Date:** 2026-09-11
-**Status:** Approved (phase 2 of: 1 run locally, 2 deploy with CI/CD, 3 make every part work)
+**Status:** Implemented 2026-09-12. First successful run: https://github.com/KhondokerTanvirHossain/elioo-health/actions/runs/34633065189 (phase 2 of: 1 run locally, 2 deploy with CI/CD, 3 make every part work)
 
 ## Goal
 
