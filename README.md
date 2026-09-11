@@ -45,59 +45,30 @@ git clone https://github.com/KhondokerTanvirHossain/elioo-health.git
 cd elioo-health
 ```
 
-### 2. Setup PostgreSQL Database
+### 2. Start a local database
 
 ```bash
-# Create database and schema
-createdb pfh
-psql -d pfh -c "CREATE SCHEMA IF NOT EXISTS pfh;"
-
-# Create user (if needed)
-psql -d pfh -c "CREATE USER pfh WITH PASSWORD <YOUR_DB_PASSWORD>;"
-psql -d pfh -c "GRANT ALL PRIVILEGES ON DATABASE pfh TO pfh;"
-psql -d pfh -c "GRANT ALL PRIVILEGES ON SCHEMA pfh TO pfh;"
+docker compose up -d        # Postgres 17 on localhost:5433 (db/user/pass: medscribe)
 ```
 
-### 3. Configure Application
+Or point at Supabase instead: copy `medscribe.env.example` to `.env.local`, fill in the
+`PG*` values, then `set -a; source .env.local; set +a` before running.
 
-Edit `src/main/resources/application-local.properties`:
-
-```properties
-# Database Connection (R2DBC)
-spring.r2dbc.url=r2dbc:postgresql://localhost:5432/pfh?schema=pfh
-spring.r2dbc.username=pfh
-spring.r2dbc.password=<YOUR_DB_PASSWORD>
-
-# Server Port
-server.port=8086
-
-# Feature Flagging (optional)
-feature-flagging.base-url=http://localhost:8087
-```
-
-Configure active profile in `src/main/resources/application.properties`:
-```properties
-spring.profiles.active=local2
-```
-
-### 4. Build the Application
+### 3. Run
 
 ```bash
-# Build with tests
-./gradlew build
-
-# Build without tests
-./gradlew build -x test
+./gradlew :medscribe-ai:bootRun      # http://localhost:8086 (UI, /actuator/health)
 ```
 
-### 5. Run the Application
+Flyway applies `medscribe-ai/src/main/resources/db/migration/V*.sql` automatically.
+Without GCP credentials the app starts in degraded mode (OCR and translation fail, everything
+else works). AWS calls need valid keys in `~/.aws` or `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`.
+
+### 4. Build and test
 
 ```bash
-# Run using Gradle
-./gradlew bootRun
-
-# Or run the JAR directly
-java -jar build/libs/medscribe-ai-0.0.1-SNAPSHOT.jar
+./gradlew build                                   # all modules, unit tests
+RUN_AWS_INTEGRATION_TESTS=true ./gradlew test     # also the real-AWS integration tests
 ```
 
 The application will be available at `http://localhost:8086`
@@ -310,18 +281,22 @@ For complete API documentation, see [API_DOCUMENTATION.md](API_DOCUMENTATION.md)
 ./gradlew dependencies
 ```
 
-### Docker Development
+## Deployment
 
-```bash
-# Build Docker image
-docker build -t medscribe-ai:v1 .
+Every push runs the **CI/CD** workflow (`.github/workflows/ci-cd.yml`):
 
-# Run Docker container
-docker run -dit --rm -p 8086:8086 medscribe-ai:v1
+1. `build` — Gradle build and tests on every branch and PR.
+2. `deploy` (only on `main`) — builds the Docker image, pushes it to
+   `ghcr.io/khondokertanvirhossain/elioo-health/medscribe-ai:<sha>`, then SSHes to the EC2
+   host and runs `deploy.sh`, which replaces the `medscribe-ai` container and waits for
+   `/actuator/health`.
 
-# Or use docker-compose (if configured)
-docker-compose up -d
-```
+Server prerequisites (one-time): Docker, `/home/ec2-user/medscribe.env` (from
+`medscribe.env.example`, mode 600), and GitHub secrets `EC2_HOST`, `EC2_USER`, `EC2_SSH_KEY`.
+
+Manual rollback on the server: `IMAGE_TAG=<previous sha> bash ~/deploy.sh`.
+
+Local image build, if you need it: `docker build -t medscribe-ai:local .`
 
 ### Code Style and Architecture
 
