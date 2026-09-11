@@ -194,42 +194,50 @@ public class MedicalReportChatService implements MedicalReportChatUseCase {
         return Mono.zip(
                         // Fetch OCR results
                         persistencePort.findResultByType(reportId, "OCR")
-                                .map(MedicalReportPersistencePort.ResultRecord::resultData)
+                                .map(r -> r.resultData() != null ? r.resultData() : (Object) Map.of())
+                                .onErrorResume(e -> { log.warn("Chat context: skipping unreadable result ({})", e.getMessage()); return Mono.empty(); })
                                 .defaultIfEmpty(Map.of()),
 
                         // Fetch classification results
                         persistencePort.findResultByType(reportId, "CLASSIFICATION")
-                                .map(MedicalReportPersistencePort.ResultRecord::resultData)
+                                .map(r -> r.resultData() != null ? r.resultData() : (Object) Map.of())
+                                .onErrorResume(e -> { log.warn("Chat context: skipping unreadable result ({})", e.getMessage()); return Mono.empty(); })
                                 .defaultIfEmpty(Map.of()),
 
                         // Fetch ICD-10 codes
                         persistencePort.findResultByType(reportId, "ICD10")
-                                .map(MedicalReportPersistencePort.ResultRecord::resultData)
+                                .map(r -> r.resultData() != null ? r.resultData() : (Object) List.of())
+                                .onErrorResume(e -> { log.warn("Chat context: skipping unreadable result ({})", e.getMessage()); return Mono.empty(); })
                                 .defaultIfEmpty(List.of()),
 
                         // Fetch RxNorm codes
                         persistencePort.findResultByType(reportId, "RXNORM")
-                                .map(MedicalReportPersistencePort.ResultRecord::resultData)
+                                .map(r -> r.resultData() != null ? r.resultData() : (Object) List.of())
+                                .onErrorResume(e -> { log.warn("Chat context: skipping unreadable result ({})", e.getMessage()); return Mono.empty(); })
                                 .defaultIfEmpty(List.of()),
 
                         // Fetch clinical insights
                         persistencePort.findResultByType(reportId, "CLINICAL_INSIGHTS")
-                                .map(MedicalReportPersistencePort.ResultRecord::resultData)
+                                .map(r -> r.resultData() != null ? r.resultData() : (Object) Map.of())
+                                .onErrorResume(e -> { log.warn("Chat context: skipping unreadable result ({})", e.getMessage()); return Mono.empty(); })
                                 .defaultIfEmpty(Map.of()),
 
                         // Fetch risk assessment
                         persistencePort.findResultByType(reportId, "RISK_ASSESSMENT")
-                                .map(MedicalReportPersistencePort.ResultRecord::resultData)
+                                .map(r -> r.resultData() != null ? r.resultData() : (Object) Map.of())
+                                .onErrorResume(e -> { log.warn("Chat context: skipping unreadable result ({})", e.getMessage()); return Mono.empty(); })
                                 .defaultIfEmpty(Map.of()),
 
                         // Fetch recommendations
                         persistencePort.findResultByType(reportId, "RECOMMENDATIONS")
-                                .map(MedicalReportPersistencePort.ResultRecord::resultData)
+                                .map(r -> r.resultData() != null ? r.resultData() : (Object) List.of())
+                                .onErrorResume(e -> { log.warn("Chat context: skipping unreadable result ({})", e.getMessage()); return Mono.empty(); })
                                 .defaultIfEmpty(List.of()),
 
                         // Fetch educational content
                         persistencePort.findResultByType(reportId, "EDUCATIONAL_CONTENT")
-                                .map(MedicalReportPersistencePort.ResultRecord::resultData)
+                                .map(r -> r.resultData() != null ? r.resultData() : (Object) Map.of())
+                                .onErrorResume(e -> { log.warn("Chat context: skipping unreadable result ({})", e.getMessage()); return Mono.empty(); })
                                 .defaultIfEmpty(Map.of())
                 )
                 .map(tuple -> {

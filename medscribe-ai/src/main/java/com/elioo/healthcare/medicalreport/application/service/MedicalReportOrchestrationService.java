@@ -2990,8 +2990,10 @@ public class MedicalReportOrchestrationService implements MedicalReportOrchestra
                             // Save a placeholder result so UI doesn't show 404
                             Map<String, Object> fallbackResult = Map.of(
                                     "topic", "General Health",
-                                    "content", List.of(),
-                                    "message", "Educational content generation failed: " + error.getMessage()
+                                    "content", "Educational content is unavailable for this report: " + error.getMessage(),
+                                    "keyPoints", List.of(),
+                                    "resources", List.of(),
+                                    "faqs", List.of()
                             );
                             return persistencePort.saveResult(
                                     context.getReportId(),

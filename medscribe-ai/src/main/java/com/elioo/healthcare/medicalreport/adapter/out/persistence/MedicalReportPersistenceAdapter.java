@@ -665,33 +665,13 @@ public class MedicalReportPersistenceAdapter implements MedicalReportPersistence
         );
     }
 
-    private Object deserializeResultData(String resultType, String resultDataJson) {
-        if (resultDataJson == null || resultDataJson.isBlank()) {
-            return null;
-        }
+    private ResultDataDeserializer resultDataDeserializer;
 
-        try {
-            return switch (resultType) {
-                case "OCR" -> deserializeOcrResult(resultDataJson);
-                case "TRANSLATION" -> objectMapper.readValue(resultDataJson,
-                        objectMapper.getTypeFactory().constructMapType(java.util.Map.class, String.class, Object.class));
-                case "CLASSIFICATION" -> objectMapper.readValue(resultDataJson, ClassificationResponse.class);
-                case "ICD10", "RXNORM" -> objectMapper.readValue(resultDataJson,
-                        objectMapper.getTypeFactory().constructCollectionType(List.class, MedicalClassificationPort.MedicalCode.class));
-                case "CLINICAL_INSIGHTS" -> objectMapper.readValue(resultDataJson, SuggestionsResponse.class);
-                case "RISK_ASSESSMENT" -> objectMapper.readValue(resultDataJson, ClinicalInsightPort.RiskAssessment.class);
-                case "RECOMMENDATIONS" -> objectMapper.readValue(resultDataJson,
-                        objectMapper.getTypeFactory().constructCollectionType(List.class, ClinicalInsightPort.Recommendation.class));
-                case "EDUCATIONAL_CONTENT" -> objectMapper.readValue(resultDataJson, ClinicalInsightPort.EducationalContent.class);
-                default -> {
-                    log.warn("Unknown result type: {}, cannot deserialize", resultType);
-                    yield null;
-                }
-            };
-        } catch (Exception e) {
-            log.error("Failed to deserialize resultDataJson for type: {}", resultType, e);
-            return null;
+    private Object deserializeResultData(String resultType, String resultDataJson) {
+        if (resultDataDeserializer == null) {
+            resultDataDeserializer = new ResultDataDeserializer(objectMapper);
         }
+        return resultDataDeserializer.deserialize(resultType, resultDataJson);
     }
 
     private Object deserializeOcrResult(String resultDataJson) throws JsonProcessingException {
