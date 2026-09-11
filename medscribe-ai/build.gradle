@@ -48,6 +48,9 @@ dependencies {
     // GCP Service Libraries (via Spring Boot Starter)
     implementation project(':elioo-gcp-spring-boot-starter')
 
+    // Provider-neutral LLM layer (Groq / Anthropic / OpenAI / Bedrock)
+    implementation project(':elioo-llm')
+
     // Caching support (for Bedrock Health API)
     implementation 'org.springframework.boot:spring-boot-starter-cache'
     implementation 'com.github.ben-manes.caffeine:caffeine'

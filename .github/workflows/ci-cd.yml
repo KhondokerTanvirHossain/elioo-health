@@ -40,6 +40,9 @@ jobs:
           PGUSER: medscribe
           PGPASSWORD: medscribe
           PGSCHEMA: medscribe
+          # presence-only: the context test never calls the provider
+          LLM_PROVIDER: groq
+          GROQ_API_KEY: ci-placeholder
       - name: Upload test reports
         if: failure()
         uses: actions/upload-artifact@v4

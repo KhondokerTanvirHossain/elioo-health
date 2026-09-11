@@ -29,6 +29,7 @@ import java.util.Map;
  *   <li>POST /api/aws/textract/validate-image - Pre-processing quality validation</li>
  * </ul>
  */
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "aws.textract.enabled", havingValue = "true", matchIfMissing = true)
 @Component
 @RequiredArgsConstructor
 @Slf4j

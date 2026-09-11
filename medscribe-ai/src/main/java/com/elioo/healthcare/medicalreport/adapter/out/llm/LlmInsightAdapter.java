@@ -1,6 +1,6 @@
-package com.elioo.healthcare.medicalreport.adapter.out.aws;
+package com.elioo.healthcare.medicalreport.adapter.out.llm;
 
-import com.elioo.healthcare.aws.bedrock.api.BedrockService;
+import com.elioo.healthcare.llm.api.LlmClient;
 import com.elioo.healthcare.llm.health.api.HealthInsightService;
 import com.elioo.healthcare.llm.model.LlmRequest;
 import com.elioo.healthcare.llm.model.LlmResponse;
@@ -66,10 +66,10 @@ import java.util.stream.Collectors;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class BedrockAdapter implements ClinicalInsightPort {
+public class LlmInsightAdapter implements ClinicalInsightPort {
 
     private final HealthInsightService healthService;
-    private final BedrockService bedrockService;
+    private final LlmClient llmClient;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -369,7 +369,7 @@ public class BedrockAdapter implements ClinicalInsightPort {
                 categoryRisks,
                 libraryRiskAssessment.riskFactors() != null ? libraryRiskAssessment.riskFactors() : List.of(),
                 List.of(), // Protective factors (not in library DTO)
-                libraryRiskAssessment.toString() // Overall assessment
+                "Overall risk: " + libraryRiskAssessment.overallRiskLevel() // Overall assessment
         );
     }
 
@@ -717,7 +717,7 @@ public class BedrockAdapter implements ClinicalInsightPort {
         // Build comprehensive prompt with patient context, report data, conversation history, and user question
         String prompt = buildChatPrompt(userMessage, conversationHistory, reportContext, patientContext);
 
-        // Use BedrockService directly to get raw text response (not JSON)
+        // Use LlmClient directly to get raw text response (not JSON)
         // Create LLM request with the prompt
         LlmRequest llmRequest = LlmRequest.custom(
                 prompt,
@@ -727,7 +727,7 @@ public class BedrockAdapter implements ClinicalInsightPort {
                 0.7    // Temperature for balanced creativity
         );
 
-        return bedrockService.invokeModel(llmRequest)
+        return llmClient.invoke(llmRequest)
                 .map(LlmResponse::content)  // Extract raw text content from response
                 .doOnSuccess(response -> log.info("Chat response generated for report: {}, response length: {}",
                         reportId, response.length()))

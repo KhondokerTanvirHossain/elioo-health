@@ -1,6 +1,6 @@
-package com.elioo.healthcare.medicalreport.adapter.out.aws;
+package com.elioo.healthcare.medicalreport.adapter.out.llm;
 
-import com.elioo.healthcare.aws.bedrock.api.BedrockService;
+import com.elioo.healthcare.llm.api.LlmClient;
 import com.elioo.healthcare.llm.health.api.HealthInsightService;
 import com.elioo.healthcare.llm.health.dto.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -24,20 +24,20 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-@DisplayName("Clinical Insights Unit Test - BedrockAdapter with Health Service Mocks")
-class BedrockAdapterTest {
+@DisplayName("Clinical Insights Unit Test - LlmInsightAdapter with Health Service Mocks")
+class LlmInsightAdapterTest {
 
     @Mock
     private HealthInsightService healthService;
 
     @Mock
-    private BedrockService bedrockService;
+    private LlmClient llmClient;
 
-    private BedrockAdapter bedrockAdapter;
+    private LlmInsightAdapter adapter;
 
     @BeforeEach
     void setUp() {
-        bedrockAdapter = new BedrockAdapter(healthService, bedrockService, new ObjectMapper());
+        adapter = new LlmInsightAdapter(healthService, llmClient, new ObjectMapper());
     }
 
     @Test
@@ -55,7 +55,7 @@ class BedrockAdapterTest {
                 "creatinine", "1.2 mg/dL"
         );
 
-        Mono<String> summaryMono = bedrockAdapter.generateSummary(medicalData, "PATIENT");
+        Mono<String> summaryMono = adapter.generateSummary(medicalData, "PATIENT");
 
         StepVerifier.create(summaryMono)
                 .assertNext(summary -> {
@@ -94,7 +94,7 @@ class BedrockAdapterTest {
                 Map.of()
         );
 
-        Mono<ClinicalInsightResult> insightMono = bedrockAdapter.generateClinicalInsights(request);
+        Mono<ClinicalInsightResult> insightMono = adapter.generateClinicalInsights(request);
 
         StepVerifier.create(insightMono)
                 .assertNext(result -> {
@@ -127,7 +127,7 @@ class BedrockAdapterTest {
                 List.of("diabetes", "cardiovascular")
         );
 
-        Mono<com.elioo.healthcare.medicalreport.application.port.out.ClinicalInsightPort.RiskAssessment> riskMono = bedrockAdapter.assessRisk(request);
+        Mono<com.elioo.healthcare.medicalreport.application.port.out.ClinicalInsightPort.RiskAssessment> riskMono = adapter.assessRisk(request);
 
         StepVerifier.create(riskMono)
                 .assertNext(risk -> {

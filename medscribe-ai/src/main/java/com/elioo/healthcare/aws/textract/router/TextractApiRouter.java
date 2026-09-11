@@ -12,6 +12,7 @@ import org.springframework.web.reactive.function.server.ServerResponse;
  *
  * <p>Defines REST endpoints for direct access to AWS Textract services.
  */
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "aws.textract.enabled", havingValue = "true", matchIfMissing = true)
 @Configuration
 public class TextractApiRouter {
 
