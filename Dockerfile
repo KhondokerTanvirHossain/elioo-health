@@ -64,6 +64,9 @@ COPY --from=builder ${DEPENDENCY}/BOOT-INF/classes /workspace/app
 # Expose application port (default: 8086)
 EXPOSE 8086
 
+# Fits beside other containers on a small host; override with -e JAVA_TOOL_OPTIONS=...
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=70 -XX:+UseSerialGC"
+
 # Health check (optional - adjust path if needed)
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
   CMD curl -f http://localhost:8086/actuator/health || exit 1

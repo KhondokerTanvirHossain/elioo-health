@@ -63,3 +63,7 @@ Thumbs.db
 
 # Spring Boot DevTools
 **/spring-boot-devtools.properties
+
+# Never bake cloud credentials into the image
+**/gcp/*.json
+.env.local
