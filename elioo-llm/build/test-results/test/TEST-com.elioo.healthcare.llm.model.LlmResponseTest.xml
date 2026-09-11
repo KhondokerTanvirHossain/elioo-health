@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.elioo.healthcare.llm.model.LlmResponseTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-09-11T19:57:15.379Z" hostname="Tanvirs-MacBook-Air.local" time="0.013">
+<testsuite name="com.elioo.healthcare.llm.model.LlmResponseTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-09-11T19:59:25.639Z" hostname="Tanvirs-MacBook-Air.local" time="0.01">
   <properties/>
-  <testcase name="testCompleteResponse()" classname="com.elioo.healthcare.llm.model.LlmResponseTest" time="0.008"/>
+  <testcase name="testCompleteResponse()" classname="com.elioo.healthcare.llm.model.LlmResponseTest" time="0.007"/>
   <testcase name="testSimpleResponse()" classname="com.elioo.healthcare.llm.model.LlmResponseTest" time="0.0"/>
-  <testcase name="testMaxTokensReached()" classname="com.elioo.healthcare.llm.model.LlmResponseTest" time="0.001"/>
-  <testcase name="testStopSequence()" classname="com.elioo.healthcare.llm.model.LlmResponseTest" time="0.001"/>
+  <testcase name="testMaxTokensReached()" classname="com.elioo.healthcare.llm.model.LlmResponseTest" time="0.0"/>
+  <testcase name="testStopSequence()" classname="com.elioo.healthcare.llm.model.LlmResponseTest" time="0.0"/>
   <testcase name="testWithUsage()" classname="com.elioo.healthcare.llm.model.LlmResponseTest" time="0.0"/>
-  <testcase name="testEmptyContent()" classname="com.elioo.healthcare.llm.model.LlmResponseTest" time="0.0"/>
-  <testcase name="testNullContent()" classname="com.elioo.healthcare.llm.model.LlmResponseTest" time="0.001"/>
+  <testcase name="testEmptyContent()" classname="com.elioo.healthcare.llm.model.LlmResponseTest" time="0.001"/>
+  <testcase name="testNullContent()" classname="com.elioo.healthcare.llm.model.LlmResponseTest" time="0.0"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

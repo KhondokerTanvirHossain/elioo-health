@@ -1,10 +1,10 @@
 package com.elioo.healthcare.medicalreport.adapter.out.aws;
 
 import com.elioo.healthcare.aws.bedrock.api.BedrockService;
-import com.elioo.healthcare.aws.bedrock.health.api.BedrockHealthService;
-import com.elioo.healthcare.aws.bedrock.health.dto.*;
+import com.elioo.healthcare.llm.health.api.HealthInsightService;
+import com.elioo.healthcare.llm.health.dto.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.elioo.healthcare.aws.bedrock.health.dto.RiskAssessment;
+import com.elioo.healthcare.llm.health.dto.RiskAssessment;
 import com.elioo.healthcare.medicalreport.application.port.out.ClinicalInsightPort;
 import com.elioo.healthcare.medicalreport.application.port.out.ClinicalInsightPort.*;
 import org.junit.jupiter.api.BeforeEach;
@@ -28,7 +28,7 @@ import static org.mockito.Mockito.when;
 class BedrockAdapterTest {
 
     @Mock
-    private BedrockHealthService healthService;
+    private HealthInsightService healthService;
 
     @Mock
     private BedrockService bedrockService;
@@ -118,7 +118,7 @@ class BedrockAdapterTest {
                 "Moderate risk"
         );
 
-        when(healthService.assessRisk(any(com.elioo.healthcare.aws.bedrock.health.dto.RiskAssessmentRequest.class)))
+        when(healthService.assessRisk(any(com.elioo.healthcare.llm.health.dto.RiskAssessmentRequest.class)))
                 .thenReturn(Mono.just(riskResponse));
 
         ClinicalInsightPort.RiskAssessmentRequest request = new ClinicalInsightPort.RiskAssessmentRequest(

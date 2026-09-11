@@ -6,7 +6,7 @@ import java.util.Map;
  * Generic LLM invocation response.
  *
  * This model represents a domain-agnostic response from a Large Language Model
- * via AWS Bedrock. It normalizes responses from different model providers.
+ * from any provider. It normalizes responses from different model providers.
  *
  * @param content      The generated text content
  * @param stopReason   Reason for stopping generation (e.g., "end_turn", "max_tokens")

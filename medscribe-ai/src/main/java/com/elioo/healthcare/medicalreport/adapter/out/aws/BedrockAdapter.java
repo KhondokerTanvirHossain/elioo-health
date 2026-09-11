@@ -1,35 +1,35 @@
 package com.elioo.healthcare.medicalreport.adapter.out.aws;
 
 import com.elioo.healthcare.aws.bedrock.api.BedrockService;
-import com.elioo.healthcare.aws.bedrock.health.api.BedrockHealthService;
+import com.elioo.healthcare.llm.health.api.HealthInsightService;
 import com.elioo.healthcare.llm.model.LlmRequest;
 import com.elioo.healthcare.llm.model.LlmResponse;
-import com.elioo.healthcare.aws.bedrock.health.dto.ClinicalFinding;
-import com.elioo.healthcare.aws.bedrock.health.dto.ClinicalInsightRequest;
-import com.elioo.healthcare.aws.bedrock.health.dto.ClinicalInsightResponse;
-import com.elioo.healthcare.aws.bedrock.health.dto.ClinicalRecommendation;
-import com.elioo.healthcare.aws.bedrock.health.dto.ContentFormat;
-import com.elioo.healthcare.aws.bedrock.health.dto.EducationalContentOptions;
-import com.elioo.healthcare.aws.bedrock.health.dto.EducationalContentRequest;
-import com.elioo.healthcare.aws.bedrock.health.dto.EducationalContentResponse;
-import com.elioo.healthcare.aws.bedrock.health.dto.InsightOptions;
-import com.elioo.healthcare.aws.bedrock.health.dto.RecommendationOptions;
-import com.elioo.healthcare.aws.bedrock.health.dto.RecommendationRequest;
-import com.elioo.healthcare.aws.bedrock.health.dto.RecommendationResponse;
-import com.elioo.healthcare.aws.bedrock.health.dto.ReadingLevel;
-import com.elioo.healthcare.aws.bedrock.health.dto.RiskAssessmentOptions;
-import com.elioo.healthcare.aws.bedrock.health.dto.RiskAssessmentRequest;
-import com.elioo.healthcare.aws.bedrock.health.dto.RiskAssessmentResponse;
-import com.elioo.healthcare.aws.bedrock.health.dto.RiskScore;
-import com.elioo.healthcare.aws.bedrock.health.dto.SummaryLength;
-import com.elioo.healthcare.aws.bedrock.health.dto.SummaryOptions;
-import com.elioo.healthcare.aws.bedrock.health.dto.SummaryRequest;
-import com.elioo.healthcare.aws.bedrock.health.dto.SummaryResponse;
-import com.elioo.healthcare.aws.bedrock.health.dto.TargetAudience;
-import com.elioo.healthcare.aws.bedrock.health.dto.TimeSeriesDataPoint;
-import com.elioo.healthcare.aws.bedrock.health.dto.TrendAnalysisRequest;
-import com.elioo.healthcare.aws.bedrock.health.dto.TrendAnalysisResponse;
-import com.elioo.healthcare.aws.bedrock.health.dto.TrendPattern;
+import com.elioo.healthcare.llm.health.dto.ClinicalFinding;
+import com.elioo.healthcare.llm.health.dto.ClinicalInsightRequest;
+import com.elioo.healthcare.llm.health.dto.ClinicalInsightResponse;
+import com.elioo.healthcare.llm.health.dto.ClinicalRecommendation;
+import com.elioo.healthcare.llm.health.dto.ContentFormat;
+import com.elioo.healthcare.llm.health.dto.EducationalContentOptions;
+import com.elioo.healthcare.llm.health.dto.EducationalContentRequest;
+import com.elioo.healthcare.llm.health.dto.EducationalContentResponse;
+import com.elioo.healthcare.llm.health.dto.InsightOptions;
+import com.elioo.healthcare.llm.health.dto.RecommendationOptions;
+import com.elioo.healthcare.llm.health.dto.RecommendationRequest;
+import com.elioo.healthcare.llm.health.dto.RecommendationResponse;
+import com.elioo.healthcare.llm.health.dto.ReadingLevel;
+import com.elioo.healthcare.llm.health.dto.RiskAssessmentOptions;
+import com.elioo.healthcare.llm.health.dto.RiskAssessmentRequest;
+import com.elioo.healthcare.llm.health.dto.RiskAssessmentResponse;
+import com.elioo.healthcare.llm.health.dto.RiskScore;
+import com.elioo.healthcare.llm.health.dto.SummaryLength;
+import com.elioo.healthcare.llm.health.dto.SummaryOptions;
+import com.elioo.healthcare.llm.health.dto.SummaryRequest;
+import com.elioo.healthcare.llm.health.dto.SummaryResponse;
+import com.elioo.healthcare.llm.health.dto.TargetAudience;
+import com.elioo.healthcare.llm.health.dto.TimeSeriesDataPoint;
+import com.elioo.healthcare.llm.health.dto.TrendAnalysisRequest;
+import com.elioo.healthcare.llm.health.dto.TrendAnalysisResponse;
+import com.elioo.healthcare.llm.health.dto.TrendPattern;
 import com.elioo.healthcare.medicalreport.application.port.out.ClinicalInsightPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -55,20 +55,20 @@ import java.util.stream.Collectors;
  * <p>Architecture: Outbound Adapter (Driven Adapter) in Hexagonal Architecture</p>
  * <ul>
  *   <li>Implements the business-defined port interface ({@link ClinicalInsightPort})</li>
- *   <li>Delegates to {@link BedrockHealthService} from library</li>
+ *   <li>Delegates to {@link HealthInsightService} from library</li>
  *   <li>Maps between medscribe-ai domain objects and library DTOs</li>
  *   <li>Acts as Anti-Corruption Layer between domain and library</li>
  * </ul>
  *
  * @see ClinicalInsightPort
- * @see BedrockHealthService
+ * @see HealthInsightService
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class BedrockAdapter implements ClinicalInsightPort {
 
-    private final BedrockHealthService healthService;
+    private final HealthInsightService healthService;
     private final BedrockService bedrockService;
     private final ObjectMapper objectMapper;
 
@@ -77,7 +77,7 @@ public class BedrockAdapter implements ClinicalInsightPort {
         log.info("Generating clinical insights for report: {}", request.reportId());
 
         // Map medscribe-ai domain to library DTOs
-        com.elioo.healthcare.aws.bedrock.health.dto.ClinicalInsightRequest libraryRequest =
+        com.elioo.healthcare.llm.health.dto.ClinicalInsightRequest libraryRequest =
                 buildClinicalInsightRequest(request);
 
         // Call library (handles prompts, invocation, parsing, caching)
@@ -98,7 +98,7 @@ public class BedrockAdapter implements ClinicalInsightPort {
         SummaryRequest libraryRequest = new SummaryRequest(
                 medicalData,
                 null, // No patient context for simple summaries
-                new com.elioo.healthcare.aws.bedrock.health.dto.SummaryOptions(
+                new com.elioo.healthcare.llm.health.dto.SummaryOptions(
                         TargetAudience.valueOf(targetAudience),
                         SummaryLength.STANDARD,
                         null
@@ -119,11 +119,11 @@ public class BedrockAdapter implements ClinicalInsightPort {
         log.info("Assessing risk for patient");
 
         // Map to library DTO
-        com.elioo.healthcare.aws.bedrock.health.dto.RiskAssessmentRequest libraryRequest =
-                new com.elioo.healthcare.aws.bedrock.health.dto.RiskAssessmentRequest(
+        com.elioo.healthcare.llm.health.dto.RiskAssessmentRequest libraryRequest =
+                new com.elioo.healthcare.llm.health.dto.RiskAssessmentRequest(
                         request.medicalData(),
                         mapPatientContext(request.patientContext()),
-                        new com.elioo.healthcare.aws.bedrock.health.dto.RiskAssessmentOptions(
+                        new com.elioo.healthcare.llm.health.dto.RiskAssessmentOptions(
                                 request.focusAreas(),
                                 true, // Include prevention strategies
                                 12   // 12-month horizon
@@ -222,7 +222,7 @@ public class BedrockAdapter implements ClinicalInsightPort {
      * OPTIMIZATION: Only send relevant medical test results, not raw AWS objects.
      * This reduces prompt size from ~27,000 chars to ~2,000 chars.
      */
-    private com.elioo.healthcare.aws.bedrock.health.dto.ClinicalInsightRequest buildClinicalInsightRequest(
+    private com.elioo.healthcare.llm.health.dto.ClinicalInsightRequest buildClinicalInsightRequest(
             InsightRequest domainRequest
     ) {
         // Convert extracted data to simplified medical test results
@@ -234,7 +234,7 @@ public class BedrockAdapter implements ClinicalInsightPort {
             medicalData.put("classificationResult", domainRequest.classificationResult());
         }
 
-        return new com.elioo.healthcare.aws.bedrock.health.dto.ClinicalInsightRequest(
+        return new com.elioo.healthcare.llm.health.dto.ClinicalInsightRequest(
                 medicalData,
                 mapPatientContext(domainRequest.patientContext()),
                 InsightOptions.defaultPatient()
@@ -244,14 +244,14 @@ public class BedrockAdapter implements ClinicalInsightPort {
     /**
      * Map library PatientContext to medscribe-ai domain.
      */
-    private com.elioo.healthcare.aws.bedrock.health.dto.PatientContext mapPatientContext(
+    private com.elioo.healthcare.llm.health.dto.PatientContext mapPatientContext(
             ClinicalInsightPort.PatientContext domainContext
     ) {
         if (domainContext == null) {
             return null;
         }
 
-        return new com.elioo.healthcare.aws.bedrock.health.dto.PatientContext(
+        return new com.elioo.healthcare.llm.health.dto.PatientContext(
                 domainContext.age(),
                 domainContext.gender(),
                 domainContext.medicalHistory(),
@@ -281,7 +281,7 @@ public class BedrockAdapter implements ClinicalInsightPort {
      * Map library ClinicalInsightResponse to medscribe-ai domain.
      */
     private ClinicalInsightResult mapToClinicalInsightResult(
-            com.elioo.healthcare.aws.bedrock.health.dto.ClinicalInsightResponse libraryResponse,
+            com.elioo.healthcare.llm.health.dto.ClinicalInsightResponse libraryResponse,
             String reportId
     ) {
         return new ClinicalInsightResult(
@@ -345,7 +345,7 @@ public class BedrockAdapter implements ClinicalInsightPort {
      * Map library RiskAssessment to medscribe-ai domain.
      */
     private RiskAssessment mapRiskAssessment(
-            com.elioo.healthcare.aws.bedrock.health.dto.RiskAssessment libraryRiskAssessment
+            com.elioo.healthcare.llm.health.dto.RiskAssessment libraryRiskAssessment
     ) {
         if (libraryRiskAssessment == null) {
             return null;
@@ -377,7 +377,7 @@ public class BedrockAdapter implements ClinicalInsightPort {
      * Map library RiskAssessmentResponse to medscribe-ai RiskAssessment.
      */
     private RiskAssessment mapToRiskAssessment(
-            com.elioo.healthcare.aws.bedrock.health.dto.RiskAssessmentResponse libraryResponse
+            com.elioo.healthcare.llm.health.dto.RiskAssessmentResponse libraryResponse
     ) {
         return mapRiskAssessment(libraryResponse.riskAssessment());
     }
@@ -423,7 +423,7 @@ public class BedrockAdapter implements ClinicalInsightPort {
      * Map library TrendAnalysisResponse to medscribe-ai TrendAnalysis.
      */
     private TrendAnalysis mapToTrendAnalysis(
-            com.elioo.healthcare.aws.bedrock.health.dto.TrendAnalysisResponse libraryResponse
+            com.elioo.healthcare.llm.health.dto.TrendAnalysisResponse libraryResponse
     ) {
         String direction = libraryResponse.hasPatterns() && !libraryResponse.patterns().isEmpty() ?
                 libraryResponse.patterns().get(0).pattern() : "STABLE";
@@ -449,7 +449,7 @@ public class BedrockAdapter implements ClinicalInsightPort {
      * Map library EducationalContentResponse to medscribe-ai EducationalContent.
      */
     private EducationalContent mapToEducationalContent(
-            com.elioo.healthcare.aws.bedrock.health.dto.EducationalContentResponse libraryResponse
+            com.elioo.healthcare.llm.health.dto.EducationalContentResponse libraryResponse
     ) {
         // Generate FAQs from the content if available
         // TODO: In future, the library DTO should include FAQs field
@@ -548,7 +548,7 @@ public class BedrockAdapter implements ClinicalInsightPort {
     /**
      * Build custom prompt for free-text clinical analysis.
      *
-     * <p>Prompt structure follows the same pattern as {@link com.elioo.healthcare.aws.bedrock.health.prompt.DefaultPromptTemplateEngine}
+     * <p>Prompt structure follows the same pattern as {@link com.elioo.healthcare.llm.health.prompt.DefaultPromptTemplateEngine}
      * but adapted for free-form text analysis without structured test data.</p>
      */
     private String buildFreeTextInsightPrompt(

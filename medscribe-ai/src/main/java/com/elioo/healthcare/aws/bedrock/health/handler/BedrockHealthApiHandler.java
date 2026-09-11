@@ -1,7 +1,7 @@
-package com.elioo.healthcare.aws.bedrock.health.handler;
+package com.elioo.healthcare.llm.health.handler;
 
-import com.elioo.healthcare.aws.bedrock.health.api.BedrockHealthService;
-import com.elioo.healthcare.aws.bedrock.health.dto.*;
+import com.elioo.healthcare.llm.health.api.HealthInsightService;
+import com.elioo.healthcare.llm.health.dto.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -31,7 +31,7 @@ import java.util.Map;
 @Slf4j
 public class BedrockHealthApiHandler {
 
-    private final BedrockHealthService bedrockHealthService;
+    private final HealthInsightService bedrockHealthService;
 
     /**
      * Generate comprehensive clinical insights from medical data.

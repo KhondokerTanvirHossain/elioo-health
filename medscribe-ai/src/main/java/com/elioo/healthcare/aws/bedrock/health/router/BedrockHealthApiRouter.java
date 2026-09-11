@@ -1,6 +1,6 @@
-package com.elioo.healthcare.aws.bedrock.health.router;
+package com.elioo.healthcare.llm.health.router;
 
-import com.elioo.healthcare.aws.bedrock.health.handler.BedrockHealthApiHandler;
+import com.elioo.healthcare.llm.health.handler.BedrockHealthApiHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.reactive.function.server.RouterFunction;

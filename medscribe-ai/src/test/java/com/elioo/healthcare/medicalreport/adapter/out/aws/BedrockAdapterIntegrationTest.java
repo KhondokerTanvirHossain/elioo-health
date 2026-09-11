@@ -1,13 +1,13 @@
 package com.elioo.healthcare.medicalreport.adapter.out.aws;
 
 import com.elioo.healthcare.aws.bedrock.api.BedrockService;
-import com.elioo.healthcare.aws.bedrock.health.api.BedrockHealthService;
-import com.elioo.healthcare.aws.bedrock.health.dto.*;
+import com.elioo.healthcare.llm.health.api.HealthInsightService;
+import com.elioo.healthcare.llm.health.dto.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.elioo.healthcare.aws.bedrock.health.dto.RiskAssessment;
-import com.elioo.healthcare.aws.bedrock.health.dto.TrendAnalysisRequest;
-import com.elioo.healthcare.aws.bedrock.health.dto.TrendAnalysisResponse;
-import com.elioo.healthcare.aws.bedrock.health.dto.TrendPattern;
+import com.elioo.healthcare.llm.health.dto.RiskAssessment;
+import com.elioo.healthcare.llm.health.dto.TrendAnalysisRequest;
+import com.elioo.healthcare.llm.health.dto.TrendAnalysisResponse;
+import com.elioo.healthcare.llm.health.dto.TrendPattern;
 import com.elioo.healthcare.medicalreport.application.port.out.ClinicalInsightPort;
 import com.elioo.healthcare.medicalreport.application.port.out.ClinicalInsightPort.*;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,7 +27,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 /**
- * Adapter-level integration-style test using mocked BedrockHealthService.
+ * Adapter-level integration-style test using mocked HealthInsightService.
  * Ensures mapping between domain and health DTOs without hitting AWS.
  */
 @ExtendWith(MockitoExtension.class)
@@ -35,7 +35,7 @@ import static org.mockito.Mockito.when;
 class BedrockAdapterIntegrationTest {
 
     @Mock
-    private BedrockHealthService healthService;
+    private HealthInsightService healthService;
 
     @Mock
     private BedrockService bedrockService;
@@ -96,7 +96,7 @@ class BedrockAdapterIntegrationTest {
                 "Moderate risk"
         );
 
-        when(healthService.assessRisk(any(com.elioo.healthcare.aws.bedrock.health.dto.RiskAssessmentRequest.class)))
+        when(healthService.assessRisk(any(com.elioo.healthcare.llm.health.dto.RiskAssessmentRequest.class)))
                 .thenReturn(Mono.just(riskResponse));
 
         ClinicalInsightPort.RiskAssessmentRequest request = new ClinicalInsightPort.RiskAssessmentRequest(
