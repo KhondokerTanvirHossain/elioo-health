@@ -46,6 +46,9 @@ dependencies {
     // Provider-neutral LLM layer (Groq / Anthropic / OpenAI / Bedrock)
     implementation project(':elioo-llm')
 
+    // Baymax module: same deployable, activated by baymax.enabled=true (DR-2)
+    implementation project(':baymax')
+
     // Testing
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'io.projectreactor:reactor-test'
