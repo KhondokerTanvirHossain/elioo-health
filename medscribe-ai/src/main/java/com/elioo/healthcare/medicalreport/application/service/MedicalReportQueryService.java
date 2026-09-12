@@ -255,12 +255,14 @@ public class MedicalReportQueryService implements MedicalReportQueryUseCase {
     public Mono<ProcessingMetrics> getProcessingMetrics(LocalDateTime since) {
         log.debug("Calculating processing metrics since: {}", since);
 
-        // Get counts for each status
-        Mono<Long> totalMono = Mono.just(0L); // TODO: Add count all query
-        Mono<Long> completedMono = persistencePort.countProcessesByStatus(ProcessingStatus.COMPLETED);
-        Mono<Long> failedMono = persistencePort.countProcessesByStatus(ProcessingStatus.FAILED);
-        Mono<Long> partialMono = persistencePort.countProcessesByStatus(ProcessingStatus.PARTIAL_SUCCESS);
-        Mono<Double> avgTimeMono = persistencePort.getAverageProcessingTime(since);
+        // Counts per status. Every Mono gets a default so an empty database (AVG() is NULL,
+        // which R2DBC surfaces as an empty Mono) still yields a metrics object instead of nothing.
+        Mono<Long> completedMono = countOrZero(ProcessingStatus.COMPLETED);
+        Mono<Long> failedMono = countOrZero(ProcessingStatus.FAILED);
+        Mono<Long> partialMono = countOrZero(ProcessingStatus.PARTIAL_SUCCESS);
+        Mono<Long> inFlightMono = Mono.zip(countOrZero(ProcessingStatus.PENDING), countOrZero(ProcessingStatus.IN_PROGRESS))
+                .map(t -> t.getT1() + t.getT2());
+        Mono<Double> avgTimeMono = persistencePort.getAverageProcessingTime(since).defaultIfEmpty(0.0);
 
         // Get stage statistics
         Flux<StageStatistics> stageStatsFlux = persistencePort.getStageStatistics(since);
@@ -268,15 +270,17 @@ public class MedicalReportQueryService implements MedicalReportQueryUseCase {
         // Get error patterns
         Flux<ErrorPattern> errorPatternsFlux = persistencePort.getErrorPatterns(since);
 
-        return Mono.zip(completedMono, failedMono, partialMono, avgTimeMono)
+        return Mono.zip(completedMono, failedMono, partialMono, avgTimeMono, inFlightMono)
                 .flatMap(tuple -> {
                     long completed = tuple.getT1();
                     long failed = tuple.getT2();
                     long partial = tuple.getT3();
                     double avgTime = tuple.getT4();
-                    long total = completed + failed + partial;
+                    long finished = completed + failed + partial;
+                    long total = finished + tuple.getT5();
 
-                    double successRate = total > 0 ? ((double) (completed + partial) / total) * 100 : 0.0;
+                    // success rate is over finished reports; in-flight ones have no outcome yet
+                    double successRate = finished > 0 ? ((double) (completed + partial) / finished) * 100 : 0.0;
 
                     // Collect stage metrics
                     Mono<Map<ProcessingStage, StageMetrics>> stageMetricsMono = stageStatsFlux
@@ -308,8 +312,12 @@ public class MedicalReportQueryService implements MedicalReportQueryUseCase {
                                     metricsData.getT2()
                             ));
                 })
-                .doOnSuccess(metrics -> log.info("Calculated processing metrics: Total={}, Success Rate={:.2f}%",
-                        metrics.totalProcessed(), metrics.successRate()));
+                .doOnSuccess(metrics -> log.info("Calculated processing metrics: Total={}, Success Rate={}%",
+                        metrics.totalProcessed(), String.format("%.2f", metrics.successRate())));
+    }
+
+    private Mono<Long> countOrZero(ProcessingStatus status) {
+        return persistencePort.countProcessesByStatus(status).defaultIfEmpty(0L);
     }
 
     // ==================== Helper Methods ====================

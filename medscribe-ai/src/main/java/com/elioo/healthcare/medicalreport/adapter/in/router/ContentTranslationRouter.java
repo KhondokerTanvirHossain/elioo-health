@@ -51,14 +51,15 @@ public class ContentTranslationRouter {
             // Get supported languages
             .GET(BASE_PATH + "/languages", handler::getSupportedLanguages)
 
+            // Check if translation is cached. Must be registered BEFORE the {resultType} route:
+            // RouterFunctions match first-wins, so the literal path has to come first.
+            .GET(BASE_PATH + "/{reportId}/translate/check", handler::checkTranslationCache)
+
             // Single result type translation
             .GET(BASE_PATH + "/{reportId}/translate/{resultType}", handler::translateContent)
 
             // Batch translation (multiple result types)
             .POST(BASE_PATH + "/{reportId}/translate-batch", handler::translateBatch)
-
-            // Check if translation is cached
-            .GET(BASE_PATH + "/{reportId}/translate/check", handler::checkTranslationCache)
 
             .build();
     }

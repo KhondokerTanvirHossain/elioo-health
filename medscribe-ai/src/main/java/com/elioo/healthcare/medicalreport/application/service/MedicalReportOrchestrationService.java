@@ -875,8 +875,11 @@ public class MedicalReportOrchestrationService implements MedicalReportOrchestra
             ProcessingContext context, Throwable error, LocalDateTime startTime) {
         log.error("[{}] Workflow failed with error: {}", context.getReportId(), error.getMessage(), error);
 
+        Mono<Void> record = error instanceof OrchestrationException
+                ? Mono.empty()  // already recorded by the failing stage wrapper
+                : persistencePort.recordError(context.getReportId(), failingStage(context, error), error).then();
         return persistencePort.failProcess(context.getReportId(), error.getMessage())
-                .then(persistencePort.recordError(context.getReportId(), ProcessingStage.OCR_PROCESSING, error))
+                .then(record)
                 .then(handleWorkflowError(context, error, startTime));
     }
 
@@ -1188,7 +1191,7 @@ public class MedicalReportOrchestrationService implements MedicalReportOrchestra
     private Mono<List<MedicalClassificationPort.MedicalCode>> inferIcd10Codes(ProcessingContext context) {
         log.debug("[{}] Stage 4: Inferring ICD-10 codes", context.getReportId());
 
-        return classificationPort.mapToMedicalCodes(context.getOcrRawText(), List.of("ICD10"))
+        return classificationPort.mapToMedicalCodes(textForCoding(context), List.of("ICD10"))
                 .doOnSuccess(codes -> {
                     context.markStageCompleted(ProcessingStage.ICD10_INFERENCE);
                     log.info("[{}] ICD-10 inference completed. Found {} codes",
@@ -1204,7 +1207,7 @@ public class MedicalReportOrchestrationService implements MedicalReportOrchestra
     private Mono<List<MedicalClassificationPort.MedicalCode>> inferRxNormCodes(ProcessingContext context) {
         log.debug("[{}] Stage 5: Inferring RxNorm codes", context.getReportId());
 
-        return classificationPort.mapToMedicalCodes(context.getOcrRawText(), List.of("RXNORM"))
+        return classificationPort.mapToMedicalCodes(textForCoding(context), List.of("RXNORM"))
                 .doOnSuccess(codes -> {
                     context.markStageCompleted(ProcessingStage.RXNORM_INFERENCE);
                     log.info("[{}] RxNorm inference completed. Found {} codes",
@@ -1220,7 +1223,7 @@ public class MedicalReportOrchestrationService implements MedicalReportOrchestra
     private Mono<List<MedicalClassificationPort.MedicalCode>> inferSnomedCtCodes(ProcessingContext context) {
         log.debug("[{}] Stage 6: Inferring SNOMED-CT codes", context.getReportId());
 
-        return classificationPort.mapToMedicalCodes(context.getOcrRawText(), List.of("SNOMEDCT"))
+        return classificationPort.mapToMedicalCodes(textForCoding(context), List.of("SNOMEDCT"))
                 .doOnSuccess(codes -> {
                     context.markStageCompleted(ProcessingStage.SNOMEDCT_INFERENCE);
                     log.info("[{}] SNOMED-CT inference completed. Found {} codes",
@@ -1468,12 +1471,36 @@ public class MedicalReportOrchestrationService implements MedicalReportOrchestra
     private MasterProcessingResponse.OcrResults buildOcrResults(ProcessingContext context) {
         if (context.getOcrExtractedData() == null) return null;
 
+        // Prefer the translated (English) data when stage 2.5 produced it, same as the multi-image path
+        List<TestResult> rows = context.getTranslatedExtractedData() != null
+                ? context.getTranslatedExtractedData() : context.getOcrExtractedData();
         return MasterProcessingResponse.OcrResults.builder()
-                .extractedData(context.getOcrExtractedData())
-                .rawText(context.getOcrRawText())
+                .extractedData(rows)
+                .rawText(textForCoding(context))
                 .overallConfidence(context.getOcrConfidence())
-                .testCount(context.getOcrExtractedData().size())
+                .testCount(rows.size())
                 .build();
+    }
+
+    /** Text downstream AWS stages should see: translated when available, otherwise the OCR text. */
+    private static String textForCoding(ProcessingContext context) {
+        return context.getTranslatedRawText() != null ? context.getTranslatedRawText() : context.getOcrRawText();
+    }
+
+    /**
+     * The stage a workflow-level error belongs to: the one carried by an OrchestrationException,
+     * otherwise the first pipeline stage that has neither completed nor failed.
+     */
+    private static ProcessingStage failingStage(ProcessingContext context, Throwable error) {
+        if (error instanceof OrchestrationException oe && oe.getStage() != null) {
+            return oe.getStage();
+        }
+        for (ProcessingStage stage : ProcessingStage.values()) {
+            boolean done = context.getCompletedStages() != null && context.getCompletedStages().contains(stage);
+            boolean failed = context.getFailedStages() != null && context.getFailedStages().contains(stage);
+            if (!done && !failed) return stage;
+        }
+        return ProcessingStage.CLINICAL_INSIGHTS;
     }
 
     private MasterProcessingResponse.EntityDetectionResult buildEntityDetectionResult(ProcessingContext context) {
@@ -1709,7 +1736,7 @@ public class MedicalReportOrchestrationService implements MedicalReportOrchestra
 
         // If it's an orchestration exception, we already logged details
         if (!(error instanceof OrchestrationException)) {
-            context.markStageFailed(ProcessingStage.OCR_PROCESSING,
+            context.markStageFailed(failingStage(context, error),
                     "Unexpected error: " + error.getMessage(), false);
         }
 
