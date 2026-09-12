@@ -51,7 +51,10 @@ Key files when changing behaviour:
 - Logs must not contain patient text: prompt/response bodies and OCR text at DEBUG only; sizes, ids, durations at INFO.
 - Cloud adapters map SDK types to domain records at the boundary; nothing above `adapter.out` imports an AWS/GCP/Anthropic type.
 - Tests: TDD for behaviour changes. Unit tests mock ports; tests that call real clouds are gated by the env vars above.
-- Commits: conventional (`feat(scope): ...`, `fix(scope): ...`). Every push to `main` deploys to production, so keep `main` green.
+- Commits: conventional (`feat(scope): ...`, `fix(scope): ...`).
+- Branching (since 2026-09-12): `main` is protected; the "Build and test" check must pass and direct pushes are
+  rejected, admins included. Work on a branch (`feat/...`, `fix/...`), open a PR with
+  `env -u GITHUB_TOKEN gh pr create`, merge when green. Every merge to `main` deploys to production.
 
 ## Environment facts (2026-09)
 
