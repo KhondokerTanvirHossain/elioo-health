@@ -32,6 +32,9 @@ RUN_LLM_INTEGRATION_TESTS=true LLM_PROVIDER=groq ./gradlew :elioo-llm:test --tes
 
 Secrets never go in the repo. Locally they live in `.env.local` (git-ignored); load with
 `set -a; source .env.local; set +a` before `bootRun`. Template: `medscribe.env.example`.
+`.env.local` points at the Docker Postgres only. Production/Supabase credentials live in `.env.supabase`
+(git-ignored, mode 600) and are sourced explicitly and rarely, e.g. for a read-only check; never source it
+by default, and never run `bootRun` against it.
 Without a GCP key the app boots with placeholder credentials and OCR/translation fail at call time (by design).
 Without a valid key for the chosen `LLM_PROVIDER` the app refuses to start (also by design).
 

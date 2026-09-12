@@ -84,3 +84,4 @@ Thumbs.db
 .dbeaver
 RemoteSystemsTempFiles/
 HELP.md
+.env.supabase
