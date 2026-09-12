@@ -2,6 +2,7 @@ package com.elioo.baymax.config;
 
 import com.elioo.baymax.adapter.out.persistence.BaymaxSchemaMigrator;
 import org.junit.jupiter.api.Test;
+import com.elioo.healthcare.llm.config.LlmAutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.data.r2dbc.R2dbcDataAutoConfiguration;
 import org.springframework.boot.autoconfigure.r2dbc.R2dbcAutoConfiguration;
@@ -34,13 +35,16 @@ class BaymaxAutoConfigurationTest {
                 .withConfiguration(AutoConfigurations.of(
                         R2dbcAutoConfiguration.class,
                         R2dbcDataAutoConfiguration.class,
+                        LlmAutoConfiguration.class,
                         BaymaxAutoConfiguration.class))
                 .withPropertyValues(
+                        "llm.provider=groq",
+                        "llm.groq.api-key=test-key",
                         "spring.r2dbc.url=r2dbc:postgresql://" + POSTGRES.getHost() + ":"
                                 + POSTGRES.getFirstMappedPort() + "/" + POSTGRES.getDatabaseName(),
                         "spring.r2dbc.username=" + POSTGRES.getUsername(),
                         "spring.r2dbc.password=" + POSTGRES.getPassword(),
-                        "baymax.flyway.url=" + POSTGRES.getJdbcUrl(),
+                        "baymax.flyway.url=" + jdbcUrl(),
                         "baymax.flyway.user=" + POSTGRES.getUsername(),
                         "baymax.flyway.password=" + POSTGRES.getPassword());
     }
@@ -56,11 +60,10 @@ class BaymaxAutoConfigurationTest {
 
     @Test
     void explicitlyDisabledLoadsNoRoutesAndRunsNoMigrations() {
-        // Own schema name so the assertion holds regardless of which test touched the shared container first
-        runner().withPropertyValues("baymax.enabled=false", "baymax.schema=baymax_disabled").run(context -> {
+        runner().withPropertyValues("baymax.enabled=false").run(context -> {
             assertThat(context).doesNotHaveBean(BaymaxAutoConfiguration.class);
             assertThat(context).doesNotHaveBean("baymaxHealthRoutes");
-            assertThat(schemaExists("baymax_disabled")).isFalse();
+            assertThat(context).doesNotHaveBean(BaymaxSchemaMigrator.class);
         });
     }
 
@@ -78,7 +81,7 @@ class BaymaxAutoConfigurationTest {
                     .expectBody().jsonPath("$.status").isEqualTo("UP");
 
             assertThat(schemaExists("baymax")).isTrue();
-            assertThat(appliedVersions("baymax")).contains("1");
+            assertThat(appliedVersions("baymax")).contains("1", "2");
             assertThat(schemaExists("medscribe")).as("must never create the medscribe schema").isFalse();
         });
     }
@@ -103,6 +106,11 @@ class BaymaxAutoConfigurationTest {
     }
 
     private static Connection connect() throws Exception {
-        return DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+        return DriverManager.getConnection(jdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+    }
+
+    /** The container speaks no TLS; skip the driver's SSL attempt, which occasionally fails mid-handshake. */
+    private static String jdbcUrl() {
+        return POSTGRES.getJdbcUrl() + "&sslmode=disable";
     }
 }

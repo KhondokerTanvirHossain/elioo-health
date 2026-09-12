@@ -63,7 +63,7 @@ public class AnthropicLlmClient implements LlmClient {
 
         return Mono.fromCallable(() -> client.messages().create(params))
                 .subscribeOn(Schedulers.boundedElastic())
-                .map(AnthropicLlmClient::toResponse)
+                .map(message -> toResponse(message).timed("anthropic", System.currentTimeMillis() - started))
                 .doOnNext(r -> log.info("[anthropic] done model={} in={} out={} stop={} {}ms", r.modelId(),
                         r.usage().inputTokens(), r.usage().outputTokens(), r.stopReason(),
                         System.currentTimeMillis() - started))

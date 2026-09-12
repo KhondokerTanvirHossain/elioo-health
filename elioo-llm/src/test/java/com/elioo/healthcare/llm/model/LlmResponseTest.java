@@ -83,4 +83,18 @@ class LlmResponseTest {
         assertThat(response.hasContent()).isFalse();
         assertThat(response.getContentLength()).isEqualTo(0);
     }
+
+    @Test
+    void timedStampsProviderAndLatencyWithoutTouchingTheRest() {
+        LlmResponse base = new LlmResponse("Text", "end_turn", new TokenUsage(10, 5), "m", null);
+        assertThat(base.provider()).isNull();
+        assertThat(base.latencyMs()).isNull();
+
+        LlmResponse timed = base.timed("groq", 321L);
+        assertThat(timed.provider()).isEqualTo("groq");
+        assertThat(timed.latencyMs()).isEqualTo(321L);
+        assertThat(timed.content()).isEqualTo("Text");
+        assertThat(timed.usage()).isEqualTo(new TokenUsage(10, 5));
+        assertThat(timed.modelId()).isEqualTo("m");
+    }
 }

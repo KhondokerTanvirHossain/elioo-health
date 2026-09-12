@@ -1,6 +1,7 @@
 package com.elioo.baymax.adapter.out.persistence;
 
 import com.elioo.baymax.config.BaymaxProperties;
+import com.elioo.baymax.config.BaymaxSchema;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.flywaydb.core.Flyway;
@@ -11,7 +12,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 /**
- * Runs the Baymax Flyway migrations at startup against schema {@code baymax.schema}.
+ * Runs the Baymax Flyway migrations at startup against schema {@link BaymaxSchema#NAME}.
  *
  * <p>Deliberately builds and runs its own {@link Flyway} instance <em>without</em> exposing it as a
  * bean: Spring Boot's Flyway auto-configuration is {@code @ConditionalOnMissingBean(Flyway.class)},
@@ -38,7 +39,7 @@ public class BaymaxSchemaMigrator implements InitializingBean {
             throw new IllegalStateException(
                     "baymax.flyway.url is required when baymax.enabled=true (it defaults to spring.flyway.url)");
         }
-        String schema = properties.getSchema();
+        String schema = BaymaxSchema.NAME;
         Flyway flyway = Flyway.configure()
                 .dataSource(settings.getUrl(), settings.getUser(), settings.getPassword())
                 .schemas(schema)

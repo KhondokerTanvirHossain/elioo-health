@@ -55,3 +55,10 @@ Content-Type: application/json
 
 ### 8. Analytics
 GET {{baseUrl}}/api/v1/medical-report/query/analytics/metrics
+
+### Baymax (only when BAYMAX_ENABLED=true)
+GET {{baseUrl}}/api/v1/baymax/health
+
+### Baymax weekly pilot log as CSV (dates are UTC days, `to` exclusive; default = last 7 days)
+GET {{baseUrl}}/api/v1/baymax/admin/metrics/weekly?from=2026-09-05&to=2026-09-12
+X-Baymax-Admin-Token: {{baymaxAdminToken}}

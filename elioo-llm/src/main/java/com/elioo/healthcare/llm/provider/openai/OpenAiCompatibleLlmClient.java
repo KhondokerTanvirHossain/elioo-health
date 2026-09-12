@@ -89,7 +89,7 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
                                 : Mono.error(toException(resp.statusCode(), text))))
                 .timeout(Duration.ofSeconds(defaults.getTimeoutSeconds()))
                 .retryWhen(retry)
-                .map(text -> parse(text, model))
+                .map(text -> parse(text, model).timed(providerName, System.currentTimeMillis() - started))
                 .doOnNext(r -> log.info("[{}] done model={} in={} out={} stop={} {}ms", providerName, r.modelId(),
                         r.usage().inputTokens(), r.usage().outputTokens(), r.stopReason(),
                         System.currentTimeMillis() - started))
