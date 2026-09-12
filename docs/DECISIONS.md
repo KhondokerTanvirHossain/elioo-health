@@ -3,9 +3,15 @@
 Chronological. Later records supersede earlier ones where noted. Format: `DR-n | date | decision | why | supersedes`.
 Add new records at the end; never rewrite an old one — add a superseding record instead.
 
-## DR-1 | 2026-09-12 | (not recorded in this repo)
+## DR-1 | 2026-09-12 | No external health-record system in MVP
 
-Reserved. Tanvir to supply the text; do not infer it.
+**Decision:** No external health-record system (Medplum or other) in the MVP. Records live in the app's
+Postgres, with FHIR-aligned naming, behind one `HealthRecordPort`. Revisit post-pilot or at the first
+provider integration.
+
+**Why:** one runtime for a solo-run pilot; FHIR modelling before the extraction schema stabilises is wasted work.
+
+**Supersedes:** none.
 
 ## DR-2 | 2026-09-12 | Baymax is a new module beside MedScribe
 

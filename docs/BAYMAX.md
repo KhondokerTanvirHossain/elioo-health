@@ -27,6 +27,10 @@ MedScribe is becoming Baymax: a WhatsApp-first health-memory assistant for Bangl
 - Tiered models: cheap model (Groq via the existing `LLM_PROVIDER` wiring) default for extraction + explanation; strong model via the `anthropic` provider when confidence < threshold or urgency ≥ "this week". Thresholds configurable (DR-3).
 - Vision OCR called once per image (MedScribe currently calls it twice — Baymax must not repeat that).
 - Images to object storage (Supabase Storage or S3), not base64 in Postgres.
+- Records live in the app's Postgres with FHIR-aligned naming behind one `HealthRecordPort`; no Medplum or other external record system in MVP (DR-1).
+- Baymax owns Postgres schema `baymax` with its own Flyway history. Migrations live under `baymax/src/main/resources/db/baymax/migration`, never under `db/migration`: Flyway scans locations recursively and MedScribe's instance would pick them up and collide on version numbers (BMX-0).
+- The Baymax Flyway instance is built and run inside `BaymaxSchemaMigrator` and is never exposed as a `Flyway` bean. Spring Boot's Flyway auto-configuration is `@ConditionalOnMissingBean(Flyway)`, so a second bean would silently disable the MedScribe migrations (BMX-0).
+- Every Baymax entity uses a schema-qualified table name (`@Table("baymax.document")` etc.). The shared R2DBC connection keeps `medscribe` as its search path (BMX-0 review).
 - Bangla TTS for voice notes (provider TBD by Tanvir).
 - Build order: web first (family accounts, patient profiles, timeline, review-gate UI, cost logging), then WhatsApp channel.
 
