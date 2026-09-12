@@ -328,6 +328,9 @@ public class MedicalReportChatService implements MedicalReportChatUseCase {
                         reportId, context.patientId()
                 ))
                 .onErrorResume(error -> {
+                    if (error instanceof java.util.NoSuchElementException) {
+                        return Mono.error(error); // unknown report: surface as 404, do not fake a patient
+                    }
                     log.error("Error fetching patient context for report: {}", reportId, error);
                     return Mono.just(createDefaultPatientContext());
                 });
