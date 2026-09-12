@@ -83,17 +83,20 @@ class S3StorageAdapterTest {
     @Test
     void signedUrlServesTheObjectAndStopsWorkingAfterTtl() throws Exception {
         adapter.put("sig/doc/page-1.jpg", "proof".getBytes(StandardCharsets.UTF_8), "image/jpeg").block();
-        URI url = adapter.signedGetUrl("sig/doc/page-1.jpg", Duration.ofSeconds(1)).block();
+        HttpClient http = HttpClient.newHttpClient();
+
+        // a URL with a comfortable TTL serves the object (a 1s TTL can lapse before a slow CI runner even sends)
+        URI url = adapter.signedGetUrl("sig/doc/page-1.jpg", Duration.ofSeconds(60)).block();
         assertThat(url).isNotNull();
         assertThat(url.getQuery()).contains("X-Amz-Signature");
-
-        HttpClient http = HttpClient.newHttpClient();
         HttpResponse<String> fresh = http.send(HttpRequest.newBuilder(url).GET().build(), HttpResponse.BodyHandlers.ofString());
         assertThat(fresh.statusCode()).isEqualTo(200);
         assertThat(fresh.body()).isEqualTo("proof");
 
+        // a URL whose TTL has passed is refused
+        URI shortLived = adapter.signedGetUrl("sig/doc/page-1.jpg", Duration.ofSeconds(1)).block();
         Thread.sleep(2500);
-        HttpResponse<String> expired = http.send(HttpRequest.newBuilder(url).GET().build(), HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> expired = http.send(HttpRequest.newBuilder(shortLived).GET().build(), HttpResponse.BodyHandlers.ofString());
         assertThat(expired.statusCode()).isEqualTo(403);
 
         // and the object is not reachable without a signature at all
