@@ -28,6 +28,9 @@ COPY elioo-gcp-translate elioo-gcp-translate
 COPY elioo-gcp-vision elioo-gcp-vision
 COPY elioo-gcp-spring-boot-starter elioo-gcp-spring-boot-starter
 
+# Copy the Baymax module (loaded into the same deployable)
+COPY baymax baymax
+
 # Copy main application module
 COPY medscribe-ai medscribe-ai
 

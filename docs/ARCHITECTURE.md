@@ -27,6 +27,7 @@ The single-file UI at `medscribe-ai/src/main/resources/static/index.html` drives
 | Module | Role | Depends on |
 |---|---|---|
 | `medscribe-ai` | The Spring Boot WebFlux application: routers, handlers, orchestration, persistence, UI | all libraries below |
+| `baymax` | Baymax MVP (DR-2): `com.elioo.baymax`, same hexagonal layout, routes under `/api/v1/baymax/**`, own Flyway instance on schema `baymax` (`db/baymax/migration`). Loaded into the app via auto-configuration only when `baymax.enabled=true` (default off; `BAYMAX_ENABLED`) | elioo-llm, elioo-gcp-vision |
 | `elioo-llm` | Provider-neutral LLM layer: `LlmClient` interface, clinical prompt templates (`HealthInsightService`), Anthropic and OpenAI-compatible (Groq/OpenAI) clients, selection by `llm.provider` | Anthropic Java SDK, Spring WebClient |
 | `elioo-aws-common` | AWS credentials/region auto-configuration | AWS SDK v2 |
 | `elioo-aws-comprehend-medical` | Entity detection, ICD-10, RxNorm, SNOMED CT | aws-common |

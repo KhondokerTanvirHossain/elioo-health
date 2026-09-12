@@ -2,6 +2,9 @@
 
 | Document | What it is |
 |---|---|
+| [BAYMAX.md](BAYMAX.md) | Baymax engineering brief: hard constraints, architecture decisions, target data model, proactive rules, build-report format. Read first for Baymax work |
+| [DECISIONS.md](DECISIONS.md) | Baymax decision records (DR-n), chronological; later records supersede earlier ones |
+| [PRODUCT.md](PRODUCT.md) | Baymax MVP v1.0 product document (2026-09-12): problem, personas, locked decisions, MVP scope, unit economics, pilot metrics |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Current system: modules, pipeline, data, configuration, deployment, open work |
 | [../README.md](../README.md) | Setup, run, build, test, deploy |
 | [../CLAUDE.md](../CLAUDE.md) | Working guide for AI-assisted development in this repo |

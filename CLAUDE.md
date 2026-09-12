@@ -10,14 +10,22 @@ medical document (Bangla and/or English lab reports and prescriptions) into stru
 RxNorm / SNOMED codes, an LLM-written clinical summary, and a chat about the report. Production runs at
 https://baymax.eliooo.org. Full architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-Status: PoC complete, MVP work starting (2026-09). Open work is listed at the end of ARCHITECTURE.md.
+Status: PoC closed 2026-09-12; MVP ("Baymax", internal codename) in development.
+
+**Read [docs/BAYMAX.md](docs/BAYMAX.md) and [docs/DECISIONS.md](docs/DECISIONS.md) before any Baymax work.**
+Product decisions come from the Baymax PO project via BMX tickets; do not change scope, safety rules or pricing
+on your own — propose in the build report. The product definition, MVP in/out list and pilot metrics are in
+[docs/PRODUCT.md](docs/PRODUCT.md). Per DR-2, Baymax is a new `baymax` module beside `medscribe-ai`; MedScribe
+(pipeline, endpoints, UI, tables) stays as-is and demoable. Baymax does not use Comprehend Medical, Translate or
+codification, and targets one LLM extraction call per document at ≤ $0.15. Open MedScribe technical work is
+listed at the end of ARCHITECTURE.md.
 
 ## Build, run, test
 
 ```bash
 docker compose up -d                          # Postgres 17 on localhost:5433 (medscribe/medscribe)
 ./gradlew :medscribe-ai:bootRun               # http://localhost:8086  (UI, /actuator/health)
-./gradlew build                               # all 9 modules, unit tests (no cloud calls)
+./gradlew build                               # all 10 modules; unit tests + context test (needs the Docker Postgres)
 RUN_AWS_INTEGRATION_TESTS=true ./gradlew test # + real AWS Comprehend/Textract tests
 RUN_LLM_INTEGRATION_TESTS=true LLM_PROVIDER=groq ./gradlew :elioo-llm:test --tests '*LlmClientIntegrationTest'
 ```
@@ -33,6 +41,7 @@ uses R2DBC. Schema is `medscribe`. New migrations: next `V<n>__description.sql`,
 ## Layout
 
 - `medscribe-ai/` — the application (hexagonal: `domain`, `application.port.{in,out}`, `application.service`, `adapter.{in,out}`).
+- `baymax/` — the Baymax MVP module (`com.elioo.baymax`, same hexagonal layout). Loaded into the medscribe-ai deployable only when `baymax.enabled=true`; own schema `baymax` and Flyway history under `src/main/resources/db/baymax/migration` (never `db/migration`, which MedScribe's Flyway scans).
 - `elioo-llm/` — provider-neutral LLM layer (`LlmClient`, prompt templates, Anthropic + OpenAI-compatible clients, `LlmAutoConfiguration`).
 - `elioo-aws-*`, `elioo-gcp-*` — thin cloud SDK wrappers with Spring auto-configuration; no business logic.
 - `docs/superpowers/{specs,plans}` — design specs and the plans that executed them; `docs/archive` — PoC history, not current.
