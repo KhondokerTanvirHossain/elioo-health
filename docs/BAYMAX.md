@@ -25,12 +25,13 @@ MedScribe is becoming Baymax: a WhatsApp-first health-memory assistant for Bangl
 - AWS Comprehend Medical (DetectEntities, SNOMED, ICD-10, RxNorm) and GCP Translate are not used in the Baymax pipeline. They are not removed from MedScribe (DR-2). Codification is out of MVP.
 - Single structured LLM extraction call per document. Output schema (minimum): document_type, patient_hint, document_date, facility, values[] {name, value, unit, ref_low, ref_high, flag}, medicines[] {name, dose_text, frequency_text, duration_text}, follow_up[] {instruction, due_date}, free_text_summary, confidence {overall, per_section}.
 - Tiered models: cheap model (Groq via the existing `LLM_PROVIDER` wiring) default for extraction + explanation; strong model via the `anthropic` provider when confidence < threshold or urgency ≥ "this week". Thresholds configurable (DR-3).
+- Strong tier placeholder is `claude-opus-5`. BMX-2 reports per-document cost for escalated documents on the handwritten test set with both Opus and Sonnet; the PO picks the strong tier from that data. Extraction returns `confidence.overall`, which the metering wrapper's extractor reads into `ai_call_log.confidence`.
 - Vision OCR called once per image (MedScribe currently calls it twice — Baymax must not repeat that).
 - Images to object storage (Supabase Storage or S3), not base64 in Postgres.
 - Records live in the app's Postgres with FHIR-aligned naming behind one `HealthRecordPort`; no Medplum or other external record system in MVP (DR-1).
 - Baymax owns Postgres schema `baymax` with its own Flyway history. Migrations live under `baymax/src/main/resources/db/baymax/migration`, never under `db/migration`: Flyway scans locations recursively and MedScribe's instance would pick them up and collide on version numbers (BMX-0).
 - The Baymax Flyway instance is built and run inside `BaymaxSchemaMigrator` and is never exposed as a `Flyway` bean. Spring Boot's Flyway auto-configuration is `@ConditionalOnMissingBean(Flyway)`, so a second bean would silently disable the MedScribe migrations (BMX-0).
-- Every LLM call from Baymax goes through `MeteredLlmClient` and every OCR call through `MeteredVisionOcr` (`com.elioo.baymax.aicall`); each successful call writes one `baymax.ai_call_log` row (purpose, provider, model, tokens, cost from the `baymax.llm.prices` / `baymax.vision.cost-per-image` config, latency, confidence). Unknown model → `cost_usd` NULL + WARN, never a guess. No prompt, reply or OCR text in the log. Weekly CSV: `GET /api/v1/baymax/admin/metrics/weekly` behind the `X-Baymax-Admin-Token` header (BMX-1).
+- Every LLM call from Baymax goes through `MeteredLlmClient` and every OCR call through `MeteredVisionOcr` (`com.elioo.baymax.aicall`); each successful call writes one `baymax.ai_call_log` row (purpose, provider, model, tokens, cost from the `baymax.llm.prices` / `baymax.vision.cost-per-image` config, latency, confidence). Unknown model → `cost_usd` NULL + WARN, never a guess. No prompt, reply or OCR text in the log. Weekly CSV: `GET /api/v1/baymax/admin/metrics/weekly` behind the `X-Baymax-Admin-Token` header (BMX-1). BMX-2 (extraction) calls models only through these wrappers and adds `ai_call_log.status` (ok|failed) in V3: failed calls write a row with zero tokens, NULL cost and the actual latency.
 - Every Baymax entity uses a schema-qualified table name (`@Table("baymax.document")` etc.). The shared R2DBC connection keeps `medscribe` as its search path (BMX-0 review).
 - Bangla TTS for voice notes (provider TBD by Tanvir).
 - Build order: web first (family accounts, patient profiles, timeline, review-gate UI, cost logging), then WhatsApp channel.
@@ -51,7 +52,7 @@ MedScribe is becoming Baymax: a WhatsApp-first health-memory assistant for Bangl
 follow_up_due (T-2 days), medicine_changed (on new prescription diff), trend (3 consecutive readings wrong direction on configured markers), silence (chronic patient, no document ~60 days), pre_visit_summary (auto, T-1 day of follow_up).
 
 ## Metrics to instrument from day one
-Per document: cost, model, confidence, review outcome, correction count. Per family: documents/month, nudges sent/answered, days since last document, tier. Weekly export for the pilot log.
+Per document: cost, model, confidence, review outcome, correction count. Cost is logged at list price (e.g. Vision at $0.0015/image even inside the free tier): the export measures marginal cost at scale, not this month's bill. Per family: documents/month, nudges sent/answered, days since last document, tier. Weekly export for the pilot log.
 
 ## Build report format
 ```
