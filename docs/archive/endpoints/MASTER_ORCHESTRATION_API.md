@@ -3,7 +3,7 @@
 **Version:** 1.0
 **Status:** 🚧 In Development
 **Base URL (local):** `http://localhost:8086`
-**Base URL (remote):** `http://15.206.148.124:8086`
+**Base URL (remote):** `http://<OLD_SERVER_IP>:8086`
 
 ---
 

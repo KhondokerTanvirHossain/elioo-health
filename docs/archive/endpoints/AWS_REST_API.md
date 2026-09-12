@@ -1,7 +1,7 @@
 # MedScribe AI - AWS REST API Reference
 
 - Base URL (local): `http://localhost:8086`
-- Base URL (remote example): `http://15.206.148.124:8086`
+- Base URL (remote example): `http://<OLD_SERVER_IP>:8086`
 
 
 ---
@@ -20,7 +20,7 @@
 ```
 - Example `curl`:
 ```bash
-curl --location 'http://15.206.148.124:8086/api/aws/textract/analyze-document' \
+curl --location 'http://<OLD_SERVER_IP>:8086/api/aws/textract/analyze-document' \
   --header 'Content-Type: application/json' \
   --header 'X-API-Key: {{token}}' \
   --data '{
@@ -78,7 +78,7 @@ curl --location 'http://15.206.148.124:8086/api/aws/textract/analyze-document' \
 ```
 - Example `curl`:
 ```bash
-curl --location 'http://15.206.148.124:8086/api/aws/textract/detect-text' \
+curl --location 'http://<OLD_SERVER_IP>:8086/api/aws/textract/detect-text' \
   --header 'Content-Type: application/json' \
   --header 'X-API-Key: {{token}}' \
   --data '{
@@ -104,7 +104,7 @@ curl --location 'http://15.206.148.124:8086/api/aws/textract/detect-text' \
 ```
 - Example `curl`:
 ```bash
-curl --location 'http://15.206.148.124:8086/api/aws/textract/validate-image' \
+curl --location 'http://<OLD_SERVER_IP>:8086/api/aws/textract/validate-image' \
   --header 'Content-Type: application/json' \
   --header 'X-API-Key: {{token}}' \
   --data '{
@@ -145,7 +145,7 @@ curl --location 'http://15.206.148.124:8086/api/aws/textract/validate-image' \
 ```
 - Example `curl`:
 ```bash
-curl --location 'http://15.206.148.124:8086/api/aws/bedrock/invoke-model' \
+curl --location 'http://<OLD_SERVER_IP>:8086/api/aws/bedrock/invoke-model' \
   --header 'Content-Type: application/json' \
   --header 'X-API-Key: {{token}}' \
   --data '{
@@ -186,7 +186,7 @@ curl --location 'http://15.206.148.124:8086/api/aws/bedrock/invoke-model' \
 ```
 - Example `curl`:
 ```bash
-curl --location 'http://15.206.148.124:8086/api/aws/bedrock/invoke-claude' \
+curl --location 'http://<OLD_SERVER_IP>:8086/api/aws/bedrock/invoke-claude' \
   --header 'Content-Type: application/json' \
   --header 'X-API-Key: {{token}}' \
   --data '{
@@ -244,7 +244,7 @@ curl --location 'http://15.206.148.124:8086/api/aws/bedrock/invoke-claude' \
 ```
 - Example `curl`:
 ```bash
-curl --location 'http://15.206.148.124:8086/api/aws/bedrock/health/clinical-insights' \
+curl --location 'http://<OLD_SERVER_IP>:8086/api/aws/bedrock/health/clinical-insights' \
   --header 'Content-Type: application/json' \
   --header 'X-API-Key: {{token}}' \
   --data '{
@@ -398,7 +398,7 @@ curl --location 'http://15.206.148.124:8086/api/aws/bedrock/health/clinical-insi
 ```
 - Example `curl`:
 ```bash
-curl --location 'http://15.206.148.124:8086/api/aws/bedrock/health/risk-assessment' \
+curl --location 'http://<OLD_SERVER_IP>:8086/api/aws/bedrock/health/risk-assessment' \
   --header 'Content-Type: application/json' \
   --header 'X-API-Key: {{token}}' \
   --data '{
@@ -586,7 +586,7 @@ curl --location 'http://15.206.148.124:8086/api/aws/bedrock/health/risk-assessme
 ```
 - Example `curl`:
 ```bash
-curl --location 'http://15.206.148.124:8086/api/aws/comprehend-medical/detect-entities' \
+curl --location 'http://<OLD_SERVER_IP>:8086/api/aws/comprehend-medical/detect-entities' \
   --header 'Content-Type: application/json' \
   --header 'X-API-Key: {{token}}' \
   --data '{
@@ -659,7 +659,7 @@ curl --location 'http://15.206.148.124:8086/api/aws/comprehend-medical/detect-en
 ```
 - Example `curl`:
 ```bash
-curl --location 'http://15.206.148.124:8086/api/aws/comprehend-medical/infer-icd10' \
+curl --location 'http://<OLD_SERVER_IP>:8086/api/aws/comprehend-medical/infer-icd10' \
   --header 'Content-Type: application/json' \
   --header 'X-API-Key: {{token}}' \
   --data '{
@@ -690,7 +690,7 @@ curl --location 'http://15.206.148.124:8086/api/aws/comprehend-medical/infer-icd
 ```
 - Example `curl`:
 ```bash
-curl --location 'http://15.206.148.124:8086/api/aws/comprehend-medical/infer-rxnorm' \
+curl --location 'http://<OLD_SERVER_IP>:8086/api/aws/comprehend-medical/infer-rxnorm' \
   --header 'Content-Type: application/json' \
   --header 'X-API-Key: {{token}}' \
   --data '{

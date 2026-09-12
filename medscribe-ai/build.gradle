@@ -30,17 +30,12 @@ dependencies {
 
     // Utilities
     implementation 'com.google.code.gson:gson:2.10.1'
-    implementation 'org.modelmapper:modelmapper:3.1.1'
 
     // Observability & Monitoring
     implementation 'io.micrometer:micrometer-tracing-bridge-brave'
     implementation 'io.zipkin.reporter2:zipkin-reporter-brave'
     implementation 'net.logstash.logback:logstash-logback-encoder:7.4'
     implementation 'com.github.maricn:logback-slack-appender:1.6.1'
-    implementation 'de.codecentric:spring-boot-admin-starter-client:3.5.0'
-
-    // Firebase Cloud Messaging
-    implementation 'com.google.firebase:firebase-admin:9.2.0'
 
     // AWS Service Libraries (via Spring Boot Starter)
     implementation project(':elioo-aws-spring-boot-starter')
@@ -50,10 +45,6 @@ dependencies {
 
     // Provider-neutral LLM layer (Groq / Anthropic / OpenAI / Bedrock)
     implementation project(':elioo-llm')
-
-    // Caching support (for Bedrock Health API)
-    implementation 'org.springframework.boot:spring-boot-starter-cache'
-    implementation 'com.github.ben-manes.caffeine:caffeine'
 
     // Testing
     testImplementation 'org.springframework.boot:spring-boot-starter-test'

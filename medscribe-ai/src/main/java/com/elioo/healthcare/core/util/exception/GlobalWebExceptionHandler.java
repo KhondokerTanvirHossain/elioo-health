@@ -1,7 +1,7 @@
 package com.elioo.healthcare.core.util.exception;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.elioo.healthcare.core.base.application.port.dto.ApiResponse;
+
 import jakarta.validation.ConstraintViolationException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

@@ -1,4 +1,4 @@
-package com.elioo.healthcare.core.base.application.port.dto;
+package com.elioo.healthcare.core.util.exception;
 
 import com.elioo.healthcare.core.util.exception.ErrorCode;
 import lombok.Data;

@@ -1,0 +1,57 @@
+### MedScribe AI — HTTP examples (IntelliJ / VS Code REST Client)
+### Pick a base URL:
+@baseUrl = http://localhost:8086
+# @baseUrl = https://baymax.eliooo.org
+
+### Health
+GET {{baseUrl}}/actuator/health
+
+### 1. Start processing a report image (returns 202 + reportId)
+# imageBase64: base64 of a JPEG/PNG. On macOS:  base64 -i report.png | tr -d '\n'
+POST {{baseUrl}}/api/v1/medical-report/process
+Content-Type: application/json
+
+{
+  "imageBase64": "<BASE64_IMAGE>",
+  "patientContext": { "patientId": "DEMO-1", "age": 45, "gender": "MALE" }
+}
+
+### 2. Poll status
+GET {{baseUrl}}/api/v1/medical-report/query/status/RPT-XXXXXXXX
+
+### 3. Results per stage
+GET {{baseUrl}}/api/v1/medical-report/query/results/RPT-XXXXXXXX/ocr
+###
+GET {{baseUrl}}/api/v1/medical-report/query/results/RPT-XXXXXXXX/classification
+###
+GET {{baseUrl}}/api/v1/medical-report/query/results/RPT-XXXXXXXX/icd10
+###
+GET {{baseUrl}}/api/v1/medical-report/query/results/RPT-XXXXXXXX/snomedct
+###
+GET {{baseUrl}}/api/v1/medical-report/query/results/RPT-XXXXXXXX/insights
+###
+GET {{baseUrl}}/api/v1/medical-report/query/results/RPT-XXXXXXXX/all
+
+### 4. Chat about the report
+POST {{baseUrl}}/api/v1/medical-report/chat/RPT-XXXXXXXX/send
+Content-Type: application/json
+
+{ "message": "Which value is most concerning and why?", "language": "en" }
+
+### 5. Show a result in Bangla
+GET {{baseUrl}}/api/v1/medical-report/RPT-XXXXXXXX/translate/CLINICAL_INSIGHTS?lang=bn
+
+### 6. Free-text insights (no image)
+POST {{baseUrl}}/api/v1/medical-report/free-text-insights
+Content-Type: application/json
+
+{ "text": "HbA1c 7.8%, fasting glucose 140 mg/dL, LDL 160 mg/dL", "targetAudience": "PATIENT" }
+
+### 7. Raw LLM call through the configured provider
+POST {{baseUrl}}/api/llm/invoke
+Content-Type: application/json
+
+{ "userPrompt": "Explain HbA1c in one sentence.", "maxTokens": 200 }
+
+### 8. Analytics
+GET {{baseUrl}}/api/v1/medical-report/query/analytics/metrics

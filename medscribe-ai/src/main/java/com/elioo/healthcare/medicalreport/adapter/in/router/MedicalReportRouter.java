@@ -25,10 +25,7 @@ public class MedicalReportRouter {
     @Bean
     public RouterFunction<ServerResponse> medicalReportRoutes() {
         return RouterFunctions
-                .route(POST("/api/v1/medical-report/ocr"), medicalReportHandler::processOcr)
-                .andRoute(POST("/api/v1/medical-report/classify"), medicalReportHandler::classifyMedicalData)
-                .andRoute(POST("/api/v1/medical-report/suggestions"), medicalReportHandler::generateSuggestions)
-                .andRoute(POST("/api/v1/medical-report/free-text-insights"), medicalReportHandler::generateFreeTextInsights);
+                .route(POST("/api/v1/medical-report/free-text-insights"), medicalReportHandler::generateFreeTextInsights);
     }
 
     /**

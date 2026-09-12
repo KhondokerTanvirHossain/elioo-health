@@ -2,7 +2,7 @@
 
 **Endpoint:** `POST /api/v1/medical-report/process`
 **Base URL (Local):** `http://localhost:8086`
-**Base URL (Remote):** `http://15.206.148.124:8086`
+**Base URL (Remote):** `http://<OLD_SERVER_IP>:8086`
 
 ---
 
@@ -26,7 +26,7 @@ curl --location 'http://localhost:8086/api/v1/medical-report/process' \
 ### Basic Test (Remote)
 
 ```bash
-curl --location 'http://15.206.148.124:8086/api/v1/medical-report/process' \
+curl --location 'http://<OLD_SERVER_IP>:8086/api/v1/medical-report/process' \
   --header 'Content-Type: application/json' \
   --header 'X-API-Key: YOUR_API_KEY' \
   --data '{
