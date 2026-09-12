@@ -311,7 +311,7 @@ public class BedrockServiceImpl implements com.elioo.healthcare.aws.bedrock.api.
             usage = new TokenUsage(inputTokens, outputTokens);
         }
 
-        return new LlmResponse(content, stopReason, usage, modelId, null);
+        return new LlmResponse(content, stopReason, usage, modelId, null, "bedrock", null);
     }
 
     /**
@@ -344,7 +344,7 @@ public class BedrockServiceImpl implements com.elioo.healthcare.aws.bedrock.api.
             usage = new TokenUsage(inputTokens, outputTokens);
         }
 
-        return new LlmResponse(content, stopReason, usage, modelId, null);
+        return new LlmResponse(content, stopReason, usage, modelId, null, "bedrock", null);
     }
 
     /**
@@ -365,7 +365,7 @@ public class BedrockServiceImpl implements com.elioo.healthcare.aws.bedrock.api.
             usage = new TokenUsage(inputTokens, outputTokens);
         }
 
-        return new LlmResponse(content, stopReason, usage, modelId, null);
+        return new LlmResponse(content, stopReason, usage, modelId, null, "bedrock", null);
     }
 
     /**

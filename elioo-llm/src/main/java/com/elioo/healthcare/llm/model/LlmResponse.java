@@ -13,14 +13,24 @@ import java.util.Map;
  * @param usage        Token usage statistics
  * @param modelId      Model that generated the response
  * @param metadata     Additional response metadata
+ * @param provider     Short provider name that answered ("groq", "anthropic", ...); null when unknown
+ * @param latencyMs    Wall-clock time of the provider call in milliseconds; null when not measured
  */
 public record LlmResponse(
         String content,
         String stopReason,
         TokenUsage usage,
         String modelId,
-        Map<String, Object> metadata
+        Map<String, Object> metadata,
+        String provider,
+        Long latencyMs
 ) {
+    /** Response without provider/latency information (kept for callers that predate those fields). */
+    public LlmResponse(String content, String stopReason, TokenUsage usage, String modelId,
+                       Map<String, Object> metadata) {
+        this(content, stopReason, usage, modelId, metadata, null, null);
+    }
+
     /**
      * Create a simple response with just content.
      */
@@ -33,6 +43,11 @@ public record LlmResponse(
      */
     public static LlmResponse withUsage(String content, TokenUsage usage) {
         return new LlmResponse(content, null, usage, null, null);
+    }
+
+    /** Copy of this response stamped with the provider that answered and how long the call took. */
+    public LlmResponse timed(String provider, long latencyMs) {
+        return new LlmResponse(content, stopReason, usage, modelId, metadata, provider, latencyMs);
     }
 
     /**
