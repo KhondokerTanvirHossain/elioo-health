@@ -24,6 +24,15 @@ dependencies {
     runtimeOnly 'org.postgresql:postgresql'
     runtimeOnly 'org.postgresql:r2dbc-postgresql'
 
+    // Object storage for images and crops (BMX-3): S3-compatible (AWS S3, Supabase Storage, MinIO locally).
+    // Sync client on a bounded-elastic scheduler; no netty client to keep one netty in the app.
+    implementation('software.amazon.awssdk:s3') {
+        // one HTTP implementation only: the adapter uses url-connection-client explicitly
+        exclude group: 'software.amazon.awssdk', module: 'apache-client'
+        exclude group: 'software.amazon.awssdk', module: 'netty-nio-client'
+    }
+    implementation 'software.amazon.awssdk:url-connection-client'
+
     implementation project(':elioo-llm')
     implementation project(':elioo-gcp-vision')
 
@@ -35,4 +44,5 @@ dependencies {
     testImplementation 'io.projectreactor:reactor-test'
     testImplementation 'org.testcontainers:junit-jupiter:1.19.7'
     testImplementation 'org.testcontainers:postgresql:1.19.7'
+    testImplementation 'org.testcontainers:minio:1.19.7'
 }

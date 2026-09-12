@@ -4,6 +4,7 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -23,6 +24,7 @@ public class BaymaxProperties {
     private Llm llm = new Llm();
     private Vision vision = new Vision();
     private Admin admin = new Admin();
+    private Storage storage = new Storage();
 
     @Data
     public static class Flyway {
@@ -63,5 +65,22 @@ public class BaymaxProperties {
     public static class Admin {
         /** Shared secret expected in the {@code X-Baymax-Admin-Token} header on /api/v1/baymax/admin/**. */
         private String token;
+    }
+
+    @Data
+    public static class Storage {
+        /** S3-compatible endpoint (blank = AWS S3 for the region; Supabase: https://<project>.storage.supabase.co/storage/v1/s3). */
+        private String endpoint;
+        private String region = "ap-south-1";
+        /** Private bucket for pages and crops. Blank = storage not configured (module still loads; calls fail). */
+        private String bucket;
+        private String accessKey;
+        private String secretKey;
+        /** Path-style addressing; required by Supabase and MinIO. */
+        private boolean pathStyle = true;
+        /** Value for x-amz-server-side-encryption on every PUT ("AES256"); blank = omit the header. */
+        private String serverSideEncryption = "AES256";
+        /** Lifetime of signed GET URLs handed to the web timeline. */
+        private Duration signedUrlTtl = Duration.ofMinutes(15);
     }
 }
