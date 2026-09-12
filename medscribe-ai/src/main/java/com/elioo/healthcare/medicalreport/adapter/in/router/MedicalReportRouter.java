@@ -55,7 +55,7 @@ public class MedicalReportRouter {
      * <p><b>Status Polling:</b></p>
      * Both endpoints return immediately with a report ID. Use these endpoints to poll for results:
      * - GET /api/v1/medical-report/query/status/{reportId} - Basic status
-     * - GET /api/v1/medical-report/query/status/{reportId}/detailed - Detailed status with partial results
+     * - GET /api/v1/medical-report/query/details/{reportId} - Detailed status with partial results
      */
     @Bean
     public RouterFunction<ServerResponse> masterOrchestrationRoutes() {

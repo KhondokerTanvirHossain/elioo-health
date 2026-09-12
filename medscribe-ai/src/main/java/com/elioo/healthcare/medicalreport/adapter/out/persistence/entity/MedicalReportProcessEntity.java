@@ -128,7 +128,7 @@ public class MedicalReportProcessEntity {
      */
     @Column("total_stages")
     @Builder.Default
-    private Integer totalStages = 10;
+    private Integer totalStages = com.elioo.healthcare.medicalreport.domain.ProcessingStage.persistedStages().size();
 
     /**
      * User or system that initiated this processing request.

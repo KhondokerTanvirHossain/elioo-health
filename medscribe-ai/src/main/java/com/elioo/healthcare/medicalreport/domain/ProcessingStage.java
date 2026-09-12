@@ -86,6 +86,23 @@ public enum ProcessingStage {
     private final String displayName;
     private final boolean critical;
 
+    /**
+     * Stages that are persisted as rows in medical_report_process_stage. PATIENT_SUMMARY,
+     * RISK_ASSESSMENT, RECOMMENDATIONS and EDUCATIONAL_CONTENT are sub-steps of
+     * CLINICAL_INSIGHTS and only tracked in memory, so progress is measured against this list.
+     */
+    public static java.util.List<ProcessingStage> persistedStages() {
+        return java.util.List.of(IMAGE_VALIDATION, OCR_PROCESSING, TRANSLATION, ENTITY_DETECTION,
+                ICD10_INFERENCE, RXNORM_INFERENCE, SNOMEDCT_INFERENCE, CLINICAL_INSIGHTS);
+    }
+
+    /** Number of persisted stages in the given list (null-safe). */
+    public static int countPersisted(java.util.Collection<ProcessingStage> stages) {
+        if (stages == null) return 0;
+        java.util.List<ProcessingStage> persisted = persistedStages();
+        return (int) stages.stream().filter(persisted::contains).count();
+    }
+
     ProcessingStage(String displayName, boolean critical) {
         this.displayName = displayName;
         this.critical = critical;

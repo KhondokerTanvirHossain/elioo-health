@@ -272,6 +272,7 @@ public class MedicalReportChatService implements MedicalReportChatUseCase {
         log.debug("Fetching patient context for report: {}", reportId);
 
         return persistencePort.findProcessByReportId(reportId)
+                .switchIfEmpty(Mono.error(new java.util.NoSuchElementException("Report not found: " + reportId)))
                 .map(processRecord -> {
                     // Parse patient context JSON string
                     String patientContextJson = processRecord.patientContextJson();

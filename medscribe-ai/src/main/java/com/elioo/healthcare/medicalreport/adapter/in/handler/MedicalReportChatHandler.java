@@ -220,6 +220,16 @@ public class MedicalReportChatHandler {
                     ));
         }
 
+        // Unknown report
+        if (error instanceof java.util.NoSuchElementException) {
+            return ServerResponse.status(HttpStatus.NOT_FOUND)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(Map.of(
+                            "error", "REPORT_NOT_FOUND",
+                            "message", error.getMessage()
+                    ));
+        }
+
         // Invalid request
         if (error instanceof IllegalArgumentException) {
             return ServerResponse.badRequest()

@@ -40,7 +40,7 @@ public interface MedicalReportOrchestrationUseCase {
      *   <li>Each stage result is saved to database as it completes</li>
      *   <li>Use query APIs to poll for status and partial results</li>
      *   <li>GET /api/v1/medical-report/query/status/{reportId} - Basic status</li>
-     *   <li>GET /api/v1/medical-report/query/status/{reportId}/detailed - Detailed status with partial results</li>
+     *   <li>GET /api/v1/medical-report/query/details/{reportId} - Detailed status with partial results</li>
      * </ul>
      *
      * <p><b>Error Handling:</b></p>
@@ -142,7 +142,7 @@ public interface MedicalReportOrchestrationUseCase {
      *   <li>Each stage result is saved to database as it completes</li>
      *   <li>Use query APIs to poll for status and partial results</li>
      *   <li>GET /api/v1/medical-report/query/status/{reportId} - Basic status</li>
-     *   <li>GET /api/v1/medical-report/query/status/{reportId}/detailed - Detailed status with partial results</li>
+     *   <li>GET /api/v1/medical-report/query/details/{reportId} - Detailed status with partial results</li>
      * </ul>
      *
      * <p><b>Error Handling:</b></p>

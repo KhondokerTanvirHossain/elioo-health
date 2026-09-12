@@ -70,8 +70,8 @@ public class TranslationServiceImpl implements TranslationService {
             }
 
             // Build parent location
-            LocationName parent = LocationName.of(properties.getProjectId(), "global");
-            log.info("[GCP Translation API] Project: {}, Location: global", properties.getProjectId());
+            LocationName parent = LocationName.of(properties.getProjectId(), properties.getLocation() != null ? properties.getLocation() : "global");
+            log.info("[GCP Translation API] Project: {}, Location: {}", properties.getLocation() != null ? properties.getLocation() : "global", properties.getProjectId());
 
             // Build translation request
             TranslateTextRequest.Builder requestBuilder = TranslateTextRequest.newBuilder()
@@ -203,13 +203,13 @@ public class TranslationServiceImpl implements TranslationService {
      */
     private String detectLanguageSync(String text) {
         try {
-            LocationName parent = LocationName.of(properties.getProjectId(), "global");
+            LocationName parent = LocationName.of(properties.getProjectId(), properties.getLocation() != null ? properties.getLocation() : "global");
 
             // Log text sample for debugging
             String textSample = text.length() > 100 ? text.substring(0, 100) + "..." : text;
             log.info("[GCP Translation API] 🔍 detectLanguageSync: calling detectLanguage API");
-            log.info("[GCP Translation API] 🔍 Project: {}, Location: global", properties.getProjectId());
-            log.info("[GCP Translation API] 🔍 Text sample (first 100 chars): \"{}\"", textSample);
+            log.info("[GCP Translation API] 🔍 Project: {}, Location: {}", properties.getLocation() != null ? properties.getLocation() : "global", properties.getProjectId());
+            log.debug("[GCP Translation API] Text sample (first 100 chars): \"{}\"", textSample);
 
             DetectLanguageRequest request = DetectLanguageRequest.newBuilder()
                     .setParent(parent.toString())
@@ -225,7 +225,7 @@ public class TranslationServiceImpl implements TranslationService {
                 String languageCode = detectedLanguage.getLanguageCode();
                 float confidence = detectedLanguage.getConfidence();
 
-                log.info("[GCP Translation API] 🔍 PRIMARY language detected: {} (confidence: {:.2f}), duration={}ms",
+                log.info("[GCP Translation API] 🔍 PRIMARY language detected: {} (confidence: {}), duration={}ms",
                         languageCode, confidence, duration);
 
                 // Log all detected languages if multiple (for mixed-language debugging)
@@ -233,7 +233,7 @@ public class TranslationServiceImpl implements TranslationService {
                     log.info("[GCP Translation API] 🔍 Alternative languages detected:");
                     for (int i = 1; i < Math.min(response.getLanguagesCount(), 5); i++) {
                         DetectedLanguage alt = response.getLanguages(i);
-                        log.info("[GCP Translation API]    - {} (confidence: {:.2f})",
+                        log.info("[GCP Translation API]    - {} (confidence: {})",
                                  alt.getLanguageCode(), alt.getConfidence());
                     }
                 }
@@ -243,12 +243,12 @@ public class TranslationServiceImpl implements TranslationService {
 
             String textPreview = text.substring(0, Math.min(50, text.length()));
             log.warn("[GCP Translation API] ⚠️ No language detected (empty response)");
-            log.warn("[GCP Translation API] ⚠️ Text sample: \"{}...\"", textPreview);
+            log.debug("[GCP Translation API] Text sample: \"{}...\"", textPreview);
             return "und"; // Undetermined
         } catch (Exception e) {
             String textPreview = text != null && text.length() > 50 ? text.substring(0, 50) + "..." : text;
             log.error("[GCP Translation API] ❌ Language detection error: {}", e.getMessage());
-            log.error("[GCP Translation API] ❌ Text sample: \"{}\"", textPreview);
+            log.debug("[GCP Translation API] Text sample: \"{}\"", textPreview);
             log.error("[GCP Translation API] ❌ Exception details:", e);
             return "und"; // Undetermined
         }

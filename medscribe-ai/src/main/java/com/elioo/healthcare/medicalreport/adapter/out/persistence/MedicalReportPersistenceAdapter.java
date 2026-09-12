@@ -90,7 +90,7 @@ public class MedicalReportPersistenceAdapter implements MedicalReportPersistence
                 reportId, patientId, status,
                 now, now, null, null,
                 imageBase64, patientContextJson, workflowOptionsJson,
-                0, 0, 10, null, null
+                0, 0, ProcessingStage.persistedStages().size(), null, null
         )
         .then(processRepository.findById(reportId))
         .doOnSuccess(saved -> log.info("Created process record: {}", reportId))
@@ -144,8 +144,8 @@ public class MedicalReportPersistenceAdapter implements MedicalReportPersistence
                             response.getProcessingTimeMs(),
                             entity.getPatientContextJson(),
                             entity.getWorkflowOptionsJson(),
-                            response.getWorkflow().getCompletedStages().size(),
-                            response.getWorkflow().getFailedStages().size(),
+                            ProcessingStage.countPersisted(response.getWorkflow().getCompletedStages()),
+                            ProcessingStage.countPersisted(response.getWorkflow().getFailedStages()),
                             entity.getErrorMessage()
                     );
                 })
@@ -509,51 +509,11 @@ public class MedicalReportPersistenceAdapter implements MedicalReportPersistence
     }
 
     private Mono<Void> incrementCompletedStages(String reportId) {
-        return processRepository.findById(reportId)
-                .flatMap(entity -> {
-                    Integer newCompletedStages = (entity.getCompletedStages() != null ? entity.getCompletedStages() : 0) + 1;
-                    LocalDateTime now = LocalDateTime.now();
-
-                    // Use custom update with JSONB casting
-                    return processRepository.updateWithJsonbCast(
-                            reportId,
-                            entity.getPatientId(),
-                            entity.getStatus(),
-                            now,
-                            entity.getCompletedAt(),
-                            entity.getProcessingTimeMs(),
-                            entity.getPatientContextJson(),
-                            entity.getWorkflowOptionsJson(),
-                            newCompletedStages,
-                            entity.getFailedStages(),
-                            entity.getErrorMessage()
-                    );
-                })
-                .then();
+        return processRepository.incrementCompletedStages(reportId).then();
     }
 
     private Mono<Void> incrementFailedStages(String reportId) {
-        return processRepository.findById(reportId)
-                .flatMap(entity -> {
-                    Integer newFailedStages = (entity.getFailedStages() != null ? entity.getFailedStages() : 0) + 1;
-                    LocalDateTime now = LocalDateTime.now();
-
-                    // Use custom update with JSONB casting
-                    return processRepository.updateWithJsonbCast(
-                            reportId,
-                            entity.getPatientId(),
-                            entity.getStatus(),
-                            now,
-                            entity.getCompletedAt(),
-                            entity.getProcessingTimeMs(),
-                            entity.getPatientContextJson(),
-                            entity.getWorkflowOptionsJson(),
-                            entity.getCompletedStages(),
-                            newFailedStages,
-                            entity.getErrorMessage()
-                    );
-                })
-                .then();
+        return processRepository.incrementFailedStages(reportId).then();
     }
 
     private String determineErrorCode(ProcessingStage stage, Throwable error) {

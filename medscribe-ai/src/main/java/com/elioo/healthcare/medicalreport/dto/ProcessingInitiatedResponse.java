@@ -18,7 +18,7 @@ import java.time.LocalDateTime;
  * <pre>
  * POST /api/v1/medical-report/process
  * → Returns ProcessingInitiatedResponse (< 1 second)
- * → Client polls GET /api/v1/medical-report/query/status/{reportId}/detailed
+ * → Client polls GET /api/v1/medical-report/query/details/{reportId}
  * </pre>
  *
  * <p><b>Response Example:</b>
@@ -27,7 +27,7 @@ import java.time.LocalDateTime;
  *   "reportId": "RPT-20250312-ABC123",
  *   "status": "PENDING",
  *   "statusUrl": "/api/v1/medical-report/query/status/RPT-20250312-ABC123",
- *   "detailedStatusUrl": "/api/v1/medical-report/query/status/RPT-20250312-ABC123/detailed",
+ *   "detailedStatusUrl": "/api/v1/medical-report/query/details/RPT-20250312-ABC123",
  *   "acceptedAt": "2025-03-12T10:30:00",
  *   "estimatedCompletionTime": "2025-03-12T10:40:00"
  * }

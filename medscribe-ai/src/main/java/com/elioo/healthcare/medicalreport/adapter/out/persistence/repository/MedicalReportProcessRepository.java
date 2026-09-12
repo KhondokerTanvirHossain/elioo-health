@@ -203,4 +203,14 @@ public interface MedicalReportProcessRepository extends R2dbcRepository<MedicalR
             String patientContextJson, String workflowOptionsJson,
             Integer completedStages, Integer failedStages, String errorMessage
     );
+
+    /** Atomic increment (no read-modify-write): safe when stages complete concurrently. */
+    @org.springframework.data.r2dbc.repository.Modifying
+    @Query("UPDATE medical_report_process SET completed_stages = COALESCE(completed_stages, 0) + 1, updated_at = CURRENT_TIMESTAMP WHERE report_id = :reportId")
+    Mono<Integer> incrementCompletedStages(String reportId);
+
+    /** Atomic increment (no read-modify-write): safe when stages fail concurrently. */
+    @org.springframework.data.r2dbc.repository.Modifying
+    @Query("UPDATE medical_report_process SET failed_stages = COALESCE(failed_stages, 0) + 1, updated_at = CURRENT_TIMESTAMP WHERE report_id = :reportId")
+    Mono<Integer> incrementFailedStages(String reportId);
 }

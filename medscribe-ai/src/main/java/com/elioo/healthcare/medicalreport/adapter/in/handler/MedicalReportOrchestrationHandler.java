@@ -69,7 +69,7 @@ public class MedicalReportOrchestrationHandler {
      * <p><b>Status Polling Endpoints:</b></p>
      * <ul>
      *   <li>GET /api/v1/medical-report/query/status/{reportId} - Basic status</li>
-     *   <li>GET /api/v1/medical-report/query/status/{reportId}/detailed - Detailed status with partial results</li>
+     *   <li>GET /api/v1/medical-report/query/details/{reportId} - Detailed status with partial results</li>
      * </ul>
      *
      * @param request HTTP server request
@@ -94,7 +94,7 @@ public class MedicalReportOrchestrationHandler {
                             .reportId(reportId)
                             .status("PENDING")
                             .statusUrl("/api/v1/medical-report/query/status/" + reportId)
-                            .detailedStatusUrl("/api/v1/medical-report/query/status/" + reportId + "/detailed")
+                            .detailedStatusUrl("/api/v1/medical-report/query/details/" + reportId)
                             .acceptedAt(LocalDateTime.now())
                             .estimatedCompletionTime(LocalDateTime.now().plusMinutes(10))
                             .build();
@@ -144,7 +144,7 @@ public class MedicalReportOrchestrationHandler {
      * <p><b>Status Polling Endpoints:</b></p>
      * <ul>
      *   <li>GET /api/v1/medical-report/query/status/{reportId} - Basic status</li>
-     *   <li>GET /api/v1/medical-report/query/status/{reportId}/detailed - Detailed status with partial results</li>
+     *   <li>GET /api/v1/medical-report/query/details/{reportId} - Detailed status with partial results</li>
      * </ul>
      *
      * @param request HTTP server request
@@ -169,7 +169,7 @@ public class MedicalReportOrchestrationHandler {
                             .reportId(reportId)
                             .status("PENDING")
                             .statusUrl("/api/v1/medical-report/query/status/" + reportId)
-                            .detailedStatusUrl("/api/v1/medical-report/query/status/" + reportId + "/detailed")
+                            .detailedStatusUrl("/api/v1/medical-report/query/details/" + reportId)
                             .acceptedAt(LocalDateTime.now())
                             .estimatedCompletionTime(LocalDateTime.now().plusMinutes(15))  // Multi-image takes longer
                             .build();
