@@ -2,6 +2,9 @@ package com.elioo.baymax.aicall.application.service;
 
 import com.elioo.baymax.aicall.application.port.out.AiCallLogPort;
 import com.elioo.baymax.aicall.domain.DocumentAiCost;
+import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
+import com.elioo.baymax.healthrecord.domain.FamilyAccount;
+import com.elioo.baymax.healthrecord.domain.FamilyActivity;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
@@ -25,6 +28,11 @@ class WeeklyMetricsServiceTest {
     void rendersDocumentRowsThenAnEmptyFamiliesBlock() {
         UUID doc = UUID.fromString("11111111-1111-1111-1111-111111111111");
         AiCallLogPort port = mock(AiCallLogPort.class);
+        HealthRecordPort records = mock(HealthRecordPort.class);
+        UUID family = UUID.fromString("22222222-2222-2222-2222-222222222222");
+        when(records.familyActivity(any(), any())).thenReturn(Flux.just(
+                new FamilyActivity(family, FamilyAccount.Plan.FREE, 1, 2, Instant.parse("2026-09-09T12:00:00Z")),
+                new FamilyActivity(UUID.fromString("33333333-3333-3333-3333-333333333333"), FamilyAccount.Plan.FAMILY, 2, 0, null)));
         when(port.perDocument(any(), any())).thenReturn(Flux.just(
                 new DocumentAiCost(doc, 3, 1, 4200, 900, new BigDecimal("0.00117000"),
                         "gcp/vision-document-text-detection|groq/openai/gpt-oss-120b", 0.905,
@@ -32,7 +40,7 @@ class WeeklyMetricsServiceTest {
                 new DocumentAiCost(null, 1, 1, 50, 10, null, "groq/llama", null,
                         Instant.parse("2026-09-07T00:00:00Z"), Instant.parse("2026-09-07T00:00:00Z"))));
 
-        StepVerifier.create(new WeeklyMetricsService(port).weeklyCsv(FROM, TO))
+        StepVerifier.create(new WeeklyMetricsService(port, records).weeklyCsv(FROM, TO))
                 .assertNext(csv -> {
                     List<String> lines = csv.lines().toList();
                     assertThat(lines.get(0)).isEqualTo("# documents from=2026-09-05T00:00:00Z to=2026-09-12T00:00:00Z (to exclusive)");
@@ -44,7 +52,9 @@ class WeeklyMetricsServiceTest {
                     assertThat(lines.get(4)).isEmpty();
                     assertThat(lines.get(5)).startsWith("# families from=");
                     assertThat(lines.get(6)).isEqualTo(WeeklyMetricsService.FAMILY_HEADER);
-                    assertThat(lines).hasSize(7);
+                    assertThat(lines.get(7)).isEqualTo("22222222-2222-2222-2222-222222222222,free,1,2,0,0,2");
+                    assertThat(lines.get(8)).isEqualTo("33333333-3333-3333-3333-333333333333,family,2,0,0,0,");
+                    assertThat(lines).hasSize(9);
                 })
                 .verifyComplete();
     }
@@ -52,9 +62,11 @@ class WeeklyMetricsServiceTest {
     @Test
     void emptyWindowStillHasBothHeaders() {
         AiCallLogPort port = mock(AiCallLogPort.class);
+        HealthRecordPort records = mock(HealthRecordPort.class);
         when(port.perDocument(any(), any())).thenReturn(Flux.empty());
+        when(records.familyActivity(any(), any())).thenReturn(Flux.empty());
 
-        StepVerifier.create(new WeeklyMetricsService(port).weeklyCsv(FROM, TO))
+        StepVerifier.create(new WeeklyMetricsService(port, records).weeklyCsv(FROM, TO))
                 .assertNext(csv -> assertThat(csv.lines().toList())
                         .containsExactly(
                                 "# documents from=2026-09-05T00:00:00Z to=2026-09-12T00:00:00Z (to exclusive)",

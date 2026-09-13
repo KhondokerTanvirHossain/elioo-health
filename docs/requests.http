@@ -62,3 +62,32 @@ GET {{baseUrl}}/api/v1/baymax/health
 ### Baymax weekly pilot log as CSV (dates are UTC days, `to` exclusive; default = last 7 days)
 GET {{baseUrl}}/api/v1/baymax/admin/metrics/weekly?from=2026-09-05&to=2026-09-12
 X-Baymax-Admin-Token: {{baymaxAdminToken}}
+
+### Baymax storage self-test (put → presign → get → delete through the real adapter)
+GET {{baseUrl}}/api/v1/baymax/admin/storage/selftest
+X-Baymax-Admin-Token: {{baymaxAdminToken}}
+
+### Baymax onboarding (admin token until OTP arrives). Numbers must be E.164.
+POST {{baseUrl}}/api/v1/baymax/families
+Content-Type: application/json
+X-Baymax-Admin-Token: {{baymaxAdminToken}}
+
+{"whatsapp_number": "+8801700000000", "owner_name": "Rahim", "terms_accepted": true}
+
+### Add a patient profile (free plan: 1 profile → second is 402 free_tier_patients)
+POST {{baseUrl}}/api/v1/baymax/families/{{familyId}}/patients
+Content-Type: application/json
+X-Baymax-Admin-Token: {{baymaxAdminToken}}
+
+{"name": "Ma", "age": 74, "sex": "female", "chronic_flags": ["diabetes", "hypertension"], "proxy_consent": true}
+
+### Share a patient with one sibling number (second share → 409)
+POST {{baseUrl}}/api/v1/baymax/patients/{{patientId}}/share
+Content-Type: application/json
+X-Baymax-Admin-Token: {{baymaxAdminToken}}
+
+{"whatsapp_number": "+8801811111111"}
+
+### Delete on request: hard delete, returns a receipt
+DELETE {{baseUrl}}/api/v1/baymax/families/{{familyId}}
+X-Baymax-Admin-Token: {{baymaxAdminToken}}

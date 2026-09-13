@@ -1,6 +1,8 @@
 package com.elioo.baymax.aicall.adapter.in.router;
 
 import com.elioo.baymax.aicall.adapter.in.handler.AdminMetricsHandler;
+import com.elioo.baymax.common.error.ErrorResponseFilter;
+import com.elioo.baymax.storage.adapter.in.handler.StorageSelfTestHandler;
 import com.elioo.baymax.aicall.application.port.in.WeeklyMetricsUseCase;
 import com.elioo.baymax.config.BaymaxProperties;
 import org.junit.jupiter.api.Test;
@@ -28,7 +30,8 @@ class BaymaxAdminRouterTest {
         props.getAdmin().setToken(configuredToken);
         when(metrics.weeklyCsv(any(), any())).thenReturn(Mono.just("# documents\n"));
         return WebTestClient.bindToRouterFunction(new BaymaxAdminRouter()
-                .baymaxAdminRoutes(new AdminMetricsHandler(metrics), new AdminAuthFilter(props))).build();
+                .baymaxAdminRoutes(new AdminMetricsHandler(metrics), mock(StorageSelfTestHandler.class),
+                        new AdminAuthFilter(props), new ErrorResponseFilter())).build();
     }
 
     @Test

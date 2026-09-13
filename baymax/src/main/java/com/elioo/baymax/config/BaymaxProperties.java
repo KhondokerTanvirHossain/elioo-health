@@ -25,6 +25,7 @@ public class BaymaxProperties {
     private Vision vision = new Vision();
     private Admin admin = new Admin();
     private Storage storage = new Storage();
+    private Free free = new Free();
 
     @Data
     public static class Flyway {
@@ -76,11 +77,28 @@ public class BaymaxProperties {
         private String bucket;
         private String accessKey;
         private String secretKey;
-        /** Path-style addressing; required by Supabase and MinIO. */
-        private boolean pathStyle = true;
+        /** Path-style addressing: false for AWS S3 (virtual-hosted), true for MinIO and Supabase. */
+        private boolean pathStyle = false;
+        /**
+         * Where the S3 credentials come from. {@code static}: access-key/secret-key (required);
+         * {@code instance-role}: the EC2 instance profile only, ignoring any AWS_* variables in the
+         * environment (the container also carries the Comprehend user's keys, which the default chain
+         * would prefer); {@code default-chain}: the AWS SDK default chain.
+         */
+        private Credentials credentials = Credentials.DEFAULT_CHAIN;
         /** Value for x-amz-server-side-encryption on every PUT ("AES256"); blank = omit the header. */
         private String serverSideEncryption = "AES256";
         /** Lifetime of signed GET URLs handed to the web timeline. */
         private Duration signedUrlTtl = Duration.ofMinutes(15);
+    }
+
+    public enum Credentials { STATIC, INSTANCE_ROLE, DEFAULT_CHAIN }
+
+    @Data
+    public static class Free {
+        /** Patient profiles a free family may have. */
+        private int maxPatients = 1;
+        /** Documents a free family may upload per calendar month (UTC). */
+        private int maxDocsPerMonth = 3;
     }
 }
