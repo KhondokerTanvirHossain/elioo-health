@@ -64,6 +64,7 @@ Key files when changing behaviour:
 - Cloud adapters map SDK types to domain records at the boundary; nothing above `adapter.out` imports an AWS/GCP/Anthropic type.
 - Tests: TDD for behaviour changes. Unit tests mock ports; tests that call real clouds are gated by the env vars above.
 - Commits: conventional (`feat(scope): ...`, `fix(scope): ...`).
+- Branches: delete the feature branch (remote and local) as soon as its PR is squash-merged.
 - Branching (since 2026-09-12): `main` is protected; the "Build and test" check must pass and direct pushes are
   rejected, admins included. Work on a branch (`feat/...`, `fix/...`), open a PR with
   `env -u GITHUB_TOKEN gh pr create`, merge when green. Every merge to `main` deploys to production.
@@ -71,7 +72,7 @@ Key files when changing behaviour:
 ## Environment facts (2026-09)
 
 - Server: EC2 `ec2-13-205-14-249.ap-south-1.compute.amazonaws.com`, user `ec2-user`, shared with an n8n stack; Caddy there does HTTPS for `baymax.eliooo.org`.
-- Runtime config on the server: `/home/ec2-user/medscribe.env` (mode 600). Redeploy manually: `IMAGE_TAG=<git sha> bash ~/deploy.sh`.
+- Runtime config on the server: `/home/ec2-user/medscribe.env` (mode 600). Redeploy manually: `IMAGE_TAG=<git sha> bash ~/deploy.sh`. Back it up before editing and list every change in the build report; which `BAYMAX_*` lines must be blank vs set, and the post-deploy self-test, are in [docs/RUNBOOK.md](docs/RUNBOOK.md).
 - Database: Supabase project `niramoy-rx` (ap-south-1), role/schema `medscribe`, via the session pooler on port 5432.
 - LLM: `groq` by default (`openai/gpt-oss-120b`, free tier 8k tokens/min); switch to `anthropic` (`claude-opus-5`) for demos by editing the server env and redeploying.
 - AWS: IAM user with Comprehend Medical permissions only; Textract and Bedrock beans are disabled.
