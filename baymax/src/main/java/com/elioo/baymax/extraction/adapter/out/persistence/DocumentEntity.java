@@ -56,18 +56,26 @@ public class DocumentEntity {
     private int unverifiedMedicines;
     @Column("unverified_follow_up")
     private int unverifiedFollowUp;
+    @Column("unverified_clinical_context")
+    private int unverifiedClinicalContext;
+    /** JSONB; the verified clinical lines, read together and never queried field by field. */
+    @Column("clinical_context")
+    private String clinicalContext;
 
     static DocumentEntity from(Document d) {
         return new DocumentEntity(d.id(), d.patientId(), d.familyId(), d.documentType(), d.docDate(),
                 d.facility(), d.extractionJson(), d.confidenceOverall(), d.status().name(), d.statusReason(),
                 d.modelFinal(), d.costUsd(), d.pageCount(), d.createdAt(), d.updatedAt(),
-                d.unverified().values(), d.unverified().medicines(), d.unverified().followUp());
+                d.unverified().values(), d.unverified().medicines(), d.unverified().followUp(),
+                d.unverified().clinicalContext(), d.clinicalContextJson());
     }
 
     Document toRecord() {
         return new Document(id, patientId, familyId, documentType, docDate, facility, extractionJson,
                 confidenceOverall, Document.Status.fromDbValue(status), statusReason, modelFinal, costUsd,
                 pageCount, createdAt, updatedAt,
-                new VerifiedItems.Unverified(unverifiedValues, unverifiedMedicines, unverifiedFollowUp));
+                new VerifiedItems.Unverified(unverifiedValues, unverifiedMedicines, unverifiedFollowUp,
+                        unverifiedClinicalContext),
+                clinicalContext);
     }
 }

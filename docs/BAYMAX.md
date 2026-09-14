@@ -17,7 +17,7 @@ MedScribe is becoming Baymax: a WhatsApp-first health-memory assistant for Bangl
 3. No numeric value is sent without its source crop; on low confidence, send a retake prompt, not an answer.
 4. Every outbound message passes the review-gate stage (config-driven: global / per urgency / per patient; default off).
 5. Real per-document cost, model, confidence and review outcome are logged. Remove the hardcoded $0.072.
-6. LLM providers used only under zero-retention / no-training terms.
+6. LLM providers used only under zero-retention / no-training terms. *Relaxed for the BMX-2 evaluation run only (DR-6): the 10-document corpus goes to Groq under default terms. In force again before pilot week 0.*
 7. Nothing in code, copy or metadata claims data is stored in Bangladesh.
 
 ## Architecture decisions already made
@@ -64,4 +64,4 @@ Done / Deviations / Open questions / Cost & metrics / Next
 ```
 
 ## Pending from Tanvir (do not guess)
-Public brand name · LLM provider data terms (Groq zero-retention: verify before pilot week 0, DR-3) · Meta WhatsApp BD pricing & healthcare template policy · the 5–6 chronic markers for trend detection · TTS provider · BD data-protection law status.
+Public brand name · **Enable Groq ZDR before pilot week 0 (DR-6 relaxed it for the eval only)** · LLM provider data terms (DR-3) · Meta WhatsApp BD pricing & healthcare template policy · the 5–6 chronic markers for trend detection · TTS provider · BD data-protection law status.

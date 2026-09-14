@@ -24,6 +24,10 @@ class ExtractionJsonReaderTest {
               ],
               "medicines": [],
               "follow_up": [],
+              "clinical_context": {
+                "chief_complaint": [], "history": [], "examination": [],
+                "diagnosis": [], "investigations_advised": [], "advice": [], "referral": null
+              },
               "free_text_summary": "A diabetes panel.",
               "confidence": {"overall": 0.91, "values": 0.9, "medicines": 1.0, "follow_up": 1.0}
             }
@@ -67,11 +71,28 @@ class ExtractionJsonReaderTest {
         String bad = """
                 {"document_type":"lab_report",
                  "values":[{"name":"HbA1c","value":"8.2"}],
-                 "medicines":[],"follow_up":[],"confidence":{"overall":0.9}}
+                 "medicines":[],"follow_up":[],"clinical_context":{},
+                 "confidence":{"overall":0.9}}
                 """;
 
         assertThatThrownBy(() -> reader.read(bad))
                 .isInstanceOf(ExtractionJsonReader.InvalidExtractionException.class);
+    }
+
+    @Test
+    void rejectsAReplyWithNoClinicalContextSection() {
+        // v1 requires the section: an absent one means the model ignored half the page rather than
+        // finding it empty, and an empty object is how "nothing written there" is expressed
+        String missing = VALID.replaceAll("(?s)\\s*\"clinical_context\": \\{.*?\\},", "");
+
+        assertThatThrownBy(() -> reader.read(missing))
+                .isInstanceOf(ExtractionJsonReader.InvalidExtractionException.class)
+                .hasMessageContaining("clinical_context");
+    }
+
+    @Test
+    void anEmptyClinicalContextIsValid() {
+        assertThat(reader.read(VALID).clinicalContextOrEmpty().itemCount()).isZero();
     }
 
     @Test

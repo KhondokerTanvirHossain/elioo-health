@@ -16,10 +16,19 @@ import sys
 
 
 def norm(value):
-    """Compare on meaning, not formatting: case, spaces and punctuation are noise here."""
+    """Compare on meaning, not formatting: case, spaces and punctuation are noise here.
+
+    Bangla and other non-Latin text is compared as-is: stripping it to [a-z0-9] would erase it entirely.
+    An empty string and a missing field are the same thing, which is how the labels are written.
+    """
     if value is None:
         return ""
-    return re.sub(r"[^a-z0-9.]+", " ", str(value).lower()).strip()
+    text = str(value).strip().lower()
+    if not text:
+        return ""
+    if any(ord(c) > 0x7F for c in text):          # non-ASCII: collapse whitespace only
+        return re.sub(r"\s+", " ", text)
+    return re.sub(r"[^a-z0-9.]+", " ", text).strip()
 
 
 def number_eq(a, b):
@@ -60,12 +69,53 @@ def match_medicines(expected, actual):
             misses.append({"field": "medicines", "reason": "not found", "name": want.get("name")})
             continue
         remaining.remove(found)
-        if (norm(want.get("dose_text")) == norm(found.get("dose_text"))
-                and norm(want.get("frequency_text")) == norm(found.get("frequency_text"))):
+        wrong = [f for f in ("dose_text", "frequency_text", "timing_text")
+                 if norm(want.get(f)) != norm(found.get(f))]
+        if not wrong:
             hits += 1
         else:
-            misses.append({"field": "medicines", "reason": "wrong dose or frequency", "name": want.get("name")})
+            misses.append({"field": "medicines", "reason": "wrong " + "/".join(wrong),
+                           "name": want.get("name")})
     return hits, misses, len(remaining)
+
+
+CONTEXT_SECTIONS = ("chief_complaint", "history", "examination", "diagnosis",
+                    "investigations_advised", "advice")
+
+
+def score_context(expected, actual):
+    """Clinical context, scored per section and reported separately from the headline number.
+
+    Matching is loose containment on the transcribed text, because a line the doctor wrote by hand will
+    not survive OCR character-perfect. Diagnosis is the section to watch: an invented one is worse than a
+    missing one, so extras are counted and shown.
+    """
+    total_expected, total_correct, detail = 0, 0, {}
+    for section in CONTEXT_SECTIONS:
+        want = [i.get("text") for i in (expected.get(section) or [])]
+        got = [i.get("text") for i in (actual.get(section) or [])]
+        remaining = list(got)
+        hits = 0
+        for w in want:
+            wn = norm(w)
+            found = next((g for g in remaining if wn and (wn in norm(g) or norm(g) in wn)), None)
+            if found is not None:
+                remaining.remove(found)
+                hits += 1
+        total_expected += len(want)
+        total_correct += hits
+        if want or got:
+            detail[section] = {"expected": len(want), "correct": hits, "invented": len(remaining)}
+
+    want_ref = norm((expected.get("referral") or {}).get("text"))
+    got_ref = norm((actual.get("referral") or {}).get("text"))
+    if want_ref:
+        total_expected += 1
+        if want_ref in got_ref or got_ref in want_ref:
+            total_correct += 1
+    elif got_ref:
+        detail["referral"] = {"expected": 0, "correct": 0, "invented": 1}
+    return total_expected, total_correct, detail
 
 
 def match_follow_up(expected, actual):
@@ -100,6 +150,9 @@ def score_one(report_path, stem, expected_path, latency_ms, result):
     m_hits, m_miss, m_extra = match_medicines(expected.get("medicines", []), medicines)
     f_hits, f_miss, f_extra = match_follow_up(expected.get("follow_up", []), follow_up)
 
+    context_expected, context_correct, context_detail = score_context(
+        expected.get("clinical_context") or {}, result.get("clinical_context") or {})
+
     type_ok = norm(expected.get("document_type")) == norm(result.get("document_type"))
     date_ok = norm(expected.get("document_date")) == norm(result.get("document_date"))
 
@@ -123,6 +176,9 @@ def score_one(report_path, stem, expected_path, latency_ms, result):
         "items_without_crop": len(without_crop),
         "document_type_ok": type_ok,
         "document_date_ok": date_ok,
+        "context_expected": context_expected,
+        "context_correct": context_correct,
+        "context_detail": context_detail,
         "misses": v_miss + m_miss + f_miss,
     }
 
@@ -161,6 +217,15 @@ def summarise(report_path, total, labelled):
     table("printed", [d for d in docs if d["set"] == "printed"])
     table("handwritten", [d for d in docs if d["set"] == "handwritten"])
     table("all", docs)
+
+    ctx_expected = sum(d.get("context_expected", 0) for d in docs)
+    ctx_correct = sum(d.get("context_correct", 0) for d in docs)
+    invented_dx = sum(d.get("context_detail", {}).get("diagnosis", {}).get("invented", 0) for d in docs)
+    if ctx_expected:
+        print(f"\n  clinical_context (informational, not in the headline): "
+              f"{ctx_correct}/{ctx_expected} = {ctx_correct / ctx_expected * 100:.1f}%")
+    if invented_dx:
+        print(f"  !! diagnosis lines invented on {invented_dx} occasion(s) — the page did not say it")
 
     models = sorted({d["model"] for d in docs if d.get("model")})
     if models:

@@ -73,7 +73,10 @@ class DocumentExtractionServiceTest {
              "values":[{"name":"HbA1c","canonical_name":"hba1c","value":"8.2","unit":"%",
                         "flag":"high","source_span":{"page":1,"start":0,"end":5}}],
              "medicines":[],"follow_up":[],
-             "confidence":{"overall":0.93,"values":0.93,"medicines":1.0,"follow_up":1.0}}
+             "clinical_context":{"chief_complaint":[],"history":[],"examination":[],
+                                 "diagnosis":[],"investigations_advised":[],"advice":[],"referral":null},
+             "confidence":{"overall":0.93,"values":0.93,"medicines":1.0,"follow_up":1.0,
+                           "clinical_context":1.0}}
             """;
 
     @BeforeEach

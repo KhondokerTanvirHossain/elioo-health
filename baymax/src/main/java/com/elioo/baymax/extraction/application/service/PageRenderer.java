@@ -8,7 +8,11 @@ import org.apache.pdfbox.rendering.ImageType;
 import org.apache.pdfbox.rendering.PDFRenderer;
 import org.springframework.stereotype.Component;
 
+import javax.imageio.IIOImage;
 import javax.imageio.ImageIO;
+import javax.imageio.ImageWriteParam;
+import javax.imageio.ImageWriter;
+import javax.imageio.stream.ImageOutputStream;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -31,6 +35,12 @@ public class PageRenderer {
 
     static final int PDF_DPI = 200;
     static final int MAX_EDGE_PX = 2200;
+    /**
+     * JPEG quality for re-encoded pages. ImageIO's default is about 0.75, which smears the thin strokes of
+     * handwritten Bangla and of a doctor's hand — exactly the pixels OCR needs most. 0.95 costs a larger
+     * file and buys back that detail; storage is cheap next to a misread dose.
+     */
+    static final float JPEG_QUALITY = 0.95f;
     private static final byte[] PDF_MAGIC = {'%', 'P', 'D', 'F'};
 
     /** @return page JPEGs in document order */
@@ -132,14 +142,20 @@ public class PageRenderer {
     }
 
     private static byte[] encodeJpeg(BufferedImage image) {
-        try {
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            if (!ImageIO.write(image, "jpg", out)) {
-                throw BaymaxException.badRequest("encode_failed", "could not encode the page as JPEG");
-            }
+        ImageWriter writer = ImageIO.getImageWritersByFormatName("jpg").next();
+        try (ByteArrayOutputStream out = new ByteArrayOutputStream();
+             ImageOutputStream stream = ImageIO.createImageOutputStream(out)) {
+            ImageWriteParam params = writer.getDefaultWriteParam();
+            params.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
+            params.setCompressionQuality(JPEG_QUALITY);
+            writer.setOutput(stream);
+            writer.write(null, new IIOImage(image, null, null), params);
+            stream.flush();
             return out.toByteArray();
         } catch (IOException e) {
             throw BaymaxException.badRequest("encode_failed", "could not encode the page as JPEG");
+        } finally {
+            writer.dispose();
         }
     }
 

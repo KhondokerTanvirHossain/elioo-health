@@ -52,3 +52,15 @@ EC2 instance role, no static keys. MinIO is local-dev only.
 later cost swap.
 
 **Supersedes:** DR-4.
+
+## DR-6 | 2026-09-14 | Groq ZDR not enabled for the eval run
+
+**Decision:** The Groq zero-data-retention toggle is not enabled before the evaluation run. The corpus goes to
+Groq under default terms: no training on the data, reliability and abuse logging retained up to 30 days, in
+US buckets.
+
+**Why:** Tanvir's call — evaluation speed over retention posture, for a one-off run on 10 documents.
+
+**Supersedes:** relaxes BAYMAX.md hard constraint 6 ("LLM providers used only under zero-retention /
+no-training terms") **for the evaluation only**. The constraint applies again in full before pilot week 0,
+when real families' documents start arriving. Enabling Groq ZDR is on the pending list.
