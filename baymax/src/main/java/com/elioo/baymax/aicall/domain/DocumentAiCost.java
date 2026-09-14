@@ -12,6 +12,7 @@ import java.util.UUID;
  * @param costUsd       SUM(cost_usd) over priced rows; null when no row was priced
  * @param models        distinct "provider/model" values, pipe-separated
  * @param avgConfidence AVG(confidence) over rows that carry one; null when none did
+ * @param unverifiedItems items read but not locatable on the page, so never stored; 0 for a clean document
  */
 public record DocumentAiCost(
         UUID documentId,
@@ -22,6 +23,7 @@ public record DocumentAiCost(
         BigDecimal costUsd,
         String models,
         Double avgConfidence,
+        long unverifiedItems,
         Instant firstCallAt,
         Instant lastCallAt
 ) {

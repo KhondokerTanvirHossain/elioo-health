@@ -20,11 +20,25 @@ public record DocumentView(
         Integer pageCount,
         List<Map<String, Object>> values,
         List<Map<String, Object>> medicines,
-        List<Map<String, Object>> followUp
+        List<Map<String, Object>> followUp,
+        Map<String, Object> unverified
 ) {
     /** Status only: the document is still being worked on, or it needs a retake, or it failed. */
     public static DocumentView pending(Document document) {
         return new DocumentView(document.id().toString(), document.status().name(), document.statusReason(),
-                null, null, null, null, null, document.pageCount(), null, null, null);
+                null, null, null, null, null, document.pageCount(), null, null, null, null);
+    }
+
+    /**
+     * Per-section counts of items we read but could not locate on the page, so they were not stored.
+     * Present only when something was actually dropped: a clean document says nothing rather than zeroes.
+     */
+    public static Map<String, Object> unverifiedOf(Document document) {
+        var counts = document.unverified();
+        if (!counts.any()) {
+            return null;
+        }
+        return Map.of("values", counts.values(), "medicines", counts.medicines(),
+                "follow_up", counts.followUp(), "total", counts.total());
     }
 }

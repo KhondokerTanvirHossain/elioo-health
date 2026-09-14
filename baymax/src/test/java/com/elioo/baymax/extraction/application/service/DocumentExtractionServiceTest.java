@@ -179,7 +179,7 @@ class DocumentExtractionServiceTest {
             assertThat(o.cropKey()).isEqualTo("key/v1");
             assertThat(o.observedAt()).isEqualTo(Instant.parse("2026-03-14T00:00:00Z"));
         });
-        assertThat(items.getValue().dropped()).isZero();
+        assertThat(items.getValue().unverified().any()).isFalse();
     }
 
     @Test
@@ -218,7 +218,10 @@ class DocumentExtractionServiceTest {
         ArgumentCaptor<VerifiedItems> items = ArgumentCaptor.forClass(VerifiedItems.class);
         verify(records).saveExtraction(any(), items.capture());
         assertThat(items.getValue().observations()).isEmpty();
-        assertThat(items.getValue().dropped()).isEqualTo(1);
+        // the value whose span pointed nowhere is counted against its own section, not a single total
+        assertThat(items.getValue().unverified().values()).isEqualTo(1);
+        assertThat(items.getValue().unverified().medicines()).isZero();
+        assertThat(items.getValue().unverified().total()).isEqualTo(1);
         verify(storage, never()).storeCrop(any(), any(), any(), anyString(), any());
     }
 

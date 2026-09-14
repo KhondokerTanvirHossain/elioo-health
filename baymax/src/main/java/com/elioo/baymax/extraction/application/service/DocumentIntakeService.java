@@ -117,7 +117,8 @@ public class DocumentIntakeService implements DocumentIntakeUseCase {
                 document.confidenceOverall(),
                 document.modelFinal(),
                 document.pageCount(),
-                items.getT1(), items.getT2(), items.getT3()));
+                items.getT1(), items.getT2(), items.getT3(),
+                DocumentView.unverifiedOf(document)));
     }
 
     private Mono<PatientProfile> patient(UUID patientId) {

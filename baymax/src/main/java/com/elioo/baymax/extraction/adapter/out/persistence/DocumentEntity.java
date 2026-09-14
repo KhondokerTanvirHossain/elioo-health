@@ -2,6 +2,7 @@ package com.elioo.baymax.extraction.adapter.out.persistence;
 
 import com.elioo.baymax.config.BaymaxSchema;
 import com.elioo.baymax.extraction.domain.Document;
+import com.elioo.baymax.extraction.domain.VerifiedItems;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -49,16 +50,24 @@ public class DocumentEntity {
     private Instant createdAt;
     @Column("updated_at")
     private Instant updatedAt;
+    @Column("unverified_values")
+    private int unverifiedValues;
+    @Column("unverified_medicines")
+    private int unverifiedMedicines;
+    @Column("unverified_follow_up")
+    private int unverifiedFollowUp;
 
     static DocumentEntity from(Document d) {
         return new DocumentEntity(d.id(), d.patientId(), d.familyId(), d.documentType(), d.docDate(),
                 d.facility(), d.extractionJson(), d.confidenceOverall(), d.status().name(), d.statusReason(),
-                d.modelFinal(), d.costUsd(), d.pageCount(), d.createdAt(), d.updatedAt());
+                d.modelFinal(), d.costUsd(), d.pageCount(), d.createdAt(), d.updatedAt(),
+                d.unverified().values(), d.unverified().medicines(), d.unverified().followUp());
     }
 
     Document toRecord() {
         return new Document(id, patientId, familyId, documentType, docDate, facility, extractionJson,
                 confidenceOverall, Document.Status.fromDbValue(status), statusReason, modelFinal, costUsd,
-                pageCount, createdAt, updatedAt);
+                pageCount, createdAt, updatedAt,
+                new VerifiedItems.Unverified(unverifiedValues, unverifiedMedicines, unverifiedFollowUp));
     }
 }

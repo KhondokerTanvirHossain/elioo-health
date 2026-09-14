@@ -61,7 +61,7 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
                 .thenReturn(document)
                 .doOnSuccess(d -> log.info("[baymax] extraction saved documentId={} values={} medicines={} followUps={} dropped={}",
                         d.id(), items.observations().size(), items.medications().size(),
-                        items.followUps().size(), items.dropped()));
+                        items.followUps().size(), items.unverified().total()));
     }
 
     /**
@@ -75,11 +75,17 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
                             document_type = :type, doc_date = :docDate, facility = :facility,
                             extraction_json = CAST(:extraction AS jsonb), confidence_overall = :confidence,
                             status = :status, status_reason = :reason, model_final = :model,
-                            cost_usd = :cost, page_count = :pages, updated_at = :updatedAt
+                            cost_usd = :cost, page_count = :pages, updated_at = :updatedAt,
+                            unverified_values = :unverifiedValues,
+                            unverified_medicines = :unverifiedMedicines,
+                            unverified_follow_up = :unverifiedFollowUp
                         WHERE id = :id
                         """.formatted(S))
                 .bind("id", d.id())
                 .bind("pages", d.pageCount())
+                .bind("unverifiedValues", d.unverified().values())
+                .bind("unverifiedMedicines", d.unverified().medicines())
+                .bind("unverifiedFollowUp", d.unverified().followUp())
                 .bind("status", d.status().name())
                 .bind("updatedAt", OffsetDateTime.ofInstant(d.updatedAt(), ZoneOffset.UTC));
         spec = bindOrNull(spec, "type", d.documentType(), String.class);

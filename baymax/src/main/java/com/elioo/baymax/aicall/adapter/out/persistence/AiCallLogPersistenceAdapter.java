@@ -23,16 +23,19 @@ public class AiCallLogPersistenceAdapter implements AiCallLogPort {
     private static final String PER_DOCUMENT_SQL = """
             SELECT document_id,
                    COUNT(*)                                          AS calls,
-                   COUNT(*) FILTER (WHERE cost_usd IS NULL)          AS unpriced_calls,
-                   COALESCE(SUM(input_tokens), 0)                    AS input_tokens,
-                   COALESCE(SUM(output_tokens), 0)                   AS output_tokens,
-                   SUM(cost_usd)                                     AS cost_usd,
-                   STRING_AGG(DISTINCT provider || '/' || model, '|' ORDER BY provider || '/' || model) AS models,
-                   AVG(confidence)                                   AS avg_confidence,
-                   MIN(created_at)                                   AS first_call_at,
-                   MAX(created_at)                                   AS last_call_at
-            FROM %s.ai_call_log
-            WHERE created_at >= :from AND created_at < :to
+                   COUNT(*) FILTER (WHERE l.cost_usd IS NULL)          AS unpriced_calls,
+                   COALESCE(SUM(l.input_tokens), 0)                    AS input_tokens,
+                   COALESCE(SUM(l.output_tokens), 0)                   AS output_tokens,
+                   SUM(l.cost_usd)                                     AS cost_usd,
+                   STRING_AGG(DISTINCT l.provider || '/' || l.model, '|' ORDER BY l.provider || '/' || l.model) AS models,
+                   AVG(l.confidence)                                   AS avg_confidence,
+                   COALESCE(MAX(d.unverified_values + d.unverified_medicines + d.unverified_follow_up), 0)
+                                                                     AS unverified_items,
+                   MIN(l.created_at)                                   AS first_call_at,
+                   MAX(l.created_at)                                   AS last_call_at
+            FROM %1$s.ai_call_log l
+            LEFT JOIN %1$s.document d ON d.id = l.document_id
+            WHERE l.created_at >= :from AND l.created_at < :to
             GROUP BY document_id
             ORDER BY document_id NULLS LAST
             """.formatted(BaymaxSchema.NAME);
@@ -64,6 +67,7 @@ public class AiCallLogPersistenceAdapter implements AiCallLogPort {
                 row.get("cost_usd", BigDecimal.class),
                 row.get("models", String.class),
                 row.get("avg_confidence", Double.class),
+                required(row.get("unverified_items", Long.class)),
                 instant(row.get("first_call_at", OffsetDateTime.class)),
                 instant(row.get("last_call_at", OffsetDateTime.class)));
     }

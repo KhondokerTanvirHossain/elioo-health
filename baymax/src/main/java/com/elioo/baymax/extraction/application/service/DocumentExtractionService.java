@@ -232,7 +232,9 @@ public class DocumentExtractionService {
         List<VerifiedItems.Observation> observations = new ArrayList<>();
         List<VerifiedItems.Medication> medications = new ArrayList<>();
         List<VerifiedItems.FollowUpItem> followUps = new ArrayList<>();
-        int[] dropped = {0};
+        int[] droppedValues = {0};
+        int[] droppedMedicines = {0};
+        int[] droppedFollowUp = {0};
 
         Flux<Void> values = Flux.fromIterable(result.valuesOrEmpty())
                 .concatMap(value -> crop(document, value.sourceSpan(), byPage, itemId("v", observations.size()))
@@ -241,7 +243,7 @@ public class DocumentExtractionService {
                                 markers.canonicalFor(value.name(), value.canonicalName()).orElse(null),
                                 value.value(), value.unit(), value.refLow(), value.refHigh(), value.flag(),
                                 key, observedAt)))
-                        .switchIfEmpty(Mono.fromRunnable(() -> dropped[0]++))
+                        .switchIfEmpty(Mono.fromRunnable(() -> droppedValues[0]++))
                         .then());
 
         Flux<Void> medicines = Flux.fromIterable(result.medicinesOrEmpty())
@@ -249,19 +251,20 @@ public class DocumentExtractionService {
                         .doOnNext(key -> medications.add(new VerifiedItems.Medication(
                                 document.patientId(), medicine.name(), medicine.doseText(),
                                 medicine.frequencyText(), medicine.durationText(), key, observedAt)))
-                        .switchIfEmpty(Mono.fromRunnable(() -> dropped[0]++))
+                        .switchIfEmpty(Mono.fromRunnable(() -> droppedMedicines[0]++))
                         .then());
 
         Flux<Void> follow = Flux.fromIterable(result.followUpOrEmpty())
                 .concatMap(item -> crop(document, item.sourceSpan(), byPage, itemId("f", followUps.size()))
                         .doOnNext(key -> followUps.add(new VerifiedItems.FollowUpItem(
                                 document.patientId(), item.instruction(), parseDate(item.dueDate()), key)))
-                        .switchIfEmpty(Mono.fromRunnable(() -> dropped[0]++))
+                        .switchIfEmpty(Mono.fromRunnable(() -> droppedFollowUp[0]++))
                         .then());
 
         return Flux.concat(values, medicines, follow)
                 .then(Mono.fromSupplier(() -> new VerifiedItems(List.copyOf(observations),
-                        List.copyOf(medications), List.copyOf(followUps), dropped[0])));
+                        List.copyOf(medications), List.copyOf(followUps),
+                        new VerifiedItems.Unverified(droppedValues[0], droppedMedicines[0], droppedFollowUp[0]))));
     }
 
     private Mono<String> crop(Document document, ExtractionResult.SourceSpan span,
@@ -293,8 +296,14 @@ public class DocumentExtractionService {
                 attempt == null ? null : attempt.confidence(),
                 status, reason,
                 attempt == null ? null : attempt.provider() + "/" + attempt.model(),
-                document.costUsd(), document.pageCount(), document.createdAt(), now);
+                document.costUsd(), document.pageCount(), document.createdAt(), now,
+                items == null ? VerifiedItems.Unverified.none() : items.unverified());
 
+        if (items != null && items.unverified().any()) {
+            log.info("[baymax] {} item(s) had no resolvable crop documentId={} values={} medicines={} followUp={}",
+                    items.unverified().total(), document.id(), items.unverified().values(),
+                    items.unverified().medicines(), items.unverified().followUp());
+        }
         if (items == null) {
             return records.update(updated)
                     .doOnSuccess(d -> log.info("[baymax] document {} documentId={} reason={}",

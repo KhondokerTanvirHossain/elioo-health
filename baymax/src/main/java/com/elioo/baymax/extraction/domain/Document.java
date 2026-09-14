@@ -11,6 +11,7 @@ import java.util.UUID;
  * @param statusReason why a document needs a retake or failed; developer-facing, never patient text
  * @param modelFinal   provider/model whose result was kept, once extraction has run
  * @param costUsd      the sum of this document's {@code ai_call_log} rows
+ * @param unverified   items the model reported that had no resolvable crop, by section
  */
 public record Document(
         UUID id,
@@ -27,8 +28,22 @@ public record Document(
         BigDecimal costUsd,
         int pageCount,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        VerifiedItems.Unverified unverified
 ) {
+    /** Backwards-compatible constructor: nothing unverified. */
+    public Document(UUID id, UUID patientId, UUID familyId, String documentType, LocalDate docDate,
+                    String facility, String extractionJson, Double confidenceOverall, Status status,
+                    String statusReason, String modelFinal, BigDecimal costUsd, int pageCount,
+                    Instant createdAt, Instant updatedAt) {
+        this(id, patientId, familyId, documentType, docDate, facility, extractionJson, confidenceOverall,
+                status, statusReason, modelFinal, costUsd, pageCount, createdAt, updatedAt,
+                VerifiedItems.Unverified.none());
+    }
+
+    public Document {
+        unverified = unverified == null ? VerifiedItems.Unverified.none() : unverified;
+    }
     public enum Status {
         RECEIVED, PROCESSING, DONE, NEEDS_RETAKE, FAILED;
 
@@ -45,11 +60,13 @@ public record Document(
 
     public Document withId(UUID newId) {
         return new Document(newId, patientId, familyId, documentType, docDate, facility, extractionJson,
-                confidenceOverall, status, statusReason, modelFinal, costUsd, pageCount, createdAt, updatedAt);
+                confidenceOverall, status, statusReason, modelFinal, costUsd, pageCount, createdAt,
+                updatedAt, unverified);
     }
 
     public Document withStatus(Status newStatus, String reason, Instant at) {
         return new Document(id, patientId, familyId, documentType, docDate, facility, extractionJson,
-                confidenceOverall, newStatus, reason, modelFinal, costUsd, pageCount, createdAt, at);
+                confidenceOverall, newStatus, reason, modelFinal, costUsd, pageCount, createdAt, at,
+                unverified);
     }
 }

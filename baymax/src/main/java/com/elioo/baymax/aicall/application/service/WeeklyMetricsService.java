@@ -31,7 +31,7 @@ import java.util.stream.Stream;
 public class WeeklyMetricsService implements WeeklyMetricsUseCase {
 
     static final String DOCUMENT_HEADER = "document_id,calls,unpriced_calls,input_tokens,output_tokens,"
-            + "cost_usd,models,avg_confidence,first_call_at,last_call_at";
+            + "cost_usd,models,avg_confidence,unverified_items,first_call_at,last_call_at";
     static final String FAMILY_HEADER = "family_id,plan,patients,documents,nudges_sent,nudges_answered,days_since_last_document";
 
     private final AiCallLogPort callLog;
@@ -83,6 +83,7 @@ public class WeeklyMetricsService implements WeeklyMetricsUseCase {
                         r.costUsd() == null ? "" : r.costUsd().stripTrailingZeros().toPlainString(),
                         r.models() == null ? "" : r.models(),
                         r.avgConfidence() == null ? "" : String.format(java.util.Locale.ROOT, "%.4f", r.avgConfidence()),
+                        Long.toString(r.unverifiedItems()),
                         r.firstCallAt() == null ? "" : r.firstCallAt().toString(),
                         r.lastCallAt() == null ? "" : r.lastCallAt().toString())
                 .map(WeeklyMetricsService::csvEscape)
