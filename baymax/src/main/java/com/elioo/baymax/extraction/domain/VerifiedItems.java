@@ -18,17 +18,32 @@ public record VerifiedItems(
         List<Observation> observations,
         List<Medication> medications,
         List<FollowUpItem> followUps,
+        List<ContextLine> clinicalContext,
         Unverified unverified
 ) {
+    /**
+     * One verified line of the clinical narrative. Kept as a flat list with its section so it can be
+     * stored as a single JSONB column: these lines are read together, never queried field by field.
+     *
+     * @param section chief_complaint | history | examination | diagnosis | investigations_advised |
+     *                advice | referral
+     */
+    public record ContextLine(String section, String text, String duration, String cropKey) {
+    }
     /** Items the model reported but the server could not locate on the page, by section. */
-    public record Unverified(int values, int medicines, int followUp) {
+    public record Unverified(int values, int medicines, int followUp, int clinicalContext) {
+
+        /** Backwards-compatible: no clinical-context drops. */
+        public Unverified(int values, int medicines, int followUp) {
+            this(values, medicines, followUp, 0);
+        }
 
         public static Unverified none() {
-            return new Unverified(0, 0, 0);
+            return new Unverified(0, 0, 0, 0);
         }
 
         public int total() {
-            return values + medicines + followUp;
+            return values + medicines + followUp + clinicalContext;
         }
 
         public boolean any() {
@@ -54,7 +69,9 @@ public record VerifiedItems(
             UUID patientId,
             String name,
             String doseText,
+            String route,
             String frequencyText,
+            String timingText,
             String durationText,
             String cropKey,
             Instant at
@@ -70,10 +87,10 @@ public record VerifiedItems(
     }
 
     public int total() {
-        return observations.size() + medications.size() + followUps.size();
+        return observations.size() + medications.size() + followUps.size() + clinicalContext.size();
     }
 
     public static VerifiedItems empty() {
-        return new VerifiedItems(List.of(), List.of(), List.of(), Unverified.none());
+        return new VerifiedItems(List.of(), List.of(), List.of(), List.of(), Unverified.none());
     }
 }

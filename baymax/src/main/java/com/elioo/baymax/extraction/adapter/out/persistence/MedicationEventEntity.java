@@ -29,6 +29,9 @@ public class MedicationEventEntity {
     private String name;
     @Column("dose_text")
     private String doseText;
+    private String route;
+    @Column("timing_text")
+    private String timingText;
     @Column("frequency_text")
     private String frequencyText;
     @Column("duration_text")
@@ -42,7 +45,9 @@ public class MedicationEventEntity {
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("name", name);
         ObservationEntity.put(view, "dose_text", doseText);
+        ObservationEntity.put(view, "route", route);
         ObservationEntity.put(view, "frequency_text", frequencyText);
+        ObservationEntity.put(view, "timing_text", timingText);
         ObservationEntity.put(view, "duration_text", durationText);
         view.put("crop_key", cropKey);
         return view;

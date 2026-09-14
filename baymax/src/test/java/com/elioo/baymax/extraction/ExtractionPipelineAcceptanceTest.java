@@ -84,7 +84,10 @@ class ExtractionPipelineAcceptanceTest {
                {"name":"Ghost","value":"1.0","unit":"x",
                 "source_span":{"page":1,"start":900,"end":950}}],
              "medicines":[],"follow_up":[],
-             "confidence":{"overall":0.93,"values":0.93,"medicines":1.0,"follow_up":1.0}}
+             "clinical_context":{"chief_complaint":[],"history":[],"examination":[],
+                                 "diagnosis":[],"investigations_advised":[],"advice":[],"referral":null},
+             "confidence":{"overall":0.93,"values":0.93,"medicines":1.0,"follow_up":1.0,
+                           "clinical_context":1.0}}
             """;
 
     @BeforeAll

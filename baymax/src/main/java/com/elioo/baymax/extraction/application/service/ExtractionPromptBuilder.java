@@ -48,22 +48,50 @@ public class ExtractionPromptBuilder {
                   "document_date": "YYYY-MM-DD" | null,
                   "facility": string | null,          // hospital, clinic or lab name as printed
                   "values":    [ { "name", "canonical_name", "value", "unit", "ref_low", "ref_high", "flag", "source_span" } ],
-                  "medicines": [ { "name", "dose_text", "frequency_text", "duration_text", "source_span" } ],
+                  "medicines": [ { "name", "dose_text", "route", "frequency_text", "timing_text", "duration_text", "source_span" } ],
                   "follow_up": [ { "instruction", "due_date", "source_span" } ],
+                  "clinical_context": {
+                    "chief_complaint":        [ { "text", "duration", "source_span" } ],
+                    "history":                [ { "text", "source_span" } ],
+                    "examination":            [ { "text", "source_span" } ],
+                    "diagnosis":              [ { "text", "source_span" } ],
+                    "investigations_advised": [ { "text", "source_span" } ],
+                    "advice":                 [ { "text", "source_span" } ],
+                    "referral":               { "text", "source_span" } | null
+                  },
                   "free_text_summary": string | null, // one neutral sentence naming what the document is
-                  "confidence": { "overall": 0..1, "values": 0..1, "medicines": 0..1, "follow_up": 0..1 }
+                  "confidence": { "overall": 0..1, "values": 0..1, "medicines": 0..1, "follow_up": 0..1, "clinical_context": 0..1 }
                 }
                 """);
+
+        p.append("\nTRANSCRIBE, DO NOT INFER\n");
+        p.append("This is the rule that matters most. You are copying what is on the page, not working out ")
+                .append("what it means.\n");
+        p.append("- If the page has no diagnosis line, diagnosis is an empty list. Do not derive a diagnosis ")
+                .append("from the medicines, the tests ordered, or the symptoms. A page that prescribes ")
+                .append("insulin is not thereby a diagnosis of diabetes.\n");
+        p.append("- Do not connect items to each other. A diagnosis, a medicine and a test on the same page ")
+                .append("are three separate transcriptions, not a story.\n");
+        p.append("- A line that stops mid-sentence stays that way: \"Amenorrhoea due to\" is transcribed as ")
+                .append("\"Amenorrhoea due to\". Do not complete it.\n");
+        p.append("- Illegible means left out, not guessed. Lower your confidence instead.\n");
 
         p.append("\nRULES\n");
         p.append("- value and unit exactly as printed: \"8.2\" and \"%\", not \"8.20\" or \"percent\".\n");
         p.append("- flag is one of low, normal, high, critical, or null. Use the reference range printed on ")
                 .append("the page. Use critical only when the page itself marks it so.\n");
-        p.append("- frequency_text keeps the local convention, e.g. \"1+0+1\".\n");
+        p.append("- Medicine text is verbatim, every field: dose_text \"5 mg+20 mg\", frequency_text ")
+                .append("\"1+0+1\", timing_text \"রাত\", duration_text \"চলবে\". No expansion, no generic or ")
+                .append("molecule name, no normalisation, no translation. Brand name as written, including ")
+                .append("\"Tab.\" or \"Cap.\" if the page has it.\n");
+        p.append("- Bangla stays Bangla. Advice, timing and duration written in Bangla are transcribed in ")
+                .append("Bangla, not translated.\n");
+        p.append("- follow_up.due_date: resolve a relative instruction against document_date. ")
+                .append("\"৩ মাস পর আসবেন\" on a document dated 2026-08-06 gives due_date 2026-11-06, with the ")
+                .append("instruction still transcribed verbatim. Null only when the page states no timing.\n");
         p.append("- Dates as YYYY-MM-DD. A date with no year on the page is null, not guessed.\n");
-        p.append("- Bangla text: transcribe the value, keep the name as printed.\n");
-        p.append("- A prescription has medicines and usually no values. A lab report has values and usually ")
-                .append("no medicines. Do not pad the empty one.\n");
+        p.append("- A prescription has medicines and clinical context, usually no lab values. A lab report ")
+                .append("has values and usually no medicines. Do not pad the empty one.\n");
         p.append("- For an imaging report, record only what the radiologist wrote. Never describe the image.\n");
 
         p.append("\nSOURCE SPANS (required for every item)\n");
@@ -86,8 +114,8 @@ public class ExtractionPromptBuilder {
         }
 
         p.append("\nCONFIDENCE\n");
-        p.append("Report honestly. Handwriting you are unsure of, a smudged number, a cut-off page: all lower ")
-                .append("confidence. A low score costs nothing; a wrong number reaches a family.\n");
+        p.append("Report honestly, per section. Handwriting you are unsure of, a smudged number, a cut-off ")
+                .append("page: all lower confidence. A low score costs nothing; a wrong number reaches a family.\n");
 
         if (imagesAttached) {
             p.append("\nThe page images are attached in order. The OCR text below is a machine reading of them ")

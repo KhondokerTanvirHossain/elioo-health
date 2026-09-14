@@ -29,7 +29,8 @@ public record Document(
         int pageCount,
         Instant createdAt,
         Instant updatedAt,
-        VerifiedItems.Unverified unverified
+        VerifiedItems.Unverified unverified,
+        String clinicalContextJson
 ) {
     /** Backwards-compatible constructor: nothing unverified. */
     public Document(UUID id, UUID patientId, UUID familyId, String documentType, LocalDate docDate,
@@ -38,7 +39,7 @@ public record Document(
                     Instant createdAt, Instant updatedAt) {
         this(id, patientId, familyId, documentType, docDate, facility, extractionJson, confidenceOverall,
                 status, statusReason, modelFinal, costUsd, pageCount, createdAt, updatedAt,
-                VerifiedItems.Unverified.none());
+                VerifiedItems.Unverified.none(), null);
     }
 
     public Document {
@@ -61,12 +62,12 @@ public record Document(
     public Document withId(UUID newId) {
         return new Document(newId, patientId, familyId, documentType, docDate, facility, extractionJson,
                 confidenceOverall, status, statusReason, modelFinal, costUsd, pageCount, createdAt,
-                updatedAt, unverified);
+                updatedAt, unverified, clinicalContextJson);
     }
 
     public Document withStatus(Status newStatus, String reason, Instant at) {
         return new Document(id, patientId, familyId, documentType, docDate, facility, extractionJson,
                 confidenceOverall, newStatus, reason, modelFinal, costUsd, pageCount, createdAt, at,
-                unverified);
+                unverified, clinicalContextJson);
     }
 }

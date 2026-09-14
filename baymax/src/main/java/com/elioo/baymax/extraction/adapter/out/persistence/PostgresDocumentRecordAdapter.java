@@ -78,7 +78,9 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
                             cost_usd = :cost, page_count = :pages, updated_at = :updatedAt,
                             unverified_values = :unverifiedValues,
                             unverified_medicines = :unverifiedMedicines,
-                            unverified_follow_up = :unverifiedFollowUp
+                            unverified_follow_up = :unverifiedFollowUp,
+                            unverified_clinical_context = :unverifiedContext,
+                            clinical_context = CAST(:clinicalContext AS jsonb)
                         WHERE id = :id
                         """.formatted(S))
                 .bind("id", d.id())
@@ -96,6 +98,7 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
         spec = bindOrNull(spec, "reason", d.statusReason(), String.class);
         spec = bindOrNull(spec, "model", d.modelFinal(), String.class);
         spec = bindOrNull(spec, "cost", d.costUsd(), BigDecimal.class);
+        spec = bindOrNull(spec, "clinicalContext", d.clinicalContextJson(), String.class);
         return spec.fetch().rowsUpdated();
     }
 
@@ -127,15 +130,16 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
         return Flux.fromIterable(items.medications())
                 .concatMap(m -> db.sql("""
                                 INSERT INTO %s.medication_event
-                                    (patient_id, document_id, name, dose_text, frequency_text,
-                                     duration_text, action, crop_key, at)
-                                VALUES (:patient, :document, :name, :dose, :frequency, :duration,
-                                        'recorded', :crop, :at)
+                                    (patient_id, document_id, name, dose_text, route, frequency_text,
+                                     timing_text, duration_text, action, crop_key, at)
+                                VALUES (:patient, :document, :name, :dose, :route, :frequency,
+                                        :timing, :duration, 'recorded', :crop, :at)
                                 """.formatted(S))
                         .bind("patient", m.patientId()).bind("document", documentId)
                         .bind("name", m.name()).bind("crop", m.cropKey())
                         .bind("at", OffsetDateTime.ofInstant(m.at(), ZoneOffset.UTC))
                         .bind("dose", nullable(m.doseText())).bind("frequency", nullable(m.frequencyText()))
+                        .bind("route", nullable(m.route())).bind("timing", nullable(m.timingText()))
                         .bind("duration", nullable(m.durationText()))
                         .fetch().rowsUpdated())
                 .then();
