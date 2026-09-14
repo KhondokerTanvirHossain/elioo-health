@@ -12,4 +12,13 @@ public interface LlmClient {
 
     /** Short lower-case name used in logs and metadata, e.g. "groq", "anthropic", "bedrock". */
     String providerName();
+
+    /**
+     * Whether this client can send {@link com.elioo.healthcare.llm.model.LlmImage}s with a request.
+     * Clients that return false silently ignore any images on the request, so callers that need the
+     * image to be seen must check this first. Default false so existing clients need no change.
+     */
+    default boolean supportsImages() {
+        return false;
+    }
 }

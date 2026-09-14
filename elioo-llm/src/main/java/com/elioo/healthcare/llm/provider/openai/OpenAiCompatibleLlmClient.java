@@ -56,6 +56,11 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
     }
 
     @Override
+    public boolean supportsImages() {
+        return cfg.isSupportsImages();
+    }
+
+    @Override
     public String providerName() {
         return providerName;
     }
@@ -74,8 +79,9 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
         String body = buildBody(request, model);
         lastRequestBody.set(body);
         long started = System.currentTimeMillis();
-        log.info("[{}] chat/completions model={} promptChars={} json={}", providerName, model,
-                request.userPrompt().length(), request.jsonOutput());
+        log.info("[{}] chat/completions model={} promptChars={} images={} json={}", providerName, model,
+                request.userPrompt().length(), request.hasImages() ? request.images().size() : 0,
+                request.jsonOutput());
         log.debug("[{}] request body: {}", providerName, body);
 
         return webClient.post()
@@ -109,7 +115,16 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
         if (request.hasSystemPrompt()) {
             messages.addObject().put("role", "system").put("content", request.systemPrompt());
         }
-        messages.addObject().put("role", "user").put("content", request.userPrompt());
+        if (request.hasImages() && cfg.isSupportsImages()) {
+            // Vision models take an array of content parts; text-only models reject anything but a string.
+            ArrayNode parts = messages.addObject().put("role", "user").putArray("content");
+            parts.addObject().put("type", "text").put("text", request.userPrompt());
+            request.images().forEach(image -> parts.addObject()
+                    .put("type", "image_url")
+                    .putObject("image_url").put("url", image.asDataUri()));
+        } else {
+            messages.addObject().put("role", "user").put("content", request.userPrompt());
+        }
         if (request.jsonOutput()) {
             root.putObject("response_format").put("type", "json_object");
         }

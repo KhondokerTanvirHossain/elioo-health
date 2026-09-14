@@ -102,14 +102,20 @@ class MeteredLlmClientTest {
     }
 
     @Test
-    void failedCallWritesNoRowAndPropagatesTheError() {
+    void failedCallWritesAFailedRowAndPropagatesTheError() {
+        // BMX-2 changed this: a failed call used to write nothing, and now writes a row with status=failed,
+        // zero tokens and no cost, so an unhealthy provider is visible in the cost log.
         when(llm.invoke(any())).thenReturn(Mono.error(new LlmException("groq HTTP 429")));
 
         StepVerifier.create(metered.invoke(AiCallPurpose.EXTRACT, documentId, LlmRequest.standard("x")))
                 .expectError(LlmException.class)
                 .verify();
 
-        verify(port, never()).save(any());
+        ArgumentCaptor<AiCallRecord> saved = ArgumentCaptor.forClass(AiCallRecord.class);
+        verify(port).save(saved.capture());
+        assertThat(saved.getValue().status()).isEqualTo(AiCallRecord.Status.FAILED);
+        assertThat(saved.getValue().costUsd()).isNull();
+        assertThat(saved.getValue().inputTokens()).isZero();
     }
 
     @Test

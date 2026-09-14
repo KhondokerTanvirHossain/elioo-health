@@ -39,17 +39,18 @@ public class AiCallLogEntity {
     private Double confidence;
     @Column("created_at")
     private Instant createdAt;
+    private String status;
 
     static AiCallLogEntity from(AiCallRecord r) {
         return new AiCallLogEntity(r.id(), r.documentId(), r.purpose().dbValue(), r.provider(), r.model(),
                 r.inputTokens(), r.outputTokens(), r.costUsd(),
                 r.latencyMs() == null ? null : Math.toIntExact(Math.min(r.latencyMs(), Integer.MAX_VALUE)),
-                r.confidence(), r.createdAt());
+                r.confidence(), r.createdAt(), r.status().dbValue());
     }
 
     AiCallRecord toRecord() {
         return new AiCallRecord(id, documentId, AiCallPurpose.fromDbValue(purpose), provider, model,
                 inputTokens, outputTokens, costUsd, latencyMs == null ? null : latencyMs.longValue(),
-                confidence, createdAt);
+                confidence, createdAt, AiCallRecord.Status.fromDbValue(status));
     }
 }

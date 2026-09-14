@@ -3,6 +3,7 @@ package com.elioo.baymax.family.application.service;
 import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.common.error.FreeTierExceededException;
 import com.elioo.baymax.config.BaymaxProperties;
+import com.elioo.baymax.extraction.application.port.out.DocumentRecordPort;
 import com.elioo.baymax.family.application.port.in.FreeTierUseCase;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
@@ -21,6 +22,7 @@ import java.util.UUID;
 public class FreeTierService implements FreeTierUseCase {
 
     private final HealthRecordPort records;
+    private final DocumentRecordPort documents;
     private final BaymaxProperties properties;
     private final Clock clock;
 
@@ -44,7 +46,8 @@ public class FreeTierService implements FreeTierUseCase {
         }
         int max = properties.getFree().getMaxDocsPerMonth();
         YearMonth month = YearMonth.now(clock.withZone(ZoneOffset.UTC));
-        return records.countDocumentsInMonth(family.id(), month)
+        // Counted from the document table (BMX-2); before it existed this came from the storage ledger.
+        return documents.countInMonth(family.id(), month)
                 .flatMap(count -> count >= max
                         ? Mono.error(new FreeTierExceededException(FreeTierExceededException.DOCUMENTS,
                                 "free plan allows " + max + " document(s) per calendar month"))

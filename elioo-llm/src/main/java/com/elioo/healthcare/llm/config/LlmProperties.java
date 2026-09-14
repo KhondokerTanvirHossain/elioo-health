@@ -29,6 +29,13 @@ public class LlmProperties {
 
     @Data
     public static class OpenAiCompatible {
+        /**
+         * Whether the configured model accepts image content parts. Text-only models (e.g.
+         * openai/gpt-oss-120b) reject an array-shaped user message outright, so this must stay false
+         * for them; set it true for a vision model (e.g. qwen/qwen3.8-27b on Groq).
+         */
+        private boolean supportsImages = false;
+
         private String apiKey = "";
         private String baseUrl;
         private String model;

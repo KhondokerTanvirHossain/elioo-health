@@ -49,8 +49,22 @@ public class MeteredVisionOcr {
         return service.detectDocumentText(request)
                 .flatMap(response -> record(documentId, response, System.currentTimeMillis() - started)
                         .thenReturn(response))
-                .doOnError(e -> log.warn("[baymax] ocr call failed documentId={} after {}ms: {}",
-                        documentId, System.currentTimeMillis() - started, e.getMessage()));
+                .onErrorResume(error -> recordFailure(documentId, started, error).then(Mono.error(error)));
+    }
+
+    /**
+     * A failed OCR call is logged like a failed model call (BMX-2): zero tokens, no cost, real latency.
+     * An unhealthy provider then shows up in the cost log instead of only in the application log.
+     */
+    private Mono<AiCallRecord> recordFailure(UUID documentId, long started, Throwable error) {
+        long latency = System.currentTimeMillis() - started;
+        log.warn("[baymax] ocr call failed documentId={} after {}ms: {}", documentId, latency, error.getMessage());
+        return callLog.save(AiCallRecord.failed(documentId, AiCallPurpose.OCR, PROVIDER, MODEL, latency, Instant.now()))
+                .onErrorResume(writeError -> {
+                    log.error("[baymax] could not write failed ocr ai_call_log row documentId={}: {}",
+                            documentId, writeError.getMessage());
+                    return Mono.empty();
+                });
     }
 
     private Mono<AiCallRecord> record(UUID documentId, VisionOcrResponse response, long latency) {

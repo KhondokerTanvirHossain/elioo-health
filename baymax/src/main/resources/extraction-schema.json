@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Baymax document extraction",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["document_type", "values", "medicines", "follow_up", "confidence"],
+  "properties": {
+    "document_type": {
+      "type": "string",
+      "enum": ["lab_report", "prescription", "discharge_summary", "imaging_report", "other"]
+    },
+    "patient_hint": { "type": ["string", "null"], "maxLength": 200 },
+    "document_date": {
+      "type": ["string", "null"],
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "description": "ISO date as written on the document; null when the page does not state one"
+    },
+    "facility": { "type": ["string", "null"], "maxLength": 200 },
+    "values": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "value", "source_span"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "canonical_name": { "type": ["string", "null"], "maxLength": 64 },
+          "value": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "unit": { "type": ["string", "null"], "maxLength": 40 },
+          "ref_low": { "type": ["string", "null"], "maxLength": 40 },
+          "ref_high": { "type": ["string", "null"], "maxLength": 40 },
+          "flag": { "type": ["string", "null"], "enum": ["low", "normal", "high", "critical", null] },
+          "source_span": { "$ref": "#/$defs/source_span" }
+        }
+      }
+    },
+    "medicines": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "source_span"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "dose_text": { "type": ["string", "null"], "maxLength": 120 },
+          "frequency_text": { "type": ["string", "null"], "maxLength": 120 },
+          "duration_text": { "type": ["string", "null"], "maxLength": 120 },
+          "source_span": { "$ref": "#/$defs/source_span" }
+        }
+      }
+    },
+    "follow_up": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["instruction", "source_span"],
+        "properties": {
+          "instruction": { "type": "string", "minLength": 1, "maxLength": 400 },
+          "due_date": { "type": ["string", "null"], "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+          "source_span": { "$ref": "#/$defs/source_span" }
+        }
+      }
+    },
+    "free_text_summary": { "type": ["string", "null"], "maxLength": 2000 },
+    "confidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["overall"],
+      "properties": {
+        "overall": { "$ref": "#/$defs/confidence" },
+        "values": { "$ref": "#/$defs/confidence" },
+        "medicines": { "$ref": "#/$defs/confidence" },
+        "follow_up": { "$ref": "#/$defs/confidence" }
+      }
+    }
+  },
+  "$defs": {
+    "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+    "source_span": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["page", "start", "end"],
+      "description": "Character offsets into that page's OCR text; the server maps them to a bounding box and stores a crop.",
+      "properties": {
+        "page": { "type": "integer", "minimum": 1 },
+        "start": { "type": "integer", "minimum": 0 },
+        "end": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

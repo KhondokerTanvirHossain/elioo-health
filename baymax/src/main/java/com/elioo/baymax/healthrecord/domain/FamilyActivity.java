@@ -6,8 +6,8 @@ import java.util.UUID;
 /**
  * Per-family counters for the weekly pilot log.
  *
- * @param documentsInWindow distinct documents with stored images created in the export window
- * @param lastDocumentAt    most recent stored image for the family, any time; null when none
+ * @param documentsInWindow documents the family created in the export window
+ * @param lastDocumentAt    when the family last sent a document, any time; null when never
  */
 public record FamilyActivity(
         UUID familyId,

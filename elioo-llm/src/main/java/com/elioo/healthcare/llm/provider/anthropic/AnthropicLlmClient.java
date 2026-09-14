@@ -3,6 +3,9 @@ package com.elioo.healthcare.llm.provider.anthropic;
 import com.anthropic.client.AnthropicClient;
 import com.anthropic.client.okhttp.AnthropicOkHttpClient;
 import com.anthropic.errors.AnthropicServiceException;
+import com.anthropic.models.messages.Base64ImageSource;
+import com.anthropic.models.messages.ContentBlockParam;
+import com.anthropic.models.messages.ImageBlockParam;
 import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.OutputConfig;
@@ -13,6 +16,9 @@ import com.elioo.healthcare.llm.exception.LlmException;
 import com.elioo.healthcare.llm.model.LlmRequest;
 import com.elioo.healthcare.llm.model.LlmResponse;
 import com.elioo.healthcare.llm.model.TokenUsage;
+
+import java.util.ArrayList;
+import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -43,6 +49,11 @@ public class AnthropicLlmClient implements LlmClient {
         this.client = client;
         this.cfg = cfg;
         this.defaults = defaults;
+    }
+
+    @Override
+    public boolean supportsImages() {
+        return true;
     }
 
     @Override
@@ -77,9 +88,23 @@ public class AnthropicLlmClient implements LlmClient {
         MessageCreateParams.Builder b = MessageCreateParams.builder()
                 .model(request.hasCustomModelId() ? request.modelId() : cfg.getModel())
                 .maxTokens(request.maxTokens() != null ? request.maxTokens().longValue() : defaults.getDefaultMaxTokens())
-                .addUserMessage(request.userPrompt())
                 .thinking(ThinkingConfigAdaptive.builder().build())
                 .outputConfig(OutputConfig.builder().effort(effort(cfg.getEffort())).build());
+        if (request.hasImages()) {
+            // Images first, then the prompt: Anthropic recommends this order for document questions.
+            List<ContentBlockParam> blocks = new ArrayList<>();
+            request.images().forEach(image -> blocks.add(ContentBlockParam.ofImage(
+                    ImageBlockParam.builder()
+                            .source(Base64ImageSource.builder()
+                                    .data(image.base64())
+                                    .mediaType(mediaType(image.mediaType()))
+                                    .build())
+                            .build())));
+            blocks.add(ContentBlockParam.ofText(request.userPrompt()));
+            b.addUserMessageOfBlockParams(blocks);
+        } else {
+            b.addUserMessage(request.userPrompt());
+        }
         if (request.hasSystemPrompt()) {
             b.system(request.systemPrompt());
         }
@@ -88,6 +113,15 @@ public class AnthropicLlmClient implements LlmClient {
         }
         // temperature / top_p deliberately not sent: rejected by Claude Opus 5
         return b.build();
+    }
+
+    private static Base64ImageSource.MediaType mediaType(String ianaType) {
+        return switch (ianaType == null ? "" : ianaType.toLowerCase(java.util.Locale.ROOT)) {
+            case "image/png" -> Base64ImageSource.MediaType.IMAGE_PNG;
+            case "image/gif" -> Base64ImageSource.MediaType.IMAGE_GIF;
+            case "image/webp" -> Base64ImageSource.MediaType.IMAGE_WEBP;
+            default -> Base64ImageSource.MediaType.IMAGE_JPEG;
+        };
     }
 
     private static OutputConfig.Effort effort(String value) {

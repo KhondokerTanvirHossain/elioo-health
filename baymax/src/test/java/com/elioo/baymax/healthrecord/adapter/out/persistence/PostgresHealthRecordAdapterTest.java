@@ -97,18 +97,20 @@ class PostgresHealthRecordAdapterTest {
             sql("update baymax.family_account set owner_name = 'Rahim Uddin' where id = '" + family.id() + "'");
             assertThat(port.findFamily(family.id()).block().ownerName()).isEqualTo("Rahim Uddin");
 
-            // three documents this calendar month (seeded ledger rows) → 402; plan=family → allowed
+            // three documents this calendar month → 402; plan=family → allowed. Since BMX-2 the count comes
+            // from the document table, so seed documents as well as the images that belong to them.
             YearMonth thisMonth = YearMonth.now(ZoneOffset.UTC);
             String inMonth = thisMonth.atDay(2).atStartOfDay(ZoneOffset.UTC).toInstant().toString();
             String lastMonth = thisMonth.minusMonths(1).atDay(2).atStartOfDay(ZoneOffset.UTC).toInstant().toString();
             for (int i = 1; i <= 3; i++) {
                 UUID doc = UUID.randomUUID();
+                seedDocument(family.id(), ma.id(), doc, inMonth);
                 seedObject(family.id(), ma.id(), doc, "page-1", inMonth);
                 seedObject(family.id(), ma.id(), doc, "page-2", inMonth); // two objects, one document
             }
-            seedObject(family.id(), ma.id(), UUID.randomUUID(), "page-1", lastMonth); // not this month
-            assertThat(port.countDocumentsInMonth(family.id(), thisMonth).block()).isEqualTo(3L);
-            assertThat(port.countDocumentsInMonth(family.id(), thisMonth.minusMonths(1)).block()).isEqualTo(1L);
+            UUID older = UUID.randomUUID();
+            seedDocument(family.id(), ma.id(), older, lastMonth);
+            seedObject(family.id(), ma.id(), older, "page-1", lastMonth); // not this month
 
             StepVerifier.create(freeTier.checkCanUploadDocument(family.id()))
                     .expectErrorMatches(e -> e instanceof FreeTierExceededException f && f.reason().equals("free_tier_documents"))
@@ -131,6 +133,7 @@ class PostgresHealthRecordAdapterTest {
             List<UUID> docs = port.documentIdsOf(family.id()).collectList().block();
             assertThat(docs).hasSize(4);
             sql("delete from baymax.stored_object where family_id = '" + family.id() + "'"); // what DocumentStorageService does first
+            sql("delete from baymax.document where family_id = '" + family.id() + "'"); // documents reference the family
             assertThat(port.deleteFamily(family.id(), docs).block()).isEqualTo(1L);
             assertThat(scalar("select count(*) from baymax.share_member")).isEqualTo("0");
             assertThat(scalar("select count(*) from baymax.patient_profile")).isEqualTo("0");
@@ -138,6 +141,11 @@ class PostgresHealthRecordAdapterTest {
             assertThat(scalar("select count(*) from baymax.ai_call_log where document_id is null")).isEqualTo("1");
             assertThat(scalar("select count(*) from baymax.ai_call_log")).isEqualTo("1");
         });
+    }
+
+    private static void seedDocument(UUID family, UUID patient, UUID doc, String createdAt) throws Exception {
+        sql("insert into baymax.document (id, patient_id, family_id, status, page_count, created_at, updated_at) values ('"
+                + doc + "','" + patient + "','" + family + "','DONE',1,'" + createdAt + "','" + createdAt + "')");
     }
 
     private static void seedObject(UUID family, UUID patient, UUID doc, String name, String createdAt) throws Exception {
