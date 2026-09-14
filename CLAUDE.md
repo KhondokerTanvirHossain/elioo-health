@@ -65,6 +65,7 @@ Key files when changing behaviour:
 - Tests: TDD for behaviour changes. Unit tests mock ports; tests that call real clouds are gated by the env vars above.
 - Commits: conventional (`feat(scope): ...`, `fix(scope): ...`).
 - Branches: delete the feature branch (remote and local) as soon as its PR is squash-merged.
+- Regression guards: a test written to catch a specific bug is replayed against the pre-fix source before it counts as done. A guard that passes on the broken code is worse than none — it was written once here, anchored on the wrong text, extracted an empty method body, and went green over the very bug it existed to catch.
 - Branching (since 2026-09-12): `main` is protected; the "Build and test" check must pass and direct pushes are
   rejected, admins included. Work on a branch (`feat/...`, `fix/...`), open a PR with
   `env -u GITHUB_TOKEN gh pr create`, merge when green. Every merge to `main` deploys to production.
