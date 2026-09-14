@@ -80,19 +80,30 @@ class MeteredVisionOcrTest {
     }
 
     @Test
-    void missingVisionBeanFailsAtCallTimeWithoutARow() {
-        StepVerifier.create(metered(null, "0.0015").detectDocumentText(null, VisionOcrRequest.standard("aGk=")))
-                .expectError(IllegalStateException.class)
+    void failedOcrWritesAFailedRowAndStillPropagatesTheError() {
+        // BMX-2: an unhealthy OCR provider must be visible in the cost log, not only in the application log.
+        when(vision.detectDocumentText(any())).thenReturn(Mono.error(new RuntimeException("vision down")));
+        UUID documentId = UUID.randomUUID();
+
+        StepVerifier.create(metered(vision, "0.0015").detectDocumentText(documentId, VisionOcrRequest.standard("aGk=")))
+                .expectError(RuntimeException.class)
                 .verify();
-        verify(port, never()).save(any());
+
+        ArgumentCaptor<AiCallRecord> saved = ArgumentCaptor.forClass(AiCallRecord.class);
+        verify(port).save(saved.capture());
+        AiCallRecord row = saved.getValue();
+        assertThat(row.status()).isEqualTo(AiCallRecord.Status.FAILED);
+        assertThat(row.purpose()).isEqualTo(AiCallPurpose.OCR);
+        assertThat(row.documentId()).isEqualTo(documentId);
+        assertThat(row.costUsd()).as("a call that never happened costs nothing").isNull();
+        assertThat(row.inputTokens()).isZero();
+        assertThat(row.latencyMs()).isNotNull();
     }
 
     @Test
-    void failedOcrWritesNoRow() {
-        when(vision.detectDocumentText(any())).thenReturn(Mono.error(new RuntimeException("vision down")));
-
-        StepVerifier.create(metered(vision, "0.0015").detectDocumentText(null, VisionOcrRequest.standard("aGk=")))
-                .expectError(RuntimeException.class)
+    void aMissingVisionBeanWritesNoRowSinceNoCallWasEverMade() {
+        StepVerifier.create(metered(null, "0.0015").detectDocumentText(null, VisionOcrRequest.standard("aGk=")))
+                .expectError(IllegalStateException.class)
                 .verify();
         verify(port, never()).save(any());
     }

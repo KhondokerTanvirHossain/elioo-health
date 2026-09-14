@@ -3,6 +3,7 @@ package com.elioo.baymax.family.application.service;
 import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.common.error.FreeTierExceededException;
 import com.elioo.baymax.config.BaymaxProperties;
+import com.elioo.baymax.extraction.application.port.out.DocumentRecordPort;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import org.junit.jupiter.api.Test;
@@ -27,7 +28,8 @@ class FreeTierServiceTest {
     private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-09-13T23:30:00Z"), ZoneOffset.UTC);
 
     private final HealthRecordPort records = mock(HealthRecordPort.class);
-    private final FreeTierService service = new FreeTierService(records, new BaymaxProperties(), CLOCK);
+    private final DocumentRecordPort documents = mock(DocumentRecordPort.class);
+    private final FreeTierService service = new FreeTierService(records, documents, new BaymaxProperties(), CLOCK);
 
     private static FamilyAccount family(FamilyAccount.Plan plan) {
         return new FamilyAccount(UUID.randomUUID(), "+8801700000000", "Owner", plan, CLOCK.instant(), CLOCK.instant());
@@ -59,13 +61,13 @@ class FreeTierServiceTest {
         StepVerifier.create(service.checkCanAddPatient(family)).verifyComplete();
         StepVerifier.create(service.checkCanUploadDocument(family)).verifyComplete();
         verify(records, never()).countPatients(any());
-        verify(records, never()).countDocumentsInMonth(any(), any());
+        verify(documents, never()).countInMonth(any(), any());
     }
 
     @Test
     void threeDocumentsThisUtcMonthBlockTheFourth() {
         FamilyAccount family = family(FamilyAccount.Plan.FREE);
-        when(records.countDocumentsInMonth(eq(family.id()), eq(YearMonth.of(2026, 9)))).thenReturn(Mono.just(3L));
+        when(documents.countInMonth(eq(family.id()), eq(YearMonth.of(2026, 9)))).thenReturn(Mono.just(3L));
 
         StepVerifier.create(service.checkCanUploadDocument(family))
                 .expectErrorMatches(e -> e instanceof FreeTierExceededException f && f.reason().equals("free_tier_documents"))
@@ -75,7 +77,7 @@ class FreeTierServiceTest {
     @Test
     void twoDocumentsThisMonthAllowTheThird() {
         FamilyAccount family = family(FamilyAccount.Plan.FREE);
-        when(records.countDocumentsInMonth(eq(family.id()), eq(YearMonth.of(2026, 9)))).thenReturn(Mono.just(2L));
+        when(documents.countInMonth(eq(family.id()), eq(YearMonth.of(2026, 9)))).thenReturn(Mono.just(2L));
 
         StepVerifier.create(service.checkCanUploadDocument(family)).verifyComplete();
     }

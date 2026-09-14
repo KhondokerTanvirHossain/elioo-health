@@ -91,3 +91,23 @@ X-Baymax-Admin-Token: {{baymaxAdminToken}}
 ### Delete on request: hard delete, returns a receipt
 DELETE {{baseUrl}}/api/v1/baymax/families/{{familyId}}
 X-Baymax-Admin-Token: {{baymaxAdminToken}}
+
+### Baymax: upload a document (multipart; 1..n images or one PDF)
+POST {{baseUrl}}/api/v1/baymax/documents
+X-Baymax-Admin-Token: {{baymaxAdminToken}}
+Content-Type: multipart/form-data; boundary=----Boundary
+
+------Boundary
+Content-Disposition: form-data; name="patient_id"
+
+{{patientId}}
+------Boundary
+Content-Disposition: form-data; name="file"; filename="report.jpg"
+Content-Type: image/jpeg
+
+< ./report.jpg
+------Boundary--
+
+### Baymax: document status and, once DONE, the extracted items with their crop keys
+GET {{baseUrl}}/api/v1/baymax/documents/{{documentId}}
+X-Baymax-Admin-Token: {{baymaxAdminToken}}

@@ -5,7 +5,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -26,6 +28,8 @@ public class BaymaxProperties {
     private Admin admin = new Admin();
     private Storage storage = new Storage();
     private Free free = new Free();
+    private Extract extract = new Extract();
+    private List<Marker> markers = new ArrayList<>();
 
     @Data
     public static class Flyway {
@@ -100,5 +104,33 @@ public class BaymaxProperties {
         private int maxPatients = 1;
         /** Documents a free family may upload per calendar month (UTC). */
         private int maxDocsPerMonth = 3;
+    }
+
+    @Data
+    public static class Extract {
+        /** Send page images to the model alongside the OCR text, when the client supports images. */
+        private boolean sendImages = true;
+        /** Vision-capable model on the cheap provider; blank falls back to the provider default (text only). */
+        private String visionModel = "";
+        /** Model used when escalating (DR-3: the anthropic provider). */
+        private String strongModel = "claude-opus-5";
+        private int maxOutputTokens = 8192;
+        /** Below this overall confidence the document needs a retake; nothing but the document row is written. */
+        private double minConfidenceOverall = 0.80;
+        /** Below this, any single section (values, medicines, follow-up) forces a retake. */
+        private double minConfidenceSection = 0.70;
+        /** Below this overall confidence, or on any critical flag, the strong model is asked as well. */
+        private double strongModelThreshold = 0.85;
+        /** Refuse documents with more pages than this. */
+        private int maxPages = 10;
+        /** Padding around a source-span bounding box when cutting the crop, in pixels. */
+        private int cropPaddingPx = 12;
+    }
+
+    /** A chronic marker the pipeline recognises by any of its aliases. Config, not code. */
+    @Data
+    public static class Marker {
+        private String canonical;
+        private List<String> aliases = new ArrayList<>();
     }
 }

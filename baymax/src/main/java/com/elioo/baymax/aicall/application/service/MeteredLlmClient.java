@@ -61,9 +61,8 @@ public class MeteredLlmClient {
         return llmClient.invoke(request)
                 .flatMap(response -> record(purpose, documentId, response, started, confidenceOf)
                         .thenReturn(response))
-                .doOnError(e -> log.warn("[baymax] llm call failed purpose={} documentId={} provider={} after {}ms: {}",
-                        purpose.dbValue(), documentId, llmClient.providerName(),
-                        System.currentTimeMillis() - started, e.getMessage()));
+                .onErrorResume(error -> recordFailure(purpose, documentId, request, started, error)
+                        .then(Mono.error(error)));
     }
 
     private Mono<AiCallRecord> record(AiCallPurpose purpose, UUID documentId, LlmResponse response,
@@ -85,6 +84,26 @@ public class MeteredLlmClient {
                     log.error("[baymax] could not write ai_call_log row purpose={} provider={} model={} documentId={}: {}",
                             purpose.dbValue(), provider, model, documentId, e.getMessage(), e);
                     return Mono.just(record);
+                });
+    }
+
+    /**
+     * A failed call still costs wall-clock time and tells us a provider is unhealthy, so it is logged with
+     * zero tokens, no cost and the real latency (BMX-2). A failure to write that row must never replace the
+     * original error, so it is swallowed after logging.
+     */
+    private Mono<AiCallRecord> recordFailure(AiCallPurpose purpose, UUID documentId, LlmRequest request,
+                                             long started, Throwable error) {
+        long latency = System.currentTimeMillis() - started;
+        String model = request.hasCustomModelId() ? request.modelId() : "default";
+        log.warn("[baymax] llm call failed purpose={} documentId={} provider={} model={} after {}ms: {}",
+                purpose.dbValue(), documentId, llmClient.providerName(), model, latency, error.getMessage());
+        return callLog.save(AiCallRecord.failed(documentId, purpose, llmClient.providerName(), model,
+                        latency, Instant.now()))
+                .onErrorResume(writeError -> {
+                    log.error("[baymax] could not write failed ai_call_log row purpose={}: {}",
+                            purpose.dbValue(), writeError.getMessage());
+                    return Mono.empty();
                 });
     }
 

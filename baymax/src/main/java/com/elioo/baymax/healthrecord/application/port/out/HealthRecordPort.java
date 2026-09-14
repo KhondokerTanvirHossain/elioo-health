@@ -8,7 +8,6 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
-import java.time.YearMonth;
 import java.util.Collection;
 import java.util.UUID;
 
@@ -46,10 +45,10 @@ public interface HealthRecordPort {
 
     Mono<Long> countShareMembers(UUID patientId);
 
-    // --- documents (from the stored-image ledger until BMX-2 adds the document table) ------------
-
-    /** Distinct documents with stored images for the family in the calendar month (UTC). */
-    Mono<Long> countDocumentsInMonth(UUID familyId, YearMonth month);
+    // --- documents ------------------------------------------------------------------------------
+    // Counting documents moved to DocumentRecordPort with BMX-2; what remains here is the id lookup
+    // delete-on-request needs, which still reads the storage ledger so that images are removed even
+    // for an upload that never produced a document row.
 
     Flux<UUID> documentIdsOf(UUID familyId);
 

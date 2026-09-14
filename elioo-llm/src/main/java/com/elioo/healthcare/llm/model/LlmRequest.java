@@ -16,6 +16,8 @@ import java.util.Map;
  * @param metadata      Free-form metadata (optional)
  * @param jsonOutput    True when the caller will parse the reply as JSON; providers with a
  *                      JSON mode enable it, others rely on the prompt
+ * @param images        Images to send alongside the prompt (optional). Providers that cannot accept
+ *                      images ignore them; see {@code LlmClient.supportsImages()}.
  */
 public record LlmRequest(
         String userPrompt,
@@ -26,8 +28,30 @@ public record LlmRequest(
         Double topP,
         List<String> stopSequences,
         Map<String, Object> metadata,
-        boolean jsonOutput
+        boolean jsonOutput,
+        List<LlmImage> images
 ) {
+    /** Backwards-compatible constructor: no images. Every pre-BMX-2 caller lands here. */
+    public LlmRequest(String userPrompt, String systemPrompt, String modelId, Integer maxTokens,
+                      Double temperature, Double topP, List<String> stopSequences,
+                      Map<String, Object> metadata, boolean jsonOutput) {
+        this(userPrompt, systemPrompt, modelId, maxTokens, temperature, topP, stopSequences,
+                metadata, jsonOutput, List.of());
+    }
+
+    public LlmRequest {
+        images = images == null ? List.of() : List.copyOf(images);
+    }
+
+    /** This request with the given images attached. */
+    public LlmRequest withImages(List<LlmImage> attached) {
+        return new LlmRequest(userPrompt, systemPrompt, modelId, maxTokens, temperature, topP,
+                stopSequences, metadata, jsonOutput, attached);
+    }
+
+    public boolean hasImages() {
+        return images != null && !images.isEmpty();
+    }
     /** Create a standard request with provider defaults. */
     public static LlmRequest standard(String userPrompt) {
         return new LlmRequest(userPrompt, null, null, null, null, null, null, null, false);

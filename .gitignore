@@ -85,3 +85,9 @@ Thumbs.db
 RemoteSystemsTempFiles/
 HELP.md
 .env.supabase
+
+# Evaluation corpus: real patient documents. Never commit — PHI in a public repo.
+# Tanvir supplies the files locally; hand-labelled expectations live beside them.
+# The README is the labelling template and carries no patient data, so it is versioned; nothing else is.
+/docs/testset/*
+!/docs/testset/README.md

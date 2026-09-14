@@ -17,7 +17,6 @@ import reactor.core.publisher.Mono;
 
 import java.time.Instant;
 import java.time.OffsetDateTime;
-import java.time.YearMonth;
 import java.time.ZoneOffset;
 import java.util.Collection;
 import java.util.List;
@@ -91,16 +90,6 @@ public class PostgresHealthRecordAdapter implements HealthRecordPort {
     }
 
     @Override
-    public Mono<Long> countDocumentsInMonth(UUID familyId, YearMonth month) {
-        Instant from = month.atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant();
-        Instant to = month.plusMonths(1).atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant();
-        return db.sql("SELECT COUNT(DISTINCT document_id) FROM " + S + ".stored_object "
-                        + "WHERE family_id = :family AND created_at >= :from AND created_at < :to")
-                .bind("family", familyId).bind("from", odt(from)).bind("to", odt(to))
-                .map((row, meta) -> row.get(0, Long.class)).one().defaultIfEmpty(0L);
-    }
-
-    @Override
     public Flux<UUID> documentIdsOf(UUID familyId) {
         return db.sql("SELECT DISTINCT document_id FROM " + S + ".stored_object WHERE family_id = :family")
                 .bind("family", familyId).map((row, meta) -> row.get(0, UUID.class)).all();
@@ -156,9 +145,9 @@ public class PostgresHealthRecordAdapter implements HealthRecordPort {
         return db.sql("""
                         SELECT f.id AS family_id, f.plan,
                                (SELECT COUNT(*) FROM %1$s.patient_profile p WHERE p.family_id = f.id) AS patients,
-                               (SELECT COUNT(DISTINCT s.document_id) FROM %1$s.stored_object s
-                                 WHERE s.family_id = f.id AND s.created_at >= :from AND s.created_at < :to) AS documents,
-                               (SELECT MAX(s.created_at) FROM %1$s.stored_object s WHERE s.family_id = f.id) AS last_document_at
+                               (SELECT COUNT(*) FROM %1$s.document d
+                                 WHERE d.family_id = f.id AND d.created_at >= :from AND d.created_at < :to) AS documents,
+                               (SELECT MAX(d.created_at) FROM %1$s.document d WHERE d.family_id = f.id) AS last_document_at
                         FROM %1$s.family_account f
                         ORDER BY f.created_at
                         """.formatted(S))
