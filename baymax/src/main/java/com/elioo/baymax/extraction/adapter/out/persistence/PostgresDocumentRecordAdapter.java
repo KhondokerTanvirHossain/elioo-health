@@ -88,6 +88,7 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
                 .bind("unverifiedValues", d.unverified().values())
                 .bind("unverifiedMedicines", d.unverified().medicines())
                 .bind("unverifiedFollowUp", d.unverified().followUp())
+                .bind("unverifiedContext", d.unverified().clinicalContext())
                 .bind("status", d.status().name())
                 .bind("updatedAt", OffsetDateTime.ofInstant(d.updatedAt(), ZoneOffset.UTC));
         spec = bindOrNull(spec, "type", d.documentType(), String.class);
