@@ -2,6 +2,8 @@ package com.elioo.baymax.aicall.adapter.in.router;
 
 import com.elioo.baymax.adapter.in.router.BaymaxHealthRouter;
 import com.elioo.baymax.aicall.adapter.in.handler.AdminMetricsHandler;
+import com.elioo.baymax.common.error.ErrorResponseFilter;
+import com.elioo.baymax.storage.adapter.in.handler.StorageSelfTestHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.reactive.function.server.RouterFunction;
@@ -15,9 +17,12 @@ public class BaymaxAdminRouter {
     public static final String BASE_PATH = BaymaxHealthRouter.BASE_PATH + "/admin";
 
     @Bean
-    public RouterFunction<ServerResponse> baymaxAdminRoutes(AdminMetricsHandler metrics, AdminAuthFilter auth) {
+    public RouterFunction<ServerResponse> baymaxAdminRoutes(AdminMetricsHandler metrics, StorageSelfTestHandler storage,
+                                                            AdminAuthFilter auth, ErrorResponseFilter errors) {
         return RouterFunctions.route()
                 .GET(BASE_PATH + "/metrics/weekly", metrics::weekly)
+                .GET(BASE_PATH + "/storage/selftest", storage::selfTest)
+                .filter(errors)
                 .filter(auth)
                 .build();
     }

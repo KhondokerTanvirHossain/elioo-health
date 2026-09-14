@@ -10,6 +10,7 @@ import reactor.core.scheduler.Schedulers;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.InstanceProfileCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
@@ -66,9 +67,7 @@ public class S3StorageAdapter implements StoragePort, Closeable {
             throw new IllegalArgumentException("baymax.storage.bucket is required");
         }
         Region region = Region.of(cfg.getRegion());
-        AwsCredentialsProvider credentials = StringUtils.hasText(cfg.getAccessKey()) && StringUtils.hasText(cfg.getSecretKey())
-                ? StaticCredentialsProvider.create(AwsBasicCredentials.create(cfg.getAccessKey(), cfg.getSecretKey()))
-                : DefaultCredentialsProvider.create();
+        AwsCredentialsProvider credentials = credentialsProvider(cfg);
         S3Configuration serviceConfig = S3Configuration.builder().pathStyleAccessEnabled(cfg.isPathStyle()).build();
 
         S3ClientBuilder clientBuilder = S3Client.builder()
@@ -85,11 +84,29 @@ public class S3StorageAdapter implements StoragePort, Closeable {
             clientBuilder.endpointOverride(endpoint);
             presignerBuilder.endpointOverride(endpoint);
         }
-        log.info("[baymax] object storage: bucket={} region={} endpoint={} pathStyle={} sse={}",
+        log.info("[baymax] object storage: bucket={} region={} endpoint={} pathStyle={} sse={} credentials={}",
                 cfg.getBucket(), cfg.getRegion(), StringUtils.hasText(cfg.getEndpoint()) ? cfg.getEndpoint() : "aws",
-                cfg.isPathStyle(), StringUtils.hasText(cfg.getServerSideEncryption()) ? cfg.getServerSideEncryption() : "none");
+                cfg.isPathStyle(), StringUtils.hasText(cfg.getServerSideEncryption()) ? cfg.getServerSideEncryption() : "none",
+                cfg.getCredentials());
         return new S3StorageAdapter(clientBuilder.build(), presignerBuilder.build(), cfg.getBucket(),
                 cfg.getServerSideEncryption());
+    }
+
+    /** Static keys when given; otherwise the instance profile (DR-5) or the SDK default chain, as configured. */
+    static AwsCredentialsProvider credentialsProvider(BaymaxProperties.Storage cfg) {
+        boolean hasKeys = StringUtils.hasText(cfg.getAccessKey()) && StringUtils.hasText(cfg.getSecretKey());
+        return switch (cfg.getCredentials()) {
+            case STATIC -> {
+                if (!hasKeys) {
+                    throw new IllegalArgumentException("baymax.storage.credentials=static needs access-key and secret-key");
+                }
+                yield StaticCredentialsProvider.create(AwsBasicCredentials.create(cfg.getAccessKey(), cfg.getSecretKey()));
+            }
+            case INSTANCE_ROLE -> InstanceProfileCredentialsProvider.create();
+            case DEFAULT_CHAIN -> hasKeys
+                    ? StaticCredentialsProvider.create(AwsBasicCredentials.create(cfg.getAccessKey(), cfg.getSecretKey()))
+                    : DefaultCredentialsProvider.create();
+        };
     }
 
     @Override

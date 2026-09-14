@@ -33,3 +33,22 @@ is reached via the `anthropic` provider. Groq zero-retention terms are verified 
 **Why:** unblocks the build; pilot data is Tanvir's own families.
 
 **Supersedes:** none.
+
+## DR-4 | 2026-09-12 | Production object storage: self-hosted MinIO — SUPERSEDED same day by DR-5
+
+**Decision:** Production object storage: self-hosted MinIO on the pilot EC2 box, nightly off-box mirror,
+restore tested before week 0.
+
+**Why:** avoid storage lock-in.
+
+**Supersedes:** none. **Superseded by:** DR-5.
+
+## DR-5 | 2026-09-12 | Production object storage: AWS S3 via the instance role
+
+**Decision:** Production object storage: AWS S3 ap-south-1, private bucket (`elioo-baymax-prod`), SSE-S3,
+EC2 instance role, no static keys. MinIO is local-dev only.
+
+**Why:** durability and presigned URLs proven; zero ops during pilot; the S3-compatible port keeps MinIO as a
+later cost swap.
+
+**Supersedes:** DR-4.
