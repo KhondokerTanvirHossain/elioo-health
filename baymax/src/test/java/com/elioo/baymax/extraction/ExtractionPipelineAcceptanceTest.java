@@ -207,6 +207,15 @@ class ExtractionPipelineAcceptanceTest {
             assertThat(new java.math.BigDecimal(scalar(
                     "select cost_usd from baymax.document where id='" + created.id() + "'")))
                     .isEqualByComparingTo("0.00036");
+
+            // the "Ghost" value pointed at text that is not on the page: dropped, but counted, so a family
+            // is told their page was partly unreadable rather than quietly given less than they sent
+            assertThat(scalar("select unverified_values from baymax.document where id='" + created.id() + "'"))
+                    .isEqualTo("1");
+            assertThat(scalar("select unverified_medicines + unverified_follow_up from baymax.document where id='"
+                    + created.id() + "'")).isEqualTo("0");
+            assertThat(done.unverified().values()).isEqualTo(1);
+            assertThat(done.unverified().total()).isEqualTo(1);
         });
     }
 

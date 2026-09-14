@@ -35,9 +35,9 @@ class WeeklyMetricsServiceTest {
                 new FamilyActivity(UUID.fromString("33333333-3333-3333-3333-333333333333"), FamilyAccount.Plan.FAMILY, 2, 0, null)));
         when(port.perDocument(any(), any())).thenReturn(Flux.just(
                 new DocumentAiCost(doc, 3, 1, 4200, 900, new BigDecimal("0.00117000"),
-                        "gcp/vision-document-text-detection|groq/openai/gpt-oss-120b", 0.905,
+                        "gcp/vision-document-text-detection|groq/openai/gpt-oss-120b", 0.905, 2,
                         Instant.parse("2026-09-06T10:00:00Z"), Instant.parse("2026-09-06T10:00:09Z")),
-                new DocumentAiCost(null, 1, 1, 50, 10, null, "groq/llama", null,
+                new DocumentAiCost(null, 1, 1, 50, 10, null, "groq/llama", null, 0,
                         Instant.parse("2026-09-07T00:00:00Z"), Instant.parse("2026-09-07T00:00:00Z"))));
 
         StepVerifier.create(new WeeklyMetricsService(port, records).weeklyCsv(FROM, TO))
@@ -45,10 +45,12 @@ class WeeklyMetricsServiceTest {
                     List<String> lines = csv.lines().toList();
                     assertThat(lines.get(0)).isEqualTo("# documents from=2026-09-05T00:00:00Z to=2026-09-12T00:00:00Z (to exclusive)");
                     assertThat(lines.get(1)).isEqualTo(WeeklyMetricsService.DOCUMENT_HEADER);
+                    // unverified_items sits beside the cost: a cheap document with items we could not
+                    // locate is not the same as a cheap document that was read cleanly
                     assertThat(lines.get(2)).isEqualTo("11111111-1111-1111-1111-111111111111,3,1,4200,900,0.00117,"
-                            + "gcp/vision-document-text-detection|groq/openai/gpt-oss-120b,0.9050,"
+                            + "gcp/vision-document-text-detection|groq/openai/gpt-oss-120b,0.9050,2,"
                             + "2026-09-06T10:00:00Z,2026-09-06T10:00:09Z");
-                    assertThat(lines.get(3)).isEqualTo(",1,1,50,10,,groq/llama,,2026-09-07T00:00:00Z,2026-09-07T00:00:00Z");
+                    assertThat(lines.get(3)).isEqualTo(",1,1,50,10,,groq/llama,,0,2026-09-07T00:00:00Z,2026-09-07T00:00:00Z");
                     assertThat(lines.get(4)).isEmpty();
                     assertThat(lines.get(5)).startsWith("# families from=");
                     assertThat(lines.get(6)).isEqualTo(WeeklyMetricsService.FAMILY_HEADER);

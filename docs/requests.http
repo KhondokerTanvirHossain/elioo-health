@@ -108,6 +108,9 @@ Content-Type: image/jpeg
 < ./report.jpg
 ------Boundary--
 
-### Baymax: document status and, once DONE, the extracted items with their crop keys
+### Baymax: document status and, once DONE, the extracted items with their crop keys.
+### A DONE document that had items we could not locate on the page also carries:
+###   "unverified": { "values": 2, "medicines": 0, "follow_up": 1, "total": 3 }
+### The field is absent when nothing was dropped.
 GET {{baseUrl}}/api/v1/baymax/documents/{{documentId}}
 X-Baymax-Admin-Token: {{baymaxAdminToken}}
