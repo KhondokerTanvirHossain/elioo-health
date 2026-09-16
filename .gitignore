@@ -91,3 +91,6 @@ HELP.md
 # The README is the labelling template and carries no patient data, so it is versioned; nothing else is.
 /docs/testset/*
 !/docs/testset/README.md
+
+# Timestamped backups of the local env file — they contain live API keys
+.env*.bak.*
