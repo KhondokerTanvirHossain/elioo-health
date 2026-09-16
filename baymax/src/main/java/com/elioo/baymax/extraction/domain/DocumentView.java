@@ -21,12 +21,13 @@ public record DocumentView(
         List<Map<String, Object>> values,
         List<Map<String, Object>> medicines,
         List<Map<String, Object>> followUp,
+        Map<String, Object> clinicalContext,
         Map<String, Object> unverified
 ) {
     /** Status only: the document is still being worked on, or it needs a retake, or it failed. */
     public static DocumentView pending(Document document) {
         return new DocumentView(document.id().toString(), document.status().name(), document.statusReason(),
-                null, null, null, null, null, document.pageCount(), null, null, null, null);
+                null, null, null, null, null, document.pageCount(), null, null, null, null, null);
     }
 
     /**

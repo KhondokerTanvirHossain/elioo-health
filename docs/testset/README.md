@@ -50,6 +50,16 @@ means, worked out against `document_date`:
 `due_date` is empty only when the page states no timing at all. The nudge engine reads this field, so a
 missing date here becomes a reminder that never fires.
 
+**Blood pressure is two entries, never one.** A page that reads `130/80 mmHg` is labelled as `BP Systolic`
+= `130` and `BP Diastolic` = `80`, two separate rows in `values[]`. This is not a formatting preference: the
+canonical markers in `baymax.markers` are `bp_systolic` and `bp_diastolic` as distinct series, because trend
+detection has to see systolic move on its own. A compound `"130/80"` label scores a correct extraction as two
+misses and an invented item — which is exactly what happened across all six BP documents in the first eval,
+and it cost the run its credibility before anyone looked at the model.
+
+The same test applies to any other reading a page writes as one token but the system stores as two. If the
+marker list splits it, the label splits it.
+
 **No `generic_name` field in v1.** If the corpus shows that brand-to-generic mapping matters often enough,
 that is a finding to report, not a field to add quietly.
 
@@ -83,7 +93,8 @@ label everything legible on the page.
   "document_type": "prescription",
   "document_date": "2026-09-14",
   "values": [
-    { "name": "Blood Pressure", "value": "130/80", "unit": "mmHg" }
+    { "name": "BP Systolic", "value": "130", "unit": "mmHg" },
+    { "name": "BP Diastolic", "value": "80", "unit": "mmHg" }
   ],
   "clinical_context": {
     "chief_complaint": [

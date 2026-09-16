@@ -98,6 +98,7 @@ class BaymaxDocumentRouterTest {
                 "groq/gpt-oss", 1,
                 List.of(Map.of("name", "HbA1c", "value", "8.2", "crop_key", "k")),
                 List.of(), List.of(),
+                Map.of("diagnosis", List.of(Map.of("text", "Type 2 Diabetes Mellitus"))),
                 Map.of("values", 2, "medicines", 0, "follow_up", 1, "total", 3))));
 
         client.get().uri(PATH + "/" + document).header(AdminAuthFilter.HEADER, TOKEN)
@@ -106,7 +107,10 @@ class BaymaxDocumentRouterTest {
                 .expectBody()
                 .jsonPath("$.unverified.values").isEqualTo(2)
                 .jsonPath("$.unverified.follow_up").isEqualTo(1)
-                .jsonPath("$.unverified.total").isEqualTo(3);
+                .jsonPath("$.unverified.total").isEqualTo(3)
+                // persisted since V7 but never surfaced, which read as a clinical_context score of 0/40 —
+                // a missing field in this response, not a model that could not find the diagnosis
+                .jsonPath("$.clinical_context.diagnosis[0].text").isEqualTo("Type 2 Diabetes Mellitus");
     }
 
     @Test
@@ -114,13 +118,14 @@ class BaymaxDocumentRouterTest {
         UUID document = UUID.randomUUID();
         when(intake.view(document)).thenReturn(Mono.just(new DocumentView(
                 document.toString(), "DONE", null, "lab_report", null, null, 0.95, "groq/gpt-oss", 1,
-                List.of(), List.of(), List.of(), null)));
+                List.of(), List.of(), List.of(), null, null)));
 
         client.get().uri(PATH + "/" + document).header(AdminAuthFilter.HEADER, TOKEN)
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody()
-                .jsonPath("$.unverified").doesNotExist();
+                .jsonPath("$.unverified").doesNotExist()
+                .jsonPath("$.clinical_context").doesNotExist();
     }
 
     @Test

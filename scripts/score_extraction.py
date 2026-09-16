@@ -165,6 +165,14 @@ def score_one(report_path, stem, expected_path, latency_ms, result):
 
     entry = {
         "document": stem,
+        # per section, so one broken section cannot silently sink the headline: that is exactly how a
+        # clinical_context of 0/40 (an unexposed API field, not a model failure) hid behind a 26.5% number
+        "sections": {
+            "values":    {"expected": len(expected.get("values", [])),    "correct": v_hits, "invented": v_extra},
+            "medicines": {"expected": len(expected.get("medicines", [])), "correct": m_hits, "invented": m_extra},
+            "follow_up": {"expected": len(expected.get("follow_up", [])), "correct": f_hits, "invented": f_extra},
+            "clinical_context": {"expected": context_expected, "correct": context_correct, "invented": 0},
+        },
         "set": expected.get("set", "unknown"),
         "status": status,
         "model": result.get("model"),
@@ -217,6 +225,16 @@ def summarise(report_path, total, labelled):
     table("printed", [d for d in docs if d["set"] == "printed"])
     table("handwritten", [d for d in docs if d["set"] == "handwritten"])
     table("all", docs)
+
+    print("\n  per section (headline = values + medicines + follow_up + type/date):")
+    print(f"    {'section':<18}{'correct':>9}{'expected':>10}{'accuracy':>10}{'invented':>10}")
+    for name in ("values", "medicines", "follow_up", "clinical_context"):
+        e = sum(d.get("sections", {}).get(name, {}).get("expected", 0) for d in docs)
+        c = sum(d.get("sections", {}).get(name, {}).get("correct", 0) for d in docs)
+        i = sum(d.get("sections", {}).get(name, {}).get("invented", 0) for d in docs)
+        pct = f"{c / e * 100:5.1f}%" if e else "    n/a"
+        warn = "   <-- ZERO across a non-empty section: check the pipeline exposes it" if e and c == 0 else ""
+        print(f"    {name:<18}{c:>9}{e:>10}{pct:>10}{i:>10}{warn}")
 
     ctx_expected = sum(d.get("context_expected", 0) for d in docs)
     ctx_correct = sum(d.get("context_correct", 0) for d in docs)

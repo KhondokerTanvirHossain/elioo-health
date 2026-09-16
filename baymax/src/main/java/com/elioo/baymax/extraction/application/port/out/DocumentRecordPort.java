@@ -42,6 +42,12 @@ public interface DocumentRecordPort {
 
     Flux<Map<String, Object>> followUpsOf(UUID documentId);
 
+    /**
+     * The verified clinical narrative, grouped by section, as stored on the document. Persisted since V7
+     * but unreachable until now, which made every clinical_context score read as zero.
+     */
+    Mono<Map<String, Object>> clinicalContextOf(UUID documentId);
+
     // --- counts used by the free tier and the weekly export -------------------------------------
 
     /** Documents the family created in the calendar month, excluding ones that never got past intake. */

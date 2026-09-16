@@ -8,12 +8,19 @@
 # Prints counts, cost, latency and model only. Never a patient name, a value or any document text:
 # per-document detail goes to docs/testset/report-<run>.json, which is git-ignored with the corpus.
 #
-# The three runs the PO asked for, each one a separate invocation with different settings:
+# The three runs the PO asked for, each one a separate invocation with different settings.
+# RUN THEM IN THIS ORDER — cheapest first, and do not reorder:
 #
-#   BAYMAX_EXTRACT_SEND_IMAGES=false                                      scripts/evaluate-extraction.sh text-only
-#   BAYMAX_EXTRACT_SEND_IMAGES=true                                       scripts/evaluate-extraction.sh vision-cheap
-#   BAYMAX_EXTRACT_SEND_IMAGES=true LLM_PROVIDER=anthropic \
-#     BAYMAX_EXTRACT_STRONG_MODEL_THRESHOLD=1.0                           scripts/evaluate-extraction.sh strong
+#   1. BAYMAX_EXTRACT_SEND_IMAGES=true                                    scripts/evaluate-extraction.sh vision-cheap
+#   2. BAYMAX_EXTRACT_SEND_IMAGES=false                                   scripts/evaluate-extraction.sh text-only
+#   3. BAYMAX_EXTRACT_SEND_IMAGES=true LLM_PROVIDER=anthropic \
+#        BAYMAX_EXTRACT_STRONG_MODEL_THRESHOLD=1.0                        scripts/evaluate-extraction.sh strong
+#
+# Groq is roughly $0.009/doc and Anthropic two orders of magnitude more, so the cheap runs are what
+# validate the harness, the labels and the scorer. The first attempt spent $0.378 on an Anthropic run
+# that produced an unusable table because clinical_context was never exposed and the BP labels used a
+# convention the pipeline does not: both defects would have shown up just as clearly on a $0.09 run.
+# Run the strong tier last, once, and only after the cheap runs look sane.
 #
 # The last one forces escalation on every document by putting the threshold above any confidence.
 set -euo pipefail

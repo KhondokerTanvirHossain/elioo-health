@@ -1,6 +1,7 @@
 package com.elioo.baymax.extraction.adapter.out.persistence;
 
 import com.elioo.baymax.config.BaymaxSchema;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.elioo.baymax.extraction.application.port.out.DocumentRecordPort;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.VerifiedItems;
@@ -29,6 +30,7 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
     private static final String S = BaymaxSchema.NAME;
 
     private final DocumentRepository documents;
+    private final com.fasterxml.jackson.databind.ObjectMapper mapper;
     private final ObservationRepository observations;
     private final MedicationEventRepository medications;
     private final FollowUpRepository followUps;
@@ -193,6 +195,19 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
     @Override
     public Flux<Map<String, Object>> followUpsOf(UUID documentId) {
         return followUps.findByDocumentId(documentId).map(FollowUpEntity::toView);
+    }
+
+    @Override
+    public Mono<Map<String, Object>> clinicalContextOf(UUID documentId) {
+        return documents.findById(documentId)
+                .mapNotNull(DocumentEntity::getClinicalContext)
+                .handle((json, sink) -> {
+                    try {
+                        sink.next(mapper.readValue(json, new TypeReference<Map<String, Object>>() { }));
+                    } catch (Exception e) {
+                        log.warn("[baymax] could not read clinical_context for {}: {}", documentId, e.getMessage());
+                    }
+                });
     }
 
     @Override

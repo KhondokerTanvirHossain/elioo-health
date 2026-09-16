@@ -21,6 +21,7 @@ import reactor.core.scheduler.Schedulers;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -106,7 +107,8 @@ public class DocumentIntakeService implements DocumentIntakeUseCase {
         return Mono.zip(
                 documents.observationsOf(document.id()).collectList(),
                 documents.medicinesOf(document.id()).collectList(),
-                documents.followUpsOf(document.id()).collectList()
+                documents.followUpsOf(document.id()).collectList(),
+                documents.clinicalContextOf(document.id()).defaultIfEmpty(Map.of())
         ).map(items -> new DocumentView(
                 document.id().toString(),
                 document.status().name(),
@@ -118,6 +120,7 @@ public class DocumentIntakeService implements DocumentIntakeUseCase {
                 document.modelFinal(),
                 document.pageCount(),
                 items.getT1(), items.getT2(), items.getT3(),
+                items.getT4().isEmpty() ? null : items.getT4(),
                 DocumentView.unverifiedOf(document)));
     }
 
