@@ -64,7 +64,10 @@ Key files when changing behaviour:
 - Cloud adapters map SDK types to domain records at the boundary; nothing above `adapter.out` imports an AWS/GCP/Anthropic type.
 - Tests: TDD for behaviour changes. Unit tests mock ports; tests that call real clouds are gated by the env vars above.
 - Commits: conventional (`feat(scope): ...`, `fix(scope): ...`).
-- Branches: delete the feature branch (remote and local) as soon as its PR is squash-merged.
+- Branches: delete the feature branch (remote and local) as soon as its PR is squash-merged. **Never trust a
+  merge report — verify the commit is on `origin/main` before deleting a branch.** `gh pr merge` can print
+  what reads as success while the PR sits BEHIND and nothing merged; deleting on that reading loses the work.
+  Check `git log origin/main --oneline | grep <sha-or-PR-number>` first, then delete.
 - Regression guards: a test written to catch a specific bug is replayed against the pre-fix source before it counts as done. A guard that passes on the broken code is worse than none — it was written once here, anchored on the wrong text, extracted an empty method body, and went green over the very bug it existed to catch.
 - Staging: never `git add -A` or `git add .` in this repo — stage explicit paths. It has caused three
   incidents: an unrelated runbook swept into a feature branch, and a `.env.local` backup holding live API

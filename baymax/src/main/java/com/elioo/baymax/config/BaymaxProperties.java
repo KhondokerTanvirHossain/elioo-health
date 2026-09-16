@@ -113,7 +113,7 @@ public class BaymaxProperties {
         /** Vision-capable model on the cheap provider; blank falls back to the provider default (text only). */
         private String visionModel = "";
         /** Model used when escalating (DR-3: the anthropic provider). */
-        private String strongModel = "claude-opus-5";
+        private String strongModel = "claude-sonnet-5";   // DR-8: opus is too costly per document
         private int maxOutputTokens = 8192;
         /** Below this overall confidence the document needs a retake; nothing but the document row is written. */
         private double minConfidenceOverall = 0.80;

@@ -64,3 +64,19 @@ US buckets.
 **Supersedes:** relaxes BAYMAX.md hard constraint 6 ("LLM providers used only under zero-retention /
 no-training terms") **for the evaluation only**. The constraint applies again in full before pilot week 0,
 when real families' documents start arriving. Enabling Groq ZDR is on the pending list.
+
+## DR-8 | 2026-09-15 | Strong extraction tier = claude-sonnet-5, not opus-5
+
+**Decision:** Strong extraction tier = claude-sonnet-5, not opus-5.
+
+**Why:** opus measured $0.073–0.113/doc against a $0.15 per-document ceiling.
+
+**Supersedes:** none.
+
+*(DR-7 is unused: the PO's numbering jumped. Left as a gap rather than renumbered, so a ticket that cites
+DR-8 keeps meaning this record.)*
+
+*Engineering note:* `baymax.extract.strong-model` defaults to `claude-sonnet-5` and stays overridable per
+environment via `BAYMAX_EXTRACT_STRONG_MODEL`, so a run that wants opus can still have it without a deploy.
+Sonnet 5 lists at $2/$10 per 1M tokens against opus-5's $5/$25 — a 2.5x cut on both sides before any
+measurement of quality, which BMX-2's re-run provides.

@@ -172,6 +172,8 @@ class DocumentIntakeServiceTest {
                 Map.of("name", "HbA1c", "value", "8.2", "crop_key", "f/p/d/crop-v1.jpg")));
         when(documents.medicinesOf(id)).thenReturn(Flux.empty());
         when(documents.followUpsOf(id)).thenReturn(Flux.empty());
+        when(documents.clinicalContextOf(id)).thenReturn(Mono.just(
+                Map.of("diagnosis", List.of(Map.of("text", "Type 2 Diabetes Mellitus")))));
 
         StepVerifier.create(service.view(id))
                 .assertNext(view -> {
@@ -181,6 +183,32 @@ class DocumentIntakeServiceTest {
                     assertThat(view.model()).isEqualTo("groq/gpt-oss");
                     assertThat(view.values()).singleElement()
                             .satisfies(v -> assertThat(v).containsEntry("crop_key", "f/p/d/crop-v1.jpg"));
+                    assertThat(view.clinicalContext()).containsKey("diagnosis");
+                })
+                .verifyComplete();
+    }
+
+    /**
+     * A document whose clinical_context is absent must still return its values: the context is an extra
+     * section, not a precondition. This is a {@code Mono.zip}, which completes empty if any source does,
+     * so an empty context here would silently turn a good document into a 404-shaped empty response.
+     */
+    @Test
+    void aDocumentWithoutClinicalContextStillShowsItsValues() {
+        UUID id = UUID.randomUUID();
+        when(documents.find(id)).thenReturn(Mono.just(new Document(id, PATIENT, FAMILY, "lab_report",
+                java.time.LocalDate.parse("2026-03-14"), "Popular", "{}", 0.93, Document.Status.DONE,
+                null, "groq/gpt-oss", null, 1, NOW, NOW)));
+        when(documents.observationsOf(id)).thenReturn(Flux.just(
+                Map.of("name", "HbA1c", "value", "8.2", "crop_key", "f/p/d/crop-v1.jpg")));
+        when(documents.medicinesOf(id)).thenReturn(Flux.empty());
+        when(documents.followUpsOf(id)).thenReturn(Flux.empty());
+        when(documents.clinicalContextOf(id)).thenReturn(Mono.empty());
+
+        StepVerifier.create(service.view(id))
+                .assertNext(view -> {
+                    assertThat(view.values()).hasSize(1);
+                    assertThat(view.clinicalContext()).isNull();
                 })
                 .verifyComplete();
     }

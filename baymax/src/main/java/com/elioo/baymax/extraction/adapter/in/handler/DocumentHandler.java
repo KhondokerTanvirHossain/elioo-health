@@ -113,6 +113,7 @@ public class DocumentHandler {
         putIfPresent(body, "values", view.values());
         putIfPresent(body, "medicines", view.medicines());
         putIfPresent(body, "follow_up", view.followUp());
+        putIfPresent(body, "clinical_context", view.clinicalContext());
         // only present when something was dropped; a family that sent a clean page sees nothing here
         putIfPresent(body, "unverified", view.unverified());
         return body;
