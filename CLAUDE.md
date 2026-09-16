@@ -66,6 +66,16 @@ Key files when changing behaviour:
 - Commits: conventional (`feat(scope): ...`, `fix(scope): ...`).
 - Branches: delete the feature branch (remote and local) as soon as its PR is squash-merged.
 - Regression guards: a test written to catch a specific bug is replayed against the pre-fix source before it counts as done. A guard that passes on the broken code is worse than none — it was written once here, anchored on the wrong text, extracted an empty method body, and went green over the very bug it existed to catch.
+- Staging: never `git add -A` or `git add .` in this repo — stage explicit paths. It has caused three
+  incidents: an unrelated runbook swept into a feature branch, and a `.env.local` backup holding live API
+  keys staged for commit.
+- Any file matching `.env*`, backups included, is git-ignored and never staged. After creating one, verify
+  with `git check-ignore <file>` — and check the file itself, not a glob, which `-q` treats differently.
+- Model prices come from the provider's API (Groq `/v1/models` `pricing` field, the equivalent elsewhere),
+  never a docs or marketing page: the pricing page carried no Qwen rates at all while the API did. Every
+  entry in the price table records its source and the date fetched.
+- Never point a destructive command (`mv`, `rm`, a redirect that overwrites) at a glob that could match
+  production credentials. Copy, with an exact filename.
 - Branching (since 2026-09-12): `main` is protected; the "Build and test" check must pass and direct pushes are
   rejected, admins included. Work on a branch (`feat/...`, `fix/...`), open a PR with
   `env -u GITHUB_TOKEN gh pr create`, merge when green. Every merge to `main` deploys to production.
