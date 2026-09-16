@@ -57,7 +57,7 @@ public class ExtractionModelConfiguration {
     // The key the condition checks must be the key the branch below will actually use: a context holding
     // only a Groq key would otherwise satisfy an `or` and then throw inside the Anthropic branch, which
     // is how this first broke the application context test.
-    @Bean(name = VISION_CLIENT, autowireCandidate = false)
+    @Bean(VISION_CLIENT)
     @ConditionalOnExpression("T(org.springframework.util.StringUtils).hasText('${baymax.extract.vision-model:}')"
             + " and ("
             + "  ('${baymax.extract.vision-model:}'.toLowerCase().startsWith('claude-')"
@@ -65,7 +65,7 @@ public class ExtractionModelConfiguration {
             + "     : (T(org.springframework.util.StringUtils).hasText('${llm.groq.api-key:}')"
             + "        or T(org.springframework.util.StringUtils).hasText('${llm.openai.api-key:}')))"
             + ")")
-    public LlmClient baymaxVisionLlmClient(BaymaxProperties baymax, LlmProperties llm,
+    public BaymaxModelClient baymaxVisionLlmClient(BaymaxProperties baymax, LlmProperties llm,
                                            ObjectProvider<WebClient> webClients,
                                            ObjectProvider<ObjectMapper> mappers) {
         String model = baymax.getExtract().getVisionModel();
@@ -80,7 +80,7 @@ public class ExtractionModelConfiguration {
             cheap.setModel(model);
             cheap.setEffort(llm.getAnthropic().getEffort());
             log.info("[baymax] cheap extraction client: provider=anthropic model={}", model);
-            return new AnthropicLlmClient(cheap, llm);
+            return new BaymaxModelClient(new AnthropicLlmClient(cheap, llm));
         }
 
         LlmProperties.OpenAiCompatible source = "openai".equalsIgnoreCase(llm.getProvider())
@@ -96,8 +96,8 @@ public class ExtractionModelConfiguration {
         vision.setSupportsImages(true);
         String provider = "openai".equalsIgnoreCase(llm.getProvider()) ? "openai" : "groq";
         log.info("[baymax] vision extraction client: provider={} model={}", provider, model);
-        return new OpenAiCompatibleLlmClient(provider, vision, llm,
-                webClients.getIfAvailable(WebClient::create), mappers.getIfUnique(ObjectMapper::new));
+        return new BaymaxModelClient(new OpenAiCompatibleLlmClient(provider, vision, llm,
+                webClients.getIfAvailable(WebClient::create), mappers.getIfUnique(ObjectMapper::new)));
     }
 
     /**
@@ -110,17 +110,17 @@ public class ExtractionModelConfiguration {
      */
     // The condition covers the key as well as the model id: a @Bean method that returns null leaves a
     // null in the context and broke five container tests the last time this configuration did it.
-    @Bean(name = STRONG_CLIENT, autowireCandidate = false)
+    @Bean(STRONG_CLIENT)
     @ConditionalOnExpression("T(org.springframework.util.StringUtils).hasText('${baymax.extract.strong-model:}')"
             + " and T(org.springframework.util.StringUtils).hasText('${llm.anthropic.api-key:}')")
-    public LlmClient baymaxStrongLlmClient(BaymaxProperties baymax, LlmProperties llm) {
+    public BaymaxModelClient baymaxStrongLlmClient(BaymaxProperties baymax, LlmProperties llm) {
         String model = baymax.getExtract().getStrongModel();
         LlmProperties.Anthropic strong = new LlmProperties.Anthropic();
         strong.setApiKey(llm.getAnthropic().getApiKey());
         strong.setModel(model);
         strong.setEffort(llm.getAnthropic().getEffort());
         log.info("[baymax] strong extraction client: provider=anthropic model={}", model);
-        return new AnthropicLlmClient(strong, llm);
+        return new BaymaxModelClient(new AnthropicLlmClient(strong, llm));
     }
 
     /**
@@ -130,14 +130,22 @@ public class ExtractionModelConfiguration {
      */
     @Bean
     public ExtractionClients extractionClients(ObjectProvider<LlmClient> clients,
-                                               @Qualifier(VISION_CLIENT) ObjectProvider<LlmClient> visionClient,
-                                               @Qualifier(STRONG_CLIENT) ObjectProvider<LlmClient> strongClient,
+                                               @Qualifier(VISION_CLIENT) ObjectProvider<BaymaxModelClient> visionClient,
+                                               @Qualifier(STRONG_CLIENT) ObjectProvider<BaymaxModelClient> strongClient,
                                                BaymaxProperties properties) {
-        LlmClient vision = visionClient.getIfAvailable();
-        LlmClient strong = strongClient.getIfAvailable();
-        LlmClient cheap = clients.stream()
-                .filter(c -> c != vision && c != strong)
-                .findFirst().orElse(vision);
+        LlmClient vision = BaymaxModelClient.unwrap(visionClient.getIfAvailable());
+        LlmClient strong = BaymaxModelClient.unwrap(strongClient.getIfAvailable());
+        // MedScribe's own default client, if there is one. `stream().findFirst()` rather than
+        // `getIfAvailable()`: a context may legitimately hold more than one LlmClient (the acceptance
+        // test registers a stub alongside the auto-configured one) and getIfAvailable cannot choose
+        // between them, which silently handed the pipeline the wrong stub.
+        LlmClient cheap = clients.stream().findFirst().orElse(null);
+        // Never MedScribe's client when a Baymax vision client exists: under DR-9 the Baymax cheap tier
+        // IS the vision client, and letting MedScribe's Groq client answer a Baymax document is how the
+        // first haiku run silently produced a gpt-oss-120b table.
+        if (vision != null) {
+            cheap = vision;
+        }
         boolean sendImages = properties.getExtract().isSendImages() && vision != null && vision.supportsImages();
         return new ExtractionClients(cheap, vision, strong, sendImages);
     }
