@@ -58,7 +58,10 @@ fi
 echo '{"run":"'"$RUN_NAME"'","documents":[]}' > "$REPORT"
 TOTAL=0; LABELLED=0
 
-for FILE in "$TESTSET"/*.jpg "$TESTSET"/*.jfif "$TESTSET"/*.pdf; do
+# Every image format the corpus might arrive in. PageRenderer re-encodes whatever this hands it to JPEG
+# and sniffs PDFs by magic bytes, so the only thing that matters here is that the glob actually matches:
+# a corpus of .png against a glob of .jpg silently scores zero documents and looks like a clean run.
+for FILE in "$TESTSET"/*.jpg "$TESTSET"/*.jpeg "$TESTSET"/*.jfif "$TESTSET"/*.png "$TESTSET"/*.webp "$TESTSET"/*.pdf; do
   [ -e "$FILE" ] || continue
   BASE=$(basename "$FILE"); STEM="${BASE%.*}"
   EXPECTED="$TESTSET/expected/$STEM.json"
@@ -82,6 +85,14 @@ for FILE in "$TESTSET"/*.jpg "$TESTSET"/*.jfif "$TESTSET"/*.pdf; do
   printf '.'
 done
 echo
+
+# A run that scored nothing is a broken harness, not a result. Fail loudly rather than print an
+# empty table that reads like a clean pass.
+if [ "$LABELLED" -eq 0 ]; then
+  echo "ERROR: 0 labelled documents were run. The corpus is at $TESTSET and holds $(find "$TESTSET" -maxdepth 1 -type f ! -name '*.json' ! -name '*.md' | wc -l | tr -d ' ') file(s)." >&2
+  echo "Either the file glob above matches none of them, or expected/<stem>.json is missing." >&2
+  exit 1
+fi
 
 # --- cost comes from the cost log, not from a guess -------------------------------------------------
 COST_JSON=$(api "$BASE_URL/api/v1/baymax/admin/metrics/weekly" | tail -n +2 || true)
