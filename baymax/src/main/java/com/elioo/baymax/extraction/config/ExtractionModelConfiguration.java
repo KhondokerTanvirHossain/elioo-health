@@ -57,7 +57,7 @@ public class ExtractionModelConfiguration {
     // The key the condition checks must be the key the branch below will actually use: a context holding
     // only a Groq key would otherwise satisfy an `or` and then throw inside the Anthropic branch, which
     // is how this first broke the application context test.
-    @Bean(VISION_CLIENT)
+    @Bean(name = VISION_CLIENT, autowireCandidate = false)
     @ConditionalOnExpression("T(org.springframework.util.StringUtils).hasText('${baymax.extract.vision-model:}')"
             + " and ("
             + "  ('${baymax.extract.vision-model:}'.toLowerCase().startsWith('claude-')"
@@ -110,7 +110,7 @@ public class ExtractionModelConfiguration {
      */
     // The condition covers the key as well as the model id: a @Bean method that returns null leaves a
     // null in the context and broke five container tests the last time this configuration did it.
-    @Bean(STRONG_CLIENT)
+    @Bean(name = STRONG_CLIENT, autowireCandidate = false)
     @ConditionalOnExpression("T(org.springframework.util.StringUtils).hasText('${baymax.extract.strong-model:}')"
             + " and T(org.springframework.util.StringUtils).hasText('${llm.anthropic.api-key:}')")
     public LlmClient baymaxStrongLlmClient(BaymaxProperties baymax, LlmProperties llm) {
