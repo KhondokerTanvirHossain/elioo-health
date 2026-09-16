@@ -80,3 +80,25 @@ DR-8 keeps meaning this record.)*
 environment via `BAYMAX_EXTRACT_STRONG_MODEL`, so a run that wants opus can still have it without a deploy.
 Sonnet 5 lists at $2/$10 per 1M tokens against opus-5's $5/$25 — a 2.5x cut on both sides before any
 measurement of quality, which BMX-2's re-run provides.
+
+## DR-9 | 2026-09-15 | Extraction tiers: cheap = claude-haiku-4-5, strong = claude-sonnet-5; Groq dropped
+
+**Decision:** Extraction tiers: cheap default = claude-haiku-4-5, strong = claude-sonnet-5. Groq dropped —
+free-tier cap unshippable, paid tier declined.
+
+**Why:** the cheap tier must actually run; both Anthropic tiers sit under the $0.15/doc ceiling.
+
+**Supersedes:** DR-3, DR-6, DR-8.
+
+*Engineering note:* Groq's free tier caps **output** at 1,000 tokens/minute. One document declares ~1,810
+expected output tokens, so Groq returns HTTP 429 before the model runs — measured directly: `max_tokens:
+900` returns 200, `max_tokens: 1810` returns 429. This is a production ceiling of roughly one document per
+two minutes across all families, not an eval artefact, and no pacing or call-splitting fixes a per-minute
+budget. Lowering `max_tokens` under the cap would truncate the JSON mid-object and fail schema validation
+instead — a visible failure traded for a silent one.
+
+The Groq client stays in `elioo-llm` and in the config; it is unused by Baymax, not deleted, and returns as
+the cheap tier if the account is ever upgraded. MedScribe is untouched and still runs Groq by default.
+
+DR-6 is superseded as a consequence rather than on its merits: it relaxed the zero-retention constraint for
+the Groq evaluation run, and there is no longer a Groq run. Hard constraint 6 applies in full again.

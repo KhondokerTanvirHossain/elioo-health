@@ -56,4 +56,33 @@ class AnthropicLlmClientTest {
                 .isInstanceOf(LlmException.class)
                 .hasMessageContaining("refused");
     }
+
+    /**
+     * Haiku 4.5 answers "adaptive thinking is not supported on this model" (400) if either parameter is
+     * sent, so the cheap extraction tier would fail on every document. Verified against the live API on
+     * 2026-09-17, then pinned here.
+     */
+    @Test
+    void haikuGetsNeitherThinkingNorEffort() {
+        MessageCreateParams p = client().buildParams(
+                LlmRequest.custom("hi", null, "claude-haiku-4-5-20251001", 300, null));
+        assertThat(p.thinking()).isEmpty();
+        assertThat(p.outputConfig()).isEmpty();
+        assertThat(p.maxTokens()).isEqualTo(300L);
+    }
+
+    @Test
+    void sonnetStillGetsThinkingAndEffort() {
+        MessageCreateParams p = client().buildParams(
+                LlmRequest.custom("hi", null, "claude-sonnet-5", 300, null));
+        assertThat(p.thinking()).isPresent();
+        assertThat(p.outputConfig()).isPresent();
+    }
+
+    /** An unrecognised id is assumed modern: better a loud 400 than a silent downgrade. */
+    @Test
+    void anUnknownModelKeepsTheModernParameters() {
+        assertThat(AnthropicLlmClient.supportsAdaptiveThinking("claude-something-7")).isTrue();
+        assertThat(AnthropicLlmClient.supportsAdaptiveThinking("claude-haiku-9")).isFalse();
+    }
 }

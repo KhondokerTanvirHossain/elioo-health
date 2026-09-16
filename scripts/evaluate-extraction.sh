@@ -8,21 +8,26 @@
 # Prints counts, cost, latency and model only. Never a patient name, a value or any document text:
 # per-document detail goes to docs/testset/report-<run>.json, which is git-ignored with the corpus.
 #
-# The three runs the PO asked for, each one a separate invocation with different settings.
-# RUN THEM IN THIS ORDER — cheapest first, and do not reorder:
+# The two runs that set the tier policy (DR-9), cheapest first:
 #
-#   1. BAYMAX_EXTRACT_SEND_IMAGES=true                                    scripts/evaluate-extraction.sh vision-cheap
-#   2. BAYMAX_EXTRACT_SEND_IMAGES=false                                   scripts/evaluate-extraction.sh text-only
-#   3. BAYMAX_EXTRACT_SEND_IMAGES=true LLM_PROVIDER=anthropic \
-#        BAYMAX_EXTRACT_STRONG_MODEL_THRESHOLD=1.0                        scripts/evaluate-extraction.sh strong
+#   A. BAYMAX_EXTRACT_VISION_MODEL=claude-haiku-4-5 \
+#        BAYMAX_EXTRACT_STRONG_MODEL_THRESHOLD=0.0                        scripts/evaluate-extraction.sh haiku
+#   B. BAYMAX_EXTRACT_VISION_MODEL=claude-sonnet-5 \
+#        BAYMAX_EXTRACT_STRONG_MODEL_THRESHOLD=0.0                        scripts/evaluate-extraction.sh sonnet
 #
-# Groq is roughly $0.009/doc and Anthropic two orders of magnitude more, so the cheap runs are what
-# validate the harness, the labels and the scorer. The first attempt spent $0.378 on an Anthropic run
-# that produced an unusable table because clinical_context was never exposed and the BP labels used a
-# convention the pipeline does not: both defects would have shown up just as clearly on a $0.09 run.
-# Run the strong tier last, once, and only after the cheap runs look sane.
+# Threshold 0.0 disables the confidence path (`confidence < 0.0` is never true) so each run measures ONE
+# model on its own. Leaving it at the default 0.85 would let a low-confidence haiku document silently
+# escalate to sonnet, and the haiku table would then be reporting sonnet's answers — the tier comparison
+# has to hold the model fixed. Note a `critical` flag still forces escalation regardless of threshold; no
+# document in the current corpus has triggered that, but check `model_final` in the report if one ever
+# does, because a mixed-model table is not a tier measurement.
 #
-# The last one forces escalation on every document by putting the threshold above any confidence.
+# The Groq text-only run is gone with DR-9: it existed to price the Groq text model, and Groq's free tier
+# caps output at 1,000 tokens/min against the ~1,810 a document declares, so it cannot complete a run.
+#
+# Run the cheaper tier first. The first eval attempt spent $0.378 on a strong-tier run that produced an
+# unusable table because clinical_context was never exposed and the BP labels used a convention the
+# pipeline does not — both defects would have shown up just as clearly on the cheap tier.
 set -euo pipefail
 
 RUN_NAME="${1:-run}"
@@ -36,6 +41,10 @@ POLL_SECONDS="${POLL_SECONDS:-180}"
 command -v jq >/dev/null || { echo "jq is required"; exit 1; }
 
 api() { curl -sS -H "X-Baymax-Admin-Token: $TOKEN" "$@"; }
+
+# GNU date has %3N; BSD/macOS date does not — it prints a literal "N" and still exits 0, so a
+# `date ... || python3 ...` fallback never fires and the arithmetic below dies mid-run. Use python.
+now_ms() { python3 -c 'import time;print(int(time.time()*1000))'; }
 
 # --- a family and a patient to own the run, on the paid plan so the free tier does not stop us ----
 echo "setting up a scratch family..."
@@ -69,7 +78,7 @@ for FILE in "$TESTSET"/*.jpg "$TESTSET"/*.jpeg "$TESTSET"/*.jfif "$TESTSET"/*.pn
   [ -f "$EXPECTED" ] || continue
   LABELLED=$((LABELLED + 1))
 
-  START=$(date +%s%3N 2>/dev/null || python3 -c 'import time;print(int(time.time()*1000))')
+  START=$(now_ms)
   DOC=$(api -F "patient_id=$PATIENT" -F "file=@$FILE" "$BASE_URL/api/v1/baymax/documents" | jq -r .document_id)
 
   STATUS="PROCESSING"
@@ -79,7 +88,7 @@ for FILE in "$TESTSET"/*.jpg "$TESTSET"/*.jpeg "$TESTSET"/*.jfif "$TESTSET"/*.pn
     case "$STATUS" in DONE|NEEDS_RETAKE|FAILED) break ;; esac
     sleep 1
   done
-  END=$(date +%s%3N 2>/dev/null || python3 -c 'import time;print(int(time.time()*1000))')
+  END=$(now_ms)
 
   python3 scripts/score_extraction.py "$REPORT" "$STEM" "$EXPECTED" "$((END - START))" <<< "$RESULT"
   printf '.'
