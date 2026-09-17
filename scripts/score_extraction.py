@@ -140,6 +140,12 @@ def match_medicines(expected, actual):
     return hits, misses, len(remaining)
 
 
+# follow_up joins the headline only once the corpus can measure it. Batch 1 is ten prescriptions of which
+# one states a follow-up, so its 0/1 said nothing about the pipeline (PO, 2026-09-17: a corpus fact, excluded
+# until a corpus with follow-ups exists). Below this many labelled follow-ups the section is reported and
+# not counted, exactly as clinical_context is.
+MIN_FOLLOW_UPS_FOR_HEADLINE = 5
+
 CONTEXT_SECTIONS = ("chief_complaint", "history", "examination", "diagnosis",
                     "investigations_advised", "advice")
 
@@ -292,12 +298,22 @@ def summarise(report_path, total, labelled):
         report = json.load(f)
     docs = report["documents"]
 
+    labelled_follow_ups = sum(d.get("sections", {}).get("follow_up", {}).get("expected", 0) for d in docs)
+    count_follow_up = labelled_follow_ups >= MIN_FOLLOW_UPS_FOR_HEADLINE
+
+    def headline(r):
+        """(correct, expected) for one document, with follow_up left out while the corpus cannot measure it."""
+        fu = r.get("sections", {}).get("follow_up", {})
+        if count_follow_up:
+            return r["correct_items"], r["expected_items"]
+        return r["correct_items"] - fu.get("correct", 0), r["expected_items"] - fu.get("expected", 0)
+
     def table(name, rows):
         if not rows:
             print(f"  {name:<14} no labelled documents")
             return
-        wanted = sum(r["expected_items"] for r in rows)
-        correct = sum(r["correct_items"] for r in rows)
+        wanted = sum(headline(r)[1] for r in rows)
+        correct = sum(headline(r)[0] for r in rows)
         extra = sum(r["extra_items"] for r in rows)
         no_crop = sum(r["items_without_crop"] for r in rows)
         done = [r for r in rows if r["status"] == "DONE"]
@@ -316,7 +332,11 @@ def summarise(report_path, total, labelled):
     table("handwritten", [d for d in docs if d["set"] == "handwritten"])
     table("all", docs)
 
-    print("\n  per section (headline = values + medicines + follow_up + type/date):")
+    if count_follow_up:
+        print("\n  per section (headline = values + medicines + follow_up + type/date):")
+    else:
+        print(f"\n  per section (headline = values + medicines + type/date; follow_up excluded: the corpus labels "
+              f"{labelled_follow_ups} follow-up(s), fewer than {MIN_FOLLOW_UPS_FOR_HEADLINE} — a corpus fact, not a score):")
     print(f"    {'section':<18}{'correct':>9}{'expected':>10}{'accuracy':>10}{'invented':>10}{'dropped':>9}")
     for name in ("values", "medicines", "follow_up", "clinical_context"):
         e = sum(d.get("sections", {}).get(name, {}).get("expected", 0) for d in docs)
@@ -324,7 +344,9 @@ def summarise(report_path, total, labelled):
         i = sum(d.get("sections", {}).get(name, {}).get("invented", 0) for d in docs)
         dr = sum(d.get("sections", {}).get(name, {}).get("dropped", 0) for d in docs)
         pct = f"{c / e * 100:5.1f}%" if e else "    n/a"
-        warn = "   <-- ZERO across a non-empty section: check the pipeline exposes it" if e and c == 0 else ""
+        excluded = name == "follow_up" and not count_follow_up
+        warn = "   (excluded from headline)" if excluded else (
+            "   <-- ZERO across a non-empty section: check the pipeline exposes it" if e and c == 0 else "")
         if dr:
             warn += f"   <-- {dr} item(s) the model returned were dropped for having no crop"
         print(f"    {name:<18}{c:>9}{e:>10}{pct:>10}{i:>10}{dr:>9}{warn}")

@@ -87,9 +87,23 @@ that is a finding to report, not a field to add quietly.
 
 Empty string and absent mean the same thing. Write `""` or omit the key, whichever is easier.
 
+## What this corpus is
+
+**Batch 1 is prescriptions only** — ten printed prescriptions, all from the same clinic style. Read every number
+it produces with that in mind:
+
+- The `values[]` score is **not a lab-report measurement**. The values here are blood-pressure readings written
+  on prescriptions. Reference ranges, flags and trend detection are unmeasured on real documents until batch 2.
+- Only 1 of 10 documents states a follow-up timing, so **`follow_up` is excluded from the headline** until a
+  corpus with follow-ups exists (the scorer counts it once at least 5 are labelled). Its 0/1 here was a corpus
+  fact, not a pipeline score — and the one item was in fact transcribed by every model and lost to crop
+  resolution, which the `dropped` column now shows.
+- Batch 2 (~10 printed lab reports) and batch 3 (~10 handwritten prescriptions) are deferred; both gate pilot
+  week 0, not the build.
+
 ## What is scored
 
-The headline accuracy is `values`, `medicines` and `follow_up`. `clinical_context` is scored and reported
+The headline accuracy is `values`, `medicines` and — once the corpus labels at least 5 of them — `follow_up`. `clinical_context` is scored and reported
 **informationally** — it matters for the Bangla explanation later, but it is free text and a looser match,
 so it does not move the headline number.
 

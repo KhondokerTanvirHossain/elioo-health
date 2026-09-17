@@ -54,6 +54,19 @@ MedScribe is becoming Baymax: a WhatsApp-first health-memory assistant for Bangl
 ## Proactive engine (v1 rules)
 follow_up_due (T-2 days), medicine_changed (on new prescription diff), trend (3 consecutive readings wrong direction on configured markers), silence (chronic patient, no document ~60 days), pre_visit_summary (auto, T-1 day of follow_up).
 
+*Corpus finding (batch 1, ten printed prescriptions, 2026-09-17):* only 1 of 10 prescriptions states a follow-up
+timing, so `follow_up_due` and `pre_visit_summary` fire on ~10% of prescriptions on this corpus. **Proposed, not
+built — belongs to BMX-8:** a rule named `course_ending` that derives an end date from `medicines[].duration_text`
++ `document_date` and nudges at T-1; duration text is present on most prescriptions where follow-up timing is not.
+
+## What the evaluation corpus does and does not measure
+Batch 1 (docs/testset, ten documents) is **prescriptions only**. The `values[]` score is therefore NOT a lab-report
+measurement: the values on these pages are blood-pressure readings written on prescriptions. Reference ranges,
+flags and trend detection are **unmeasured on real documents** until a lab-report batch exists. `follow_up` is
+excluded from the headline accuracy until a corpus with follow-ups exists (1 of 10 here). Corpus expansion is
+deferred — batch 2 (~10 printed lab reports) and batch 3 (~10 handwritten prescriptions) both gate pilot week 0,
+not the build (PO, 2026-09-17).
+
 ## Metrics to instrument from day one
 Per document: cost, model, confidence, review outcome, correction count. Cost is logged at list price (e.g. Vision at $0.0015/image even inside the free tier): the export measures marginal cost at scale, not this month's bill. Per family: documents/month, nudges sent/answered, days since last document, tier. Weekly export for the pilot log.
 
@@ -64,4 +77,4 @@ Done / Deviations / Open questions / Cost & metrics / Next
 ```
 
 ## Pending from Tanvir (do not guess)
-Public brand name · **Confirm Anthropic retention posture before pilot week 0** (DR-9 dropped Groq, so the Groq ZDR item is moot) · Meta WhatsApp BD pricing & healthcare template policy · the 5–6 chronic markers for trend detection · TTS provider · BD data-protection law status.
+Public brand name · **Batch 2: ~10 printed lab reports — blocking pilot week 0** · **Batch 3: ~10 handwritten prescriptions — blocking pilot week 0** · Label verification pass on batch 1 (43 numeral fields, docs 2/6/8, doc 8 forms, follow-up count) · **Confirm Anthropic retention posture before pilot week 0** (DR-9 dropped Groq, so the Groq ZDR item is moot) · Meta WhatsApp BD pricing & healthcare template policy · the 5–6 chronic markers for trend detection · TTS provider · BD data-protection law status.
