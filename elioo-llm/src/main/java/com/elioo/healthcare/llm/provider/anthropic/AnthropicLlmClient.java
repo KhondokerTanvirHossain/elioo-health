@@ -69,7 +69,8 @@ public class AnthropicLlmClient implements LlmClient {
         MessageCreateParams params = buildParams(request);
         long started = System.currentTimeMillis();
         log.info("[anthropic] messages.create model={} promptChars={} effort={}", params.model(),
-                request.userPrompt().length(), cfg.getEffort());
+                request.userPrompt().length(),
+                supportsAdaptiveThinking(params.model().toString()) ? cfg.getEffort() : "n/a");
         log.debug("[anthropic] user prompt: {}", request.userPrompt());
 
         return Mono.fromCallable(() -> client.messages().create(params))
@@ -85,11 +86,18 @@ public class AnthropicLlmClient implements LlmClient {
     }
 
     MessageCreateParams buildParams(LlmRequest request) {
+        String model = request.hasCustomModelId() ? request.modelId() : cfg.getModel();
         MessageCreateParams.Builder b = MessageCreateParams.builder()
-                .model(request.hasCustomModelId() ? request.modelId() : cfg.getModel())
-                .maxTokens(request.maxTokens() != null ? request.maxTokens().longValue() : defaults.getDefaultMaxTokens())
-                .thinking(ThinkingConfigAdaptive.builder().build())
-                .outputConfig(OutputConfig.builder().effort(effort(cfg.getEffort())).build());
+                .model(model)
+                .maxTokens(request.maxTokens() != null ? request.maxTokens().longValue() : defaults.getDefaultMaxTokens());
+        // Not every model takes these. Haiku 4.5 rejects both outright — "adaptive thinking is not
+        // supported on this model" / "This model does not support the effort parameter" — so sending
+        // them unconditionally turns a working cheap tier into a 400 on every call. Verified against
+        // the API, 2026-09-17. Extraction is transcription, so the cheap tier simply goes without.
+        if (supportsAdaptiveThinking(model)) {
+            b.thinking(ThinkingConfigAdaptive.builder().build())
+                    .outputConfig(OutputConfig.builder().effort(effort(cfg.getEffort())).build());
+        }
         if (request.hasImages()) {
             // Images first, then the prompt: Anthropic recommends this order for document questions.
             List<ContentBlockParam> blocks = new ArrayList<>();
@@ -122,6 +130,22 @@ public class AnthropicLlmClient implements LlmClient {
             case "image/webp" -> Base64ImageSource.MediaType.IMAGE_WEBP;
             default -> Base64ImageSource.MediaType.IMAGE_JPEG;
         };
+    }
+
+    /**
+     * Whether the model takes {@code thinking: adaptive} and {@code output_config.effort}.
+     *
+     * <p>A denylist, not an allowlist: an unknown model id is assumed modern and gets the parameters,
+     * so a model released after this code was written is not silently downgraded. The cost of being
+     * wrong in that direction is a clear 400 at the first call; the cost of an allowlist is a new model
+     * quietly losing thinking with nothing in the logs to say so.
+     *
+     * <p>Checked against the Models API on 2026-09-17: Haiku 4.5 reports {@code effort.supported=false}
+     * and {@code thinking.types.adaptive.supported=false}.
+     */
+    static boolean supportsAdaptiveThinking(String modelId) {
+        String id = modelId == null ? "" : modelId.toLowerCase(Locale.ROOT);
+        return !id.contains("haiku");
     }
 
     private static OutputConfig.Effort effort(String value) {

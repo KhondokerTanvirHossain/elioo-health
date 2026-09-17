@@ -62,6 +62,8 @@ class DocumentExtractionServiceTest {
     private final MeteredVisionOcr ocr = mock(MeteredVisionOcr.class);
     private final MeteredLlmClient metered = mock(MeteredLlmClient.class);
     private final LlmClient cheap = mock(LlmClient.class);
+    /** DR-9: the strong tier is its own client, no longer the cheap one wearing a different provider name. */
+    private final LlmClient strong = mock(LlmClient.class);
     private final DocumentStorageUseCase storage = mock(DocumentStorageUseCase.class);
     private final DocumentRecordPort records = mock(DocumentRecordPort.class);
     private final BaymaxProperties properties = new BaymaxProperties();
@@ -98,7 +100,24 @@ class DocumentExtractionServiceTest {
         properties.setMarkers(List.of(marker));
 
         service = new DocumentExtractionService(ocr, metered,
-                new ExtractionClients(cheap, null, false),
+                new ExtractionClients(cheap, null, null, false),
+                new ExtractionPromptBuilder(properties),
+                new ExtractionJsonReader(new ObjectMapper()),
+                new CropCutter(properties), new MarkerMatcher(properties),
+                storage, records, properties, new ObjectMapper(),
+                Clock.fixed(NOW, ZoneOffset.UTC));
+    }
+
+    /**
+     * Rebuild the service with an escalation client present. Before DR-9 a test could fake this by making
+     * the cheap client claim {@code providerName() == "anthropic"}, because the strong tier WAS the cheap
+     * client whenever the default provider happened to be Anthropic. That is exactly the coupling that let
+     * escalation silently never fire in production, so the test now wires a separate client like the
+     * configuration does.
+     */
+    private void withStrongClient() {
+        service = new DocumentExtractionService(ocr, metered,
+                new ExtractionClients(cheap, null, strong, false),
                 new ExtractionPromptBuilder(properties),
                 new ExtractionJsonReader(new ObjectMapper()),
                 new CropCutter(properties), new MarkerMatcher(properties),
@@ -230,7 +249,7 @@ class DocumentExtractionServiceTest {
 
     @Test
     void aCriticalFlagAsksTheStrongModelEvenWhenConfidenceIsHigh() throws Exception {
-        when(cheap.providerName()).thenReturn("anthropic"); // the strong client is the default one here
+        withStrongClient();
         replyWith(GOOD_REPLY.replace("\"flag\":\"high\"", "\"flag\":\"critical\""),
                 GOOD_REPLY.replace("\"flag\":\"high\"", "\"flag\":\"critical\"").replace("0.93", "0.97"));
 
@@ -243,7 +262,7 @@ class DocumentExtractionServiceTest {
 
     @Test
     void theMoreConfidentAnswerWinsTheEscalation() throws Exception {
-        when(cheap.providerName()).thenReturn("anthropic");
+        withStrongClient();
         replyWith(GOOD_REPLY.replace("0.93", "0.81"), GOOD_REPLY.replace("0.93", "0.70"));
 
         StepVerifier.create(service.process(received(1), List.of(pageJpeg())))

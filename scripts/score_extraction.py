@@ -5,6 +5,7 @@ Two modes:
 
     score_extraction.py <report.json> <stem> <expected.json> <latency_ms>   # reads the result on stdin
     score_extraction.py --summary <report.json> <total> <labelled>
+    score_extraction.py --rescore <report.json> <expected-dir>     # re-score stored results, no model calls
 
 Nothing patient-identifying reaches stdout: only counts, accuracy, cost, latency and model names. The
 per-document detail (which item matched what) goes into the report file, which lives beside the corpus
@@ -13,30 +14,76 @@ and is git-ignored with it.
 import json
 import re
 import sys
+import unicodedata
+
+
+def fold_digits(text):
+    """Every decimal digit, whatever script it is written in, becomes its ASCII equivalent.
+
+    The stored record is verbatim (PO decision, 2026-09-17): a prescription that says ১+০+১ is stored as
+    ১+০+১ so the text matches the crop beside it. The label may say 1+0+1. Both mean the same instruction,
+    so the comparison folds numerals on both sides and nowhere else does. Uses the Unicode decimal value,
+    so Bangla, Devanagari, Arabic-Indic and anything else with Nd digits all fold the same way.
+    """
+    return "".join(
+        str(unicodedata.decimal(c)) if unicodedata.category(c) == "Nd" else c
+        for c in text
+    )
 
 
 def norm(value):
-    """Compare on meaning, not formatting: case, spaces and punctuation are noise here.
+    """Compare on meaning, not formatting: case, spaces, punctuation and digit script are noise here.
 
     Bangla and other non-Latin text is compared as-is: stripping it to [a-z0-9] would erase it entirely.
     An empty string and a missing field are the same thing, which is how the labels are written.
     """
     if value is None:
         return ""
-    text = str(value).strip().lower()
+    text = fold_digits(str(value).strip().lower())
     if not text:
         return ""
-    if any(ord(c) > 0x7F for c in text):          # non-ASCII: collapse whitespace only
-        return re.sub(r"\s+", " ", text)
+    if any(ord(c) > 0x7F for c in text):
+        # non-ASCII: punctuation and its spacing are noise (সকাল-রাত is সকাল - রাত), letters are not
+        return re.sub(r"\s+", " ", re.sub(r"[\s,\-–—/()+:;.]+", " ", text)).strip()
     return re.sub(r"[^a-z0-9.]+", " ", text).strip()
 
 
 def number_eq(a, b):
     """8.2 and 8.20 are the same reading; anything non-numeric falls back to string equality."""
     try:
-        return abs(float(a) - float(b)) < 1e-9
+        return abs(float(fold_digits(str(a))) - float(fold_digits(str(b)))) < 1e-9
     except (TypeError, ValueError):
         return norm(a) == norm(b)
+
+
+MARKER_ALIASES = None
+
+
+def marker_aliases():
+    """canonical marker -> its aliases, read from baymax.markers in application.properties (config, not code)."""
+    global MARKER_ALIASES
+    if MARKER_ALIASES is None:
+        import os
+        path = os.path.join(os.path.dirname(__file__), "..", "medscribe-ai", "src", "main", "resources",
+                            "application.properties")
+        canon, aliases = {}, {}
+        for line in open(path, encoding="utf-8"):
+            m = re.match(r"baymax\.markers\[(\d+)\]\.(canonical|aliases)=(.*)", line.strip())
+            if m:
+                (canon if m.group(2) == "canonical" else aliases)[m.group(1)] = m.group(3)
+        MARKER_ALIASES = {canon[i]: {norm(a) for a in aliases.get(i, "").split(",")} | {norm(canon[i])}
+                          for i in canon}
+    return MARKER_ALIASES
+
+
+def value_matches(want, got):
+    """The stored name is verbatim from the page ("BP", twice for a 130/80) and the meaning lives in
+    canonical_name. A label names the marker directly, so it is matched through the same alias table the
+    pipeline uses; a plain name match still works for anything that is not a canonical marker."""
+    if norm(got.get("name")) == norm(want.get("name")):
+        return True
+    canonical = got.get("canonical_name")
+    return bool(canonical) and norm(want.get("name")) in marker_aliases().get(canonical, set())
 
 
 def match_values(expected, actual):
@@ -46,7 +93,7 @@ def match_values(expected, actual):
     for want in expected:
         found = None
         for got in remaining:
-            if norm(got.get("name")) == norm(want.get("name")):
+            if value_matches(want, got):
                 found = got
                 break
         if found is None:
@@ -60,11 +107,25 @@ def match_values(expected, actual):
     return hits, misses, len(remaining)
 
 
+def medicine_name_matches(want, got):
+    """Exact, or the model folded the strength into the name: the label's name is a leading run of whole
+    tokens and what remains is the dose. "Tab. Thyrox 25 mcg" matches "Tab. Thyrox" + dose "25 mcg";
+    "Tab. Thyroxide" does not match "Tab. Thyrox"."""
+    w, g = norm(want.get("name")), norm(got.get("name"))
+    if w == g:
+        return True
+    if w and g.startswith(w + " "):
+        rest = g[len(w):].strip()
+        dose = norm(got.get("dose_text")) or norm(want.get("dose_text"))
+        return rest == dose or not dose
+    return False
+
+
 def match_medicines(expected, actual):
     hits, misses = 0, []
     remaining = list(actual)
     for want in expected:
-        found = next((g for g in remaining if norm(g.get("name")) == norm(want.get("name"))), None)
+        found = next((g for g in remaining if medicine_name_matches(want, g)), None)
         if found is None:
             misses.append({"field": "medicines", "reason": "not found", "name": want.get("name")})
             continue
@@ -137,9 +198,18 @@ def match_follow_up(expected, actual):
     return hits, misses, len(remaining)
 
 
-def score_one(report_path, stem, expected_path, latency_ms, result):
+def score_one(report_path, stem, expected_path, latency_ms, result, document_id=None):
     with open(expected_path) as f:
         expected = json.load(f)
+    entry = score_entry(stem, expected, latency_ms, result, document_id)
+    with open(report_path) as f:
+        report = json.load(f)
+    report["documents"].append(entry)
+    with open(report_path, "w") as f:
+        json.dump(report, f, indent=2, ensure_ascii=False)
+
+
+def score_entry(stem, expected, latency_ms, result, document_id=None):
 
     status = result.get("status", "NO_RESPONSE")
     values = result.get("values") or []
@@ -165,6 +235,7 @@ def score_one(report_path, stem, expected_path, latency_ms, result):
 
     entry = {
         "document": stem,
+        "document_id": document_id,
         # per section, so one broken section cannot silently sink the headline: that is exactly how a
         # clinical_context of 0/40 (an unexposed API field, not a model failure) hid behind a 26.5% number
         "sections": {
@@ -188,13 +259,28 @@ def score_one(report_path, stem, expected_path, latency_ms, result):
         "context_correct": context_correct,
         "context_detail": context_detail,
         "misses": v_miss + m_miss + f_miss,
+        # the raw response, so the run can be rescored under a later scorer without another model call;
+        # this file lives beside the corpus and is git-ignored with it, so patient text is allowed here
+        "result": result,
     }
+    return entry
 
+
+def rescore(report_path, expected_dir):
+    """Rebuild every entry from its stored result under the current scoring rules. No model calls."""
     with open(report_path) as f:
         report = json.load(f)
-    report["documents"].append(entry)
+    rebuilt = []
+    for old in report["documents"]:
+        if "result" not in old:
+            sys.exit(f"{report_path}: document {old['document']} has no stored result; cannot rescore")
+        with open(f"{expected_dir}/{old['document']}.json") as f:
+            expected = json.load(f)
+        rebuilt.append(score_entry(old["document"], expected, old["latency_ms"], old["result"],
+                                   old.get("document_id")))
+    report["documents"] = rebuilt
     with open(report_path, "w") as f:
-        json.dump(report, f, indent=2)
+        json.dump(report, f, indent=2, ensure_ascii=False)
 
 
 def summarise(report_path, total, labelled):
@@ -255,10 +341,13 @@ def summarise(report_path, total, labelled):
 if __name__ == "__main__":
     if sys.argv[1] == "--summary":
         summarise(sys.argv[2], int(sys.argv[3]), int(sys.argv[4]))
+    elif sys.argv[1] == "--rescore":
+        rescore(sys.argv[2], sys.argv[3])
     else:
         raw = sys.stdin.read().strip()
         try:
             parsed = json.loads(raw) if raw else {}
         except json.JSONDecodeError:
             parsed = {}
-        score_one(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], parsed)
+        score_one(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], parsed,
+                  sys.argv[5] if len(sys.argv) > 5 else None)

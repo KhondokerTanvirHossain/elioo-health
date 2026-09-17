@@ -144,10 +144,10 @@ public class DocumentExtractionService {
     }
 
     private LlmClient strongClient() {
-        // DR-3: the strong tier is the anthropic provider. It is the application's default client when
-        // llm.provider=anthropic; otherwise there is no strong client and the cheap answer stands.
-        LlmClient cheap = clients.cheap();
-        return "anthropic".equals(cheap.providerName()) ? cheap : null;
+        // DR-9: the strong tier is its own Anthropic client built from baymax.extract.strong-model, not
+        // the application default. It used to be "the default client, if llm.provider=anthropic", which
+        // meant escalation silently never fired whenever MedScribe's default was Groq.
+        return clients.strong();
     }
 
     /** One structured call, with a single repair retry when the reply does not match the schema. */

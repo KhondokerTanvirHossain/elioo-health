@@ -110,10 +110,14 @@ public class BaymaxProperties {
     public static class Extract {
         /** Send page images to the model alongside the OCR text, when the client supports images. */
         private boolean sendImages = true;
-        /** Vision-capable model on the cheap provider; blank falls back to the provider default (text only). */
-        private String visionModel = "";
-        /** Model used when escalating (DR-3: the anthropic provider). */
-        private String strongModel = "claude-sonnet-5";   // DR-8: opus is too costly per document
+        /**
+         * The cheap tier: a vision-capable model that reads every document. Blank runs text-only.
+         * DR-9 makes this Anthropic Haiku 4.5 rather than Groq, whose free tier caps output at
+         * 1,000 tokens/minute against the ~1,810 one document declares.
+         */
+        private String visionModel = "claude-haiku-4-5";
+        /** Model used when escalating (DR-9: sonnet, on its own Anthropic client). */
+        private String strongModel = "claude-sonnet-5";
         private int maxOutputTokens = 8192;
         /** Below this overall confidence the document needs a retake; nothing but the document row is written. */
         private double minConfidenceOverall = 0.80;
