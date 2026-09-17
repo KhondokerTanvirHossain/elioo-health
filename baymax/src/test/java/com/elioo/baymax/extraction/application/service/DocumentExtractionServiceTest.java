@@ -98,6 +98,9 @@ class DocumentExtractionServiceTest {
         marker.setCanonical("hba1c");
         marker.setAliases(List.of("hba1c"));
         properties.setMarkers(List.of(marker));
+        // DR-10 turned confidence escalation off by default (threshold 0.0). These tests exercise the
+        // escalation path itself, so they pin the threshold the path was designed around.
+        properties.getExtract().setStrongModelThreshold(0.85);
 
         service = new DocumentExtractionService(ocr, metered,
                 new ExtractionClients(cheap, null, null, false),

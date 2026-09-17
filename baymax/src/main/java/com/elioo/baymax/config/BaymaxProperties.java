@@ -111,11 +111,11 @@ public class BaymaxProperties {
         /** Send page images to the model alongside the OCR text, when the client supports images. */
         private boolean sendImages = true;
         /**
-         * The cheap tier: a vision-capable model that reads every document. Blank runs text-only.
-         * DR-9 makes this Anthropic Haiku 4.5 rather than Groq, whose free tier caps output at
-         * 1,000 tokens/minute against the ~1,810 one document declares.
+         * The model that reads every document, vision-capable. Blank runs text-only. DR-10: sonnet,
+         * single-tier, for printed documents — haiku measured 26 points lower and its confidence could not
+         * route escalation. Haiku stays selectable here; Groq (DR-9) is out, its free tier cannot run one.
          */
-        private String visionModel = "claude-haiku-4-5";
+        private String visionModel = "claude-sonnet-5";
         /** Model used when escalating (DR-9: sonnet, on its own Anthropic client). */
         private String strongModel = "claude-sonnet-5";
         private int maxOutputTokens = 8192;
@@ -123,8 +123,11 @@ public class BaymaxProperties {
         private double minConfidenceOverall = 0.80;
         /** Below this, any single section (values, medicines, follow-up) forces a retake. */
         private double minConfidenceSection = 0.70;
-        /** Below this overall confidence, or on any critical flag, the strong model is asked as well. */
-        private double strongModelThreshold = 0.85;
+        /**
+         * Below this overall confidence, or on any critical flag, the strong model is asked as well.
+         * 0.0 (DR-10) turns the confidence path off; the critical-flag path stays.
+         */
+        private double strongModelThreshold = 0.0;
         /** Refuse documents with more pages than this. */
         private int maxPages = 10;
         /** Padding around a source-span bounding box when cutting the crop, in pixels. */

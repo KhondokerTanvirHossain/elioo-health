@@ -232,6 +232,10 @@ def score_entry(stem, expected, latency_ms, result, document_id=None):
 
     # every surviving item must carry a crop: that is the BMX-2 rule, checked rather than assumed
     without_crop = [i for i in values + medicines + follow_up if not i.get("crop_key")]
+    # items the model returned that the server dropped because no crop could be cut for them. They are
+    # counted per section in the response and were invisible to this scorer until a follow-up that both
+    # models had transcribed correctly scored 0/1 for three runs running.
+    dropped = result.get("unverified") or {}
 
     entry = {
         "document": stem,
@@ -239,10 +243,10 @@ def score_entry(stem, expected, latency_ms, result, document_id=None):
         # per section, so one broken section cannot silently sink the headline: that is exactly how a
         # clinical_context of 0/40 (an unexposed API field, not a model failure) hid behind a 26.5% number
         "sections": {
-            "values":    {"expected": len(expected.get("values", [])),    "correct": v_hits, "invented": v_extra},
-            "medicines": {"expected": len(expected.get("medicines", [])), "correct": m_hits, "invented": m_extra},
-            "follow_up": {"expected": len(expected.get("follow_up", [])), "correct": f_hits, "invented": f_extra},
-            "clinical_context": {"expected": context_expected, "correct": context_correct, "invented": 0},
+            "values":    {"expected": len(expected.get("values", [])),    "correct": v_hits, "invented": v_extra, "dropped": dropped.get("values", 0)},
+            "medicines": {"expected": len(expected.get("medicines", [])), "correct": m_hits, "invented": m_extra, "dropped": dropped.get("medicines", 0)},
+            "follow_up": {"expected": len(expected.get("follow_up", [])), "correct": f_hits, "invented": f_extra, "dropped": dropped.get("follow_up", 0)},
+            "clinical_context": {"expected": context_expected, "correct": context_correct, "invented": 0, "dropped": 0},
         },
         "set": expected.get("set", "unknown"),
         "status": status,
@@ -313,14 +317,17 @@ def summarise(report_path, total, labelled):
     table("all", docs)
 
     print("\n  per section (headline = values + medicines + follow_up + type/date):")
-    print(f"    {'section':<18}{'correct':>9}{'expected':>10}{'accuracy':>10}{'invented':>10}")
+    print(f"    {'section':<18}{'correct':>9}{'expected':>10}{'accuracy':>10}{'invented':>10}{'dropped':>9}")
     for name in ("values", "medicines", "follow_up", "clinical_context"):
         e = sum(d.get("sections", {}).get(name, {}).get("expected", 0) for d in docs)
         c = sum(d.get("sections", {}).get(name, {}).get("correct", 0) for d in docs)
         i = sum(d.get("sections", {}).get(name, {}).get("invented", 0) for d in docs)
+        dr = sum(d.get("sections", {}).get(name, {}).get("dropped", 0) for d in docs)
         pct = f"{c / e * 100:5.1f}%" if e else "    n/a"
         warn = "   <-- ZERO across a non-empty section: check the pipeline exposes it" if e and c == 0 else ""
-        print(f"    {name:<18}{c:>9}{e:>10}{pct:>10}{i:>10}{warn}")
+        if dr:
+            warn += f"   <-- {dr} item(s) the model returned were dropped for having no crop"
+        print(f"    {name:<18}{c:>9}{e:>10}{pct:>10}{i:>10}{dr:>9}{warn}")
 
     ctx_expected = sum(d.get("context_expected", 0) for d in docs)
     ctx_correct = sum(d.get("context_correct", 0) for d in docs)
