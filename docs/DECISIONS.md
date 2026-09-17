@@ -102,3 +102,22 @@ the cheap tier if the account is ever upgraded. MedScribe is untouched and still
 
 DR-6 is superseded as a consequence rather than on its merits: it relaxed the zero-retention constraint for
 the Groq evaluation run, and there is no longer a Groq run. Hard constraint 6 applies in full again.
+
+## DR-10 | 2026-09-17 | Extraction runs single-tier on claude-sonnet-5 for printed documents
+
+**Decision:** Extraction runs single-tier on claude-sonnet-5 for printed documents. Haiku stays configured
+and unused; confidence-based escalation stays in code, default off. Re-measure both on the handwritten batch
+before freezing.
+
+**Why:** measured — any threshold recovering the 26-point gap costs as much as Sonnet alone; 86.2% at
+$0.0253/doc, 17% of ceiling.
+
+**Supersedes:** DR-9 (tier names stand, default changes).
+
+*Engineering note:* on the ten printed documents Haiku scored 60.0% at $0.0118/doc with two retakes; Sonnet
+86.2% at $0.0253 with none. Haiku's reported confidence was 0.85–0.95 on every completed document while its
+gap to Sonnet on the same document ranged from 0 to +0.60, so confidence cannot route: escalating at < 0.86
+reached 82.5% for $0.024, and every higher threshold cost more than Sonnet alone for no further gain.
+Configuration: `baymax.extract.vision-model` defaults to `claude-sonnet-5`, `strong-model-threshold` to `0.0`
+(escalation off; a `critical` flag still escalates, to the same model). To re-enable the two-tier path set
+`BAYMAX_EXTRACT_VISION_MODEL=claude-haiku-4-5` and a threshold; the Haiku client and its price entries remain.

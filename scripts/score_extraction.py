@@ -140,6 +140,12 @@ def match_medicines(expected, actual):
     return hits, misses, len(remaining)
 
 
+# follow_up joins the headline only once the corpus can measure it. Batch 1 is ten prescriptions of which
+# one states a follow-up, so its 0/1 said nothing about the pipeline (PO, 2026-09-17: a corpus fact, excluded
+# until a corpus with follow-ups exists). Below this many labelled follow-ups the section is reported and
+# not counted, exactly as clinical_context is.
+MIN_FOLLOW_UPS_FOR_HEADLINE = 5
+
 CONTEXT_SECTIONS = ("chief_complaint", "history", "examination", "diagnosis",
                     "investigations_advised", "advice")
 
@@ -232,6 +238,10 @@ def score_entry(stem, expected, latency_ms, result, document_id=None):
 
     # every surviving item must carry a crop: that is the BMX-2 rule, checked rather than assumed
     without_crop = [i for i in values + medicines + follow_up if not i.get("crop_key")]
+    # items the model returned that the server dropped because no crop could be cut for them. They are
+    # counted per section in the response and were invisible to this scorer until a follow-up that both
+    # models had transcribed correctly scored 0/1 for three runs running.
+    dropped = result.get("unverified") or {}
 
     entry = {
         "document": stem,
@@ -239,10 +249,10 @@ def score_entry(stem, expected, latency_ms, result, document_id=None):
         # per section, so one broken section cannot silently sink the headline: that is exactly how a
         # clinical_context of 0/40 (an unexposed API field, not a model failure) hid behind a 26.5% number
         "sections": {
-            "values":    {"expected": len(expected.get("values", [])),    "correct": v_hits, "invented": v_extra},
-            "medicines": {"expected": len(expected.get("medicines", [])), "correct": m_hits, "invented": m_extra},
-            "follow_up": {"expected": len(expected.get("follow_up", [])), "correct": f_hits, "invented": f_extra},
-            "clinical_context": {"expected": context_expected, "correct": context_correct, "invented": 0},
+            "values":    {"expected": len(expected.get("values", [])),    "correct": v_hits, "invented": v_extra, "dropped": dropped.get("values", 0)},
+            "medicines": {"expected": len(expected.get("medicines", [])), "correct": m_hits, "invented": m_extra, "dropped": dropped.get("medicines", 0)},
+            "follow_up": {"expected": len(expected.get("follow_up", [])), "correct": f_hits, "invented": f_extra, "dropped": dropped.get("follow_up", 0)},
+            "clinical_context": {"expected": context_expected, "correct": context_correct, "invented": 0, "dropped": 0},
         },
         "set": expected.get("set", "unknown"),
         "status": status,
@@ -288,12 +298,22 @@ def summarise(report_path, total, labelled):
         report = json.load(f)
     docs = report["documents"]
 
+    labelled_follow_ups = sum(d.get("sections", {}).get("follow_up", {}).get("expected", 0) for d in docs)
+    count_follow_up = labelled_follow_ups >= MIN_FOLLOW_UPS_FOR_HEADLINE
+
+    def headline(r):
+        """(correct, expected) for one document, with follow_up left out while the corpus cannot measure it."""
+        fu = r.get("sections", {}).get("follow_up", {})
+        if count_follow_up:
+            return r["correct_items"], r["expected_items"]
+        return r["correct_items"] - fu.get("correct", 0), r["expected_items"] - fu.get("expected", 0)
+
     def table(name, rows):
         if not rows:
             print(f"  {name:<14} no labelled documents")
             return
-        wanted = sum(r["expected_items"] for r in rows)
-        correct = sum(r["correct_items"] for r in rows)
+        wanted = sum(headline(r)[1] for r in rows)
+        correct = sum(headline(r)[0] for r in rows)
         extra = sum(r["extra_items"] for r in rows)
         no_crop = sum(r["items_without_crop"] for r in rows)
         done = [r for r in rows if r["status"] == "DONE"]
@@ -312,15 +332,24 @@ def summarise(report_path, total, labelled):
     table("handwritten", [d for d in docs if d["set"] == "handwritten"])
     table("all", docs)
 
-    print("\n  per section (headline = values + medicines + follow_up + type/date):")
-    print(f"    {'section':<18}{'correct':>9}{'expected':>10}{'accuracy':>10}{'invented':>10}")
+    if count_follow_up:
+        print("\n  per section (headline = values + medicines + follow_up + type/date):")
+    else:
+        print(f"\n  per section (headline = values + medicines + type/date; follow_up excluded: the corpus labels "
+              f"{labelled_follow_ups} follow-up(s), fewer than {MIN_FOLLOW_UPS_FOR_HEADLINE} — a corpus fact, not a score):")
+    print(f"    {'section':<18}{'correct':>9}{'expected':>10}{'accuracy':>10}{'invented':>10}{'dropped':>9}")
     for name in ("values", "medicines", "follow_up", "clinical_context"):
         e = sum(d.get("sections", {}).get(name, {}).get("expected", 0) for d in docs)
         c = sum(d.get("sections", {}).get(name, {}).get("correct", 0) for d in docs)
         i = sum(d.get("sections", {}).get(name, {}).get("invented", 0) for d in docs)
+        dr = sum(d.get("sections", {}).get(name, {}).get("dropped", 0) for d in docs)
         pct = f"{c / e * 100:5.1f}%" if e else "    n/a"
-        warn = "   <-- ZERO across a non-empty section: check the pipeline exposes it" if e and c == 0 else ""
-        print(f"    {name:<18}{c:>9}{e:>10}{pct:>10}{i:>10}{warn}")
+        excluded = name == "follow_up" and not count_follow_up
+        warn = "   (excluded from headline)" if excluded else (
+            "   <-- ZERO across a non-empty section: check the pipeline exposes it" if e and c == 0 else "")
+        if dr:
+            warn += f"   <-- {dr} item(s) the model returned were dropped for having no crop"
+        print(f"    {name:<18}{c:>9}{e:>10}{pct:>10}{i:>10}{dr:>9}{warn}")
 
     ctx_expected = sum(d.get("context_expected", 0) for d in docs)
     ctx_correct = sum(d.get("context_correct", 0) for d in docs)
