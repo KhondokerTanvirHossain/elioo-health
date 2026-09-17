@@ -90,7 +90,7 @@ for FILE in "$TESTSET"/*.jpg "$TESTSET"/*.jpeg "$TESTSET"/*.jfif "$TESTSET"/*.pn
   done
   END=$(now_ms)
 
-  python3 scripts/score_extraction.py "$REPORT" "$STEM" "$EXPECTED" "$((END - START))" <<< "$RESULT"
+  python3 scripts/score_extraction.py "$REPORT" "$STEM" "$EXPECTED" "$((END - START))" "$DOC" <<< "$RESULT"
   printf '.'
 done
 echo

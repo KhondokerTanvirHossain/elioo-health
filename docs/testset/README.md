@@ -35,6 +35,28 @@ exactly as they appear:
 - No normalisation: `5 mg+20 mg` keeps its spacing and its plus sign.
 - No translation: Bangla stays Bangla. `রাত` is `রাত`, not "night".
 
+**Numerals are transcribed in whatever script the page uses.** A prescription written `১+০+১` is labelled
+`১+০+১`, not `1+0+1`; one written `1+0+1` stays `1+0+1`. This follows from verbatim, and it is also what
+the pipeline stores, because the stored text must match the crop beside it (PO decision, 2026-09-17). The
+scorer folds every digit script to ASCII on both sides before comparing, so a label in the wrong script
+does not change the score — but it is still a wrong label, and the first ten labels were all written in
+ASCII where the pages use Bangla. Anything downstream that needs `1+0+1` as a number (nudge scheduling,
+BMX-6) gets a derived, normalised field; the verbatim record is never normalised in place.
+
+> page `১ + ০ + ১` → `"frequency_text": "১ + ০ + ১"` · page `৩ মাস` → `"duration_text": "৩ মাস"`
+
+**A value's `name` is what the page calls it; the marker id carries the meaning.** A page that says
+`BP 130/80` is stored as two values both named `BP`, with `canonical_name` `bp_systolic` and
+`bp_diastolic` assigned by the pipeline from `baymax.markers`. Labels may name the marker directly
+(`BP Systolic`, `BP Diastolic`, or any alias in that table): the scorer matches a label name against the
+model's `canonical_name` through the same alias table, so both spellings score. Do not invent a name the
+page does not use for a value that is not a canonical marker — there is no alias to match it through.
+
+**A medicine's `name` stops before the strength.** `Tab. Thyrox` with `dose_text` `25 mcg`, not
+`Tab. Thyrox 25 mcg`. The model sometimes folds the strength into the name; the scorer accepts that when
+the trailing tokens equal the dose, so it costs nothing, but the label should keep them apart. Dropping
+the form (`Amilin` for `Tab. Amilin`) is not accepted — that is a transcription error, not a formatting one.
+
 **Transcription, not interpretation.** Label what the page says, not what it implies.
 
 - If there is no diagnosis line, `diagnosis` is `[]`. A prescription for insulin is not a diagnosis of
@@ -75,8 +97,12 @@ so it does not move the headline number.
 |---|---|
 | `document_type` | exact |
 | `document_date` | exact, ISO |
-| `values[]` | `name`, then `value` and `unit` must both agree |
-| `medicines[]` | `name`, then `dose_text`, `frequency_text` and `timing_text` must all agree |
+| `values[]` | `name`, or the model's `canonical_name` via the `baymax.markers` aliases; then `value` and `unit` must both agree |
+| `medicines[]` | `name` (a strength folded into the name is tolerated, a dropped form is not), then `dose_text`, `frequency_text` and `timing_text` must all agree |
+
+Before every comparison both sides are folded: digits of any script to ASCII, case, and — in non-Latin
+text — punctuation and its spacing (`সকাল-রাত` is `সকাল - রাত`). A dropped clause is still a miss:
+`সকাল-রাত` does not match `সকাল-রাত, খাবারের পরে`.
 | `follow_up[]` | `instruction` loosely, then `due_date` exactly |
 | `clinical_context` | per section, loose containment; invented `diagnosis` lines are called out separately |
 
