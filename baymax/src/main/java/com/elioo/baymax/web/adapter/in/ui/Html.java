@@ -54,7 +54,17 @@ final class Html {
             """;
 
     static String page(String title, String body) {
+        return page(title, body, 0);
+    }
+
+    /**
+     * @param refreshSeconds when > 0 the page reloads itself after that many seconds — the timeline while a
+     *                       document is still being read. Plain HTML, no script: the first real walkthrough
+     *                       sat on "পড়া হচ্ছে…" long after the document had finished.
+     */
+    static String page(String title, String body, int refreshSeconds) {
         return "<!doctype html><html lang=\"bn\"><head><meta charset=\"utf-8\">"
+                + (refreshSeconds > 0 ? "<meta http-equiv=\"refresh\" content=\"" + refreshSeconds + "\">" : "")
                 + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
                 + "<meta name=\"robots\" content=\"noindex\">"
                 + "<title>" + esc(title) + "</title><style>" + CSS + "</style></head><body><main>"
@@ -63,6 +73,10 @@ final class Html {
 
     static Mono<ServerResponse> ok(String title, String body) {
         return ServerResponse.ok().contentType(MediaType.TEXT_HTML).bodyValue(page(title, body));
+    }
+
+    static Mono<ServerResponse> ok(String title, String body, int refreshSeconds) {
+        return ServerResponse.ok().contentType(MediaType.TEXT_HTML).bodyValue(page(title, body, refreshSeconds));
     }
 
     static Mono<ServerResponse> status(HttpStatus status, String title, String body) {
