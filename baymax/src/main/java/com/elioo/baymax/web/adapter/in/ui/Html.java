@@ -38,10 +38,10 @@ final class Html {
      * from Tanvir — never a generated or approximated character). Until the file is in the jar the hero shows
      * a plain teal disc, not a stand-in figure.
      */
-    static final String MASCOT = "/assets/mio.png";
+    static final String MASCOT = "/assets/mio.webp";
 
     /** The medioo wordmark, header of every page. Same rule: one constant, rendered only once the file is in the jar. */
-    static final String WORDMARK = "/assets/medioo.svg";
+    static final String WORDMARK = "/assets/medioo.webp";
 
     /** True when the asset behind an {@code /assets/…} path is in the jar, so a slot never shows a broken image. */
     static boolean present(String assetPath) {
@@ -55,14 +55,13 @@ final class Html {
 
     /** The brand mark for a top bar: the wordmark image when present, else the dot and the name. */
     static String brand(String title) {
-        return present(WORDMARK) ? "<img alt=\"" + esc(title) + "\" src=\"" + WORDMARK + "?v=" + version("/baymax/ui/medioo.svg") + "\">"
+        return present(WORDMARK) ? "<img alt=\"" + esc(title) + "\" src=\"" + WORDMARK + "?v=" + version("/baymax/ui/medioo.webp") + "\" width=\"123\" height=\"44\">"
                 : "<span class=\"dot\"></span>" + title;
     }
 
-    /** The landing screenshot: the sample document page beside its values and crops. Tanvir supplies the final one. */
-    static final String LANDING_SHOT = "/assets/landing-shot.png";
 
     /**
+     * @param title          already HTML-escaped (it comes from {@link UiCopy}); escaping it again showed "&#39;" in the tab
      * @param lang           the page language, on {@code <html lang>} and in the disclaimer footer
      * @param refreshSeconds when > 0 the page reloads itself after that many seconds — the timeline while a
      *                       document is still being read. Plain HTML, no script.
@@ -74,7 +73,7 @@ final class Html {
                 + (refreshSeconds > 0 ? "<meta http-equiv=\"refresh\" content=\"" + refreshSeconds + "\">" : "")
                 + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
                 + (index ? "" : "<meta name=\"robots\" content=\"noindex\">")
-                + "<title>" + esc(title) + "</title><link rel=\"stylesheet\" href=\"" + CSS_HREF + "\"><link rel=\"icon\" type=\"image/svg+xml\" href=\"" + ICON_HREF + "\"></head><body><main class=\""
+                + "<title>" + title + "</title><link rel=\"stylesheet\" href=\"" + CSS_HREF + "\"><link rel=\"icon\" type=\"image/svg+xml\" href=\"" + ICON_HREF + "\"></head><body><main class=\""
                 + (wide ? "page" : "app") + "\">" + body
                 + "<footer class=\"foot\">" + disclaimer + "</footer></main></body></html>";
     }

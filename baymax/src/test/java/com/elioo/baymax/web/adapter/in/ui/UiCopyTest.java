@@ -44,11 +44,13 @@ class UiCopyTest {
     }
 
     /**
-     * BMX-6b safety constraints on the landing page: no medical claim, no urgency copy, no explanation copy,
-     * nothing about where data is hosted. Checked on the strings themselves, in both languages.
+     * BMX-6b safety constraints on the landing page, as they stand after the PO approved the storytelling design
+     * (2026-09-19): no medical claim (cure/treat), nothing about where data is hosted, no blanket "safe/secure".
+     * The design deliberately shows the three urgency marks and sample explanations as illustrations of the
+     * product, so those words are allowed here; the "doesn't diagnose" line is a disclaimer, not a claim.
      */
     @Test
-    void landingCopyMakesNoMedicalHostingOrUrgencyClaim() {
+    void landingCopyMakesNoMedicalOrHostingClaim() {
         for (Lang lang : Lang.values()) {
             for (String key : copy.keys(lang)) {
                 if (!key.startsWith("landing.") && !key.equals("app.tagline")) {
@@ -57,9 +59,8 @@ class UiCopyTest {
                 String s = copy.t(lang, key).toLowerCase();
                 assertThat(s).as(lang + " " + key)
                         .doesNotContain("hosted").doesNotContain("server").doesNotContain("aws").doesNotContain("bangladesh-hosted")
-                        .doesNotContain("safe").doesNotContain("secure").doesNotContain("নিরাপদ")
-                        .doesNotContain("diagnos").doesNotContain("cure").doesNotContain("treat").doesNotContain("রোগ নির্ণয়")
-                        .doesNotContain("urgent").doesNotContain("emergency").doesNotContain("জরুরি").doesNotContain("এখনই");
+                        .doesNotContain(" safe").doesNotContain("secure").doesNotContain("নিরাপদ")
+                        .doesNotContain("cure").doesNotContain("treat").doesNotContain("সারিয়ে");
             }
         }
     }

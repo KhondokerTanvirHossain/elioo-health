@@ -34,7 +34,11 @@ class BaymaxWebUiRouterTest {
         String html = client.get().uri("/").exchange().expectStatus().isOk()
                 .expectHeader().contentTypeCompatibleWith("text/html").expectBody(String.class).returnResult().getResponseBody();
         assertThat(html).startsWith("<!doctype html><html lang=\"bn\">");
-        assertThat(html).contains("চিকিৎসা পরামর্শ নয়").contains("href=\"/app\"").contains("৳ ২৪৯").contains("Medioo").contains("Elioo Health");
+        assertThat(html).contains("চিকিৎসা পরামর্শ নয়").contains("Medioo").contains("Elioo Health");
+        // every CTA is the app login until WhatsApp exists (BMX-10): no wa.me, no dead button, no placeholder address
+        assertThat(html).contains("class=\"cta\" href=\"/app\"").doesNotContain("wa.me").doesNotContain("example.com").doesNotContain("XXXX");
+        // the trend renders once, inside its own span — not a span between every character
+        assertThat(html).containsOnlyOnce("<span class=\"nw\">১.১ → ১.৩ → ১.৫</span>").doesNotContain("<span class=\"nw\"></span>");
         assertThat(html).doesNotContain("<script").doesNotContain("src=\"http").doesNotContain("href=\"http://");
         // the only off-site href is the company site in the footer (DR-15); every asset is same-origin
         assertThat(html.replace("href=\"https://www.eliooo.org/\"", "")).doesNotContain("https://");
@@ -45,7 +49,9 @@ class BaymaxWebUiRouterTest {
     void theLanguageCookieSwitchesEveryPageAndTheLoginPageToo() {
         String en = client.get().uri("/").cookie("baymax_lang", "en").exchange().expectStatus().isOk()
                 .expectBody(String.class).returnResult().getResponseBody();
-        assertThat(en).startsWith("<!doctype html><html lang=\"en\">").contains("not medical advice").contains("BDT 249");
+        assertThat(en).startsWith("<!doctype html><html lang=\"en\">").contains("not medical advice").contains("Send your first photo");
+        // the title is escaped exactly once: an apostrophe is &#39;, never &amp;#39;
+        assertThat(en).contains("<title>Medioo — Your family&#39;s health companion</title>").doesNotContain("&amp;#39;");
         assertThat(en).doesNotContain("চিকিৎসা পরামর্শ নয়");
 
         String login = client.get().uri("/app/").cookie("baymax_lang", "en").exchange().expectStatus().isOk()
@@ -89,6 +95,7 @@ class BaymaxWebUiRouterTest {
                 .expectHeader().contentTypeCompatibleWith("text/css").expectHeader().cacheControl(org.springframework.http.CacheControl.maxAge(java.time.Duration.ofDays(1)).cachePublic())
                 .expectBody(String.class).value(css -> assertThat(css).contains(":root{"));
         client.get().uri("/assets/ui_bn.properties").exchange().expectStatus().isNotFound();
+        client.get().uri("/assets/mio.webp").exchange().expectStatus().isOk().expectHeader().contentTypeCompatibleWith("image/webp");
         client.get().uri("/assets/..%2Fmessages_bn.properties").exchange().expectStatus().isNotFound();
     }
 

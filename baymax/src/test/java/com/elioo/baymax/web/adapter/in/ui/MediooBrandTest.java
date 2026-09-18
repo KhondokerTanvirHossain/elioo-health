@@ -41,7 +41,9 @@ class MediooBrandTest {
                         .expectBody(String.class).returnResult().getResponseBody();
                 // cookie names, asset paths and CSS class names are code, not copy: strip them before looking
                 String visible = html.replaceAll("<[^>]+>", " ");
-                assertThat(visible).as(path + " " + lang).doesNotContainIgnoringCase("baymax").doesNotContainPattern("(?i)\\bmedio\\b").contains("Medioo");
+                assertThat(visible).as(path + " " + lang).doesNotContainIgnoringCase("baymax").doesNotContainPattern("(?i)\\bmedio\\b");
+                // the name is on every page: as text, or as the wordmark image's alt in the header
+                assertThat(html).as(path + " " + lang).containsAnyOf("Medioo", "alt=\"Medioo\"");
             }
         }
     }
