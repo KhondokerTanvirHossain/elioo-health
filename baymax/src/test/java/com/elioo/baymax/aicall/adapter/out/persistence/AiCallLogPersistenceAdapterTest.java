@@ -109,7 +109,9 @@ class AiCallLogPersistenceAdapterTest {
                     .weeklyCsv(T0.minusSeconds(1), T0.plusSeconds(3600)).block();
             assertThat(csv).contains(docA + ",3,1,4100,850,0.00258,");
             assertThat(csv).contains(docB + ",1,0,3000,500,0.0275,anthropic/claude-opus-5,0.9500,");
-            assertThat(csv).doesNotContain("999");
+            // the out-of-window row carries 999 tokens; match it as a CSV field, because the export now holds
+            // several random UUIDs (documents, and families in the # views block) and one in fifty contains "999"
+            assertThat(csv).doesNotContain(",999,");
         });
     }
 

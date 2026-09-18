@@ -14,7 +14,7 @@ MedScribe is becoming Baymax: a WhatsApp-first health-memory assistant for Bangl
 ## Hard constraints (do not violate; propose instead)
 1. Outbound messages never advise starting/stopping/changing a medicine or dose.
 2. Urgency is never downgraded by any post-processing; when uncertain, escalate.
-3. No numeric value is sent without its source crop; on low confidence, send a retake prompt, not an answer.
+3. No numeric value is sent without its source crop; on low confidence, send a retake prompt, not an answer. *The crop must contain the value's text — content, not existence (DR-12): a crop that exists but shows the neighbouring words does not satisfy this.*
 4. Every outbound message passes the review-gate stage (config-driven: global / per urgency / per patient; default off).
 5. Real per-document cost, model, confidence and review outcome are logged. Remove the hardcoded $0.072.
 6. LLM providers used only under zero-retention / no-training terms. *In force again in full: DR-6 relaxed this for a Groq evaluation run, and DR-9 dropped Groq, so the relaxation has no subject. Anthropic's API terms do not train on API inputs; confirm the retention posture before pilot week 0.*

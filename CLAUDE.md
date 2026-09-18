@@ -68,6 +68,10 @@ Key files when changing behaviour:
   merge report — verify the commit is on `origin/main` before deleting a branch.** `gh pr merge` can print
   what reads as success while the PR sits BEHIND and nothing merged; deleting on that reading loses the work.
   Check `git log origin/main --oneline | grep <sha-or-PR-number>` first, then delete.
+- An invariant asserted on a proxy is not asserted. Anything non-inspectable — an image, a PDF, a voice note — is
+  checked against its actual content, never its presence. "Every value has a crop" was true for 137 crops of which
+  116 showed the neighbouring words (DR-12); the test saw a file that existed. This is the fifth flattering failure
+  in this repo and the only one that would have reached a family.
 - Regression guards: a test written to catch a specific bug is replayed against the pre-fix source before it counts as done. A guard that passes on the broken code is worse than none — it was written once here, anchored on the wrong text, extracted an empty method body, and went green over the very bug it existed to catch.
 - Staging: never `git add -A` or `git add .` in this repo — stage explicit paths. It has caused three
   incidents: an unrelated runbook swept into a feature branch, and a `.env.local` backup holding live API
