@@ -136,8 +136,17 @@ public class BaymaxProperties {
         private List<String> gateUrgencyLevels = new ArrayList<>(List.of("now", "this_week"));
         /** Hard cap on any message body, characters. */
         private int maxChars = 600;
-        /** A value beyond its printed range by more than this × the range width is critical → NOW. */
-        private double criticalBandMultiplier = 1.0;
+        /**
+         * STOPGAP (PO ruling 2026-09-18): a value is critical → NOW when it is at least this multiple of the
+         * printed ref_high, or at most {@code criticalLowMultiple} of the printed ref_low, or the page's own
+         * text marks it with one of {@code criticalMarkers} near the value. The correct source is per-marker
+         * panic thresholds from a clinician, not a multiple; that is on the pending list, blocking week 0.
+         */
+        private double criticalHighMultiple = 2.0;
+        private double criticalLowMultiple = 0.5;
+        /** Words the page itself uses to mark a value critical, both scripts, matched near the value. */
+        private List<String> criticalMarkers = new ArrayList<>(List.of("critical", "panic", "alarm", "very high", "very low",
+                "ক্রিটিক্যাল", "প্যানিক", "খুব বেশি", "খুব কম", "অত্যধিক", "অতি বেশি", "অতি কম"));
         /** Verbatim tokens in the document text that mean NOW, both scripts. */
         private List<String> emergencyPhrases = new ArrayList<>(List.of("emergency", "urgent", "urgently", "admit", "admission",
                 "immediately", "জরুরি", "জরুরী", "ভর্তি", "অবিলম্বে"));

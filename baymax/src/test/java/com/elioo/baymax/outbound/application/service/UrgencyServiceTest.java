@@ -34,18 +34,39 @@ class UrgencyServiceTest {
         return new DocumentFacts(d, "Ma", values, followUps, ctx, "https://x/baymax/documents/1");
     }
 
-    /** Acceptance: a value in a critical band → NOW. Range 4.0–5.6, width 1.6; 9.8 is more than one width above. */
+    /** Acceptance (PO ruling 2026-09-18, STOPGAP): ≥ 2.0 × ref_high → NOW. Range 4.0–5.6: 11.2 is exactly 2 × 5.6. */
     @Test
-    void aValueInTheCriticalBandIsNow() {
-        var a = service.assess(facts(List.of(value("HbA1c", "9.8", "4.0", "5.6")), List.of(), Map.of(), "{}"));
+    void aValueAtTwiceTheUpperLimitIsNow() {
+        var a = service.assess(facts(List.of(value("HbA1c", "11.2", "4.0", "5.6")), List.of(), Map.of(), "{}"));
         assertThat(a.level()).isEqualTo(Urgency.NOW);
         assertThat(a.reasons()).contains("value_critical:hba1c");
     }
 
+    /** ≤ 0.5 × ref_low → NOW. Range 4.0–5.6: 2.0 is exactly half of 4.0. */
     @Test
-    void aValueOutsideTheRangeButInsideTheBandIsThisWeek() {
-        var a = service.assess(facts(List.of(value("HbA1c", "6.5", "4.0", "5.6")), List.of(), Map.of(), "{}"));
-        assertThat(a.level()).isEqualTo(Urgency.THIS_WEEK);
+    void aValueAtHalfTheLowerLimitIsNow() {
+        assertThat(service.assess(facts(List.of(value("Hb", "2.0", "4.0", "5.6")), List.of(), Map.of(), "{}")).level()).isEqualTo(Urgency.NOW);
+        assertThat(service.assess(facts(List.of(value("Hb", "2.1", "4.0", "5.6")), List.of(), Map.of(), "{}")).level()).isEqualTo(Urgency.THIS_WEEK);
+    }
+
+    /** Outside the range but under the multiples — even well outside — stays THIS_WEEK. 9.8 was NOW under the old width rule. */
+    @Test
+    void outsideTheRangeButUnderTheMultiplesIsThisWeek() {
+        assertThat(service.assess(facts(List.of(value("HbA1c", "9.8", "4.0", "5.6")), List.of(), Map.of(), "{}")).level()).isEqualTo(Urgency.THIS_WEEK);
+        assertThat(service.assess(facts(List.of(value("HbA1c", "6.5", "4.0", "5.6")), List.of(), Map.of(), "{}")).level()).isEqualTo(Urgency.THIS_WEEK);
+    }
+
+    /** The page's own marking near the value makes an outside-range value NOW, in either script; far from it, it does not. */
+    @Test
+    void thePagesOwnCriticalMarkingNearTheValueIsNow() {
+        String near = "{\"values\":[{\"name\":\"HbA1c\",\"value\":\"6.5\",\"flag\":\"high\"}],\"free_text_summary\":\"HbA1c 6.5 marked critical\"}";
+        assertThat(service.assess(facts(List.of(value("HbA1c", "6.5", "4.0", "5.6")), List.of(), Map.of(), near)).level()).isEqualTo(Urgency.NOW);
+        String nearBn = "{\"advice\":\"HbA1c 6.5 খুব বেশি\"}";
+        assertThat(service.assess(facts(List.of(value("HbA1c", "6.5", "4.0", "5.6")), List.of(), Map.of(), nearBn)).level()).isEqualTo(Urgency.NOW);
+        String far = "{\"a\":\"6.5\",\"b\":\"" + "x ".repeat(80) + "critical\"}";
+        assertThat(service.assess(facts(List.of(value("HbA1c", "6.5", "4.0", "5.6")), List.of(), Map.of(), far)).level()).isEqualTo(Urgency.THIS_WEEK);
+        // a marking with no printed range still escalates nothing: no range, no escalation from values
+        assertThat(service.assess(facts(List.of(value("HbA1c", "6.5", null, null)), List.of(), Map.of(), near)).level()).isEqualTo(Urgency.ROUTINE);
     }
 
     /** Acceptance: no printed range anywhere → never above ROUTINE from values, whatever the number. */
@@ -82,7 +103,7 @@ class UrgencyServiceTest {
 
     @Test
     void banglaDigitsInAValueAreRead() {
-        var a = service.assess(facts(List.of(value("HbA1c", "৯.৮", "4.0", "5.6")), List.of(), Map.of(), "{}"));
+        var a = service.assess(facts(List.of(value("HbA1c", "১১.২", "4.0", "5.6")), List.of(), Map.of(), "{}"));
         assertThat(a.level()).isEqualTo(Urgency.NOW);
     }
 

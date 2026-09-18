@@ -211,16 +211,29 @@ public class WebUiHandler {
     public Mono<ServerResponse> documentPage(ServerRequest request) {
         WebSession session = SessionAuthFilter.session(request);
         UUID documentId = uuid(request.pathVariable("id"));
-        return timeline.document(session.familyId(), documentId).flatMap(view -> Html.ok(TITLE, render(view, documentId)));
+        return timeline.document(session.familyId(), documentId)
+                .zipWith(timeline.explanationOf(session.familyId(), documentId).map(Optional::of).defaultIfEmpty(Optional.empty()))
+                .flatMap(t -> Html.ok(TITLE, render(t.getT1(), documentId, t.getT2())));
+    }
+
+    String render(DocumentView view, UUID documentId) {
+        return render(view, documentId, Optional.empty());
     }
 
     /** The page as the ticket specifies it: extracted items beside their crops, and for a retake nothing but why and the page. */
-    String render(DocumentView view, UUID documentId) {
+    /**
+     * @param explanation the released BMX-6 message for this document, shown above the extraction exactly as
+     *                    composed — it is the only interpretive text on the page and it passed the checklist
+     */
+    String render(DocumentView view, UUID documentId, Optional<String> explanation) {
         StringBuilder b = new StringBuilder(top(null));
         b.append("<p class=\"small\"><a href=\"javascript:history.back()\">← ফিরে যান</a></p>");
         b.append("<h1>").append(Html.documentType(view.documentType())).append(" ").append(Html.status(view.status())).append("</h1>");
         b.append("<div class=\"meta\">").append(esc(view.documentDate() == null ? "" : view.documentDate()))
                 .append(view.facility() == null ? "" : " · " + esc(view.facility())).append("</div>");
+
+        explanation.ifPresent(text -> b.append("<div class=\"card\"><div class=\"meta\">সংক্ষেপে</div><div style=\"white-space:pre-line\">")
+                .append(esc(text)).append("</div></div>"));
 
         if (!"DONE".equals(view.status())) {
             // NEEDS_RETAKE / FAILED / in flight: the reason and the page image, and nothing extracted anywhere

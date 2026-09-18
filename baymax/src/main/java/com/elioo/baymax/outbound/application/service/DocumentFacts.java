@@ -52,7 +52,8 @@ public record DocumentFacts(Document document, String patientName, List<Map<Stri
             out.add(String.valueOf(document.docDate().getDayOfMonth()));
             out.add(String.valueOf(document.docDate().getMonthValue()));
         }
-        addRuns(out, link);
+        // the link is NOT a source of allowed numbers: its UUID carries random digit runs that would let a
+        // fabricated "42" pass by luck. The safety check strips the link from the body before counting digits.
         return out;
     }
 
@@ -76,9 +77,11 @@ public record DocumentFacts(Document document, String patientName, List<Map<Stri
         return sb.toString();
     }
 
+    /** Digit runs in a body, with the timeline link removed first: its UUID is not a number the family reads. */
     public List<String> digitRunsIn(String body) {
         List<String> runs = new ArrayList<>();
-        Matcher m = DIGITS.matcher(fold(body));
+        String withoutLink = link == null ? body : body.replace(link, " ");
+        Matcher m = DIGITS.matcher(fold(withoutLink));
         while (m.find()) {
             runs.add(m.group());
         }
