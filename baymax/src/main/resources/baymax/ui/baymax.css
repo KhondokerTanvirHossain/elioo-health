@@ -101,7 +101,7 @@ button.quiet:hover,.btn.quiet:hover{background:var(--c-line);color:var(--c-text)
 /* landing — the storytelling page (BMX-6d). Chat bubbles, one motion, no script. */
 main.page{max-width:none;padding:0}
 .wrap{max-width:592px;margin:0 auto;padding:0 var(--sp-4)}
-.land .top{padding:var(--sp-4) var(--sp-4) var(--sp-2);margin:0}
+.land .top{padding:var(--sp-4) var(--sp-4) var(--sp-2);margin:0 auto}
 .wm img{display:block;height:44px;width:auto}
 .tagline{display:block;font-size:var(--fs-s);line-height:1.4;color:var(--c-muted);margin-top:var(--sp-1)}
 .land .actions a.login{font-weight:600;color:var(--c-accent);text-decoration:none;padding:var(--sp-2) 0 var(--sp-2) var(--sp-2)}
