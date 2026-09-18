@@ -6,104 +6,91 @@ import com.elioo.baymax.extraction.domain.PageOcr;
 import org.junit.jupiter.api.Test;
 
 import javax.imageio.ImageIO;
-import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+/** Where a crop comes from, and the invariant: a stored crop always contains its item's text. */
 class CropCutterTest {
 
-    private static final int PAGE_W = 600;
-    private static final int PAGE_H = 400;
+    private final CropCutter cutter = new CropCutter(new BaymaxProperties());
 
-    private static CropCutter cutter(int padding) {
-        BaymaxProperties props = new BaymaxProperties();
-        props.getExtract().setCropPaddingPx(padding);
-        return new CropCutter(props);
-    }
-
-    /** A page with the words "HbA1c" and "8.2" laid out at known boxes. */
-    private static PageOcr page() throws IOException {
-        BufferedImage image = new BufferedImage(PAGE_W, PAGE_H, BufferedImage.TYPE_INT_RGB);
-        var g = image.createGraphics();
-        g.setColor(Color.WHITE);
-        g.fillRect(0, 0, PAGE_W, PAGE_H);
-        g.dispose();
+    /** SpanLocatorTest's page, with a white image big enough for its boxes. */
+    static PageOcr page() throws Exception {
+        PageOcr p = SpanLocatorTest.PAGE;
+        BufferedImage img = new BufferedImage(400, 200, BufferedImage.TYPE_INT_RGB);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        ImageIO.write(image, "jpg", out);
-        String base64 = Base64.getEncoder().encodeToString(out.toByteArray());
-
-        // text: "HbA1c 8.2"  →  offsets 0..5 and 6..9
-        List<PageOcr.PositionedWord> words = List.of(
-                new PageOcr.PositionedWord("HbA1c", 0, 5, 100, 100, 180, 130),
-                new PageOcr.PositionedWord("8.2", 6, 9, 200, 100, 240, 130));
-        return new PageOcr(1, "HbA1c 8.2", words, base64, 0.9);
+        ImageIO.write(img, "jpg", out);
+        return new PageOcr(1, p.text(), p.words(), Base64.getEncoder().encodeToString(out.toByteArray()), 0.9);
     }
 
-    @Test
-    void cutsTheUnionOfEveryWordTouchingTheSpan() throws Exception {
-        PageOcr page = page();
-        Optional<byte[]> crop = cutter(10).cut(new ExtractionResult.SourceSpan(1, 0, 9),
-                Map.of(1, page));
-
-        assertThat(crop).isPresent();
-        BufferedImage cut = ImageIO.read(new ByteArrayInputStream(crop.get()));
-        // union is x 100..240, y 100..130, padded by 10 on every side
-        assertThat(cut.getWidth()).isEqualTo(160);
-        assertThat(cut.getHeight()).isEqualTo(50);
+    static int heightOf(byte[] jpeg) throws Exception {
+        return ImageIO.read(new ByteArrayInputStream(jpeg)).getHeight();
     }
 
+    /** Acceptance: the follow-up whose offsets pointed past the text resolves to a crop containing it. */
     @Test
-    void aSpanOverOneWordCutsOnlyThatWord() throws Exception {
-        Optional<byte[]> crop = cutter(0).cut(new ExtractionResult.SourceSpan(1, 6, 9), Map.of(1, page()));
-
-        BufferedImage cut = ImageIO.read(new ByteArrayInputStream(crop.get()));
-        assertThat(cut.getWidth()).isEqualTo(40);
-        assertThat(cut.getHeight()).isEqualTo(30);
-    }
-
-    @Test
-    void paddingIsClampedToThePageEdges() throws Exception {
-        PageOcr page = new PageOcr(1, "edge",
-                List.of(new PageOcr.PositionedWord("edge", 0, 4, 0, 0, 40, 20)),
-                page().imageBase64(), 0.9);
-
-        Optional<byte[]> crop = cutter(50).cut(new ExtractionResult.SourceSpan(1, 0, 4), Map.of(1, page));
-
-        assertThat(crop).isPresent();
-        BufferedImage cut = ImageIO.read(new ByteArrayInputStream(crop.get()));
-        assertThat(cut.getWidth()).isLessThanOrEqualTo(PAGE_W);
-        assertThat(cut.getHeight()).isLessThanOrEqualTo(PAGE_H);
-    }
-
-    @Test
-    void noCropWhenTheSpanMatchesNoWord() throws Exception {
-        assertThat(cutter(10).cut(new ExtractionResult.SourceSpan(1, 50, 60), Map.of(1, page()))).isEmpty();
-    }
-
-    @Test
-    void noCropWhenThePageIsUnknownOrTheSpanIsUnusable() throws Exception {
+    void aFollowUpWithDriftedOffsetsIsCroppedFromItsOwnLine() throws Exception {
         Map<Integer, PageOcr> pages = Map.of(1, page());
-        CropCutter c = cutter(10);
-        assertThat(c.cut(new ExtractionResult.SourceSpan(9, 0, 5), pages)).isEmpty();
-        assertThat(c.cut(new ExtractionResult.SourceSpan(1, 5, 5), pages)).isEmpty();
-        assertThat(c.cut(new ExtractionResult.SourceSpan(0, 0, 5), pages)).isEmpty();
-        assertThat(c.cut(null, pages)).isEmpty();
+        CropCutter.Cut cut = cutter.cut(new ExtractionResult.SourceSpan(1, 428, 452), "Follow up after 1 month", pages);
+        assertThat(cut.outcome()).isEqualTo(CropCutter.Outcome.RELOCATED);
+        assertThat(cut.bytes()).isPresent();
+        // the crop is one line high (20px words + 12px padding each side), not the page
+        assertThat(heightOf(cut.bytes().get())).isLessThan(60);
+    }
+
+    /** The regression: offsets that land on the wrong words used to yield a crop of those wrong words. */
+    @Test
+    void aSpanOnTheWrongWordsIsNotCroppedThereButWhereTheTextIs() throws Exception {
+        Map<Integer, PageOcr> pages = Map.of(1, page());
+        // [0,20) is the name line; the item is the medicine
+        CropCutter.Cut cut = cutter.cut(new ExtractionResult.SourceSpan(1, 0, 20), "Tab. Demoprol", pages);
+        assertThat(cut.outcome()).isEqualTo(CropCutter.Outcome.RELOCATED);
+        assertThat(cut.bytes()).isPresent();
     }
 
     @Test
-    void wordsWithoutGeometryAreIgnored() throws Exception {
-        PageOcr page = new PageOcr(1, "blind",
-                List.of(new PageOcr.PositionedWord("blind", 0, 5, -1, -1, -1, -1)),
-                page().imageBase64(), 0.5);
+    void offsetsThatAreRightAreUsedAsIs() throws Exception {
+        Map<Integer, PageOcr> pages = Map.of(1, page());
+        int start = SpanLocatorTest.PAGE.text().indexOf("Tab . Demoprol");
+        CropCutter.Cut cut = cutter.cut(new ExtractionResult.SourceSpan(1, start, start + 14), "Tab. Demoprol", pages);
+        assertThat(cut.outcome()).isEqualTo(CropCutter.Outcome.CLAIMED_SPAN);
+    }
 
-        assertThat(cutter(10).cut(new ExtractionResult.SourceSpan(1, 0, 5), Map.of(1, page))).isEmpty();
+    /** Safety: text that is not on the page gets no crop and so is never stored or surfaced. */
+    @Test
+    void textNotOnThePageYieldsNoCrop() throws Exception {
+        CropCutter.Cut cut = cutter.cut(new ExtractionResult.SourceSpan(1, 10, 30), "Tab. Zorbaflex", Map.of(1, page()));
+        assertThat(cut.outcome()).isEqualTo(CropCutter.Outcome.TEXT_NOT_ON_PAGE);
+        assertThat(cut.bytes()).isEmpty();
+    }
+
+    @Test
+    void theDiastolicReadingGetsTheBloodPressureLine() throws Exception {
+        Map<Integer, PageOcr> pages = Map.of(1, page());
+        CropCutter.Cut systolic = cutter.cutValue(new ExtractionResult.SourceSpan(1, 0, 20), "BP", "130", pages);
+        CropCutter.Cut diastolic = cutter.cutValue(new ExtractionResult.SourceSpan(1, 0, 20), "BP", "80", pages);
+        assertThat(systolic.bytes()).isPresent();
+        assertThat(diastolic.bytes()).isPresent();
+        assertThat(diastolic.outcome()).isEqualTo(CropCutter.Outcome.RELOCATED);
+        // a value whose name is not on any line with it is not cropped from some other "80"
+        assertThat(cutter.cutValue(new ExtractionResult.SourceSpan(1, 0, 20), "HbA1c", "80", pages).bytes()).isEmpty();
+    }
+
+    /** Safety: never widen a crop to the page. */
+    @Test
+    void aRunOfWordsCoveringMostOfThePageIsRefused() throws Exception {
+        PageOcr p = page();
+        // pretend every word sits in one giant box spanning the page height
+        List<PageOcr.PositionedWord> tall = p.words().stream()
+                .map(w -> new PageOcr.PositionedWord(w.text(), w.start(), w.end(), w.left(), 0, w.right(), 199)).toList();
+        PageOcr tallPage = new PageOcr(1, p.text(), tall, p.imageBase64(), 0.9);
+        CropCutter.Cut cut = cutter.cut(new ExtractionResult.SourceSpan(1, 0, 5), "Name", Map.of(1, tallPage));
+        assertThat(cut.bytes()).isEmpty();
     }
 }

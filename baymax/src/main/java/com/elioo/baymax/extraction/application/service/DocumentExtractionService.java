@@ -237,7 +237,7 @@ public class DocumentExtractionService {
         int[] droppedFollowUp = {0};
 
         Flux<Void> values = Flux.fromIterable(result.valuesOrEmpty())
-                .concatMap(value -> crop(document, value.sourceSpan(), byPage, itemId("v", observations.size()))
+                .concatMap(value -> store(document, cropCutter.cutValue(value.sourceSpan(), value.name(), value.value(), byPage), itemId("v", observations.size()))
                         .doOnNext(key -> observations.add(new VerifiedItems.Observation(
                                 document.patientId(), value.name(),
                                 markers.canonicalFor(value.name(), value.canonicalName()).orElse(null),
@@ -247,7 +247,7 @@ public class DocumentExtractionService {
                         .then());
 
         Flux<Void> medicines = Flux.fromIterable(result.medicinesOrEmpty())
-                .concatMap(medicine -> crop(document, medicine.sourceSpan(), byPage, itemId("m", medications.size()))
+                .concatMap(medicine -> crop(document, medicine.sourceSpan(), medicine.name(), byPage, itemId("m", medications.size()))
                         .doOnNext(key -> medications.add(new VerifiedItems.Medication(
                                 document.patientId(), medicine.name(), medicine.doseText(), medicine.route(),
                                 medicine.frequencyText(), medicine.timingText(), medicine.durationText(),
@@ -256,7 +256,7 @@ public class DocumentExtractionService {
                         .then());
 
         Flux<Void> follow = Flux.fromIterable(result.followUpOrEmpty())
-                .concatMap(item -> crop(document, item.sourceSpan(), byPage, itemId("f", followUps.size()))
+                .concatMap(item -> crop(document, item.sourceSpan(), item.instruction(), byPage, itemId("f", followUps.size()))
                         .doOnNext(key -> followUps.add(new VerifiedItems.FollowUpItem(
                                 document.patientId(), item.instruction(), parseDate(item.dueDate()), key)))
                         .switchIfEmpty(Mono.fromRunnable(() -> droppedFollowUp[0]++))
@@ -265,7 +265,7 @@ public class DocumentExtractionService {
         List<VerifiedItems.ContextLine> context = new ArrayList<>();
         int[] droppedContext = {0};
         Flux<Void> clinical = Flux.fromIterable(contextItems(result))
-                .concatMap(item -> crop(document, item.span(), byPage, itemId("c", context.size()))
+                .concatMap(item -> crop(document, item.span(), item.text(), byPage, itemId("c", context.size()))
                         .doOnNext(key -> context.add(new VerifiedItems.ContextLine(
                                 item.section(), item.text(), item.duration(), key)))
                         .switchIfEmpty(Mono.fromRunnable(() -> droppedContext[0]++))
@@ -279,11 +279,12 @@ public class DocumentExtractionService {
     }
 
     /** One clinical line, flattened out of its section so every line is cropped the same way. */
-    private record ContextItem(String section, String text, String duration,
+    /** A clinical-context line flattened with its section; public for the BMX-5b replay harness. */
+    public record ContextItem(String section, String text, String duration,
                                ExtractionResult.SourceSpan span) {
     }
 
-    private static List<ContextItem> contextItems(ExtractionResult result) {
+    public static List<ContextItem> contextItems(ExtractionResult result) {
         ExtractionResult.ClinicalContext c = result.clinicalContextOrEmpty();
         List<ContextItem> items = new ArrayList<>();
         c.chiefComplaintOrEmpty().forEach(x ->
@@ -300,16 +301,24 @@ public class DocumentExtractionService {
         return items;
     }
 
-    private Mono<String> crop(Document document, ExtractionResult.SourceSpan span,
+    private Mono<String> crop(Document document, ExtractionResult.SourceSpan span, String anchor,
                               Map<Integer, PageOcr> byPage, String itemId) {
-        Optional<byte[]> bytes = cropCutter.cut(span, byPage);
-        if (bytes.isEmpty()) {
-            log.debug("[baymax] item dropped, no resolvable crop documentId={} item={}", document.id(), itemId);
+        return store(document, cropCutter.cut(span, anchor, byPage), itemId);
+    }
+
+    private Mono<String> store(Document document, CropCutter.Cut cut, String itemId) {
+        if (cut.bytes().isEmpty()) {
+            // the outcome names why, never the text (BMX-5b)
+            log.info("[baymax] item dropped documentId={} item={} outcome={}", document.id(), itemId, cut.outcome());
             return Mono.empty();
         }
-        return storage.storeCrop(document.familyId(), document.patientId(), document.id(), itemId, bytes.get())
+        if (cut.outcome() == CropCutter.Outcome.RELOCATED) {
+            log.debug("[baymax] item crop relocated by text documentId={} item={}", document.id(), itemId);
+        }
+        return storage.storeCrop(document.familyId(), document.patientId(), document.id(), itemId, cut.bytes().get())
                 .map(stored -> stored.storageKey());
     }
+
 
     private static String itemId(String prefix, int index) {
         return prefix + (index + 1);

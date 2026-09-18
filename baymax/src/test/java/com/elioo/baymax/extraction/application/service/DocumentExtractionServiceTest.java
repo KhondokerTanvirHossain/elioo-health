@@ -232,9 +232,29 @@ class DocumentExtractionServiceTest {
         verify(records, never()).saveExtraction(any(), any());
     }
 
+    /**
+     * BMX-5b: offsets past the end of the text used to drop the item. The item's text is on the page, so
+     * it is now cropped from where the text actually is — and stored with that crop.
+     */
+    @Test
+    void aValueWhoseOffsetsAreWrongIsCroppedFromItsOwnTextNotDropped() throws Exception {
+        replyWith(GOOD_REPLY.replace("\"start\":0,\"end\":5", "\"start\":900,\"end\":950"));
+
+        StepVerifier.create(service.process(received(1), List.of(pageJpeg())))
+                .assertNext(d -> assertThat(d.status()).isEqualTo(Document.Status.DONE))
+                .verifyComplete();
+
+        ArgumentCaptor<VerifiedItems> items = ArgumentCaptor.forClass(VerifiedItems.class);
+        verify(records).saveExtraction(any(), items.capture());
+        assertThat(items.getValue().observations()).hasSize(1);
+        assertThat(items.getValue().unverified().total()).isZero();
+        verify(storage).storeCrop(any(), any(), any(), eq("v1"), any());
+    }
+
+    /** The invariant: text that is not on the page gets no crop, is not stored, and is counted. */
     @Test
     void anItemWhoseSpanResolvesToNothingIsDroppedNotStored() throws Exception {
-        replyWith(GOOD_REPLY.replace("\"start\":0,\"end\":5", "\"start\":900,\"end\":950"));
+        replyWith(GOOD_REPLY.replace("HbA1c", "Ferritin"));
 
         StepVerifier.create(service.process(received(1), List.of(pageJpeg())))
                 .assertNext(d -> assertThat(d.status()).isEqualTo(Document.Status.DONE))
