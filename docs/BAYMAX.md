@@ -39,6 +39,7 @@ MedScribe is becoming Baymax: a WhatsApp-first health-memory assistant for Bangl
 - Every LLM call from Baymax goes through `MeteredLlmClient` and every OCR call through `MeteredVisionOcr` (`com.elioo.baymax.aicall`); each successful call writes one `baymax.ai_call_log` row (purpose, provider, model, tokens, cost from the `baymax.llm.prices` / `baymax.vision.cost-per-image` config, latency, confidence). Unknown model → `cost_usd` NULL + WARN, never a guess. No prompt, reply or OCR text in the log. Weekly CSV: `GET /api/v1/baymax/admin/metrics/weekly` behind the `X-Baymax-Admin-Token` header (BMX-1). BMX-2 (extraction) calls models only through these wrappers and adds `ai_call_log.status` (ok|failed) in V5 (V3 = stored_object, V4 = family tables): failed calls write a row with zero tokens, NULL cost and the actual latency.
 - Every Baymax entity uses a schema-qualified table name (`@Table("baymax.document")` etc.). The shared R2DBC connection keeps `medscribe` as its search path (BMX-0 review).
 - Bangla TTS for voice notes (provider TBD by Tanvir).
+- **URL layout (DR-11, deferred to BMX-10):** Baymax will serve `/` (landing page + app) and the MedScribe PoC moves to `/medscribeai/`. Until then the Baymax UI stays at `/baymax/` and nothing is renamed — BMX-5b and BMX-6 come first; do the flip before any external eyes on the product.
 - Build order: web first (family accounts, patient profiles, timeline, review-gate UI, cost logging), then WhatsApp channel.
 
 ## Data model (target, adjust as needed)

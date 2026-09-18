@@ -121,3 +121,18 @@ reached 82.5% for $0.024, and every higher threshold cost more than Sonnet alone
 Configuration: `baymax.extract.vision-model` defaults to `claude-sonnet-5`, `strong-model-threshold` to `0.0`
 (escalation off; a `critical` flag still escalates, to the same model). To re-enable the two-tier path set
 `BAYMAX_EXTRACT_VISION_MODEL=claude-haiku-4-5` and a threshold; the Haiku client and its price entries remain.
+
+## DR-11 | 2026-09-18 | URL layout flips: Baymax serves `/`, MedScribe PoC moves to `/medscribeai/`
+
+**Decision:** URL layout flips: Baymax serves `/` (landing page + app); MedScribe PoC moves to `/medscribeai/`.
+Deferred — do it as part of BMX-10, before any external eyes.
+
+**Why:** Baymax is the product; the PoC is a demo artefact.
+
+**Supersedes:** none.
+
+*Engineering note:* nothing moves now — BMX-5b and BMX-6 come first. When it does: the MedScribe static UI
+(`medscribe-ai/src/main/resources/static/index.html`) and its `/api/...` routes gain the `/medscribeai` prefix, the
+Baymax web UI moves from `/baymax/**` to `/**` with `/api/v1/baymax/**` unchanged, and Caddy on the box needs no
+change (it proxies the whole host). Session cookie `Path=/` already covers the new layout; the OTP login cookie is
+scoped to the UI base path and must follow it.
