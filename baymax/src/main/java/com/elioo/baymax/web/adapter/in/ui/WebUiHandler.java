@@ -54,9 +54,11 @@ import static com.elioo.baymax.web.adapter.in.ui.Html.esc;
 public class WebUiHandler {
 
     static final String BASE = "/app";
+    /** The company site, linked from the landing footer (DR-15). */
+    static final String ELIOO = "https://www.eliooo.org/";
     static final String LOGIN_COOKIE = "baymax_login";
     /** Files under classpath {@code baymax/ui/} that {@code /assets/{file}} may serve; nothing else leaves the jar. */
-    static final Set<String> ASSETS = Set.of("baymax.css", "landing-shot.png", "mascot.png", "mascot.svg", "mascot.webp");
+    static final Set<String> ASSETS = Set.of("baymax.css", "favicon.svg", "landing-shot.png", "mio.png", "mio@2x.png", "mio.svg", "medioo.svg", "medioo.png");
 
     private final WebAuthUseCase auth;
     private final TimelineUseCase timeline;
@@ -69,7 +71,7 @@ public class WebUiHandler {
         Lang lang = Lang.of(request);
         String t = copy.t(lang, "app.title");
         StringBuilder b = new StringBuilder();
-        b.append("<div class=\"top\"><a class=\"brand\" href=\"/\"><span class=\"dot\"></span>").append(t).append("</a>")
+        b.append("<div class=\"top\"><a class=\"brand\" href=\"/\">").append(Html.brand(t)).append("</a>")
                 .append("<div class=\"actions\">").append(langToggle(lang, "/"))
                 .append("<a class=\"btn\" href=\"").append(BASE).append("\">").append(copy.t(lang, "landing.login")).append("</a></div></div>");
         b.append("<section class=\"hero\"><div><h1>").append(t).append("</h1>")
@@ -77,7 +79,7 @@ public class WebUiHandler {
                 .append("<p class=\"lead\">").append(copy.t(lang, "landing.lead")).append("</p>")
                 .append("<p class=\"cta\"><a class=\"btn\" href=\"").append(BASE).append("\">").append(copy.t(lang, "landing.cta")).append("</a></p></div>")
                 .append("<div class=\"mascot\"><div class=\"mascot-slot\">")
-                .append(Html.MASCOT == null ? "" : "<img alt=\"\" src=\"" + Html.MASCOT + "\">")
+                .append(Html.present(Html.MASCOT) ? "<img alt=\"Mio\" src=\"" + Html.MASCOT + "?v=" + Html.version("/baymax/ui/mio.png") + "\">" : "")
                 .append("</div></div></section>");
         b.append("<section class=\"section\"><h2>").append(copy.t(lang, "landing.how")).append("</h2><div class=\"steps\">");
         for (int i = 1; i <= 3; i++) {
@@ -98,7 +100,10 @@ public class WebUiHandler {
             b.append("<li>").append(copy.t(lang, "landing.data." + i)).append("</li>");
         }
         b.append("</ul></section>");
-        return Html.html(HttpStatus.OK, Html.page(lang, t, b.toString(), 0, true, copy.t(lang, "disclaimer"), true));
+        // the landing footer also says whose product this is (DR-15): the one off-site link in the whole app
+        String foot = copy.t(lang, "disclaimer") + "<div class=\"about\"><a href=\"" + ELIOO + "\" rel=\"noopener\">"
+                + copy.t(lang, "landing.about") + "</a></div>";
+        return Html.html(HttpStatus.OK, Html.page(lang, t, b.toString(), 0, true, foot, true));
     }
 
     private void plan(StringBuilder b, Lang lang, String key, int lines, String cls) {
@@ -487,7 +492,7 @@ public class WebUiHandler {
     /** The top bar: brand home, language toggle, and the logout button when signed in. */
     private String top(Lang lang, String who, boolean signedIn) {
         String here = signedIn ? BASE + "/home" : BASE + "/";
-        return "<div class=\"top\"><a class=\"brand\" href=\"" + here + "\"><span class=\"dot\"></span>" + copy.t(lang, "app.title") + "</a>"
+        return "<div class=\"top\"><a class=\"brand\" href=\"" + here + "\">" + Html.brand(copy.t(lang, "app.title")) + "</a>"
                 + "<div class=\"actions\">" + langToggle(lang, here)
                 + (signedIn ? "<form method=\"post\" action=\"" + BASE + "/logout\"><button type=\"submit\" class=\"quiet\">"
                 + (who == null ? "" : "<span class=\"who\">" + esc(who) + " · </span>") + copy.t(lang, "app.logout") + "</button></form>" : "")

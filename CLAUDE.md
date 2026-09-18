@@ -8,11 +8,11 @@ file disagree, the code wins and this file should be fixed.
 **MedScribe AI** (repo `elioo-health`): a Spring Boot 3.4 / Java 21 WebFlux service that turns a photo of a
 medical document (Bangla and/or English lab reports and prescriptions) into structured results, ICD-10 /
 RxNorm / SNOMED codes, an LLM-written clinical summary, and a chat about the report. Production runs at
-https://baymax.eliooo.org. Full architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+https://medioo.eliooo.org (the old name baymax.eliooo.org redirects permanently). Full architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-Status: PoC closed 2026-09-12; MVP ("Baymax", internal codename) in development.
+Status: PoC closed 2026-09-12; MVP in development — public name **Medioo** (DR-15), "Baymax" is the internal codename kept in module, package, schema, config and env names.
 
-**Read [docs/BAYMAX.md](docs/BAYMAX.md) and [docs/DECISIONS.md](docs/DECISIONS.md) before any Baymax work.**
+**Read [docs/MEDIOO.md](docs/MEDIOO.md) and [docs/DECISIONS.md](docs/DECISIONS.md) before any Baymax/Medioo work.**
 Product decisions come from the Baymax PO project via BMX tickets; do not change scope, safety rules or pricing
 on your own — propose in the build report. The product definition, MVP in/out list and pilot metrics are in
 [docs/PRODUCT.md](docs/PRODUCT.md). Per DR-2, Baymax is a new `baymax` module beside `medscribe-ai`; MedScribe
@@ -97,7 +97,7 @@ Key files when changing behaviour:
 
 ## Environment facts (2026-09)
 
-- Server: EC2 `ec2-13-205-14-249.ap-south-1.compute.amazonaws.com`, user `ec2-user`, shared with an n8n stack; Caddy there does HTTPS for `baymax.eliooo.org`.
+- Server: EC2 `ec2-13-205-14-249.ap-south-1.compute.amazonaws.com`, user `ec2-user`, shared with an n8n stack; Caddy there does HTTPS for `medioo.eliooo.org` and redirects `baymax.eliooo.org` to it (Caddyfile at `/home/ec2-user/n8n/Caddyfile`, reload with `docker exec n8n-caddy-1 caddy reload --config /etc/caddy/Caddyfile`).
 - Runtime config on the server: `/home/ec2-user/medscribe.env` (mode 600). Redeploy manually: `IMAGE_TAG=<git sha> bash ~/deploy.sh`. Back it up before editing and list every change in the build report; which `BAYMAX_*` lines must be blank vs set, and the post-deploy self-test, are in [docs/RUNBOOK.md](docs/RUNBOOK.md).
 - Database: Supabase project `niramoy-rx` (ap-south-1), role/schema `medscribe`, via the session pooler on port 5432.
 - LLM: `groq` by default (`openai/gpt-oss-120b`, free tier 8k tokens/min); switch to `anthropic` (`claude-opus-5`) for demos by editing the server env and redeploying.

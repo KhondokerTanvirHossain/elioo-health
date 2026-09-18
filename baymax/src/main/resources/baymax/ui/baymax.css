@@ -1,23 +1,28 @@
-/* Baymax design tokens (DR-14). The ONLY place a colour, radius, spacing step or type size is written.
-   Pages consume tokens; a literal colour or radius anywhere else fails DesignTokensTest. */
+/* Medioo design tokens (DR-14, palette amended 2026-09-19 to match the Mio mascot). The ONLY place a colour,
+   radius, spacing step or type size is written. Pages consume tokens; a literal anywhere else fails DesignTokensTest.
+   Teal is the primary; RED IS RESERVED for the wordmark dot and NOW-urgency states (.urgent) and appears nowhere
+   else — that is what makes "এখনই যান" read as urgent. Values read off the supplied poster; replace from the SVG. */
 :root{
-  --c-bg:#fffdfa;            /* warm white page */
+  --c-bg:#fbfdfd;            /* white with a breath of teal */
   --c-surface:#ffffff;       /* cards */
-  --c-surface-2:#f6f1ea;     /* warm neutral, quiet blocks */
-  --c-text:#2b2523;
-  --c-muted:#6f6663;
-  --c-line:#eadfd6;
-  --c-accent:#e05a4e;        /* soft red */
-  --c-accent-ink:#b8382d;    /* red on light surfaces */
-  --c-accent-soft:#fbe9e6;
+  --c-surface-2:#f4f1ec;     /* warm neutral, quiet blocks */
+  --c-text:#1f2a2b;
+  --c-muted:#5f6d6e;
+  --c-line:#dfe9e9;
+  --c-accent:#2f9aa3;        /* Mio teal — primary */
+  --c-accent-ink:#1e6f78;    /* teal on light surfaces */
+  --c-accent-soft:#e3f3f4;
   --c-on-accent:#ffffff;
-  --c-info-soft:#f1ece6;
-  --c-warn-soft:#fff3e0;
-  --c-warn-line:#f2d9b0;
-  --c-danger:#b8382d;
-  --c-danger-soft:#fdecea;
-  --c-danger-line:#f3c1bb;
-  --c-focus:#e05a4e;
+  --c-brand-2:#4fa8d8;       /* the wordmark's light-blue "oo" */
+  --c-urgent:#f26b5b;        /* RESERVED: wordmark dot, NOW urgency */
+  --c-urgent-soft:#fdeae6;   /* RESERVED: NOW urgency surfaces */
+  --c-info-soft:#eef4f4;
+  --c-warn-soft:#fff6e5;
+  --c-warn-line:#f0dcae;
+  --c-danger:#1f2a2b;        /* destructive buttons are dark, never red */
+  --c-danger-soft:#f4f1ec;
+  --c-danger-line:#cfc6bb;
+  --c-focus:#2f9aa3;
   --r-s:10px; --r-m:16px; --r-l:24px; --r-pill:999px;
   --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:24px; --sp-6:32px; --sp-7:48px;
   --fs-s:.9rem; --fs-0:1rem; --fs-1:1.125rem; --fs-2:1.375rem; --fs-3:1.75rem; --fs-4:2.25rem;
@@ -43,7 +48,8 @@ main.page{max-width:var(--w-page);margin:0 auto;padding:var(--sp-4)}
 .top .btn{padding:var(--sp-2) var(--sp-3);min-height:36px;margin:0}
 .top form{margin:0}
 .brand{display:inline-flex;align-items:center;gap:var(--sp-2);text-decoration:none;color:var(--c-text);font-weight:700;font-size:var(--fs-1);white-space:nowrap}
-.brand .dot{width:14px;height:14px;border-radius:var(--r-pill);background:var(--c-accent);flex:none}
+.brand .dot{width:14px;height:14px;border-radius:var(--r-pill);background:var(--c-urgent);flex:none}
+.brand img{height:28px;width:auto;display:block}
 .actions{display:flex;align-items:center;gap:var(--sp-2)}
 
 /* language toggle: two pills, the active one filled */
@@ -85,6 +91,7 @@ button.quiet:hover,.btn.quiet:hover{background:var(--c-line);color:var(--c-text)
 .top button.quiet{margin:0;padding:var(--sp-2) var(--sp-3);min-height:36px}
 
 /* footer disclaimer: every page */
+.foot .about{margin-top:var(--sp-2)}
 .foot{margin-top:var(--sp-7);padding:var(--sp-4) 0 var(--sp-5);border-top:1px solid var(--c-line);color:var(--c-muted);font-size:var(--fs-s)}
 
 /* landing */
@@ -93,7 +100,7 @@ button.quiet:hover,.btn.quiet:hover{background:var(--c-line);color:var(--c-text)
 .hero .lead{font-size:var(--fs-1);color:var(--c-muted);max-width:34em}
 .hero .cta{margin-top:var(--sp-2)}
 .mascot{display:flex;justify-content:center}
-.mascot-slot{width:min(60vw,260px);aspect-ratio:1;border-radius:var(--r-pill);background:var(--c-accent-soft);display:flex;align-items:center;justify-content:center}
+.mascot-slot{width:min(60vw,260px);aspect-ratio:1;border-radius:var(--r-pill);background:var(--c-accent-soft);display:flex;align-items:center;justify-content:center;overflow:visible}
 .mascot-slot img{width:100%;height:100%;object-fit:contain}
 .steps{display:grid;gap:var(--sp-3)}
 .step{display:flex;gap:var(--sp-3);align-items:flex-start;background:var(--c-surface);border:1px solid var(--c-line);border-radius:var(--r-l);padding:var(--sp-4)}
@@ -117,5 +124,8 @@ button.quiet:hover,.btn.quiet:hover{background:var(--c-line);color:var(--c-text)
   .plans{grid-template-columns:1fr 1fr}
   main.page{padding:var(--sp-5)}
 }
+/* NOW urgency: the only red surface in the app (BMX-8 renders it; defined here so the rule is visible) */
+.urgent{background:var(--c-urgent-soft);border:1px solid var(--c-urgent);border-radius:var(--r-m);padding:var(--sp-3) var(--sp-4)}
+.urgent strong{color:var(--c-urgent)}
 @media (max-width:479px){.who{display:none}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
