@@ -10,6 +10,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.reactive.function.server.RouterFunction;
 import org.springframework.web.reactive.function.server.RouterFunctions;
+import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
 
 /** Admin routes under {@code /api/v1/baymax/admin/**}; every one of them passes {@link AdminAuthFilter}. */
@@ -21,13 +22,15 @@ public class BaymaxAdminRouter {
     @Bean
     public RouterFunction<ServerResponse> baymaxAdminRoutes(AdminMetricsHandler metrics, StorageSelfTestHandler storage,
                                                              RecropHandler recrop, ReviewGateHandler review,
-                                                            AdminAuthFilter auth, ErrorResponseFilter errors) {
+                                                            AdminAuthFilter auth, ErrorResponseFilter errors, com.elioo.baymax.nudge.application.port.in.NudgeUseCase nudges) {
         return RouterFunctions.route()
                 .GET(BASE_PATH + "/metrics/weekly", metrics::weekly)
                 .GET(BASE_PATH + "/storage/selftest", storage::selfTest)
                 // literal before {id}: "recrop" must not be read as a document id
                 .POST(BASE_PATH + "/documents/recrop", recrop::all)
                 .POST(BASE_PATH + "/documents/{id}/recrop", recrop::one)
+                .POST(BASE_PATH + "/nudges/evaluate", (ServerRequest req) -> nudges.evaluateAll()
+                        .flatMap(n -> ServerResponse.ok().bodyValue(java.util.Map.of("composed", n))))
                 .GET(BASE_PATH + "/messages/pending", review::pending)
                 .POST(BASE_PATH + "/messages/{id}/approve", review::approve)
                 .POST(BASE_PATH + "/messages/{id}/reject", review::reject)

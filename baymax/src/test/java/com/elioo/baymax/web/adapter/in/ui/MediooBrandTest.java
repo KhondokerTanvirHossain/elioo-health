@@ -34,7 +34,7 @@ class MediooBrandTest {
         when(auth.authenticate(anyString())).thenReturn(Mono.empty());
         SessionAuthFilter sessions = new SessionAuthFilter(auth, new BaymaxProperties());
         WebTestClient client = WebTestClient.bindToRouterFunction(new BaymaxWebUiRouter().baymaxWebUiRoutes(
-                new WebUiHandler(auth, mock(TimelineUseCase.class), sessions, copy), sessions)).build();
+                new WebUiHandler(auth, mock(TimelineUseCase.class), sessions, copy, mock(com.elioo.baymax.nudge.application.port.in.NudgeOptOutUseCase.class), mock(com.elioo.baymax.nudge.application.port.out.NudgeDataPort.class)), sessions)).build();
         for (String path : new String[]{"/", "/app/"}) {
             for (String lang : new String[]{"bn", "en"}) {
                 String html = client.get().uri(path).cookie("baymax_lang", lang).exchange().expectStatus().isOk()

@@ -42,6 +42,8 @@ public class DocumentIntakeService implements DocumentIntakeUseCase {
     private final BaymaxProperties properties;
     private final Clock clock;
     private final com.elioo.baymax.outbound.application.port.in.ExplainDocumentUseCase explainer;
+    /** BMX-8: medicine_changed fires on extraction completion; the other rules wait for the hour. */
+    private final com.elioo.baymax.nudge.application.port.in.NudgeUseCase nudges;
 
     @Override
     public Mono<Document> accept(UUID patientId, List<Upload> uploads) {
@@ -94,6 +96,14 @@ public class DocumentIntakeService implements DocumentIntakeUseCase {
                                 done.id(), m.kind(), m.urgency(), m.gateStatus()))
                         .onErrorResume(e -> {
                             log.error("[baymax] explanation failed documentId={}: {}", done.id(), e.getMessage());
+                            return Mono.empty();
+                        })
+                        .thenReturn(done))
+                // BMX-8: the medicine_changed rule looks at this prescription against the previous one; a failure is
+                // logged and never undoes anything. chronic_flags are never touched from here (asserted).
+                .flatMap(done -> nudges.onDocumentDone(done.id())
+                        .onErrorResume(e -> {
+                            log.error("[baymax] nudge check failed documentId={}: {}", done.id(), e.getMessage());
                             return Mono.empty();
                         })
                         .thenReturn(done))

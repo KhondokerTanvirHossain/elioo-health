@@ -25,7 +25,7 @@ class BaymaxWebUiRouterTest {
     BaymaxWebUiRouterTest() {
         SessionAuthFilter sessions = new SessionAuthFilter(auth, new BaymaxProperties());
         when(auth.authenticate(anyString())).thenReturn(Mono.empty());
-        WebUiHandler ui = new WebUiHandler(auth, mock(TimelineUseCase.class), sessions, new UiCopy());
+        WebUiHandler ui = new WebUiHandler(auth, mock(TimelineUseCase.class), sessions, new UiCopy(), mock(com.elioo.baymax.nudge.application.port.in.NudgeOptOutUseCase.class), mock(com.elioo.baymax.nudge.application.port.out.NudgeDataPort.class));
         client = WebTestClient.bindToRouterFunction(new BaymaxWebUiRouter().baymaxWebUiRoutes(ui, sessions)).build();
     }
 

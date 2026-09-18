@@ -21,6 +21,8 @@ import static org.mockito.Mockito.when;
 
 class WeeklyMetricsServiceTest {
 
+    private final com.elioo.baymax.nudge.application.port.out.NudgePort nudgePort = org.mockito.Mockito.mock(com.elioo.baymax.nudge.application.port.out.NudgePort.class);
+
     private static final Instant FROM = Instant.parse("2026-09-05T00:00:00Z");
     private static final Instant TO = Instant.parse("2026-09-12T00:00:00Z");
 
@@ -53,6 +55,7 @@ class WeeklyMetricsServiceTest {
                 new FamilyActivity(family, FamilyAccount.Plan.FREE, 1, 2, Instant.parse("2026-09-09T12:00:00Z")),
                 new FamilyActivity(UUID.fromString("33333333-3333-3333-3333-333333333333"), FamilyAccount.Plan.FAMILY, 2, 0, null)));
         when(port.extractOutputTokens(any(), any())).thenReturn(Flux.just(900, 1200, 2000, 8192));
+        when(nudgePort.counts(any(), any())).thenReturn(Flux.just(new com.elioo.baymax.nudge.domain.NudgeCount(java.util.UUID.fromString("00000000-0000-0000-0000-000000000001"), com.elioo.baymax.nudge.domain.NudgeRule.TREND, com.elioo.baymax.nudge.domain.NudgeStatus.GATED, null, 2), new com.elioo.baymax.nudge.domain.NudgeCount(java.util.UUID.fromString("00000000-0000-0000-0000-000000000001"), com.elioo.baymax.nudge.domain.NudgeRule.TREND, com.elioo.baymax.nudge.domain.NudgeStatus.DROPPED, "weekly_cap", 1)));
         when(port.perDocument(any(), any())).thenReturn(Flux.just(
                 new DocumentAiCost(doc, 3, 1, 4200, 900, new BigDecimal("0.00117000"),
                         "gcp/vision-document-text-detection|groq/openai/gpt-oss-120b", 0.905, 2,
@@ -60,7 +63,7 @@ class WeeklyMetricsServiceTest {
                 new DocumentAiCost(null, 1, 1, 50, 10, null, "groq/llama", null, 0,
                         Instant.parse("2026-09-07T00:00:00Z"), Instant.parse("2026-09-07T00:00:00Z"))));
 
-        StepVerifier.create(new WeeklyMetricsService(port, records, audit, messages).weeklyCsv(FROM, TO))
+        StepVerifier.create(new WeeklyMetricsService(port, records, audit, messages, nudgePort).weeklyCsv(FROM, TO))
                 .assertNext(csv -> {
                     List<String> lines = csv.lines().toList();
                     assertThat(lines.get(0)).isEqualTo("# documents from=2026-09-05T00:00:00Z to=2026-09-12T00:00:00Z (to exclusive)");
@@ -86,20 +89,24 @@ class WeeklyMetricsServiceTest {
                     assertThat(lines.get(19)).startsWith("# extraction from=");
                     assertThat(lines.get(20)).isEqualTo(WeeklyMetricsService.EXTRACTION_HEADER);
                     assertThat(lines.get(21)).isEqualTo("4,8192,8192,1200");   // max, p95, median of 900/1200/2000/8192
-                    assertThat(lines).hasSize(22);
+                    assertThat(lines.get(23)).startsWith("# nudges from=");
+                    assertThat(lines.get(24)).isEqualTo(WeeklyMetricsService.NUDGES_HEADER);
+                    assertThat(lines.get(25)).isEqualTo("00000000-0000-0000-0000-000000000001,trend,0,2,0,1,weekly_cap:1,0,0");
+                    assertThat(lines).hasSize(26);
                 })
                 .verifyComplete();
     }
 
     @Test
-    void emptyWindowStillHasAllSixHeaders() {
+    void emptyWindowStillHasAllSevenHeaders() {
         AiCallLogPort port = mock(AiCallLogPort.class);
         HealthRecordPort records = mock(HealthRecordPort.class);
         when(port.perDocument(any(), any())).thenReturn(Flux.empty());
         when(port.extractOutputTokens(any(), any())).thenReturn(Flux.empty());
+        when(nudgePort.counts(any(), any())).thenReturn(Flux.empty());
         when(records.familyActivity(any(), any())).thenReturn(Flux.empty());
 
-        StepVerifier.create(new WeeklyMetricsService(port, records, audit, messages).weeklyCsv(FROM, TO))
+        StepVerifier.create(new WeeklyMetricsService(port, records, audit, messages, nudgePort).weeklyCsv(FROM, TO))
                 .assertNext(csv -> assertThat(csv.lines().toList())
                         .containsExactly(
                                 "# documents from=2026-09-05T00:00:00Z to=2026-09-12T00:00:00Z (to exclusive)",
@@ -118,7 +125,10 @@ class WeeklyMetricsServiceTest {
                                 WeeklyMetricsService.MESSAGES_HEADER,
                                 "",
                                 "# extraction from=2026-09-05T00:00:00Z to=2026-09-12T00:00:00Z (to exclusive)",
-                                WeeklyMetricsService.EXTRACTION_HEADER))
+                                WeeklyMetricsService.EXTRACTION_HEADER,
+                                "",
+                                "# nudges from=2026-09-05T00:00:00Z to=2026-09-12T00:00:00Z (to exclusive)",
+                                WeeklyMetricsService.NUDGES_HEADER))
                 .verifyComplete();
     }
 

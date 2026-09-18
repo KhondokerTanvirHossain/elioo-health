@@ -11,7 +11,7 @@ public record OutboundMessage(UUID id, UUID familyId, UUID patientId, UUID docum
                               String rejectReason, Instant decidedAt, Instant sentAt, Instant createdAt) {
 
     public enum Kind {
-        EXPLANATION, DETAIL, RETAKE;
+        EXPLANATION, DETAIL, RETAKE, NUDGE;
 
         public String dbValue() {
             return name().toLowerCase(Locale.ROOT);

@@ -40,9 +40,11 @@ public class WeeklyMetricsService implements WeeklyMetricsUseCase {
     private final com.elioo.baymax.web.application.port.out.AuditPort audit;
     /** BMX-6: urgency distribution and gate outcomes. */
     private final com.elioo.baymax.outbound.application.port.out.OutboundMessagePort messages;
+    private final com.elioo.baymax.nudge.application.port.out.NudgePort nudges;
 
     static final String MESSAGES_HEADER = "urgency,gate_status,messages";
     /** Extraction output tokens per call: two walkthrough documents ran to 7,059 and 8,192 (the cap). Watch, do not cap yet. */
+    static final String NUDGES_HEADER = "family_id,rule,sent,gated,held,dropped,drop_reasons,failed,replied";
     static final String EXTRACTION_HEADER = "extract_calls,output_tokens_max,output_tokens_p95,output_tokens_median";
 
     static final String AUTH_HEADER = "day,phone_hash,otp_requests,otp_verify_ok,otp_verify_failed";
@@ -55,9 +57,10 @@ public class WeeklyMetricsService implements WeeklyMetricsUseCase {
                         audit.otpPerNumberPerDay(from, to).collectList(),
                         audit.viewsPerFamily(from, to).collectList(),
                         messages.counts(from, to).collectList(),
-                        callLog.extractOutputTokens(from, to).collectList())
+                        callLog.extractOutputTokens(from, to).collectList(),
+                        nudges.counts(from, to).collectList())
                 .map(t -> render(t.getT1(), t.getT2(), from, to) + renderAuth(t.getT3(), t.getT4(), from, to)
-                        + renderMessages(t.getT5(), from, to) + renderExtraction(t.getT6(), from, to));
+                        + renderMessages(t.getT5(), from, to) + renderExtraction(t.getT6(), from, to) + renderNudges(t.getT7(), from, to));
     }
 
     static String render(List<DocumentAiCost> rows, List<FamilyActivity> families, Instant from, Instant to) {
@@ -157,5 +160,34 @@ public class WeeklyMetricsService implements WeeklyMetricsUseCase {
     static int percentile(java.util.List<Integer> sorted, int p) {
         int rank = (int) Math.ceil(p / 100.0 * sorted.size());
         return sorted.get(Math.max(0, Math.min(sorted.size() - 1, rank - 1)));
+    }
+
+    /** BMX-8: nudges by rule and outcome per family; replied stays 0 until BMX-10 carries replies. */
+    static String renderNudges(java.util.List<com.elioo.baymax.nudge.domain.NudgeCount> rows, Instant from, Instant to) {
+        StringBuilder csv = new StringBuilder();
+        csv.append('\n').append("# nudges from=").append(from).append(" to=").append(to).append(" (to exclusive)").append('\n')
+                .append(NUDGES_HEADER).append('\n');
+        java.util.Map<String, long[]> agg = new java.util.LinkedHashMap<>();
+        java.util.Map<String, java.util.List<String>> reasons = new java.util.LinkedHashMap<>();
+        for (var r : rows) {
+            String key = r.familyId() + "," + r.rule().dbValue();
+            long[] a = agg.computeIfAbsent(key, k -> new long[5]);
+            switch (r.status()) {
+                case SENT -> a[0] += r.count();
+                case GATED -> a[1] += r.count();
+                case HELD -> a[2] += r.count();
+                case DROPPED -> {
+                    a[3] += r.count();
+                    reasons.computeIfAbsent(key, k -> new java.util.ArrayList<>()).add((r.dropReason() == null ? "?" : r.dropReason()) + ":" + r.count());
+                }
+                case FAILED -> a[4] += r.count();
+            }
+        }
+        for (var e : agg.entrySet()) {
+            long[] a = e.getValue();
+            csv.append(e.getKey()).append(',').append(a[0]).append(',').append(a[1]).append(',').append(a[2]).append(',').append(a[3]).append(',')
+                    .append(csvEscape(String.join("|", reasons.getOrDefault(e.getKey(), java.util.List.of())))).append(',').append(a[4]).append(",0").append('\n');
+        }
+        return csv.toString();
     }
 }

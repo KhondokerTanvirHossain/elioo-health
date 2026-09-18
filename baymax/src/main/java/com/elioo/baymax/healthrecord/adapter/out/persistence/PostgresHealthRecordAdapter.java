@@ -62,6 +62,14 @@ public class PostgresHealthRecordAdapter implements HealthRecordPort {
     }
 
     @Override
+    public Mono<PatientProfile> updateChronicFlags(UUID patientId, List<String> chronicFlags) {
+        return patients.findById(patientId).flatMap(entity -> {
+            entity.setChronicFlags(chronicFlags == null ? new String[0] : chronicFlags.toArray(String[]::new));
+            return patients.save(entity);
+        }).map(PatientProfileEntity::toRecord);
+    }
+
+    @Override
     public Mono<PatientProfile> findPatient(UUID patientId) {
         return patients.findById(patientId).map(PatientProfileEntity::toRecord);
     }

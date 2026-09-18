@@ -53,6 +53,7 @@ main.page{max-width:var(--w-page);margin:0 auto;padding:var(--sp-4)}
 .top form{margin:0}
 .brand{display:inline-flex;align-items:center;gap:var(--sp-2);text-decoration:none;color:var(--c-text);font-weight:700;font-size:var(--fs-1);white-space:nowrap}
 .brand .dot{width:14px;height:14px;border-radius:var(--r-pill);background:var(--c-urgent);flex:none}
+.brand{flex:none}
 .brand img{height:28px;width:auto;display:block}
 .actions{display:flex;align-items:center;gap:var(--sp-2)}
 
@@ -83,6 +84,8 @@ a.card:hover{transform:translateY(-1px)}
 .explain{white-space:pre-line}
 
 /* forms */
+label.check{display:flex;align-items:center;gap:var(--sp-2);font-weight:400;margin:var(--sp-2) 0}
+label.check input{width:22px;height:22px}
 label{display:block;margin:var(--sp-4) 0 var(--sp-2);font-weight:600}
 input[type=text],input[type=tel],input[type=file]{width:100%;font-size:var(--fs-1);padding:var(--sp-3) var(--sp-4);border:1px solid var(--c-line);border-radius:var(--r-m);background:var(--c-surface);color:var(--c-text);transition:border-color var(--t)}
 input:focus{border-color:var(--c-accent);outline:none}
@@ -93,6 +96,11 @@ button.danger{background:var(--c-danger)}
 button.quiet,.btn.quiet{background:var(--c-surface-2);color:var(--c-text)}
 button.quiet:hover,.btn.quiet:hover{background:var(--c-line);color:var(--c-text)}
 .top button.quiet{margin:0;padding:var(--sp-2) var(--sp-3);min-height:36px}
+
+/* NOW urgency: the only red surface in the app (BMX-8 nudges never reach it; document messages may) */
+.urgent{background:var(--c-urgent-soft);border:1px solid var(--c-urgent);border-radius:var(--r-m);padding:var(--sp-3) var(--sp-4)}
+.urgent strong{color:var(--c-urgent)}
+@media (max-width:479px){.who{display:none}}
 
 /* footer disclaimer: every page */
 .foot .about{margin-top:var(--sp-2)}

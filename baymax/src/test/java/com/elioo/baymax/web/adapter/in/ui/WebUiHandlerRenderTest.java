@@ -18,7 +18,7 @@ import static org.mockito.Mockito.mock;
 class WebUiHandlerRenderTest {
 
     private final WebUiHandler ui = new WebUiHandler(mock(WebAuthUseCase.class), mock(TimelineUseCase.class),
-            new SessionAuthFilter(mock(WebAuthUseCase.class), new BaymaxProperties()), new UiCopy());
+            new SessionAuthFilter(mock(WebAuthUseCase.class), new BaymaxProperties()), new UiCopy(), mock(com.elioo.baymax.nudge.application.port.in.NudgeOptOutUseCase.class), mock(com.elioo.baymax.nudge.application.port.out.NudgeDataPort.class));
     private final UUID id = UUID.randomUUID();
 
     /** Acceptance: given unverified items, the count is shown and the items themselves never appear. */

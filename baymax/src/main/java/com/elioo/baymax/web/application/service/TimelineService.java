@@ -21,6 +21,8 @@ import com.elioo.baymax.web.domain.TimelinePage;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
+import com.elioo.baymax.healthrecord.domain.PatientProfile;
+import com.elioo.baymax.family.application.service.FamilyAccountService;
 import reactor.core.publisher.Mono;
 
 import java.net.URI;
@@ -172,5 +174,14 @@ public class TimelineService implements TimelineUseCase {
         } catch (RuntimeException e) {
             throw BaymaxException.badRequest("invalid_cursor", "cursor must be the next_cursor of a previous page");
         }
+    }
+
+    @Override
+    public Mono<PatientProfile> updateChronicFlags(UUID familyId, UUID patientId, List<String> chronicFlags) {
+        return records.visiblePatient(familyId, patientId)
+                .switchIfEmpty(Mono.error(BaymaxException.notFound("patient_not_found", "no patient with id " + patientId)))
+                .flatMap(access -> access.owner()
+                        ? records.updateChronicFlags(patientId, FamilyAccountService.normalizeFlags(chronicFlags))
+                        : Mono.error(BaymaxException.forbidden("not_owner", "only the family owner can change a profile")));
     }
 }

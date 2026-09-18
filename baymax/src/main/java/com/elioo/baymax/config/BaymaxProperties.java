@@ -31,6 +31,7 @@ public class BaymaxProperties {
     private Extract extract = new Extract();
     private Auth auth = new Auth();
     private Outbound outbound = new Outbound();
+    private Nudge nudge = new Nudge();
     private List<Marker> markers = new ArrayList<>();
 
     @Data
@@ -156,6 +157,35 @@ public class BaymaxProperties {
                 "double the", "dose", "dosage", "mg", "tablet", "tab.", "cap."));
         /** At least one must appear in every NOW / THIS_WEEK body: the doctor-first framing. */
         private List<String> doctorFirstMarkers = new ArrayList<>(List.of("ডাক্তার", "হাসপাতাল"));
+        /** DR-18: during the pilot every nudge waits for the reviewer, whatever its urgency and whatever gateMode says. */
+        private boolean gateNudges = true;
+    }
+
+    /** The proactive engine (BMX-8, DR-17, DR-18). All rules read stored data only; the policy is enforced centrally. */
+    @Data
+    public static class Nudge {
+        /** Run the hourly evaluation. Off in tests and on boxes that should never message anyone. */
+        private boolean enabled = true;
+        /** Spring cron for the evaluation job; hourly, five past. */
+        private String cron = "0 5 * * * *";
+        /** Send window in {@code zone}: hours [windowStartHour, windowEndHour). Outside it a nudge is held, never dropped. */
+        private String zone = "Asia/Dhaka";
+        private int windowStartHour = 9;
+        private int windowEndHour = 20;
+        /** Caps per patient: rolling 7 days and per (zone) day. Dropped, not queued. */
+        private int weeklyCap = 2;
+        private int dailyCap = 1;
+        /** follow_up_due fires this many days before due_date; course_ending this many days before the course ends. */
+        private int followUpLeadDays = 2;
+        private int courseLeadDays = 1;
+        /** silence: no document for this many days, patient has chronic flags; then suppressed for suppressDays. */
+        private int silenceDays = 60;
+        private int silenceSuppressDays = 30;
+        /** trend: this many consecutive readings of one canonical marker moving the wrong way (DR-17). */
+        private int trendReadings = 3;
+        /** DR-17: markers where rising is wrong; {@code trendEitherWay} where either direction is. */
+        private List<String> trendRising = new ArrayList<>(List.of("hba1c", "fasting_glucose", "creatinine", "bp_systolic", "bp_diastolic", "ldl"));
+        private List<String> trendEitherWay = new ArrayList<>(List.of("tsh"));
     }
 
     @Data

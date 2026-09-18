@@ -61,6 +61,8 @@ absent on any server where Baymax should not run.
 | `BAYMAX_AUTH_HMAC_SECRET` | **set** (`openssl rand -hex 32`) | Stands in for phone numbers in otp_code / web_session / audit_event. Blank = OTP login answers 503 (fail closed). Rotating it logs every family out. BMX-5. |
 | `BAYMAX_COOKIE_SECURE` | blank (defaults true) | Only ever set `false` on a plain-http dev box; production is HTTPS behind Caddy. |
 | `BAYMAX_PUBLIC_BASE_URL` | `https://medioo.eliooo.org` (set 2026-09-19) | Builds the timeline links in outbound messages. Default in application.properties is the same host; set explicitly so a host change is one env edit + restart. |
+| `BAYMAX_GATE_NUDGES` | blank (defaults true) | DR-18: every nudge parked for the reviewer during the pilot, whatever `BAYMAX_GATE_MODE` says. Set `false` only after the PO ends the pilot gate. |
+| `BAYMAX_NUDGE_ENABLED` | blank (defaults true) | The hourly proactive job (BMX-8). Set `false` on any box that must never message a family. `BAYMAX_NUDGE_CRON` overrides the schedule (default `0 5 * * * *`). |
 | `BAYMAX_STORAGE_BUCKET` | `elioo-baymax-prod` | blank ⇒ no storage bean; the module still loads but every storage call fails at call time |
 | `BAYMAX_STORAGE_REGION` | `ap-south-1` | |
 | `BAYMAX_STORAGE_CREDENTIALS` | `instance-role` | **critical**, see below |
@@ -186,6 +188,13 @@ docker logs medscribe-ai 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep '\[baymax\]'
 Patient text never appears at INFO. Prompts, model replies and OCR text are DEBUG only; `ai_call_log` and
 `stored_object` hold ids, counts, money and timings, never content.
 
+
+## Running the nudge job by hand (BMX-8)
+
+```bash
+curl -sS -X POST -H "X-Baymax-Admin-Token: $T" http://localhost:8086/api/v1/baymax/admin/nudges/evaluate   # {"composed": n}
+```
+Every outcome is a row in `baymax.nudge`; pending nudges appear under `GET /admin/messages/pending` like any message.
 
 ## Re-cropping documents (DR-12)
 
