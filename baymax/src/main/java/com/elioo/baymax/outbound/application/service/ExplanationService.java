@@ -166,7 +166,7 @@ public class ExplanationService implements ExplainDocumentUseCase {
         if (detail) {
             StringBuilder b = new StringBuilder(copy.bn("detail.header", vars)).append('\n');
             for (Map<String, Object> v : facts.values()) {
-                b.append(line(v, "line.value_outside_range".equals(kindOf(v)) ? "line.value_outside_range" : null, v)).append('\n');
+                b.append(line(v, kindOf(v, facts), v)).append('\n');
             }
             for (Map<String, Object> f : facts.followUps()) {
                 if (f.get("due_date") != null) {
@@ -191,7 +191,7 @@ public class ExplanationService implements ExplainDocumentUseCase {
     private String standout(DocumentFacts facts, UrgencyAssessment assessed) {
         List<String> lines = new ArrayList<>();
         for (Map<String, Object> v : facts.values()) {
-            String kind = kindOf(v);
+            String kind = kindOf(v, facts);
             if (kind != null) {
                 lines.add(line(v, kind, v));
             }
@@ -202,23 +202,15 @@ public class ExplanationService implements ExplainDocumentUseCase {
         return String.join("\n", lines);
     }
 
-    /** Which standout line a value earns from its printed range, or null when it is inside it or has no range. */
-    private String kindOf(Map<String, Object> v) {
-        var value = UrgencyService.number(v.get("value"));
-        var low = UrgencyService.number(v.get("ref_low"));
-        var high = UrgencyService.number(v.get("ref_high"));
-        if (value.isEmpty() || low.isEmpty() || high.isEmpty()) {
-            return null;
-        }
-        double width = high.get() - low.get();
-        double band = properties.getOutbound().getCriticalBandMultiplier();
-        if (value.get() > high.get()) {
-            return width > 0 && value.get() > high.get() + band * width ? "line.value_critical_high" : "line.value_outside_range";
-        }
-        if (value.get() < low.get()) {
-            return width > 0 && value.get() < low.get() - band * width ? "line.value_critical_low" : "line.value_outside_range";
-        }
-        return null;
+    /** Which standout line a value earns, under the same STOPGAP rule urgency uses; null inside the range or without one. */
+    private String kindOf(Map<String, Object> v, DocumentFacts facts) {
+        String text = facts.document().extractionJson() == null ? "" : facts.document().extractionJson();
+        return switch (urgency.criticalKind(v, text)) {
+            case CRITICAL_HIGH -> "line.value_critical_high";
+            case CRITICAL_LOW -> "line.value_critical_low";
+            case OUTSIDE -> "line.value_outside_range";
+            case NONE -> null;
+        };
     }
 
     private String line(Map<String, Object> v, String key, Map<String, Object> vars) {

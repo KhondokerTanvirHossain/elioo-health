@@ -57,7 +57,7 @@ class TimelineServiceTest {
 
     @BeforeEach
     void wire() {
-        service = new TimelineService(records, documents, intake, storage, audit, Clock.fixed(NOW, ZoneOffset.UTC));
+        service = new TimelineService(records, documents, intake, storage, audit, mock(com.elioo.baymax.outbound.application.port.out.OutboundMessagePort.class), Clock.fixed(NOW, ZoneOffset.UTC));
         when(audit.record(any())).thenReturn(Mono.empty());
     }
 

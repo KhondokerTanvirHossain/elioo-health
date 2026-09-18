@@ -88,15 +88,15 @@ class ExplanationServiceTest {
         when(documents.observationsOf(DOC)).thenReturn(Flux.fromArray(values));
     }
 
-    private static final Map<String, Object> CRITICAL = UrgencyServiceTest.value("HbA1c", "9.8", "4.0", "5.6");
+    private static final Map<String, Object> CRITICAL = UrgencyServiceTest.value("HbA1c", "11.2", "4.0", "5.6");
     private static final Map<String, Object> NORMAL = UrgencyServiceTest.value("HbA1c", "5.0", "4.0", "5.6");
 
     /** Acceptance: a body with a number absent from the extraction is rejected, regenerated once, then fails closed and is logged. */
     @Test
     void aBodyWithAForeignNumberIsRegeneratedOnceThenFailsClosed() {
         done(CRITICAL);
-        replies.push("HbA1c এসেছে 9.8 mmol। এখনই ডাক্তারের কাছে যান। বাকি সব 77।");
-        replies.push("HbA1c এসেছে 9.8। এখনই ডাক্তারের কাছে যান। আরও 42 দিন।");
+        replies.push("HbA1c এসেছে 11.2 mmol। এখনই ডাক্তারের কাছে যান। বাকি সব 77।");
+        replies.push("HbA1c এসেছে 11.2। এখনই ডাক্তারের কাছে যান। আরও 42 দিন।");
 
         StepVerifier.create(service.explain(DOC))
                 .assertNext(m -> {
@@ -115,7 +115,7 @@ class ExplanationServiceTest {
     void aNowMessageUnderTheUrgencyGateIsParkedNotSent() {
         properties.getOutbound().setGateMode("urgency");
         done(CRITICAL);
-        replies.push("HbA1c এসেছে 9.8 %, যা স্বাভাবিকের চেয়ে অনেক বেশি। এখনই ডাক্তারের কাছে যান। দেরি করবেন না। সাথে নিয়ে যাবেন: এই রিপোর্ট।");
+        replies.push("HbA1c এসেছে 11.2 %, যা স্বাভাবিকের চেয়ে অনেক বেশি। এখনই ডাক্তারের কাছে যান। দেরি করবেন না। সাথে নিয়ে যাবেন: এই রিপোর্ট।");
 
         StepVerifier.create(service.explain(DOC))
                 .assertNext(m -> {
@@ -132,7 +132,7 @@ class ExplanationServiceTest {
     @Test
     void aCriticalValueIsNowAndTheStoredRowCarriesIt() {
         done(CRITICAL);
-        replies.push("HbA1c এসেছে 9.8 %, যা স্বাভাবিকের চেয়ে অনেক বেশি। এখনই ডাক্তারের কাছে যান। দেরি করবেন না।");
+        replies.push("HbA1c এসেছে 11.2 %, যা স্বাভাবিকের চেয়ে অনেক বেশি। এখনই ডাক্তারের কাছে যান। দেরি করবেন না।");
         StepVerifier.create(service.explain(DOC)).assertNext(m -> {
             assertThat(m.urgency()).isEqualTo(Urgency.NOW);
             assertThat(m.urgencyReasons()).contains("value_critical:hba1c");
@@ -171,7 +171,7 @@ class ExplanationServiceTest {
     @Test
     void medicinesNeverReachTheSkeletonOrTheModel() {
         done(CRITICAL);
-        replies.push("HbA1c এসেছে 9.8। এখনই ডাক্তারের কাছে যান। দেরি করবেন না।");
+        replies.push("HbA1c এসেছে 11.2। এখনই ডাক্তারের কাছে যান। দেরি করবেন না।");
         service.explain(DOC).block();
         ArgumentCaptor<LlmRequest> req = ArgumentCaptor.forClass(LlmRequest.class);
         verify(metered).invoke(eq(AiCallPurpose.EXPLAIN), any(), req.capture());

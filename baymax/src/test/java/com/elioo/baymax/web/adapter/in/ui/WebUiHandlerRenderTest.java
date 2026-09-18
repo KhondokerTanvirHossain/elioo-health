@@ -94,4 +94,14 @@ class WebUiHandlerRenderTest {
         assertThat(html).contains("image?key=k1").contains("image?key=k2");
         assertThat(html).doesNotContain(">advice<").doesNotContain(">diagnosis<").contains("রোগ নির্ণয়");
     }
+
+    /** The released BMX-6 message is the only interpretive text on the page, shown verbatim above the extraction. */
+    @Test
+    void theReleasedMessageIsShownVerbatimAndOnlyWhenPresent() {
+        DocumentView view = new DocumentView(id.toString(), "DONE", null, "prescription", "2026-09-01", null, 0.9, "m", 1,
+                List.of(), List.of(), List.of(), null, null);
+        String with = ui.render(view, id, java.util.Optional.of("রিপোর্টটি পেয়েছি।\nএ সপ্তাহের মধ্যে একজন ডাক্তার দেখান।"));
+        assertThat(with).contains("সংক্ষেপে").contains("এ সপ্তাহের মধ্যে একজন ডাক্তার দেখান");
+        assertThat(ui.render(view, id, java.util.Optional.empty())).doesNotContain("সংক্ষেপে");
+    }
 }
