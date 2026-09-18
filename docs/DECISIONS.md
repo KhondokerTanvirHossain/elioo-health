@@ -215,3 +215,8 @@ appearing nowhere else is what makes "এখনই যান" read as urgent. De
 poster is a marketing asset: its gradient background and three-icon footer strip are not used on the landing page.
 Slots: `Html.WORDMARK` (`/assets/medioo.svg`, header of every page) and `Html.MASCOT` (`/assets/mio.png`, hero);
 each renders only once its file is in `baymax/src/main/resources/baymax/ui/`, so dropping the files in is the whole change.
+
+*Amendment to DR-14, palette values (2026-09-19, with the assets in hand):* ink `#0a2e4d` (the wordmark's "medi"), teal
+primary `#06788a`, tint `#ddf1f4`, paper `#f8f6f1`, green `#2ee0a5` (the wordmark's "oo"), amber `#92400e` for THIS_WEEK,
+red `#b91c1c` reserved for NOW. The PO approved the storytelling landing design the same day (BMX-6d); its four unkept
+promises and the open medicines-in-explanation question are recorded in docs/MEDIOO.md.
