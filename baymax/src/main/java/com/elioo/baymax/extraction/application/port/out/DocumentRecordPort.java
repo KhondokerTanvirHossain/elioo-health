@@ -81,4 +81,10 @@ public interface DocumentRecordPort {
      * lose the document_id, as for family deletion (BMX-4). Objects are the storage module's job.
      */
     Mono<Long> deleteDocument(UUID documentId);
+
+    /** Removes a document's stored items (observations, medicines, follow-ups) but keeps the document; for re-cropping. */
+    Mono<Long> deleteItems(UUID documentId);
+
+    /** Ids of every document in a status, oldest first. */
+    Flux<UUID> idsWithStatus(Document.Status status);
 }

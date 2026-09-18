@@ -300,4 +300,18 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
                 .then(db.sql("DELETE FROM " + S + ".follow_up WHERE document_id = :d").bind("d", documentId).then())
                 .then(db.sql("DELETE FROM " + S + ".document WHERE id = :d").bind("d", documentId).fetch().rowsUpdated());
     }
+
+    @Override
+    @org.springframework.transaction.annotation.Transactional
+    public Mono<Long> deleteItems(UUID documentId) {
+        return db.sql("DELETE FROM " + S + ".observation WHERE document_id = :d").bind("d", documentId).fetch().rowsUpdated()
+                .zipWith(db.sql("DELETE FROM " + S + ".medication_event WHERE document_id = :d").bind("d", documentId).fetch().rowsUpdated(), Long::sum)
+                .zipWith(db.sql("DELETE FROM " + S + ".follow_up WHERE document_id = :d").bind("d", documentId).fetch().rowsUpdated(), Long::sum);
+    }
+
+    @Override
+    public Flux<UUID> idsWithStatus(Document.Status status) {
+        return db.sql("SELECT id FROM " + S + ".document WHERE status = :s ORDER BY created_at")
+                .bind("s", status.name()).map((row, meta) -> row.get("id", UUID.class)).all();
+    }
 }

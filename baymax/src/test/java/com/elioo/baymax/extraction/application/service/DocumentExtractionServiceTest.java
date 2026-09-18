@@ -357,4 +357,55 @@ class DocumentExtractionServiceTest {
 
         verify(records).refreshCost(DOC);
     }
+
+    // --- DR-12 re-crop -------------------------------------------------------------------------------
+
+    /** The stored JSON as the pipeline writes it: validated result re-serialised, with the derived usable flag. */
+    private static final String STORED_JSON = GOOD_REPLY.replace("\"source_span\":{\"page\":1,\"start\":0,\"end\":5}",
+            "\"source_span\":{\"page\":1,\"start\":900,\"end\":950,\"usable\":true}");
+
+    private Document doneDocument() {
+        return new Document(DOC, PATIENT, FAMILY, "lab_report", java.time.LocalDate.parse("2026-03-14"), "Popular",
+                STORED_JSON, 0.93, Document.Status.DONE, null, "anthropic/claude-sonnet-5", null, 1, NOW, NOW);
+    }
+
+    @Test
+    void recropWipesOldCropsAndItemsThenReVerifiesFromStoredJsonWithoutAModelCall() throws Exception {
+        when(records.find(DOC)).thenReturn(Mono.just(doneDocument()));
+        when(storage.pageBytes(FAMILY, PATIENT, DOC, 1)).thenReturn(Mono.just(pageJpeg()));
+        when(storage.deleteCrops(FAMILY, PATIENT, DOC)).thenReturn(Mono.just(new com.elioo.baymax.storage.domain.DeletionReport("p/", 1, 1)));
+        when(records.deleteItems(DOC)).thenReturn(Mono.just(1L));
+
+        StepVerifier.create(service.recrop(DOC))
+                .assertNext(r -> {
+                    assertThat(r.outcome()).isEqualTo("recropped");
+                    // the offsets pointed past the text; the value is on the page, so it is cropped from its own text
+                    assertThat(r.values()).isEqualTo(1);
+                    assertThat(r.unverified()).isZero();
+                })
+                .verifyComplete();
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(storage, records);
+        order.verify(storage).deleteCrops(FAMILY, PATIENT, DOC);
+        order.verify(records).deleteItems(DOC);
+        order.verify(records).saveExtraction(any(), any());
+        verify(metered, never()).invoke(any(), any(), any(LlmRequest.class), any());   // no model call
+        verify(ocr).detectDocumentText(eq(DOC), any());                                // Vision, once per page
+        ArgumentCaptor<Document> saved = ArgumentCaptor.forClass(Document.class);
+        verify(records).saveExtraction(saved.capture(), any());
+        assertThat(saved.getValue().modelFinal()).isEqualTo("anthropic/claude-sonnet-5");   // written back unchanged
+        assertThat(saved.getValue().confidenceOverall()).isEqualTo(0.93);
+        assertThat(saved.getValue().status()).isEqualTo(Document.Status.DONE);
+    }
+
+    @Test
+    void recropSkipsADocumentThatIsNotDoneAndTouchesNothing() {
+        when(records.find(DOC)).thenReturn(Mono.just(received(1)));
+        StepVerifier.create(service.recrop(DOC))
+                .assertNext(r -> assertThat(r.outcome()).isEqualTo("skipped_received"))
+                .verifyComplete();
+        verify(storage, never()).deleteCrops(any(), any(), any());
+        verify(records, never()).deleteItems(any());
+        verify(ocr, never()).detectDocumentText(any(), any());
+    }
 }

@@ -27,6 +27,12 @@ public interface DocumentStorageUseCase {
 
     Mono<DeletionReport> deleteDocument(UUID familyId, UUID patientId, UUID documentId);
 
+    /** Only the crops of a document (objects and ledger), keeping its pages; for re-cropping. */
+    Mono<DeletionReport> deleteCrops(UUID familyId, UUID patientId, UUID documentId);
+
+    /** The stored JPEG of one page. */
+    Mono<byte[]> pageBytes(UUID familyId, UUID patientId, UUID documentId, int pageNo);
+
     Mono<DeletionReport> deletePatient(UUID familyId, UUID patientId);
 
     Mono<DeletionReport> deleteFamily(UUID familyId);

@@ -136,3 +136,20 @@ Deferred — do it as part of BMX-10, before any external eyes.
 Baymax web UI moves from `/baymax/**` to `/**` with `/api/v1/baymax/**` unchanged, and Caddy on the box needs no
 change (it proxies the whole host). Session cookie `Path=/` already covers the new layout; the OTP login cookie is
 scoped to the UI base path and must follow it.
+
+## DR-12 | 2026-09-18 | Crop invariant is content-based, not existence-based
+
+**Decision:** Crop invariant is content-based, not existence-based: a stored crop must contain its item's text,
+asserted on every path. Overlap-tolerance resolution is removed.
+
+**Why:** 116 of 137 stored crops showed neighbouring text; constraint 3 was satisfied by a rectangle that existed
+rather than one containing the value, and no test could see it because a crop is an image.
+
+**Supersedes:** none.
+
+*Engineering note:* `SpanLocator.contains` gates every crop in `CropCutter` (BMX-5b, PR #17): the model's offsets
+are used only when the words there carry the item's text; otherwise the text is located on the page and the whole
+OCR line is cropped; otherwise nothing is stored. The re-crop admin route (`POST /api/v1/baymax/admin/documents/
+{id}/recrop`, RUNBOOK) replays stored `extraction_json` through the current cutter — Vision only — so a corpus
+cropped before this decision never needs re-extraction. Standing rule in CLAUDE.md: an invariant asserted on a proxy
+is not asserted.

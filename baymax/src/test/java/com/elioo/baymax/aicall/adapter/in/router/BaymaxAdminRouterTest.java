@@ -24,6 +24,8 @@ class BaymaxAdminRouterTest {
     private static final String PATH = "/api/v1/baymax/admin/metrics/weekly";
 
     private final WeeklyMetricsUseCase metrics = mock(WeeklyMetricsUseCase.class);
+    private final com.elioo.baymax.extraction.application.port.in.RecropUseCase recrop =
+            mock(com.elioo.baymax.extraction.application.port.in.RecropUseCase.class);
 
     private WebTestClient client(String configuredToken) {
         BaymaxProperties props = new BaymaxProperties();
@@ -31,6 +33,7 @@ class BaymaxAdminRouterTest {
         when(metrics.weeklyCsv(any(), any())).thenReturn(Mono.just("# documents\n"));
         return WebTestClient.bindToRouterFunction(new BaymaxAdminRouter()
                 .baymaxAdminRoutes(new AdminMetricsHandler(metrics), mock(StorageSelfTestHandler.class),
+                        new com.elioo.baymax.extraction.adapter.in.handler.RecropHandler(recrop),
                         new AdminAuthFilter(props), new ErrorResponseFilter())).build();
     }
 
@@ -84,5 +87,24 @@ class BaymaxAdminRouterTest {
                 .exchange().expectStatus().isBadRequest();
         client.get().uri(PATH + "?from=2026-09-08&to=2026-09-01").header(AdminAuthFilter.HEADER, "s3cret")
                 .exchange().expectStatus().isBadRequest();
+    }
+
+    /** DR-12: re-crop is an admin route, token-gated, and "recrop" is a literal segment before {id}. */
+    @Test
+    void recropRoutesAreTokenGatedAndTheLiteralWinsOverTheId() {
+        java.util.UUID id = java.util.UUID.randomUUID();
+        when(recrop.recrop(id)).thenReturn(Mono.just(new com.elioo.baymax.extraction.application.port.in.RecropUseCase.RecropReport(
+                id, "recropped", 2, 3, 1, 4, 0)));
+        when(recrop.recropAll()).thenReturn(reactor.core.publisher.Flux.just(
+                new com.elioo.baymax.extraction.application.port.in.RecropUseCase.RecropReport(id, "recropped", 2, 3, 1, 4, 0)));
+
+        client("t").post().uri("/api/v1/baymax/admin/documents/" + id + "/recrop").header(AdminAuthFilter.HEADER, "t")
+                .exchange().expectStatus().isOk()
+                .expectBody().jsonPath("$.outcome").isEqualTo("recropped").jsonPath("$.medicines").isEqualTo(3);
+        client("t").post().uri("/api/v1/baymax/admin/documents/recrop").header(AdminAuthFilter.HEADER, "t")
+                .exchange().expectStatus().isOk()
+                .expectBody().jsonPath("$.documents").isEqualTo(1).jsonPath("$.recropped").isEqualTo(1);
+        client("t").post().uri("/api/v1/baymax/admin/documents/recrop")
+                .exchange().expectStatus().isUnauthorized();
     }
 }
