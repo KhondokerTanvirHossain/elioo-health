@@ -176,6 +176,11 @@ main.page .foot p{margin:0}main.page .foot p+p{margin-top:var(--sp-2)}
   .sec{padding:112px 0}.hero{padding:56px 0 112px}
   .hero .wrap{max-width:1040px;display:grid;grid-template-columns:1fr 1fr;gap:72px;align-items:start}
   .land .top.wrap{max-width:1040px}
+  .sec .wrap{max-width:1040px}
+  .sec .wrap>*{max-width:592px}
+  .hero .wrap>*{max-width:none}
+  main.page .foot .wrap{max-width:1040px}
+  main.page .foot .wrap>*{max-width:592px}
   .hero .thread{margin-top:var(--sp-2)}
   .cmp{grid-template-columns:1fr 1fr}
 }
