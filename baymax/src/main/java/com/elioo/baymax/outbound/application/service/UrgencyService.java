@@ -20,8 +20,9 @@ import java.util.Optional;
  *   <li>NOW — a value outside its <em>printed</em> reference range that is critical under the STOPGAP rule
  *       ({@link #criticalKind}: ≥ 2.0 × ref_high, ≤ 0.5 × ref_low, or the page's own text marks it critical
  *       near the value), or the document text carries a verbatim emergency phrase (config list, both scripts).</li>
- *   <li>THIS_WEEK — a value outside its printed range but not critical, a diagnosis line present, or a
- *       follow-up due date already past.</li>
+ *   <li>THIS_WEEK — a value outside its printed range but not critical, a diagnosis line on anything but a
+ *       prescription (where the doctor has just been seen and a diagnosis is expected), or a follow-up due
+ *       date already past.</li>
  *   <li>ROUTINE — everything else. <b>No printed range → no escalation from values</b>, whatever the number.</li>
  * </ul>
  * The model's own {@code flag} is ignored here. Assessment only ever raises.
@@ -60,7 +61,13 @@ public class UrgencyService {
             }
         }
 
-        if (facts.clinicalContext() != null && facts.clinicalContext().get("diagnosis") instanceof List<?> dx && !dx.isEmpty()) {
+        // A diagnosis line means "see a doctor" only where a doctor has not just been seen. On a prescription
+        // the patient was seen and the doctor wrote it — expected, not a reason (PO ruling 2026-09-18, after the
+        // first real walkthrough parked a message for exactly this). Urgency reasons are evaluated against
+        // document_type, never in isolation.
+        boolean prescription = "prescription".equalsIgnoreCase(facts.document().documentType());
+        if (!prescription && facts.clinicalContext() != null
+                && facts.clinicalContext().get("diagnosis") instanceof List<?> dx && !dx.isEmpty()) {
             a = a.raise(Urgency.THIS_WEEK, "diagnosis_present");
         }
 

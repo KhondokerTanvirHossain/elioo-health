@@ -78,12 +78,20 @@ public class ExplanationService implements ExplainDocumentUseCase {
                 });
     }
 
-    /** NEEDS_RETAKE: the retake prompt and nothing else — no facts, no model, no explanation. */
+    /**
+     * NEEDS_RETAKE: the retake prompt and nothing else — no facts, no model, no explanation. The copy escalates
+     * with the family's consecutive retakes: the first asks for another photo, the second says exactly what to
+     * change, the third offers help instead of a third attempt (a family whose first photos bounce does not
+     * send a third — PO, after the first real walkthrough).
+     */
     private Mono<OutboundMessage> retake(Document document) {
-        String body = copy.bn("retake", Map.of());
-        return release(new OutboundMessage(null, document.familyId(), document.patientId(), document.id(),
-                OutboundMessage.Kind.RETAKE, Urgency.ROUTINE, List.of(), body, gate.decide(Urgency.ROUTINE),
-                null, null, null, null, clock.instant()));
+        return messages.consecutiveRetakes(document.familyId()).defaultIfEmpty(0L).flatMap(before -> {
+            String key = before >= 2 ? "retake.third" : before == 1 ? "retake.second" : "retake";
+            String body = copy.bn(key, Map.of());
+            return release(new OutboundMessage(null, document.familyId(), document.patientId(), document.id(),
+                    OutboundMessage.Kind.RETAKE, Urgency.ROUTINE, List.of("retake_" + (before + 1)), body,
+                    gate.decide(Urgency.ROUTINE), null, null, null, null, clock.instant()));
+        });
     }
 
     private Mono<DocumentFacts> facts(Document document) {

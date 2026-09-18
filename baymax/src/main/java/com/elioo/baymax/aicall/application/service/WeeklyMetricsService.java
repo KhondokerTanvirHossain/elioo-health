@@ -42,6 +42,8 @@ public class WeeklyMetricsService implements WeeklyMetricsUseCase {
     private final com.elioo.baymax.outbound.application.port.out.OutboundMessagePort messages;
 
     static final String MESSAGES_HEADER = "urgency,gate_status,messages";
+    /** Extraction output tokens per call: two walkthrough documents ran to 7,059 and 8,192 (the cap). Watch, do not cap yet. */
+    static final String EXTRACTION_HEADER = "extract_calls,output_tokens_max,output_tokens_p95,output_tokens_median";
 
     static final String AUTH_HEADER = "day,phone_hash,otp_requests,otp_verify_ok,otp_verify_failed";
     static final String VIEWS_HEADER = "family_id,timeline_views,document_views";
@@ -52,9 +54,10 @@ public class WeeklyMetricsService implements WeeklyMetricsUseCase {
                         records.familyActivity(from, to).collectList(),
                         audit.otpPerNumberPerDay(from, to).collectList(),
                         audit.viewsPerFamily(from, to).collectList(),
-                        messages.counts(from, to).collectList())
+                        messages.counts(from, to).collectList(),
+                        callLog.extractOutputTokens(from, to).collectList())
                 .map(t -> render(t.getT1(), t.getT2(), from, to) + renderAuth(t.getT3(), t.getT4(), from, to)
-                        + renderMessages(t.getT5(), from, to));
+                        + renderMessages(t.getT5(), from, to) + renderExtraction(t.getT6(), from, to));
     }
 
     static String render(List<DocumentAiCost> rows, List<FamilyActivity> families, Instant from, Instant to) {
@@ -135,5 +138,24 @@ public class WeeklyMetricsService implements WeeklyMetricsUseCase {
             csv.append(c.urgency().dbValue()).append(',').append(c.gateStatus().dbValue()).append(',').append(c.count()).append('\n');
         }
         return csv.toString();
+    }
+
+    static String renderExtraction(java.util.List<Integer> outputTokens, Instant from, Instant to) {
+        java.util.List<Integer> sorted = new java.util.ArrayList<>(outputTokens);
+        java.util.Collections.sort(sorted);
+        StringBuilder csv = new StringBuilder();
+        csv.append('\n').append("# extraction from=").append(from).append(" to=").append(to).append(" (to exclusive)").append('\n')
+                .append(EXTRACTION_HEADER).append('\n');
+        if (!sorted.isEmpty()) {
+            csv.append(sorted.size()).append(',').append(sorted.get(sorted.size() - 1)).append(',')
+                    .append(percentile(sorted, 95)).append(',').append(percentile(sorted, 50)).append('\n');
+        }
+        return csv.toString();
+    }
+
+    /** Nearest-rank percentile on a sorted list. */
+    static int percentile(java.util.List<Integer> sorted, int p) {
+        int rank = (int) Math.ceil(p / 100.0 * sorted.size());
+        return sorted.get(Math.max(0, Math.min(sorted.size() - 1, rank - 1)));
     }
 }

@@ -79,6 +79,7 @@ class ExplanationServiceTest {
         when(delivery.deliver(any())).thenReturn(Mono.empty());
         when(records.findPatient(PATIENT)).thenReturn(Mono.just(new PatientProfile(PATIENT, FAMILY, "Ma", 74, PatientProfile.Sex.FEMALE, List.of(), NOW, NOW)));
         when(documents.followUpsOf(DOC)).thenReturn(Flux.empty());
+        when(messages.consecutiveRetakes(FAMILY)).thenReturn(Mono.just(0L));
         when(documents.clinicalContextOf(DOC)).thenReturn(Mono.empty());
     }
 
@@ -177,5 +178,25 @@ class ExplanationServiceTest {
         verify(metered).invoke(eq(AiCallPurpose.EXPLAIN), any(), req.capture());
         assertThat(req.getValue().userPrompt()).doesNotContainIgnoringCase("tab.").doesNotContain("medicine");
         verify(documents, never()).medicinesOf(any());
+    }
+
+    /** Consecutive retakes escalate the copy: specific on the second, help instead of a third attempt on the third. */
+    @Test
+    void consecutiveRetakesGetMoreSpecificThenOfferHelp() {
+        when(documents.find(DOC)).thenReturn(Mono.just(new Document(DOC, PATIENT, FAMILY, null, null, null, null, 0.6,
+                Document.Status.NEEDS_RETAKE, "blurry", null, null, 1, NOW, NOW)));
+        when(messages.consecutiveRetakes(FAMILY)).thenReturn(Mono.just(1L));
+        StepVerifier.create(service.explain(DOC)).assertNext(m -> {
+            assertThat(m.body()).contains("তিনটা জিনিস চেষ্টা করুন");
+            assertThat(m.urgencyReasons()).containsExactly("retake_2");
+        }).verifyComplete();
+        when(messages.consecutiveRetakes(FAMILY)).thenReturn(Mono.just(2L));
+        StepVerifier.create(service.explain(DOC)).assertNext(m -> {
+            assertThat(m.body()).contains("এটা আপনার দোষ নয়").contains("অন্য কোনো রিপোর্ট");
+            // No human offer until BMX-10 routes the reply; a promise into silence is worse than none (PO).
+            assertThat(m.body()).doesNotContain("সাহায্য").doesNotContain("একজন মানুষ");
+            assertThat(m.body().length()).isLessThanOrEqualTo(600);
+        }).verifyComplete();
+        verify(metered, never()).invoke(any(), any(), any(LlmRequest.class));
     }
 }

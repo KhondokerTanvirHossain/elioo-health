@@ -15,4 +15,7 @@ public interface AiCallLogPort {
 
     /** One row per document (plus one for untied calls) for calls created in {@code [from, to)}. */
     Flux<DocumentAiCost> perDocument(Instant from, Instant to);
+
+    /** Output tokens of every successful extract call in the window, one value per call, for the cost columns. */
+    Flux<Integer> extractOutputTokens(Instant from, Instant to);
 }

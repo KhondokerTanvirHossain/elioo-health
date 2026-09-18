@@ -16,7 +16,7 @@ class CopyTest {
     void everyDraftFillsAndFitsTheCap() {
         Map<String, String> vars = Map.of("document_type", "ল্যাব রিপোর্ট", "date", "2026-09-14", "patient", "মা",
                 "link", "https://baymax.eliooo.org/baymax/documents/x", "standout", "HbA1c এসেছে 9.8 %, স্বাভাবিক সীমা 4.0–5.6।");
-        for (String key : List.of("explanation.routine", "explanation.this_week", "explanation.now", "retake")) {
+        for (String key : List.of("explanation.routine", "explanation.this_week", "explanation.now", "retake", "retake.second", "retake.third")) {
             String text = copy.bn(key, vars);
             assertThat(text).as(key).doesNotContain("{").doesNotContain("\\n").contains("\n");
             assertThat(text.length()).as(key).isLessThanOrEqualTo(600);
