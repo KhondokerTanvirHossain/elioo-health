@@ -1,7 +1,7 @@
 package com.elioo.baymax.extraction.adapter.in.router;
 
 import com.elioo.baymax.adapter.in.router.BaymaxHealthRouter;
-import com.elioo.baymax.aicall.adapter.in.router.AdminAuthFilter;
+import com.elioo.baymax.web.adapter.in.router.SessionOrAdminAuthFilter;
 import com.elioo.baymax.common.error.ErrorResponseFilter;
 import com.elioo.baymax.extraction.adapter.in.handler.DocumentHandler;
 import org.springframework.context.annotation.Bean;
@@ -20,11 +20,12 @@ public class BaymaxDocumentRouter {
     public static final String BASE_PATH = BaymaxHealthRouter.BASE_PATH + "/documents";
 
     @Bean
-    public RouterFunction<ServerResponse> baymaxDocumentRoutes(DocumentHandler handler, AdminAuthFilter auth,
+    public RouterFunction<ServerResponse> baymaxDocumentRoutes(DocumentHandler handler, SessionOrAdminAuthFilter auth,
                                                                ErrorResponseFilter errors) {
         return RouterFunctions.route()
                 .POST(BASE_PATH, handler::upload)
                 .GET(BASE_PATH + "/{id}", handler::status)
+                .DELETE(BASE_PATH + "/{id}", handler::delete)
                 .filter(errors)
                 .filter(auth)
                 .build();

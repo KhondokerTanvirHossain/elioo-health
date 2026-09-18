@@ -24,6 +24,17 @@ class WeeklyMetricsServiceTest {
     private static final Instant FROM = Instant.parse("2026-09-05T00:00:00Z");
     private static final Instant TO = Instant.parse("2026-09-12T00:00:00Z");
 
+    private final com.elioo.baymax.web.application.port.out.AuditPort audit = noAudit();
+
+    private static com.elioo.baymax.web.application.port.out.AuditPort noAudit() {
+        var a = org.mockito.Mockito.mock(com.elioo.baymax.web.application.port.out.AuditPort.class);
+        org.mockito.Mockito.when(a.otpPerNumberPerDay(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(reactor.core.publisher.Flux.empty());
+        org.mockito.Mockito.when(a.viewsPerFamily(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(reactor.core.publisher.Flux.empty());
+        return a;
+    }
+
     @Test
     void rendersDocumentRowsThenAnEmptyFamiliesBlock() {
         UUID doc = UUID.fromString("11111111-1111-1111-1111-111111111111");
@@ -40,7 +51,7 @@ class WeeklyMetricsServiceTest {
                 new DocumentAiCost(null, 1, 1, 50, 10, null, "groq/llama", null, 0,
                         Instant.parse("2026-09-07T00:00:00Z"), Instant.parse("2026-09-07T00:00:00Z"))));
 
-        StepVerifier.create(new WeeklyMetricsService(port, records).weeklyCsv(FROM, TO))
+        StepVerifier.create(new WeeklyMetricsService(port, records, audit).weeklyCsv(FROM, TO))
                 .assertNext(csv -> {
                     List<String> lines = csv.lines().toList();
                     assertThat(lines.get(0)).isEqualTo("# documents from=2026-09-05T00:00:00Z to=2026-09-12T00:00:00Z (to exclusive)");
@@ -56,26 +67,37 @@ class WeeklyMetricsServiceTest {
                     assertThat(lines.get(6)).isEqualTo(WeeklyMetricsService.FAMILY_HEADER);
                     assertThat(lines.get(7)).isEqualTo("22222222-2222-2222-2222-222222222222,free,1,2,0,0,2");
                     assertThat(lines.get(8)).isEqualTo("33333333-3333-3333-3333-333333333333,family,2,0,0,0,");
-                    assertThat(lines).hasSize(9);
+                    // BMX-5 appended two blocks: auth (per hashed number per day) and views (per family)
+                    assertThat(lines.get(10)).startsWith("# auth from=");
+                    assertThat(lines.get(11)).isEqualTo(WeeklyMetricsService.AUTH_HEADER);
+                    assertThat(lines.get(13)).startsWith("# views from=");
+                    assertThat(lines.get(14)).isEqualTo(WeeklyMetricsService.VIEWS_HEADER);
+                    assertThat(lines).hasSize(15);
                 })
                 .verifyComplete();
     }
 
     @Test
-    void emptyWindowStillHasBothHeaders() {
+    void emptyWindowStillHasAllFourHeaders() {
         AiCallLogPort port = mock(AiCallLogPort.class);
         HealthRecordPort records = mock(HealthRecordPort.class);
         when(port.perDocument(any(), any())).thenReturn(Flux.empty());
         when(records.familyActivity(any(), any())).thenReturn(Flux.empty());
 
-        StepVerifier.create(new WeeklyMetricsService(port, records).weeklyCsv(FROM, TO))
+        StepVerifier.create(new WeeklyMetricsService(port, records, audit).weeklyCsv(FROM, TO))
                 .assertNext(csv -> assertThat(csv.lines().toList())
                         .containsExactly(
                                 "# documents from=2026-09-05T00:00:00Z to=2026-09-12T00:00:00Z (to exclusive)",
                                 WeeklyMetricsService.DOCUMENT_HEADER,
                                 "",
                                 "# families from=2026-09-05T00:00:00Z to=2026-09-12T00:00:00Z (to exclusive)",
-                                WeeklyMetricsService.FAMILY_HEADER))
+                                WeeklyMetricsService.FAMILY_HEADER,
+                                "",
+                                "# auth from=2026-09-05T00:00:00Z to=2026-09-12T00:00:00Z (to exclusive)",
+                                WeeklyMetricsService.AUTH_HEADER,
+                                "",
+                                "# views from=2026-09-05T00:00:00Z to=2026-09-12T00:00:00Z (to exclusive)",
+                                WeeklyMetricsService.VIEWS_HEADER))
                 .verifyComplete();
     }
 

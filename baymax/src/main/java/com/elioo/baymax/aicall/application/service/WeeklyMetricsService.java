@@ -36,12 +36,19 @@ public class WeeklyMetricsService implements WeeklyMetricsUseCase {
 
     private final AiCallLogPort callLog;
     private final HealthRecordPort records;
+    /** BMX-5: OTP traffic per (hashed) number per day, and views per family. */
+    private final com.elioo.baymax.web.application.port.out.AuditPort audit;
+
+    static final String AUTH_HEADER = "day,phone_hash,otp_requests,otp_verify_ok,otp_verify_failed";
+    static final String VIEWS_HEADER = "family_id,timeline_views,document_views";
 
     @Override
     public Mono<String> weeklyCsv(Instant from, Instant to) {
-        return callLog.perDocument(from, to).collectList()
-                .zipWith(records.familyActivity(from, to).collectList())
-                .map(t -> render(t.getT1(), t.getT2(), from, to));
+        return Mono.zip(callLog.perDocument(from, to).collectList(),
+                        records.familyActivity(from, to).collectList(),
+                        audit.otpPerNumberPerDay(from, to).collectList(),
+                        audit.viewsPerFamily(from, to).collectList())
+                .map(t -> render(t.getT1(), t.getT2(), from, to) + renderAuth(t.getT3(), t.getT4(), from, to));
     }
 
     static String render(List<DocumentAiCost> rows, List<FamilyActivity> families, Instant from, Instant to) {
@@ -95,5 +102,22 @@ public class WeeklyMetricsService implements WeeklyMetricsUseCase {
             return "\"" + value.replace("\"", "\"\"") + "\"";
         }
         return value;
+    }
+
+    /** Two more blocks (BMX-5): OTP traffic per number per day, and timeline/document views per family. */
+    static String renderAuth(java.util.List<com.elioo.baymax.web.domain.OtpDailyCount> otp,
+                             java.util.List<com.elioo.baymax.web.domain.FamilyViewCount> views, Instant from, Instant to) {
+        String window = "from=" + from + " to=" + to + " (to exclusive)";
+        StringBuilder csv = new StringBuilder();
+        csv.append('\n').append("# auth ").append(window).append('\n').append(AUTH_HEADER).append('\n');
+        for (var o : otp) {
+            csv.append(o.day()).append(',').append(o.phoneHash()).append(',').append(o.requests()).append(',')
+                    .append(o.verifiesOk()).append(',').append(o.verifiesFailed()).append('\n');
+        }
+        csv.append('\n').append("# views ").append(window).append('\n').append(VIEWS_HEADER).append('\n');
+        for (var v : views) {
+            csv.append(v.familyId()).append(',').append(v.timelineViews()).append(',').append(v.documentViews()).append('\n');
+        }
+        return csv.toString();
     }
 }

@@ -60,4 +60,25 @@ public interface DocumentRecordPort {
     Flux<UUID> idsOfFamily(UUID familyId);
 
     Flux<UUID> idsOfPatient(UUID patientId);
+
+    /**
+     * A patient's documents newest first, strictly older than {@code before} (by created_at), at most
+     * {@code limit}. The timeline pages on created_at because doc_date may be absent (BMX-5).
+     */
+    Flux<Document> timelineOf(UUID patientId, Instant before, int limit);
+
+    /**
+     * A document if the family may see it: it belongs to one of the family's own patients, or to a patient
+     * the family is a share member on. Decided in SQL so a service cannot get it wrong; empty means 404.
+     */
+    Mono<Document> findVisible(UUID familyId, UUID documentId);
+
+    /** Stored (crop-verified) item counts: values, medicines, follow-ups. */
+    Mono<int[]> sectionCounts(UUID documentId);
+
+    /**
+     * Hard-deletes one document's rows: items, then the document. ai_call_log rows keep their numbers and
+     * lose the document_id, as for family deletion (BMX-4). Objects are the storage module's job.
+     */
+    Mono<Long> deleteDocument(UUID documentId);
 }

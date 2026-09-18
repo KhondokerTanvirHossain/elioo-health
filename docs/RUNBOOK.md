@@ -58,6 +58,8 @@ absent on any server where Baymax should not run.
 |---|---|---|
 | `BAYMAX_ENABLED` | `true` | loads the module at all |
 | `BAYMAX_ADMIN_TOKEN` | a long random string | gates `/api/v1/baymax/admin/**` and, until BMX-5 brings OTP, the family endpoints. Unset ⇒ those routes answer 503 |
+| `BAYMAX_AUTH_HMAC_SECRET` | **set** (`openssl rand -hex 32`) | Stands in for phone numbers in otp_code / web_session / audit_event. Blank = OTP login answers 503 (fail closed). Rotating it logs every family out. BMX-5. |
+| `BAYMAX_COOKIE_SECURE` | blank (defaults true) | Only ever set `false` on a plain-http dev box; production is HTTPS behind Caddy. |
 | `BAYMAX_STORAGE_BUCKET` | `elioo-baymax-prod` | blank ⇒ no storage bean; the module still loads but every storage call fails at call time |
 | `BAYMAX_STORAGE_REGION` | `ap-south-1` | |
 | `BAYMAX_STORAGE_CREDENTIALS` | `instance-role` | **critical**, see below |

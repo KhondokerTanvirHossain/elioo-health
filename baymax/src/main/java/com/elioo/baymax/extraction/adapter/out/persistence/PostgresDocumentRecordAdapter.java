@@ -255,4 +255,49 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
     private static Object nullable(String value) {
         return value == null ? org.springframework.r2dbc.core.Parameter.empty(String.class) : value;
     }
+
+    // --- BMX-5: timeline reads and the scoped lookup ------------------------------------------------------
+
+    @Override
+    public Flux<Document> timelineOf(UUID patientId, Instant before, int limit) {
+        return documents.timelineOf(patientId, java.time.OffsetDateTime.ofInstant(before, java.time.ZoneOffset.UTC), limit)
+                .map(DocumentEntity::toRecord);
+    }
+
+    @Override
+    public Mono<Document> findVisible(UUID familyId, UUID documentId) {
+        return db.sql("""
+                        SELECT d.id FROM %1$s.document d
+                        JOIN %1$s.patient_profile p ON p.id = d.patient_id
+                        WHERE d.id = :document AND (p.family_id = :family
+                           OR EXISTS (SELECT 1 FROM %1$s.share_member s JOIN %1$s.family_account f ON f.whatsapp_number = s.whatsapp_number
+                                      WHERE s.patient_id = p.id AND f.id = :family))
+                        """.formatted(S))
+                .bind("document", documentId).bind("family", familyId)
+                .map((row, meta) -> row.get("id", UUID.class)).one()
+                .flatMap(this::find);
+    }
+
+    @Override
+    public Mono<int[]> sectionCounts(UUID documentId) {
+        return db.sql("""
+                        SELECT (SELECT count(*) FROM %1$s.observation WHERE document_id = :d) AS v,
+                               (SELECT count(*) FROM %1$s.medication_event WHERE document_id = :d) AS m,
+                               (SELECT count(*) FROM %1$s.follow_up WHERE document_id = :d) AS f
+                        """.formatted(S))
+                .bind("d", documentId)
+                .map((row, meta) -> new int[]{row.get("v", Long.class).intValue(), row.get("m", Long.class).intValue(),
+                        row.get("f", Long.class).intValue()})
+                .one();
+    }
+
+    @Override
+    @org.springframework.transaction.annotation.Transactional
+    public Mono<Long> deleteDocument(UUID documentId) {
+        return db.sql("UPDATE " + S + ".ai_call_log SET document_id = NULL WHERE document_id = :d").bind("d", documentId).then()
+                .then(db.sql("DELETE FROM " + S + ".observation WHERE document_id = :d").bind("d", documentId).then())
+                .then(db.sql("DELETE FROM " + S + ".medication_event WHERE document_id = :d").bind("d", documentId).then())
+                .then(db.sql("DELETE FROM " + S + ".follow_up WHERE document_id = :d").bind("d", documentId).then())
+                .then(db.sql("DELETE FROM " + S + ".document WHERE id = :d").bind("d", documentId).fetch().rowsUpdated());
+    }
 }

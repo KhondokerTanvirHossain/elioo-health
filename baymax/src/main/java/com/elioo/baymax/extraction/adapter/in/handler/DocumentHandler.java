@@ -4,6 +4,9 @@ import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.extraction.application.port.in.DocumentIntakeUseCase;
 import com.elioo.baymax.extraction.domain.DocumentView;
 import com.elioo.baymax.extraction.domain.Upload;
+import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
+import com.elioo.baymax.web.application.port.in.TimelineUseCase;
+import com.elioo.baymax.web.domain.WebSession;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -31,6 +34,8 @@ public class DocumentHandler {
     static final int MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
     private final DocumentIntakeUseCase intake;
+    /** Session-scoped variants (BMX-5). A null session on the request means the admin token was used. */
+    private final TimelineUseCase timeline;
 
     public Mono<ServerResponse> upload(ServerRequest request) {
         return request.multipartData().flatMap(parts -> {
@@ -45,7 +50,11 @@ public class DocumentHandler {
                     .cast(FilePart.class)
                     .concatMap(DocumentHandler::readBytes)
                     .collectList()
-                    .flatMap(uploads -> intake.accept(patientId, uploads))
+                    .flatMap(uploads -> {
+                        WebSession session = SessionAuthFilter.session(request);
+                        return session == null ? intake.accept(patientId, uploads)
+                                : timeline.upload(session.familyId(), patientId, uploads);
+                    })
                     .flatMap(document -> ServerResponse.status(HttpStatus.ACCEPTED)
                             .bodyValue(Map.of("document_id", document.id().toString(),
                                     "status", document.status().name())));
@@ -59,7 +68,26 @@ public class DocumentHandler {
         } catch (IllegalArgumentException e) {
             return Mono.error(BaymaxException.badRequest("invalid_request", "document id must be a UUID"));
         }
-        return intake.view(documentId).flatMap(view -> ServerResponse.ok().bodyValue(body(view)));
+        WebSession session = SessionAuthFilter.session(request);
+        Mono<DocumentView> view = session == null ? intake.view(documentId) : timeline.document(session.familyId(), documentId);
+        return view.flatMap(v -> ServerResponse.ok().bodyValue(body(v)));
+    }
+
+    /** Hard delete of one document, session-scoped: 404 if not the family's to see, 403 if only shared. */
+    public Mono<ServerResponse> delete(ServerRequest request) {
+        UUID documentId;
+        try {
+            documentId = UUID.fromString(request.pathVariable("id"));
+        } catch (IllegalArgumentException e) {
+            return Mono.error(BaymaxException.badRequest("invalid_request", "document id must be a UUID"));
+        }
+        WebSession session = SessionAuthFilter.session(request);
+        if (session == null) {
+            return Mono.error(BaymaxException.unauthorized("session_required", "deleting a document needs a family session"));
+        }
+        return timeline.deleteDocument(session.familyId(), documentId)
+                .flatMap(report -> ServerResponse.ok().bodyValue(Map.of("document_id", documentId.toString(),
+                        "objects", report.objectsDeleted(), "ledger_rows", report.ledgerRowsDeleted())));
     }
 
     private static Mono<Upload> readBytes(FilePart part) {
