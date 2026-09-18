@@ -66,6 +66,8 @@ public class WebUiHandler {
     private final TimelineUseCase timeline;
     private final SessionAuthFilter sessions;
     private final UiCopy copy;
+    private final com.elioo.baymax.nudge.application.port.in.NudgeOptOutUseCase optOut;
+    private final com.elioo.baymax.nudge.application.port.out.NudgeDataPort nudgeData;
 
     // ---- landing, language, assets --------------------------------------------------------------------
 
@@ -316,6 +318,7 @@ public class WebUiHandler {
                 StringBuilder b = new StringBuilder(top(lang, me.family().ownerName(), true));
                 b.append("<p class=\"small\"><a href=\"").append(BASE).append("/home\">").append(copy.t(lang, "app.back.patients")).append("</a></p>");
                 b.append("<h1>").append(esc(patient.patient().name())).append("</h1>");
+                b.append("<p class=\"small\"><a href=\"").append(BASE).append("/patients/").append(patientId).append("/profile\">").append(copy.t(lang, "profile.link")).append("</a></p>");
                 if (patient.owner()) {
                     b.append("<form class=\"card\" method=\"post\" enctype=\"multipart/form-data\" action=\"")
                             .append(BASE).append("/patients/").append(patientId).append("/upload\">")
@@ -501,6 +504,126 @@ public class WebUiHandler {
                 + "<h1>" + copy.t(lang, "doc.deleted") + "</h1><div class=\"card\">" + copy.t(lang, "doc.deleted.objects", report.objectsDeleted())
                 + "<br>" + copy.t(lang, "doc.deleted.rows", report.ledgerRowsDeleted()) + "</div>"
                 + "<p><a class=\"btn\" href=\"" + BASE + "/home\">" + copy.t(lang, "doc.deleted.back") + "</a></p>"));
+    }
+
+    // ---- profile: chronic flags (asked, never inferred) and the nudge switch (BMX-8) ----------------------
+
+    static final List<String> FLAGS = List.of("diabetes", "hypertension", "kidney", "thyroid", "heart");
+
+    public Mono<ServerResponse> profilePage(ServerRequest request) {
+        return profilePage(request, false);
+    }
+
+    private Mono<ServerResponse> profilePage(ServerRequest request, boolean saved) {
+        WebSession session = SessionAuthFilter.session(request);
+        Lang lang = Lang.of(request);
+        UUID patientId = uuid(request.pathVariable("id"));
+        return timeline.me(session.familyId()).flatMap(me -> {
+            PatientSummary patient = me.patients().stream().filter(p -> p.patient().id().equals(patientId)).findFirst()
+                    .orElseThrow(() -> BaymaxException.notFound("patient_not_found", "no patient with id " + patientId));
+            return nudgeData.patient(patientId).map(ref -> ref.optedOut()).defaultIfEmpty(false).flatMap(optedOut -> {
+                List<String> flags = patient.patient().chronicFlags() == null ? List.of() : patient.patient().chronicFlags();
+                StringBuilder b = new StringBuilder(top(lang, me.family().ownerName(), true));
+                b.append("<p class=\"small\"><a href=\"").append(BASE).append("/patients/").append(patientId).append("\">").append(copy.t(lang, "app.back")).append("</a></p>");
+                b.append("<h1>").append(esc(patient.patient().name())).append(" · ").append(copy.t(lang, "profile.title")).append("</h1>");
+                if (saved) {
+                    b.append("<div class=\"card\">").append(copy.t(lang, "profile.saved")).append("</div>");
+                }
+                b.append("<form class=\"card\" method=\"post\" action=\"").append(BASE).append("/patients/").append(patientId).append("/profile\">")
+                        .append("<strong>").append(copy.t(lang, "profile.flags")).append("</strong><p class=\"small\">").append(copy.t(lang, "profile.flags.hint")).append("</p>");
+                String other = "";
+                for (String f : flags) {
+                    if (!FLAGS.contains(f)) {
+                        other = other.isEmpty() ? f : other + ", " + f;
+                    }
+                }
+                for (String f : FLAGS) {
+                    b.append("<label class=\"check\"><input type=\"checkbox\" name=\"flag\" value=\"").append(f).append("\"")
+                            .append(flags.contains(f) ? " checked" : "").append("> ").append(copy.t(lang, "flag." + f)).append("</label>");
+                }
+                b.append("<label for=\"o\">").append(copy.t(lang, "flag.other")).append("</label><input id=\"o\" type=\"text\" name=\"other\" maxlength=\"40\" value=\"").append(esc(other)).append("\">")
+                        .append(patient.owner() ? "<button type=\"submit\">" + copy.t(lang, "profile.save") + "</button>" : "").append("</form>");
+                b.append("<h2>").append(copy.t(lang, "profile.nudges")).append("</h2><div class=\"card\">")
+                        .append(optedOut ? copy.t(lang, "profile.nudges.off") : copy.t(lang, "profile.nudges.on"));
+                if (!optedOut && patient.owner()) {
+                    b.append("<form method=\"post\" action=\"").append(BASE).append("/patients/").append(patientId).append("/nudges/opt-out\">")
+                            .append("<button type=\"submit\" class=\"quiet\">").append(copy.t(lang, "profile.nudges.stop")).append("</button></form>");
+                }
+                b.append("</div>");
+                return app(lang, b.toString());
+            });
+        });
+    }
+
+    public Mono<ServerResponse> saveProfile(ServerRequest request) {
+        WebSession session = SessionAuthFilter.session(request);
+        UUID patientId = uuid(request.pathVariable("id"));
+        return request.formData().flatMap(form -> {
+            List<String> flags = new java.util.ArrayList<>(form.getOrDefault("flag", List.of()));
+            String other = form.getFirst("other");
+            if (other != null && !other.isBlank()) {
+                flags.add(other.trim());
+            }
+            return timeline.updateChronicFlags(session.familyId(), patientId, flags);
+        }).flatMap(p -> profilePage(request, true));
+    }
+
+    /** From the profile page, with a session: stop nudges for this patient. */
+    public Mono<ServerResponse> optOutFromProfile(ServerRequest request) {
+        WebSession session = SessionAuthFilter.session(request);
+        UUID patientId = uuid(request.pathVariable("id"));
+        return timeline.me(session.familyId())
+                .filter(me -> me.patients().stream().anyMatch(p -> p.patient().id().equals(patientId) && p.owner()))
+                .switchIfEmpty(Mono.error(BaymaxException.notFound("patient_not_found", "no patient with id " + patientId)))
+                .flatMap(me -> optOut.optOutPatient(patientId))
+                .then(Mono.defer(() -> profilePage(request, false)));
+    }
+
+    // ---- opt-out from a message link: no session, an HMAC token instead ---------------------------------------
+
+    public Mono<ServerResponse> optOutPage(ServerRequest request) {
+        Lang lang = Lang.of(request);
+        UUID patientId;
+        try {
+            patientId = UUID.fromString(request.queryParam("p").orElse(""));
+        } catch (IllegalArgumentException e) {
+            return badLink(lang);
+        }
+        String token = request.queryParam("t").orElse("");
+        if (!optOut.tokenValid(patientId, token)) {
+            return badLink(lang);
+        }
+        return app(lang, top(lang, null, false) + "<h1>" + copy.t(lang, "optout.title") + "</h1><div class=\"card\"><p>" + copy.t(lang, "optout.q") + "</p>"
+                + "<form method=\"post\" action=\"" + BASE + "/nudges/opt-out\"><input type=\"hidden\" name=\"p\" value=\"" + patientId + "\">"
+                + "<input type=\"hidden\" name=\"t\" value=\"" + esc(token) + "\">"
+                + "<button type=\"submit\" name=\"scope\" value=\"patient\">" + copy.t(lang, "optout.patient") + "</button> "
+                + "<button type=\"submit\" name=\"scope\" value=\"family\" class=\"quiet\">" + copy.t(lang, "optout.family") + "</button></form>"
+                + "<p class=\"small\"><a href=\"/\">" + copy.t(lang, "optout.keep") + "</a></p></div>");
+    }
+
+    public Mono<ServerResponse> optOutApply(ServerRequest request) {
+        Lang lang = Lang.of(request);
+        return request.formData().flatMap(form -> {
+            UUID patientId;
+            try {
+                patientId = UUID.fromString(Optional.ofNullable(form.getFirst("p")).orElse(""));
+            } catch (IllegalArgumentException e) {
+                return badLink(lang);
+            }
+            if (!optOut.tokenValid(patientId, form.getFirst("t"))) {
+                return badLink(lang);
+            }
+            boolean family = "family".equals(form.getFirst("scope"));
+            Mono<Void> done = family ? optOut.optOutFamily(patientId) : optOut.optOutPatient(patientId);
+            // confirmed back, the moment it is stored
+            return done.then(app(lang, top(lang, null, false) + "<h1>" + copy.t(lang, "optout.title") + "</h1><div class=\"card\">"
+                    + copy.t(lang, family ? "optout.done.family" : "optout.done.patient") + "</div>"));
+        });
+    }
+
+    private Mono<ServerResponse> badLink(Lang lang) {
+        return Html.html(HttpStatus.NOT_FOUND, Html.page(lang, copy.t(lang, "app.home.title"), "<h1>" + copy.t(lang, "app.sorry") + "</h1><div class=\"err\">"
+                + copy.t(lang, "optout.badlink") + "</div>", 0, false, copy.t(lang, "disclaimer"), false));
     }
 
     // ---- images: signed afresh on every load -------------------------------------------------------

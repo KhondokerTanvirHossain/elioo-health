@@ -52,12 +52,18 @@ public class BaymaxWebUiRouter {
                 .GET(BASE + "/verify", ui::verifyPage)
                 .POST(BASE + "/verify", ui::verify)
                 .POST(BASE + "/logout", ui::logout)
+                // BMX-8: opt-out from a message link, no session — the link carries an HMAC token
+                .GET(BASE + "/nudges/opt-out", ui::optOutPage)
+                .POST(BASE + "/nudges/opt-out", ui::optOutApply)
                 .build();
 
         RouterFunction<ServerResponse> signedIn = RouterFunctions.route()
                 .GET(BASE + "/home", ui::home)
                 .GET(BASE + "/patients/{id}", ui::timelinePage)
                 .POST(BASE + "/patients/{id}/upload", ui::upload)
+                .GET(BASE + "/patients/{id}/profile", ui::profilePage)
+                .POST(BASE + "/patients/{id}/profile", ui::saveProfile)
+                .POST(BASE + "/patients/{id}/nudges/opt-out", ui::optOutFromProfile)
                 // literal segments before the {id}-only routes, per the router convention
                 .GET(BASE + "/documents/{id}/delete", ui::confirmDelete)
                 .POST(BASE + "/documents/{id}/delete", ui::delete)

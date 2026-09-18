@@ -6,6 +6,7 @@ import com.elioo.baymax.extraction.domain.Upload;
 import com.elioo.baymax.storage.domain.DeletionReport;
 import com.elioo.baymax.web.domain.FamilyOverview;
 import com.elioo.baymax.web.domain.TimelinePage;
+import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import reactor.core.publisher.Mono;
 
 import java.net.URI;
@@ -42,4 +43,7 @@ public interface TimelineUseCase {
 
     /** The newest released or approved message for a document the family may see; empty when none or pending. */
     Mono<String> explanationOf(UUID familyId, UUID documentId);
+
+    /** BMX-8: the family ticks the patient's chronic flags; owner only; never set from extracted data. */
+    Mono<PatientProfile> updateChronicFlags(UUID familyId, UUID patientId, List<String> chronicFlags);
 }

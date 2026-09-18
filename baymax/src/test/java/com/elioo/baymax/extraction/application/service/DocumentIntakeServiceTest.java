@@ -51,14 +51,17 @@ class DocumentIntakeServiceTest {
     private final BaymaxProperties properties = new BaymaxProperties();
     private final com.elioo.baymax.outbound.application.port.in.ExplainDocumentUseCase explainer =
             mock(com.elioo.baymax.outbound.application.port.in.ExplainDocumentUseCase.class);
+    private final com.elioo.baymax.nudge.application.port.in.NudgeUseCase nudges =
+            mock(com.elioo.baymax.nudge.application.port.in.NudgeUseCase.class);
 
     private DocumentIntakeService service;
 
     @BeforeEach
     void setUp() {
         service = new DocumentIntakeService(records, documents, freeTier, storage, new PageRenderer(),
-                extraction, properties, Clock.fixed(NOW, ZoneOffset.UTC), explainer);
+                extraction, properties, Clock.fixed(NOW, ZoneOffset.UTC), explainer, nudges);
         when(explainer.explain(any())).thenReturn(Mono.empty());
+        when(nudges.onDocumentDone(any())).thenReturn(Mono.empty());
 
         when(records.findPatient(PATIENT)).thenReturn(Mono.just(new PatientProfile(
                 PATIENT, FAMILY, "Ma", 74, PatientProfile.Sex.FEMALE, List.of(), NOW, NOW)));
@@ -90,6 +93,8 @@ class DocumentIntakeServiceTest {
 
         verify(storage, times(2)).storePage(any(), any(), any(), anyInt(), any());
         verify(extraction).process(any(), any());
+        // BMX-8: extraction of any document leaves chronic_flags exactly as the family set them
+        verify(records, never()).updateChronicFlags(any(), any());
     }
 
     @Test

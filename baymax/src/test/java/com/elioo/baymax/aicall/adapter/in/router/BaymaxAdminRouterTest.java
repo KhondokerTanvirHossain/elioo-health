@@ -37,7 +37,7 @@ class BaymaxAdminRouterTest {
                 .baymaxAdminRoutes(new AdminMetricsHandler(metrics), mock(StorageSelfTestHandler.class),
                         new com.elioo.baymax.extraction.adapter.in.handler.RecropHandler(recrop),
                         new com.elioo.baymax.outbound.adapter.in.handler.ReviewGateHandler(review),
-                        new AdminAuthFilter(props), new ErrorResponseFilter())).build();
+                        new AdminAuthFilter(props), new ErrorResponseFilter(), mock(com.elioo.baymax.nudge.application.port.in.NudgeUseCase.class))).build();
     }
 
     @Test

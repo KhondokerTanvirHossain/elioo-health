@@ -241,3 +241,34 @@ copied onto the message: each verbatim line's crop is the medicine's stored `cro
 document page and attached at delivery (BMX-10). Still forbidden, unchanged: saying what a medicine is for, inferring a
 schedule, restating dosing, any start/stop/change advice. Deviation to note: the 600-character cap applies to the
 model's text; the verbatim block is added after it, so a long prescription can push the whole body past 600.
+
+## DR-17 | 2026-09-19 | Trend markers and directions
+
+**Decision:** Trend markers and directions: hba1c, fasting_glucose, creatinine, bp_systolic, bp_diastolic, ldl — rising is
+wrong; tsh — either direction. Three consecutive readings.
+
+**Why:** the six most common chronic markers on Bangladeshi reports plus thyroid, which is very common locally.
+
+**Supersedes:** none.
+
+*Engineering note:* `baymax.nudge.trend-rising` / `trend-either-way` / `trend-readings` (config, defaults as ruled). The rule
+walks the current monotonic run at the end of a patient's series for a canonical marker (`observation.canonical_name`,
+`MarkerMatcher`); the dedupe key is the run's first reading, so a fourth reading in the same run never re-fires and a
+reversal starts a new run that can. Values are shown verbatim with their units.
+
+## DR-18 | 2026-09-19 | Nudge policy
+
+**Decision:** Nudge policy: max 2 per patient per 7 days and 1 per day; 09:00–20:00 Asia/Dhaka; highest urgency wins and the
+rest drop; nudges are never NOW; all nudges gated during the pilot; every nudge carries an opt-out.
+
+**Why:** over-messaging is how a family mutes the product, and §7.2 metric 5 measures replies, not volume. An unprompted NOW
+about old data would terrify rather than help.
+
+**Supersedes:** none.
+
+*Engineering note:* `NudgePolicy` (pure) + `NudgeEvaluationService` (BMX-8). "Never NOW" is a type: `NudgeUrgency` has two
+values and the `nudge.urgency` CHECK has two; the composer refuses a NOW row besides. Outside the window a nudge is HELD
+with `hold_until` = next 09:00 Dhaka and released by the hourly job (caps re-checked then). `baymax.outbound.gate-nudges`
+(default true) parks every nudge PENDING regardless of `gate-mode`. The opt-out link carries an HMAC of the patient id under
+`BAYMAX_AUTH_HMAC_SECRET`; opt-out is stored on `patient_profile` / `family_account` (`nudges_opted_out_at`) and checked
+before any rule runs, so an opted-out patient — silence rule included — is never evaluated.

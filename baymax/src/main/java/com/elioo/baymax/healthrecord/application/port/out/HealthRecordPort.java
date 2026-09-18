@@ -10,6 +10,7 @@ import reactor.core.publisher.Mono;
 
 import java.time.Instant;
 import java.util.Collection;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -33,6 +34,12 @@ public interface HealthRecordPort {
     // --- patient profiles ------------------------------------------------------------------------
 
     Mono<PatientProfile> createPatient(PatientProfile patient);
+
+    /**
+     * BMX-8: chronic flags are asked, never inferred. This is the only write to them after creation; nothing in the
+     * extraction or nudge packages may call it (asserted by ChronicFlagsAreAskedNeverInferredTest).
+     */
+    Mono<PatientProfile> updateChronicFlags(UUID patientId, List<String> chronicFlags);
 
     Mono<PatientProfile> findPatient(UUID patientId);
 

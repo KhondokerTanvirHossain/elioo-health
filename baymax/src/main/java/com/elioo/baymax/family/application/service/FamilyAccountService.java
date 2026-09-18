@@ -192,7 +192,7 @@ public class FamilyAccountService implements FamilyAccountUseCase {
         }
     }
 
-    static List<String> normalizeFlags(List<String> flags) {
+    public static List<String> normalizeFlags(List<String> flags) {
         if (flags == null) {
             return List.of();
         }
