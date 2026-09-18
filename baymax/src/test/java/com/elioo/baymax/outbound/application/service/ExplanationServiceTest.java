@@ -81,6 +81,7 @@ class ExplanationServiceTest {
         when(documents.followUpsOf(DOC)).thenReturn(Flux.empty());
         when(messages.consecutiveRetakes(FAMILY)).thenReturn(Mono.just(0L));
         when(documents.clinicalContextOf(DOC)).thenReturn(Mono.empty());
+        when(documents.medicinesOf(DOC)).thenReturn(Flux.empty());
     }
 
     private void done(Map<String, Object>... values) {
@@ -169,15 +170,49 @@ class ExplanationServiceTest {
         verify(metered, never()).invoke(any(), any(), any(LlmRequest.class));
     }
 
+    private static final Map<String, Object> NAPA = Map.of("name", "Tab. Napa", "dose_text", "500 mg", "frequency_text", "১+০+১",
+            "timing_text", "after meal", "crop_key", "f/p/d/crop-m1.jpg");
+    private static final Map<String, Object> LOSARTAN = Map.of("name", "Losartan", "dose_text", "50mg", "frequency_text", "0+0+1",
+            "crop_key", "f/p/d/crop-m2.jpg");
+
+    /** DR-16: medicines never reach the model; they are appended verbatim after generation, character for character. */
     @Test
-    void medicinesNeverReachTheSkeletonOrTheModel() {
+    void medicinesNeverReachTheModelAndAreAppendedVerbatim() {
         done(CRITICAL);
+        when(documents.medicinesOf(DOC)).thenReturn(Flux.just(NAPA, LOSARTAN));
         replies.push("HbA1c এসেছে 11.2। এখনই ডাক্তারের কাছে যান। দেরি করবেন না।");
-        service.explain(DOC).block();
+        OutboundMessage m = service.explain(DOC).block();
         ArgumentCaptor<LlmRequest> req = ArgumentCaptor.forClass(LlmRequest.class);
         verify(metered).invoke(eq(AiCallPurpose.EXPLAIN), any(), req.capture());
-        assertThat(req.getValue().userPrompt()).doesNotContainIgnoringCase("tab.").doesNotContain("medicine");
-        verify(documents, never()).medicinesOf(any());
+        assertThat(req.getValue().userPrompt()).doesNotContain("Napa").doesNotContain("Losartan").doesNotContain("500 mg").doesNotContain("medicine");
+        assertThat(req.getValue().systemPrompt()).doesNotContain("Napa");
+        // the body: the model's text first, then the fixed header and one verbatim line per medicine, " · " between fields
+        assertThat(m.body()).startsWith("HbA1c এসেছে 11.2।")
+                .contains("প্রেসক্রিপশনে যা লেখা আছে:\nTab. Napa · 500 mg · ১+০+১ · after meal\nLosartan · 50mg · 0+0+1");
+        assertThat(MedicineTranscription.verify(m.body(), List.of(NAPA, LOSARTAN))).isEmpty();
+        // "mg", "tab." and "500" would trip the phrase and number checks on model text; the verbatim block is exempt
+        assertThat(m.gateStatus()).isNotEqualTo(OutboundMessage.GateStatus.FAILED_SAFETY);
+    }
+
+    /** DR-16: the same block on the ROUTINE template (no model call) and on the detail message. */
+    @Test
+    void theVerbatimBlockIsOnTemplateOnlyAndDetailMessagesToo() {
+        done(NORMAL);
+        when(documents.medicinesOf(DOC)).thenReturn(Flux.just(NAPA));
+        OutboundMessage routine = service.explain(DOC).block();
+        assertThat(routine.body()).endsWith("প্রেসক্রিপশনে যা লেখা আছে:\nTab. Napa · 500 mg · ১+০+১ · after meal");
+        verify(metered, never()).invoke(any(), any(), any(LlmRequest.class));
+        replies.push("HbA1c 5.0, স্বাভাবিক 4.0–5.6।");   // no link: a link with foreign digits would fail the number check, correctly
+        OutboundMessage detail = service.detail(DOC).block();
+        assertThat(detail.body()).contains("Tab. Napa · 500 mg · ১+০+১ · after meal");
+    }
+
+    /** DR-16 assertion: a stored medicine string that is not in the body character for character is a failure. */
+    @Test
+    void aMedicineStringNotVerbatimIsCaught() {
+        assertThat(MedicineTranscription.verify("Tab. Napa · 500mg · ১+০+১", List.of(NAPA))).containsExactly("dose_text:500 mg", "timing_text:after meal");
+        assertThat(MedicineTranscription.verify("x\nTab. Napa · 500 mg · ১+০+১ · after meal", List.of(NAPA))).isEmpty();
+        assertThat(MedicineTranscription.block("H:", List.of())).isEmpty();
     }
 
     /** Consecutive retakes escalate the copy: specific on the second, help instead of a third attempt on the third. */

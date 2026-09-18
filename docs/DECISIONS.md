@@ -220,3 +220,24 @@ each renders only once its file is in `baymax/src/main/resources/baymax/ui/`, so
 primary `#06788a`, tint `#ddf1f4`, paper `#f8f6f1`, green `#2ee0a5` (the wordmark's "oo"), amber `#92400e` for THIS_WEEK,
 red `#b91c1c` reserved for NOW. The PO approved the storytelling landing design the same day (BMX-6d); its four unkept
 promises and the open medicines-in-explanation question are recorded in docs/MEDIOO.md.
+
+## DR-16 | 2026-09-19 | Medicines may appear in outbound explanations as verbatim transcription with crops, never as model-generated text
+
+**Decision:** Medicines may appear in outbound explanations as verbatim transcription with crops, never as
+model-generated text; medicines remain out of the model prompt.
+
+**Why:** the dosing line is the most useful thing on a prescription and transcribing it is grounded; composing about
+medicines is where the risk is.
+
+**Supersedes:** refines BMX-6's blanket exclusion.
+
+*Engineering note:* `ExplanationService` loads the document's medicines and, **after** the model has phrased the
+skeleton and the safety check has passed on that text, appends a fixed header (`medicines.header`) and one line per
+medicine — `name`, `dose_text`, `frequency_text`, `timing_text` exactly as stored, joined by " · ", empty fields skipped.
+The model never sees them (asserted on the captured prompt). The forbidden-phrase and number checks run on the
+model's text only; the verbatim block is exempt. `MedicineTranscription.verify` then asserts that every stored
+medicine string appears in the final body character for character, or the message fails closed. Crops are not
+copied onto the message: each verbatim line's crop is the medicine's stored `crop_key`, rendered beside it on the
+document page and attached at delivery (BMX-10). Still forbidden, unchanged: saying what a medicine is for, inferring a
+schedule, restating dosing, any start/stop/change advice. Deviation to note: the 600-character cap applies to the
+model's text; the verbatim block is added after it, so a long prescription can push the whole body past 600.

@@ -13,7 +13,8 @@ import java.util.regex.Pattern;
 
 /**
  * The persisted extraction as the explanation may use it: values with their printed ranges, follow-ups,
- * clinical lines — and never the medicines, which no family message mentions (BMX-6). {@link #numbers}
+ * clinical lines — and not the medicines: they never reach the skeleton or the model, and enter a message only as
+ * the verbatim block {@link MedicineTranscription} appends after generation (DR-16). {@link #numbers}
  * is the closed set of digit runs a message body may contain.
  */
 public record DocumentFacts(Document document, String patientName, List<Map<String, Object>> values,

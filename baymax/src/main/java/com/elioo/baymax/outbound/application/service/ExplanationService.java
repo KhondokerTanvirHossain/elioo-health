@@ -73,7 +73,8 @@ public class ExplanationService implements ExplainDocumentUseCase {
                 .switchIfEmpty(Mono.error(BaymaxException.notFound("document_not_found", "no document with id " + documentId)))
                 .flatMap(document -> switch (document.status()) {
                     case NEEDS_RETAKE -> retake(document);
-                    case DONE -> facts(document).flatMap(facts -> explanation(facts, detail));
+                    case DONE -> facts(document).flatMap(facts -> documents.medicinesOf(document.id()).collectList()
+                            .flatMap(medicines -> explanation(facts, medicines, detail)));
                     default -> Mono.empty();
                 });
     }
@@ -104,7 +105,12 @@ public class ExplanationService implements ExplainDocumentUseCase {
         ).map(t -> new DocumentFacts(document, t.getT4(), t.getT1(), t.getT2(), t.getT3(), link));
     }
 
-    private Mono<OutboundMessage> explanation(DocumentFacts facts, boolean detail) {
+    /**
+     * @param medicines the document's stored medicines (DR-16): never in the skeleton, never in the prompt; after
+     *                  the model's text has passed the checklist they are appended verbatim, then verified
+     *                  character for character against the store
+     */
+    private Mono<OutboundMessage> explanation(DocumentFacts facts, List<Map<String, Object>> medicines, boolean detail) {
         UrgencyAssessment assessed = urgency.assess(facts);
         String skeleton = skeleton(facts, assessed, detail);
         OutboundMessage.Kind kind = detail ? OutboundMessage.Kind.DETAIL : OutboundMessage.Kind.EXPLANATION;
@@ -134,8 +140,16 @@ public class ExplanationService implements ExplainDocumentUseCase {
                     if (!finalCheck.isEmpty()) {
                         throw new IllegalStateException("template violated its own checklist: " + finalCheck);
                     }
+                    // DR-16: the verbatim medicine block goes on after the checklist has passed on the model's text —
+                    // it is exempt from the phrase and number checks (it IS the extraction) and must match the store
+                    String block = MedicineTranscription.block(copy.bn("medicines.header", Map.of()), medicines);
+                    String full = block.isEmpty() ? text : text + "\n\n" + block;
+                    List<String> missing = MedicineTranscription.verify(full, medicines);
+                    if (!missing.isEmpty()) {
+                        throw new IllegalStateException("medicine transcription is not verbatim: " + missing);
+                    }
                     return new OutboundMessage(null, facts.document().familyId(), facts.document().patientId(), facts.document().id(),
-                            kind, assessed.level(), assessed.reasons(), text, gate.decide(assessed.level()),
+                            kind, assessed.level(), assessed.reasons(), full, gate.decide(assessed.level()),
                             null, null, null, null, clock.instant());
                 })
                 .switchIfEmpty(Mono.fromSupplier(() -> new OutboundMessage(null, facts.document().familyId(), facts.document().patientId(),
