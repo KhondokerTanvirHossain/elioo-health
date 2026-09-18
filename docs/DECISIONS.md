@@ -208,3 +208,10 @@ names `baymax_*`, the asset path `/assets/baymax.css`, branch and ticket prefixe
 buys nothing and risks a bad deploy. `MediooBrandTest` asserts no bundle string and no rendered page carries the codename.
 Pre-rename check: medioo.eliooo.org already resolves to the EC2 box (no Caddy site block yet); a quick search found no Bangladeshi health product
 named Medioo (MedEasy and MedicBD are the nearest names) — not a trademark search.
+
+*Amendment to DR-14 (PO, 2026-09-19, with the Mio mascot and medioo wordmark):* palette is **teal primary** (from the
+asset), white and warm neutral surfaces; **red is reserved for the wordmark dot and NOW-urgency states only** — red
+appearing nowhere else is what makes "এখনই যান" read as urgent. Destructive buttons are dark, not red. The supplied
+poster is a marketing asset: its gradient background and three-icon footer strip are not used on the landing page.
+Slots: `Html.WORDMARK` (`/assets/medioo.svg`, header of every page) and `Html.MASCOT` (`/assets/mio.png`, hero);
+each renders only once its file is in `baymax/src/main/resources/baymax/ui/`, so dropping the files in is the whole change.

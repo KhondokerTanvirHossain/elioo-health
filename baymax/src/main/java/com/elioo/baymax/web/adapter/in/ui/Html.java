@@ -34,11 +34,30 @@ final class Html {
     static final String ICON_HREF = "/assets/favicon.svg?v=" + version("/baymax/ui/favicon.svg");
 
     /**
-     * The mascot image, referenced from this one place so swapping the file is one change. {@code null} until
-     * Tanvir's asset lands (BMX-6b: never generate or approximate the character); the hero then shows a plain
-     * soft-red disc, not a stand-in figure.
+     * Mio, the mascot, referenced from this one place so swapping the file is one change (an original asset
+     * from Tanvir — never a generated or approximated character). Until the file is in the jar the hero shows
+     * a plain teal disc, not a stand-in figure.
      */
-    static final String MASCOT = null;
+    static final String MASCOT = "/assets/mio.png";
+
+    /** The medioo wordmark, header of every page. Same rule: one constant, rendered only once the file is in the jar. */
+    static final String WORDMARK = "/assets/medioo.svg";
+
+    /** True when the asset behind an {@code /assets/…} path is in the jar, so a slot never shows a broken image. */
+    static boolean present(String assetPath) {
+        String file = assetPath.substring("/assets/".length());
+        try (java.io.InputStream in = Html.class.getResourceAsStream("/baymax/ui/" + file)) {
+            return in != null;
+        } catch (java.io.IOException e) {
+            return false;
+        }
+    }
+
+    /** The brand mark for a top bar: the wordmark image when present, else the dot and the name. */
+    static String brand(String title) {
+        return present(WORDMARK) ? "<img alt=\"" + esc(title) + "\" src=\"" + WORDMARK + "?v=" + version("/baymax/ui/medioo.svg") + "\">"
+                : "<span class=\"dot\"></span>" + title;
+    }
 
     /** The landing screenshot: the sample document page beside its values and crops. Tanvir supplies the final one. */
     static final String LANDING_SHOT = "/assets/landing-shot.png";
