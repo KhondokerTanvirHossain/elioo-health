@@ -192,7 +192,9 @@ class ExplanationServiceTest {
         }).verifyComplete();
         when(messages.consecutiveRetakes(FAMILY)).thenReturn(Mono.just(2L));
         StepVerifier.create(service.explain(DOC)).assertNext(m -> {
-            assertThat(m.body()).contains("এটা আপনার দোষ নয়").contains("সাহায্য");
+            assertThat(m.body()).contains("এটা আপনার দোষ নয়").contains("অন্য কোনো রিপোর্ট");
+            // No human offer until BMX-10 routes the reply; a promise into silence is worse than none (PO).
+            assertThat(m.body()).doesNotContain("সাহায্য").doesNotContain("একজন মানুষ");
             assertThat(m.body().length()).isLessThanOrEqualTo(600);
         }).verifyComplete();
         verify(metered, never()).invoke(any(), any(), any(LlmRequest.class));
