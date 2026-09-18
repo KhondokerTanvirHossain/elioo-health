@@ -76,6 +76,10 @@ Key files when changing behaviour:
   `doesNotContain("999")` on a CSV full of UUIDs passed for the wrong reason for weeks and then failed for the
   wrong reason on a docs-only PR; `doesNotContain(",999,")` says what was meant. Same class as the crop bug and
   the false-positive guard: green for a reason other than the one you think.
+- An ignore rule that matches a source directory name will silently drop source from a commit that builds
+  locally. `log/` in `.gitignore` swallowed `adapter/out/log/`; the build was green here and CI could not find
+  the bean. Before pushing a PR that adds directories, `git status --ignored --short -- <module>/src | grep '^!!'`
+  must print nothing — this check is standard now. Sixth flattering failure.
 - Regression guards: a test written to catch a specific bug is replayed against the pre-fix source before it counts as done. A guard that passes on the broken code is worse than none — it was written once here, anchored on the wrong text, extracted an empty method body, and went green over the very bug it existed to catch.
 - Staging: never `git add -A` or `git add .` in this repo — stage explicit paths. It has caused three
   incidents: an unrelated runbook swept into a feature branch, and a `.env.local` backup holding live API
