@@ -189,7 +189,9 @@ public class WebUiHandler {
                     b.append("<p><a class=\"btn quiet\" href=\"").append(BASE).append("/patients/").append(patientId)
                             .append("?cursor=").append(esc(page.nextCursor())).append("\">আরও দেখুন</a></p>");
                 }
-                return Html.ok(TITLE, b.toString());
+                // a document still being read: reload every few seconds until it is not
+                boolean inFlight = page.entries().stream().anyMatch(e -> "RECEIVED".equals(e.status()) || "PROCESSING".equals(e.status()));
+                return Html.ok(TITLE, b.toString(), inFlight ? 5 : 0);
             });
         });
     }
