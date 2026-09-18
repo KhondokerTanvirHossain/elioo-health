@@ -116,4 +116,22 @@ class NudgeComposerTest {
         assertThat(m.sentAt()).isEqualTo(NOW);
         verify(delivery).deliver(any());
     }
+
+    /** PO ruling 2026-09-19: the cap covers what the family receives, opt-out line included. */
+    @Test
+    void theCapCoversTheWholeBodyIncludingTheOptOutLine() {
+        props.getOutbound().setMaxChars(200);   // opt-out line + link ≈ 110 chars → the model gets ≈ 90
+        replies.push("S. Creatinine বদলাচ্ছে: 1.1 mg/dL → 1.3 mg/dL → 1.5 mg/dL। ডাক্তার দেখান।");
+        OutboundMessage ok = composer.compose(TREND, LINK).block();
+        assertThat(ok.body()).isNotNull();
+        assertThat(ok.body().length()).isLessThanOrEqualTo(200);
+        String tooLong = "S. Creatinine বদলাচ্ছে: 1.1 mg/dL → 1.3 mg/dL → 1.5 mg/dL। ডাক্তার দেখান। " + "ক".repeat(60);
+        replies.push(tooLong);
+        replies.push(tooLong);
+        OutboundMessage failed = composer.compose(TREND, LINK).block();
+        assertThat(failed.gateStatus()).isEqualTo(OutboundMessage.GateStatus.FAILED_SAFETY);   // over budget twice → fails closed
+        ArgumentCaptor<LlmRequest> req = ArgumentCaptor.forClass(LlmRequest.class);
+        verify(metered, org.mockito.Mockito.atLeastOnce()).invoke(eq(AiCallPurpose.NUDGE), any(), req.capture());
+        assertThat(req.getValue().systemPrompt()).doesNotContain("Under 200 characters");   // the model is told its budget, not the cap
+    }
 }

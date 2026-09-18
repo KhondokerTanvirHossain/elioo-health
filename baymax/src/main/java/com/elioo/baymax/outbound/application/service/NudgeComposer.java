@@ -59,6 +59,8 @@ public class NudgeComposer implements ComposeNudgeUseCase {
         String optout = copy.bn("nudge.optout", vars);
         String skeleton = copy.bn("nudge." + c.rule().dbValue(), vars);
         Set<String> allowed = new HashSet<>(c.numbers());
+        // the cap is on what the family receives (PO ruling 2026-09-19): the model's budget is the cap minus the opt-out line
+        int budget = properties.getOutbound().getMaxChars() - optout.length() - 1;
         // the stored strings the message must carry word for word: values, changes, instructions, medicine names
         List<String> verbatim = new java.util.ArrayList<>();
         for (String key : VERBATIM_KEYS) {
@@ -69,15 +71,15 @@ public class NudgeComposer implements ComposeNudgeUseCase {
         }
         OutboundMessage.GateStatus status = properties.getOutbound().isGateNudges() ? OutboundMessage.GateStatus.PENDING : gate.decide(urgency);
 
-        return generate(c, skeleton, null)
+        return generate(c, skeleton, budget, null)
                 .flatMap(first -> {
-                    List<String> v = safety.violations(first, allowed, optOutLink, urgency, verbatim);
+                    List<String> v = violations(first, budget, allowed, optOutLink, urgency, verbatim);
                     if (v.isEmpty()) {
                         return Mono.just(first);
                     }
                     log.info("[baymax] nudge rejected once rule={} patientId={} violations={}", c.rule(), c.patientId(), v);
-                    return generate(c, skeleton, v).filter(second -> {
-                        List<String> again = safety.violations(second, allowed, optOutLink, urgency, verbatim);
+                    return generate(c, skeleton, budget, v).filter(second -> {
+                        List<String> again = violations(second, budget, allowed, optOutLink, urgency, verbatim);
                         if (!again.isEmpty()) {
                             log.warn("[baymax] nudge failed closed rule={} patientId={} violations={}", c.rule(), c.patientId(), again);
                         }
@@ -87,6 +89,9 @@ public class NudgeComposer implements ComposeNudgeUseCase {
                 .map(text -> {
                     // the opt-out line is fixed copy appended after the checklist; every nudge carries it (DR-18)
                     String body = text + "\n" + optout;
+                    if (body.length() > properties.getOutbound().getMaxChars()) {
+                        throw new IllegalStateException("nudge body over the cap with the opt-out line: " + body.length());
+                    }
                     return new OutboundMessage(null, c.familyId(), c.patientId(), null, OutboundMessage.Kind.NUDGE, urgency,
                             List.of("nudge:" + c.rule().dbValue()), body, status, null, null, null, null, clock.instant());
                 })
@@ -112,7 +117,17 @@ public class NudgeComposer implements ComposeNudgeUseCase {
     }
 
     /** One model call: phrase the skeleton as plain Bangla, changing no number and no quoted string. */
-    private Mono<String> generate(NudgeCandidate c, String skeleton, List<String> priorViolations) {
+    /** The checklist, with the length check on the model's budget rather than the whole cap. */
+    private List<String> violations(String text, int budget, Set<String> allowed, String link, Urgency urgency, List<String> verbatim) {
+        List<String> v = new java.util.ArrayList<>(safety.violations(text, allowed, link, urgency, verbatim));
+        v.removeIf(x -> x.startsWith("too_long:"));
+        if (text != null && text.length() > budget) {
+            v.add("too_long:" + text.length() + ">" + budget);
+        }
+        return v;
+    }
+
+    private Mono<String> generate(NudgeCandidate c, String skeleton, int budget, List<String> priorViolations) {
         String system = """
                 You write short Bangla messages for a family about their relative's stored health records. You are given a \
                 SKELETON: it is already correct and already contains every number, every date and every quoted string. \
@@ -124,7 +139,7 @@ public class NudgeComposer implements ComposeNudgeUseCase {
                 never tell anyone to take, stop, start or change anything.
                 - No advice beyond "see a doctor" as the skeleton phrases it. No reassurance beyond the skeleton.
                 - Under %d characters. Output the message text only: no title, no quotes, no notes.
-                """.formatted(properties.getOutbound().getMaxChars());
+                """.formatted(budget);
         StringBuilder user = new StringBuilder("SKELETON:\n").append(skeleton);
         if (priorViolations != null) {
             user.append("\n\nYour previous attempt was rejected for: ").append(String.join(", ", priorViolations))

@@ -183,6 +183,8 @@ public class BaymaxProperties {
         private int silenceSuppressDays = 30;
         /** trend: this many consecutive readings of one canonical marker moving the wrong way (DR-17). */
         private int trendReadings = 3;
+        /** PO ruling 2026-09-19: same-day readings are one report; the readings must span at least this many days. */
+        private int trendMinSpanDays = 14;
         /** DR-17: markers where rising is wrong; {@code trendEitherWay} where either direction is. */
         private List<String> trendRising = new ArrayList<>(List.of("hba1c", "fasting_glucose", "creatinine", "bp_systolic", "bp_diastolic", "ldl"));
         private List<String> trendEitherWay = new ArrayList<>(List.of("tsh"));

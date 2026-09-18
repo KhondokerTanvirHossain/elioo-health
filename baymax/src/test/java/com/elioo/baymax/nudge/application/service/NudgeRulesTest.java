@@ -145,4 +145,19 @@ class NudgeRulesTest {
         assertThat(out.get(0).vars()).containsEntry("instruction", "Follow up after 1 month").containsEntry("due_date", "2026-09-21");
         assertThat(out.get(0).numbers()).contains("1", "2026", "09", "21");
     }
+
+    /** PO ruling 2026-09-19: same-day readings are one report; three readings inside a fortnight are acute, not a trend. */
+    @Test
+    void sameDayReadingsCollapseAndAShortSpanIsNotATrend() {
+        List<ObservationRow> sameDay = List.of(obs("1.1", "2026-09-01"), obs("1.3", "2026-09-01"), obs("1.5", "2026-09-01"));
+        assertThat(rules.trendOf(chronic, "creatinine", sameDay, true)).isEmpty();
+        List<ObservationRow> week = List.of(obs("1.1", "2026-09-01"), obs("1.3", "2026-09-04"), obs("1.5", "2026-09-07"));
+        assertThat(rules.trendOf(chronic, "creatinine", week, true)).isEmpty();
+        List<ObservationRow> fortnight = List.of(obs("1.1", "2026-09-01"), obs("1.3", "2026-09-08"), obs("1.5", "2026-09-15"));
+        assertThat(rules.trendOf(chronic, "creatinine", fortnight, true)).isPresent();
+        // a repeat on the last day does not make a fourth reading; the first of a day stands for the day
+        List<ObservationRow> withRepeat = new ArrayList<>(fortnight);
+        withRepeat.add(obs("1.9", "2026-09-15"));
+        assertThat(rules.trendOf(chronic, "creatinine", withRepeat, true).get().vars().get("values")).isEqualTo("1.1 mg/dL → 1.3 mg/dL → 1.5 mg/dL");
+    }
 }
