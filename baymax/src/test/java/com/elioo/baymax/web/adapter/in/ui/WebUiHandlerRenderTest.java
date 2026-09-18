@@ -76,15 +76,22 @@ class WebUiHandlerRenderTest {
         assertThat(html).doesNotContain("<script>").doesNotContain("<img src=x").contains("&lt;img src=x onerror=alert(1)&gt;").contains("&lt;b&gt;x&lt;/b&gt;");
     }
 
-    /** The page's own advice line is transcribed and kept, but not shown here until the PO rules on it. */
+    /**
+     * The doctor's own advice lines are shown as written, in the page's order, each beside its crop, under
+     * "as written on the prescription" — never composed, never reordered (PO ruling 2026-09-18).
+     */
     @Test
-    void thePagesAdviceSectionIsNotRenderedAndSectionKeysAreLabelledInBangla() {
+    void thePagesAdviceIsShownAsWrittenInOrderAndSectionKeysAreLabelledInBangla() {
+        java.util.LinkedHashMap<String, Object> ctx = new java.util.LinkedHashMap<>();
+        ctx.put("advice", List.of(Map.of("text", "Salt restriction", "crop_key", "k1"),
+                Map.of("text", "Daily walk 30 min", "crop_key", "k2")));
+        ctx.put("diagnosis", List.of(Map.of("text", "Hypertension", "crop_key", "k3")));
         DocumentView view = new DocumentView(id.toString(), "DONE", null, "prescription", "2026-09-01", null, 0.9, "m", 1,
-                List.of(), List.of(), List.of(),
-                Map.of("advice", List.of(Map.of("text", "Salt restriction", "crop_key", "k1")),
-                        "diagnosis", List.of(Map.of("text", "Hypertension", "crop_key", "k2"))), null);
+                List.of(), List.of(), List.of(), ctx, null);
         String html = ui.render(view, id);
-        assertThat(html).doesNotContain("Salt restriction").doesNotContain(">advice<").doesNotContain(">diagnosis<");
-        assertThat(html).contains("রোগ নির্ণয়").contains("Hypertension");
+        assertThat(html).contains("প্রেসক্রিপশনে যা লেখা আছে").contains("Salt restriction").contains("Daily walk 30 min");
+        assertThat(html.indexOf("Salt restriction")).isLessThan(html.indexOf("Daily walk 30 min"));
+        assertThat(html).contains("image?key=k1").contains("image?key=k2");
+        assertThat(html).doesNotContain(">advice<").doesNotContain(">diagnosis<").contains("রোগ নির্ণয়");
     }
 }

@@ -106,10 +106,11 @@ final class Html {
     }
 
     /**
-     * Bangla label for a clinical-context section, or null for a section the UI does not show. {@code advice}
-     * is the page's own advice line, transcribed verbatim — but "no advice anywhere in this UI" (BMX-5) is the
-     * constraint, and a family reading advice on our screen cannot tell whose it is. Held back until the PO
-     * rules on it; it stays in the API and the record.
+     * Bangla label for a clinical-context section, or null for one the UI does not show. {@code advice} is the
+     * doctor's own words transcribed from the page, shown under "as written on the prescription" (PO ruling,
+     * 2026-09-18): "no advice in this UI" means no Baymax-generated advice, which still holds absolutely —
+     * nothing here is composed, reordered or interpreted. {@code referral} is a single field, not a list, and
+     * waits for BMX-6.
      */
     static String contextSection(String key) {
         if (key == null) {
@@ -121,7 +122,8 @@ final class Html {
             case "examination" -> "পরীক্ষা";
             case "diagnosis" -> "রোগ নির্ণয়";
             case "investigations_advised" -> "পরীক্ষা করাতে বলা হয়েছে";
-            case "advice", "referral" -> null;
+            case "advice" -> "প্রেসক্রিপশনে যা লেখা আছে";
+            case "referral" -> null;
             default -> esc(key);
         };
     }
