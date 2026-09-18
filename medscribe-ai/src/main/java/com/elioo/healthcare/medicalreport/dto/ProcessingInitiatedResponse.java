@@ -26,8 +26,8 @@ import java.time.LocalDateTime;
  * {
  *   "reportId": "RPT-20250312-ABC123",
  *   "status": "PENDING",
- *   "statusUrl": "/api/v1/medical-report/query/status/RPT-20250312-ABC123",
- *   "detailedStatusUrl": "/api/v1/medical-report/query/details/RPT-20250312-ABC123",
+ *   "statusUrl": "/medscribeai/api/v1/medical-report/query/status/RPT-20250312-ABC123",
+ *   "detailedStatusUrl": "/medscribeai/api/v1/medical-report/query/details/RPT-20250312-ABC123",
  *   "acceptedAt": "2025-03-12T10:30:00",
  *   "estimatedCompletionTime": "2025-03-12T10:40:00"
  * }

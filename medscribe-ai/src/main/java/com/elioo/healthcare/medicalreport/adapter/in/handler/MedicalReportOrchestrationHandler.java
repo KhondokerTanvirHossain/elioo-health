@@ -1,5 +1,6 @@
 package com.elioo.healthcare.medicalreport.adapter.in.handler;
 
+import com.elioo.healthcare.core.MedScribePaths;
 import com.elioo.healthcare.medicalreport.application.port.in.MedicalReportOrchestrationUseCase;
 import com.elioo.healthcare.medicalreport.domain.MasterProcessingRequest;
 import com.elioo.healthcare.medicalreport.domain.MasterProcessingResponse;
@@ -93,8 +94,8 @@ public class MedicalReportOrchestrationHandler {
                     ProcessingInitiatedResponse response = ProcessingInitiatedResponse.builder()
                             .reportId(reportId)
                             .status("PENDING")
-                            .statusUrl("/api/v1/medical-report/query/status/" + reportId)
-                            .detailedStatusUrl("/api/v1/medical-report/query/details/" + reportId)
+                            .statusUrl(MedScribePaths.PREFIX + "/api/v1/medical-report/query/status/" + reportId)
+                            .detailedStatusUrl(MedScribePaths.PREFIX + "/api/v1/medical-report/query/details/" + reportId)
                             .acceptedAt(LocalDateTime.now())
                             .estimatedCompletionTime(LocalDateTime.now().plusMinutes(10))
                             .build();
@@ -168,8 +169,8 @@ public class MedicalReportOrchestrationHandler {
                     ProcessingInitiatedResponse response = ProcessingInitiatedResponse.builder()
                             .reportId(reportId)
                             .status("PENDING")
-                            .statusUrl("/api/v1/medical-report/query/status/" + reportId)
-                            .detailedStatusUrl("/api/v1/medical-report/query/details/" + reportId)
+                            .statusUrl(MedScribePaths.PREFIX + "/api/v1/medical-report/query/status/" + reportId)
+                            .detailedStatusUrl(MedScribePaths.PREFIX + "/api/v1/medical-report/query/details/" + reportId)
                             .acceptedAt(LocalDateTime.now())
                             .estimatedCompletionTime(LocalDateTime.now().plusMinutes(15))  // Multi-image takes longer
                             .build();
