@@ -2,6 +2,7 @@ package com.elioo.baymax.healthrecord.application.port.out;
 
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.FamilyActivity;
+import com.elioo.baymax.healthrecord.domain.PatientAccess;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.healthrecord.domain.ShareMember;
 import reactor.core.publisher.Flux;
@@ -71,4 +72,13 @@ public interface HealthRecordPort {
 
     /** One row per family: plan, patients, documents created in {@code [from, to)}, last document time. */
     Flux<FamilyActivity> familyActivity(Instant from, Instant to);
+
+    /**
+     * The patients a family may see: its own, and any it is a share member on (matched by the family's
+     * WhatsApp number in share_member). Access is decided here, in one query, not in a service (BMX-5).
+     */
+    Flux<PatientAccess> visiblePatients(UUID familyId);
+
+    /** One patient if the family may see them; empty otherwise, so the caller answers 404 and never 403. */
+    Mono<PatientAccess> visiblePatient(UUID familyId, UUID patientId);
 }

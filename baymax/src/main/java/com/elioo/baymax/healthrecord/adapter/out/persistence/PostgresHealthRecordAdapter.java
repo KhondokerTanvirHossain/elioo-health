@@ -4,6 +4,7 @@ import com.elioo.baymax.config.BaymaxSchema;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.FamilyActivity;
+import com.elioo.baymax.healthrecord.domain.PatientAccess;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.healthrecord.domain.ShareMember;
 import com.elioo.baymax.common.error.BaymaxException;
@@ -164,5 +165,45 @@ public class PostgresHealthRecordAdapter implements HealthRecordPort {
 
     private static OffsetDateTime odt(Instant instant) {
         return OffsetDateTime.ofInstant(instant, ZoneOffset.UTC);
+    }
+
+    // --- BMX-5: who may see a patient, decided in one query -------------------------------------------
+
+    private static final String VISIBLE_SQL = """
+            SELECT p.id, p.family_id, p.name, p.age, p.sex, p.chronic_flags, p.proxy_consent_at, p.created_at,
+                   (p.family_id = :family) AS owner
+            FROM %1$s.patient_profile p
+            WHERE (p.family_id = :family
+                   OR EXISTS (SELECT 1 FROM %1$s.share_member s JOIN %1$s.family_account f ON f.whatsapp_number = s.whatsapp_number
+                              WHERE s.patient_id = p.id AND f.id = :family))
+            """.formatted(S);
+
+    @Override
+    public Flux<PatientAccess> visiblePatients(UUID familyId) {
+        return db.sql(VISIBLE_SQL + " ORDER BY owner DESC, p.created_at")
+                .bind("family", familyId)
+                .map((row, meta) -> access(row)).all();
+    }
+
+    @Override
+    public Mono<PatientAccess> visiblePatient(UUID familyId, UUID patientId) {
+        return db.sql(VISIBLE_SQL + " AND p.id = :patient")
+                .bind("family", familyId).bind("patient", patientId)
+                .map((row, meta) -> access(row)).one();
+    }
+
+    private static PatientAccess access(io.r2dbc.spi.Row row) {
+        String[] flags = row.get("chronic_flags", String[].class);
+        PatientProfile profile = new PatientProfile(row.get("id", UUID.class), row.get("family_id", UUID.class),
+                row.get("name", String.class), row.get("age", Integer.class),
+                PatientProfile.Sex.fromDbValue(row.get("sex", String.class)),
+                flags == null ? List.of() : List.of(flags),
+                offset(row, "proxy_consent_at"), offset(row, "created_at"));
+        return new PatientAccess(profile, Boolean.TRUE.equals(row.get("owner", Boolean.class)));
+    }
+
+    private static Instant offset(io.r2dbc.spi.Row row, String col) {
+        OffsetDateTime v = row.get(col, OffsetDateTime.class);
+        return v == null ? null : v.toInstant();
     }
 }

@@ -29,6 +29,7 @@ public class BaymaxProperties {
     private Storage storage = new Storage();
     private Free free = new Free();
     private Extract extract = new Extract();
+    private Auth auth = new Auth();
     private List<Marker> markers = new ArrayList<>();
 
     @Data
@@ -97,6 +98,31 @@ public class BaymaxProperties {
     }
 
     public enum Credentials { STATIC, INSTANCE_ROLE, DEFAULT_CHAIN }
+
+    /** OTP login and web sessions (BMX-5). */
+    @Data
+    public static class Auth {
+        /**
+         * Secret for the HMAC that stands in for a phone number in otp_code, web_session and audit_event.
+         * Blank = OTP login answers 503, the same fail-closed shape as the admin token. Rotating it logs
+         * every family out (sessions are keyed by it too) and orphans in-flight codes; nothing else.
+         */
+        private String hmacSecret = "";
+        /** How a code reaches the family: {@code log} writes it to the server log (v1); WhatsApp is BMX-10. */
+        private String otpDelivery = "log";
+        private Duration otpTtl = Duration.ofMinutes(10);
+        /** Live (unexpired, unused, unburned) codes allowed per number per hour; beyond it, requests are silently ignored. */
+        private int otpMaxLivePerHour = 5;
+        /** Wrong guesses that burn a code. */
+        private int otpMaxAttempts = 5;
+        /** Sliding session lifetime, measured from last use. */
+        private Duration sessionTtl = Duration.ofDays(30);
+        /** Sliding expiry is pushed forward at most this often, so a busy session is not a write per request. */
+        private Duration sessionTouchInterval = Duration.ofHours(1);
+        private String cookieName = "baymax_session";
+        /** Secure attribute on the cookie. Browsers exempt http://localhost, so this stays true in dev too. */
+        private boolean cookieSecure = true;
+    }
 
     @Data
     public static class Free {

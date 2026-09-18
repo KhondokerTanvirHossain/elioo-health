@@ -139,7 +139,8 @@ public class FamilyAccountService implements FamilyAccountUseCase {
                 .switchIfEmpty(Mono.error(BaymaxException.notFound("patient_not_found", "no patient with id " + patientId)));
     }
 
-    static String normalizeNumber(String raw) {
+    /** Public since BMX-5: OTP login normalises the same way before hashing. */
+    public static String normalizeNumber(String raw) {
         if (raw == null) {
             throw new IllegalArgumentException("whatsapp_number is required");
         }

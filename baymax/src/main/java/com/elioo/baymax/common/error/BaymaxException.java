@@ -36,4 +36,17 @@ public class BaymaxException extends RuntimeException {
     public static BaymaxException conflict(String reason, String message) {
         return new BaymaxException(HttpStatus.CONFLICT, reason, message);
     }
+
+    /** No session, or a session that is not allowed to do this at all. */
+    public static BaymaxException unauthorized(String reason, String message) {
+        return new BaymaxException(HttpStatus.UNAUTHORIZED, reason, message);
+    }
+
+    /**
+     * A session that may see the thing but not do this to it — a share member deleting a document. Reserved
+     * for that: "not yours to see" is a 404, never a 403, so an id can not be probed for existence.
+     */
+    public static BaymaxException forbidden(String reason, String message) {
+        return new BaymaxException(HttpStatus.FORBIDDEN, reason, message);
+    }
 }

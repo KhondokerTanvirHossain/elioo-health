@@ -1,6 +1,8 @@
 package com.elioo.baymax.extraction.adapter.in.router;
 
 import com.elioo.baymax.aicall.adapter.in.router.AdminAuthFilter;
+import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
+import com.elioo.baymax.web.adapter.in.router.SessionOrAdminAuthFilter;
 import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.common.error.ErrorResponseFilter;
 import com.elioo.baymax.common.error.FreeTierExceededException;
@@ -33,13 +35,15 @@ class BaymaxDocumentRouterTest {
     private static final String PATH = "/api/v1/baymax/documents";
 
     private final DocumentIntakeUseCase intake = mock(DocumentIntakeUseCase.class);
+    private final com.elioo.baymax.web.application.port.in.TimelineUseCase timeline = mock(com.elioo.baymax.web.application.port.in.TimelineUseCase.class);
+    private final com.elioo.baymax.web.application.port.in.WebAuthUseCase auth = mock(com.elioo.baymax.web.application.port.in.WebAuthUseCase.class);
     private final WebTestClient client;
 
     BaymaxDocumentRouterTest() {
         BaymaxProperties props = new BaymaxProperties();
         props.getAdmin().setToken(TOKEN);
         client = WebTestClient.bindToRouterFunction(new BaymaxDocumentRouter()
-                        .baymaxDocumentRoutes(new DocumentHandler(intake), new AdminAuthFilter(props),
+                        .baymaxDocumentRoutes(new DocumentHandler(intake, timeline), new SessionOrAdminAuthFilter(new AdminAuthFilter(props), new SessionAuthFilter(auth, props)),
                                 new ErrorResponseFilter()))
                 .build();
     }
@@ -137,5 +141,30 @@ class BaymaxDocumentRouterTest {
         client.get().uri(PATH + "/" + document).header(AdminAuthFilter.HEADER, TOKEN)
                 .exchange().expectStatus().isNotFound()
                 .expectBody().jsonPath("$.reason").isEqualTo("document_not_found");
+    }
+
+    /** BMX-5: a family session takes the scoped path; another family's id is a 404 there, never a 403. */
+    @Test
+    void aSessionCookieUsesTheScopedLookupAndAnotherFamilysDocumentIs404() {
+        UUID family = UUID.randomUUID();
+        UUID document = UUID.randomUUID();
+        java.time.Instant now = java.time.Instant.now();
+        org.mockito.Mockito.when(auth.authenticate("tok")).thenReturn(Mono.just(
+                new com.elioo.baymax.web.domain.WebSession(UUID.randomUUID(), family, now, now, now.plusSeconds(60))));
+        org.mockito.Mockito.when(timeline.document(family, document)).thenReturn(Mono.error(
+                BaymaxException.notFound("document_not_found", "no document with id " + document)));
+
+        client.get().uri(PATH + "/" + document).cookie("baymax_session", "tok")
+                .exchange()
+                .expectStatus().isNotFound()
+                .expectBody().jsonPath("$.reason").isEqualTo("document_not_found");
+        verify(intake, never()).view(any());
+    }
+
+    @Test
+    void deleteNeedsASessionNotTheAdminToken() {
+        client.delete().uri(PATH + "/" + UUID.randomUUID()).header(AdminAuthFilter.HEADER, TOKEN)
+                .exchange().expectStatus().isUnauthorized();
+        verify(timeline, never()).deleteDocument(any(), any());
     }
 }
