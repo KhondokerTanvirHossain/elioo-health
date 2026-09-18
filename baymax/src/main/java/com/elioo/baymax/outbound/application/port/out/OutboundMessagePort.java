@@ -25,4 +25,7 @@ public interface OutboundMessagePort {
     Mono<OutboundMessage> latestDeliverable(UUID documentId);
 
     Flux<MessageCount> counts(Instant from, Instant to);
+
+    /** Retake messages this family has received since its last message of any other kind (0 when none). */
+    Mono<Long> consecutiveRetakes(UUID familyId);
 }

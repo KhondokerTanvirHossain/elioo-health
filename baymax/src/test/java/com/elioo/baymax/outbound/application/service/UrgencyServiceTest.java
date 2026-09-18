@@ -29,7 +29,11 @@ class UrgencyServiceTest {
     }
 
     static DocumentFacts facts(List<Map<String, Object>> values, List<Map<String, Object>> followUps, Map<String, Object> ctx, String json) {
-        Document d = new Document(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "lab_report", null, null, json, 0.9,
+        return facts("lab_report", values, followUps, ctx, json);
+    }
+
+    static DocumentFacts facts(String type, List<Map<String, Object>> values, List<Map<String, Object>> followUps, Map<String, Object> ctx, String json) {
+        Document d = new Document(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), type, null, null, json, 0.9,
                 Document.Status.DONE, null, "m", null, 1, NOW, NOW);
         return new DocumentFacts(d, "Ma", values, followUps, ctx, "https://x/baymax/documents/1");
     }
@@ -82,6 +86,16 @@ class UrgencyServiceTest {
         Map<String, Object> v = value("HbA1c", "5.0", "4.0", "5.6");
         v.put("flag", "critical");
         assertThat(service.assess(facts(List.of(v), List.of(), Map.of(), "{}")).level()).isEqualTo(Urgency.ROUTINE);
+    }
+
+    /** A diagnosis line escalates a lab report or discharge summary, never a prescription (PO ruling 2026-09-18). */
+    @Test
+    void aDiagnosisLineEscalatesOnlyWhereADoctorHasNotJustBeenSeen() {
+        Map<String, Object> dx = Map.of("diagnosis", List.of(Map.of("text", "x")));
+        assertThat(service.assess(facts("lab_report", List.of(), List.of(), dx, "{}")).level()).isEqualTo(Urgency.THIS_WEEK);
+        assertThat(service.assess(facts("discharge_summary", List.of(), List.of(), dx, "{}")).level()).isEqualTo(Urgency.THIS_WEEK);
+        assertThat(service.assess(facts("prescription", List.of(), List.of(), dx, "{}")).level()).isEqualTo(Urgency.ROUTINE);
+        assertThat(service.assess(facts("prescription", List.of(), List.of(), dx, "{}")).reasons()).doesNotContain("diagnosis_present");
     }
 
     @Test

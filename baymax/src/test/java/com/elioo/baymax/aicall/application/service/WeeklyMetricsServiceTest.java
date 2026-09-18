@@ -52,6 +52,7 @@ class WeeklyMetricsServiceTest {
         when(records.familyActivity(any(), any())).thenReturn(Flux.just(
                 new FamilyActivity(family, FamilyAccount.Plan.FREE, 1, 2, Instant.parse("2026-09-09T12:00:00Z")),
                 new FamilyActivity(UUID.fromString("33333333-3333-3333-3333-333333333333"), FamilyAccount.Plan.FAMILY, 2, 0, null)));
+        when(port.extractOutputTokens(any(), any())).thenReturn(Flux.just(900, 1200, 2000, 8192));
         when(port.perDocument(any(), any())).thenReturn(Flux.just(
                 new DocumentAiCost(doc, 3, 1, 4200, 900, new BigDecimal("0.00117000"),
                         "gcp/vision-document-text-detection|groq/openai/gpt-oss-120b", 0.905, 2,
@@ -82,16 +83,20 @@ class WeeklyMetricsServiceTest {
                     assertThat(lines.get(14)).isEqualTo(WeeklyMetricsService.VIEWS_HEADER);
                     assertThat(lines.get(16)).startsWith("# messages from=");
                     assertThat(lines.get(17)).isEqualTo(WeeklyMetricsService.MESSAGES_HEADER);
-                    assertThat(lines).hasSize(18);
+                    assertThat(lines.get(19)).startsWith("# extraction from=");
+                    assertThat(lines.get(20)).isEqualTo(WeeklyMetricsService.EXTRACTION_HEADER);
+                    assertThat(lines.get(21)).isEqualTo("4,8192,8192,1200");   // max, p95, median of 900/1200/2000/8192
+                    assertThat(lines).hasSize(22);
                 })
                 .verifyComplete();
     }
 
     @Test
-    void emptyWindowStillHasAllFiveHeaders() {
+    void emptyWindowStillHasAllSixHeaders() {
         AiCallLogPort port = mock(AiCallLogPort.class);
         HealthRecordPort records = mock(HealthRecordPort.class);
         when(port.perDocument(any(), any())).thenReturn(Flux.empty());
+        when(port.extractOutputTokens(any(), any())).thenReturn(Flux.empty());
         when(records.familyActivity(any(), any())).thenReturn(Flux.empty());
 
         StepVerifier.create(new WeeklyMetricsService(port, records, audit, messages).weeklyCsv(FROM, TO))
@@ -110,7 +115,10 @@ class WeeklyMetricsServiceTest {
                                 WeeklyMetricsService.VIEWS_HEADER,
                                 "",
                                 "# messages from=2026-09-05T00:00:00Z to=2026-09-12T00:00:00Z (to exclusive)",
-                                WeeklyMetricsService.MESSAGES_HEADER))
+                                WeeklyMetricsService.MESSAGES_HEADER,
+                                "",
+                                "# extraction from=2026-09-05T00:00:00Z to=2026-09-12T00:00:00Z (to exclusive)",
+                                WeeklyMetricsService.EXTRACTION_HEADER))
                 .verifyComplete();
     }
 

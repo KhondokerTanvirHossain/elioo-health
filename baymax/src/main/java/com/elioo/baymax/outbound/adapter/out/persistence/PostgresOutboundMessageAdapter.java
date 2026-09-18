@@ -103,4 +103,11 @@ public class PostgresOutboundMessageAdapter implements OutboundMessagePort {
                 row.get("reviewer", String.class), row.get("reject_reason", String.class),
                 instant(row, "decided_at"), instant(row, "sent_at"), instant(row, "created_at"));
     }
+
+    @Override
+    public Mono<Long> consecutiveRetakes(UUID familyId) {
+        return db.sql("SELECT count(*) FROM " + T + " WHERE family_id = :f AND kind = 'retake' AND created_at > "
+                        + "COALESCE((SELECT max(created_at) FROM " + T + " WHERE family_id = :f AND kind <> 'retake'), 'epoch'::timestamptz)")
+                .bind("f", familyId).map((row, meta) -> row.get(0, Long.class)).one();
+    }
 }

@@ -79,4 +79,14 @@ public class AiCallLogPersistenceAdapter implements AiCallLogPort {
     private static Instant instant(OffsetDateTime value) {
         return value == null ? null : value.toInstant();
     }
+
+    @Override
+    public Flux<Integer> extractOutputTokens(Instant from, Instant to) {
+        return databaseClient.sql("SELECT output_tokens FROM " + BaymaxSchema.NAME + ".ai_call_log "
+                        + "WHERE purpose = 'extract' "
+                        + "AND created_at >= :from AND created_at < :to ORDER BY output_tokens")
+                .bind("from", OffsetDateTime.ofInstant(from, java.time.ZoneOffset.UTC))
+                .bind("to", OffsetDateTime.ofInstant(to, java.time.ZoneOffset.UTC))
+                .map((row, meta) -> row.get("output_tokens", Integer.class)).all();
+    }
 }
