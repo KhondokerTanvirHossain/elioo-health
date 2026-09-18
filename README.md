@@ -88,7 +88,7 @@ Once the application is running, you can:
 ### Key Endpoints
 
 Since DR-11 the MedScribe PoC lives under `/medscribeai/` (its UI at `/medscribeai/`, every API route below it);
-Baymax serves `/`. The PoC is frozen; the routes are listed in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
+Medioo (codename Baymax) serves `/`. The PoC is frozen; the routes are listed in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
 exercised in [docs/requests.http](docs/requests.http).
 
 ```

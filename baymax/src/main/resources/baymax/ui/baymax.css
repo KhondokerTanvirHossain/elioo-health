@@ -85,6 +85,7 @@ button.quiet:hover,.btn.quiet:hover{background:var(--c-line);color:var(--c-text)
 .top button.quiet{margin:0;padding:var(--sp-2) var(--sp-3);min-height:36px}
 
 /* footer disclaimer: every page */
+.foot .about{margin-top:var(--sp-2)}
 .foot{margin-top:var(--sp-7);padding:var(--sp-4) 0 var(--sp-5);border-top:1px solid var(--c-line);color:var(--c-muted);font-size:var(--fs-s)}
 
 /* landing */

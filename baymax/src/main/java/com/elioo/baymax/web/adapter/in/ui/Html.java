@@ -31,6 +31,7 @@ final class Html {
      * served stale for a day to anyone who had opened the app before it.
      */
     static final String CSS_HREF = CSS_PATH + "?v=" + version("/baymax/ui/baymax.css");
+    static final String ICON_HREF = "/assets/favicon.svg?v=" + version("/baymax/ui/favicon.svg");
 
     /**
      * The mascot image, referenced from this one place so swapping the file is one change. {@code null} until
@@ -54,7 +55,7 @@ final class Html {
                 + (refreshSeconds > 0 ? "<meta http-equiv=\"refresh\" content=\"" + refreshSeconds + "\">" : "")
                 + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
                 + (index ? "" : "<meta name=\"robots\" content=\"noindex\">")
-                + "<title>" + esc(title) + "</title><link rel=\"stylesheet\" href=\"" + CSS_HREF + "\"></head><body><main class=\""
+                + "<title>" + esc(title) + "</title><link rel=\"stylesheet\" href=\"" + CSS_HREF + "\"><link rel=\"icon\" type=\"image/svg+xml\" href=\"" + ICON_HREF + "\"></head><body><main class=\""
                 + (wide ? "page" : "app") + "\">" + body
                 + "<footer class=\"foot\">" + disclaimer + "</footer></main></body></html>";
     }

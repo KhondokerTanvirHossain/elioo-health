@@ -8,7 +8,7 @@ Status: Ideation locked — pre-development
 
 Date: 12 September 2026
 
-Codename note: “Baymax” is an internal codename only (Disney IP). Public brand name to be decided before launch.
+Naming: the public product name is **Medioo**, a product of Elioo Health (DR-15, 2026-09-19). “Baymax” was the internal codename (Disney IP) and stays only in code, schema and config names.
 
 > Engineering note (not part of the PO document): where engineering decisions diverge from the wording below,
 > [DECISIONS.md](DECISIONS.md) wins. In particular DR-2: Comprehend Medical and Translate are *not used by Baymax*
@@ -311,7 +311,7 @@ Green on metrics 1–6 → build bKash/Nagad, drop the gate to config-only, open
 
 | Item | Owner | When |
 |-------------------------------------------------------------------------------------|-----------|------------------------------------|
-| Public brand name (Baymax is codename only)                                         | Tanvir    | Before public launch               |
+| Public brand name (Baymax is codename only) — **closed: Medioo (DR-15, 2026-09-19)** | Tanvir    | Done                               |
 | Verify Groq zero-retention / no-training terms; pick fallback strong model          | Tanvir    | Before pilot                       |
 | Verify current Meta WhatsApp BD conversation pricing and healthcare template policy | Tanvir    | Before WhatsApp build              |
 | Confirm the 5–6 chronic markers for v1 trend detection                              | Tanvir    | Before extraction schema is frozen |

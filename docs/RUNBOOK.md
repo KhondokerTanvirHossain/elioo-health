@@ -9,7 +9,7 @@ and this file should be fixed.
 | | |
 |---|---|
 | Host | EC2 `i-0215d6b600b251455`, `ec2-13-205-14-249.ap-south-1.compute.amazonaws.com`, user `ec2-user`, region ap-south-1 |
-| Shared with | an n8n stack; its Caddy terminates HTTPS for `baymax.eliooo.org` and reaches the app as `medscribe-ai:8086` on the docker network `n8n_edge` |
+| Shared with | an n8n stack; its Caddy terminates HTTPS for `medioo.eliooo.org` (and answers `baymax.eliooo.org` with a permanent redirect to it — DR-15) and reaches the app as `medscribe-ai:8086` on the docker network `n8n_edge` |
 | Container | `medscribe-ai`, image `ghcr.io/khondokertanvirhossain/elioo-health/medscribe-ai:<git sha>` |
 | Runtime config | `/home/ec2-user/medscribe.env`, mode 600, passed to `docker run --env-file` |
 | Database | Supabase `niramoy-rx`, session pooler, schemas `medscribe` and `baymax` |
@@ -60,6 +60,7 @@ absent on any server where Baymax should not run.
 | `BAYMAX_ADMIN_TOKEN` | a long random string | gates `/api/v1/baymax/admin/**` and, until BMX-5 brings OTP, the family endpoints. Unset ⇒ those routes answer 503 |
 | `BAYMAX_AUTH_HMAC_SECRET` | **set** (`openssl rand -hex 32`) | Stands in for phone numbers in otp_code / web_session / audit_event. Blank = OTP login answers 503 (fail closed). Rotating it logs every family out. BMX-5. |
 | `BAYMAX_COOKIE_SECURE` | blank (defaults true) | Only ever set `false` on a plain-http dev box; production is HTTPS behind Caddy. |
+| `BAYMAX_PUBLIC_BASE_URL` | `https://medioo.eliooo.org` (set 2026-09-19) | Builds the timeline links in outbound messages. Default in application.properties is the same host; set explicitly so a host change is one env edit + restart. |
 | `BAYMAX_STORAGE_BUCKET` | `elioo-baymax-prod` | blank ⇒ no storage bean; the module still loads but every storage call fails at call time |
 | `BAYMAX_STORAGE_REGION` | `ap-south-1` | |
 | `BAYMAX_STORAGE_CREDENTIALS` | `instance-role` | **critical**, see below |
@@ -120,14 +121,15 @@ The route answers 503 when any step fails, so a non-200 status is itself the ala
 Alongside it, the routes that should always answer:
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' https://baymax.eliooo.org/actuator/health          # 200
-curl -s https://baymax.eliooo.org/api/v1/baymax/health                                      # {"status":"UP","module":"baymax"}
-curl -s -o /dev/null -w '%{http_code}\n' https://baymax.eliooo.org/medscribeai/api/v1/medical-report/languages  # 200, MedScribe at its prefix (DR-11)
-curl -s -o /dev/null -w '%{http_code}\n' https://baymax.eliooo.org/                                          # 200, Baymax landing
-curl -s -o /dev/null -w '%{http_code}\n' https://baymax.eliooo.org/app/                                      # 200, login page
-curl -s -o /dev/null -w '%{http_code}\n' https://baymax.eliooo.org/baymax/home                               # 301 → /app/home
-curl -s -o /dev/null -w '%{http_code}\n' https://baymax.eliooo.org/medscribeai/                              # 200, MedScribe PoC UI
-curl -s -o /dev/null -w '%{http_code}\n' https://baymax.eliooo.org/api/v1/baymax/admin/storage/selftest  # 401 without the token
+curl -s -o /dev/null -w '%{http_code}\n' https://medioo.eliooo.org/actuator/health          # 200
+curl -s https://medioo.eliooo.org/api/v1/baymax/health                                      # {"status":"UP","module":"baymax"}
+curl -s -o /dev/null -w '%{http_code}\n' https://medioo.eliooo.org/medscribeai/api/v1/medical-report/languages  # 200, MedScribe at its prefix (DR-11)
+curl -s -o /dev/null -w '%{http_code}\n' https://medioo.eliooo.org/                                          # 200, Medioo landing
+curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' https://baymax.eliooo.org/app/home                  # 301 → https://medioo.eliooo.org/app/home (old public name)
+curl -s -o /dev/null -w '%{http_code}\n' https://medioo.eliooo.org/app/                                      # 200, login page
+curl -s -o /dev/null -w '%{http_code}\n' https://medioo.eliooo.org/baymax/home                               # 301 → /app/home
+curl -s -o /dev/null -w '%{http_code}\n' https://medioo.eliooo.org/medscribeai/                              # 200, MedScribe PoC UI
+curl -s -o /dev/null -w '%{http_code}\n' https://medioo.eliooo.org/api/v1/baymax/admin/storage/selftest  # 401 without the token
 ```
 
 Baymax health returning 404 in production means the module did not load: `BAYMAX_ENABLED` is not `true`.

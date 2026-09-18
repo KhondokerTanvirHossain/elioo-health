@@ -186,3 +186,25 @@ colour, radius, spacing, type scale) consumed by the landing page and every app 
 outside it (grep-asserted in a test). The mascot is referenced from one place (`Html.MASCOT`) with a placeholder until
 Tanvir's asset lands; the reference images Tanvir sent are Disney's Baymax character and are used as palette/mood
 reference only — never committed or served, because the repo is open-source and the character is Disney IP (§8).
+
+## DR-15 | 2026-09-19 | Public product name is Medioo, under Elioo Health
+
+*(The relayed decision text read "Medio"; the PO corrected the name to **Medioo** and the domain to `medioo` the same day, before merge.)*
+
+**Decision:** Public product name is Medioo, under Elioo Health (company: Elioo, https://www.eliooo.org/). Supersedes
+"Baymax" as the public brand; Baymax remains an internal codename only. Tagline slot still Tanvir's. Mascot: an
+original asset Tanvir supplies — no Disney character.
+
+**Why:** §8 required a public brand before launch; Medioo is ownable and sits cleanly under the existing Elioo Health /
+elioo-health naming.
+
+**Supersedes:** closes the §8 "public brand name" open item.
+
+*Engineering note (BMX-6c):* the rename is copy and docs only. Renamed: every user-facing string in both language
+bundles, page titles, the landing wordmark and footer ("Medioo — a product of Elioo Health", linking to the company
+site), docs/BAYMAX.md → docs/MEDIOO.md (stub left at the old path). **Not renamed, deliberately:** the Gradle module
+`baymax`, Java packages `com.elioo.baymax`, schema `baymax`, config prefix `baymax.*`, env vars `BAYMAX_*`, cookie
+names `baymax_*`, the asset path `/assets/baymax.css`, branch and ticket prefixes (BMX-n). Churning code for a brand
+buys nothing and risks a bad deploy. `MediooBrandTest` asserts no bundle string and no rendered page carries the codename.
+Pre-rename check: medioo.eliooo.org already resolves to the EC2 box (no Caddy site block yet); a quick search found no Bangladeshi health product
+named Medioo (MedEasy and MedicBD are the nearest names) — not a trademark search.
