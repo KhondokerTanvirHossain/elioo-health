@@ -56,6 +56,8 @@ public class WebUiHandler {
     static final String BASE = "/app";
     /** The company site, linked from the landing footer (DR-15). */
     static final String ELIOO = "https://www.eliooo.org/";
+    /** The collaboration address on the landing page (Tanvir, 2026-09-19). */
+    static final String CONTACT_EMAIL = "k.tanvir.hossain@gmail.com";
     static final String LOGIN_COOKIE = "baymax_login";
     /** Files under classpath {@code baymax/ui/} that {@code /assets/{file}} may serve; nothing else leaves the jar. */
     static final Set<String> ASSETS = Set.of("baymax.css", "favicon.svg", "mio.webp", "mio-head.webp", "medioo.webp", "paper-lab.svg", "paper-rx.svg", "mio.png", "medioo.png", "medioo.svg");
@@ -147,6 +149,8 @@ public class WebUiHandler {
                         : "<span class=\"mio-slot\"></span>")
                 .append("<h2>").append(copy.t(lang, "landing.z.h")).append("</h2>")
                 .append("<p class=\"body\">").append(copy.t(lang, "landing.z.p")).append("</p>").append(cta)
+                .append("<p class=\"collab\">").append(copy.t(lang, "landing.collab")).append(" <a href=\"mailto:").append(CONTACT_EMAIL)
+                .append("\">").append(CONTACT_EMAIL).append("</a></p>")
                 .append("</div></section></div>");
 
         String foot = "<div class=\"wrap\"><p>" + copy.t(lang, "landing.foot") + "</p><p class=\"about\"><a href=\"" + ELIOO + "\" rel=\"noopener\">"

@@ -101,7 +101,7 @@ button.quiet:hover,.btn.quiet:hover{background:var(--c-line);color:var(--c-text)
 /* landing — the storytelling page (BMX-6d). Chat bubbles, one motion, no script. */
 main.page{max-width:none;padding:0}
 .wrap{max-width:592px;margin:0 auto;padding:0 var(--sp-4)}
-.land .top{padding:var(--sp-4) var(--sp-4) var(--sp-2);margin:0}
+.land .top{padding:var(--sp-4) var(--sp-4) var(--sp-2);margin:0 auto}
 .wm img{display:block;height:44px;width:auto}
 .tagline{display:block;font-size:var(--fs-s);line-height:1.4;color:var(--c-muted);margin-top:var(--sp-1)}
 .land .actions a.login{font-weight:600;color:var(--c-accent);text-decoration:none;padding:var(--sp-2) 0 var(--sp-2) var(--sp-2)}
@@ -159,6 +159,7 @@ main.page{max-width:none;padding:0}
 .not h3{margin:0;font-size:var(--fs-1);line-height:1.4}
 .not p{margin-top:var(--sp-2)}
 .mio{display:block;width:188px;height:auto;padding:22px var(--sp-4) 0;margin:0 0 var(--sp-5);background:var(--c-accent-soft);border-radius:94px 94px 28px 28px}
+.collab{margin-top:var(--sp-6);font-size:var(--fs-0);color:var(--c-muted)}
 .mio-slot{display:block;width:188px;height:180px;margin:0 0 var(--sp-5);background:var(--c-accent-soft);border-radius:94px 94px 28px 28px}
 main.page .foot{margin-top:0;padding:var(--sp-6) 0 var(--sp-7);border-top:1px solid var(--c-line)}
 main.page .foot p{margin:0}main.page .foot p+p{margin-top:var(--sp-2)}
@@ -176,6 +177,11 @@ main.page .foot p{margin:0}main.page .foot p+p{margin-top:var(--sp-2)}
   .sec{padding:112px 0}.hero{padding:56px 0 112px}
   .hero .wrap{max-width:1040px;display:grid;grid-template-columns:1fr 1fr;gap:72px;align-items:start}
   .land .top.wrap{max-width:1040px}
+  .sec .wrap{max-width:1040px}
+  .sec .wrap>*{max-width:592px}
+  .hero .wrap>*{max-width:none}
+  main.page .foot .wrap{max-width:1040px}
+  main.page .foot .wrap>*{max-width:592px}
   .hero .thread{margin-top:var(--sp-2)}
   .cmp{grid-template-columns:1fr 1fr}
 }
