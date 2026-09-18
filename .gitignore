@@ -63,6 +63,8 @@ nbproject/private/
 # ============================================
 logs/
 log/
+# ...but never a source package that happens to be called log (it swallowed adapter/out/log/ once, silently)
+!**/src/**/log/
 *.log
 *.rdb
 files/

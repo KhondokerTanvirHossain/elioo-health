@@ -153,3 +153,20 @@ OCR line is cropped; otherwise nothing is stored. The re-crop admin route (`POST
 {id}/recrop`, RUNBOOK) replays stored `extraction_json` through the current cutter — Vision only — so a corpus
 cropped before this decision never needs re-extraction. Standing rule in CLAUDE.md: an invariant asserted on a proxy
 is not asserted.
+
+## DR-13 | 2026-09-18 | Review-gate reviewer during pilot = Tanvir, via WhatsApp approve/reject
+
+**Decision:** Review-gate reviewer during pilot = Tanvir, via WhatsApp approve/reject. Gate on for "this
+week"/"now" in weeks 0–2, default off otherwise. No licensed-doctor approver and no provider portal in v1.
+
+**Why:** a doctor approving patient-facing messages converts an information service into something resembling
+remote practice (§6.1) and risks their licence, not ours. Reviewer identity is config — a doctor can be attached
+later without a refactor.
+
+**Supersedes:** none.
+
+*Engineering note:* `baymax.outbound.gate-mode` = `off` (default) | `all` | `urgency`, with
+`baymax.outbound.gate-urgency-levels` = `now,this_week`. For weeks 0–2 set `BAYMAX_GATE_MODE=urgency` on the box.
+The reviewer is whoever presents the admin token; the optional `X-Baymax-Reviewer` header names them (default
+`tanvir`) and is stored on the row. Notification of a pending message is `ReviewerNotificationPort` — the log until
+BMX-10 puts it on WhatsApp. Nothing PENDING is ever delivered without an explicit approve (asserted in tests).

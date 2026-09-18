@@ -1,0 +1,266 @@
+package com.elioo.baymax.outbound.application.service;
+
+import com.elioo.baymax.aicall.application.service.MeteredLlmClient;
+import com.elioo.baymax.aicall.domain.AiCallPurpose;
+import com.elioo.baymax.common.error.BaymaxException;
+import com.elioo.baymax.config.BaymaxProperties;
+import com.elioo.baymax.extraction.application.port.out.DocumentRecordPort;
+import com.elioo.baymax.extraction.config.ExtractionModelConfiguration;
+import com.elioo.baymax.extraction.domain.Document;
+import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
+import com.elioo.baymax.outbound.application.port.in.ExplainDocumentUseCase;
+import com.elioo.baymax.outbound.application.port.out.MessageDeliveryPort;
+import com.elioo.baymax.outbound.application.port.out.OutboundMessagePort;
+import com.elioo.baymax.outbound.application.port.out.ReviewerNotificationPort;
+import com.elioo.baymax.outbound.domain.OutboundMessage;
+import com.elioo.baymax.outbound.domain.Urgency;
+import com.elioo.baymax.outbound.domain.UrgencyAssessment;
+import com.elioo.healthcare.llm.model.LlmRequest;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import reactor.core.publisher.Mono;
+
+import java.time.Clock;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * The family's message for a finished document (BMX-6). The skeleton comes from {@link Copy} — the urgency
+ * line, the doctor-first line and the standout lines are fixed text with the extraction's own numbers —
+ * and the model is asked only to phrase it as plain Bangla within that skeleton. Then the checklist runs in
+ * code: numbers ⊆ extraction, no medicine/dose verbs, doctor-first on anything urgent, ≤ 600 characters.
+ * One regeneration with the violations named, then fail closed: a row with no body, and a log line.
+ *
+ * <p>Urgency is assessed once, before composition, and asserted afterwards: the stored message carries the
+ * urgency it was assessed at, or nothing is stored.
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class ExplanationService implements ExplainDocumentUseCase {
+
+    private final DocumentRecordPort documents;
+    private final HealthRecordPort records;
+    private final OutboundMessagePort messages;
+    private final MeteredLlmClient metered;
+    private final ExtractionModelConfiguration.ExtractionClients clients;
+    private final UrgencyService urgency;
+    private final MessageSafetyCheck safety;
+    private final OutboundMessageGate gate;
+    private final ReviewerNotificationPort reviewer;
+    private final MessageDeliveryPort delivery;
+    private final Copy copy;
+    private final BaymaxProperties properties;
+    private final Clock clock;
+
+    @Override
+    public Mono<OutboundMessage> explain(UUID documentId) {
+        return compose(documentId, false);
+    }
+
+    @Override
+    public Mono<OutboundMessage> detail(UUID documentId) {
+        return compose(documentId, true);
+    }
+
+    private Mono<OutboundMessage> compose(UUID documentId, boolean detail) {
+        return documents.find(documentId)
+                .switchIfEmpty(Mono.error(BaymaxException.notFound("document_not_found", "no document with id " + documentId)))
+                .flatMap(document -> switch (document.status()) {
+                    case NEEDS_RETAKE -> retake(document);
+                    case DONE -> facts(document).flatMap(facts -> explanation(facts, detail));
+                    default -> Mono.empty();
+                });
+    }
+
+    /** NEEDS_RETAKE: the retake prompt and nothing else — no facts, no model, no explanation. */
+    private Mono<OutboundMessage> retake(Document document) {
+        String body = copy.bn("retake", Map.of());
+        return release(new OutboundMessage(null, document.familyId(), document.patientId(), document.id(),
+                OutboundMessage.Kind.RETAKE, Urgency.ROUTINE, List.of(), body, gate.decide(Urgency.ROUTINE),
+                null, null, null, null, clock.instant()));
+    }
+
+    private Mono<DocumentFacts> facts(Document document) {
+        String link = properties.getOutbound().getPublicBaseUrl() + "/baymax/documents/" + document.id();
+        return Mono.zip(
+                documents.observationsOf(document.id()).collectList(),
+                documents.followUpsOf(document.id()).collectList(),
+                documents.clinicalContextOf(document.id()).defaultIfEmpty(Map.of()),
+                records.findPatient(document.patientId()).map(p -> p.name()).defaultIfEmpty("")
+        ).map(t -> new DocumentFacts(document, t.getT4(), t.getT1(), t.getT2(), t.getT3(), link));
+    }
+
+    private Mono<OutboundMessage> explanation(DocumentFacts facts, boolean detail) {
+        UrgencyAssessment assessed = urgency.assess(facts);
+        String skeleton = skeleton(facts, assessed, detail);
+        OutboundMessage.Kind kind = detail ? OutboundMessage.Kind.DETAIL : OutboundMessage.Kind.EXPLANATION;
+
+        // nothing stands out and nothing is urgent: the template is the whole message, the model adds nothing
+        boolean templateOnly = !detail && assessed.level() == Urgency.ROUTINE;
+        Mono<String> body = templateOnly ? Mono.just(skeleton) : generate(facts, assessed, skeleton, null)
+                .flatMap(first -> {
+                    List<String> violations = safety.violations(first, facts, assessed.level());
+                    if (violations.isEmpty()) {
+                        return Mono.just(first);
+                    }
+                    log.info("[baymax] explanation rejected once documentId={} violations={}", facts.document().id(), violations);
+                    return generate(facts, assessed, skeleton, violations).flatMap(second -> {
+                        List<String> again = safety.violations(second, facts, assessed.level());
+                        if (again.isEmpty()) {
+                            return Mono.just(second);
+                        }
+                        log.warn("[baymax] explanation failed closed documentId={} violations={}", facts.document().id(), again);
+                        return Mono.empty();
+                    });
+                });
+
+        return body
+                .map(text -> {
+                    List<String> finalCheck = safety.violations(text, facts, assessed.level());
+                    if (!finalCheck.isEmpty()) {
+                        throw new IllegalStateException("template violated its own checklist: " + finalCheck);
+                    }
+                    return new OutboundMessage(null, facts.document().familyId(), facts.document().patientId(), facts.document().id(),
+                            kind, assessed.level(), assessed.reasons(), text, gate.decide(assessed.level()),
+                            null, null, null, null, clock.instant());
+                })
+                .switchIfEmpty(Mono.fromSupplier(() -> new OutboundMessage(null, facts.document().familyId(), facts.document().patientId(),
+                        facts.document().id(), kind, assessed.level(), assessed.reasons(), null,
+                        OutboundMessage.GateStatus.FAILED_SAFETY, null, null, null, null, clock.instant())))
+                .flatMap(message -> {
+                    // urgency is never lowered by any later stage: the row must carry what was assessed
+                    if (message.urgency() != assessed.level()) {
+                        return Mono.error(new IllegalStateException("urgency changed after assessment"));
+                    }
+                    return message.gateStatus() == OutboundMessage.GateStatus.FAILED_SAFETY ? messages.save(message) : release(message);
+                });
+    }
+
+    /** Persist, then either park it with the reviewer or hand it to delivery. Nothing PENDING is delivered. */
+    private Mono<OutboundMessage> release(OutboundMessage message) {
+        if (message.gateStatus() == OutboundMessage.GateStatus.PENDING) {
+            return messages.save(message).flatMap(saved -> reviewer.notifyPending(saved).thenReturn(saved));
+        }
+        Instant now = clock.instant();
+        OutboundMessage sent = new OutboundMessage(message.id(), message.familyId(), message.patientId(), message.documentId(),
+                message.kind(), message.urgency(), message.urgencyReasons(), message.body(), OutboundMessage.GateStatus.RELEASED,
+                null, null, null, now, message.createdAt());
+        return messages.save(sent).flatMap(saved -> delivery.deliver(saved).thenReturn(saved));
+    }
+
+    /** The fixed skeleton: template lines with the extraction's own numbers. */
+    String skeleton(DocumentFacts facts, UrgencyAssessment assessed, boolean detail) {
+        Document d = facts.document();
+        Map<String, String> vars = new LinkedHashMap<>();
+        vars.put("document_type", copy.documentType(d.documentType()));
+        vars.put("date", d.docDate() == null ? "" : d.docDate().toString());
+        vars.put("patient", facts.patientName());
+        vars.put("link", facts.link());
+        vars.put("standout", standout(facts, assessed));
+        if (detail) {
+            StringBuilder b = new StringBuilder(copy.bn("detail.header", vars)).append('\n');
+            for (Map<String, Object> v : facts.values()) {
+                b.append(line(v, "line.value_outside_range".equals(kindOf(v)) ? "line.value_outside_range" : null, v)).append('\n');
+            }
+            for (Map<String, Object> f : facts.followUps()) {
+                if (f.get("due_date") != null) {
+                    b.append(copy.bn("detail.follow_up", Map.of("date", String.valueOf(f.get("due_date"))))).append('\n');
+                }
+            }
+            if (assessed.level() == Urgency.NOW) {
+                b.append(copy.bn("urgency.now", Map.of())).append('\n');
+            } else if (assessed.level() == Urgency.THIS_WEEK) {
+                b.append(copy.bn("urgency.this_week", Map.of())).append('\n');
+            }
+            b.append(copy.bn("detail.footer", vars));
+            return b.toString().trim();
+        }
+        return switch (assessed.level()) {
+            case NOW -> copy.bn("explanation.now", vars);
+            case THIS_WEEK -> copy.bn("explanation.this_week", vars);
+            case ROUTINE -> copy.bn("explanation.routine", vars);
+        };
+    }
+
+    private String standout(DocumentFacts facts, UrgencyAssessment assessed) {
+        List<String> lines = new ArrayList<>();
+        for (Map<String, Object> v : facts.values()) {
+            String kind = kindOf(v);
+            if (kind != null) {
+                lines.add(line(v, kind, v));
+            }
+        }
+        if (lines.isEmpty() && assessed.level() == Urgency.THIS_WEEK) {
+            lines.add(copy.bn("line.this_week_no_value", Map.of()));
+        }
+        return String.join("\n", lines);
+    }
+
+    /** Which standout line a value earns from its printed range, or null when it is inside it or has no range. */
+    private String kindOf(Map<String, Object> v) {
+        var value = UrgencyService.number(v.get("value"));
+        var low = UrgencyService.number(v.get("ref_low"));
+        var high = UrgencyService.number(v.get("ref_high"));
+        if (value.isEmpty() || low.isEmpty() || high.isEmpty()) {
+            return null;
+        }
+        double width = high.get() - low.get();
+        double band = properties.getOutbound().getCriticalBandMultiplier();
+        if (value.get() > high.get()) {
+            return width > 0 && value.get() > high.get() + band * width ? "line.value_critical_high" : "line.value_outside_range";
+        }
+        if (value.get() < low.get()) {
+            return width > 0 && value.get() < low.get() - band * width ? "line.value_critical_low" : "line.value_outside_range";
+        }
+        return null;
+    }
+
+    private String line(Map<String, Object> v, String key, Map<String, Object> vars) {
+        if (key == null) {
+            key = "line.value_outside_range";
+        }
+        Map<String, String> m = new LinkedHashMap<>();
+        m.put("value_name", str(vars.get("name")));
+        m.put("value", str(vars.get("value")));
+        m.put("unit", str(vars.get("unit")));
+        m.put("ref_low", str(vars.get("ref_low")));
+        m.put("ref_high", str(vars.get("ref_high")));
+        return copy.bn(key, m);
+    }
+
+    private static String str(Object o) {
+        return o == null ? "" : String.valueOf(o);
+    }
+
+    /** One model call: phrase the skeleton as plain Bangla, changing no number and no fixed line. */
+    private Mono<String> generate(DocumentFacts facts, UrgencyAssessment assessed, String skeleton, List<String> priorViolations) {
+        String system = """
+                You write short Bangla messages for a family about one medical document. You are given a SKELETON: \
+                it is already correct and already contains every number and every fixed line. Your job is only to \
+                phrase it as natural, plain Bangla a non-medical person understands, keeping it to 4-6 short lines.
+                Rules, all absolute:
+                - Keep every number exactly as it appears in the skeleton, in the same script. Add no number.
+                - Keep the URGENCY LINE and the "সাথে নিয়ে যাবেন" line word for word. Keep the link unchanged.
+                - Never say what a result means clinically. Never name a disease from a number. Never mention a \
+                medicine, a tablet, a dose, or tell anyone to take, stop, start or change anything.
+                - No advice beyond "see a doctor" as the skeleton phrases it. No reassurance beyond the skeleton.
+                - Under %d characters in total. Output the message text only: no title, no quotes, no notes.
+                """.formatted(properties.getOutbound().getMaxChars());
+        StringBuilder user = new StringBuilder("SKELETON:\n").append(skeleton).append("\n\nURGENCY LINE: ")
+                .append(assessed.level() == Urgency.NOW ? copy.bn("urgency.now", Map.of())
+                        : assessed.level() == Urgency.THIS_WEEK ? copy.bn("urgency.this_week", Map.of()) : "(none)");
+        if (priorViolations != null) {
+            user.append("\n\nYour previous attempt was rejected for: ").append(String.join(", ", priorViolations))
+                    .append(". Fix exactly those; change nothing else.");
+        }
+        LlmRequest request = LlmRequest.custom(user.toString(), system, null, 400, null);
+        return metered.using(clients.cheap()).invoke(AiCallPurpose.EXPLAIN, facts.document().id(), request)
+                .map(r -> r.content() == null ? "" : r.content().trim());
+    }
+}

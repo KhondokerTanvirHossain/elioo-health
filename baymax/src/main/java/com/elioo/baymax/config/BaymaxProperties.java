@@ -30,6 +30,7 @@ public class BaymaxProperties {
     private Free free = new Free();
     private Extract extract = new Extract();
     private Auth auth = new Auth();
+    private Outbound outbound = new Outbound();
     private List<Marker> markers = new ArrayList<>();
 
     @Data
@@ -122,6 +123,30 @@ public class BaymaxProperties {
         private String cookieName = "baymax_session";
         /** Secure attribute on the cookie. Browsers exempt http://localhost, so this stays true in dev too. */
         private boolean cookieSecure = true;
+    }
+
+    /** Explanation, urgency, safety and the review gate (BMX-6, DR-13). */
+    @Data
+    public static class Outbound {
+        /** Base URL for links in messages. */
+        private String publicBaseUrl = "https://baymax.eliooo.org";
+        /** off | all | urgency — which messages wait for a reviewer. */
+        private String gateMode = "off";
+        /** Urgencies gated when gateMode=urgency. */
+        private List<String> gateUrgencyLevels = new ArrayList<>(List.of("now", "this_week"));
+        /** Hard cap on any message body, characters. */
+        private int maxChars = 600;
+        /** A value beyond its printed range by more than this × the range width is critical → NOW. */
+        private double criticalBandMultiplier = 1.0;
+        /** Verbatim tokens in the document text that mean NOW, both scripts. */
+        private List<String> emergencyPhrases = new ArrayList<>(List.of("emergency", "urgent", "urgently", "admit", "admission",
+                "immediately", "জরুরি", "জরুরী", "ভর্তি", "অবিলম্বে"));
+        /** Tokens/phrases a body may never contain: advice to start/stop/change a medicine or dose. */
+        private List<String> forbiddenPhrases = new ArrayList<>(List.of("ওষুধ খান", "ওষুধ খাবেন", "ওষুধ বন্ধ", "বন্ধ করুন", "শুরু করুন",
+                "ডোজ", "বাড়ান", "কমান", "দ্বিগুণ", "take the", "stop taking", "start taking", "increase the", "reduce the",
+                "double the", "dose", "dosage", "mg", "tablet", "tab.", "cap."));
+        /** At least one must appear in every NOW / THIS_WEEK body: the doctor-first framing. */
+        private List<String> doctorFirstMarkers = new ArrayList<>(List.of("ডাক্তার", "হাসপাতাল"));
     }
 
     @Data

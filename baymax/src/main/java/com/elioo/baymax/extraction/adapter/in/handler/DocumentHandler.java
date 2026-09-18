@@ -36,6 +36,8 @@ public class DocumentHandler {
     private final DocumentIntakeUseCase intake;
     /** Session-scoped variants (BMX-5). A null session on the request means the admin token was used. */
     private final TimelineUseCase timeline;
+    /** BMX-6: "detail" on request. Session-scoped through the timeline lookup first; admin unscoped. */
+    private final com.elioo.baymax.outbound.application.port.in.ExplainDocumentUseCase explainer;
 
     public Mono<ServerResponse> upload(ServerRequest request) {
         return request.multipartData().flatMap(parts -> {
@@ -151,5 +153,24 @@ public class DocumentHandler {
         if (value != null) {
             body.put(key, value);
         }
+    }
+
+    /** The longer explanation, on request, for a document the caller may see; same gate and safety rules. */
+    public Mono<ServerResponse> detail(ServerRequest request) {
+        UUID documentId;
+        try {
+            documentId = UUID.fromString(request.pathVariable("id"));
+        } catch (IllegalArgumentException e) {
+            return Mono.error(BaymaxException.badRequest("invalid_request", "document id must be a UUID"));
+        }
+        WebSession session = SessionAuthFilter.session(request);
+        Mono<?> visible = session == null ? intake.view(documentId) : timeline.document(session.familyId(), documentId);
+        return visible.then(explainer.detail(documentId))
+                .switchIfEmpty(Mono.error(BaymaxException.conflict("not_ready", "the document has not finished")))
+                .flatMap(m -> ServerResponse.ok().bodyValue(Map.of(
+                        "document_id", documentId.toString(), "urgency", m.urgency().dbValue(),
+                        "gate_status", m.gateStatus().dbValue(),
+                        "body", m.isDeliverable() ? m.body() : "",
+                        "pending_review", m.gateStatus() == com.elioo.baymax.outbound.domain.OutboundMessage.GateStatus.PENDING)));
     }
 }

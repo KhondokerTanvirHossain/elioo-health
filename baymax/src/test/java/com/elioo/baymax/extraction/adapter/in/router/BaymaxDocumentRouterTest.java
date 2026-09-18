@@ -43,7 +43,7 @@ class BaymaxDocumentRouterTest {
         BaymaxProperties props = new BaymaxProperties();
         props.getAdmin().setToken(TOKEN);
         client = WebTestClient.bindToRouterFunction(new BaymaxDocumentRouter()
-                        .baymaxDocumentRoutes(new DocumentHandler(intake, timeline), new SessionOrAdminAuthFilter(new AdminAuthFilter(props), new SessionAuthFilter(auth, props)),
+                        .baymaxDocumentRoutes(new DocumentHandler(intake, timeline, mock(com.elioo.baymax.outbound.application.port.in.ExplainDocumentUseCase.class)), new SessionOrAdminAuthFilter(new AdminAuthFilter(props), new SessionAuthFilter(auth, props)),
                                 new ErrorResponseFilter()))
                 .build();
     }
