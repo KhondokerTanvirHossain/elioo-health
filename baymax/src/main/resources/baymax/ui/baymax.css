@@ -60,6 +60,7 @@ a.card:hover{transform:translateY(-1px)}
 .row img{width:96px;height:96px;object-fit:cover;border-radius:var(--r-s);flex:none;background:var(--c-surface-2)}
 .meta{color:var(--c-muted);font-size:var(--fs-s)}
 .small{font-size:var(--fs-s);color:var(--c-muted)}
+.spaced{margin-top:var(--sp-6)}
 .tag{display:inline-block;padding:2px var(--sp-3);border-radius:var(--r-pill);background:var(--c-info-soft);font-size:var(--fs-s);margin-right:var(--sp-1);color:var(--c-text)}
 .tag.retake{background:var(--c-warn-soft)}
 .warn{background:var(--c-warn-soft);border:1px solid var(--c-warn-line);border-radius:var(--r-m);padding:var(--sp-3) var(--sp-4);margin:var(--sp-3) 0}

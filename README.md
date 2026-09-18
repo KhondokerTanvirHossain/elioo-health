@@ -82,184 +82,37 @@ The application will be available at `http://localhost:8086`
 Once the application is running, you can:
 
 - **Test APIs**: Use the [rest.http](rest.http) file in your IDE (IntelliJ IDEA supports this natively)
-- **Health Check**: `http://localhost:8086/actuator/health` or `http://localhost:8086/api/v1/notification/pfh/actuator/health`
+- **Health Check**: `http://localhost:8086/actuator/health`
 - **Complete Documentation**: See [API_DOCUMENTATION.md](API_DOCUMENTATION.md)
 
 ### Key Endpoints
 
-**Medical Report Processing (3-Step Workflow)**
+Since DR-11 the MedScribe PoC lives under `/medscribeai/` (its UI at `/medscribeai/`, every API route below it);
+Baymax serves `/`. The PoC is frozen; the routes are listed in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
+exercised in [docs/requests.http](docs/requests.http).
 
-Step 1: Extract text from medical test report images
 ```
-POST /api/v1/medical-report/ocr
+POST /medscribeai/api/v1/medical-report/process                         image + patient context → 202 + reportId
+GET  /medscribeai/api/v1/medical-report/query/status/{reportId}         poll
+GET  /medscribeai/api/v1/medical-report/query/results/{reportId}/all    results per stage (ocr, classification, icd10, …, all)
+POST /medscribeai/api/v1/medical-report/chat/{reportId}/send            ask about the report
 ```
-
-Step 2: Classify medical entities using AWS Comprehend Medical
-```
-POST /api/v1/medical-report/classify
-```
-
-Step 3: Generate AI-powered insights and suggestions
-```
-POST /api/v1/medical-report/suggestions
-```
-
-**Hello World (Testing)**
-```
-GET /api/hello
-```
-
-**Other Endpoints (Planned)**
-
-OCR Processing:
-```
-POST /api/v1/documents/scan
-POST /api/v1/documents/{id}/ocr
-GET /api/v1/documents/{id}/text
-```
-
-Medical Coding:
-```
-POST /api/v1/medical/extract-terms
-POST /api/v1/medical/map-codes
-PUT /api/v1/medical/terms/{id}/review
-```
-
-Timeline:
-```
-GET /api/v1/timeline/{patientId}
-GET /api/v1/timeline/{patientId}/filter
-```
-
-Summarization:
-```
-POST /api/v1/summarization/generate
-GET /api/v1/summarization/{summaryId}
-```
-
----
 
 ## Medical Report Processing Workflow
 
-### Complete 3-Step Example
-
-#### Step 1: OCR Processing
-Extract structured data from a blood test report image:
+### Upload → process → results
 
 ```bash
-curl -X POST http://localhost:8086/api/v1/medical-report/ocr \
+B64=$(base64 -i report.png | tr -d '\n')
+curl -s -X POST http://localhost:8086/medscribeai/api/v1/medical-report/process \
   -H "Content-Type: application/json" \
-  -d '{
-    "imageBase64": "base64_encoded_image...",
-    "patientId": "P12345",
-    "reportType": "BLOOD_TEST"
-  }'
+  -d "{\"imageBase64\":\"$B64\",\"patientContext\":{\"patientId\":\"DEMO-1\",\"age\":45,\"gender\":\"MALE\"}}"
+# → {"reportId":"RPT-…","status":"PENDING",…}
+curl -s http://localhost:8086/medscribeai/api/v1/medical-report/query/status/RPT-…
+curl -s http://localhost:8086/medscribeai/api/v1/medical-report/query/results/RPT-…/all
 ```
 
-**Response:**
-```json
-{
-  "reportId": "RPT-2024-001",
-  "patientId": "P12345",
-  "extractedData": [
-    {
-      "testName": "Serum Creatinine",
-      "testValue": "135.0",
-      "unit": "µmol/L",
-      "referenceRange": "Male: 59-104, Female: 45-84",
-      "status": "ABNORMAL"
-    },
-    {
-      "testName": "Blood Ammonia",
-      "testValue": "244.0",
-      "unit": "µg/dL",
-      "referenceRange": "Adult: 19-54 µg/dL",
-      "status": "CRITICAL"
-    }
-  ],
-  "confidence": 0.96,
-  "processedAt": "2024-01-15T10:30:00Z"
-}
-```
-
-#### Step 2: Medical Entity Classification
-Classify and extract medical entities:
-
-```bash
-curl -X POST http://localhost:8086/api/v1/medical-report/classify \
-  -H "Content-Type: application/json" \
-  -d '{
-    "reportId": "RPT-2024-001",
-    "extractedData": [...]
-  }'
-```
-
-**Response:**
-```json
-{
-  "reportId": "RPT-2024-001",
-  "classificationResult": {
-    "Entities": [
-      {
-        "Id": 1,
-        "Text": "Serum Creatinine",
-        "Category": "TEST_TREATMENT_PROCEDURE",
-        "Type": "TEST_NAME",
-        "Score": 0.98,
-        "Attributes": [...]
-      }
-    ]
-  },
-  "medicalCodes": {
-    "ICD10": ["R79.89", "N17.9"],
-    "LOINC": ["2160-0", "16362-6"],
-    "SNOMED": ["313822004", "43904001"]
-  }
-}
-```
-
-#### Step 3: AI-Powered Suggestions
-Generate insights and recommendations:
-
-```bash
-curl -X POST http://localhost:8086/api/v1/medical-report/suggestions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "reportId": "RPT-2024-001",
-    "patientContext": {
-      "age": 45,
-      "gender": "MALE",
-      "medicalHistory": ["Diabetes Type 2"]
-    }
-  }'
-```
-
-**Response:**
-```json
-{
-  "reportId": "RPT-2024-001",
-  "summary": "Your recent blood tests show concerning results...",
-  "keyFindings": [
-    {
-      "finding": "Elevated Blood Ammonia (244.0 µg/dL)",
-      "severity": "HIGH",
-      "interpretation": "Indicates liver may not be processing waste products effectively..."
-    }
-  ],
-  "aiSuggestions": [
-    {
-      "category": "IMMEDIATE_ACTION",
-      "priority": "HIGH",
-      "recommendation": "See a liver specialist within 24-48 hours",
-      "rationale": "Combination of elevated ammonia and liver enzymes requires immediate evaluation"
-    }
-  ],
-  "riskLevel": "HIGH",
-  "requiresImmediateAttention": true
-}
-```
-
-For complete API documentation, see [API_DOCUMENTATION.md](API_DOCUMENTATION.md)
+---
 
 ## Development
 

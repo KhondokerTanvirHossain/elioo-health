@@ -65,6 +65,8 @@ class BaymaxAuthRouterTest {
                 .expectHeader().valueMatches("Set-Cookie", "baymax_session=tok-123;.*HttpOnly.*")
                 .expectHeader().valueMatches("Set-Cookie", ".*Secure.*")
                 .expectHeader().valueMatches("Set-Cookie", ".*SameSite=Lax.*")
+                // scoped to the app so the MedScribe demo page on the same origin never receives it (BMX-6b follow-up)
+                .expectHeader().valueMatches("Set-Cookie", ".*Path=/app.*")
                 .expectBody().jsonPath("$.family_id").isEqualTo(FAMILY.toString());
     }
 

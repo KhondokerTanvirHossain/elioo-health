@@ -64,9 +64,18 @@ public class SessionAuthFilter implements HandlerFilterFunction<ServerResponse, 
         return build("", Duration.ZERO);
     }
 
+    /**
+     * The session cookie is scoped to the app, not the origin (PO, BMX-6b follow-up): the MedScribe demo UI —
+     * 4,800 lines of PoC JavaScript — now shares the origin, and a script injected there must not ride a
+     * family's session. The browser therefore never sends this cookie to {@code /medscribeai/**}, nor to the
+     * JSON API under {@code /api/v1/baymax/**}; the server-rendered app is the only session client today
+     * (see docs/BAYMAX.md). A cookie issued before this change with Path=/ keeps working until it expires.
+     */
+    public static final String COOKIE_PATH = "/app";
+
     private ResponseCookie build(String value, Duration maxAge) {
         BaymaxProperties.Auth cfg = properties.getAuth();
         return ResponseCookie.from(cfg.getCookieName(), value)
-                .httpOnly(true).secure(cfg.isCookieSecure()).sameSite("Lax").path("/").maxAge(maxAge).build();
+                .httpOnly(true).secure(cfg.isCookieSecure()).sameSite("Lax").path(COOKIE_PATH).maxAge(maxAge).build();
     }
 }
