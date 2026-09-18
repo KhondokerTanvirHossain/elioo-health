@@ -325,7 +325,7 @@ public class WebUiHandler {
      */
     String render(Lang lang, DocumentView view, UUID documentId, Optional<String> explanation) {
         StringBuilder b = new StringBuilder(top(lang, null, true));
-        b.append("<p class=\"small\"><a href=\"javascript:history.back()\">").append(copy.t(lang, "app.back")).append("</a></p>");
+        b.append("<p class=\"small\"><a href=\"").append(BASE).append("/home\">").append(copy.t(lang, "app.back")).append("</a></p>");
         b.append("<h1>").append(documentType(lang, view.documentType())).append(" ").append(status(lang, view.status())).append("</h1>");
         b.append("<div class=\"meta\">").append(esc(view.documentDate() == null ? "" : view.documentDate()))
                 .append(view.facility() == null ? "" : " · " + esc(view.facility())).append("</div>");
@@ -407,7 +407,7 @@ public class WebUiHandler {
     }
 
     private String deleteLink(Lang lang, UUID documentId) {
-        return "<p class=\"small\" style=\"margin-top:var(--sp-6)\"><a href=\"" + BASE + "/documents/" + documentId + "/delete\">"
+        return "<p class=\"small spaced\"><a href=\"" + BASE + "/documents/" + documentId + "/delete\">"
                 + copy.t(lang, "doc.delete") + "</a></p>";
     }
 
