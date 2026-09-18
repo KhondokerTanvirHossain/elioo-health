@@ -80,4 +80,18 @@ public class ExtractionJsonReader {
             throw new IllegalStateException("extraction-schema.json is missing from the Baymax module", e);
         }
     }
+
+    /**
+     * Reads the pipeline's own stored extraction_json, which is the validated result re-serialised (and so
+     * carries derived fields such as source_span.usable that the input schema forbids). Not for model output.
+     */
+    public ExtractionResult readStored(String storedJson) {
+        try {
+            return mapper.copy()
+                    .configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+                    .readValue(storedJson, ExtractionResult.class);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new InvalidExtractionException("stored extraction_json is unreadable: " + e.getOriginalMessage());
+        }
+    }
 }

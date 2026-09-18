@@ -90,6 +90,16 @@ public class DocumentStorageService implements DocumentStorageUseCase {
     }
 
     @Override
+    public Mono<DeletionReport> deleteCrops(UUID familyId, UUID patientId, UUID documentId) {
+        return deleteByPrefix(StorageKeys.documentPrefix(familyId, patientId, documentId) + "crop-");
+    }
+
+    @Override
+    public Mono<byte[]> pageBytes(UUID familyId, UUID patientId, UUID documentId, int pageNo) {
+        return storagePort().flatMap(port -> port.get(StorageKeys.page(familyId, patientId, documentId, pageNo)));
+    }
+
+    @Override
     public Mono<DeletionReport> deletePatient(UUID familyId, UUID patientId) {
         return deleteByPrefix(StorageKeys.patientPrefix(familyId, patientId));
     }

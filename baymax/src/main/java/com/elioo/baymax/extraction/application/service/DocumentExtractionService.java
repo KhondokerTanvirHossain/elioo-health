@@ -6,6 +6,7 @@ import com.elioo.baymax.aicall.domain.AiCallPurpose;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.extraction.application.port.out.DocumentRecordPort;
 import com.elioo.baymax.extraction.config.ExtractionModelConfiguration.ExtractionClients;
+import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.ExtractionResult;
 import com.elioo.baymax.extraction.domain.PageOcr;
@@ -54,7 +55,7 @@ import java.util.UUID;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class DocumentExtractionService {
+public class DocumentExtractionService implements com.elioo.baymax.extraction.application.port.in.RecropUseCase {
 
     private final MeteredVisionOcr ocr;
     private final MeteredLlmClient metered;
@@ -409,5 +410,58 @@ public class DocumentExtractionService {
         String message = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
         String firstLine = message.lines().findFirst().orElse(message);
         return firstLine.length() > 180 ? firstLine.substring(0, 180) : firstLine;
+    }
+
+    // --- re-crop (DR-12): replay stored extraction_json through the current cutter --------------------
+
+    @Override
+    public Mono<RecropReport> recrop(UUID documentId) {
+        return records.find(documentId)
+                .switchIfEmpty(Mono.error(BaymaxException.notFound("document_not_found", "no document with id " + documentId)))
+                .flatMap(document -> {
+                    if (document.status() != Document.Status.DONE || document.extractionJson() == null) {
+                        return Mono.just(new RecropReport(documentId, "skipped_" + document.status().name().toLowerCase(java.util.Locale.ROOT),
+                                0, 0, 0, 0, 0));
+                    }
+                    ExtractionResult result = reader.readStored(document.extractionJson());
+                    return storedPages(document)
+                            .flatMap(pages -> storage.deleteCrops(document.familyId(), document.patientId(), document.id())
+                                    .then(records.deleteItems(document.id()))
+                                    .then(verify(document, pages, result))
+                                    .flatMap(items -> finish(document, Document.Status.DONE, null, storedAttempt(document), result, items)
+                                            .thenReturn(items)))
+                            .map(items -> new RecropReport(documentId, "recropped", items.observations().size(),
+                                    items.medications().size(), items.followUps().size(), items.clinicalContext().size(),
+                                    items.unverified().total()));
+                })
+                .doOnNext(r -> log.info("[baymax] recrop documentId={} outcome={} values={} medicines={} followUps={} context={} unverified={}",
+                        r.documentId(), r.outcome(), r.values(), r.medicines(), r.followUps(), r.context(), r.unverified()));
+    }
+
+    @Override
+    public Flux<RecropReport> recropAll() {
+        return records.idsWithStatus(Document.Status.DONE).concatMap(this::recrop);
+    }
+
+    /** OCR the stored page images again: Vision only, metered like any OCR call, no model. */
+    private Mono<List<PageOcr>> storedPages(Document document) {
+        return Flux.range(1, Math.max(1, document.pageCount()))
+                .concatMap(n -> storage.pageBytes(document.familyId(), document.patientId(), document.id(), n)
+                        .flatMap(bytes -> {
+                            String base64 = Base64.getEncoder().encodeToString(bytes);
+                            return ocr.detectDocumentText(document.id(), VisionOcrRequest.withLanguages(base64, List.of("bn", "en")))
+                                    .map(response -> PageOcr.from(n, base64, response));
+                        }))
+                .collectList();
+    }
+
+    /** The model and confidence the document already carries, so finish() writes them back unchanged. */
+    private static Attempt storedAttempt(Document document) {
+        String model = document.modelFinal() == null ? "unknown/unknown" : document.modelFinal();
+        int slash = model.indexOf('/');
+        String provider = slash > 0 ? model.substring(0, slash) : "unknown";
+        String name = slash > 0 ? model.substring(slash + 1) : model;
+        ExtractionResult.Confidence confidence = new ExtractionResult.Confidence(document.confidenceOverall(), null, null, null, null);
+        return new Attempt(name, provider, new ExtractionResult(null, null, null, null, null, null, null, null, null, confidence));
     }
 }

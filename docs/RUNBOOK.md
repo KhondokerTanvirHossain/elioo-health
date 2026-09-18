@@ -179,3 +179,20 @@ docker logs medscribe-ai 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep '\[baymax\]'
 
 Patient text never appears at INFO. Prompts, model replies and OCR text are DEBUG only; `ai_call_log` and
 `stored_object` hold ids, counts, money and timings, never content.
+
+
+## Re-cropping documents (DR-12)
+
+Crops are anchored on each item's text since BMX-5b. Documents extracted before that carry crops that may show
+neighbouring text. Re-crop replays the stored `extraction_json` through the current cutter after OCR-ing the stored
+page images again — **Vision cost only (~$0.0015/page), no model call**, items and crops replaced, the document's
+model, confidence and date untouched. Not scheduled; run it by hand when a corpus predates a cutter change.
+
+```bash
+T=$(grep "^BAYMAX_ADMIN_TOKEN=" ~/medscribe.env | cut -d= -f2-)
+curl -sS -X POST -H "X-Baymax-Admin-Token: $T" http://localhost:8086/api/v1/baymax/admin/documents/<id>/recrop   # one
+curl -sS -X POST -H "X-Baymax-Admin-Token: $T" http://localhost:8086/api/v1/baymax/admin/documents/recrop        # all DONE
+```
+
+The response lists, per document, the stored counts per section and `unverified` (items the current cutter could
+not place); a document that is not DONE is reported as `skipped_<status>` and left alone.
