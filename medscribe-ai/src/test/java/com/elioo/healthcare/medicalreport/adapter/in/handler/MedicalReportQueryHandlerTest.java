@@ -94,7 +94,7 @@ class MedicalReportQueryHandlerTest {
         when(queryUseCase.getAllResults(reportId)).thenReturn(Flux.just(ocrRecord, classificationRecord, suggestionsRecord));
 
         client.get()
-                .uri("/api/v1/medical-report/query/results/{reportId}/ocr", reportId)
+                .uri("/medscribeai/api/v1/medical-report/query/results/{reportId}/ocr", reportId)
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody()
@@ -102,7 +102,7 @@ class MedicalReportQueryHandlerTest {
                 .jsonPath("$.resultData.extractedData[0].testName").isEqualTo("Sodium");
 
         client.get()
-                .uri("/api/v1/medical-report/query/results/{reportId}/all", reportId)
+                .uri("/medscribeai/api/v1/medical-report/query/results/{reportId}/all", reportId)
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody()

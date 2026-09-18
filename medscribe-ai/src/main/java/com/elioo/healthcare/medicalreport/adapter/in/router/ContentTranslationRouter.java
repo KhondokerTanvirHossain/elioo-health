@@ -1,5 +1,6 @@
 package com.elioo.healthcare.medicalreport.adapter.in.router;
 
+import com.elioo.healthcare.core.MedScribePaths;
 import com.elioo.healthcare.medicalreport.adapter.in.handler.ContentTranslationHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -43,7 +44,7 @@ import static org.springframework.web.reactive.function.server.RequestPredicates
 @Configuration
 public class ContentTranslationRouter {
 
-    private static final String BASE_PATH = "/api/v1/medical-report";
+    private static final String BASE_PATH = MedScribePaths.PREFIX + "/api/v1/medical-report";
 
     @Bean
     public RouterFunction<ServerResponse> translationRoutes(ContentTranslationHandler handler) {

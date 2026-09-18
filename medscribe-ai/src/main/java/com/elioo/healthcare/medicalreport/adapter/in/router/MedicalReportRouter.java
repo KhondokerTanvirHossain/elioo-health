@@ -1,5 +1,6 @@
 package com.elioo.healthcare.medicalreport.adapter.in.router;
 
+import com.elioo.healthcare.core.MedScribePaths;
 import com.elioo.healthcare.medicalreport.adapter.in.handler.MedicalReportHandler;
 import com.elioo.healthcare.medicalreport.adapter.in.handler.MedicalReportOrchestrationHandler;
 import lombok.RequiredArgsConstructor;
@@ -25,7 +26,7 @@ public class MedicalReportRouter {
     @Bean
     public RouterFunction<ServerResponse> medicalReportRoutes() {
         return RouterFunctions
-                .route(POST("/api/v1/medical-report/free-text-insights"), medicalReportHandler::generateFreeTextInsights);
+                .route(POST(MedScribePaths.PREFIX + "/api/v1/medical-report/free-text-insights"), medicalReportHandler::generateFreeTextInsights);
     }
 
     /**
@@ -57,9 +58,9 @@ public class MedicalReportRouter {
     @Bean
     public RouterFunction<ServerResponse> masterOrchestrationRoutes() {
         return RouterFunctions
-                .route(POST("/api/v1/medical-report/process"),
+                .route(POST(MedScribePaths.PREFIX + "/api/v1/medical-report/process"),
                        orchestrationHandler::processCompleteMedicalReport)
-                .andRoute(POST("/api/v1/medical-report/process-multi-image"),
+                .andRoute(POST(MedScribePaths.PREFIX + "/api/v1/medical-report/process-multi-image"),
                          orchestrationHandler::processMultiImageReport);
     }
 }

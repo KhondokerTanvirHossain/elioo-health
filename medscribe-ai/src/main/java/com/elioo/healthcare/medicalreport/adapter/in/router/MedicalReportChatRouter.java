@@ -1,5 +1,6 @@
 package com.elioo.healthcare.medicalreport.adapter.in.router;
 
+import com.elioo.healthcare.core.MedScribePaths;
 import com.elioo.healthcare.medicalreport.adapter.in.handler.MedicalReportChatHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -38,7 +39,7 @@ import org.springframework.web.reactive.function.server.ServerResponse;
 @Configuration
 public class MedicalReportChatRouter {
 
-    private static final String BASE_PATH = "/api/v1/medical-report/chat";
+    private static final String BASE_PATH = MedScribePaths.PREFIX + "/api/v1/medical-report/chat";
 
     /**
      * Define chat routes.

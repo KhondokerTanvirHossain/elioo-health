@@ -1,5 +1,6 @@
 package com.elioo.healthcare.medicalreport.adapter.in.router;
 
+import com.elioo.healthcare.core.MedScribePaths;
 import com.elioo.healthcare.medicalreport.adapter.in.handler.MedicalReportQueryHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -33,7 +34,7 @@ import static org.springframework.web.reactive.function.server.RequestPredicates
 @Configuration
 public class MedicalReportQueryRouter {
 
-    private static final String BASE_PATH = "/api/v1/medical-report/query";
+    private static final String BASE_PATH = MedScribePaths.PREFIX + "/api/v1/medical-report/query";
 
     @Bean
     public RouterFunction<ServerResponse> queryRoutes(MedicalReportQueryHandler handler) {

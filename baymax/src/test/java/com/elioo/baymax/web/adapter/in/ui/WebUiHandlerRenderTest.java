@@ -18,7 +18,7 @@ import static org.mockito.Mockito.mock;
 class WebUiHandlerRenderTest {
 
     private final WebUiHandler ui = new WebUiHandler(mock(WebAuthUseCase.class), mock(TimelineUseCase.class),
-            new SessionAuthFilter(mock(WebAuthUseCase.class), new BaymaxProperties()));
+            new SessionAuthFilter(mock(WebAuthUseCase.class), new BaymaxProperties()), new UiCopy());
     private final UUID id = UUID.randomUUID();
 
     /** Acceptance: given unverified items, the count is shown and the items themselves never appear. */
@@ -50,7 +50,7 @@ class WebUiHandlerRenderTest {
                 List.of(), List.of(Map.of("name", "Tab. Napa", "dose_text", "500 mg", "frequency_text", "১+০+১", "crop_key", "f/p/d/crop-m1.jpg")),
                 List.of(), null, null);
         String html = ui.render(view, id);
-        assertThat(html).contains("/baymax/documents/" + id + "/image?key=f%2Fp%2Fd%2Fcrop-m1.jpg");
+        assertThat(html).contains("/app/documents/" + id + "/image?key=f%2Fp%2Fd%2Fcrop-m1.jpg");
         assertThat(html).doesNotContain("X-Amz-").doesNotContain("amazonaws").doesNotContain("localhost:9000");
         assertThat(html).contains("১+০+১");   // verbatim, Bangla numerals untouched
     }
@@ -61,7 +61,7 @@ class WebUiHandlerRenderTest {
         DocumentView view = new DocumentView(id.toString(), "DONE", null, "lab_report", "2026-09-01", null, 0.9, "m", 1,
                 List.of(Map.of("name", "HbA1c", "value", "9.8", "unit", "%", "flag", "high", "crop_key", "k")),
                 List.of(), List.of(), Map.of("diagnosis", List.of(Map.of("text", "T2DM", "crop_key", "k2"))), null);
-        String html = Html.page("t", ui.render(view, id)).toLowerCase();
+        String html = Html.page(Lang.BN, "t", ui.render(view, id), 0, false, "", false).toLowerCase();
         for (String forbidden : List.of("urgent", "জরুরি", "advice", "পরামর্শ", "high risk", "ঝুঁকি", "normal range", "should")) {
             assertThat(html).as(forbidden).doesNotContain(forbidden);
         }
@@ -100,8 +100,8 @@ class WebUiHandlerRenderTest {
     void theReleasedMessageIsShownVerbatimAndOnlyWhenPresent() {
         DocumentView view = new DocumentView(id.toString(), "DONE", null, "prescription", "2026-09-01", null, 0.9, "m", 1,
                 List.of(), List.of(), List.of(), null, null);
-        String with = ui.render(view, id, java.util.Optional.of("রিপোর্টটি পেয়েছি।\nএ সপ্তাহের মধ্যে একজন ডাক্তার দেখান।"));
+        String with = ui.render(Lang.BN, view, id, java.util.Optional.of("রিপোর্টটি পেয়েছি।\nএ সপ্তাহের মধ্যে একজন ডাক্তার দেখান।"));
         assertThat(with).contains("সংক্ষেপে").contains("এ সপ্তাহের মধ্যে একজন ডাক্তার দেখান");
-        assertThat(ui.render(view, id, java.util.Optional.empty())).doesNotContain("সংক্ষেপে");
+        assertThat(ui.render(Lang.BN, view, id, java.util.Optional.empty())).doesNotContain("সংক্ষেপে");
     }
 }

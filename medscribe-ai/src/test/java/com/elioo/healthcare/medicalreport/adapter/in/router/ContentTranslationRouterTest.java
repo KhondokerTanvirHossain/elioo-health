@@ -24,21 +24,21 @@ class ContentTranslationRouterTest {
 
     @Test
     void checkRouteIsNotShadowedByTheResultTypeRoute() {
-        client.get().uri("/api/v1/medical-report/RPT-1/translate/check?resultType=CLINICAL_INSIGHTS&lang=bn")
+        client.get().uri("/medscribeai/api/v1/medical-report/RPT-1/translate/check?resultType=CLINICAL_INSIGHTS&lang=bn")
                 .exchange().expectStatus().isOk()
                 .expectBody(String.class).isEqualTo("check");
     }
 
     @Test
     void resultTypeRouteStillWorks() {
-        client.get().uri("/api/v1/medical-report/RPT-1/translate/CLINICAL_INSIGHTS?lang=bn")
+        client.get().uri("/medscribeai/api/v1/medical-report/RPT-1/translate/CLINICAL_INSIGHTS?lang=bn")
                 .exchange().expectStatus().isOk()
                 .expectBody(String.class).isEqualTo("translate");
     }
 
     @Test
     void languagesRouteStillWorks() {
-        client.get().uri("/api/v1/medical-report/languages")
+        client.get().uri("/medscribeai/api/v1/medical-report/languages")
                 .exchange().expectStatus().isOk()
                 .expectBody(String.class).isEqualTo("languages");
     }
