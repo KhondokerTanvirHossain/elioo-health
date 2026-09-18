@@ -38,6 +38,10 @@ public class WeeklyMetricsService implements WeeklyMetricsUseCase {
     private final HealthRecordPort records;
     /** BMX-5: OTP traffic per (hashed) number per day, and views per family. */
     private final com.elioo.baymax.web.application.port.out.AuditPort audit;
+    /** BMX-6: urgency distribution and gate outcomes. */
+    private final com.elioo.baymax.outbound.application.port.out.OutboundMessagePort messages;
+
+    static final String MESSAGES_HEADER = "urgency,gate_status,messages";
 
     static final String AUTH_HEADER = "day,phone_hash,otp_requests,otp_verify_ok,otp_verify_failed";
     static final String VIEWS_HEADER = "family_id,timeline_views,document_views";
@@ -47,8 +51,10 @@ public class WeeklyMetricsService implements WeeklyMetricsUseCase {
         return Mono.zip(callLog.perDocument(from, to).collectList(),
                         records.familyActivity(from, to).collectList(),
                         audit.otpPerNumberPerDay(from, to).collectList(),
-                        audit.viewsPerFamily(from, to).collectList())
-                .map(t -> render(t.getT1(), t.getT2(), from, to) + renderAuth(t.getT3(), t.getT4(), from, to));
+                        audit.viewsPerFamily(from, to).collectList(),
+                        messages.counts(from, to).collectList())
+                .map(t -> render(t.getT1(), t.getT2(), from, to) + renderAuth(t.getT3(), t.getT4(), from, to)
+                        + renderMessages(t.getT5(), from, to));
     }
 
     static String render(List<DocumentAiCost> rows, List<FamilyActivity> families, Instant from, Instant to) {
@@ -117,6 +123,16 @@ public class WeeklyMetricsService implements WeeklyMetricsUseCase {
         csv.append('\n').append("# views ").append(window).append('\n').append(VIEWS_HEADER).append('\n');
         for (var v : views) {
             csv.append(v.familyId()).append(',').append(v.timelineViews()).append(',').append(v.documentViews()).append('\n');
+        }
+        return csv.toString();
+    }
+
+    static String renderMessages(java.util.List<com.elioo.baymax.outbound.domain.MessageCount> counts, Instant from, Instant to) {
+        StringBuilder csv = new StringBuilder();
+        csv.append('\n').append("# messages from=").append(from).append(" to=").append(to).append(" (to exclusive)").append('\n')
+                .append(MESSAGES_HEADER).append('\n');
+        for (var c : counts) {
+            csv.append(c.urgency().dbValue()).append(',').append(c.gateStatus().dbValue()).append(',').append(c.count()).append('\n');
         }
         return csv.toString();
     }

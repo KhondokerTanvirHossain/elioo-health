@@ -24,6 +24,8 @@ class BaymaxAdminRouterTest {
     private static final String PATH = "/api/v1/baymax/admin/metrics/weekly";
 
     private final WeeklyMetricsUseCase metrics = mock(WeeklyMetricsUseCase.class);
+    private final com.elioo.baymax.outbound.application.port.in.ReviewGateUseCase review =
+            mock(com.elioo.baymax.outbound.application.port.in.ReviewGateUseCase.class);
     private final com.elioo.baymax.extraction.application.port.in.RecropUseCase recrop =
             mock(com.elioo.baymax.extraction.application.port.in.RecropUseCase.class);
 
@@ -34,6 +36,7 @@ class BaymaxAdminRouterTest {
         return WebTestClient.bindToRouterFunction(new BaymaxAdminRouter()
                 .baymaxAdminRoutes(new AdminMetricsHandler(metrics), mock(StorageSelfTestHandler.class),
                         new com.elioo.baymax.extraction.adapter.in.handler.RecropHandler(recrop),
+                        new com.elioo.baymax.outbound.adapter.in.handler.ReviewGateHandler(review),
                         new AdminAuthFilter(props), new ErrorResponseFilter())).build();
     }
 

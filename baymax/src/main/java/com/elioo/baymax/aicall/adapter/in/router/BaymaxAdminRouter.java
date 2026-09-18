@@ -5,6 +5,7 @@ import com.elioo.baymax.aicall.adapter.in.handler.AdminMetricsHandler;
 import com.elioo.baymax.common.error.ErrorResponseFilter;
 import com.elioo.baymax.storage.adapter.in.handler.StorageSelfTestHandler;
 import com.elioo.baymax.extraction.adapter.in.handler.RecropHandler;
+import com.elioo.baymax.outbound.adapter.in.handler.ReviewGateHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.reactive.function.server.RouterFunction;
@@ -19,7 +20,7 @@ public class BaymaxAdminRouter {
 
     @Bean
     public RouterFunction<ServerResponse> baymaxAdminRoutes(AdminMetricsHandler metrics, StorageSelfTestHandler storage,
-                                                             RecropHandler recrop,
+                                                             RecropHandler recrop, ReviewGateHandler review,
                                                             AdminAuthFilter auth, ErrorResponseFilter errors) {
         return RouterFunctions.route()
                 .GET(BASE_PATH + "/metrics/weekly", metrics::weekly)
@@ -27,6 +28,9 @@ public class BaymaxAdminRouter {
                 // literal before {id}: "recrop" must not be read as a document id
                 .POST(BASE_PATH + "/documents/recrop", recrop::all)
                 .POST(BASE_PATH + "/documents/{id}/recrop", recrop::one)
+                .GET(BASE_PATH + "/messages/pending", review::pending)
+                .POST(BASE_PATH + "/messages/{id}/approve", review::approve)
+                .POST(BASE_PATH + "/messages/{id}/reject", review::reject)
                 .filter(errors)
                 .filter(auth)
                 .build();

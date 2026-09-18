@@ -25,6 +25,14 @@ class WeeklyMetricsServiceTest {
     private static final Instant TO = Instant.parse("2026-09-12T00:00:00Z");
 
     private final com.elioo.baymax.web.application.port.out.AuditPort audit = noAudit();
+    private final com.elioo.baymax.outbound.application.port.out.OutboundMessagePort messages = noMessages();
+
+    private static com.elioo.baymax.outbound.application.port.out.OutboundMessagePort noMessages() {
+        var m = org.mockito.Mockito.mock(com.elioo.baymax.outbound.application.port.out.OutboundMessagePort.class);
+        org.mockito.Mockito.when(m.counts(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(reactor.core.publisher.Flux.empty());
+        return m;
+    }
 
     private static com.elioo.baymax.web.application.port.out.AuditPort noAudit() {
         var a = org.mockito.Mockito.mock(com.elioo.baymax.web.application.port.out.AuditPort.class);
@@ -51,7 +59,7 @@ class WeeklyMetricsServiceTest {
                 new DocumentAiCost(null, 1, 1, 50, 10, null, "groq/llama", null, 0,
                         Instant.parse("2026-09-07T00:00:00Z"), Instant.parse("2026-09-07T00:00:00Z"))));
 
-        StepVerifier.create(new WeeklyMetricsService(port, records, audit).weeklyCsv(FROM, TO))
+        StepVerifier.create(new WeeklyMetricsService(port, records, audit, messages).weeklyCsv(FROM, TO))
                 .assertNext(csv -> {
                     List<String> lines = csv.lines().toList();
                     assertThat(lines.get(0)).isEqualTo("# documents from=2026-09-05T00:00:00Z to=2026-09-12T00:00:00Z (to exclusive)");
@@ -72,19 +80,21 @@ class WeeklyMetricsServiceTest {
                     assertThat(lines.get(11)).isEqualTo(WeeklyMetricsService.AUTH_HEADER);
                     assertThat(lines.get(13)).startsWith("# views from=");
                     assertThat(lines.get(14)).isEqualTo(WeeklyMetricsService.VIEWS_HEADER);
-                    assertThat(lines).hasSize(15);
+                    assertThat(lines.get(16)).startsWith("# messages from=");
+                    assertThat(lines.get(17)).isEqualTo(WeeklyMetricsService.MESSAGES_HEADER);
+                    assertThat(lines).hasSize(18);
                 })
                 .verifyComplete();
     }
 
     @Test
-    void emptyWindowStillHasAllFourHeaders() {
+    void emptyWindowStillHasAllFiveHeaders() {
         AiCallLogPort port = mock(AiCallLogPort.class);
         HealthRecordPort records = mock(HealthRecordPort.class);
         when(port.perDocument(any(), any())).thenReturn(Flux.empty());
         when(records.familyActivity(any(), any())).thenReturn(Flux.empty());
 
-        StepVerifier.create(new WeeklyMetricsService(port, records, audit).weeklyCsv(FROM, TO))
+        StepVerifier.create(new WeeklyMetricsService(port, records, audit, messages).weeklyCsv(FROM, TO))
                 .assertNext(csv -> assertThat(csv.lines().toList())
                         .containsExactly(
                                 "# documents from=2026-09-05T00:00:00Z to=2026-09-12T00:00:00Z (to exclusive)",
@@ -97,7 +107,10 @@ class WeeklyMetricsServiceTest {
                                 WeeklyMetricsService.AUTH_HEADER,
                                 "",
                                 "# views from=2026-09-05T00:00:00Z to=2026-09-12T00:00:00Z (to exclusive)",
-                                WeeklyMetricsService.VIEWS_HEADER))
+                                WeeklyMetricsService.VIEWS_HEADER,
+                                "",
+                                "# messages from=2026-09-05T00:00:00Z to=2026-09-12T00:00:00Z (to exclusive)",
+                                WeeklyMetricsService.MESSAGES_HEADER))
                 .verifyComplete();
     }
 

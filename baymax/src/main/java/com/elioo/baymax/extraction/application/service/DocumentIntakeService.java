@@ -41,6 +41,7 @@ public class DocumentIntakeService implements DocumentIntakeUseCase {
     private final DocumentExtractionService extraction;
     private final BaymaxProperties properties;
     private final Clock clock;
+    private final com.elioo.baymax.outbound.application.port.in.ExplainDocumentUseCase explainer;
 
     @Override
     public Mono<Document> accept(UUID patientId, List<Upload> uploads) {
@@ -86,6 +87,16 @@ public class DocumentIntakeService implements DocumentIntakeUseCase {
     private void startProcessing(Document document, List<byte[]> pages) {
         extraction.process(document, pages)
                 .subscribeOn(Schedulers.boundedElastic())
+                // BMX-6: once the document is DONE or NEEDS_RETAKE, compose the family's message; a failure
+                // there is logged and never undoes the extraction
+                .flatMap(done -> explainer.explain(done.id())
+                        .doOnNext(m -> log.info("[baymax] message composed documentId={} kind={} urgency={} gate={}",
+                                done.id(), m.kind(), m.urgency(), m.gateStatus()))
+                        .onErrorResume(e -> {
+                            log.error("[baymax] explanation failed documentId={}: {}", done.id(), e.getMessage());
+                            return Mono.empty();
+                        })
+                        .thenReturn(done))
                 .subscribe(
                         done -> log.info("[baymax] document finished documentId={} status={}",
                                 done.id(), done.status()),

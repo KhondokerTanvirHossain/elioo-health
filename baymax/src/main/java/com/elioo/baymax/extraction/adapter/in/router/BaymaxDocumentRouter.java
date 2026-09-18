@@ -26,6 +26,7 @@ public class BaymaxDocumentRouter {
                 .POST(BASE_PATH, handler::upload)
                 .GET(BASE_PATH + "/{id}", handler::status)
                 .DELETE(BASE_PATH + "/{id}", handler::delete)
+                .POST(BASE_PATH + "/{id}/detail", handler::detail)
                 .filter(errors)
                 .filter(auth)
                 .build();

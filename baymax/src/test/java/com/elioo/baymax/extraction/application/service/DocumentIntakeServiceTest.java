@@ -49,13 +49,16 @@ class DocumentIntakeServiceTest {
     private final DocumentStorageUseCase storage = mock(DocumentStorageUseCase.class);
     private final DocumentExtractionService extraction = mock(DocumentExtractionService.class);
     private final BaymaxProperties properties = new BaymaxProperties();
+    private final com.elioo.baymax.outbound.application.port.in.ExplainDocumentUseCase explainer =
+            mock(com.elioo.baymax.outbound.application.port.in.ExplainDocumentUseCase.class);
 
     private DocumentIntakeService service;
 
     @BeforeEach
     void setUp() {
         service = new DocumentIntakeService(records, documents, freeTier, storage, new PageRenderer(),
-                extraction, properties, Clock.fixed(NOW, ZoneOffset.UTC));
+                extraction, properties, Clock.fixed(NOW, ZoneOffset.UTC), explainer);
+        when(explainer.explain(any())).thenReturn(Mono.empty());
 
         when(records.findPatient(PATIENT)).thenReturn(Mono.just(new PatientProfile(
                 PATIENT, FAMILY, "Ma", 74, PatientProfile.Sex.FEMALE, List.of(), NOW, NOW)));
