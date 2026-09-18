@@ -34,8 +34,10 @@ class BaymaxWebUiRouterTest {
         String html = client.get().uri("/").exchange().expectStatus().isOk()
                 .expectHeader().contentTypeCompatibleWith("text/html").expectBody(String.class).returnResult().getResponseBody();
         assertThat(html).startsWith("<!doctype html><html lang=\"bn\">");
-        assertThat(html).contains("চিকিৎসা পরামর্শ নয়").contains("href=\"/app\"").contains("৳ ২৪৯");
-        assertThat(html).doesNotContain("http://").doesNotContain("https://").doesNotContain("<script");
+        assertThat(html).contains("চিকিৎসা পরামর্শ নয়").contains("href=\"/app\"").contains("৳ ২৪৯").contains("Medioo").contains("Elioo Health");
+        assertThat(html).doesNotContain("<script").doesNotContain("src=\"http").doesNotContain("href=\"http://");
+        // the only off-site href is the company site in the footer (DR-15); every asset is same-origin
+        assertThat(html.replace("href=\"https://www.eliooo.org/\"", "")).doesNotContain("https://");
         assertThat(html).containsPattern("<link rel=\"stylesheet\" href=\"/assets/baymax\\.css\\?v=[0-9a-f]+\">");
     }
 

@@ -54,9 +54,11 @@ import static com.elioo.baymax.web.adapter.in.ui.Html.esc;
 public class WebUiHandler {
 
     static final String BASE = "/app";
+    /** The company site, linked from the landing footer (DR-15). */
+    static final String ELIOO = "https://www.eliooo.org/";
     static final String LOGIN_COOKIE = "baymax_login";
     /** Files under classpath {@code baymax/ui/} that {@code /assets/{file}} may serve; nothing else leaves the jar. */
-    static final Set<String> ASSETS = Set.of("baymax.css", "landing-shot.png", "mascot.png", "mascot.svg", "mascot.webp");
+    static final Set<String> ASSETS = Set.of("baymax.css", "favicon.svg", "landing-shot.png", "mascot.png", "mascot.svg", "mascot.webp");
 
     private final WebAuthUseCase auth;
     private final TimelineUseCase timeline;
@@ -98,7 +100,10 @@ public class WebUiHandler {
             b.append("<li>").append(copy.t(lang, "landing.data." + i)).append("</li>");
         }
         b.append("</ul></section>");
-        return Html.html(HttpStatus.OK, Html.page(lang, t, b.toString(), 0, true, copy.t(lang, "disclaimer"), true));
+        // the landing footer also says whose product this is (DR-15): the one off-site link in the whole app
+        String foot = copy.t(lang, "disclaimer") + "<div class=\"about\"><a href=\"" + ELIOO + "\" rel=\"noopener\">"
+                + copy.t(lang, "landing.about") + "</a></div>";
+        return Html.html(HttpStatus.OK, Html.page(lang, t, b.toString(), 0, true, foot, true));
     }
 
     private void plan(StringBuilder b, Lang lang, String key, int lines, String cls) {

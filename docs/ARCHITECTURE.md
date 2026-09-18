@@ -27,7 +27,7 @@ The single-file UI at `medscribe-ai/src/main/resources/static/index.html` drives
 | Module | Role | Depends on |
 |---|---|---|
 | `medscribe-ai` | The Spring Boot WebFlux application: routers, handlers, orchestration, persistence, UI | all libraries below |
-| `baymax` | Baymax MVP (DR-2): `com.elioo.baymax`, same hexagonal layout, routes under `/api/v1/baymax/**`, own Flyway instance on schema `baymax` (`db/baymax/migration`). Per-call AI cost log `baymax.ai_call_log` written by `MeteredLlmClient`/`MeteredVisionOcr`; weekly CSV at `/api/v1/baymax/admin/metrics/weekly` (`X-Baymax-Admin-Token`). Object storage: `StoragePort`/`S3StorageAdapter` (S3-compatible, `baymax.storage.*`), ledger `baymax.stored_object`, MinIO locally. Extraction (BMX-2): `POST/GET /api/v1/baymax/documents`, tables `document`/`observation`/`medication_event`/`follow_up` (V5), one Vision call per page plus one structured LLM call, confidence gate and strong-model escalation, every item proved by a stored crop. Loaded into the app via auto-configuration only when `baymax.enabled=true` (default off; `BAYMAX_ENABLED`) | elioo-llm, elioo-gcp-vision |
+| `baymax` | Medioo MVP (public name per DR-15; module codename Baymax, DR-2): `com.elioo.baymax`, same hexagonal layout, routes under `/api/v1/baymax/**`, own Flyway instance on schema `baymax` (`db/baymax/migration`). Per-call AI cost log `baymax.ai_call_log` written by `MeteredLlmClient`/`MeteredVisionOcr`; weekly CSV at `/api/v1/baymax/admin/metrics/weekly` (`X-Baymax-Admin-Token`). Object storage: `StoragePort`/`S3StorageAdapter` (S3-compatible, `baymax.storage.*`), ledger `baymax.stored_object`, MinIO locally. Extraction (BMX-2): `POST/GET /api/v1/baymax/documents`, tables `document`/`observation`/`medication_event`/`follow_up` (V5), one Vision call per page plus one structured LLM call, confidence gate and strong-model escalation, every item proved by a stored crop. Loaded into the app via auto-configuration only when `baymax.enabled=true` (default off; `BAYMAX_ENABLED`) | elioo-llm, elioo-gcp-vision |
 | `elioo-llm` | Provider-neutral LLM layer: `LlmClient` interface, clinical prompt templates (`HealthInsightService`), Anthropic and OpenAI-compatible (Groq/OpenAI) clients, selection by `llm.provider` | Anthropic Java SDK, Spring WebClient |
 | `elioo-aws-common` | AWS credentials/region auto-configuration | AWS SDK v2 |
 | `elioo-aws-comprehend-medical` | Entity detection, ICD-10, RxNorm, SNOMED CT | aws-common |
@@ -84,7 +84,7 @@ Everything comes from the environment; see `medscribe.env.example`. The importan
 
 Push to `main` -> `.github/workflows/ci-cd.yml` -> Gradle build and tests -> Docker image to GHCR ->
 SSH to the EC2 host -> `deploy.sh` replaces the `medscribe-ai` container and waits for `/actuator/health`.
-Caddy (from the co-located n8n stack) terminates HTTPS for `baymax.eliooo.org` and proxies to the container
+Caddy (from the co-located n8n stack) terminates HTTPS for `medioo.eliooo.org` (301 from `baymax.eliooo.org`) and proxies to the container
 over the `n8n_edge` Docker network.
 
 ## Known limits and open work
