@@ -159,6 +159,7 @@ main.page{max-width:none;padding:0}
 .not h3{margin:0;font-size:var(--fs-1);line-height:1.4}
 .not p{margin-top:var(--sp-2)}
 .mio{display:block;width:188px;height:auto;padding:22px var(--sp-4) 0;margin:0 0 var(--sp-5);background:var(--c-accent-soft);border-radius:94px 94px 28px 28px}
+.collab{margin-top:var(--sp-6);font-size:var(--fs-0);color:var(--c-muted)}
 .mio-slot{display:block;width:188px;height:180px;margin:0 0 var(--sp-5);background:var(--c-accent-soft);border-radius:94px 94px 28px 28px}
 main.page .foot{margin-top:0;padding:var(--sp-6) 0 var(--sp-7);border-top:1px solid var(--c-line)}
 main.page .foot p{margin:0}main.page .foot p+p{margin-top:var(--sp-2)}

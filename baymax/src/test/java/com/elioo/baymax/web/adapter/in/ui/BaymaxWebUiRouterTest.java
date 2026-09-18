@@ -37,6 +37,7 @@ class BaymaxWebUiRouterTest {
         assertThat(html).contains("চিকিৎসা পরামর্শ নয়").contains("Medioo").contains("Elioo Health");
         // every CTA is the app login until WhatsApp exists (BMX-10): no wa.me, no dead button, no placeholder address
         assertThat(html).contains("class=\"cta\" href=\"/app\"").doesNotContain("wa.me").doesNotContain("example.com").doesNotContain("XXXX");
+        assertThat(html).contains("href=\"mailto:k.tanvir.hossain@gmail.com\"").doesNotContain("8801793399171");   // the pilot number is never on the page
         // the trend renders once, inside its own span — not a span between every character
         assertThat(html).containsOnlyOnce("<span class=\"nw\">১.১ → ১.৩ → ১.৫</span>").doesNotContain("<span class=\"nw\"></span>");
         assertThat(html).doesNotContain("<script").doesNotContain("src=\"http").doesNotContain("href=\"http://");
