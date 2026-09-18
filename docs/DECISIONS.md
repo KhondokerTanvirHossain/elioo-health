@@ -125,7 +125,7 @@ Configuration: `baymax.extract.vision-model` defaults to `claude-sonnet-5`, `str
 ## DR-11 | 2026-09-18 | URL layout flips: Baymax serves `/`, MedScribe PoC moves to `/medscribeai/`
 
 **Decision:** URL layout flips: Baymax serves `/` (landing page + app); MedScribe PoC moves to `/medscribeai/`.
-Deferred — do it as part of BMX-10, before any external eyes.
+Deferred at the time; **done in BMX-6b (2026-09-18)** — see the engineering note and docs/BAYMAX.md.
 
 **Why:** Baymax is the product; the PoC is a demo artefact.
 
@@ -170,3 +170,19 @@ later without a refactor.
 The reviewer is whoever presents the admin token; the optional `X-Baymax-Reviewer` header names them (default
 `tanvir`) and is stored on the row. Notification of a pending message is `ReviewerNotificationPort` — the log until
 BMX-10 puts it on WhatsApp. Nothing PENDING is ever delivered without an explicit approve (asserted in tests).
+
+## DR-14 | 2026-09-18 | Visual direction for the Baymax web app
+
+**Decision:** Visual direction for the Baymax web app: white / soft red / warm neutral palette, rounded and calm
+throughout, nothing clinical. Bangla default with an English toggle. Name "Baymax" stands through the open-source
+MVP; public brand remains open before commercial launch (§8). Tagline and mascot asset are supplied by Tanvir.
+
+**Why:** the product should feel like a presence, not a form.
+
+**Supersedes:** none.
+
+*Engineering note:* BMX-6b applies this as one token stylesheet (`baymax/src/main/resources/baymax/ui/baymax.css`:
+colour, radius, spacing, type scale) consumed by the landing page and every app page; no colour or radius literal
+outside it (grep-asserted in a test). The mascot is referenced from one place (`Html.MASCOT`) with a placeholder until
+Tanvir's asset lands; the reference images Tanvir sent are Disney's Baymax character and are used as palette/mood
+reference only — never committed or served, because the repo is open-source and the character is Disney IP (§8).

@@ -1,5 +1,6 @@
 package com.elioo.healthcare.gcp.vision.router;
 
+import com.elioo.healthcare.core.MedScribePaths;
 import com.elioo.healthcare.gcp.vision.handler.VisionApiHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -57,7 +58,7 @@ public class VisionApiRouter {
     @Bean
     public RouterFunction<ServerResponse> visionRoutes(VisionApiHandler handler) {
         return RouterFunctions.route()
-                .path("/api/gcp/vision", builder -> builder
+                .path(MedScribePaths.PREFIX + "/api/gcp/vision", builder -> builder
                         .POST("/detect-text", handler::detectText)
                         .POST("/analyze-document", handler::analyzeDocument)
                         .POST("/validate-image", handler::validateImage)

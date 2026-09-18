@@ -1,5 +1,6 @@
 package com.elioo.healthcare.aws.comprehend.router;
 
+import com.elioo.healthcare.core.MedScribePaths;
 import com.elioo.healthcare.aws.comprehend.handler.ComprehendMedicalApiHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -18,7 +19,7 @@ public class ComprehendMedicalApiRouter {
     @Bean
     public RouterFunction<ServerResponse> comprehendMedicalRoutes(ComprehendMedicalApiHandler handler) {
         return RouterFunctions.route()
-                .path("/api/aws/comprehend-medical", builder -> builder
+                .path(MedScribePaths.PREFIX + "/api/aws/comprehend-medical", builder -> builder
                         .POST("/detect-entities", handler::detectEntities)
                         .POST("/infer-icd10", handler::inferICD10Codes)
                         .POST("/infer-rxnorm", handler::inferRxNormCodes)

@@ -1,5 +1,6 @@
 package com.elioo.healthcare.gcp.translate.router;
 
+import com.elioo.healthcare.core.MedScribePaths;
 import com.elioo.healthcare.gcp.translate.handler.TranslateApiHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -57,7 +58,7 @@ public class TranslateApiRouter {
     @Bean
     public RouterFunction<ServerResponse> translateRoutes(TranslateApiHandler handler) {
         return RouterFunctions.route()
-                .path("/api/gcp/translate", builder -> builder
+                .path(MedScribePaths.PREFIX + "/api/gcp/translate", builder -> builder
                         .POST("/translate", handler::translateText)
                         .POST("/batch", handler::batchTranslate)
                         .POST("/detect-language", handler::detectLanguage)

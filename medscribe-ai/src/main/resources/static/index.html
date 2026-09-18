@@ -865,7 +865,7 @@
 
             try {
                 const response = await fetch(
-                    `/api/v1/medical-report/${reportId}/translate/${resultType}?lang=${targetLang}`
+                    `/medscribeai/api/v1/medical-report/${reportId}/translate/${resultType}?lang=${targetLang}`
                 );
 
                 if (!response.ok) {
@@ -1519,7 +1519,7 @@
 
         // Call the multi-image process API
         async function processMultiImageReport(imageBase64Array, patientContext, workflowOptions) {
-            const apiUrl = '/api/v1/medical-report/process-multi-image';
+            const apiUrl = '/medscribeai/api/v1/medical-report/process-multi-image';
 
             const requestBody = {
                 images: imageBase64Array,
@@ -1551,7 +1551,7 @@
 
         // Call the single-image process API (kept for backward compatibility)
         async function processReport(imageBase64, patientContext, workflowOptions) {
-            const apiUrl = '/api/v1/medical-report/process';
+            const apiUrl = '/medscribeai/api/v1/medical-report/process';
 
             const requestBody = {
                 imageBase64: imageBase64,
@@ -1583,7 +1583,7 @@
 
         // Poll report status and update UI
         async function pollReportStatus(reportId) {
-            const statusUrl = `/api/v1/medical-report/query/status/${reportId}`;
+            const statusUrl = `/medscribeai/api/v1/medical-report/query/status/${reportId}`;
             const maxPollingTime = 5 * 60 * 1000; // 5 minutes
             const pollingInterval = 3000; // 3 seconds
             const startTime = Date.now();
@@ -1825,21 +1825,21 @@
         // Note: Backend uses *_INFERENCE names, keeping *_CODING as aliases for backward compatibility
         const STAGE_TO_ENDPOINT = {
             'IMAGE_VALIDATION': null, // No result to display
-            'OCR_PROCESSING': { name: 'ocr', url: (id) => `/api/v1/medical-report/query/results/${id}/ocr`, renderer: 'renderOcrAccordion' },
-            'ENTITY_DETECTION': { name: 'classification', url: (id) => `/api/v1/medical-report/query/results/${id}/classification`, renderer: 'renderClassificationAccordion' },
+            'OCR_PROCESSING': { name: 'ocr', url: (id) => `/medscribeai/api/v1/medical-report/query/results/${id}/ocr`, renderer: 'renderOcrAccordion' },
+            'ENTITY_DETECTION': { name: 'classification', url: (id) => `/medscribeai/api/v1/medical-report/query/results/${id}/classification`, renderer: 'renderClassificationAccordion' },
             // Backend stage names (ICD10_INFERENCE, RXNORM_INFERENCE, SNOMEDCT_INFERENCE)
-            'ICD10_INFERENCE': { name: 'icd10', url: (id) => `/api/v1/medical-report/query/results/${id}/icd10`, renderer: 'renderIcd10Accordion' },
-            'RXNORM_INFERENCE': { name: 'rxnorm', url: (id) => `/api/v1/medical-report/query/results/${id}/rxnorm`, renderer: 'renderRxNormAccordion' },
-            'SNOMEDCT_INFERENCE': { name: 'snomedct', url: (id) => `/api/v1/medical-report/query/results/${id}/snomedct`, renderer: 'renderSnomedCtAccordion' },
+            'ICD10_INFERENCE': { name: 'icd10', url: (id) => `/medscribeai/api/v1/medical-report/query/results/${id}/icd10`, renderer: 'renderIcd10Accordion' },
+            'RXNORM_INFERENCE': { name: 'rxnorm', url: (id) => `/medscribeai/api/v1/medical-report/query/results/${id}/rxnorm`, renderer: 'renderRxNormAccordion' },
+            'SNOMEDCT_INFERENCE': { name: 'snomedct', url: (id) => `/medscribeai/api/v1/medical-report/query/results/${id}/snomedct`, renderer: 'renderSnomedCtAccordion' },
             // Legacy aliases (keep for backward compatibility)
-            'ICD10_CODING': { name: 'icd10', url: (id) => `/api/v1/medical-report/query/results/${id}/icd10`, renderer: 'renderIcd10Accordion' },
-            'RXNORM_CODING': { name: 'rxnorm', url: (id) => `/api/v1/medical-report/query/results/${id}/rxnorm`, renderer: 'renderRxNormAccordion' },
-            'SNOMEDCT_CODING': { name: 'snomedct', url: (id) => `/api/v1/medical-report/query/results/${id}/snomedct`, renderer: 'renderSnomedCtAccordion' },
-            'SNOMED_CODING': { name: 'snomedct', url: (id) => `/api/v1/medical-report/query/results/${id}/snomedct`, renderer: 'renderSnomedCtAccordion' },
-            'RISK_ASSESSMENT': { name: 'risk', url: (id) => `/api/v1/medical-report/query/results/${id}/risk-assessment`, renderer: 'renderRiskAssessmentAccordion' },
-            'RECOMMENDATIONS': { name: 'recommendations', url: (id) => `/api/v1/medical-report/query/results/${id}/recommendations`, renderer: 'renderRecommendationsAccordion' },
-            'CLINICAL_INSIGHTS': { name: 'insights', url: (id) => `/api/v1/medical-report/query/results/${id}/insights`, renderer: 'renderInsightsAccordion' },
-            'EDUCATIONAL_CONTENT': { name: 'educational', url: (id) => `/api/v1/medical-report/query/results/${id}/educational-content`, renderer: 'renderEducationalContentAccordion' },
+            'ICD10_CODING': { name: 'icd10', url: (id) => `/medscribeai/api/v1/medical-report/query/results/${id}/icd10`, renderer: 'renderIcd10Accordion' },
+            'RXNORM_CODING': { name: 'rxnorm', url: (id) => `/medscribeai/api/v1/medical-report/query/results/${id}/rxnorm`, renderer: 'renderRxNormAccordion' },
+            'SNOMEDCT_CODING': { name: 'snomedct', url: (id) => `/medscribeai/api/v1/medical-report/query/results/${id}/snomedct`, renderer: 'renderSnomedCtAccordion' },
+            'SNOMED_CODING': { name: 'snomedct', url: (id) => `/medscribeai/api/v1/medical-report/query/results/${id}/snomedct`, renderer: 'renderSnomedCtAccordion' },
+            'RISK_ASSESSMENT': { name: 'risk', url: (id) => `/medscribeai/api/v1/medical-report/query/results/${id}/risk-assessment`, renderer: 'renderRiskAssessmentAccordion' },
+            'RECOMMENDATIONS': { name: 'recommendations', url: (id) => `/medscribeai/api/v1/medical-report/query/results/${id}/recommendations`, renderer: 'renderRecommendationsAccordion' },
+            'CLINICAL_INSIGHTS': { name: 'insights', url: (id) => `/medscribeai/api/v1/medical-report/query/results/${id}/insights`, renderer: 'renderInsightsAccordion' },
+            'EDUCATIONAL_CONTENT': { name: 'educational', url: (id) => `/medscribeai/api/v1/medical-report/query/results/${id}/educational-content`, renderer: 'renderEducationalContentAccordion' },
             'ACTION_PLAN': null // Included in CLINICAL_INSIGHTS
         };
 
@@ -2283,15 +2283,15 @@
         // Fetch all results from the query endpoints
         async function fetchAllResults(reportId) {
             const endpoints = [
-                { name: 'ocr', url: `/api/v1/medical-report/query/results/${reportId}/ocr` },
-                { name: 'classification', url: `/api/v1/medical-report/query/results/${reportId}/classification` },
-                { name: 'icd10', url: `/api/v1/medical-report/query/results/${reportId}/icd10` },
-                { name: 'rxnorm', url: `/api/v1/medical-report/query/results/${reportId}/rxnorm` },
-                { name: 'snomedct', url: `/api/v1/medical-report/query/results/${reportId}/snomedct` },
-                { name: 'risk', url: `/api/v1/medical-report/query/results/${reportId}/risk-assessment` },
-                { name: 'recommendations', url: `/api/v1/medical-report/query/results/${reportId}/recommendations` },
-                { name: 'insights', url: `/api/v1/medical-report/query/results/${reportId}/insights` },
-                { name: 'educational', url: `/api/v1/medical-report/query/results/${reportId}/educational-content` }
+                { name: 'ocr', url: `/medscribeai/api/v1/medical-report/query/results/${reportId}/ocr` },
+                { name: 'classification', url: `/medscribeai/api/v1/medical-report/query/results/${reportId}/classification` },
+                { name: 'icd10', url: `/medscribeai/api/v1/medical-report/query/results/${reportId}/icd10` },
+                { name: 'rxnorm', url: `/medscribeai/api/v1/medical-report/query/results/${reportId}/rxnorm` },
+                { name: 'snomedct', url: `/medscribeai/api/v1/medical-report/query/results/${reportId}/snomedct` },
+                { name: 'risk', url: `/medscribeai/api/v1/medical-report/query/results/${reportId}/risk-assessment` },
+                { name: 'recommendations', url: `/medscribeai/api/v1/medical-report/query/results/${reportId}/recommendations` },
+                { name: 'insights', url: `/medscribeai/api/v1/medical-report/query/results/${reportId}/insights` },
+                { name: 'educational', url: `/medscribeai/api/v1/medical-report/query/results/${reportId}/educational-content` }
             ];
 
             const results = {};
@@ -4440,7 +4440,7 @@
             showTypingIndicator();
 
             try {
-                const response = await fetch(`/api/v1/medical-report/chat/${reportId}/send`, {
+                const response = await fetch(`/medscribeai/api/v1/medical-report/chat/${reportId}/send`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message: message, language: getCurrentLanguage() })
@@ -4532,7 +4532,7 @@
         // Load chat messages
         async function loadChatMessages(reportId) {
             try {
-                const response = await fetch(`/api/v1/medical-report/chat/${reportId}/messages`);
+                const response = await fetch(`/medscribeai/api/v1/medical-report/chat/${reportId}/messages`);
                 const conversation = await response.json();
 
                 if (conversation.messages && conversation.messages.length > 0) {
@@ -4566,7 +4566,7 @@
             }
 
             try {
-                await fetch(`/api/v1/medical-report/chat/${reportId}/clear`, {
+                await fetch(`/medscribeai/api/v1/medical-report/chat/${reportId}/clear`, {
                     method: 'DELETE'
                 });
 

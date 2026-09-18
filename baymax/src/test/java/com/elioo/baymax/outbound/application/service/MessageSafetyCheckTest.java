@@ -50,7 +50,7 @@ class MessageSafetyCheckTest {
     void theLinkIsNeitherANumberInTheBodyNorAnAllowedNumber() {
         DocumentFacts base = UrgencyServiceTest.facts(List.of(UrgencyServiceTest.value("HbA1c", "9.8", "4.0", "5.6")), List.of(), Map.of(), "{}");
         DocumentFacts f = new DocumentFacts(base.document(), base.patientName(), base.values(), base.followUps(), base.clinicalContext(),
-                "https://x/baymax/documents/7a42f-7777");
+                "https://x/app/documents/7a42f-7777");
         assertThat(check.violations("HbA1c 9.8। টাইমলাইন: " + f.link() + " ডাক্তার", f, Urgency.THIS_WEEK)).isEmpty();
         assertThat(f.numbers()).doesNotContain("42").doesNotContain("7777");
         assertThat(check.violations("HbA1c 9.8 আর 42 দিন। ডাক্তার", f, Urgency.THIS_WEEK)).contains("number_not_in_extraction:42");

@@ -95,7 +95,7 @@ public class ExplanationService implements ExplainDocumentUseCase {
     }
 
     private Mono<DocumentFacts> facts(Document document) {
-        String link = properties.getOutbound().getPublicBaseUrl() + "/baymax/documents/" + document.id();
+        String link = properties.getOutbound().getPublicBaseUrl() + "/app/documents/" + document.id();
         return Mono.zip(
                 documents.observationsOf(document.id()).collectList(),
                 documents.followUpsOf(document.id()).collectList(),

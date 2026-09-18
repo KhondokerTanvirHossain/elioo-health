@@ -122,7 +122,11 @@ Alongside it, the routes that should always answer:
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' https://baymax.eliooo.org/actuator/health          # 200
 curl -s https://baymax.eliooo.org/api/v1/baymax/health                                      # {"status":"UP","module":"baymax"}
-curl -s -o /dev/null -w '%{http_code}\n' https://baymax.eliooo.org/api/v1/medical-report/languages  # 200, MedScribe unaffected
+curl -s -o /dev/null -w '%{http_code}\n' https://baymax.eliooo.org/medscribeai/api/v1/medical-report/languages  # 200, MedScribe at its prefix (DR-11)
+curl -s -o /dev/null -w '%{http_code}\n' https://baymax.eliooo.org/                                          # 200, Baymax landing
+curl -s -o /dev/null -w '%{http_code}\n' https://baymax.eliooo.org/app/                                      # 200, login page
+curl -s -o /dev/null -w '%{http_code}\n' https://baymax.eliooo.org/baymax/home                               # 301 → /app/home
+curl -s -o /dev/null -w '%{http_code}\n' https://baymax.eliooo.org/medscribeai/                              # 200, MedScribe PoC UI
 curl -s -o /dev/null -w '%{http_code}\n' https://baymax.eliooo.org/api/v1/baymax/admin/storage/selftest  # 401 without the token
 ```
 

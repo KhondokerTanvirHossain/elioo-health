@@ -35,7 +35,7 @@ class UrgencyServiceTest {
     static DocumentFacts facts(String type, List<Map<String, Object>> values, List<Map<String, Object>> followUps, Map<String, Object> ctx, String json) {
         Document d = new Document(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), type, null, null, json, 0.9,
                 Document.Status.DONE, null, "m", null, 1, NOW, NOW);
-        return new DocumentFacts(d, "Ma", values, followUps, ctx, "https://x/baymax/documents/1");
+        return new DocumentFacts(d, "Ma", values, followUps, ctx, "https://x/app/documents/1");
     }
 
     /** Acceptance (PO ruling 2026-09-18, STOPGAP): ≥ 2.0 × ref_high → NOW. Range 4.0–5.6: 11.2 is exactly 2 × 5.6. */

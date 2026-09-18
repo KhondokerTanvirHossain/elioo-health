@@ -9,15 +9,15 @@ results, standard medical codes, an AI clinical summary, and a chat about the re
 Everything is asynchronous: the client gets a report id immediately and polls.
 
 ```
-POST /api/v1/medical-report/process  (image, patient context)      -> 202 + reportId
+POST /medscribeai/api/v1/medical-report/process  (image, patient context)      -> 202 + reportId
    background pipeline, one DB row per stage:
    IMAGE_VALIDATION -> OCR_PROCESSING (GCP Vision) -> TRANSLATION (GCP Translate, Bangla->English)
    -> ENTITY_DETECTION -> ICD10 -> RXNORM -> SNOMEDCT (AWS Comprehend Medical)
    -> CLINICAL_INSIGHTS (LLM: summary, risk, recommendations, education)
-GET  /api/v1/medical-report/query/status/{id}    poll
-GET  /api/v1/medical-report/query/results/{id}/{ocr|classification|icd10|rxnorm|snomedct|insights|risk-assessment|recommendations|educational-content|all}
-POST /api/v1/medical-report/chat/{id}/send       ask the LLM about the report
-GET  /api/v1/medical-report/{id}/translate/{resultType}?lang=bn   show a result in Bangla
+GET  /medscribeai/api/v1/medical-report/query/status/{id}    poll
+GET  /medscribeai/api/v1/medical-report/query/results/{id}/{ocr|classification|icd10|rxnorm|snomedct|insights|risk-assessment|recommendations|educational-content|all}
+POST /medscribeai/api/v1/medical-report/chat/{id}/send       ask the LLM about the report
+GET  /medscribeai/api/v1/medical-report/{id}/translate/{resultType}?lang=bn   show a result in Bangla
 ```
 
 The single-file UI at `medscribe-ai/src/main/resources/static/index.html` drives all of this.
@@ -52,7 +52,7 @@ The single-file UI at `medscribe-ai/src/main/resources/static/index.html` drives
 - `adapter.out.llm` — `LlmInsightAdapter` (ClinicalInsightPort on top of `elioo-llm`).
 - `adapter.out.persistence` — R2DBC entities/repositories, `MedicalReportPersistenceAdapter`, `ResultDataDeserializer` (tolerant read-back of stored JSON).
 
-`com.elioo.healthcare.llm` (inside the app) exposes the raw LLM endpoints under `/api/llm/*`;
+`com.elioo.healthcare.llm` (inside the app) exposes the raw LLM endpoints under `/medscribeai/api/llm/*`;
 `com.elioo.healthcare.aws.*` and `gcp.*` expose raw passthrough endpoints for each cloud service (debugging aids).
 
 ## Data

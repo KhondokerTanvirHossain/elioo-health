@@ -1,5 +1,6 @@
 package com.elioo.healthcare.llm.router;
 
+import com.elioo.healthcare.core.MedScribePaths;
 import com.elioo.healthcare.llm.handler.LlmApiHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -13,7 +14,7 @@ public class LlmApiRouter {
     @Bean
     public RouterFunction<ServerResponse> llmRoutes(LlmApiHandler handler) {
         return RouterFunctions.route()
-                .path("/api/llm", b -> b
+                .path(MedScribePaths.PREFIX + "/api/llm", b -> b
                         .POST("/invoke", handler::invoke)
                         .POST("/health/clinical-insights", handler::generateClinicalInsights)
                         .POST("/health/summary", handler::generateSummary)
