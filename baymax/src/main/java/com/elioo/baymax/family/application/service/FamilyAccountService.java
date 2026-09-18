@@ -144,7 +144,19 @@ public class FamilyAccountService implements FamilyAccountUseCase {
         if (raw == null) {
             throw new IllegalArgumentException("whatsapp_number is required");
         }
-        String number = raw.replaceAll("[\\s\\-()]", "");
+        // Bangla digits fold to ASCII, and the two ways a Bangladeshi number is actually written are accepted:
+        // 01XXXXXXXXX (11 digits, how everyone types it) and 8801XXXXXXXXX (no plus). Found on the first real
+        // walkthrough: the login form said "a code is on its way" to a 017… entry and issued nothing.
+        StringBuilder folded = new StringBuilder();
+        for (char c : raw.toCharArray()) {
+            folded.append(Character.isDigit(c) ? (char) ('0' + Character.digit(c, 10)) : c);
+        }
+        String number = folded.toString().replaceAll("[\\s\\-()]", "");
+        if (number.matches("^01\\d{9}$")) {
+            number = "+88" + number;
+        } else if (number.matches("^8801\\d{9}$")) {
+            number = "+" + number;
+        }
         if (!E164.matcher(number).matches()) {
             throw new IllegalArgumentException("whatsapp_number must be E.164, e.g. +8801XXXXXXXXX");
         }

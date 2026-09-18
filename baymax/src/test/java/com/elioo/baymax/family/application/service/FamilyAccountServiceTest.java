@@ -96,7 +96,7 @@ class FamilyAccountServiceTest {
 
     @Test
     void badNumberIs400() {
-        StepVerifier.create(service.createFamily(new CreateFamilyCommand("01700000000", "Rahim", true)))
+        StepVerifier.create(service.createFamily(new CreateFamilyCommand("1700000000", "Rahim", true)))   // ten digits, no country
                 .expectErrorMatches(e -> e instanceof BaymaxException b && b.status().value() == 400)
                 .verify();
         verify(records, never()).createFamily(any());
@@ -242,9 +242,21 @@ class FamilyAccountServiceTest {
     @Test
     void numberNormalisation() {
         assertThat(FamilyAccountService.normalizeNumber("+880 (17) 00-000000")).isEqualTo("+8801700000000");
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> FamilyAccountService.normalizeNumber("8801700000000"))
+        assertThat(FamilyAccountService.normalizeNumber("8801700000000")).isEqualTo("+8801700000000");   // accepted since the walkthrough fix
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> FamilyAccountService.normalizeNumber("017"))   // too short to be anything
                 .isInstanceOf(IllegalArgumentException.class);
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> FamilyAccountService.normalizeNumber("+1"))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    /** Found on the first real walkthrough: a Bangladeshi types 017…, not +8801…; both must mean the same account. */
+    @org.junit.jupiter.api.Test
+    void localBangladeshiFormatsNormaliseToE164() {
+        org.assertj.core.api.Assertions.assertThat(FamilyAccountService.normalizeNumber("01793399171")).isEqualTo("+8801793399171");
+        org.assertj.core.api.Assertions.assertThat(FamilyAccountService.normalizeNumber("8801793399171")).isEqualTo("+8801793399171");
+        org.assertj.core.api.Assertions.assertThat(FamilyAccountService.normalizeNumber("+880 1793-399171")).isEqualTo("+8801793399171");
+        org.assertj.core.api.Assertions.assertThat(FamilyAccountService.normalizeNumber("০১৭৯৩৩৯৯১৭১")).isEqualTo("+8801793399171");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> FamilyAccountService.normalizeNumber("1793399171"))
+                .isInstanceOf(IllegalArgumentException.class);   // ten digits, no country: still refused
     }
 }
