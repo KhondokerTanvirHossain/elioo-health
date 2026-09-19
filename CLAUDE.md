@@ -81,6 +81,11 @@ Key files when changing behaviour:
   the bean. Before pushing a PR that adds directories, `git status --ignored --short -- <module>/src | grep '^!!'`
   must print nothing — this check is standard now. Sixth flattering failure.
 - Regression guards: a test written to catch a specific bug is replayed against the pre-fix source before it counts as done. A guard that passes on the broken code is worse than none — it was written once here, anchored on the wrong text, extracted an empty method body, and went green over the very bug it existed to catch.
+- **A red replay must fail ON the defect, not merely fail.** Read the failure message and confirm it names the
+  bug: `expected: DEFERRED but was: DROPPED`, `duplicate key value violates unique constraint`. A guard whose
+  replay died on a `NullPointerException` in its own Mockito matcher was red, looked like a successful replay and
+  proved nothing — the defect was never reached. Assert the failure mode, not the failure. Ninth instance of the
+  family, and the second inside the replay step that exists to catch the other eight.
 - Any path with a database constraint is exercised against a real database (Testcontainers), never only a mocked
   port. A mock that cannot fail the way production fails is not a test of that path. `NudgePort` was mocked with a
   `HashSet` ledger where a duplicate `add` is a silent no-op; Postgres raises a unique-constraint violation on the
