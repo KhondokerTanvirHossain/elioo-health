@@ -118,12 +118,8 @@ public class NudgeRules {
             List<MedicationRow> before = byDoc.get(order.get(idx + 1));
             List<String> lines = new ArrayList<>();
             List<String> crops = new ArrayList<>();
-            Map<String, MedicationRow> nowByName = new LinkedHashMap<>();
-            for (MedicationRow r : now) {
-                nowByName.putIfAbsent(key(r.name()), r);
-            }
             for (MedicationRow b : before) {
-                MedicationRow n = nowByName.get(key(b.name()));
+                MedicationRow n = sameMedicine(b, now);
                 if (n == null) {
                     lines.add(nz(b.name()) + " — " + joined(b) + " → (নতুন প্রেসক্রিপশনে নেই)");
                     crops.add(b.cropKey());
@@ -155,8 +151,28 @@ public class NudgeRules {
         return parts.isEmpty() ? "(মাত্রা লেখা নেই)" : String.join(" · ", parts);
     }
 
-    private static String key(String name) {
-        return nz(name).toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}\\p{N}]+", " ").trim();
+    /** Dosage-form words the model may or may not copy from the page ("Tab. Amlodipine" one run, "Amlodipine" the next). */
+    private static final Pattern FORM_WORDS = Pattern.compile("(?<![\\p{L}\\p{N}])(tab|tabs|tablet|tablets|cap|caps|capsule|capsules|syp|syrup|inj|injection|susp|suspension|oint|ointment|drops?|ট্যাব|ক্যাপ|সিরাপ|ইনজেকশন)(?![\\p{L}\\p{M}\\p{N}])\\.?");
+
+    static String key(String name) {
+        String k = nz(name).toLowerCase(Locale.ROOT);
+        k = FORM_WORDS.matcher(k).replaceAll(" ");
+        return k.replaceAll("[^\\p{L}\\p{M}\\p{N}]+", " ").trim();
+    }
+
+    /** The same medicine on the newer prescription: equal after form words are dropped, or one name contains the other. */
+    static MedicationRow sameMedicine(MedicationRow before, List<MedicationRow> now) {
+        String b = key(before.name());
+        if (b.isEmpty()) {
+            return null;
+        }
+        for (MedicationRow n : now) {
+            String k = key(n.name());
+            if (k.equals(b) || (k.length() >= 4 && b.length() >= 4 && (k.contains(b) || b.contains(k)))) {
+                return n;
+            }
+        }
+        return null;
     }
 
     // ---- trend: N consecutive readings of one canonical marker moving the wrong way (DR-17) ---------------------
