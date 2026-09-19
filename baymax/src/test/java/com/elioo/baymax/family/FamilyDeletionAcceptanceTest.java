@@ -34,6 +34,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -140,6 +141,19 @@ class FamilyDeletionAcceptanceTest {
             storage.storePage(f, p, docB, 1, JPEG).block();
             UUID otherFamily = UUID.randomUUID();
             storage.storePage(otherFamily, UUID.randomUUID(), UUID.randomUUID(), 1, JPEG).block();
+            // The document rows themselves — the fixture never created these, so `document` was always empty and
+            // the delete was never exercised against the table whose surviving rows actually block it. With the
+            // child rows too, so the whole graph is present exactly as a real family's would be.
+            for (UUID d : List.of(docA, docB)) {
+                sql("insert into baymax.document (id, patient_id, family_id, document_type, doc_date, status, page_count) values ('"
+                        + d + "','" + p + "','" + f + "','lab_report','2026-09-01','DONE',1)");
+                sql("insert into baymax.observation (patient_id, document_id, name, canonical_name, value, unit, crop_key, observed_at) values ('"
+                        + p + "','" + d + "','HbA1c','hba1c','9.8','%','k','2026-09-01T00:00:00Z')");
+                sql("insert into baymax.follow_up (patient_id, document_id, instruction, due_date, status, crop_key) values ('"
+                        + p + "','" + d + "','Follow up','2026-09-21','open','k')");
+                sql("insert into baymax.medication_event (patient_id, document_id, name, crop_key, at) values ('"
+                        + p + "','" + d + "','Metformin','k','2026-09-01T00:00:00Z')");
+            }
             sql("insert into baymax.ai_call_log (document_id, purpose, provider, model, input_tokens) values ('" + docA + "','extract','groq','m',10)");
 
             // admin storage self-test against the same bucket
@@ -163,10 +177,12 @@ class FamilyDeletionAcceptanceTest {
                     .jsonPath("$.objects").isEqualTo(4)
                     .jsonPath("$.deleted_at").isNotEmpty();
 
-            assertThat(scalar("select count(*) from baymax.family_account where id = '" + familyId + "'")).isEqualTo("0");
-            assertThat(scalar("select count(*) from baymax.patient_profile where family_id = '" + familyId + "'")).isEqualTo("0");
-            assertThat(scalar("select count(*) from baymax.share_member where patient_id = '" + patientId + "'")).isEqualTo("0");
-            assertThat(scalar("select count(*) from baymax.stored_object where family_id = '" + familyId + "'")).isEqualTo("0");
+            // Every table the SCHEMA says can hold this family's data must be empty — the list is derived, not
+            // remembered. The previous version of this test named six tables by hand and omitted `document`, the
+            // one table whose surviving rows blocked the delete: it asserted everything except the thing that
+            // broke. A table added later is picked up here automatically.
+            assertThat(tablesStillHolding(familyId, patientId))
+                    .as("tables still holding rows for the deleted family").isEmpty();
             assertThat(scalar("select count(*) from baymax.ai_call_log where document_id = '" + docA + "'")).isEqualTo("0");
             assertThat(scalar("select count(*) from baymax.ai_call_log where document_id is null and input_tokens = 10")).isEqualTo("1");
             assertThat(bucket.listKeys(familyId + "/").collectList().block()).isEmpty();
@@ -175,6 +191,44 @@ class FamilyDeletionAcceptanceTest {
             api.delete().uri("/api/v1/baymax/families/" + familyId).header(AdminAuthFilter.HEADER, TOKEN)
                     .exchange().expectStatus().isNotFound();
         });
+    }
+
+    /**
+     * Asks the database which tables carry a family, patient or document id, then counts rows left for this
+     * family in each. Derived from {@code information_schema} rather than a hand-written list, so a table added
+     * in a later migration cannot be silently missed — which is exactly how {@code document} went unchecked while
+     * the delete had never worked on any family that had one.
+     *
+     * @return {@code table=count} for every table that still holds something; empty when the delete was complete
+     */
+    private static List<String> tablesStillHolding(String familyId, String patientId) throws Exception {
+        List<String> offenders = new java.util.ArrayList<>();
+        try (Connection c = connect(); Statement s = c.createStatement()) {
+            List<String[]> targets = new java.util.ArrayList<>();
+            try (ResultSet rs = s.executeQuery(
+                    "SELECT table_name, column_name FROM information_schema.columns "
+                            + "WHERE table_schema = 'baymax' AND column_name IN ('family_id','patient_id') "
+                            + "ORDER BY table_name, column_name")) {
+                while (rs.next()) {
+                    targets.add(new String[]{rs.getString(1), rs.getString(2)});
+                }
+            }
+            assertThat(targets).as("information_schema returned no family/patient columns — the sweep would "
+                    + "vacuously pass, which is the failure mode this helper exists to prevent").isNotEmpty();
+            for (String[] t : targets) {
+                String id = "family_id".equals(t[1]) ? familyId : patientId;
+                try (Statement q = c.createStatement();
+                     ResultSet rs = q.executeQuery("SELECT count(*) FROM baymax." + t[0]
+                             + " WHERE " + t[1] + " = '" + id + "'")) {
+                    rs.next();
+                    long n = rs.getLong(1);
+                    if (n > 0) {
+                        offenders.add(t[0] + "." + t[1] + "=" + n);
+                    }
+                }
+            }
+        }
+        return offenders;
     }
 
     private static void sql(String statement) throws Exception {
