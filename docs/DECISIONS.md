@@ -311,3 +311,29 @@ called from both the tie path (`decide`) and the cap path (`place`) — previous
 keeps its `superseded_by_<rule>` reason; only its status changes, so the export still shows what outranked it.
 Guard: `aDateBoundNudgeBeatenInATieIsDeferredAndSendsTheNextDay` — replayed red against the pre-fix source
 (`expected: DEFERRED but was: DROPPED`) before it counted.
+
+## DR-22 | 2026-09-19 | Nudge uniqueness is a partial unique index over live rows
+
+**Decision:** Nudge uniqueness is a partial unique index over live rows `(patient_id, rule, trigger_key)`
+excluding `dropped`/`failed`, not a blanket constraint. A consumed deferral is retired and retained; the retry
+inserts cleanly. One ACTIVE nudge per trigger, history preserved.
+
+**Why:** DR-19's audit trail requires the retired row to survive, and V10's blanket constraint made the retry
+collide with the row it had just retired — defeating DR-19 and DR-20 one day later. Found on production: the
+evaluation 500'd with the deferral already consumed, so the nudge was retired, no replacement row was written,
+no message was composed, and the family was never told about the appointment.
+
+**Supersedes:** none.
+
+*Engineering note:* V12 drops `nudge_patient_id_rule_trigger_key_key` and creates `nudge_live_trigger_idx`
+`WHERE status NOT IN ('dropped','failed')`. `NudgePort.exists` still counts **every** row, retired included —
+the index frees the key, it does not decide whether a trigger may fire again; `consumeDeferred` remains the one
+path that deliberately bypasses dedupe. Guard: `PostgresNudgeAdapterTest` on real Postgres (Testcontainers),
+replayed red against the pre-V12 schema with the production error verbatim
+(`DuplicateKeyException: duplicate key value violates unique constraint`).
+
+*Per-patient isolation, same ruling:* one patient's failure must never cost every other family their nudges for
+that run. `evaluateAll` isolates each patient with `onErrorResume`, logs the failing patient and family id,
+counts it (`lastRunFailedPatients`) and continues. Before this a single duplicate-key error aborted the whole
+evaluation, and nobody would have noticed until a pilot family asked why they had heard nothing — worse than the
+duplicate key itself. Guard: `onePatientsFailureDoesNotStopTheRestOfTheRun`, replayed red.

@@ -45,6 +45,13 @@ public class NudgeEvaluationService implements NudgeUseCase {
     private final com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort records;
     private final BaymaxProperties properties;
     private final Clock clock;
+    /** Patients skipped after an error in the last {@link #evaluateAll()} (DR-22); surfaced in the weekly export. */
+    private final java.util.concurrent.atomic.AtomicInteger failedPatients = new java.util.concurrent.atomic.AtomicInteger();
+
+    /** How many patients the last evaluation skipped after an error. Zero on a clean run. */
+    public int lastRunFailedPatients() {
+        return failedPatients.get();
+    }
 
     public NudgeEvaluationService(NudgeDataPort data, NudgePort nudges, NudgeRules rules, ComposeNudgeUseCase composer,
                                   NudgeOptOutUseCase optOut, DocumentRecordPort documents,
@@ -69,13 +76,30 @@ public class NudgeEvaluationService implements NudgeUseCase {
         Mono<Map<UUID, List<NudgeCandidate>>> global = Flux.concat(rules.followUpDue(), rules.courseEnding())
                 .collect(LinkedHashMap::new, (Map<UUID, List<NudgeCandidate>> m, NudgeCandidate c) ->
                         m.computeIfAbsent(c.patientId(), k -> new ArrayList<>()).add(c));
+        failedPatients.set(0);
         return releaseHeld(now)
                 .then(global)
                 .flatMap(byPatient -> data.patients()
                         .filter(p -> !p.optedOut())
+                        // One patient's failure must never cost every other family their nudges for this run
+                        // (DR-22): isolate it, count it, carry on. Before this, a single duplicate-key error
+                        // aborted the whole evaluation and nobody would have noticed until a pilot family asked
+                        // why they had heard nothing.
                         .concatMap(p -> candidatesFor(p, byPatient.getOrDefault(p.patientId(), List.of()))
-                                .flatMap(cs -> decide(p, cs, now)))
-                        .reduce(0L, Long::sum));
+                                .flatMap(cs -> decide(p, cs, now))
+                                .onErrorResume(e -> {
+                                    failedPatients.incrementAndGet();
+                                    log.error("[baymax] nudge evaluation failed for patientId={} familyId={} — skipped, run continues: {}",
+                                            p.patientId(), p.familyId(), e.toString());
+                                    return Mono.just(0L);
+                                }))
+                        .reduce(0L, Long::sum))
+                .doOnSuccess(n -> {
+                    int failed = failedPatients.get();
+                    if (failed > 0) {
+                        log.warn("[baymax] nudge evaluation completed with {} patient(s) skipped after errors", failed);
+                    }
+                });
     }
 
     private Mono<List<NudgeCandidate>> candidatesFor(PatientRef p, List<NudgeCandidate> global) {
