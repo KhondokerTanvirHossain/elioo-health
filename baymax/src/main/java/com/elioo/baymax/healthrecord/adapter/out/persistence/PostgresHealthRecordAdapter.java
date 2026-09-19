@@ -2,6 +2,7 @@ package com.elioo.baymax.healthrecord.adapter.out.persistence;
 
 import com.elioo.baymax.config.BaymaxSchema;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
+import com.elioo.baymax.healthrecord.domain.DeletionCounts;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.FamilyActivity;
 import com.elioo.baymax.healthrecord.domain.PatientAccess;
@@ -21,6 +22,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /** The only {@link HealthRecordPort} implementation in v1. Every table name is schema-qualified. */
@@ -100,13 +102,14 @@ public class PostgresHealthRecordAdapter implements HealthRecordPort {
 
     @Override
     public Flux<UUID> documentIdsOf(UUID familyId) {
-        return db.sql("SELECT DISTINCT document_id FROM " + S + ".stored_object WHERE family_id = :family")
+        // from document itself, not stored_object: a document with no images was invisible to the delete
+        return db.sql("SELECT id FROM " + S + ".document WHERE family_id = :family")
                 .bind("family", familyId).map((row, meta) -> row.get(0, UUID.class)).all();
     }
 
     @Override
     public Flux<UUID> documentIdsOfPatient(UUID patientId) {
-        return db.sql("SELECT DISTINCT document_id FROM " + S + ".stored_object WHERE patient_id = :patient")
+        return db.sql("SELECT id FROM " + S + ".document WHERE patient_id = :patient")
                 .bind("patient", patientId).map((row, meta) -> row.get(0, UUID.class)).all();
     }
 
@@ -116,28 +119,60 @@ public class PostgresHealthRecordAdapter implements HealthRecordPort {
                 .bind("patient", patientId).map((row, meta) -> row.get(0, Long.class)).one().defaultIfEmpty(0L);
     }
 
+    /**
+     * The whole graph for one family, in FK order, in one transaction. Every table in the schema that carries a
+     * family, patient or document id is deleted here — including {@code audit_event} and {@code stored_object},
+     * which carry the ids with no foreign key at all, so nothing in the database would ever have flagged them.
+     *
+     * <p>Before this, the method deleted only share_member, patient_profile and family_account: {@code document}
+     * was never deleted, so the patient_profile delete violated {@code document_patient_id_fkey} and the route
+     * had never once worked on a family that had documents — which is every real family. §6.3 (delete on request
+     * within 24h) could not be honoured.
+     */
     @Override
     @Transactional
-    public Mono<Long> deleteFamily(UUID familyId, Collection<UUID> documentIds) {
+    public Mono<DeletionCounts> deleteFamily(UUID familyId, Collection<UUID> documentIds) {
+        String patientsOf = "(SELECT id FROM " + S + ".patient_profile WHERE family_id = :family)";
         return detachCostRows(documentIds)
-                .then(db.sql("DELETE FROM " + S + ".share_member WHERE patient_id IN "
-                        + "(SELECT id FROM " + S + ".patient_profile WHERE family_id = :family)")
-                        .bind("family", familyId).fetch().rowsUpdated())
-                .then(db.sql("DELETE FROM " + S + ".patient_profile WHERE family_id = :family")
-                        .bind("family", familyId).fetch().rowsUpdated())
-                .flatMap(patientsRemoved -> db.sql("DELETE FROM " + S + ".family_account WHERE id = :family")
-                        .bind("family", familyId).fetch().rowsUpdated()
-                        .thenReturn(patientsRemoved));
+                .then(count("audit_event", "DELETE FROM " + S + ".audit_event WHERE family_id = :family", "family", familyId))
+                .flatMap(c -> add(c, "share_member", "DELETE FROM " + S + ".share_member WHERE patient_id IN " + patientsOf, "family", familyId))
+                .flatMap(c -> add(c, "observation", "DELETE FROM " + S + ".observation WHERE patient_id IN " + patientsOf, "family", familyId))
+                .flatMap(c -> add(c, "medication_event", "DELETE FROM " + S + ".medication_event WHERE patient_id IN " + patientsOf, "family", familyId))
+                .flatMap(c -> add(c, "follow_up", "DELETE FROM " + S + ".follow_up WHERE patient_id IN " + patientsOf, "family", familyId))
+                .flatMap(c -> add(c, "outbound_message", "DELETE FROM " + S + ".outbound_message WHERE family_id = :family", "family", familyId))
+                .flatMap(c -> add(c, "nudge", "DELETE FROM " + S + ".nudge WHERE family_id = :family", "family", familyId))
+                .flatMap(c -> add(c, "stored_object", "DELETE FROM " + S + ".stored_object WHERE family_id = :family", "family", familyId))
+                .flatMap(c -> add(c, "document", "DELETE FROM " + S + ".document WHERE family_id = :family", "family", familyId))
+                .flatMap(c -> add(c, "web_session", "DELETE FROM " + S + ".web_session WHERE family_id = :family", "family", familyId))
+                .flatMap(c -> add(c, "otp_code", "DELETE FROM " + S + ".otp_code WHERE family_id = :family", "family", familyId))
+                .flatMap(c -> add(c, "patient_profile", "DELETE FROM " + S + ".patient_profile WHERE family_id = :family", "family", familyId))
+                .flatMap(c -> add(c, "family_account", "DELETE FROM " + S + ".family_account WHERE id = :family", "family", familyId));
     }
 
+    /** The same graph scoped to one patient; the family and its own rows survive. */
     @Override
     @Transactional
-    public Mono<Long> deletePatient(UUID patientId, Collection<UUID> documentIds) {
+    public Mono<DeletionCounts> deletePatient(UUID patientId, Collection<UUID> documentIds) {
         return detachCostRows(documentIds)
-                .then(db.sql("DELETE FROM " + S + ".share_member WHERE patient_id = :patient")
-                        .bind("patient", patientId).fetch().rowsUpdated())
-                .then(db.sql("DELETE FROM " + S + ".patient_profile WHERE id = :patient")
-                        .bind("patient", patientId).fetch().rowsUpdated());
+                .then(count("audit_event", "DELETE FROM " + S + ".audit_event WHERE patient_id = :patient", "patient", patientId))
+                .flatMap(c -> add(c, "share_member", "DELETE FROM " + S + ".share_member WHERE patient_id = :patient", "patient", patientId))
+                .flatMap(c -> add(c, "observation", "DELETE FROM " + S + ".observation WHERE patient_id = :patient", "patient", patientId))
+                .flatMap(c -> add(c, "medication_event", "DELETE FROM " + S + ".medication_event WHERE patient_id = :patient", "patient", patientId))
+                .flatMap(c -> add(c, "follow_up", "DELETE FROM " + S + ".follow_up WHERE patient_id = :patient", "patient", patientId))
+                .flatMap(c -> add(c, "outbound_message", "DELETE FROM " + S + ".outbound_message WHERE patient_id = :patient", "patient", patientId))
+                .flatMap(c -> add(c, "nudge", "DELETE FROM " + S + ".nudge WHERE patient_id = :patient", "patient", patientId))
+                .flatMap(c -> add(c, "stored_object", "DELETE FROM " + S + ".stored_object WHERE patient_id = :patient", "patient", patientId))
+                .flatMap(c -> add(c, "document", "DELETE FROM " + S + ".document WHERE patient_id = :patient", "patient", patientId))
+                .flatMap(c -> add(c, "patient_profile", "DELETE FROM " + S + ".patient_profile WHERE id = :patient", "patient", patientId));
+    }
+
+    private Mono<DeletionCounts> count(String table, String sql, String bind, UUID id) {
+        return db.sql(sql).bind(bind, id).fetch().rowsUpdated()
+                .map(n -> new DeletionCounts(new java.util.LinkedHashMap<>(Map.of(table, n))));
+    }
+
+    private Mono<DeletionCounts> add(DeletionCounts soFar, String table, String sql, String bind, UUID id) {
+        return db.sql(sql).bind(bind, id).fetch().rowsUpdated().map(n -> soFar.with(table, n));
     }
 
     /** ai_call_log keeps its numbers (no PHI) but loses the link to the deleted subject. */
