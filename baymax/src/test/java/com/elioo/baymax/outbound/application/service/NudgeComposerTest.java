@@ -53,9 +53,9 @@ class NudgeComposerTest {
     private NudgeComposer composer;
 
     private static final String LINK = "https://medioo.eliooo.org/app/nudges/opt-out?p=x&t=abc";
-    private static final NudgeCandidate TREND = new NudgeCandidate(NudgeRule.TREND, F, P, "trend:creatinine:1", NudgeUrgency.THIS_WEEK,
-            Map.of("marker", "S. Creatinine", "values", "1.1 mg/dL → 1.3 mg/dL → 1.5 mg/dL", "count", "3", "first_date", "2026-03-01", "last_date", "2026-09-01", "direction", "up"),
-            Set.of("1", "3", "5", "2026", "03", "01", "09"), List.of("c1", "c2", "c3"));
+    private static final NudgeCandidate TREND = new NudgeCandidate(NudgeRule.TREND, F, P, "মা", "trend:creatinine:1", NudgeUrgency.THIS_WEEK,
+            Map.of("marker", "S. Creatinine", "values", "1.1 mg/dL → 1.3 mg/dL → 1.5 mg/dL", "count", "৩", "first_date", "১ মার্চ", "last_date", "১ সেপ্টেম্বর", "direction", "একটু একটু করে বাড়ছে"),
+            Set.of("1", "3", "5"), List.of("c1", "c2", "c3"), null);
 
     @BeforeEach
     void wire() {
@@ -108,9 +108,9 @@ class NudgeComposerTest {
     void withTheGateOffARoutineNudgeReleasesAndDelivers() {
         props.getOutbound().setGateNudges(false);
         props.getOutbound().setGateMode("off");
-        NudgeCandidate follow = new NudgeCandidate(NudgeRule.FOLLOW_UP_DUE, F, P, "follow_up:1", NudgeUrgency.ROUTINE,
-                Map.of("instruction", "Follow up after 1 month", "due_date", "2026-09-21"), Set.of("1", "2026", "09", "21"), List.of("c"));
-        replies.push("ডাক্তারের দেওয়া ফলো-আপের তারিখ কাছে এসে গেছে: 2026-09-21। প্রেসক্রিপশনে লেখা: \"Follow up after 1 month\"।");
+        NudgeCandidate follow = new NudgeCandidate(NudgeRule.FOLLOW_UP_DUE, F, P, "মা", "follow_up:1", NudgeUrgency.ROUTINE,
+                Map.of("instruction", "Follow up after 1 month", "due_date", "২১ সেপ্টেম্বর"), Set.of("1", "21"), List.of("c"), java.time.LocalDate.parse("2026-09-21"));
+        replies.push("মা-এর ফলো-আপের তারিখ কাছে এসে গেছে: ২১ সেপ্টেম্বর। প্রেসক্রিপশনে লেখা: \"Follow up after 1 month\"।");
         OutboundMessage m = composer.compose(follow, LINK).block();
         assertThat(m.gateStatus()).isEqualTo(OutboundMessage.GateStatus.RELEASED);
         assertThat(m.sentAt()).isEqualTo(NOW);

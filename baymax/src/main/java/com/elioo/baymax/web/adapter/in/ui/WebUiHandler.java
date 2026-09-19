@@ -319,6 +319,14 @@ public class WebUiHandler {
                 b.append("<p class=\"small\"><a href=\"").append(BASE).append("/home\">").append(copy.t(lang, "app.back.patients")).append("</a></p>");
                 b.append("<h1>").append(esc(patient.patient().name())).append("</h1>");
                 b.append("<p class=\"small\"><a href=\"").append(BASE).append("/patients/").append(patientId).append("/profile\">").append(copy.t(lang, "profile.link")).append("</a></p>");
+                // BMX-8 (PO option 1): a patient with no chronic flags is asked once, here, where the family already is —
+                // nothing infers them, and the silence rule can never fire until someone answers
+                if (patient.patient().chronicFlags() == null || patient.patient().chronicFlags().isEmpty()) {
+                    b.append("<div class=\"card ask\"><strong>").append(copy.t(lang, "timeline.flags.ask")).append("</strong>")
+                            .append("<p class=\"small\">").append(copy.t(lang, "timeline.flags.why")).append("</p>")
+                            .append("<a class=\"btn quiet\" href=\"").append(BASE).append("/patients/").append(patientId).append("/profile\">")
+                            .append(copy.t(lang, "timeline.flags.cta")).append("</a></div>");
+                }
                 if (patient.owner()) {
                     b.append("<form class=\"card\" method=\"post\" enctype=\"multipart/form-data\" action=\"")
                             .append(BASE).append("/patients/").append(patientId).append("/upload\">")

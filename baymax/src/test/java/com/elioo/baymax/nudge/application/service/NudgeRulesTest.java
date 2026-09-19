@@ -90,7 +90,7 @@ class NudgeRulesTest {
         assertThat(rules.silence(noFlags).block()).isNull();           // no flags → never, whatever the quiet period
         NudgeCandidate c = rules.silence(chronic).block();
         assertThat(c).isNotNull();
-        assertThat(c.vars().get("days")).isEqualTo("61");
+        assertThat(c.vars().get("days")).isEqualTo("৬১");
         when(data.lastDocumentAt(P)).thenReturn(Mono.just(NOW.minusSeconds(30L * 86400)));
         assertThat(rules.silence(chronic).block()).isNull();           // not quiet enough
         when(data.lastDocumentAt(P)).thenReturn(Mono.just(NOW.minusSeconds(61L * 86400)));
@@ -130,7 +130,7 @@ class NudgeRulesTest {
         when(data.medicationsWithDurationSince(any())).thenReturn(Flux.just(seven, ten, vague));
         List<NudgeCandidate> out = rules.courseEnding().collectList().block();
         assertThat(out).hasSize(1);
-        assertThat(out.get(0).vars()).containsEntry("medicine", "Cap. Omeprazole").containsEntry("end_date", "2026-09-20").containsEntry("duration_text", "৭ দিন");
+        assertThat(out.get(0).vars()).containsEntry("medicine", "Cap. Omeprazole").containsEntry("end_date", "২০ সেপ্টেম্বর").containsEntry("duration_text", "৭ দিন");
         assertThat(out.get(0).triggerKey()).isEqualTo("medication:" + seven.id());
     }
 
@@ -142,8 +142,9 @@ class NudgeRulesTest {
         List<NudgeCandidate> out = rules.followUpDue().collectList().block();
         assertThat(out).hasSize(1);
         assertThat(out.get(0).triggerKey()).isEqualTo("follow_up:" + id);
-        assertThat(out.get(0).vars()).containsEntry("instruction", "Follow up after 1 month").containsEntry("due_date", "2026-09-21");
-        assertThat(out.get(0).numbers()).contains("1", "2026", "09", "21");
+        assertThat(out.get(0).vars()).containsEntry("instruction", "Follow up after 1 month").containsEntry("due_date", "২১ সেপ্টেম্বর");
+        assertThat(out.get(0).numbers()).contains("1", "21");
+        assertThat(out.get(0).deadline()).isEqualTo(LocalDate.parse("2026-09-21"));   // DR-19: the date a deferral expires on
     }
 
     /** PO ruling 2026-09-19: same-day readings are one report; three readings inside a fortnight are acute, not a trend. */

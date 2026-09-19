@@ -42,11 +42,14 @@ public class NudgeEvaluationService implements NudgeUseCase {
     private final ComposeNudgeUseCase composer;
     private final NudgeOptOutUseCase optOut;
     private final DocumentRecordPort documents;
+    private final com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort records;
     private final BaymaxProperties properties;
     private final Clock clock;
 
     public NudgeEvaluationService(NudgeDataPort data, NudgePort nudges, NudgeRules rules, ComposeNudgeUseCase composer,
-                                  NudgeOptOutUseCase optOut, DocumentRecordPort documents, BaymaxProperties properties, Clock clock) {
+                                  NudgeOptOutUseCase optOut, DocumentRecordPort documents,
+                                  com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort records,
+                                  BaymaxProperties properties, Clock clock) {
         this.data = data;
         this.nudges = nudges;
         this.rules = rules;
@@ -54,6 +57,7 @@ public class NudgeEvaluationService implements NudgeUseCase {
         this.composer = composer;
         this.optOut = optOut;
         this.documents = documents;
+        this.records = records;
         this.properties = properties;
         this.clock = clock;
     }
@@ -75,7 +79,23 @@ public class NudgeEvaluationService implements NudgeUseCase {
     }
 
     private Mono<List<NudgeCandidate>> candidatesFor(PatientRef p, List<NudgeCandidate> global) {
-        return Flux.concat(Flux.fromIterable(global), rules.trend(p), rules.silence(p).flux()).collectList();
+        return Flux.concat(Flux.fromIterable(global), rules.trend(p), rules.silence(p).flux())
+                .collectList()
+                .flatMap(this::named);
+    }
+
+    /**
+     * Every nudge names the patient as the family entered it (PO ruling 2026-09-19): the reader is the eldest
+     * child, the patient is their parent, so "আপনার" would address the wrong person.
+     */
+    private Mono<List<NudgeCandidate>> named(List<NudgeCandidate> candidates) {
+        if (candidates.isEmpty()) {
+            return Mono.just(candidates);
+        }
+        return records.findPatient(candidates.get(0).patientId())
+                .map(profile -> profile.name())
+                .defaultIfEmpty("")
+                .map(name -> candidates.stream().map(c -> c.withPatientName(name)).toList());
     }
 
     @Override
@@ -92,7 +112,10 @@ public class NudgeEvaluationService implements NudgeUseCase {
     /** Dedupe, select, cap, window — every outcome a row. Returns how many were handed to composition. */
     Mono<Long> decide(PatientRef p, List<NudgeCandidate> candidates, Instant now) {
         return Flux.fromIterable(candidates)
-                .filterWhen(c -> nudges.exists(c.patientId(), c.rule(), c.triggerKey()).map(exists -> !exists))
+                // a deferred row is a retry, not a duplicate: consuming it lets the trigger be attempted again (DR-19)
+                .filterWhen(c -> nudges.consumeDeferred(c.patientId(), c.rule(), c.triggerKey(), now)
+                        .flatMap(retry -> retry ? Mono.just(true)
+                                : nudges.exists(c.patientId(), c.rule(), c.triggerKey()).map(exists -> !exists)))
                 .collectList()
                 .flatMap(fresh -> {
                     NudgePolicy.Selection sel = policy.select(fresh);
@@ -112,7 +135,10 @@ public class NudgeEvaluationService implements NudgeUseCase {
                 .flatMap(t -> {
                     String cap = policy.capReason(t.getT1(), t.getT2());
                     if (cap != null) {
-                        return record(c, NudgeStatus.DROPPED, cap, null, null, now).thenReturn(0L);
+                        // DR-19: a date-bound nudge refused by a cap is deferred to the next day, never discarded —
+                        // follow_up_due fires once per follow-up, so a drop meant the appointment was never mentioned
+                        NudgeStatus status = c.rule().isDateBound() && !c.expired(rules.today()) ? NudgeStatus.DEFERRED : NudgeStatus.DROPPED;
+                        return record(c, status, cap, null, null, now).thenReturn(0L);
                     }
                     if (!policy.inWindow(now)) {
                         return record(c, NudgeStatus.HELD, null, null, policy.nextWindowStart(now), now).thenReturn(0L);
@@ -141,8 +167,9 @@ public class NudgeEvaluationService implements NudgeUseCase {
                                 if (p.optedOut()) {
                                     return nudges.resolve(row.id(), NudgeStatus.DROPPED, "opted_out", null, now).then();
                                 }
-                                NudgeCandidate c = new NudgeCandidate(row.rule(), row.familyId(), row.patientId(), row.triggerKey(), row.urgency(),
-                                        row.vars(), NudgeRules.numbersOf(row.vars().values()), List.of());
+                                NudgeCandidate c = new NudgeCandidate(row.rule(), row.familyId(), row.patientId(),
+                                        row.vars().get("patient"), row.triggerKey(), row.urgency(), row.vars(),
+                                        NudgeRules.numbersOf(row.vars().values()), List.of(), null);
                                 return send(row, c).then();
                             });
                         }))
@@ -165,7 +192,11 @@ public class NudgeEvaluationService implements NudgeUseCase {
     }
 
     private Mono<Nudge> record(NudgeCandidate c, NudgeStatus status, String reason, UUID messageId, Instant holdUntil, Instant now) {
-        return nudges.save(new Nudge(null, c.familyId(), c.patientId(), c.rule(), c.triggerKey(), c.urgency(), status, reason, c.vars(),
+        Map<String, String> vars = new LinkedHashMap<>(c.vars());
+        if (c.patientName() != null) {
+            vars.put("patient", c.patientName());   // a held row is composed later and still needs the name
+        }
+        return nudges.save(new Nudge(null, c.familyId(), c.patientId(), c.rule(), c.triggerKey(), c.urgency(), status, reason, vars,
                 messageId, holdUntil, now, status == NudgeStatus.HELD ? null : now));
     }
 }

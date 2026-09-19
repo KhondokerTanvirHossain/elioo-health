@@ -23,7 +23,7 @@ class NudgePolicyTest {
     private static final UUID F = UUID.randomUUID(), P = UUID.randomUUID();
 
     static NudgeCandidate c(NudgeRule rule, NudgeUrgency u) {
-        return new NudgeCandidate(rule, F, P, rule.dbValue() + ":k", u, Map.of(), Set.of(), List.of());
+        return new NudgeCandidate(rule, F, P, "মা", rule.dbValue() + ":k", u, Map.of(), Set.of(), List.of(), null);
     }
 
     @Test

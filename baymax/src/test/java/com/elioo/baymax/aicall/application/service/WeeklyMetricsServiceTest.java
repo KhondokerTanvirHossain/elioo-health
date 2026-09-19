@@ -91,7 +91,7 @@ class WeeklyMetricsServiceTest {
                     assertThat(lines.get(21)).isEqualTo("4,8192,8192,1200");   // max, p95, median of 900/1200/2000/8192
                     assertThat(lines.get(23)).startsWith("# nudges from=");
                     assertThat(lines.get(24)).isEqualTo(WeeklyMetricsService.NUDGES_HEADER);
-                    assertThat(lines.get(25)).isEqualTo("00000000-0000-0000-0000-000000000001,trend,0,2,0,1,weekly_cap:1,0,n/a");
+                    assertThat(lines.get(25)).isEqualTo("00000000-0000-0000-0000-000000000001,trend,0,2,0,0,1,weekly_cap:1,0,n/a");   // sent,gated,held,deferred,dropped,...
                     assertThat(lines).hasSize(26);
                 })
                 .verifyComplete();

@@ -49,6 +49,8 @@ class NudgeEvaluationServiceTest {
     private final ComposeNudgeUseCase composer = mock(ComposeNudgeUseCase.class);
     private final NudgeOptOutUseCase optOut = mock(NudgeOptOutUseCase.class);
     private final DocumentRecordPort documents = mock(DocumentRecordPort.class);
+    private final com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort records =
+            mock(com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort.class);
     private final BaymaxProperties props = new BaymaxProperties();
     private final Set<String> ledger = new HashSet<>();           // (patient|rule|key) rows that exist
     private final List<Nudge> saved = new ArrayList<>();
@@ -57,7 +59,7 @@ class NudgeEvaluationServiceTest {
     private NudgeEvaluationService at(String utc) {
         Clock clock = Clock.fixed(Instant.parse(utc), ZoneOffset.UTC);
         NudgeRules rules = new NudgeRules(data, nudges, props, clock);
-        return new NudgeEvaluationService(data, nudges, rules, composer, optOut, documents, props, clock);
+        return new NudgeEvaluationService(data, nudges, rules, composer, optOut, documents, records, props, clock);
     }
 
     @BeforeEach
@@ -78,6 +80,9 @@ class NudgeEvaluationServiceTest {
         });
         when(nudges.heldDueBy(any())).thenReturn(Flux.empty());
         when(nudges.latest(any(), any())).thenReturn(Mono.empty());
+        when(records.findPatient(P)).thenReturn(Mono.just(new com.elioo.baymax.healthrecord.domain.PatientProfile(
+                P, F, "মা", 74, com.elioo.baymax.healthrecord.domain.PatientProfile.Sex.FEMALE, List.of("diabetes"), Instant.EPOCH, Instant.EPOCH)));
+        when(nudges.consumeDeferred(any(), any(), anyString(), any())).thenReturn(Mono.just(false));
         when(data.patients()).thenReturn(Flux.just(new PatientRef(P, F, List.of("diabetes"), null, null)));
         when(data.patient(P)).thenReturn(Mono.just(new PatientRef(P, F, List.of("diabetes"), null, null)));
         when(data.openFollowUpsDueOn(any())).thenReturn(Flux.empty());
@@ -92,9 +97,10 @@ class NudgeEvaluationServiceTest {
         });
     }
 
+    /** The same open follow-up, whichever day the rule looks two days ahead from (the retry runs a day later). */
     private void followUpDueInTwoDays() {
-        when(data.openFollowUpsDueOn(eq(LocalDate.parse("2026-09-21")))).thenReturn(Flux.just(
-                new NudgeDataPort.FollowUpRow(UUID.fromString("11111111-1111-1111-1111-111111111111"), P, F, UUID.randomUUID(), "Follow up", LocalDate.parse("2026-09-21"), "c")));
+        when(data.openFollowUpsDueOn(any())).thenAnswer(i -> Flux.just(new NudgeDataPort.FollowUpRow(
+                UUID.fromString("11111111-1111-1111-1111-111111111111"), P, F, UUID.randomUUID(), "Follow up", i.getArgument(0), "c")));
     }
 
     /** Acceptance: a follow_up due in 2 days → exactly one nudge; running the job again → none. */
@@ -123,17 +129,50 @@ class NudgeEvaluationServiceTest {
                 .containsExactlyInAnyOrder(org.assertj.core.groups.Tuple.tuple(NudgeRule.FOLLOW_UP_DUE, "superseded_by_trend"), org.assertj.core.groups.Tuple.tuple(NudgeRule.SILENCE, "superseded_by_trend"));
     }
 
-    /** Acceptance: a patient at 2 nudges this week → the third is dropped with reason=weekly_cap. */
+    /**
+     * Acceptance: a patient at 2 nudges this week → the third does not send. DR-19: a date-bound trigger is
+     * DEFERRED (retried tomorrow, the appointment is not silently lost); a non-date-bound one is DROPPED.
+     */
     @Test
-    void theWeeklyCapDropsWithReason() {
+    void theWeeklyCapDefersADateBoundNudgeAndDropsTheRest() {
         followUpDueInTwoDays();
         countedWeek = 2;
         assertThat(at("2026-09-19T06:00:00Z").evaluateAll().block()).isEqualTo(0L);
         verify(composer, never()).compose(any(), anyString());
         assertThat(saved).singleElement().satisfies(n -> {
+            assertThat(n.status()).isEqualTo(NudgeStatus.DEFERRED);
+            assertThat(n.dropReason()).isEqualTo("weekly_cap");
+        });
+        // the deferred row is consumed on the next evaluation, so the trigger is attempted again
+        saved.clear();
+        ledger.clear();
+        when(nudges.consumeDeferred(any(), any(), anyString(), any())).thenReturn(Mono.just(true));
+        countedWeek = 0;
+        assertThat(at("2026-09-20T06:00:00Z").evaluateAll().block()).isEqualTo(1L);
+    }
+
+    /** DR-19: a trend nudge is not date-bound, so a cap drops it. */
+    @Test
+    void theWeeklyCapDropsANonDateBoundNudge() {
+        when(data.markersOf(P)).thenReturn(Flux.just("creatinine"));
+        when(data.observationsOf(P, "creatinine")).thenReturn(Flux.just(NudgeRulesTest.obs("1.1", "2026-03-01"),
+                NudgeRulesTest.obs("1.3", "2026-06-01"), NudgeRulesTest.obs("1.5", "2026-09-01")));
+        countedWeek = 2;
+        assertThat(at("2026-09-19T06:00:00Z").evaluateAll().block()).isEqualTo(0L);
+        assertThat(saved).singleElement().satisfies(n -> {
             assertThat(n.status()).isEqualTo(NudgeStatus.DROPPED);
             assertThat(n.dropReason()).isEqualTo("weekly_cap");
         });
+    }
+
+    /** PO ruling 2026-09-19: every nudge names the patient as the family entered it. */
+    @Test
+    void everyCandidateCarriesThePatientsName() {
+        followUpDueInTwoDays();
+        at("2026-09-19T06:00:00Z").evaluateAll().block();
+        ArgumentCaptor<NudgeCandidate> sent = ArgumentCaptor.forClass(NudgeCandidate.class);
+        verify(composer).compose(sent.capture(), anyString());
+        assertThat(sent.getValue().patientName()).isEqualTo("মা");
     }
 
     /** Acceptance: a rule firing at 03:00 Dhaka is held to 09:00 — not sent at 03:00, not never. */

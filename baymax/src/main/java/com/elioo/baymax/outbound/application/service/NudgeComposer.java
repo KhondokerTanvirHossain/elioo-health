@@ -38,7 +38,7 @@ import java.util.Set;
 public class NudgeComposer implements ComposeNudgeUseCase {
 
     /** Template variables whose stored text must appear in the body character for character. */
-    static final List<String> VERBATIM_KEYS = List.of("values", "changes", "instruction", "marker", "medicine", "dose_text", "frequency_text", "timing_text", "duration_text");
+    static final List<String> VERBATIM_KEYS = List.of("values", "changes", "instruction", "marker", "medicine", "dose_text", "frequency_text", "timing_text", "duration_text", "patient");
 
     private final OutboundMessagePort messages;
     private final MeteredLlmClient metered;
@@ -56,9 +56,12 @@ public class NudgeComposer implements ComposeNudgeUseCase {
         Urgency urgency = c.urgency().toUrgency();
         Map<String, String> vars = new LinkedHashMap<>(c.vars());
         vars.put("optout_link", optOutLink);
+        // the patient as the family entered the name; never "আপনার" — the reader is the child (PO, 2026-09-19)
+        vars.put("patient", c.patientName() == null ? vars.getOrDefault("patient", "") : c.patientName());
         String optout = copy.bn("nudge.optout", vars);
         String skeleton = copy.bn("nudge." + c.rule().dbValue(), vars);
         Set<String> allowed = new HashSet<>(c.numbers());
+        allowed.addAll(com.elioo.baymax.nudge.application.service.NudgeRules.numbersOf(List.of(vars.getOrDefault("patient", ""))));
         // the cap is on what the family receives (PO ruling 2026-09-19): the model's budget is the cap minus the opt-out line
         int budget = properties.getOutbound().getMaxChars() - optout.length() - 1;
         // the stored strings the message must carry word for word: values, changes, instructions, medicine names

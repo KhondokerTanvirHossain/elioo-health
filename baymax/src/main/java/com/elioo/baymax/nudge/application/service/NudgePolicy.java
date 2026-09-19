@@ -35,7 +35,10 @@ public final class NudgePolicy {
     public record Selection(NudgeCandidate winner, List<NudgeCandidate> dropped) {
     }
 
-    /** Highest urgency wins; ties go to the rule that comes first in {@code NudgeRule}'s order. */
+    /**
+      * Highest urgency wins; ties go to the rule that comes first in {@code NudgeRule}'s declaration order, which
+      * DR-19 sets as follow_up_due > course_ending > medicine_changed > trend > silence.
+      */
     public Selection select(List<NudgeCandidate> candidates) {
         if (candidates.isEmpty()) {
             return new Selection(null, List.of());
