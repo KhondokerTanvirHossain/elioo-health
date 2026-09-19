@@ -8,7 +8,7 @@ file disagree, the code wins and this file should be fixed.
 **MedScribe AI** (repo `elioo-health`): a Spring Boot 3.4 / Java 21 WebFlux service that turns a photo of a
 medical document (Bangla and/or English lab reports and prescriptions) into structured results, ICD-10 /
 RxNorm / SNOMED codes, an LLM-written clinical summary, and a chat about the report. Production runs at
-https://medioo.eliooo.org (the old name baymax.eliooo.org redirects permanently). Full architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+https://medioo.eliooo.org (the old name baymax.eliooo.org redirects permanently, preserving the path). Full architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 Status: PoC closed 2026-09-12; MVP in development — public name **Medioo** (DR-15), "Baymax" is the internal codename kept in module, package, schema, config and env names.
 
@@ -97,7 +97,7 @@ Key files when changing behaviour:
 
 ## Environment facts (2026-09)
 
-- Server: EC2 `ec2-13-205-14-249.ap-south-1.compute.amazonaws.com`, user `ec2-user`, shared with an n8n stack; Caddy there does HTTPS for `medioo.eliooo.org` and redirects `baymax.eliooo.org` to it (Caddyfile at `/home/ec2-user/n8n/Caddyfile`, reload with `docker exec n8n-caddy-1 caddy reload --config /etc/caddy/Caddyfile`).
+- Server: EC2 `ec2-13-205-14-249.ap-south-1.compute.amazonaws.com`, user `ec2-user`, shared with an n8n stack; Caddy there does HTTPS for `medioo.eliooo.org` and redirects `baymax.eliooo.org` to it, path preserved (Caddyfile at `/home/ec2-user/n8n/Caddyfile`, reload with `docker exec n8n-caddy-1 caddy reload --config /etc/caddy/Caddyfile`). **Both hostnames are separate A records pointing at the EC2 IP — not a CNAME — so moving the box means changing both in Hostinger.**
 - Runtime config on the server: `/home/ec2-user/medscribe.env` (mode 600). Redeploy manually: `IMAGE_TAG=<git sha> bash ~/deploy.sh`. Back it up before editing and list every change in the build report; which `BAYMAX_*` lines must be blank vs set, and the post-deploy self-test, are in [docs/RUNBOOK.md](docs/RUNBOOK.md).
 - Database: Supabase project `niramoy-rx` (ap-south-1), role/schema `medscribe`, via the session pooler on port 5432.
 - LLM: `groq` by default (`openai/gpt-oss-120b`, free tier 8k tokens/min); switch to `anthropic` (`claude-opus-5`) for demos by editing the server env and redeploying.
