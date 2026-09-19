@@ -6,6 +6,7 @@
 | [DECISIONS.md](DECISIONS.md) | Baymax decision records (DR-n), chronological; later records supersede earlier ones |
 | [PRODUCT.md](PRODUCT.md) | Baymax MVP v1.0 product document (2026-09-12): problem, personas, locked decisions, MVP scope, unit economics, pilot metrics |
 | [RUNBOOK.md](RUNBOOK.md) | Production: the box, safe edits to the server env (which BAYMAX_* lines must be blank vs set), deploy, the post-deploy self-test, migrations, rollback |
+| [PILOT_LOG.md](PILOT_LOG.md) | Evidence from real production runs — what actually happened, with row states and the family-facing text; kept because the fixtures that produced it do not survive |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Current system: modules, pipeline, data, configuration, deployment, open work |
 | [../README.md](../README.md) | Setup, run, build, test, deploy |
 | [../CLAUDE.md](../CLAUDE.md) | Working guide for AI-assisted development in this repo |
