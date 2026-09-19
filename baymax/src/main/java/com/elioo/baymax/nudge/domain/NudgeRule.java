@@ -12,7 +12,8 @@ public enum NudgeRule {
 
     /**
      * True when the trigger is tied to a date that passes: dropping it means the family is never told about that
-     * appointment or that course. Such a nudge is deferred by a cap, not discarded (DR-19).
+     * appointment or that course. Such a nudge is never discarded before its date — it sends, defers, or expires,
+     * whether a cap refused it or a tie outranked it (DR-20, widening DR-19).
      */
     public boolean isDateBound() {
         return this == FOLLOW_UP_DUE || this == COURSE_ENDING;

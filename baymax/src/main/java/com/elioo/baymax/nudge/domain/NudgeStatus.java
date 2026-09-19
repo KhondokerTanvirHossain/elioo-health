@@ -4,8 +4,8 @@ import java.util.Locale;
 
 /**
  * What happened to a candidate. SENT and GATED count against the caps; HELD counts once it is released.
- * DEFERRED (DR-19) is a cap refusing a date-bound nudge today: it is retried on later evaluations and only
- * becomes DROPPED when its date has passed.
+ * DEFERRED (DR-19, widened by DR-20) is a date-bound nudge that could not go today — refused by a cap or beaten
+ * in a tie: it is retried on later evaluations and only becomes DROPPED when its date has passed.
  */
 public enum NudgeStatus {
     SENT, GATED, HELD, DEFERRED, DROPPED, FAILED;

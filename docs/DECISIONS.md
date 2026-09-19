@@ -293,3 +293,21 @@ attempted again; `NudgeCandidate.expired(today)` stops the retry once the date h
 entered it (`{patient}`), never "আপনার" — the reader is the eldest child and the patient is their parent; dates
 render as Bangla day-and-month via `BanglaDate` ("১ জুন"), never ISO; the trend template states the direction in
 words ("একটু একটু করে বাড়ছে" / "কমছে").
+
+## DR-20 | 2026-09-19 | A date-bound nudge is never dropped, however it was lost
+
+**Decision:** A date-bound nudge (follow_up_due, course_ending) is never dropped. It sends, defers to the next day,
+or expires when its date passes — whether it was refused by a cap or lost a tie in the same evaluation. Only
+non-date-bound rules (trend, medicine_changed, silence) may be discarded, since those can be said on any day.
+
+**Why:** a family not told about their mother's appointment is the same failure however it was lost. DR-19 split
+the rule on mechanism (a cap) rather than on consequence (the family never hears), so a date-bound nudge beaten in
+a tie was still discarded.
+
+**Supersedes:** widens DR-19.
+
+*Engineering note:* `NudgeEvaluationService.deferOrDrop(c)` is the single definition of "may this be discarded?",
+called from both the tie path (`decide`) and the cap path (`place`) — previously only the cap path asked. A loser
+keeps its `superseded_by_<rule>` reason; only its status changes, so the export still shows what outranked it.
+Guard: `aDateBoundNudgeBeatenInATieIsDeferredAndSendsTheNextDay` — replayed red against the pre-fix source
+(`expected: DEFERRED but was: DROPPED`) before it counted.

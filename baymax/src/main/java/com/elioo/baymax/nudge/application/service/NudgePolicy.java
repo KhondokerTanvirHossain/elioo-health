@@ -31,7 +31,10 @@ public final class NudgePolicy {
         return ZoneId.of(cfg.getZone());
     }
 
-    /** The winner and the losers, losers first-class so they can be recorded as dropped. */
+    /**
+     * The winner and the losers, losers first-class so every outcome is recorded. A loser's status is decided by
+     * the caller (DR-20): date-bound rules defer, the rest drop.
+     */
     public record Selection(NudgeCandidate winner, List<NudgeCandidate> dropped) {
     }
 

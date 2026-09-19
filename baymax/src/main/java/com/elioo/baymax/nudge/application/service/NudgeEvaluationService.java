@@ -122,11 +122,23 @@ public class NudgeEvaluationService implements NudgeUseCase {
                     if (sel.winner() == null) {
                         return Mono.just(0L);
                     }
+                    // DR-20 widens DR-19: a date-bound nudge is never discarded, whether a cap refused it or a tie
+                    // outranked it — the family missing the appointment is the same failure either way. It defers
+                    // and is retried until its date passes; only trend/medicine_changed/silence may be dropped.
                     Mono<Void> losers = Flux.fromIterable(sel.dropped())
-                            .concatMap(c -> record(c, NudgeStatus.DROPPED, "superseded_by_" + sel.winner().rule().dbValue(), null, null, now))
+                            .concatMap(c -> record(c, deferOrDrop(c), "superseded_by_" + sel.winner().rule().dbValue(), null, null, now))
                             .then();
                     return losers.then(place(sel.winner(), now));
                 });
+    }
+
+    /**
+     * DR-20: the single definition of "may this candidate be discarded?". A date-bound trigger (follow_up_due,
+     * course_ending) is never dropped before its date passes — it sends, defers, or expires — however it lost:
+     * refused by a cap or beaten in a tie. Non-date-bound rules can be said on any day, so they drop.
+     */
+    private NudgeStatus deferOrDrop(NudgeCandidate c) {
+        return c.rule().isDateBound() && !c.expired(rules.today()) ? NudgeStatus.DEFERRED : NudgeStatus.DROPPED;
     }
 
     /** Caps, then window, then composition. */
@@ -137,8 +149,7 @@ public class NudgeEvaluationService implements NudgeUseCase {
                     if (cap != null) {
                         // DR-19: a date-bound nudge refused by a cap is deferred to the next day, never discarded —
                         // follow_up_due fires once per follow-up, so a drop meant the appointment was never mentioned
-                        NudgeStatus status = c.rule().isDateBound() && !c.expired(rules.today()) ? NudgeStatus.DEFERRED : NudgeStatus.DROPPED;
-                        return record(c, status, cap, null, null, now).thenReturn(0L);
+                        return record(c, deferOrDrop(c), cap, null, null, now).thenReturn(0L);
                     }
                     if (!policy.inWindow(now)) {
                         return record(c, NudgeStatus.HELD, null, null, policy.nextWindowStart(now), now).thenReturn(0L);
