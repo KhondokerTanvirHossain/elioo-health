@@ -35,6 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -114,7 +115,10 @@ class NudgeEvaluationServiceTest {
         verify(composer).compose(any(), anyString());   // still exactly one
     }
 
-    /** Acceptance: three rules at once → one sends, two are recorded as dropped with the reason. */
+    /**
+     * Acceptance: three rules at once → one sends; the losers are recorded with the reason. DR-20: the date-bound
+     * follow_up_due DEFERS (it is retried tomorrow), the non-date-bound silence DROPS.
+     */
     @Test
     void threeRulesAtOnceSendOneAndDropTwoWithReason() {
         followUpDueInTwoDays();
@@ -125,8 +129,38 @@ class NudgeEvaluationServiceTest {
         ArgumentCaptor<NudgeCandidate> sent = ArgumentCaptor.forClass(NudgeCandidate.class);
         verify(composer).compose(sent.capture(), anyString());
         assertThat(sent.getValue().rule()).isEqualTo(NudgeRule.TREND);
+        assertThat(saved).filteredOn(n -> n.status() == NudgeStatus.DEFERRED).extracting(Nudge::rule, Nudge::dropReason)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(NudgeRule.FOLLOW_UP_DUE, "superseded_by_trend"));
         assertThat(saved).filteredOn(n -> n.status() == NudgeStatus.DROPPED).extracting(Nudge::rule, Nudge::dropReason)
-                .containsExactlyInAnyOrder(org.assertj.core.groups.Tuple.tuple(NudgeRule.FOLLOW_UP_DUE, "superseded_by_trend"), org.assertj.core.groups.Tuple.tuple(NudgeRule.SILENCE, "superseded_by_trend"));
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(NudgeRule.SILENCE, "superseded_by_trend"));
+    }
+
+    /**
+     * DR-20 guard: a date-bound nudge beaten in a tie is never discarded. The follow-up loses to the trend on the
+     * same day, is DEFERRED rather than DROPPED, and the next evaluation consumes the deferral and sends it — so
+     * the family hears about the appointment, a day after the trend they should raise at it.
+     */
+    @Test
+    void aDateBoundNudgeBeatenInATieIsDeferredAndSendsTheNextDay() {
+        followUpDueInTwoDays();
+        when(data.markersOf(P)).thenReturn(Flux.just("creatinine"));
+        when(data.observationsOf(P, "creatinine")).thenReturn(Flux.just(NudgeRulesTest.obs("1.1", "2026-03-01"),
+                NudgeRulesTest.obs("1.3", "2026-06-01"), NudgeRulesTest.obs("1.5", "2026-09-01")));
+
+        assertThat(at("2026-09-19T06:00:00Z").evaluateAll().block()).isEqualTo(1L);
+        assertThat(saved).filteredOn(n -> n.rule() == NudgeRule.FOLLOW_UP_DUE).singleElement()
+                .satisfies(n -> assertThat(n.status()).isEqualTo(NudgeStatus.DEFERRED));
+        assertThat(saved).noneMatch(n -> n.rule() == NudgeRule.FOLLOW_UP_DUE && n.status() == NudgeStatus.DROPPED);
+
+        // The next day only the DEFERRED row is consumable — the trend's row still exists and dedupes, exactly as
+        // in production, so the follow-up no longer has anything to lose to and is finally sent.
+        saved.clear();
+        when(nudges.consumeDeferred(any(), any(), anyString(), any()))
+                .thenAnswer(i -> Mono.just(i.getArgument(1) == NudgeRule.FOLLOW_UP_DUE));
+        ArgumentCaptor<NudgeCandidate> next = ArgumentCaptor.forClass(NudgeCandidate.class);
+        assertThat(at("2026-09-20T06:00:00Z").evaluateAll().block()).isEqualTo(1L);
+        verify(composer, atLeastOnce()).compose(next.capture(), anyString());
+        assertThat(next.getAllValues()).extracting(NudgeCandidate::rule).contains(NudgeRule.FOLLOW_UP_DUE);
     }
 
     /**
