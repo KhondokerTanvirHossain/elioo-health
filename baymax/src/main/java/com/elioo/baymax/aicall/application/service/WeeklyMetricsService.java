@@ -186,7 +186,7 @@ public class WeeklyMetricsService implements WeeklyMetricsUseCase {
         for (var e : agg.entrySet()) {
             long[] a = e.getValue();
             csv.append(e.getKey()).append(',').append(a[0]).append(',').append(a[1]).append(',').append(a[2]).append(',').append(a[3]).append(',')
-                    .append(csvEscape(String.join("|", reasons.getOrDefault(e.getKey(), java.util.List.of())))).append(',').append(a[4]).append(",0").append('\n');
+                    .append(csvEscape(String.join("|", reasons.getOrDefault(e.getKey(), java.util.List.of())))).append(',').append(a[4]).append(",n/a").append('\n');   // replies: unavailable until BMX-10
         }
         return csv.toString();
     }

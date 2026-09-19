@@ -172,14 +172,20 @@ public class NudgeRules {
 
     /** The current monotonic run at the end of the series; a candidate when it is long enough and in the wrong direction. */
     Optional<NudgeCandidate> trendOf(PatientRef patient, String marker, List<ObservationRow> rows, boolean risingIsWrong) {
+        // distinct document dates only (PO ruling 2026-09-19): several readings on one day are one report, and the
+        // first reading of a day stands for it — the rule exists for slow decline nobody noticed, not for a day's repeats
         List<ObservationRow> numeric = new ArrayList<>();
         List<Double> values = new ArrayList<>();
+        LocalDate lastDate = null;
         for (ObservationRow r : rows) {
             Optional<Double> v = numeric(r.value());
-            if (v.isPresent()) {
-                numeric.add(r);
-                values.add(v.get());
+            LocalDate day = LocalDate.ofInstant(r.observedAt(), zone());
+            if (v.isEmpty() || day.equals(lastDate)) {
+                continue;
             }
+            numeric.add(r);
+            values.add(v.get());
+            lastDate = day;
         }
         int n = properties.getNudge().getTrendReadings();
         if (values.size() < n) {
@@ -199,6 +205,11 @@ public class NudgeRules {
         }
         int run = last - start + 1;
         if (run < n) {
+            return Optional.empty();
+        }
+        // three readings inside a week is an acute situation a doctor is already handling (PO ruling 2026-09-19)
+        long spanDays = Duration.between(numeric.get(start).observedAt(), numeric.get(last).observedAt()).toDays();
+        if (spanDays < properties.getNudge().getTrendMinSpanDays()) {
             return Optional.empty();
         }
         // the key is the run's first reading: a fourth reading in the same run dedupes, a reversal starts a new run
