@@ -23,6 +23,7 @@ import reactor.core.publisher.Mono;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -181,7 +182,8 @@ public class ExplanationService implements ExplainDocumentUseCase {
         Document d = facts.document();
         Map<String, String> vars = new LinkedHashMap<>();
         vars.put("document_type", copy.documentType(d.documentType()));
-        vars.put("date", d.docDate() == null ? "" : d.docDate().toString());
+        // dates a family reads are Bangla day-and-month, never ISO (PO ruling 2026-09-19, every outbound message)
+        vars.put("date", d.docDate() == null ? "" : BanglaDate.format(d.docDate(), LocalDate.now(clock)));
         vars.put("patient", facts.patientName());
         vars.put("link", facts.link());
         vars.put("standout", standout(facts, assessed));
@@ -192,7 +194,7 @@ public class ExplanationService implements ExplainDocumentUseCase {
             }
             for (Map<String, Object> f : facts.followUps()) {
                 if (f.get("due_date") != null) {
-                    b.append(copy.bn("detail.follow_up", Map.of("date", String.valueOf(f.get("due_date"))))).append('\n');
+                    b.append(copy.bn("detail.follow_up", Map.of("date", BanglaDate.format(String.valueOf(f.get("due_date")), LocalDate.now(clock))))).append('\n');
                 }
             }
             if (assessed.level() == Urgency.NOW) {

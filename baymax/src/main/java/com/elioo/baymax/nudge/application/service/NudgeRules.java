@@ -9,6 +9,7 @@ import com.elioo.baymax.nudge.application.port.out.NudgePort;
 import com.elioo.baymax.nudge.domain.NudgeCandidate;
 import com.elioo.baymax.nudge.domain.NudgeRule;
 import com.elioo.baymax.nudge.domain.NudgeUrgency;
+import com.elioo.baymax.outbound.application.service.BanglaDate;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -66,9 +67,9 @@ public class NudgeRules {
         return data.openFollowUpsDueOn(due).map(f -> {
             Map<String, String> vars = new LinkedHashMap<>();
             vars.put("instruction", nz(f.instruction()));
-            vars.put("due_date", f.dueDate().toString());
-            return new NudgeCandidate(NudgeRule.FOLLOW_UP_DUE, f.familyId(), f.patientId(), "follow_up:" + f.id(), NudgeUrgency.ROUTINE,
-                    vars, numbersOf(vars.values()), List.of(f.cropKey()));
+            vars.put("due_date", BanglaDate.format(f.dueDate(), today()));
+            return new NudgeCandidate(NudgeRule.FOLLOW_UP_DUE, f.familyId(), f.patientId(), null, "follow_up:" + f.id(),
+                    NudgeUrgency.ROUTINE, vars, numbersOf(vars.values()), List.of(f.cropKey()), f.dueDate());
         });
     }
 
@@ -94,9 +95,9 @@ public class NudgeRules {
             vars.put("frequency_text", nz(m.frequencyText()));
             vars.put("timing_text", nz(m.timingText()));
             vars.put("duration_text", nz(m.durationText()));
-            vars.put("end_date", end.toString());
-            return Mono.just(new NudgeCandidate(NudgeRule.COURSE_ENDING, m.familyId(), m.patientId(), "medication:" + m.id(),
-                    NudgeUrgency.ROUTINE, vars, numbersOf(vars.values()), List.of(m.cropKey())));
+            vars.put("end_date", BanglaDate.format(end, today()));
+            return Mono.just(new NudgeCandidate(NudgeRule.COURSE_ENDING, m.familyId(), m.patientId(), null, "medication:" + m.id(),
+                    NudgeUrgency.ROUTINE, vars, numbersOf(vars.values()), List.of(m.cropKey()), end));
         });
     }
 
@@ -135,9 +136,9 @@ public class NudgeRules {
             MedicationRow any = now.isEmpty() ? before.get(0) : now.get(0);
             Map<String, String> vars = new LinkedHashMap<>();
             vars.put("changes", String.join("\n", lines));
-            vars.put("date", any.docDate() == null ? "" : any.docDate().toString());
-            return Mono.just(new NudgeCandidate(NudgeRule.MEDICINE_CHANGED, any.familyId(), patientId, "document:" + documentId,
-                    NudgeUrgency.THIS_WEEK, vars, numbersOf(vars.values()), crops));
+            vars.put("date", any.docDate() == null ? "" : BanglaDate.format(any.docDate(), today()));
+            return Mono.just(new NudgeCandidate(NudgeRule.MEDICINE_CHANGED, any.familyId(), patientId, null, "document:" + documentId,
+                    NudgeUrgency.THIS_WEEK, vars, numbersOf(vars.values()), crops, null));
         });
     }
 
@@ -240,12 +241,14 @@ public class NudgeRules {
         Map<String, String> vars = new LinkedHashMap<>();
         vars.put("marker", nz(latest.name()));
         vars.put("values", String.join(" → ", shown));
-        vars.put("count", String.valueOf(window.size()));
-        vars.put("first_date", LocalDate.ofInstant(window.get(0).observedAt(), zone()).toString());
-        vars.put("last_date", LocalDate.ofInstant(latest.observedAt(), zone()).toString());
-        vars.put("direction", direction > 0 ? "up" : "down");
-        return Optional.of(new NudgeCandidate(NudgeRule.TREND, patient.familyId(), patient.patientId(),
-                "trend:" + marker + ":" + numeric.get(start).id(), NudgeUrgency.THIS_WEEK, vars, numbersOf(vars.values()), crops));
+        vars.put("count", BanglaDate.digits(String.valueOf(window.size())));
+        vars.put("first_date", BanglaDate.format(LocalDate.ofInstant(window.get(0).observedAt(), zone()), today()));
+        vars.put("last_date", BanglaDate.format(LocalDate.ofInstant(latest.observedAt(), zone()), today()));
+        // the direction in words, not "changing in one direction" (PO ruling 2026-09-19)
+        vars.put("direction", direction > 0 ? "একটু একটু করে বাড়ছে" : "একটু একটু করে কমছে");
+        vars.put("direction_en", direction > 0 ? "creeping up" : "drifting down");
+        return Optional.of(new NudgeCandidate(NudgeRule.TREND, patient.familyId(), patient.patientId(), null,
+                "trend:" + marker + ":" + numeric.get(start).id(), NudgeUrgency.THIS_WEEK, vars, numbersOf(vars.values()), crops, null));
     }
 
     static Optional<Double> numeric(String value) {
@@ -283,15 +286,15 @@ public class NudgeRules {
     private NudgeCandidate silenceCandidate(PatientRef patient, Instant lastDocumentAt) {
         Map<String, String> vars = new LinkedHashMap<>();
         long days = Duration.between(lastDocumentAt, clock.instant()).toDays();
-        vars.put("days", String.valueOf(days));
-        vars.put("last_date", LocalDate.ofInstant(lastDocumentAt, zone()).toString());
-        return new NudgeCandidate(NudgeRule.SILENCE, patient.familyId(), patient.patientId(), "silence:" + today(), NudgeUrgency.ROUTINE,
-                vars, numbersOf(vars.values()), List.of());
+        vars.put("days", BanglaDate.digits(String.valueOf(days)));
+        vars.put("last_date", BanglaDate.format(LocalDate.ofInstant(lastDocumentAt, zone()), today()));
+        return new NudgeCandidate(NudgeRule.SILENCE, patient.familyId(), patient.patientId(), null, "silence:" + today(),
+                NudgeUrgency.ROUTINE, vars, numbersOf(vars.values()), List.of(), null);
     }
 
     // ---- helpers ----------------------------------------------------------------------------------------------
 
-    static Set<String> numbersOf(Iterable<String> strings) {
+    public static Set<String> numbersOf(Iterable<String> strings) {
         Set<String> out = new LinkedHashSet<>();
         for (String s : strings) {
             if (s == null) {

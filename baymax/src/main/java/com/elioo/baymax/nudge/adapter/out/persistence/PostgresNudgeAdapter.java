@@ -56,6 +56,14 @@ public class PostgresNudgeAdapter implements NudgePort {
     }
 
     @Override
+    public Mono<Boolean> consumeDeferred(UUID patientId, NudgeRule rule, String triggerKey, Instant at) {
+        return db.sql("UPDATE " + T + " SET status = 'dropped', drop_reason = 'superseded_by_retry', resolved_at = :at "
+                        + "WHERE patient_id = :p AND rule = :r AND trigger_key = :k AND status = 'deferred'")
+                .bind("p", patientId).bind("r", rule.dbValue()).bind("k", triggerKey).bind("at", at(at))
+                .fetch().rowsUpdated().map(n -> n > 0);
+    }
+
+    @Override
     public Mono<Long> countedSince(UUID patientId, Instant since) {
         return db.sql("SELECT count(*) FROM " + T + " WHERE patient_id = :p AND status IN ('sent', 'gated') AND COALESCE(resolved_at, created_at) >= :since")
                 .bind("p", patientId).bind("since", at(since)).map((row, meta) -> row.get(0, Long.class)).one();

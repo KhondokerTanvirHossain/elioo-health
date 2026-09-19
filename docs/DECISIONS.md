@@ -272,3 +272,24 @@ with `hold_until` = next 09:00 Dhaka and released by the hourly job (caps re-che
 (default true) parks every nudge PENDING regardless of `gate-mode`. The opt-out link carries an HMAC of the patient id under
 `BAYMAX_AUTH_HMAC_SECRET`; opt-out is stored on `patient_profile` / `family_account` (`nudges_opted_out_at`) and checked
 before any rule runs, so an opted-out patient — silence rule included — is never evaluated.
+
+## DR-19 | 2026-09-19 | Nudge tie-break order, and deferral instead of dropping for date-bound nudges
+
+**Decision:** On equal urgency, nudge rules are prioritised follow_up_due > course_ending > medicine_changed >
+trend > silence; date-bound nudges dropped by a cap are deferred to the next day rather than discarded.
+
+**Why:** follow_up_due fires once per follow-up, so a cap drop meant the family was never told about the appointment.
+
+**Supersedes:** refines DR-18.
+
+*Engineering note:* the order is `NudgeRule`'s declaration order and `NudgePolicy.select` sorts by it after urgency.
+`NudgeRule.isDateBound()` is true for follow_up_due and course_ending; a cap gives those rows status `deferred`
+(V11) with the cap as the reason, carrying the trigger's `deadline`. The next evaluation calls
+`NudgePort.consumeDeferred`, which marks the old row `dropped` with `superseded_by_retry` and lets the trigger be
+attempted again; `NudgeCandidate.expired(today)` stops the retry once the date has passed. The export counts
+`deferred` in its own column, so a weekly log never reads a postponement as a refusal.
+
+*Copy rulings the same day, standing for every outbound message:* every message names the patient as the family
+entered it (`{patient}`), never "আপনার" — the reader is the eldest child and the patient is their parent; dates
+render as Bangla day-and-month via `BanglaDate` ("১ জুন"), never ISO; the trend template states the direction in
+words ("একটু একটু করে বাড়ছে" / "কমছে").

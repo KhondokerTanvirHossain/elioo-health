@@ -150,7 +150,7 @@ class ExplanationServiceTest {
         done(NORMAL);
         StepVerifier.create(service.explain(DOC)).assertNext(m -> {
             assertThat(m.urgency()).isEqualTo(Urgency.ROUTINE);
-            assertThat(m.body()).contains("সব কিছু স্বাভাবিক সীমার মধ্যে আছে").contains("ল্যাব রিপোর্ট").contains("2026-09-14").contains("Ma");
+            assertThat(m.body()).contains("সব কিছু স্বাভাবিক সীমার মধ্যে আছে").contains("ল্যাব রিপোর্ট").contains("১৪ সেপ্টেম্বর").contains("Ma");
             assertThat(m.body().length()).isLessThanOrEqualTo(600);
         }).verifyComplete();
         verify(metered, never()).invoke(any(), any(), any(LlmRequest.class));
