@@ -81,6 +81,12 @@ Key files when changing behaviour:
   the bean. Before pushing a PR that adds directories, `git status --ignored --short -- <module>/src | grep '^!!'`
   must print nothing — this check is standard now. Sixth flattering failure.
 - Regression guards: a test written to catch a specific bug is replayed against the pre-fix source before it counts as done. A guard that passes on the broken code is worse than none — it was written once here, anchored on the wrong text, extracted an empty method body, and went green over the very bug it existed to catch.
+- Any path with a database constraint is exercised against a real database (Testcontainers), never only a mocked
+  port. A mock that cannot fail the way production fails is not a test of that path. `NudgePort` was mocked with a
+  `HashSet` ledger where a duplicate `add` is a silent no-op; Postgres raises a unique-constraint violation on the
+  same operation, so defer → consume → re-insert was green in the unit test and 500'd on production with the
+  deferral already consumed and the family never told about their appointment (DR-22). Eighth flattering failure,
+  and the second where the guard itself was green for the wrong reason.
 - Staging: never `git add -A` or `git add .` in this repo — stage explicit paths. It has caused three
   incidents: an unrelated runbook swept into a feature branch, and a `.env.local` backup holding live API
   keys staged for commit.

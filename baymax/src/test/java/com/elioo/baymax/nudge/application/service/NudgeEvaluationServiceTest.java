@@ -34,6 +34,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
@@ -197,6 +198,51 @@ class NudgeEvaluationServiceTest {
             assertThat(n.status()).isEqualTo(NudgeStatus.DROPPED);
             assertThat(n.dropReason()).isEqualTo("weekly_cap");
         });
+    }
+
+    /**
+     * DR-22 guard: one patient's failure must not cost every other family their nudges for that run. Before this,
+     * a duplicate-key error on the first patient aborted the whole evaluation — and nobody would have noticed
+     * until a pilot family asked why they had heard nothing.
+     */
+    @Test
+    void onePatientsFailureDoesNotStopTheRestOfTheRun() {
+        UUID p2 = UUID.fromString("22222222-2222-4222-8222-222222222222");
+        UUID f2 = UUID.fromString("33333333-3333-4333-8333-333333333333");
+        when(data.patients()).thenReturn(Flux.just(
+                new PatientRef(P, F, List.of("diabetes"), null, null),
+                new PatientRef(p2, f2, List.of("diabetes"), null, null)));
+        when(nudges.countedSince(eq(p2), any())).thenReturn(Mono.just(0L));
+        when(data.markersOf(p2)).thenReturn(Flux.empty());
+        when(data.lastDocumentAt(p2)).thenReturn(Mono.empty());
+        when(records.findPatient(p2)).thenReturn(Mono.just(new com.elioo.baymax.healthrecord.domain.PatientProfile(
+                p2, f2, "বাবা", 70, com.elioo.baymax.healthrecord.domain.PatientProfile.Sex.MALE, List.of("diabetes"), Instant.EPOCH, Instant.EPOCH)));
+        // both patients have a follow-up due; the FIRST one blows up the way a unique-constraint violation did
+        followUpDueInTwoDays();
+        when(data.openFollowUpsDueOn(any())).thenAnswer(i -> Flux.just(
+                new NudgeDataPort.FollowUpRow(UUID.fromString("11111111-1111-1111-1111-111111111111"), P, F, UUID.randomUUID(), "Follow up", i.getArgument(0), "c"),
+                new NudgeDataPort.FollowUpRow(UUID.fromString("44444444-4444-4444-4444-444444444444"), p2, f2, UUID.randomUUID(), "Follow up", i.getArgument(0), "c")));
+        // The first patient's save fails the way the duplicate-key violation did in production. doAnswer, not
+        // when(...): when() re-invokes the mock, which would run the @BeforeEach stub with a null argument.
+        org.mockito.Mockito.doAnswer(i -> {
+            Nudge n = i.getArgument(0);
+            if (P.equals(n.patientId())) {
+                return Mono.error(new org.springframework.dao.DuplicateKeyException("duplicate key value violates unique constraint"));
+            }
+            ledger.add(n.patientId() + "|" + n.rule() + "|" + n.triggerKey());
+            Nudge withId = new Nudge(UUID.randomUUID(), n.familyId(), n.patientId(), n.rule(), n.triggerKey(), n.urgency(),
+                    n.status(), n.dropReason(), n.vars(), n.messageId(), n.holdUntil(), n.createdAt(), n.resolvedAt());
+            saved.add(withId);
+            return Mono.just(withId);
+        }).when(nudges).save(any());
+
+        NudgeEvaluationService service = at("2026-09-19T06:00:00Z");
+        // the run completes rather than erroring out, and the healthy patient still gets their nudge
+        assertThat(service.evaluateAll().block()).isEqualTo(1L);
+        assertThat(service.lastRunFailedPatients()).isEqualTo(1);
+        ArgumentCaptor<NudgeCandidate> sent = ArgumentCaptor.forClass(NudgeCandidate.class);
+        verify(composer).compose(sent.capture(), anyString());
+        assertThat(sent.getValue().patientId()).isEqualTo(p2);
     }
 
     /** PO ruling 2026-09-19: every nudge names the patient as the family entered it. */
