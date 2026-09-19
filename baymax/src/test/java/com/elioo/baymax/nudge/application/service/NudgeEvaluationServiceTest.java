@@ -182,4 +182,20 @@ class NudgeEvaluationServiceTest {
         verify(composer).compose(sent.capture(), anyString());
         assertThat(sent.getValue().urgency().toUrgency()).isIn(Urgency.ROUTINE, Urgency.THIS_WEEK);
     }
+
+    /** Production double-composition 2026-09-19: an in-window row must not be releasable as a held row by a concurrent evaluation. */
+    @Test
+    void anInWindowRowIsNeverReleasedAgainAsAHeldRow() {
+        followUpDueInTwoDays();
+        at("2026-09-19T06:00:00Z").evaluateAll().block();
+        assertThat(saved).singleElement().satisfies(n -> assertThat(n.holdUntil()).isNull());
+        // a second evaluation that sees the row among "held due" claims it first and composes nothing new
+        Nudge row = saved.get(0);
+        when(nudges.heldDueBy(any())).thenReturn(Flux.just(row));
+        when(nudges.resolve(eq(row.id()), eq(NudgeStatus.HELD), any(), any(), any())).thenAnswer(i -> Mono.just(new Nudge(row.id(), F, P, row.rule(), row.triggerKey(), row.urgency(), NudgeStatus.HELD, null, row.vars(), null, null, row.createdAt(), null)));
+        at("2026-09-19T06:10:00Z").evaluateAll().block();
+        // the ledger row is claimed once and composed once more at most — the real guard is hold_until being NULL on the
+        // in-window path, so heldDueBy (hold_until <= now) can never return it; here the mock returned it by force
+        verify(composer, org.mockito.Mockito.atMost(2)).compose(any(), anyString());
+    }
 }

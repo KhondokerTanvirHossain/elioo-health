@@ -160,4 +160,16 @@ class NudgeRulesTest {
         withRepeat.add(obs("1.9", "2026-09-15"));
         assertThat(rules.trendOf(chronic, "creatinine", withRepeat, true).get().vars().get("values")).isEqualTo("1.1 mg/dL → 1.3 mg/dL → 1.5 mg/dL");
     }
+
+    /** Production false positive 2026-09-19: identical prescriptions, "Tab. Amlodipine" on one run and "Amlodipine" on the next. */
+    @Test
+    void aFormWordOrAPrefixIsNotAChangedMedicine() {
+        UUID newer = UUID.randomUUID(), older = UUID.randomUUID();
+        when(data.medicationsOfPatient(P)).thenReturn(Flux.just(
+                med(newer, "2026-09-19", "Amlodipine", "5 mg", "1+0+0"), med(newer, "2026-09-19", "Losartan", "50 mg", "0+0+1"),
+                med(older, "2026-09-19", "Tab. Amlodipine", "5 mg", "1+0+0"), med(older, "2026-09-19", "Tab. Losartan 50", "50 mg", "0+0+1")));
+        assertThat(rules.medicineChanged(P, newer).block()).isNull();
+        assertThat(NudgeRules.key("Tab. Amlodipine")).isEqualTo("amlodipine");
+        assertThat(NudgeRules.key("ট্যাব. নাপা ৫০০")).isEqualTo("নাপা ৫০০");
+    }
 }

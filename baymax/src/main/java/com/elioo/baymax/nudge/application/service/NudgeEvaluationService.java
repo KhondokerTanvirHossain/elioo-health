@@ -117,7 +117,9 @@ public class NudgeEvaluationService implements NudgeUseCase {
                     if (!policy.inWindow(now)) {
                         return record(c, NudgeStatus.HELD, null, null, policy.nextWindowStart(now), now).thenReturn(0L);
                     }
-                    return record(c, NudgeStatus.HELD, null, null, now, now).flatMap(row -> send(row, c)).thenReturn(1L);
+                    // inside the window: the row exists before composition (dedupe) but carries no hold_until, so a
+                    // concurrent evaluation's releaseHeld can never compose the same trigger a second time
+                    return record(c, NudgeStatus.HELD, null, null, null, now).flatMap(row -> send(row, c)).thenReturn(1L);
                 });
     }
 
@@ -127,6 +129,8 @@ public class NudgeEvaluationService implements NudgeUseCase {
             return Mono.empty();
         }
         return nudges.heldDueBy(now)
+                // claim the row first (resolve clears hold_until), so two evaluations never compose the same hold
+                .concatMap(claimed -> nudges.resolve(claimed.id(), NudgeStatus.HELD, null, null, now))
                 .concatMap(row -> Mono.zip(nudges.countedSince(row.patientId(), policy.sevenDaysAgo(now)), nudges.countedSince(row.patientId(), policy.startOfToday(now)))
                         .flatMap(t -> {
                             String cap = policy.capReason(t.getT1(), t.getT2());
