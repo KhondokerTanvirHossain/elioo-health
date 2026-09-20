@@ -90,6 +90,13 @@ Key files when changing behaviour:
   asks `information_schema` which tables carry a family or patient id and sweeps every one, so a table added in a
   later migration cannot be silently missed. A derived check needs its own guard against emptiness: if the query
   returns no tables the sweep passes vacuously, which is the same defect one level up.
+- **A test that works around a constraint, or whose name encodes surprising behaviour, is evidence of a defect
+  rather than of intent.** Distinct from the ten above: those were checks that could not fail, this is a check
+  that described the bug and called it correct. `PostgresHealthRecordAdapterTest` deleted `stored_object` and
+  `document` by hand before calling the port, commenting "documents reference the family" — it knew the
+  constraint and stepped around it. `FamilyAccountServiceTest.deleteFamilyRemovesImagesThenRows...` named the
+  dangerous ordering and verified it. Both documented delete-on-request being broken and held it in place.
+  **When a test has to step around something to pass, the thing it stepped around is the finding.**
 - **A red replay must fail ON the defect, not merely fail.** Read the failure message and confirm it names the
   bug: `expected: DEFERRED but was: DROPPED`, `duplicate key value violates unique constraint`. A guard whose
   replay died on a `NullPointerException` in its own Mockito matcher was red, looked like a successful replay and
