@@ -30,6 +30,7 @@ public class BaymaxProperties {
     private Free free = new Free();
     private Extract extract = new Extract();
     private Auth auth = new Auth();
+    private Wa wa = new Wa();
     private Outbound outbound = new Outbound();
     private Nudge nudge = new Nudge();
     private List<Marker> markers = new ArrayList<>();
@@ -124,6 +125,36 @@ public class BaymaxProperties {
         private String cookieName = "baymax_session";
         /** Secure attribute on the cookie. Browsers exempt http://localhost, so this stays true in dev too. */
         private boolean cookieSecure = true;
+    }
+
+    /**
+     * The WhatsApp channel (BMX-10 phase 1). Entirely off unless {@link #enabled} is true: with it unset every
+     * existing behaviour is unchanged, which is the RUNBOOK contract. OTP is deliberately NOT routed here —
+     * {@code auth.otpDelivery} stays {@code log}, because a blank or expired token must never become a login
+     * outage.
+     */
+    @Data
+    public static class Wa {
+        /** Master switch. False (the default) means no webhook route, no outbound, nothing to misconfigure. */
+        private boolean enabled = false;
+        /** Cloud API phone number id (non-secret; it identifies the sending number, it does not authorise). */
+        private String phoneNumberId = "";
+        /** WhatsApp Business Account id (non-secret); needed for the subscribed_apps call. */
+        private String wabaId = "";
+        /** System-user access token. Blank with the channel enabled = fail closed at startup, never silently. */
+        private String token = "";
+        /** App secret, for validating X-Hub-Signature-256 on every inbound POST. */
+        private String appSecret = "";
+        /** The string Meta echoes back during the GET verification handshake; ours to invent, must match there. */
+        private String verifyToken = "";
+        /**
+         * Phase-1 guard: outbound refuses any number not on this list, and says so in the log. Enforced in code
+         * rather than relying on the Meta test number's own restriction, which disappears the moment we move to
+         * a production number.
+         */
+        private List<String> allowlist = new java.util.ArrayList<>();
+        /** Pinned in config, not the environment: this is a code-compatibility concern, not a deployment secret. */
+        private String graphVersion = "v21.0";
     }
 
     /** Explanation, urgency, safety and the review gate (BMX-6, DR-13). */
