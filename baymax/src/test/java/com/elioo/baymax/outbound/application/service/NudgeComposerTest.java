@@ -42,6 +42,10 @@ import static org.mockito.Mockito.when;
 /** A nudge on the BMX-6 path: one NUDGE model call, the checklist with the candidate's numbers, the gate, the opt-out line. */
 class NudgeComposerTest {
 
+    /** what save() last returned, so find() can hand the released row back (V13 path) */
+    private final java.util.concurrent.atomic.AtomicReference<OutboundMessage> lastSaved =
+            new java.util.concurrent.atomic.AtomicReference<>();
+
     private static final Instant NOW = Instant.parse("2026-09-19T06:00:00Z");
     private static final UUID F = UUID.randomUUID(), P = UUID.randomUUID();
     private final OutboundMessagePort messages = mock(OutboundMessagePort.class);
@@ -67,11 +71,17 @@ class NudgeComposerTest {
                 new LlmResponse(replies.isEmpty() ? "" : replies.pop(), "stop", new TokenUsage(300, 80), "claude-sonnet-5", null, "anthropic", 700L)));
         when(messages.save(any())).thenAnswer(i -> {
             OutboundMessage m = i.getArgument(0);
-            return Mono.just(new OutboundMessage(UUID.randomUUID(), m.familyId(), m.patientId(), m.documentId(), m.kind(), m.urgency(),
+            lastSaved.set(new OutboundMessage(UUID.randomUUID(), m.familyId(), m.patientId(), m.documentId(), m.kind(),
+                    m.urgency(), m.urgencyReasons(), m.body(), m.gateStatus(), m.reviewer(), m.rejectReason(),
+                    m.decidedAt(), m.sentAt(), m.createdAt()));
+            return Mono.just(new OutboundMessage(lastSaved.get().id(), m.familyId(), m.patientId(), m.documentId(), m.kind(), m.urgency(),
                     m.urgencyReasons(), m.body(), m.gateStatus(), m.reviewer(), m.rejectReason(), m.decidedAt(), m.sentAt(), m.createdAt()));
         });
         when(reviewer.notifyPending(any())).thenReturn(Mono.empty());
-        when(delivery.deliver(any())).thenReturn(Mono.empty());
+        // the log adapter's outcome; the released path then stamps sent_at and re-reads the row
+        when(delivery.deliver(any())).thenReturn(Mono.just(com.elioo.baymax.outbound.domain.DeliveryOutcome.logged()));
+        when(messages.markSent(any(), any())).thenReturn(Mono.empty());
+        when(messages.find(any())).thenAnswer(i -> Mono.justOrEmpty(lastSaved.get()));
     }
 
     /** Acceptance: gate-nudges=true → nothing sends without approve, whatever gate-mode says. */
@@ -113,8 +123,11 @@ class NudgeComposerTest {
         replies.push("মা-এর ফলো-আপের তারিখ কাছে এসে গেছে: ২১ সেপ্টেম্বর। প্রেসক্রিপশনে লেখা: \"Follow up after 1 month\"।");
         OutboundMessage m = composer.compose(follow, LINK).block();
         assertThat(m.gateStatus()).isEqualTo(OutboundMessage.GateStatus.RELEASED);
-        assertThat(m.sentAt()).isEqualTo(NOW);
         verify(delivery).deliver(any());
+        // V13: the row is saved with sentAt NULL and only stamped after delivery answers — asserting the call
+        // rather than the returned object, which is the mock's echo and would prove nothing
+        verify(messages).save(org.mockito.ArgumentMatchers.argThat(saved -> saved.sentAt() == null));
+        verify(messages).markSent(any(), eq(NOW));
     }
 
     /** PO ruling 2026-09-19: the cap covers what the family receives, opt-out line included. */

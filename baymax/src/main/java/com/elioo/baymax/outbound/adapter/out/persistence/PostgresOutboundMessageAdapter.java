@@ -49,12 +49,12 @@ public class PostgresOutboundMessageAdapter implements OutboundMessagePort {
     }
 
     @Override
-    public Mono<OutboundMessage> decide(UUID id, OutboundMessage.GateStatus status, String reviewer, String reason, Instant decidedAt, Instant sentAt) {
-        var spec = db.sql("UPDATE " + T + " SET gate_status = :status, reviewer = :reviewer, reject_reason = :reason, decided_at = :decided, "
-                        + "sent_at = :sent WHERE id = :id RETURNING " + COLS)
+    public Mono<OutboundMessage> decide(UUID id, OutboundMessage.GateStatus status, String reviewer, String reason, Instant decidedAt) {
+        // sent_at is deliberately absent from this statement: a decision is not a delivery (V14)
+        var spec = db.sql("UPDATE " + T + " SET gate_status = :status, reviewer = :reviewer, reject_reason = :reason, "
+                        + "decided_at = :decided WHERE id = :id RETURNING " + COLS)
                 .bind("status", status.dbValue()).bind("reviewer", reviewer).bind("decided", at(decidedAt)).bind("id", id);
         spec = reason == null ? spec.bindNull("reason", String.class) : spec.bind("reason", reason);
-        spec = sentAt == null ? spec.bindNull("sent", OffsetDateTime.class) : spec.bind("sent", at(sentAt));
         return spec.map((row, meta) -> from(row)).one();
     }
 

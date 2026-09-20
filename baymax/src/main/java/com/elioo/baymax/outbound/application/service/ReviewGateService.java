@@ -45,7 +45,7 @@ public class ReviewGateService implements ReviewGateUseCase {
         Instant now = clock.instant();
         return pendingOrError(messageId)
                 // decidedAt is set here; sentAt stays NULL until a provider actually accepts the message
-                .flatMap(m -> messages.decide(messageId, OutboundMessage.GateStatus.APPROVED, reviewer, null, now, null))
+                .flatMap(m -> messages.decide(messageId, OutboundMessage.GateStatus.APPROVED, reviewer, null, now))
                 .doOnNext(m -> log.info("[baymax] message approved id={} by={} urgency={}", m.id(), reviewer, m.urgency()))
                 .flatMap(m -> delivery.deliver(m)
                         .onErrorResume(e -> {
@@ -67,7 +67,7 @@ public class ReviewGateService implements ReviewGateUseCase {
         }
         Instant now = clock.instant();
         return pendingOrError(messageId)
-                .flatMap(m -> messages.decide(messageId, OutboundMessage.GateStatus.REJECTED, reviewer, reason, now, null))
+                .flatMap(m -> messages.decide(messageId, OutboundMessage.GateStatus.REJECTED, reviewer, reason, now))
                 .doOnNext(m -> log.info("[baymax] message rejected id={} by={} urgency={} reason={}", m.id(), reviewer, m.urgency(), reason));
     }
 

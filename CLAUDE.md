@@ -97,6 +97,13 @@ Key files when changing behaviour:
   constraint and stepped around it. `FamilyAccountServiceTest.deleteFamilyRemovesImagesThenRows...` named the
   dangerous ordering and verified it. Both documented delete-on-request being broken and held it in place.
   **When a test has to step around something to pass, the thing it stepped around is the finding.**
+- **A fix scoped to the path under discussion, rather than to the invariant it protects, leaves the same defect
+  live on every other path.** When a rule is agreed, find every writer of the field it governs and assert the
+  rule once, centrally, where all of them meet it. V13 gave `sent_at` the meaning "the provider accepted it" and
+  was wired into `ReviewGateService.approve` — the path being discussed. Both release paths kept stamping it at
+  save time and discarding the delivery outcome, so the first real WhatsApp send produced a row saying
+  `delivery_status` NULL with no `wamid` for a message that had demonstrably gone out. The rule now lives in a
+  CHECK constraint (V14): no code path, present or future, can store a row claiming a delivery it never got.
 - **A red replay must fail ON the defect, not merely fail.** Read the failure message and confirm it names the
   bug: `expected: DEFERRED but was: DROPPED`, `duplicate key value violates unique constraint`. A guard whose
   replay died on a `NullPointerException` in its own Mockito matcher was red, looked like a successful replay and

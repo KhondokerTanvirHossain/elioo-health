@@ -46,6 +46,10 @@ import static org.mockito.Mockito.when;
 /** The composition pipeline with every port mocked: skeleton, model, checklist, gate, delivery. */
 class ExplanationServiceTest {
 
+    /** what save() last returned, so find() can hand the released row back (V13 path) */
+    private final java.util.concurrent.atomic.AtomicReference<OutboundMessage> lastSaved =
+            new java.util.concurrent.atomic.AtomicReference<>();
+
     private static final Instant NOW = Instant.parse("2026-09-18T10:00:00Z");
     private static final UUID DOC = UUID.randomUUID(), PATIENT = UUID.randomUUID(), FAMILY = UUID.randomUUID();
 
@@ -72,11 +76,17 @@ class ExplanationServiceTest {
                 new LlmResponse(replies.isEmpty() ? "" : replies.pop(), "stop", new TokenUsage(500, 120), "claude-sonnet-5", null, "anthropic", 900L)));
         when(messages.save(any())).thenAnswer(i -> {
             OutboundMessage m = i.getArgument(0);
-            return Mono.just(new OutboundMessage(UUID.randomUUID(), m.familyId(), m.patientId(), m.documentId(), m.kind(), m.urgency(),
+            lastSaved.set(new OutboundMessage(UUID.randomUUID(), m.familyId(), m.patientId(), m.documentId(), m.kind(),
+                    m.urgency(), m.urgencyReasons(), m.body(), m.gateStatus(), m.reviewer(), m.rejectReason(),
+                    m.decidedAt(), m.sentAt(), m.createdAt()));
+            return Mono.just(new OutboundMessage(lastSaved.get().id(), m.familyId(), m.patientId(), m.documentId(), m.kind(), m.urgency(),
                     m.urgencyReasons(), m.body(), m.gateStatus(), m.reviewer(), m.rejectReason(), m.decidedAt(), m.sentAt(), m.createdAt()));
         });
         when(reviewer.notifyPending(any())).thenReturn(Mono.empty());
-        when(delivery.deliver(any())).thenReturn(Mono.empty());
+        // the log adapter's outcome; the released path then stamps sent_at and re-reads the row
+        when(delivery.deliver(any())).thenReturn(Mono.just(com.elioo.baymax.outbound.domain.DeliveryOutcome.logged()));
+        when(messages.markSent(any(), any())).thenReturn(Mono.empty());
+        when(messages.find(any())).thenAnswer(i -> Mono.justOrEmpty(lastSaved.get()));
         when(records.findPatient(PATIENT)).thenReturn(Mono.just(new PatientProfile(PATIENT, FAMILY, "Ma", 74, PatientProfile.Sex.FEMALE, List.of(), NOW, NOW)));
         when(documents.followUpsOf(DOC)).thenReturn(Flux.empty());
         when(messages.consecutiveRetakes(FAMILY)).thenReturn(Mono.just(0L));
