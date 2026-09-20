@@ -132,9 +132,14 @@ class PostgresHealthRecordAdapterTest {
             sql("insert into baymax.ai_call_log (document_id, purpose, provider, model) values ('" + doc + "', 'extract', 'groq', 'm')");
             List<UUID> docs = port.documentIdsOf(family.id()).collectList().block();
             assertThat(docs).hasSize(4);
-            sql("delete from baymax.stored_object where family_id = '" + family.id() + "'"); // what DocumentStorageService does first
-            sql("delete from baymax.document where family_id = '" + family.id() + "'"); // documents reference the family
-            assertThat(port.deleteFamily(family.id(), docs).block()).isEqualTo(1L);
+            // These two lines used to clear stored_object and document by hand before calling the port, with a
+            // comment noting that "documents reference the family" — the test worked around the bug instead of
+            // exposing it. deleteFamily owns the whole graph now, so the port is left to do its own job.
+            // counts are per table now, so the receipt reports what was removed rather than one number
+            com.elioo.baymax.healthrecord.domain.DeletionCounts removed = port.deleteFamily(family.id(), docs).block();
+            assertThat(removed.of("patient_profile")).isEqualTo(1L);
+            assertThat(removed.of("family_account")).isEqualTo(1L);
+            assertThat(removed.byTable()).containsKey("document");
             assertThat(scalar("select count(*) from baymax.share_member")).isEqualTo("0");
             assertThat(scalar("select count(*) from baymax.patient_profile")).isEqualTo("0");
             assertThat(scalar("select count(*) from baymax.family_account")).isEqualTo("0");

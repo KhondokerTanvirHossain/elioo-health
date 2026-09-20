@@ -6,6 +6,7 @@ import com.elioo.baymax.family.application.port.in.FamilyAccountUseCase.AddPatie
 import com.elioo.baymax.family.application.port.in.FamilyAccountUseCase.CreateFamilyCommand;
 import com.elioo.baymax.family.application.port.in.FreeTierUseCase;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
+import com.elioo.baymax.healthrecord.domain.DeletionCounts;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.healthrecord.domain.ShareMember;
@@ -184,13 +185,14 @@ class FamilyAccountServiceTest {
     }
 
     @Test
-    void deleteFamilyRemovesImagesThenRowsAndReportsCounts() {
+    void deleteFamilyCommitsRowsBeforeTouchingImagesAndReportsCounts() {
         UUID docA = UUID.randomUUID();
         UUID docB = UUID.randomUUID();
         when(records.findFamily(familyId)).thenReturn(Mono.just(family));
         when(records.documentIdsOf(familyId)).thenReturn(Flux.just(docA, docB));
         when(storage.deleteFamily(familyId)).thenReturn(Mono.just(new DeletionReport(familyId + "/", 5, 5)));
-        when(records.deleteFamily(eq(familyId), any())).thenReturn(Mono.just(2L));
+        when(records.deleteFamily(eq(familyId), any())).thenReturn(Mono.just(
+                DeletionCounts.empty().with("patient_profile", 2L).with("document", 2L)));
 
         StepVerifier.create(service.deleteFamily(familyId))
                 .assertNext(r -> {
@@ -202,10 +204,13 @@ class FamilyAccountServiceTest {
                 })
                 .verifyComplete();
 
+        // Rows FIRST, images after. The reverse order destroyed images and then rolled the SQL back on failure,
+        // leaving records that claimed images existed which were already gone — silent and unrecoverable. This
+        // test previously asserted that dangerous order and so locked the bug in.
         InOrder order = inOrder(storage, records);
-        order.verify(storage).deleteFamily(familyId);
         ArgumentCaptor<java.util.Collection<UUID>> ids = ArgumentCaptor.forClass(java.util.Collection.class);
         order.verify(records).deleteFamily(eq(familyId), ids.capture());
+        order.verify(storage).deleteFamily(familyId);
         assertThat(ids.getValue()).containsExactlyInAnyOrder(docA, docB);
     }
 
@@ -216,7 +221,8 @@ class FamilyAccountServiceTest {
         when(records.findPatient(patientId)).thenReturn(Mono.just(patient));
         when(records.documentIdsOfPatient(patientId)).thenReturn(Flux.empty());
         when(storage.deletePatient(familyId, patientId)).thenReturn(Mono.just(new DeletionReport("p/", 0, 0)));
-        when(records.deletePatient(eq(patientId), any())).thenReturn(Mono.just(1L));
+        when(records.deletePatient(eq(patientId), any())).thenReturn(Mono.just(
+                DeletionCounts.empty().with("patient_profile", 1L).with("document", 0L)));
 
         StepVerifier.create(service.deletePatient(patientId))
                 .assertNext(r -> {

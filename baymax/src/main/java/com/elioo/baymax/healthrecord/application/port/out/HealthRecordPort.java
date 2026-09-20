@@ -1,5 +1,6 @@
 package com.elioo.baymax.healthrecord.application.port.out;
 
+import com.elioo.baymax.healthrecord.domain.DeletionCounts;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.FamilyActivity;
 import com.elioo.baymax.healthrecord.domain.PatientAccess;
@@ -70,10 +71,10 @@ public interface HealthRecordPort {
      * Removes the family, its patients and share members. Cost rows in ai_call_log for the given documents
      * are kept (numbers only) but their document_id is cleared. Returns the number of patient rows removed.
      */
-    Mono<Long> deleteFamily(UUID familyId, Collection<UUID> documentIds);
+    Mono<DeletionCounts> deleteFamily(UUID familyId, Collection<UUID> documentIds);
 
     /** Removes one patient and its share members; same treatment of ai_call_log. Returns 1 when removed. */
-    Mono<Long> deletePatient(UUID patientId, Collection<UUID> documentIds);
+    Mono<DeletionCounts> deletePatient(UUID patientId, Collection<UUID> documentIds);
 
     // --- reporting -------------------------------------------------------------------------------
 

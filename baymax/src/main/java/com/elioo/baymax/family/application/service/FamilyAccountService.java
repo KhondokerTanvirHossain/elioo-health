@@ -4,10 +4,12 @@ import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.family.application.port.in.FamilyAccountUseCase;
 import com.elioo.baymax.family.application.port.in.FreeTierUseCase;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
+import com.elioo.baymax.healthrecord.domain.DeletionCounts;
 import com.elioo.baymax.healthrecord.domain.DeletionReceipt;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.healthrecord.domain.ShareMember;
+import com.elioo.baymax.storage.domain.DeletionReport;
 import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -109,24 +111,52 @@ public class FamilyAccountService implements FamilyAccountUseCase {
     public Mono<DeletionReceipt> deletePatient(UUID patientId) {
         return requirePatient(patientId).flatMap(patient ->
                 records.documentIdsOfPatient(patientId).collectList().flatMap(documentIds ->
-                        storage.deletePatient(patient.familyId(), patientId)
-                                .flatMap(images -> records.deletePatient(patientId, documentIds)
-                                        .map(rows -> new DeletionReceipt(clock.instant(), 0, rows,
-                                                documentIds.size(), images.objectsDeleted())))))
+                        // rows first, in one transaction; images only once that has committed (see deleteFamily)
+                        records.deletePatient(patientId, documentIds).flatMap(counts ->
+                                deleteObjects(storage.deletePatient(patient.familyId(), patientId), "patient", patientId)
+                                        .map(objects -> receipt(counts, 0, objects)))))
                 .doOnNext(r -> log.info("[baymax] patient deleted id={} documents={} objects={}",
                         patientId, r.documents(), r.objects()));
     }
 
+    /**
+     * Rows are deleted and committed FIRST; the bucket is emptied afterwards.
+     *
+     * <p>The reverse order destroyed images and then rolled the SQL back when the delete failed, leaving records
+     * that claimed images existed which were already gone — silent and unrecoverable. This way round the only
+     * failure mode is images outliving their rows: visible in the bucket, recoverable by a sweep, and invisible
+     * to the family, whose record is gone — which is what they asked for under §6.3. A storage failure after the
+     * commit is therefore logged with its keys for retry and does NOT fail the request.
+     */
     @Override
     public Mono<DeletionReceipt> deleteFamily(UUID familyId) {
         return requireFamily(familyId).flatMap(family ->
                 records.documentIdsOf(familyId).collectList().flatMap(documentIds ->
-                        storage.deleteFamily(familyId)
-                                .flatMap(images -> records.deleteFamily(familyId, documentIds)
-                                        .map(patients -> new DeletionReceipt(clock.instant(), 1, patients,
-                                                documentIds.size(), images.objectsDeleted())))))
+                        records.deleteFamily(familyId, documentIds).flatMap(counts ->
+                                deleteObjects(storage.deleteFamily(familyId), "family", familyId)
+                                        .map(objects -> receipt(counts, 1, objects)))))
                 .doOnNext(r -> log.info("[baymax] family deleted id={} patients={} documents={} objects={}",
                         familyId, r.patients(), r.documents(), r.objects()));
+    }
+
+    /**
+     * The rows are already gone, so a storage failure cannot undo the delete — it is recorded, not propagated.
+     * The prefix is logged at ERROR with the marker {@code orphaned_objects} so a sweep can find and retry it;
+     * the family still gets their confirmation.
+     */
+    private Mono<Long> deleteObjects(Mono<DeletionReport> deletion, String scope, UUID id) {
+        return deletion.map(DeletionReport::objectsDeleted)
+                .onErrorResume(e -> {
+                    log.error("[baymax] orphaned_objects scope={} id={} — rows are deleted and committed, bucket "
+                            + "objects under that prefix survive and need a sweep: {}", scope, id, e.toString());
+                    return Mono.just(0L);
+                });
+    }
+
+    private DeletionReceipt receipt(DeletionCounts counts, long families, long objects) {
+        log.info("[baymax] deletion rows {}", counts.describe());
+        return new DeletionReceipt(clock.instant(), families, counts.of("patient_profile"),
+                counts.of("document"), objects);
     }
 
     private Mono<FamilyAccount> requireFamily(UUID familyId) {

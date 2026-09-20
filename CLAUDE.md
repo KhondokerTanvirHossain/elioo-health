@@ -81,6 +81,22 @@ Key files when changing behaviour:
   the bean. Before pushing a PR that adds directories, `git status --ignored --short -- <module>/src | grep '^!!'`
   must print nothing — this check is standard now. Sixth flattering failure.
 - Regression guards: a test written to catch a specific bug is replayed against the pre-fix source before it counts as done. A guard that passes on the broken code is worse than none — it was written once here, anchored on the wrong text, extracted an empty method body, and went green over the very bug it existed to catch.
+- **All ten flattering failures share one shape: a check that could not fail for the reason it existed.** The
+  crop test saw a file that existed; the CSV guard matched a random id; the nudge mock was a `HashSet` where
+  Postgres raises; the deletion test asserted six tables by hand and skipped `document`, the only one that blocked
+  the delete — and never inserted a `document` row at all, so the table it forgot was also empty. **For any
+  operation spanning multiple tables or systems, the assertion is derived from the schema or the system itself,
+  never from a hand-written list of what the author remembered.** `FamilyDeletionAcceptanceTest.tablesStillHolding`
+  asks `information_schema` which tables carry a family or patient id and sweeps every one, so a table added in a
+  later migration cannot be silently missed. A derived check needs its own guard against emptiness: if the query
+  returns no tables the sweep passes vacuously, which is the same defect one level up.
+- **A test that works around a constraint, or whose name encodes surprising behaviour, is evidence of a defect
+  rather than of intent.** Distinct from the ten above: those were checks that could not fail, this is a check
+  that described the bug and called it correct. `PostgresHealthRecordAdapterTest` deleted `stored_object` and
+  `document` by hand before calling the port, commenting "documents reference the family" — it knew the
+  constraint and stepped around it. `FamilyAccountServiceTest.deleteFamilyRemovesImagesThenRows...` named the
+  dangerous ordering and verified it. Both documented delete-on-request being broken and held it in place.
+  **When a test has to step around something to pass, the thing it stepped around is the finding.**
 - **A red replay must fail ON the defect, not merely fail.** Read the failure message and confirm it names the
   bug: `expected: DEFERRED but was: DROPPED`, `duplicate key value violates unique constraint`. A guard whose
   replay died on a `NullPointerException` in its own Mockito matcher was red, looked like a successful replay and
