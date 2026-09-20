@@ -51,7 +51,9 @@ MedScribe is becoming Medioo (codename Baymax): a WhatsApp-first health-memory a
   DR-13 gate is unchanged — explanations park PENDING and only an explicit approve delivers. OTP stays on the
   log adapter (`OtpDeliveryPort` is a separate port in `web/`): a blank or expired token must never become a
   login outage. Channel entirely off when `BAYMAX_WA_ENABLED` is unset, every existing behaviour unchanged —
-  that is the RUNBOOK contract.
+  that is the RUNBOOK contract. **Known: the verify token is logged in clear** — `IWebFilter` logs full request URIs
+  including query strings, so every handshake writes it to the production log and Meta re-verifies periodically
+  (DR-23, fix deferred; rotate the token when the filter is fixed).
 
   **Known phase-1 limitation — "which patient?" (deferred, not a design choice).** §1.4 is explicit that the
   account model is *one WhatsApp number → multiple patient profiles* and that **every message must be able to
