@@ -23,7 +23,7 @@ import java.util.Map;
 @Slf4j
 @Component
 @ConditionalOnProperty(prefix = "baymax.wa", name = "enabled", havingValue = "true")
-public class WaGraphClient {
+public class WaGraphClient implements com.elioo.baymax.wa.application.port.out.WaMessagingPort {
 
     private final BaymaxProperties properties;
     private final WebClient http;
@@ -76,6 +76,7 @@ public class WaGraphClient {
     }
 
     /** Convenience: descriptor then bytes, for the one case phase 1 has. */
+    @Override
     public Mono<byte[]> downloadMedia(String mediaId) {
         return media(mediaId).flatMap(m -> download(m, mediaId));
     }
@@ -87,6 +88,7 @@ public class WaGraphClient {
      *
      * @return the provider message id (wamid), for correlating the delivery status callback
      */
+    @Override
     public Mono<String> sendText(String toNumber, String body) {
         Map<String, Object> payload = Map.of(
                 "messaging_product", "whatsapp",

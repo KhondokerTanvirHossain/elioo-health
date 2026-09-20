@@ -27,10 +27,13 @@ import java.nio.charset.StandardCharsets;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+        prefix = "baymax.wa", name = "enabled", havingValue = "true")
 public class WaWebhookHandler {
 
     private final BaymaxProperties properties;
     private final ObjectMapper json;
+    private final com.elioo.baymax.wa.application.service.WaIntakeService intake;
 
     /** Meta's handshake. A wrong or missing token is 403 — the endpoint never confirms what the right one is. */
     public Mono<ServerResponse> verify(ServerRequest request) {
@@ -81,11 +84,44 @@ public class WaWebhookHandler {
     private Mono<Void> handle(byte[] body) {
         return Mono.fromCallable(() -> json.readTree(body))
                 .doOnNext(this::logCallback)
+                .flatMap(this::dispatch)
                 .onErrorResume(e -> {
                     log.error("[baymax] wa webhook: signed callback did not parse as JSON: {}", e.toString());
                     return Mono.empty();
                 })
                 .then();
+    }
+
+    /**
+     * Intake runs detached from the HTTP response: Meta retries anything that is not a prompt 200, and a
+     * download plus extraction is far slower than its timeout. The callback is acknowledged as soon as it is
+     * stored-and-dispatched, and the family hears back over WhatsApp, not over this response.
+     */
+    private Mono<Void> dispatch(JsonNode root) {
+        for (JsonNode entry : root.path("entry")) {
+            for (JsonNode change : entry.path("changes")) {
+                for (JsonNode message : change.path("value").path("messages")) {
+                    String from = message.path("from").asText("");
+                    String type = message.path("type").asText("");
+                    if ("image".equals(type)) {
+                        subscribe(intake.onImage(from, message.path("image").path("id").asText("")), from);
+                    } else if ("document".equals(type)) {
+                        subscribe(intake.onImage(from, message.path("document").path("id").asText("")), from);
+                    } else if ("text".equals(type)) {
+                        subscribe(intake.onText(from), from);
+                    } else {
+                        log.info("[baymax] wa inbound ignored type={} from={}", type, maskedNumber(from));
+                    }
+                }
+            }
+        }
+        return Mono.empty();
+    }
+
+    private void subscribe(Mono<com.elioo.baymax.wa.application.service.WaIntakeService.Outcome> work, String from) {
+        work.subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
+                .subscribe(outcome -> log.info("[baymax] wa intake done outcome={} from={}", outcome, maskedNumber(from)),
+                        error -> log.error("[baymax] wa intake errored from={}: {}", maskedNumber(from), error.toString()));
     }
 
     private void logCallback(JsonNode root) {

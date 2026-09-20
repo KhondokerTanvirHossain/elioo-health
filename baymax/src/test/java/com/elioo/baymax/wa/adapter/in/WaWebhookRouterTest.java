@@ -28,7 +28,8 @@ class WaWebhookRouterTest {
         props.getWa().setEnabled(true);
         props.getWa().setVerifyToken(VERIFY_TOKEN);
         props.getWa().setAppSecret(APP_SECRET);
-        WaWebhookHandler handler = new WaWebhookHandler(props, new ObjectMapper());
+        WaWebhookHandler handler = new WaWebhookHandler(props, new ObjectMapper(),
+                org.mockito.Mockito.mock(com.elioo.baymax.wa.application.service.WaIntakeService.class));
         return WebTestClient.bindToRouterFunction(
                 new WaWebhookRouter().baymaxWaRoutes(handler, new ErrorResponseFilter())).build();
     }
