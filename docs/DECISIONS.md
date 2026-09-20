@@ -365,3 +365,14 @@ receive and respond, query string included. Two things follow, and the second sh
 Until the filter is fixed, treat any credential in a query string as logged. The fix is to redact
 `t`, `token`, `verify_token`, `hub.verify_token`, `key` and `secret`-shaped parameters in `IWebFilter` before
 the URI reaches the log line — one place, both directions.
+
+**Amendment, 2026-09-21 (Tanvir).** The condition in the original ruling is already met, so the deferral becomes
+a **deadline**: the query-string logging fix **and** the `BAYMAX_WA_VERIFY_TOKEN` rotation must land **before any
+nudge is delivered to a real family** — that is, before pilot week 0 and before `baymax.outbound.gate-nudges`
+stops parking messages PENDING. Listed in *Pending from Tanvir* as blocking week 0.
+
+The reasoning: BMX-8's opt-out link has carried an unauthenticated HMAC in a query string since #33. The only
+thing keeping it out of the production log is that the gate has never released a nudge, so no family has ever
+clicked one. **That is accidental protection, not a control** — it disappears the moment the gate opens, which is
+exactly the moment real families start receiving messages. Rotation is paired with the fix rather than done
+first, because rotating into a log that still records the value buys nothing.

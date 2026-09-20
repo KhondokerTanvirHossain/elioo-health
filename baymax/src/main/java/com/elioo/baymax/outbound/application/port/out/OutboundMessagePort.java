@@ -19,6 +19,14 @@ public interface OutboundMessagePort {
 
     Mono<Void> markSent(UUID messageId, Instant sentAt);
 
+    /**
+     * Records what the delivery channel actually did. {@code sentAt} is written ONLY when the provider
+     * accepted the message — a failure leaves it NULL and stores the reason, so a reviewer can read
+     * {@code sent_at} as "the family received it" (BMX-10, V13).
+     */
+    Mono<OutboundMessage> recordDelivery(UUID messageId, com.elioo.baymax.outbound.domain.DeliveryOutcome outcome,
+                                         Instant sentAt);
+
     Flux<OutboundMessage> pending();
 
     /** The newest deliverable message for a document, for the timeline. */

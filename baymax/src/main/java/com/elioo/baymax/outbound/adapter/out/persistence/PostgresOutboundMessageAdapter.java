@@ -63,6 +63,27 @@ public class PostgresOutboundMessageAdapter implements OutboundMessagePort {
         return db.sql("UPDATE " + T + " SET sent_at = :sent WHERE id = :id").bind("sent", at(sentAt)).bind("id", id).then();
     }
 
+    /**
+     * sent_at is bound to the timestamp ONLY when the provider accepted the message; every other outcome binds
+     * NULL. That is the whole point of V13 — a reviewer reads sent_at as "the family received it".
+     */
+    @Override
+    public Mono<OutboundMessage> recordDelivery(UUID id, com.elioo.baymax.outbound.domain.DeliveryOutcome outcome, Instant sentAt) {
+        return db.sql("UPDATE " + T + " SET delivery_status = :status, provider_message_id = :wamid, "
+                        + "delivery_error = :error, sent_at = :sent WHERE id = :id")
+                .bind("status", outcome.status() == null ? io.r2dbc.spi.Parameters.in(io.r2dbc.spi.R2dbcType.VARCHAR)
+                        : io.r2dbc.spi.Parameters.in(io.r2dbc.spi.R2dbcType.VARCHAR, outcome.status().dbValue()))
+                .bind("wamid", outcome.messageId() == null ? io.r2dbc.spi.Parameters.in(io.r2dbc.spi.R2dbcType.VARCHAR)
+                        : io.r2dbc.spi.Parameters.in(io.r2dbc.spi.R2dbcType.VARCHAR, outcome.messageId()))
+                .bind("error", outcome.error() == null ? io.r2dbc.spi.Parameters.in(io.r2dbc.spi.R2dbcType.VARCHAR)
+                        : io.r2dbc.spi.Parameters.in(io.r2dbc.spi.R2dbcType.VARCHAR, outcome.error()))
+                .bind("sent", outcome.wasSent() ? io.r2dbc.spi.Parameters.in(io.r2dbc.spi.R2dbcType.TIMESTAMP_WITH_TIME_ZONE, at(sentAt))
+                        : io.r2dbc.spi.Parameters.in(io.r2dbc.spi.R2dbcType.TIMESTAMP_WITH_TIME_ZONE))
+                .bind("id", id)
+                .fetch().rowsUpdated()
+                .then(find(id));
+    }
+
     @Override
     public Flux<OutboundMessage> pending() {
         return db.sql("SELECT " + COLS + " FROM " + T + " WHERE gate_status = 'pending' ORDER BY created_at").map((row, meta) -> from(row)).all();
