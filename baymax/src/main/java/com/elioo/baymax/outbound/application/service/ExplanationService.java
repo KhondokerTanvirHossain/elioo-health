@@ -12,6 +12,7 @@ import com.elioo.baymax.outbound.application.port.in.ExplainDocumentUseCase;
 import com.elioo.baymax.outbound.application.port.out.MessageDeliveryPort;
 import com.elioo.baymax.outbound.application.port.out.OutboundMessagePort;
 import com.elioo.baymax.outbound.application.port.out.ReviewerNotificationPort;
+import com.elioo.baymax.outbound.domain.DeliveryOutcome;
 import com.elioo.baymax.outbound.domain.OutboundMessage;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.outbound.domain.UrgencyAssessment;
@@ -171,10 +172,21 @@ public class ExplanationService implements ExplainDocumentUseCase {
             return messages.save(message).flatMap(saved -> reviewer.notifyPending(saved).thenReturn(saved));
         }
         Instant now = clock.instant();
-        OutboundMessage sent = new OutboundMessage(message.id(), message.familyId(), message.patientId(), message.documentId(),
+        // sentAt stays NULL here: V13 says only a provider acceptance sets it, and nothing has been attempted
+        // yet. Setting it at save time was the same lie approve() used to tell — a row claiming delivery of a
+        // message that may never arrive.
+        OutboundMessage toSend = new OutboundMessage(message.id(), message.familyId(), message.patientId(), message.documentId(),
                 message.kind(), message.urgency(), message.urgencyReasons(), message.body(), OutboundMessage.GateStatus.RELEASED,
-                null, null, null, now, message.createdAt());
-        return messages.save(sent).flatMap(saved -> delivery.deliver(saved).thenReturn(saved));
+                null, null, null, null, message.createdAt());
+        return messages.save(toSend).flatMap(saved -> delivery.deliver(saved)
+                .onErrorResume(e -> {
+                    log.error("[baymax] released message delivery threw id={} : {}", saved.id(), e.toString());
+                    return Mono.just(DeliveryOutcome.failed(DeliveryOutcome.SEND_FAILED));
+                })
+                .flatMap(outcome -> outcome.status() == null
+                        // the log adapter delivered nothing; keep v1 behaviour and stamp sent_at
+                        ? messages.markSent(saved.id(), now).then(messages.find(saved.id()))
+                        : messages.recordDelivery(saved.id(), outcome, now)));
     }
 
     /** The fixed skeleton: template lines with the extraction's own numbers. */

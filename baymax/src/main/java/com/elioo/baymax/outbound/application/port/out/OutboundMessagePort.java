@@ -14,8 +14,12 @@ public interface OutboundMessagePort {
 
     Mono<OutboundMessage> find(UUID messageId);
 
+    /**
+     * Records the reviewer's decision. It does NOT touch sent_at: that field means "the provider accepted it"
+     * and only {@link #recordDelivery} or {@link #markSent} may write it (V14 enforces this at the database).
+     */
     Mono<OutboundMessage> decide(UUID messageId, OutboundMessage.GateStatus status, String reviewer, String reason,
-                                 Instant decidedAt, Instant sentAt);
+                                 Instant decidedAt);
 
     Mono<Void> markSent(UUID messageId, Instant sentAt);
 

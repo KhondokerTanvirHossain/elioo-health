@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * V13 on real Postgres: {@code sent_at} means "the provider accepted it" and nothing else sets it.
@@ -128,6 +129,82 @@ class DeliveryOutcomeAcceptanceTest {
                     .as("sent_at must not survive a subsequent failure").isNull();
             assertThat(column(stored.id(), "delivery_error")).isEqualTo("token_invalid");
         });
+    }
+
+    /**
+     * The defect the first production run exposed: V13 was wired into approve() only, so a RELEASED message —
+     * one the gate never parked — went out over WhatsApp while its row said delivery_status NULL, no wamid, and
+     * sent_at stamped at save time. The row claimed a delivery it had not observed. Asserted on the columns for
+     * the released path specifically, because that is the path that was missed.
+     */
+    @Test
+    void aReleasedMessageRecordsItsProviderOutcomeRatherThanClaimingDeliveryAtSaveTime() {
+        runner().run(context -> {
+            OutboundMessagePort messages = context.getBean(OutboundMessagePort.class);
+            HealthRecordPort records = context.getBean(HealthRecordPort.class);
+            Instant now = Instant.parse("2026-09-21T10:00:00Z");
+
+            FamilyAccount family = records.createFamily(new FamilyAccount(
+                    null, "+8801700000704", "Nasrin", FamilyAccount.Plan.FREE, now, now)).block();
+            // a released row as ExplanationService.release now saves it: sent_at NULL until a provider answers
+            OutboundMessage released = messages.save(new OutboundMessage(null, family.id(), null, null,
+                    OutboundMessage.Kind.EXPLANATION, Urgency.ROUTINE, List.of(), "শরীর ভালো আছে",
+                    OutboundMessage.GateStatus.RELEASED, null, null, null, null, now)).block();
+
+            assertThat(column(released.id(), "sent_at"))
+                    .as("a released row must not claim delivery before the provider has answered").isNull();
+
+            messages.recordDelivery(released.id(), DeliveryOutcome.sent("wamid.RELEASED1"), now).block();
+            assertThat(column(released.id(), "provider_message_id")).isEqualTo("wamid.RELEASED1");
+            assertThat(column(released.id(), "delivery_status")).isEqualTo("sent");
+            assertThat(column(released.id(), "sent_at")).isNotNull();
+        });
+    }
+
+    /**
+     * V14: the invariant lives at the database, so it holds for writers that do not exist yet. V13 was scoped
+     * to approve() and both release paths kept the defect — a rule enforced per call site is only as good as
+     * the last person who remembered it.
+     */
+    @Test
+    void theDatabaseItselfRefusesARowThatClaimsDeliveryItDidNotGet() {
+        runner().run(context -> {
+            OutboundMessagePort messages = context.getBean(OutboundMessagePort.class);
+            HealthRecordPort records = context.getBean(HealthRecordPort.class);
+            Instant now = Instant.parse("2026-09-21T11:00:00Z");
+            FamilyAccount family = records.createFamily(new FamilyAccount(
+                    null, "+8801700000705", "Jamal", FamilyAccount.Plan.FREE, now, now)).block();
+            OutboundMessage stored = messages.save(new OutboundMessage(null, family.id(), null, null,
+                    OutboundMessage.Kind.EXPLANATION, Urgency.ROUTINE, List.of(), "শরীর ভালো আছে",
+                    OutboundMessage.GateStatus.RELEASED, null, null, null, null, now)).block();
+
+            // raw SQL, bypassing every service: sent_at alongside a failed delivery must not be storable
+            assertThatThrownBy(() -> execute("UPDATE baymax.outbound_message SET delivery_status = 'failed', "
+                    + "delivery_error = 'window_expired', sent_at = now() WHERE id = '" + stored.id() + "'"))
+                    .hasMessageContaining("outbound_message_sent_at_requires_acceptance");
+
+            // a sent delivery without the provider's id is not evidence of anything
+            assertThatThrownBy(() -> execute("UPDATE baymax.outbound_message SET delivery_status = 'sent', "
+                    + "provider_message_id = NULL, sent_at = now() WHERE id = '" + stored.id() + "'"))
+                    .hasMessageContaining("outbound_message_sent_status_has_provider_id");
+
+            // a failure always says why
+            assertThatThrownBy(() -> execute("UPDATE baymax.outbound_message SET delivery_status = 'failed', "
+                    + "delivery_error = NULL WHERE id = '" + stored.id() + "'"))
+                    .hasMessageContaining("outbound_message_failed_status_has_reason");
+
+            // the honest shapes are accepted
+            execute("UPDATE baymax.outbound_message SET delivery_status = 'sent', provider_message_id = 'wamid.OK', "
+                    + "delivery_error = NULL, sent_at = now() WHERE id = '" + stored.id() + "'");
+            assertThat(column(stored.id(), "sent_at")).isNotNull();
+        });
+    }
+
+    private static void execute(String sql) throws Exception {
+        try (Connection c = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement s = c.createStatement()) {
+            s.execute(sql);
+        }
     }
 
     private static String column(UUID id, String name) throws Exception {
