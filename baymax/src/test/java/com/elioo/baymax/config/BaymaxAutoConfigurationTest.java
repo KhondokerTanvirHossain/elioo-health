@@ -49,6 +49,21 @@ class BaymaxAutoConfigurationTest {
                         "baymax.flyway.password=" + POSTGRES.getPassword());
     }
 
+    /**
+     * BMX-10 RUNBOOK contract: with the WhatsApp flag unset the channel is entirely absent — not a disabled
+     * endpoint that might still answer — so every existing behaviour is unchanged. The route appears only when
+     * the flag is explicitly true.
+     */
+    @Test
+    void theWhatsappWebhookExistsOnlyWhenTheChannelIsEnabled() {
+        runner().withPropertyValues("baymax.enabled=true").run(context ->
+                assertThat(context).doesNotHaveBean("baymaxWaRoutes"));
+        runner().withPropertyValues("baymax.enabled=true", "baymax.wa.enabled=false").run(context ->
+                assertThat(context).doesNotHaveBean("baymaxWaRoutes"));
+        runner().withPropertyValues("baymax.enabled=true", "baymax.wa.enabled=true").run(context ->
+                assertThat(context).hasBean("baymaxWaRoutes"));
+    }
+
     @Test
     void disabledByDefault() {
         runner().run(context -> {
