@@ -337,3 +337,31 @@ that run. `evaluateAll` isolates each patient with `onErrorResume`, logs the fai
 counts it (`lastRunFailedPatients`) and continues. Before this a single duplicate-key error aborted the whole
 evaluation, and nobody would have noticed until a pilot family asked why they had heard nothing — worse than the
 duplicate key itself. Guard: `onePatientsFailureDoesNotStopTheRestOfTheRun`, replayed red.
+
+## DR-23 | 2026-09-19 | Query strings are logged in clear; the fix is deferred, with a trigger
+
+**Decision:** Query strings, including the WhatsApp verify token, are logged in clear by `IWebFilter`. Fix
+deferred by Tanvir's call. **Must be fixed before any feature puts a credential or an unauthenticated access
+link in a query string** — media download, OTP links, opt-out links.
+
+**Why:** negligible exposure today on a private test channel; a filter-level fix that grows more expensive with
+each feature added.
+
+**Supersedes:** none.
+
+*Engineering note, 2026-09-20.* `IWebFilter` (MedScribe, pre-Baymax) logs the full request URI at INFO on both
+receive and respond, query string included. Two things follow, and the second sharpens the trigger:
+
+1. **The WhatsApp verify token is already in the production log**, written on every handshake. Meta re-verifies
+   periodically, so it accumulates. Rotating `BAYMAX_WA_VERIFY_TOKEN` costs one dashboard edit and one restart —
+   cheap now, and worth doing whenever the filter is fixed.
+2. **The trigger condition is already met in code, though not yet in data.** BMX-8's opt-out link is
+   `/app/nudges/opt-out?p=<patientId>&t=<HMAC>` — an unauthenticated access link with its token in the query
+   string, live since #33. It has not been logged because no family has clicked one: the filter logs *inbound*
+   URIs, and those links exist only inside gated messages that have never been delivered. **The first click
+   writes a working opt-out token for a real patient into the log.** The gate is what is holding this, not the
+   design.
+
+Until the filter is fixed, treat any credential in a query string as logged. The fix is to redact
+`t`, `token`, `verify_token`, `hub.verify_token`, `key` and `secret`-shaped parameters in `IWebFilter` before
+the URI reaches the log line — one place, both directions.
