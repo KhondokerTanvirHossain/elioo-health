@@ -60,8 +60,33 @@ class BaymaxAutoConfigurationTest {
                 assertThat(context).doesNotHaveBean("baymaxWaRoutes"));
         runner().withPropertyValues("baymax.enabled=true", "baymax.wa.enabled=false").run(context ->
                 assertThat(context).doesNotHaveBean("baymaxWaRoutes"));
-        runner().withPropertyValues("baymax.enabled=true", "baymax.wa.enabled=true").run(context ->
-                assertThat(context).hasBean("baymaxWaRoutes"));
+        // with the channel on, the config must also be well formed — WaConfigValidator refuses to start
+        // otherwise, which is the point of it, so the enabled case supplies credentials of the right shape
+        runner().withPropertyValues("baymax.enabled=true", "baymax.wa.enabled=true",
+                        "baymax.wa.token=EAA" + "x".repeat(200),
+                        "baymax.wa.app-secret=88e3540dd539aabbccddeeff00112233",
+                        "baymax.wa.verify-token=78d41af3449a9bfbd560140166c6f2c2",
+                        "baymax.wa.phone-number-id=1412074765313019",
+                        "baymax.wa.waba-id=4407553579467225")
+                .run(context -> assertThat(context).hasBean("baymaxWaRoutes"));
+    }
+
+    /**
+     * BMX-10: a malformed WhatsApp value stops the application rather than surfacing later as a rejected
+     * handshake or a 403 on every callback. The inline-comment case is the one that actually happened.
+     */
+    @Test
+    void aMalformedWhatsappValueStopsStartupWithANamedReason() {
+        runner().withPropertyValues("baymax.enabled=true", "baymax.wa.enabled=true",
+                        "baymax.wa.token=EAA" + "x".repeat(200),
+                        "baymax.wa.app-secret=88e3540dd539aabbccddeeff00112233",
+                        "baymax.wa.verify-token=78d41af3449a9bfbd560140166c6f2c2  # must match Meta exactly",
+                        "baymax.wa.phone-number-id=1412074765313019",
+                        "baymax.wa.waba-id=4407553579467225")
+                .run(context -> assertThat(context).hasFailed()
+                        .getFailure().rootCause()
+                        .hasMessageContaining("BAYMAX_WA_VERIFY_TOKEN")
+                        .hasMessageContaining("inline comment"));
     }
 
     @Test
