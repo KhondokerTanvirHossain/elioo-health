@@ -247,6 +247,23 @@ public class BaymaxProperties {
         /** Below this, any single section (values, medicines, follow-up) forces a retake. */
         private double minConfidenceSection = 0.70;
         /**
+         * Which sections each document type is expected to carry, by {@code document_type}.
+         *
+         * <p>An empty section means one of two things — nothing on the page, or we could not read it — and the
+         * confidence number alone cannot tell them apart. A prescription has no lab values, so a zero there is
+         * "nothing to find"; a lab report with no values read is a failed read whatever confidence it claims.
+         * Before this, a prescription with no values was rejected as an unclear photo (0.85 overall, every
+         * medicine correct) and the family was coached on photography for a document we had read perfectly.
+         *
+         * <p>A type absent from this map expects nothing, so only its confidence numbers gate it.
+         */
+        private Map<String, List<String>> expectedSections = new java.util.LinkedHashMap<>(Map.of(
+                "lab_report", List.of("values"),
+                "prescription", List.of("medicines"),
+                "discharge_summary", List.of(),
+                "imaging_report", List.of(),
+                "other", List.of()));
+        /**
          * Below this overall confidence, or on any critical flag, the strong model is asked as well.
          * 0.0 (DR-10) turns the confidence path off; the critical-flag path stays.
          */

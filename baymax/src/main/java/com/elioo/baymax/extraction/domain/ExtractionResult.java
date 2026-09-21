@@ -118,6 +118,12 @@ public record ExtractionResult(
         }
 
         /** The lowest section confidence that was actually reported; 1.0 when none were. */
+        /**
+         * @deprecated the min across every section, including ones the document never had. A prescription has
+         *     no lab values, so values[] scored 0.0 and clear photos were rejected as unreadable. The gate now
+         *     uses {@code DocumentExtractionService.lowestPresentSection} with the expected-sections table.
+         */
+        @Deprecated
         public double lowestSection() {
             return java.util.stream.Stream.of(values, medicines, followUp, clinicalContext)
                     .filter(java.util.Objects::nonNull)

@@ -206,7 +206,6 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
     private Mono<Document> gateAndPersist(Document document, List<PageOcr> pages, Attempt attempt) {
         ExtractionResult result = attempt.result();
         double overall = attempt.confidence();
-        double section = result.confidence() == null ? 1d : result.confidence().lowestSection();
         var thresholds = properties.getExtract();
 
         if (overall < thresholds.getMinConfidenceOverall()) {
@@ -214,13 +213,83 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
                     "the document was not read confidently enough (%.2f)".formatted(overall),
                     attempt, result, null);
         }
-        if (section < thresholds.getMinConfidenceSection()) {
+        // A section the document type expects, read as empty, is a failed read whatever confidence it claims:
+        // a lab report with no values is not an empty page. Checked before the confidence gate, because the
+        // number is the thing we do not trust here.
+        String missing = missingExpectedSection(result, thresholds);
+        if (missing != null) {
             return finish(document, Document.Status.NEEDS_RETAKE,
-                    "part of the document was not read confidently enough (%.2f)".formatted(section),
+                    "nothing was read from the %s of this %s".formatted(missing, typeOf(result)),
+                    attempt, result, null);
+        }
+        double gatedSection = lowestPresentSection(result, thresholds);
+        if (gatedSection < thresholds.getMinConfidenceSection()) {
+            return finish(document, Document.Status.NEEDS_RETAKE,
+                    "part of the document was not read confidently enough (%.2f)".formatted(gatedSection),
                     attempt, result, null);
         }
         return verify(document, pages, result)
                 .flatMap(items -> finish(document, Document.Status.DONE, null, attempt, result, items));
+    }
+
+
+    /**
+     * {@code document_type} as the expectation table keys it, taken from the EXTRACTION — the document row
+     * does not carry it yet at gate time, it is written in {@code finish}. Reading it from the row here made
+     * every document look like "other", which expects nothing, and the lab-report half of the rule never fired.
+     */
+    private static String typeOf(ExtractionResult result) {
+        String type = result == null ? null : result.documentType();
+        return type == null ? "other" : type.toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private static int itemCount(ExtractionResult result, String section) {
+        return switch (section) {
+            case "values" -> result.valuesOrEmpty().size();
+            case "medicines" -> result.medicinesOrEmpty().size();
+            case "follow_up" -> result.followUpOrEmpty().size();
+            default -> 1;   // unknown section names are not gated on emptiness
+        };
+    }
+
+    /**
+     * The first section this document type expects that came back with nothing, or null when all are present.
+     * "Expects" comes from config, not from the model: a prescription never carries lab values, so an empty
+     * values[] there is the page, not the read.
+     */
+    private static String missingExpectedSection(ExtractionResult result,
+                                                 BaymaxProperties.Extract thresholds) {
+        for (String section : thresholds.getExpectedSections().getOrDefault(typeOf(result), List.of())) {
+            if (itemCount(result, section) == 0) {
+                return section;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The lowest confidence among sections that actually have content, plus any expected-and-present section.
+     * A section with nothing in it is excluded — confidence in an empty section is a number about nothing, and
+     * including it rejected clear prescriptions because values[] scored 0.0 (eleventh flattering failure: a
+     * gate firing for a reason unrelated to what it exists for).
+     */
+    private static double lowestPresentSection(ExtractionResult result,
+                                               BaymaxProperties.Extract thresholds) {
+        ExtractionResult.Confidence c = result.confidence();
+        if (c == null) {
+            return 1d;
+        }
+        double lowest = 1d;
+        for (var entry : java.util.Map.of("values", c.values(), "medicines", c.medicines(),
+                "follow_up", c.followUp()).entrySet()) {
+            if (entry.getValue() != null && itemCount(result, entry.getKey()) > 0) {
+                lowest = Math.min(lowest, entry.getValue());
+            }
+        }
+        if (c.clinicalContext() != null && result.clinicalContextOrEmpty().itemCount() > 0) {
+            lowest = Math.min(lowest, c.clinicalContext());
+        }
+        return lowest;
     }
 
     /**
