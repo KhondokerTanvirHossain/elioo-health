@@ -233,6 +233,82 @@ class DocumentExtractionServiceTest {
     }
 
     /**
+     * The production defect (2026-09-21, doc 34c36ca7): a prescription read at 0.85 overall with four
+     * medicines and a follow-up date was rejected as an unclear photo, because values[] — a section a
+     * prescription never carries — reported 0.0 and the min-section gate counted it. The family was coached
+     * on photography for a document we had read perfectly. Eleventh flattering failure: a gate firing for a
+     * reason unrelated to what it exists for.
+     */
+    @Test
+    void aPrescriptionWithNoLabValuesIsDoneNotRetaken() throws Exception {
+        replyWith("""
+                {"document_type":"prescription","document_date":"2026-09-19","facility":"Popular",
+                 "values":[],
+                 "medicines":[{"name":"Cap. DDR","dose_text":"30 mg","frequency_text":"1+0+0",
+                               "timing_text":"before meal","source_span":{"page":1,"start":0,"end":5}}],
+                 "follow_up":[{"instruction":"Follow up after 5 days","due_date":"2026-09-24",
+                               "source_span":{"page":1,"start":0,"end":5}}],
+                 "clinical_context":{"chief_complaint":[],"history":[],"examination":[],
+                                     "diagnosis":[],"investigations_advised":[],"advice":[],"referral":null},
+                 "confidence":{"overall":0.85,"values":0.0,"medicines":0.9,"follow_up":0.85,
+                               "clinical_context":0.85}}
+                """);
+
+        StepVerifier.create(service.process(received(1), List.of(pageJpeg())))
+                .assertNext(d -> {
+                    assertThat(d.status()).as("a prescription has no lab values; an empty values[] is the page, "
+                            + "not a failed read").isEqualTo(Document.Status.DONE);
+                    assertThat(d.statusReason()).isNull();
+                })
+                .verifyComplete();
+    }
+
+    /** The other half: a lab report IS expected to carry values, so an empty one is a failed read. */
+    @Test
+    void aLabReportWithNoValuesIsRetakenHoweverConfidentItClaimsToBe() throws Exception {
+        replyWith("""
+                {"document_type":"lab_report","document_date":"2026-09-19","facility":"Popular",
+                 "values":[],"medicines":[],"follow_up":[],
+                 "clinical_context":{"chief_complaint":[],"history":[],"examination":[],
+                                     "diagnosis":[],"investigations_advised":[],"advice":[],"referral":null},
+                 "confidence":{"overall":0.99,"values":0.99,"medicines":1.0,"follow_up":1.0,
+                               "clinical_context":1.0}}
+                """);
+
+        StepVerifier.create(service.process(received(1), List.of(pageJpeg())))
+                .assertNext(d -> {
+                    assertThat(d.status()).as("a lab report with nothing read is a failed read, whatever "
+                            + "confidence the model reports").isEqualTo(Document.Status.NEEDS_RETAKE);
+                    assertThat(d.statusReason()).contains("values");
+                })
+                .verifyComplete();
+        verify(records, never()).saveExtraction(any(), any());
+    }
+
+    /** Overall confidence still gates everything: the expectation table does not rescue a bad read. */
+    @Test
+    void aPrescriptionBelowTheOverallThresholdIsStillRetaken() throws Exception {
+        replyWith("""
+                {"document_type":"prescription","document_date":"2026-09-19","facility":"Popular",
+                 "values":[],
+                 "medicines":[{"name":"Cap. DDR","dose_text":"30 mg","frequency_text":"1+0+0",
+                               "timing_text":"before meal","source_span":{"page":1,"start":0,"end":5}}],
+                 "follow_up":[],
+                 "clinical_context":{"chief_complaint":[],"history":[],"examination":[],
+                                     "diagnosis":[],"investigations_advised":[],"advice":[],"referral":null},
+                 "confidence":{"overall":0.55,"values":0.0,"medicines":0.9,"follow_up":1.0,
+                               "clinical_context":0.9}}
+                """);
+
+        StepVerifier.create(service.process(received(1), List.of(pageJpeg())))
+                .assertNext(d -> {
+                    assertThat(d.status()).isEqualTo(Document.Status.NEEDS_RETAKE);
+                    assertThat(d.statusReason()).contains("not read confidently");
+                })
+                .verifyComplete();
+    }
+
+    /**
      * BMX-5b: offsets past the end of the text used to drop the item. The item's text is on the page, so
      * it is now cropped from where the text actually is — and stored with that crop.
      */

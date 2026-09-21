@@ -396,3 +396,23 @@ refused with "you have used all your free reports this month". The filter lives 
 plain count of rows, because reporting wants every document and billing does not. Guard:
 `retakesAndFailuresDoNotConsumeAFreeTierSlot` — replayed red against the unfiltered count, where a family with
 two readable documents and four unreadable ones is refused.
+
+## DR-25 | 2026-09-21 | Retake images are purged after 7 days
+
+**Decision:** NEEDS_RETAKE page images are purged 7 days after the retake unless the document later reaches
+DONE. The document row (status, reason, timestamps, confidence) is kept for metrics; only the image is deleted.
+**Retake images are never used for evaluation or any other purpose.**
+
+**Why:** once the family has been asked to resend, the image does nothing for them; the retry path it preserves
+is speculative and a bounded window covers it. Using failed photos as eval data would repurpose a family's
+medical document without consent.
+
+**Supersedes:** none — pairs with DR-24.
+
+*Engineering note.* Found during the BMX-10 acceptance run: a NEEDS_RETAKE document held 1 object, 107,634
+bytes, for a read that delivered nothing. DR-24 had just ruled that a retake must not *cost* the family a slot,
+which made keeping their image the obvious next question. Implementation is a scheduled job: delete the object
+and its `stored_object` ledger row, then **verify the bucket, not just the ledger** — the family-deletion bug
+(#41) was exactly a ledger that agreed with itself while objects survived. The commit-then-bucket ordering from
+that fix does not apply here because the document row stays either way. Logs carry counts only, never a family
+or patient id.
