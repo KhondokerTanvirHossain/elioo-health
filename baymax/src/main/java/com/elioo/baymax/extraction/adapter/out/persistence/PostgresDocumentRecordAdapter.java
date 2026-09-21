@@ -210,13 +210,33 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
                 });
     }
 
+    /**
+     * Documents that consume a free-tier slot this month — DONE only (DR-24).
+     *
+     * <p>A NEEDS_RETAKE document delivered nothing: we could not read the family's photo, told them so, and
+     * said it was not their fault. Charging a slot for it bills them for our failure and lands hardest on the
+     * families with the worst cameras, who are the ones the product exists for. FAILED does not count either,
+     * for the same reason. Deliberately NOT {@code countInWindow}, which stays a plain count of rows.
+     */
     @Override
     public Mono<Long> countInMonth(UUID familyId, YearMonth month) {
-        return countInWindow(familyId,
-                month.atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant(),
-                month.plusMonths(1).atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant());
+        return db.sql("SELECT COUNT(*) FROM " + S + ".document WHERE family_id = :family "
+                        + "AND created_at >= :from AND created_at < :to AND status = 'DONE'")
+                .bind("family", familyId)
+                .bind("from", OffsetDateTime.ofInstant(month.atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC))
+                .bind("to", OffsetDateTime.ofInstant(month.plusMonths(1).atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC))
+                .map((row, meta) -> {
+                    Long count = row.get(0, Long.class);
+                    return count == null ? 0L : count;
+                }).one().defaultIfEmpty(0L);
     }
 
+    @Override
+    public Mono<Document> latestDoneDocument(UUID familyId) {
+        return documents.latestDone(familyId).map(DocumentEntity::toRecord);
+    }
+
+    /** Every document row in the window, whatever its status — reporting, not billing. */
     @Override
     public Mono<Long> countInWindow(UUID familyId, Instant from, Instant to) {
         return db.sql("SELECT COUNT(*) FROM " + S + ".document WHERE family_id = :family "

@@ -40,6 +40,10 @@ class WaIntakeServiceTest {
     private static final UUID FAMILY = UUID.randomUUID();
 
     private final HealthRecordPort records = mock(HealthRecordPort.class);
+    private final com.elioo.baymax.extraction.application.port.out.DocumentRecordPort documents =
+            mock(com.elioo.baymax.extraction.application.port.out.DocumentRecordPort.class);
+    private final com.elioo.baymax.outbound.application.port.in.ExplainDocumentUseCase explainer =
+            mock(com.elioo.baymax.outbound.application.port.in.ExplainDocumentUseCase.class);
     private final DocumentIntakeUseCase intake = mock(DocumentIntakeUseCase.class);
     private final WaMessagingPort graph = mock(WaMessagingPort.class);
     private final BaymaxProperties props = new BaymaxProperties();
@@ -51,7 +55,7 @@ class WaIntakeServiceTest {
         props.getWa().setAllowlist(List.of(E164));
         when(graph.sendText(anyString(), anyString())).thenReturn(Mono.just("wamid.REPLY"));
         when(graph.downloadMedia(anyString())).thenReturn(Mono.just(new byte[]{1, 2, 3}));
-        service = new WaIntakeService(records, intake, graph, new Copy(), props);
+        service = new WaIntakeService(records, documents, explainer, intake, graph, new Copy(), props);
     }
 
     private PatientProfile patient(String name) {
@@ -174,6 +178,50 @@ class WaIntakeServiceTest {
                 .as("the unknown-sender text must never go to a family that exists")
                 .doesNotContain(copy.bn("wa.unknown", java.util.Map.of()));
         assertThat(sent.getAllValues()).containsExactly(copy.bn("wa.received", java.util.Map.of()));
+    }
+
+    /**
+     * Every explanation ends with বিস্তারিত শুনতে চাইলে লিখুন "বিস্তারিত". A family following that instruction
+     * and getting silence is the same failure as a photo vanishing — the first production run did exactly that.
+     */
+    @Test
+    void theWordTheExplanationInvitesIsAnswered() {
+        familyWith(patient("মা"));
+        com.elioo.baymax.extraction.domain.Document doc = mock(com.elioo.baymax.extraction.domain.Document.class);
+        UUID docId = UUID.randomUUID();
+        when(doc.id()).thenReturn(docId);
+        when(documents.latestDoneDocument(FAMILY)).thenReturn(Mono.just(doc));
+        com.elioo.baymax.outbound.domain.OutboundMessage detail =
+                mock(com.elioo.baymax.outbound.domain.OutboundMessage.class);
+        when(detail.body()).thenReturn("বিস্তারিত: সব স্বাভাবিক");
+        when(explainer.detail(docId)).thenReturn(Mono.just(detail));
+
+        assertThat(service.onText(FROM, "বিস্তারিত").block()).isEqualTo(WaIntakeService.Outcome.ACCEPTED);
+        verify(graph).sendText(eq(E164), eq("বিস্তারিত: সব স্বাভাবিক"));
+    }
+
+    @Test
+    void anOrdinaryTextIsAcknowledgedWithoutAReply() {
+        familyWith(patient("মা"));
+        assertThat(service.onText(FROM, "ধন্যবাদ").block()).isEqualTo(WaIntakeService.Outcome.ACCEPTED);
+        verify(graph, never()).sendText(anyString(), anyString());
+    }
+
+    @Test
+    void askingForDetailBeforeAnyReadableDocumentSaysSoRatherThanNothing() {
+        familyWith(patient("মা"));
+        when(documents.latestDoneDocument(FAMILY)).thenReturn(Mono.empty());
+        assertThat(service.onText(FROM, "বিস্তারিত").block()).isEqualTo(WaIntakeService.Outcome.ACCEPTED);
+        verify(graph).sendText(eq(E164), anyString());
+    }
+
+    @Test
+    void theInvitedWordIsRecognisedWithPunctuationOrInEnglish() {
+        assertThat(WaIntakeService.isDetailRequest("বিস্তারিত")).isTrue();
+        assertThat(WaIntakeService.isDetailRequest("  বিস্তারিত।  ")).isTrue();
+        assertThat(WaIntakeService.isDetailRequest("detail")).isTrue();
+        assertThat(WaIntakeService.isDetailRequest("ধন্যবাদ")).isFalse();
+        assertThat(WaIntakeService.isDetailRequest(null)).isFalse();
     }
 
     @Test

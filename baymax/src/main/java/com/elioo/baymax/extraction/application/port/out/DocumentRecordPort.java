@@ -57,6 +57,9 @@ public interface DocumentRecordPort {
 
     Mono<Instant> lastDocumentAt(UUID familyId);
 
+    /** The family's newest readable document, for answering a "বিস্তারিত" reply about the one just explained. */
+    Mono<Document> latestDoneDocument(UUID familyId);
+
     Flux<UUID> idsOfFamily(UUID familyId);
 
     Flux<UUID> idsOfPatient(UUID patientId);

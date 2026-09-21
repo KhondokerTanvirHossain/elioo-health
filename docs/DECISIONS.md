@@ -376,3 +376,23 @@ thing keeping it out of the production log is that the gate has never released a
 clicked one. **That is accidental protection, not a control** — it disappears the moment the gate opens, which is
 exactly the moment real families start receiving messages. Rotation is paired with the fix rather than done
 first, because rotating into a log that still records the value buys nothing.
+
+## DR-24 | 2026-09-21 | A retake does not consume a free-tier slot
+
+**Decision:** NEEDS_RETAKE documents do not count against the free-tier monthly limit; only DONE consumes a
+slot, and FAILED does not count either.
+
+**Why:** a retake delivers nothing, so charging for it bills the family for our failure to read their photo,
+contradicts the retake copy ("it's not your fault"), and falls hardest on families with the worst cameras — the
+users the product exists for. Pilot metric 1 is activation within 48h, and a family whose photos bounce and
+whose next upload is refused never activates.
+
+**Supersedes:** none.
+
+*Engineering note.* Found on production during the BMX-10 acceptance run, in the worst possible order: a photo
+came back NEEDS_RETAKE at confidence 0.75 ("it's not your fault, please send another"), and the next upload was
+refused with "you have used all your free reports this month". The filter lives in
+`PostgresDocumentRecordAdapter.countInMonth`, whose only caller is `FreeTierService`; `countInWindow` stays a
+plain count of rows, because reporting wants every document and billing does not. Guard:
+`retakesAndFailuresDoNotConsumeAFreeTierSlot` — replayed red against the unfiltered count, where a family with
+two readable documents and four unreadable ones is refused.
