@@ -144,6 +144,12 @@ public class ExplanationService implements ExplainDocumentUseCase {
                     }
                     // DR-16: the verbatim medicine block goes on after the checklist has passed on the model's text —
                     // it is exempt from the phrase and number checks (it IS the extraction) and must match the store
+                    // An ellipsis in a dosing instruction is a safety defect, not a formatting one: it stood
+                    // in for "৩০ দিন। তারপর" and turned a two-phase regimen into two simultaneous doses.
+                    List<String> elided = MedicineTranscription.elided(medicines);
+                    if (!elided.isEmpty()) {
+                        throw new IllegalStateException("medicine instruction is abbreviated, not transcribed: " + elided);
+                    }
                     String block = MedicineTranscription.block(copy.bn("medicines.header", Map.of()), medicines);
                     String full = block.isEmpty() ? text : text + "\n\n" + block;
                     List<String> missing = MedicineTranscription.verify(full, medicines);

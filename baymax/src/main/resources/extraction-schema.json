@@ -4,79 +4,211 @@
   "description": "Everything written on one medical document, transcribed. Nothing is inferred, normalised or translated: a page with no diagnosis line yields an empty diagnosis array, and a truncated line stays truncated.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["document_type", "values", "medicines", "follow_up", "clinical_context", "confidence"],
+  "required": [
+    "document_type",
+    "values",
+    "medicines",
+    "follow_up",
+    "clinical_context",
+    "confidence"
+  ],
   "properties": {
     "document_type": {
       "type": "string",
-      "enum": ["lab_report", "prescription", "discharge_summary", "imaging_report", "other"]
+      "enum": [
+        "lab_report",
+        "prescription",
+        "discharge_summary",
+        "imaging_report",
+        "other"
+      ]
     },
-    "patient_hint": { "type": ["string", "null"], "maxLength": 200 },
+    "patient_hint": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 200
+    },
     "document_date": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
       "description": "ISO date as written on the document; null when the page does not state one"
     },
-    "facility": { "type": ["string", "null"], "maxLength": 200 },
-
+    "facility": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 200
+    },
     "values": {
       "type": "array",
       "maxItems": 200,
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["name", "value", "source_span"],
+        "required": [
+          "name",
+          "value",
+          "source_span"
+        ],
         "properties": {
-          "name": { "type": "string", "minLength": 1, "maxLength": 200 },
-          "canonical_name": { "type": ["string", "null"], "maxLength": 64 },
-          "value": { "type": "string", "minLength": 1, "maxLength": 100 },
-          "unit": { "type": ["string", "null"], "maxLength": 40 },
-          "ref_low": { "type": ["string", "null"], "maxLength": 40 },
-          "ref_high": { "type": ["string", "null"], "maxLength": 40 },
-          "flag": { "type": ["string", "null"], "enum": ["low", "normal", "high", "critical", null] },
-          "source_span": { "$ref": "#/$defs/source_span" }
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "canonical_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 40
+          },
+          "ref_low": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 40
+          },
+          "ref_high": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 40
+          },
+          "flag": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "low",
+              "normal",
+              "high",
+              "critical",
+              null
+            ]
+          },
+          "source_span": {
+            "$ref": "#/$defs/source_span"
+          }
         }
       }
     },
-
     "medicines": {
       "type": "array",
       "maxItems": 100,
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["name", "source_span"],
+        "required": [
+          "name",
+          "source_span"
+        ],
         "description": "Every text field verbatim as printed or written: no expansion, no molecule name, no normalisation. '1+0+1' stays '1+0+1'.",
         "properties": {
-          "name": { "type": "string", "minLength": 1, "maxLength": 200 },
-          "dose_text": { "type": ["string", "null"], "maxLength": 120 },
-          "route": { "type": ["string", "null"], "maxLength": 60 },
-          "frequency_text": { "type": ["string", "null"], "maxLength": 120 },
-          "timing_text": { "type": ["string", "null"], "maxLength": 120 },
-          "duration_text": { "type": ["string", "null"], "maxLength": 120 },
-          "source_span": { "$ref": "#/$defs/source_span" }
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "dose_text": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 120
+          },
+          "route": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 60
+          },
+          "frequency_text": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 120
+          },
+          "timing_text": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 120
+          },
+          "duration_text": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 120
+          },
+          "instruction_text": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The medicine's WHOLE instruction line, exactly as written, when it cannot be decomposed into the fields above without losing meaning — a multi-phase regimen (\"1+0+0 for 30 days, then 1+0+1 for 2 weeks\") is ONE instruction, not two doses. Set this INSTEAD of guessing a single frequency. Never abbreviate a dosing instruction and never write an ellipsis: the family is shown this text verbatim."
+          },
+          "source_span": {
+            "$ref": "#/$defs/source_span"
+          }
         }
       }
     },
-
     "follow_up": {
       "type": "array",
       "maxItems": 50,
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["instruction", "source_span"],
+        "required": [
+          "instruction",
+          "source_span"
+        ],
         "properties": {
-          "instruction": { "type": "string", "minLength": 1, "maxLength": 400 },
+          "instruction": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 400
+          },
           "due_date": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
             "description": "A relative instruction is resolved against document_date: '৩ মাস পর আসবেন' on 2026-08-06 becomes 2026-11-06. Null only when the page states no timing at all."
           },
-          "source_span": { "$ref": "#/$defs/source_span" }
+          "source_span": {
+            "$ref": "#/$defs/source_span"
+          }
         }
       }
     },
-
     "clinical_context": {
       "type": "object",
       "additionalProperties": false,
@@ -88,62 +220,120 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["text", "source_span"],
+            "required": [
+              "text",
+              "source_span"
+            ],
             "properties": {
-              "text": { "type": "string", "minLength": 1, "maxLength": 400 },
-              "duration": { "type": ["string", "null"], "maxLength": 80 },
-              "source_span": { "$ref": "#/$defs/source_span" }
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 400
+              },
+              "duration": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 80
+              },
+              "source_span": {
+                "$ref": "#/$defs/source_span"
+              }
             }
           }
         },
-        "history": { "$ref": "#/$defs/text_lines" },
-        "examination": { "$ref": "#/$defs/text_lines" },
+        "history": {
+          "$ref": "#/$defs/text_lines"
+        },
+        "examination": {
+          "$ref": "#/$defs/text_lines"
+        },
         "diagnosis": {
           "$ref": "#/$defs/text_lines",
           "description": "Only a diagnosis written on the page. Never inferred from the medicines, the tests or the symptoms; an absent diagnosis line means an empty array."
         },
-        "investigations_advised": { "$ref": "#/$defs/text_lines" },
+        "investigations_advised": {
+          "$ref": "#/$defs/text_lines"
+        },
         "advice": {
           "$ref": "#/$defs/text_lines",
           "description": "What the doctor told the patient to do. Load-bearing for the Bangla explanation."
         },
         "referral": {
-          "type": ["object", "null"],
+          "type": [
+            "object",
+            "null"
+          ],
           "additionalProperties": false,
-          "required": ["text", "source_span"],
+          "required": [
+            "text",
+            "source_span"
+          ],
           "properties": {
-            "text": { "type": "string", "minLength": 1, "maxLength": 400 },
-            "source_span": { "$ref": "#/$defs/source_span" }
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 400
+            },
+            "source_span": {
+              "$ref": "#/$defs/source_span"
+            }
           }
         }
       }
     },
-
-    "free_text_summary": { "type": ["string", "null"], "maxLength": 2000 },
-
+    "free_text_summary": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 2000
+    },
     "confidence": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["overall"],
+      "required": [
+        "overall"
+      ],
       "properties": {
-        "overall": { "$ref": "#/$defs/confidence" },
-        "values": { "$ref": "#/$defs/confidence" },
-        "medicines": { "$ref": "#/$defs/confidence" },
-        "follow_up": { "$ref": "#/$defs/confidence" },
-        "clinical_context": { "$ref": "#/$defs/confidence" }
+        "overall": {
+          "$ref": "#/$defs/confidence"
+        },
+        "values": {
+          "$ref": "#/$defs/confidence"
+        },
+        "medicines": {
+          "$ref": "#/$defs/confidence"
+        },
+        "follow_up": {
+          "$ref": "#/$defs/confidence"
+        },
+        "clinical_context": {
+          "$ref": "#/$defs/confidence"
+        }
       }
     }
   },
-
   "$defs": {
-    "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+    "confidence": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
     "text_lines": {
       "type": "array",
       "maxItems": 40,
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["text", "source_span"],
+        "required": [
+          "text",
+          "source_span"
+        ],
         "properties": {
           "text": {
             "type": "string",
@@ -151,19 +341,34 @@
             "maxLength": 400,
             "description": "Exactly as written, including a line that stops mid-sentence."
           },
-          "source_span": { "$ref": "#/$defs/source_span" }
+          "source_span": {
+            "$ref": "#/$defs/source_span"
+          }
         }
       }
     },
     "source_span": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["page", "start", "end"],
+      "required": [
+        "page",
+        "start",
+        "end"
+      ],
       "description": "Character offsets into that page's OCR text; the server maps them to a bounding box and stores a crop.",
       "properties": {
-        "page": { "type": "integer", "minimum": 1 },
-        "start": { "type": "integer", "minimum": 0 },
-        "end": { "type": "integer", "minimum": 0 }
+        "page": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 0
+        }
       }
     }
   }

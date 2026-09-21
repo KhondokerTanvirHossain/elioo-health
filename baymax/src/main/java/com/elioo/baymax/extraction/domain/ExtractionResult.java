@@ -47,6 +47,13 @@ public record ExtractionResult(
             @JsonProperty("frequency_text") String frequencyText,
             @JsonProperty("timing_text") String timingText,
             @JsonProperty("duration_text") String durationText,
+            /**
+             * The medicine's whole instruction line, exactly as written, when it does not fit the fields above
+             * — a multi-phase regimen ("১+০+০ ৩০ দিন। তারপর ১+০+১ ২ সপ্তাহ") is one instruction, not two doses.
+             * Set by the model when it cannot decompose the line without losing meaning; the family then
+             * receives this instead of the fields (DR-16).
+             */
+            @JsonProperty("instruction_text") String instructionText,
             @JsonProperty("source_span") SourceSpan sourceSpan
     ) {
     }
