@@ -189,6 +189,43 @@ public class ExplanationService implements ExplainDocumentUseCase {
                         : messages.recordDelivery(saved.id(), outcome, now)));
     }
 
+    /**
+     * May the ROUTINE message say "everything is within the normal range"?
+     *
+     * <p>Only when the document actually carries values with printed ranges and every one of them is inside.
+     * The claim is about the document, not about the patient, and a document with no printed ranges cannot
+     * support it. On 2026-09-21 a prescription recording near-blackout, hallucinations and a new Parkinson's
+     * diagnosis was sent with that line, because the ROUTINE template asserted it unconditionally — the copy
+     * had been written for lab reports and nothing checked that the document was one.
+     *
+     * <p>ROUTINE itself is unchanged and correct: a diagnosis on a prescription is not a reason to see a
+     * doctor, because the doctor just wrote it (PO ruling 2026-09-18). What was wrong was the reassurance.
+     */
+    static boolean canSayWithinNormalRange(DocumentFacts facts) {
+        List<Map<String, Object>> values = facts.values();
+        if (values == null || values.isEmpty()) {
+            return false;
+        }
+        boolean anyWithRange = false;
+        for (Map<String, Object> value : values) {
+            boolean hasLow = value.get("ref_low") != null && !String.valueOf(value.get("ref_low")).isBlank();
+            boolean hasHigh = value.get("ref_high") != null && !String.valueOf(value.get("ref_high")).isBlank();
+            if (!hasLow && !hasHigh) {
+                // a value we cannot place against a printed range: the claim would cover it without evidence
+                return false;
+            }
+            anyWithRange = true;
+            String flag = value.get("flag") == null ? "" : String.valueOf(value.get("flag"));
+            if (!flag.isBlank() && !"normal".equalsIgnoreCase(flag)) {
+                return false;
+            }
+            if (Boolean.TRUE.equals(value.get("critical"))) {
+                return false;
+            }
+        }
+        return anyWithRange;
+    }
+
     /** The fixed skeleton: template lines with the extraction's own numbers. */
     String skeleton(DocumentFacts facts, UrgencyAssessment assessed, boolean detail) {
         Document d = facts.document();
@@ -220,7 +257,8 @@ public class ExplanationService implements ExplainDocumentUseCase {
         return switch (assessed.level()) {
             case NOW -> copy.bn("explanation.now", vars);
             case THIS_WEEK -> copy.bn("explanation.this_week", vars);
-            case ROUTINE -> copy.bn("explanation.routine", vars);
+            case ROUTINE -> copy.bn(canSayWithinNormalRange(facts)
+                    ? "explanation.routine" : "explanation.routine.filed", vars);
         };
     }
 
