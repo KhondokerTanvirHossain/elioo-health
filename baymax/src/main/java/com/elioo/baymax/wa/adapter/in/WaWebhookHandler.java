@@ -108,7 +108,7 @@ public class WaWebhookHandler {
                     } else if ("document".equals(type)) {
                         subscribe(intake.onImage(from, message.path("document").path("id").asText("")), from);
                     } else if ("text".equals(type)) {
-                        subscribe(intake.onText(from), from);
+                        subscribe(intake.onText(from, message.path("text").path("body").asText("")), from);
                     } else {
                         log.info("[baymax] wa inbound ignored type={} from={}", type, maskedNumber(from));
                     }

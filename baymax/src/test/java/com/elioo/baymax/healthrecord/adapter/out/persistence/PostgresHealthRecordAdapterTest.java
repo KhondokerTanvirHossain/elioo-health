@@ -148,6 +148,52 @@ class PostgresHealthRecordAdapterTest {
         });
     }
 
+    /**
+     * DR-24: a NEEDS_RETAKE document delivered nothing, so it does not consume a free-tier slot. Charging for
+     * it bills the family for our failure to read their photo, contradicts the retake copy ("it's not your
+     * fault"), and falls hardest on the families with the worst cameras — the users the product exists for.
+     * FAILED does not count either.
+     */
+    @Test
+    void retakesAndFailuresDoNotConsumeAFreeTierSlot() {
+        runner().run(context -> {
+            HealthRecordPort port = context.getBean(HealthRecordPort.class);
+            FreeTierUseCase freeTier = context.getBean(FreeTierUseCase.class);
+            Instant t = Instant.parse("2026-09-21T08:00:00Z");
+
+            FamilyAccount family = port.createFamily(new FamilyAccount(
+                    null, "+8801700000801", "Shireen", FamilyAccount.Plan.FREE, t, t)).block();
+            PatientProfile ma = port.createPatient(new PatientProfile(
+                    null, family.id(), "Ma", 70, PatientProfile.Sex.FEMALE, List.of(), t, t)).block();
+
+            YearMonth month = YearMonth.now(ZoneOffset.UTC);
+            String inMonth = month.atDay(2).atStartOfDay(ZoneOffset.UTC).toInstant().toString();
+
+            // two readable documents plus three we could not read: still one slot left, not minus two
+            for (int i = 0; i < 2; i++) {
+                seedDocumentWithStatus(family.id(), ma.id(), UUID.randomUUID(), inMonth, "DONE");
+            }
+            for (int i = 0; i < 3; i++) {
+                seedDocumentWithStatus(family.id(), ma.id(), UUID.randomUUID(), inMonth, "NEEDS_RETAKE");
+            }
+            seedDocumentWithStatus(family.id(), ma.id(), UUID.randomUUID(), inMonth, "FAILED");
+
+            StepVerifier.create(freeTier.checkCanUploadDocument(family.id())).verifyComplete();
+
+            // the third readable document is what actually exhausts the plan
+            seedDocumentWithStatus(family.id(), ma.id(), UUID.randomUUID(), inMonth, "DONE");
+            StepVerifier.create(freeTier.checkCanUploadDocument(family.id()))
+                    .expectErrorMatches(e -> e instanceof FreeTierExceededException f
+                            && f.reason().equals("free_tier_documents"))
+                    .verify();
+        });
+    }
+
+    private static void seedDocumentWithStatus(UUID family, UUID patient, UUID doc, String createdAt, String status) throws Exception {
+        sql("insert into baymax.document (id, patient_id, family_id, status, page_count, created_at, updated_at) values ('"
+                + doc + "','" + patient + "','" + family + "','" + status + "',1,'" + createdAt + "','" + createdAt + "')");
+    }
+
     private static void seedDocument(UUID family, UUID patient, UUID doc, String createdAt) throws Exception {
         sql("insert into baymax.document (id, patient_id, family_id, status, page_count, created_at, updated_at) values ('"
                 + doc + "','" + patient + "','" + family + "','DONE',1,'" + createdAt + "','" + createdAt + "')");

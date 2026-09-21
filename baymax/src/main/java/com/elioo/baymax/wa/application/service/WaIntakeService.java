@@ -37,6 +37,8 @@ import java.util.Map;
 public class WaIntakeService {
 
     private final HealthRecordPort records;
+    private final com.elioo.baymax.extraction.application.port.out.DocumentRecordPort documents;
+    private final com.elioo.baymax.outbound.application.port.in.ExplainDocumentUseCase explainer;
     private final DocumentIntakeUseCase intake;
     private final WaMessagingPort graph;
     private final Copy copy;
@@ -87,13 +89,34 @@ public class WaIntakeService {
                 .thenReturn(Outcome.ACCEPTED);
     }
 
-    /** A text message: acknowledged and logged, nothing more in phase 1. */
-    public Mono<Outcome> onText(String from) {
+    /**
+     * A text message. Every explanation ends with an invitation — বিস্তারিত শুনতে চাইলে লিখুন "বিস্তারিত" —
+     * so that word must be answered: a family following an instruction we gave them and getting silence is the
+     * same failure as a photo vanishing. Anything else is acknowledged and logged, as phase 1 intends.
+     */
+    public Mono<Outcome> onText(String from, String text) {
         String number = e164(from);
         return records.findFamilyByWhatsapp(number)
-                .map(family -> Outcome.ACCEPTED)
+                .flatMap(family -> isDetailRequest(text)
+                        ? documents.latestDoneDocument(family.id())
+                                .flatMap(document -> explainer.detail(document.id()))
+                                .flatMap(message -> message.body() == null || message.body().isBlank()
+                                        ? Mono.just(Outcome.FAILED)
+                                        : send(number, message.body()).thenReturn(Outcome.ACCEPTED))
+                                .switchIfEmpty(Mono.defer(() -> reply(number, "wa.no_document", Outcome.ACCEPTED,
+                                        "detail asked for but no readable document yet")))
+                        : Mono.just(Outcome.ACCEPTED))
                 .switchIfEmpty(Mono.defer(() -> reply(number, "wa.unknown", Outcome.UNKNOWN_SENDER,
                         "text from unknown sender")));
+    }
+
+    /** The invitation is literal; accept the word with or without surrounding whitespace or punctuation. */
+    static boolean isDetailRequest(String text) {
+        if (text == null) {
+            return false;
+        }
+        String trimmed = text.trim().replaceAll("[।.!?,]+$", "");
+        return trimmed.equals("বিস্তারিত") || trimmed.equalsIgnoreCase("detail") || trimmed.equalsIgnoreCase("bistarito");
     }
 
     private Mono<Outcome> reply(String number, String key, Outcome outcome, String why) {
