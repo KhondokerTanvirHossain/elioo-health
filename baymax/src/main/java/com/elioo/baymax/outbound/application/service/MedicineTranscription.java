@@ -35,26 +35,41 @@ final class MedicineTranscription {
      * worse than the full line.
      */
     static String block(String header, List<Map<String, Object>> medicines) {
+        List<String> lines = lines(medicines);
+        return lines.isEmpty() ? "" : header + "\n" + String.join("\n", lines);
+    }
+
+    /** One verbatim line per medicine, in order; empty entries are skipped. */
+    static List<String> lines(List<Map<String, Object>> medicines) {
         List<String> lines = new ArrayList<>();
         for (Map<String, Object> m : medicines) {
-            String whole = text(m.get("instruction_text"));
-            if (!whole.isEmpty()) {
-                String name = text(m.get("name"));
-                lines.add(name.isEmpty() || whole.startsWith(name) ? whole : name + SEPARATOR + whole);
-                continue;
-            }
-            List<String> parts = new ArrayList<>();
-            for (String f : FIELDS) {
-                String s = text(m.get(f));
-                if (!s.isEmpty()) {
-                    parts.add(s);
-                }
-            }
-            if (!parts.isEmpty()) {
-                lines.add(String.join(SEPARATOR, parts));
+            String line = line(m);
+            if (!line.isEmpty()) {
+                lines.add(line);
             }
         }
-        return lines.isEmpty() ? "" : header + "\n" + String.join("\n", lines);
+        return lines;
+    }
+
+    /**
+     * The single line a family sees for one medicine: its whole original instruction when the fields could not
+     * hold it, otherwise the fields joined verbatim. One definition, so the block and the splitter can never
+     * disagree about what a medicine line is.
+     */
+    static String line(Map<String, Object> m) {
+        String whole = text(m.get("instruction_text"));
+        if (!whole.isEmpty()) {
+            String name = text(m.get("name"));
+            return name.isEmpty() || whole.startsWith(name) ? whole : name + SEPARATOR + whole;
+        }
+        List<String> parts = new ArrayList<>();
+        for (String f : FIELDS) {
+            String s = text(m.get(f));
+            if (!s.isEmpty()) {
+                parts.add(s);
+            }
+        }
+        return String.join(SEPARATOR, parts);
     }
 
     /**

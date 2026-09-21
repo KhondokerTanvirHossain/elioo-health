@@ -150,11 +150,30 @@ public class ExplanationService implements ExplainDocumentUseCase {
                     if (!elided.isEmpty()) {
                         throw new IllegalStateException("medicine instruction is abbreviated, not transcribed: " + elided);
                     }
+                    // DR-26: the doctor's own diagnosis lines, verbatim, inserted after generation like the
+                    // medicines — never explained, never paraphrased, never passed to the model. The family's
+                    // first question is whether anything is wrong and the doctor has written the answer;
+                    // listing the medicines while omitting the diagnosis they treat is the silent failure.
+                    String diagnosis = DiagnosisTranscription.block(copy.bn("diagnosis.header", Map.of()), facts);
+                    String head = diagnosis.isEmpty() ? text : text + "\n\n" + diagnosis;
                     String block = MedicineTranscription.block(copy.bn("medicines.header", Map.of()), medicines);
-                    String full = block.isEmpty() ? text : text + "\n\n" + block;
+                    String full = block.isEmpty() ? head : head + "\n\n" + block;
                     List<String> missing = MedicineTranscription.verify(full, medicines);
                     if (!missing.isEmpty()) {
                         throw new IllegalStateException("medicine transcription is not verbatim: " + missing);
+                    }
+                    List<String> dxMissing = DiagnosisTranscription.verify(full, facts);
+                    if (!dxMissing.isEmpty()) {
+                        throw new IllegalStateException("diagnosis transcription is not verbatim: " + dxMissing);
+                    }
+                    // The cap is asserted on what is actually SENT, after every insertion — it used to run on
+                    // the model's text while the longest part was appended afterwards, so it never covered the
+                    // medicine block at all (thirteenth flattering failure: a check that does not cover what it
+                    // claims to). Overflow splits into further messages; nothing is truncated or dropped.
+                    int cap = properties.getOutbound().getMaxChars();
+                    if (full.length() > cap) {
+                        log.info("[baymax] explanation exceeds {} chars ({}), splitting documentId={}",
+                                cap, full.length(), facts.document().id());
                     }
                     return new OutboundMessage(null, facts.document().familyId(), facts.document().patientId(), facts.document().id(),
                             kind, assessed.level(), assessed.reasons(), full, gate.decide(assessed.level()),

@@ -109,6 +109,10 @@ Key files when changing behaviour:
   whenever the gate changes** (thresholds, the expected-sections table, or the gate code) against every document
   in production. It is how the 2-of-6 false-retake rate was found, and every retake rate measured before
   2026-09-21 carries that artefact.
+- **A limit is asserted on the thing actually sent, after every insertion — never on an intermediate.** The
+  600-character cap ran in `MessageSafetyCheck` on the model's phrased text, and the medicine block, the
+  longest part, was appended afterwards: the cap never covered it at all. Thirteenth instance of a check that
+  does not cover what it claims to. Same shape whenever a value is assembled in stages — assert at the end.
 - **For any rule with two directions (protect X, still catch Y), write both tests before the implementation.**
   A one-directional fix passes the safe case and hides the dangerous one, and the passing half makes it look
   finished. The section gate had to stop rejecting prescriptions for an empty `values[]` *and* keep rejecting a

@@ -416,3 +416,30 @@ and its `stored_object` ledger row, then **verify the bucket, not just the ledge
 (#41) was exactly a ledger that agreed with itself while objects survived. The commit-then-bucket ordering from
 that fix does not apply here because the document row stays either way. Logs carry counts only, never a family
 or patient id.
+
+## DR-26 | 2026-09-21 | The doctor's diagnosis lines go in the message, verbatim
+
+**Decision:** The explanation message includes the document's diagnosis lines verbatim under "ডাক্তার লিখেছেন",
+with their crops. Never explained, paraphrased, or linked to medicines or symptoms. Chief complaints,
+examination and history remain on the timeline and in the detail reply.
+
+**Why:** the family's first question is whether anything is wrong, and the doctor has written the answer;
+listing medicines while omitting the diagnosis they treat is the silent failure. Transcription is grounded;
+interpretation is where the risk lives — same line as DR-16.
+
+**Supersedes:** none.
+
+*Engineering note.* Found on 2026-09-21: prescription 08c02570 recorded "HTN (known)", "HTN + DM (known)" and
+"Parkinson Disease", plus near-blackout and hallucinations in the complaints, and the family received a medicine
+list and a (false) reassurance. `DiagnosisTranscription` inserts the lines after generation exactly as
+`MedicineTranscription` does — never passed to the model, verified character for character against the store,
+and the composition fails closed if a line is missing. Only `diagnosis` is included; complaints and examination
+are deliberately not.
+
+*The 600-character cap, same ruling.* The cap ran on the model's text while the medicine block — the longest
+part — was appended afterwards, so it never covered it. It is now asserted on the complete body after every
+insertion. Where that body overflows, `MessageSplit` sends a second message rather than dropping medicines:
+the cap was set for single-bubble readability, WhatsApp allows 4,096, and it must never be the reason a family
+loses their dosing instructions. A medicine line is never truncated and never dropped; the split falls on a
+line boundary. Measured across the production documents before building: 0 of 4 exceeded 600, but the headroom
+is 5 medicines at the observed mean line length, so a 6-medicine prescription overflows.
