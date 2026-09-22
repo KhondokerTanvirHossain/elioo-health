@@ -204,9 +204,33 @@ def match_follow_up(expected, actual):
     return hits, misses, len(remaining)
 
 
+def require_verified(expected, expected_path):
+    """A label that has not been read by a human is not a label.
+
+    A model drafted these files; scoring against them unchecked would report the model's agreement with
+    itself as accuracy — a number that looks like a measurement and is not one. The gate is deliberately
+    loud and deliberately unskippable: there is no flag to bypass it, because the only reason to want one
+    is to produce exactly the number that must not be produced.
+    """
+    # A label with NO "verified" key is hand-written and predates drafting — batch 1 is ten such files,
+    # and they are the most trustworthy labels in the project. Only a file that explicitly says it is
+    # unverified is refused: the key exists to mark model-drafted output, not to invalidate human work.
+    if "verified" not in expected:
+        return
+    if expected.get("verified") is not True:
+        sys.exit(
+            f"REFUSING TO SCORE: {expected_path} is not verified.\n"
+            f'  It says "verified": {json.dumps(expected.get("verified"))}.\n'
+            "  This label was drafted by the model. Scoring against it measures the model's agreement\n"
+            "  with itself, not its accuracy. Read every field against the image, correct what is wrong,\n"
+            '  then set "verified": true and "verified_by".'
+        )
+
+
 def score_one(report_path, stem, expected_path, latency_ms, result, document_id=None):
     with open(expected_path) as f:
         expected = json.load(f)
+    require_verified(expected, expected_path)
     entry = score_entry(stem, expected, latency_ms, result, document_id)
     with open(report_path) as f:
         report = json.load(f)
@@ -284,8 +308,10 @@ def rescore(report_path, expected_dir):
     for old in report["documents"]:
         if "result" not in old:
             sys.exit(f"{report_path}: document {old['document']} has no stored result; cannot rescore")
-        with open(f"{expected_dir}/{old['document']}.json") as f:
+        expected_path = f"{expected_dir}/{old['document']}.json"
+        with open(expected_path) as f:
             expected = json.load(f)
+        require_verified(expected, expected_path)
         rebuilt.append(score_entry(old["document"], expected, old["latency_ms"], old["result"],
                                    old.get("document_id")))
     report["documents"] = rebuilt
