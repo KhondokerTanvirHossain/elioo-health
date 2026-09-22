@@ -450,3 +450,27 @@ the cap was set for single-bubble readability, WhatsApp allows 4,096, and it mus
 loses their dosing instructions. A medicine line is never truncated and never dropped; the split falls on a
 line boundary. Measured across the production documents before building: 0 of 4 exceeded 600, but the headroom
 is 5 medicines at the observed mean line length, so a 6-medicine prescription overflows.
+
+## DR-29 | 2026-09-22 | Extraction transcribes references, never computes them
+
+**Decision:** Extraction transcribes references, never computes them. `ref_low`/`ref_high` only when the page
+prints numbers; any other reference goes verbatim into `ref_text`; tiered references record the printed
+`band`. `flag` records only a mark the page prints. **Abnormal judgement (`status`) is computed in code,
+never by the model.**
+
+**Why:** the model invented numeric ranges for word references — lab2's "Nil" stored with `ref_low` 0 and
+`ref_high` 2, a range not on the page — and wrote flags from its own comparisons. Fabricated ranges were
+driving urgency with nothing to flag them.
+
+**Supersedes:** none.
+
+*Engineering note.* The schema gave a value only `ref_low`, `ref_high` and `flag`, so a reference printed as
+a word had nowhere to go and the model filled the numeric fields anyway. Three separate questions were
+collapsed into one: what the page printed as a reference (`ref_text`, `band`), what mark the page printed
+(`flag`), and whether the value is abnormal (`status`). The label format now keeps them apart and the scorer
+scores each as its own section — with **missed abnormals reported separately from false ones**, because a
+missed low is a missed urgency and a false one is a family sent to a doctor for nothing.
+
+Batch 2 also showed why the urgency *rule* must be reported beside the level: a sex-range misselection
+removed a real low haemoglobin while both label and extraction still read THIS_WEEK overall. Comparing levels
+alone would have called that a match.
