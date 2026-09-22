@@ -228,8 +228,20 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
                     "part of the document was not read confidently enough (%.2f)".formatted(gatedSection),
                     attempt, result, null);
         }
+        // DR-28: the gate above judged what was EXTRACTED; this judges what will actually be SHOWN. A value
+        // with no locatable crop is never persisted (crop_key is NOT NULL, "no number without its source"),
+        // so a lab report can pass every confidence check and still show the family nothing. lab10 did
+        // exactly that: DONE at 0.9, one value extracted, one dropped, zero shown.
         return verify(document, pages, result)
-                .flatMap(items -> finish(document, Document.Status.DONE, null, attempt, result, items));
+                .flatMap(items -> {
+                    if (showsNothingItShould(result, items, thresholds)) {
+                        return finish(document, Document.Status.NEEDS_RETAKE,
+                                "nothing from the %s of this %s could be shown with its source"
+                                        .formatted(gatingSectionOf(result, thresholds), typeOf(result)),
+                                attempt, result, null);
+                    }
+                    return finish(document, Document.Status.DONE, null, attempt, result, items);
+                });
     }
 
 
@@ -259,7 +271,7 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
      */
     private static String missingExpectedSection(ExtractionResult result,
                                                  BaymaxProperties.Extract thresholds) {
-        for (String section : thresholds.getExpectedSections().getOrDefault(typeOf(result), List.of())) {
+        for (String section : thresholds.getGatingSections().getOrDefault(typeOf(result), List.of())) {
             if (itemCount(result, section) == 0) {
                 return section;
             }
@@ -279,17 +291,52 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
         if (c == null) {
             return 1d;
         }
+        // DR-27: only the sections that matter for this document type gate a retake. clinical_context is
+        // deliberately absent from every gating list — lab1 read 21 values at 0.92 and was retaken because a
+        // clinical section a lab report barely has scored 0.60.
+        List<String> gating = thresholds.getGatingSections().getOrDefault(typeOf(result), List.of());
         double lowest = 1d;
         for (var entry : java.util.Map.of("values", c.values(), "medicines", c.medicines(),
                 "follow_up", c.followUp()).entrySet()) {
-            if (entry.getValue() != null && itemCount(result, entry.getKey()) > 0) {
+            if (gating.contains(entry.getKey()) && entry.getValue() != null
+                    && itemCount(result, entry.getKey()) > 0) {
                 lowest = Math.min(lowest, entry.getValue());
             }
         }
-        if (c.clinicalContext() != null && result.clinicalContextOrEmpty().itemCount() > 0) {
-            lowest = Math.min(lowest, c.clinicalContext());
-        }
         return lowest;
+    }
+
+    /** The first gating section for this type, for the retake reason; "document" when the type gates nothing. */
+    private static String gatingSectionOf(ExtractionResult result, BaymaxProperties.Extract thresholds) {
+        List<String> gating = thresholds.getGatingSections().getOrDefault(typeOf(result), List.of());
+        return gating.isEmpty() ? "document" : gating.get(0);
+    }
+
+    /**
+     * True when a gating section was read but nothing from it survived cropping — the family would be shown
+     * an empty report (DR-28). Judged on the verified items, not the extraction, because that is what they
+     * see: every value here carries a crop, by construction.
+     */
+    private static boolean showsNothingItShould(ExtractionResult result, VerifiedItems items,
+                                                BaymaxProperties.Extract thresholds) {
+        if (items == null) {
+            return false;
+        }
+        for (String section : thresholds.getGatingSections().getOrDefault(typeOf(result), List.of())) {
+            if (itemCount(result, section) > 0 && shownCount(items, section) == 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static int shownCount(VerifiedItems items, String section) {
+        return switch (section) {
+            case "values" -> items.observations() == null ? 0 : items.observations().size();
+            case "medicines" -> items.medications() == null ? 0 : items.medications().size();
+            case "follow_up" -> items.followUps() == null ? 0 : items.followUps().size();
+            default -> 1;
+        };
     }
 
     /**

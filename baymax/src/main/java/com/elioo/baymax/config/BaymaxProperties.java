@@ -247,7 +247,12 @@ public class BaymaxProperties {
         /** Below this, any single section (values, medicines, follow-up) forces a retake. */
         private double minConfidenceSection = 0.70;
         /**
-         * Which sections each document type is expected to carry, by {@code document_type}.
+         * Which sections the confidence gate CHECKS, by {@code document_type} (DR-27).
+         *
+         * <p>Only the sections that matter for the type gate a retake: a lab report on its values, a
+         * prescription on its medicines and follow-up. Every other section is still extracted and shown —
+         * its confidence simply never triggers a retake. lab1 was retaken because {@code clinical_context}
+         * scored 0.60 on a lab report, which barely has clinical context, while its 21 values read at 0.92.
          *
          * <p>An empty section means one of two things — nothing on the page, or we could not read it — and the
          * confidence number alone cannot tell them apart. A prescription has no lab values, so a zero there is
@@ -257,9 +262,9 @@ public class BaymaxProperties {
          *
          * <p>A type absent from this map expects nothing, so only its confidence numbers gate it.
          */
-        private Map<String, List<String>> expectedSections = new java.util.LinkedHashMap<>(Map.of(
+        private Map<String, List<String>> gatingSections = new java.util.LinkedHashMap<>(Map.of(
                 "lab_report", List.of("values"),
-                "prescription", List.of("medicines"),
+                "prescription", List.of("medicines", "follow_up"),
                 "discharge_summary", List.of(),
                 "imaging_report", List.of(),
                 "other", List.of()));
