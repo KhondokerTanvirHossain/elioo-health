@@ -269,3 +269,12 @@ output; it does not invalidate human work that predates it.
 **Do not run `evaluate-extraction.sh` without `TESTSET=`.** It globs `$TESTSET/*.png`, so from the default
 `docs/testset` it would run batch 1 and batch 2 together — twice the cost, two corpora in one report. Use
 `TESTSET=docs/testset/batch2`.
+
+## Batch 2 findings
+
+Code-level findings from the ten lab reports — schema gaps, the urgency stopgap being wrong in both
+directions, trends computed across units, range selection, date ambiguity — are in
+[../EXTRACTION_FINDINGS.md](../EXTRACTION_FINDINGS.md), which carries no patient values and is tracked.
+
+The report-by-report detail **with real values** is in `batch2/FINDINGS.md`, which is git-ignored with the
+images. It stays out of the repository for the same reason the images do.
