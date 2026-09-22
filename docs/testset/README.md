@@ -242,3 +242,30 @@ Scored on the radiologist's written report only; the pipeline never interprets t
   ]
 }
 ```
+
+## Labels: hand-written, or model-drafted then human-verified
+
+Batch 1 (`1.png`–`10.png`, `expected/*.json`) was hand-labelled from scratch. Those files carry no
+`verified` key and are scored as-is — they are the most trustworthy labels here.
+
+Batch 2 (`batch2/lab1.png`–`lab10.png`) is too dense to hand-label from scratch, so the labels were
+**drafted by the model and must be verified by a human before they mean anything**:
+
+1. `scripts/draft-labels.sh docs/testset/batch2` runs extraction once and writes
+   `batch2/expected/lab<n>.json`, each carrying `"verified": false` and a `_draft` block with the model's
+   own confidence per section.
+2. A human reads every field against the image — value, unit, `ref_low`, `ref_high`, `flag` — corrects what
+   is wrong, and sets `"verified": true` with `"verified_by"`.
+3. Only then can it be scored.
+
+**`scripts/score_extraction.py` refuses to score a file that says `"verified": false`,** and there is no
+flag to bypass it. Scoring a model against its own unchecked output reports the model's agreement with
+itself as accuracy: a number that looks like a measurement and is not one. The refusal is the only thing
+standing between a drafted label and that number.
+
+A label with no `verified` key at all is treated as hand-written (batch 1). The key marks model-drafted
+output; it does not invalidate human work that predates it.
+
+**Do not run `evaluate-extraction.sh` without `TESTSET=`.** It globs `$TESTSET/*.png`, so from the default
+`docs/testset` it would run batch 1 and batch 2 together — twice the cost, two corpora in one report. Use
+`TESTSET=docs/testset/batch2`.
