@@ -474,3 +474,27 @@ missed low is a missed urgency and a false one is a family sent to a doctor for 
 Batch 2 also showed why the urgency *rule* must be reported beside the level: a sex-range misselection
 removed a real low haemoglobin while both label and extraction still read THIS_WEEK overall. Comparing levels
 alone would have called that a match.
+
+## DR-30 | 2026-09-22 | Several printed ranges: extraction transcribes all, code selects
+
+**Decision:** When a report prints several reference ranges, extraction transcribes **each one with its
+printed qualifier** (male/female, adult/child, an age band); **code selects** the applicable range. Sex and
+age come from the report first, the patient profile second; a conflict between them is logged and **the
+report wins**. If the needed attribute is still unknown, every applicable range is evaluated: all give the
+same verdict → use it; verdicts differ → `status` is **undetermined**. Never the first range printed, never a
+default of normal. An undetermined value withdraws the "within normal range" claim.
+
+**Why:** lab1's haemoglobin is low only against the male range, and a wrong selection removes a real abnormal
+silently. The model must not make the choice, and neither may a default.
+
+**Supersedes:** none. Pairs with DR-29 (transcribe, never compute) and DR-28 (a value that cannot be judged
+withdraws the claim).
+
+*Engineering note.* Schema: `values[].ranges[]` of `{low, high, qualifier}` alongside `ref_text`.
+`ref_low`/`ref_high` become the **selected** range, filled by code rather than the model — they stay in place
+so every existing reader keeps working, but nothing upstream writes them any more.
+
+The failure this prevents is silent in both the product and the scorer: lab1's Hb 12.9 reads low against the
+male range (13.0–18.0) and normal against the female (11.5–16.5). A wrong choice removes a real low
+haemoglobin, and because some *other* value still escalated the report to THIS_WEEK, a level-only comparison
+scored it as a match. The scorer now compares the producing rule, not just the level.
