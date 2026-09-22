@@ -104,6 +104,21 @@ Key files when changing behaviour:
   save time and discarding the delivery outcome, so the first real WhatsApp send produced a row saying
   `delivery_status` NULL with no `wamid` for a message that had demonstrably gone out. The rule now lives in a
   CHECK constraint (V14): no code path, present or future, can store a row claiming a delivery it never got.
+- The retake gate has a replay harness: `scripts/replay-extraction-gate.py` runs every document's **stored**
+  extraction through the current gate — no model calls, no cost — and prints which decisions change. **Rerun it
+  whenever the gate changes** (thresholds, the expected-sections table, or the gate code) against every document
+  in production. It is how the 2-of-6 false-retake rate was found, and every retake rate measured before
+  2026-09-21 carries that artefact.
+- **A limit is asserted on the thing actually sent, after every insertion — never on an intermediate.** The
+  600-character cap ran in `MessageSafetyCheck` on the model's phrased text, and the medicine block, the
+  longest part, was appended afterwards: the cap never covered it at all. Thirteenth instance of a check that
+  does not cover what it claims to. Same shape whenever a value is assembled in stages — assert at the end.
+- **For any rule with two directions (protect X, still catch Y), write both tests before the implementation.**
+  A one-directional fix passes the safe case and hides the dangerous one, and the passing half makes it look
+  finished. The section gate had to stop rejecting prescriptions for an empty `values[]` *and* keep rejecting a
+  lab report that read nothing; the first implementation's `typeOf()` read an unset column, so every document
+  became `"other"` — prescriptions passed and a blurry lab report would have sailed through. Only the
+  second test caught it, and only because it existed before the code.
 - **A red replay must fail ON the defect, not merely fail.** Read the failure message and confirm it names the
   bug: `expected: DEFERRED but was: DROPPED`, `duplicate key value violates unique constraint`. A guard whose
   replay died on a `NullPointerException` in its own Mockito matcher was red, looked like a successful replay and

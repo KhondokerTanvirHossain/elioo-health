@@ -144,11 +144,42 @@ public class ExplanationService implements ExplainDocumentUseCase {
                     }
                     // DR-16: the verbatim medicine block goes on after the checklist has passed on the model's text —
                     // it is exempt from the phrase and number checks (it IS the extraction) and must match the store
+                    // An ellipsis in a dosing instruction is a safety defect, not a formatting one: it stood
+                    // in for "৩০ দিন। তারপর" and turned a two-phase regimen into two simultaneous doses.
+                    List<String> elided = MedicineTranscription.elided(medicines);
+                    if (!elided.isEmpty()) {
+                        throw new IllegalStateException("medicine instruction is abbreviated, not transcribed: " + elided);
+                    }
+                    // DR-26: the doctor's own diagnosis lines, verbatim, inserted after generation like the
+                    // medicines — never explained, never paraphrased, never passed to the model. The family's
+                    // first question is whether anything is wrong and the doctor has written the answer;
+                    // listing the medicines while omitting the diagnosis they treat is the silent failure.
+                    String diagnosis = DiagnosisTranscription.block(copy.bn("diagnosis.header", Map.of()), facts);
+                    String head = diagnosis.isEmpty() ? text : text + "\n\n" + diagnosis;
                     String block = MedicineTranscription.block(copy.bn("medicines.header", Map.of()), medicines);
-                    String full = block.isEmpty() ? text : text + "\n\n" + block;
+                    String full = block.isEmpty() ? head : head + "\n\n" + block;
                     List<String> missing = MedicineTranscription.verify(full, medicines);
                     if (!missing.isEmpty()) {
                         throw new IllegalStateException("medicine transcription is not verbatim: " + missing);
+                    }
+                    List<String> dxMissing = DiagnosisTranscription.verify(full, facts);
+                    if (!dxMissing.isEmpty()) {
+                        throw new IllegalStateException("diagnosis transcription is not verbatim: " + dxMissing);
+                    }
+                    // The cap is asserted on what is actually SENT, after every insertion — it used to run on
+                    // the model's text while the longest part was appended afterwards, so it never covered the
+                    // medicine block at all (thirteenth flattering failure: a check that does not cover what it
+                    // claims to). Overflow splits into further messages; nothing is truncated or dropped.
+                    // INTERIM (until the multi-message contract exists — storage, gate pairing with an atomic
+                    // approve, delivery ordering): an overflowing body is SENT AS ONE MESSAGE and logged. A long
+                    // bubble costs readability; failing closed on length alone would cost the family their
+                    // dosing instructions, and that trade is never worth making. The number, forbidden-phrase
+                    // and ellipsis checks above still fail closed exactly as before.
+                    int cap = properties.getOutbound().getMaxChars();
+                    if (full.length() > cap) {
+                        log.info("[baymax] explanation is {} chars, over the {} cap — sent whole, not truncated; "
+                                        + "the multi-message split needs the pairing contract (documentId={})",
+                                full.length(), cap, facts.document().id());
                     }
                     return new OutboundMessage(null, facts.document().familyId(), facts.document().patientId(), facts.document().id(),
                             kind, assessed.level(), assessed.reasons(), full, gate.decide(assessed.level()),
@@ -189,6 +220,43 @@ public class ExplanationService implements ExplainDocumentUseCase {
                         : messages.recordDelivery(saved.id(), outcome, now)));
     }
 
+    /**
+     * May the ROUTINE message say "everything is within the normal range"?
+     *
+     * <p>Only when the document actually carries values with printed ranges and every one of them is inside.
+     * The claim is about the document, not about the patient, and a document with no printed ranges cannot
+     * support it. On 2026-09-21 a prescription recording near-blackout, hallucinations and a new Parkinson's
+     * diagnosis was sent with that line, because the ROUTINE template asserted it unconditionally — the copy
+     * had been written for lab reports and nothing checked that the document was one.
+     *
+     * <p>ROUTINE itself is unchanged and correct: a diagnosis on a prescription is not a reason to see a
+     * doctor, because the doctor just wrote it (PO ruling 2026-09-18). What was wrong was the reassurance.
+     */
+    static boolean canSayWithinNormalRange(DocumentFacts facts) {
+        List<Map<String, Object>> values = facts.values();
+        if (values == null || values.isEmpty()) {
+            return false;
+        }
+        boolean anyWithRange = false;
+        for (Map<String, Object> value : values) {
+            boolean hasLow = value.get("ref_low") != null && !String.valueOf(value.get("ref_low")).isBlank();
+            boolean hasHigh = value.get("ref_high") != null && !String.valueOf(value.get("ref_high")).isBlank();
+            if (!hasLow && !hasHigh) {
+                // a value we cannot place against a printed range: the claim would cover it without evidence
+                return false;
+            }
+            anyWithRange = true;
+            String flag = value.get("flag") == null ? "" : String.valueOf(value.get("flag"));
+            if (!flag.isBlank() && !"normal".equalsIgnoreCase(flag)) {
+                return false;
+            }
+            if (Boolean.TRUE.equals(value.get("critical"))) {
+                return false;
+            }
+        }
+        return anyWithRange;
+    }
+
     /** The fixed skeleton: template lines with the extraction's own numbers. */
     String skeleton(DocumentFacts facts, UrgencyAssessment assessed, boolean detail) {
         Document d = facts.document();
@@ -220,7 +288,8 @@ public class ExplanationService implements ExplainDocumentUseCase {
         return switch (assessed.level()) {
             case NOW -> copy.bn("explanation.now", vars);
             case THIS_WEEK -> copy.bn("explanation.this_week", vars);
-            case ROUTINE -> copy.bn("explanation.routine", vars);
+            case ROUTINE -> copy.bn(canSayWithinNormalRange(facts)
+                    ? "explanation.routine" : "explanation.routine.filed", vars);
         };
     }
 
