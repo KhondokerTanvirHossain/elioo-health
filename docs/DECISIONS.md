@@ -436,6 +436,13 @@ list and a (false) reassurance. `DiagnosisTranscription` inserts the lines after
 and the composition fails closed if a line is missing. Only `diagnosis` is included; complaints and examination
 are deliberately not.
 
+*DDR line, closed 2026-09-22 (Tanvir, against the paper).* The page genuinely reads "১+০+০ - খাবারের আগে -
+৩০ দিন। তারপর ১+০+১ - খাবারের আগে - ২ সপ্তাহ" — a two-phase regimen, extracted correctly, including the
+sequence word and both durations. **The defect was rendering, not reading:** `duration_text` was never in
+`FIELDS` so the durations were dropped, and the frequency was abbreviated to "১+০+০ ... ১+০+১". Evidence for
+extraction quality rather than against it, and worth carrying into the confidence-vs-plausibility question: a
+model that reads a two-phase handwritten Bangla regimen correctly is not one struggling with legibility.
+
 *The 600-character cap, same ruling.* The cap ran on the model's text while the medicine block — the longest
 part — was appended afterwards, so it never covered it. It is now asserted on the complete body after every
 insertion. Where that body overflows, `MessageSplit` sends a second message rather than dropping medicines:
