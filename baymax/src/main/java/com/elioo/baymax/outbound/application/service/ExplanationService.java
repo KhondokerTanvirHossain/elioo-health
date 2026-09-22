@@ -170,10 +170,16 @@ public class ExplanationService implements ExplainDocumentUseCase {
                     // the model's text while the longest part was appended afterwards, so it never covered the
                     // medicine block at all (thirteenth flattering failure: a check that does not cover what it
                     // claims to). Overflow splits into further messages; nothing is truncated or dropped.
+                    // INTERIM (until the multi-message contract exists — storage, gate pairing with an atomic
+                    // approve, delivery ordering): an overflowing body is SENT AS ONE MESSAGE and logged. A long
+                    // bubble costs readability; failing closed on length alone would cost the family their
+                    // dosing instructions, and that trade is never worth making. The number, forbidden-phrase
+                    // and ellipsis checks above still fail closed exactly as before.
                     int cap = properties.getOutbound().getMaxChars();
                     if (full.length() > cap) {
-                        log.info("[baymax] explanation exceeds {} chars ({}), splitting documentId={}",
-                                cap, full.length(), facts.document().id());
+                        log.info("[baymax] explanation is {} chars, over the {} cap — sent whole, not truncated; "
+                                        + "the multi-message split needs the pairing contract (documentId={})",
+                                full.length(), cap, facts.document().id());
                     }
                     return new OutboundMessage(null, facts.document().familyId(), facts.document().patientId(), facts.document().id(),
                             kind, assessed.level(), assessed.reasons(), full, gate.decide(assessed.level()),

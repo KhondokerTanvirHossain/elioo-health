@@ -112,6 +112,42 @@ class MessageSplitTest {
                 .filteredOn(p -> p.contains(longLine)).hasSize(1);
     }
 
+    /**
+     * INTERIM behaviour until the multi-message contract exists: an overflowing body is sent as ONE message,
+     * never failed closed on length alone. A long bubble costs readability; a failed message costs the family
+     * their dosing instructions. Asserted here on the assembled body so the trade is explicit and tested — the
+     * split exists and is proven above, but nothing may drop a medicine while the pairing contract is missing.
+     */
+    @Test
+    void whenOverflowCannotYetBeSplitTheWholeBodyIsStillProducedIntact() {
+        String summary = "রিপোর্টটি পেয়েছি — প্রেসক্রিপশন, ১৯ সেপ্টেম্বর।\n"
+                + "Test Patient-এর টাইমলাইনে রেখে দিলাম: https://medioo.eliooo.org/app/documents/08c02570\n"
+                + "কাগজে যা লেখা আছে নিচে তুলে দিলাম।\nবিস্তারিত জানতে চাইলে লিখুন \"বিস্তারিত\"।";
+        String diagnosis = "ডাক্তার লিখেছেন:\nHTN (known)\nHTN + DM (known)\nParkinson Disease";
+        String ddr = "Cap. DDR · 30mg · ১+০+০ - খাবারের আগে - ৩০ দিন। তারপর ১+০+১ - খাবারের আগে - ২ সপ্তাহ";
+        List<Map<String, Object>> medicines = List.of(
+                wholeLine("Cap. DDR", ddr),
+                medicine("Cap. Ginoba", "60 mg", "১+০+১", "সকাল-রাত", "১ মাস"),
+                medicine("Tab. Rosuva", "5 mg", "০+০+১", "খাবারের পরে", "৩ মাস"),
+                medicine("Tab. Terbicon", "250 mg", "১+০+০", "সকাল", "৭ দিন"),
+                medicine("Tab. Losartan", "50 mg", "১+০+০", "সকাল", "চলবে"),
+                medicine("Tab. Metformin", "500 mg", "১+০+১", "খাবারের পরে", "চলবে"),
+                medicine("Cap. Omeprazole", "20 mg", "১+০+০", "খাবারের আগে", "১৪ দিন"));
+
+        // the single assembled body, as ExplanationService builds it today
+        String whole = summary + "\n\n" + diagnosis + "\n\n"
+                + MedicineTranscription.block(MED_HEADER, medicines);
+
+        assertThat(whole.length()).as("this fixture really does overflow, or the test proves nothing")
+                .isGreaterThan(CAP);
+        for (Map<String, Object> m : medicines) {
+            assertThat(whole).as("no medicine is dropped when the body overflows")
+                    .contains(MedicineTranscription.line(m));
+        }
+        assertThat(whole).contains(ddr).contains("তারপর").contains("Parkinson Disease");
+        assertThat(whole).doesNotContain("...").doesNotContain("…");
+    }
+
     /** The cap applies to what is actually sent — the assembled body, not an intermediate. */
     @Test
     void everyPartIsWithinTheCapIncludingMedicinesAndDiagnosis() {
