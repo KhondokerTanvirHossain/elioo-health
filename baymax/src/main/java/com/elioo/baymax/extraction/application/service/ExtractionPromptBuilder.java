@@ -47,7 +47,7 @@ public class ExtractionPromptBuilder {
                   "patient_hint": string | null,      // the patient name or id as printed, if any
                   "document_date": "YYYY-MM-DD" | null,
                   "facility": string | null,          // hospital, clinic or lab name as printed
-                  "values":    [ { "name", "canonical_name", "value", "unit", "ref_low", "ref_high", "flag", "source_span", "source_region" } ],
+                  "values":    [ { "name", "canonical_name", "value", "unit", "ref_low", "ref_high", "flag", "specimen", "source_span", "source_region" } ],
                   "medicines": [ { "name", "dose_text", "route", "frequency_text", "timing_text", "duration_text", "source_span" } ],
                   "follow_up": [ { "instruction", "due_date", "source_span" } ],
                   "clinical_context": {
@@ -75,6 +75,12 @@ public class ExtractionPromptBuilder {
         p.append("- A line that stops mid-sentence stays that way: \"Amenorrhoea due to\" is transcribed as ")
                 .append("\"Amenorrhoea due to\". Do not complete it.\n");
         p.append("- Illegible means left out, not guessed. Lower your confidence instead.\n");
+        p.append("- EVERY ROW THAT HAS A PRINTED RESULT IS LISTED, including negative and normal ones: ")
+                .append("\"Nil\", \"Negative\", \"Absent\", \"Not seen\", \"Normal\", \"0-2/HPF\". ")
+                .append("A negative result is a result — the page says this was looked for and not found, ")
+                .append("which is different from the test not being done. Never leave a row out because it ")
+                .append("looks unremarkable; a report listing 28 findings must produce 28 values, not the ")
+                .append("handful that are abnormal. Only a row with the result column BLANK is skipped.\n");
 
         p.append("\nRULES\n");
         p.append("- value and unit exactly as printed: \"8.2\" and \"%\", not \"8.20\" or \"percent\".\n");
@@ -93,6 +99,11 @@ public class ExtractionPromptBuilder {
         p.append("- A prescription has medicines and clinical context, usually no lab values. A lab report ")
                 .append("has values and usually no medicines. Do not pad the empty one.\n");
         p.append("- For an imaging report, record only what the radiologist wrote. Never describe the image.\n");
+        p.append("- specimen: which SAMPLE the value was measured in — \"blood\", \"urine\", \"stool\" or ")
+                .append("\"other\" — taken from the section heading the row sits under (\"URINE R/E\", ")
+                .append("\"COMPLETE BLOOD COUNT\", \"BIOCHEMISTRY\"). Null when the page gives no heading. ")
+                .append("Never infer it from the test name: a urine glucose and a blood glucose are the same ")
+                .append("word and completely different results.\n");
 
         p.append("\nSOURCE SPANS (required for every item)\n");
         p.append("""

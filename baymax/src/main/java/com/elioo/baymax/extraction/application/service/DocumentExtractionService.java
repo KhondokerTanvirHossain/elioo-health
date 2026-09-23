@@ -395,7 +395,7 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
                 .concatMap(value -> cropForValue(document, value, byPage, itemId("v", observations.size()))
                         .doOnNext(key -> observations.add(new VerifiedItems.Observation(
                                 document.patientId(), value.name(),
-                                markers.canonicalFor(value.name(), value.canonicalName()).orElse(null),
+                                markers.canonicalFor(value.name(), value.canonicalName(), value.specimen()).orElse(null),
                                 value.value(), value.unit(), value.refLow(), value.refHigh(), value.flag(),
                                 key, observedAt)))
                         .switchIfEmpty(Mono.fromRunnable(() -> droppedValues[0]++))

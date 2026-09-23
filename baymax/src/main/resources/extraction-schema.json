@@ -113,6 +113,20 @@
           },
           "source_region": {
             "$ref": "#/$defs/source_region"
+          },
+          "specimen": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "blood",
+              "urine",
+              "stool",
+              "other",
+              null
+            ],
+            "description": "Which sample this value was measured in, taken from the section heading the row sits under (\"URINE R/E\", \"BIOCHEMISTRY\", \"COMPLETE BLOOD COUNT\"). Null when the page does not say. Never guess from the test name: the same word can name a blood test and a urine finding, and treating a urine result as a blood result applies the wrong reference range."
           }
         }
       }

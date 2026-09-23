@@ -38,7 +38,13 @@ public record ExtractionResult(
              * lost whenever Vision split or missed the cell; the region survives that, which is the whole
              * point of it. Always a proposal — {@code CropVerifier} decides what may be stored.
              */
-            @JsonProperty("source_region") SourceRegion sourceRegion
+            @JsonProperty("source_region") SourceRegion sourceRegion,
+            /**
+             * The sample this value was measured in, from the section heading the row sits under — not
+             * guessed from the test name. "Calcium-Oxalate" under URINE R/E is a crystal, not serum calcium;
+             * without the specimen the two are one word and the wrong reference range gets applied.
+             */
+            String specimen
     ) {
         public boolean isCritical() {
             return "critical".equalsIgnoreCase(flag);
