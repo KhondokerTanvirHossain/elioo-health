@@ -241,12 +241,15 @@ class DocumentExtractionServiceTest {
      */
     @Test
     void aPrescriptionWithNoLabValuesIsDoneNotRetaken() throws Exception {
+        // the medicine and follow-up are named for text the stub OCR page actually carries, so their spans
+        // resolve and they survive cropping; this test is about values[] being legitimately empty, and a
+        // medicine that could not be cropped would retake the document for an unrelated reason (DR-28)
         replyWith("""
                 {"document_type":"prescription","document_date":"2026-09-19","facility":"Popular",
                  "values":[],
-                 "medicines":[{"name":"Cap. DDR","dose_text":"30 mg","frequency_text":"1+0+0",
+                 "medicines":[{"name":"HbA1c","dose_text":"30 mg","frequency_text":"1+0+0",
                                "timing_text":"before meal","source_span":{"page":1,"start":0,"end":5}}],
-                 "follow_up":[{"instruction":"Follow up after 5 days","due_date":"2026-09-24",
+                 "follow_up":[{"instruction":"HbA1c","due_date":"2026-09-24",
                                "source_span":{"page":1,"start":0,"end":5}}],
                  "clinical_context":{"chief_complaint":[],"history":[],"examination":[],
                                      "diagnosis":[],"investigations_advised":[],"advice":[],"referral":null},
@@ -327,10 +330,29 @@ class DocumentExtractionServiceTest {
         verify(storage).storeCrop(any(), any(), any(), eq("v1"), any());
     }
 
-    /** The invariant: text that is not on the page gets no crop, is not stored, and is counted. */
+    /**
+     * The invariant: text that is not on the page gets no crop, is not stored, and is counted.
+     *
+     * <p>Scored on a document that still has something to show, because a document showing NOTHING is now
+     * retaken (DR-28) and a retaken document never reaches {@code saveExtraction} at all — it takes the
+     * update path. The drop-and-count behaviour is the subject here; the retake itself is asserted in
+     * {@code aLabReportShowingNothingAfterCroppingIsRetaken}.
+     */
     @Test
     void anItemWhoseSpanResolvesToNothingIsDroppedNotStored() throws Exception {
-        replyWith(GOOD_REPLY.replace("HbA1c", "Ferritin"));
+        // two values: one locatable on the stub page, one that is not on it at all
+        replyWith("""
+                {"document_type":"lab_report","document_date":"2026-03-14","facility":"Popular",
+                 "values":[{"name":"HbA1c","canonical_name":"hba1c","value":"8.2","unit":"%",
+                            "flag":"high","source_span":{"page":1,"start":0,"end":5}},
+                           {"name":"Ferritin","canonical_name":"ferritin","value":"11","unit":"ng/mL",
+                            "flag":"normal","source_span":{"page":1,"start":0,"end":5}}],
+                 "medicines":[],"follow_up":[],
+                 "clinical_context":{"chief_complaint":[],"history":[],"examination":[],
+                                     "diagnosis":[],"investigations_advised":[],"advice":[],"referral":null},
+                 "confidence":{"overall":0.93,"values":0.93,"medicines":1.0,"follow_up":1.0,
+                               "clinical_context":1.0}}
+                """);
 
         StepVerifier.create(service.process(received(1), List.of(pageJpeg())))
                 .assertNext(d -> assertThat(d.status()).isEqualTo(Document.Status.DONE))
@@ -338,12 +360,65 @@ class DocumentExtractionServiceTest {
 
         ArgumentCaptor<VerifiedItems> items = ArgumentCaptor.forClass(VerifiedItems.class);
         verify(records).saveExtraction(any(), items.capture());
-        assertThat(items.getValue().observations()).isEmpty();
+        assertThat(items.getValue().observations()).as("only the value found on the page survives").hasSize(1);
         // the value whose span pointed nowhere is counted against its own section, not a single total
         assertThat(items.getValue().unverified().values()).isEqualTo(1);
         assertThat(items.getValue().unverified().medicines()).isZero();
         assertThat(items.getValue().unverified().total()).isEqualTo(1);
+    }
+
+    /**
+     * DR-28: a lab report that would show the family NOTHING is retaken, however confident the read was.
+     *
+     * <p>lab10 in batch 2 was exactly this — DONE at 0.9 confidence, one value extracted, its crop
+     * unlocatable, zero values shown. The confidence gate had already passed because it judges what was
+     * EXTRACTED; this judges what survives cropping, which is what the family actually sees.
+     */
+    @Test
+    void aLabReportShowingNothingAfterCroppingIsRetaken() throws Exception {
+        replyWith(GOOD_REPLY.replace("HbA1c", "Ferritin"));   // not on the stub page: no crop, nothing shown
+
+        StepVerifier.create(service.process(received(1), List.of(pageJpeg())))
+                .assertNext(d -> {
+                    assertThat(d.status()).isEqualTo(Document.Status.NEEDS_RETAKE);
+                    assertThat(d.statusReason()).contains("values").contains("could be shown with its source");
+                })
+                .verifyComplete();
+
         verify(storage, never()).storeCrop(any(), any(), any(), anyString(), any());
+        verify(records, never()).saveExtraction(any(), any());
+    }
+
+    /**
+     * DR-27, the other direction: a section the type does NOT gate on must not cause a retake. lab1 read 21
+     * values at 0.92 and was retaken because clinical_context scored 0.60 — on a lab report, which barely
+     * has clinical context.
+     */
+    @Test
+    void aWeakClinicalContextDoesNotRetakeALabReport() throws Exception {
+        // the section must actually CONTAIN something: an empty clinical_context is skipped by the
+        // present-sections rule in both the old gate and the new, and a fixture with none proves nothing
+        replyWith(GOOD_REPLY
+                .replace("\"clinical_context\":1.0", "\"clinical_context\":0.30")
+                .replace("\"diagnosis\":[]", "\"diagnosis\":[{\"text\":\"HbA1c\","
+                        + "\"source_span\":{\"page\":1,\"start\":0,\"end\":5}}]"));
+
+        StepVerifier.create(service.process(received(1), List.of(pageJpeg())))
+                .assertNext(d -> assertThat(d.status())
+                        .as("a lab report gates on its values, not on a clinical section it barely has")
+                        .isEqualTo(Document.Status.DONE))
+                .verifyComplete();
+    }
+
+    /** DR-27, and the direction that must still bite: a lab report's OWN section gates it. */
+    @Test
+    void aWeakValuesSectionStillRetakesALabReport() throws Exception {
+        replyWith(GOOD_REPLY.replace("\"values\":0.93", "\"values\":0.40"));
+
+        StepVerifier.create(service.process(received(1), List.of(pageJpeg())))
+                .assertNext(d -> assertThat(d.status()).isEqualTo(Document.Status.NEEDS_RETAKE))
+                .verifyComplete();
+        verify(records, never()).saveExtraction(any(), any());
     }
 
     @Test
