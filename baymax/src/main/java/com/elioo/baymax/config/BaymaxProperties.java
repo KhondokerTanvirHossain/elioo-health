@@ -190,6 +190,16 @@ public class BaymaxProperties {
         private List<String> doctorFirstMarkers = new ArrayList<>(List.of("ডাক্তার", "হাসপাতাল"));
         /** DR-18: during the pilot every nudge waits for the reviewer, whatever its urgency and whatever gateMode says. */
         private boolean gateNudges = true;
+        /**
+         * Per-marker urgency thresholds, per unit, as a clinician states them — the replacement for the
+         * 2×/0.5× stopgap above, which batch 2 showed to be wrong in both directions.
+         *
+         * <p><b>Every entry ships as {@code status: proposed} and is inert.</b> Only {@code active} can
+         * change a family's message, so a doctor's sign-off is a config change rather than a code change.
+         * {@code ProposedThresholdsAreInertTest} asserts that a proposed entry which WOULD change a verdict
+         * does not, and that an active one does.</p>
+         */
+        private List<com.elioo.baymax.outbound.domain.MarkerThreshold> markerThresholds = new ArrayList<>();
     }
 
     /** The proactive engine (BMX-8, DR-17, DR-18). All rules read stored data only; the policy is enforced centrally. */

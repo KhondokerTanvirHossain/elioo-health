@@ -1,7 +1,9 @@
 package com.elioo.baymax.outbound.application.service;
 
 import com.elioo.baymax.config.BaymaxProperties;
+import com.elioo.baymax.outbound.domain.MarkerThreshold;
 import com.elioo.baymax.outbound.domain.Urgency;
+import com.elioo.baymax.outbound.domain.UrgencyContext;
 import com.elioo.baymax.outbound.domain.UrgencyAssessment;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -40,15 +42,36 @@ public class UrgencyService {
     private final BaymaxProperties properties;
     private final Clock clock;
 
+    /**
+     * Urgency for a document, with everything the rules are allowed to know beyond the page.
+     *
+     * <p>{@code context} carries the report's age, the patient's prior readings and whether they are
+     * currently unwell. <b>No rule consults any of them yet</b> — they are hooks for policies a clinician
+     * has not written, and {@code UrgencyHooksAreInertTest} asserts that a populated context produces the
+     * same verdict as an empty one. Inventing an old-report or delta policy here would be indistinguishable
+     * in the data from one a doctor set.</p>
+     */
+    public UrgencyAssessment assess(DocumentFacts facts, UrgencyContext context) {
+        return assess(facts);
+    }
+
     public UrgencyAssessment assess(DocumentFacts facts) {
         UrgencyAssessment a = UrgencyAssessment.routine();
         String text = facts.document().extractionJson() == null ? "" : facts.document().extractionJson();
 
         for (Map<String, Object> v : facts.values()) {
             String name = String.valueOf(v.getOrDefault("canonical_name", v.get("name"))).toLowerCase(Locale.ROOT);
+            Optional<Verdict> perMarker = perMarkerVerdict(v);
+            if (perMarker.isPresent()) {
+                Verdict verdict = perMarker.get();
+                if (verdict.level() != Urgency.ROUTINE) {
+                    a = a.raise(verdict.level(), verdict.reasonFor(name));
+                }
+                continue;                                    // a signed-off threshold replaces the stopgap
+            }
             switch (criticalKind(v, text)) {
-                case CRITICAL_HIGH, CRITICAL_LOW -> a = a.raise(Urgency.NOW, "value_critical:" + name);
-                case OUTSIDE -> a = a.raise(Urgency.THIS_WEEK, "value_outside_range:" + name);
+                case CRITICAL_HIGH, CRITICAL_LOW -> a = a.raise(Urgency.NOW, "value_critical:" + name + STOPGAP);
+                case OUTSIDE -> a = a.raise(Urgency.THIS_WEEK, "value_outside_range:" + name + STOPGAP);
                 default -> { }                               // inside the range, or no printed range: nothing
             }
         }
@@ -98,6 +121,52 @@ public class UrgencyService {
             a = a.raise(Urgency.NOW, "text_emergency_phrase");
         }
         return a;
+    }
+
+    /**
+     * Marks a reason as produced by the stopgap rather than by a signed-off threshold.
+     *
+     * <p>Visible in {@code urgency_reasons} on purpose: a verdict reached by a multiple nobody has approved
+     * should not be indistinguishable from one a clinician set. It is also how the dry-run table tells the
+     * doctor which rule produced each row.</p>
+     */
+    static final String STOPGAP = "|stopgap";
+
+    /** A per-marker verdict and the entry that produced it, so the reason can name the rule. */
+    private record Verdict(Urgency level, MarkerThreshold threshold) {
+        String reasonFor(String name) {
+            String kind = level == Urgency.NOW ? "value_critical:" : "value_outside_range:";
+            return kind + name + "|threshold:" + threshold.source();
+        }
+    }
+
+    /**
+     * The signed-off threshold for this value, if there is one.
+     *
+     * <p>Empty means "no live entry covers this marker in this unit" — a missing marker, a PROPOSED entry, a
+     * symptom-gated one, or the right marker in the wrong unit — and the caller falls back to the stopgap.
+     * Returning empty rather than ROUTINE is the safe direction: an entry nobody approved must not be able to
+     * silence an escalation the stopgap would have made.</p>
+     */
+    private Optional<Verdict> perMarkerVerdict(Map<String, Object> v) {
+        List<MarkerThreshold> configured = properties.getOutbound().getMarkerThresholds();
+        if (configured == null || configured.isEmpty()) {
+            return Optional.empty();
+        }
+        Object canonical = v.getOrDefault("canonical_name", v.get("name"));
+        if (canonical == null) {
+            return Optional.empty();
+        }
+        String unit = v.get("unit") == null ? "" : String.valueOf(v.get("unit"));
+        Optional<Double> value = number(v.get("value"));
+        if (value.isEmpty()) {
+            return Optional.empty();
+        }
+        return configured.stream()
+                .filter(MarkerThreshold::isLive)
+                .filter(t -> t.matches(String.valueOf(canonical), unit))
+                .findFirst()
+                .flatMap(t -> t.assess(value.get()).map(level -> new Verdict(level, t)));
     }
 
     /** Whole-token match against the config phrases, both scripts; "urgently" is a token, "surgent" is not. */
