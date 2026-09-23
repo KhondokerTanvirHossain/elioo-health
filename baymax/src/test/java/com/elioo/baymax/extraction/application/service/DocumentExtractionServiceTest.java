@@ -70,6 +70,16 @@ class DocumentExtractionServiceTest {
 
     private DocumentExtractionService service;
 
+    /**
+     * A verifier whose readers see nothing, which is what these mocked-port tests need: no real page image
+     * is involved, so no region crop could be confirmed anyway, and the region path must then behave
+     * exactly as the pipeline did before it existed — the value is dropped. Tests for the verifier's own
+     * behaviour live in {@link CropVerifierTest}.
+     */
+    private static final CropVerifier NO_CROP_VERIFIER =
+            new CropVerifier((documentId, crop) -> reactor.core.publisher.Mono.empty(),
+                    (documentId, crop) -> reactor.core.publisher.Mono.empty());
+
     private static final String GOOD_REPLY = """
             {"document_type":"lab_report","document_date":"2026-03-14","facility":"Popular",
              "values":[{"name":"HbA1c","canonical_name":"hba1c","value":"8.2","unit":"%",
@@ -106,7 +116,7 @@ class DocumentExtractionServiceTest {
                 new ExtractionClients(cheap, null, null, false),
                 new ExtractionPromptBuilder(properties),
                 new ExtractionJsonReader(new ObjectMapper()),
-                new CropCutter(properties), new MarkerMatcher(properties),
+                new CropCutter(properties), NO_CROP_VERIFIER, new MarkerMatcher(properties),
                 storage, records, properties, new ObjectMapper(),
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
@@ -123,7 +133,7 @@ class DocumentExtractionServiceTest {
                 new ExtractionClients(cheap, null, strong, false),
                 new ExtractionPromptBuilder(properties),
                 new ExtractionJsonReader(new ObjectMapper()),
-                new CropCutter(properties), new MarkerMatcher(properties),
+                new CropCutter(properties), NO_CROP_VERIFIER, new MarkerMatcher(properties),
                 storage, records, properties, new ObjectMapper(),
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }

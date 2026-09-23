@@ -277,6 +277,12 @@ public class BaymaxProperties {
         private int maxPages = 10;
         /** Padding around a source-span bounding box when cutting the crop, in pixels. */
         private int cropPaddingPx = 12;
+        /**
+         * Output cap for the model that re-reads a crop when OCR read nothing. A crop is one row, so the
+         * answer is a few words; this is small on purpose, because the call happens per unlocatable value
+         * and an unbounded one would be the most expensive thing in the pipeline.
+         */
+        private int cropVerifyMaxTokens = 100;
     }
 
     /** A chronic marker the pipeline recognises by any of its aliases. Config, not code. */

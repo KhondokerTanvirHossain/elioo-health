@@ -63,6 +63,7 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
     private final ExtractionPromptBuilder prompts;
     private final ExtractionJsonReader reader;
     private final CropCutter cropCutter;
+    private final CropVerifier cropVerifier;
     private final MarkerMatcher markers;
     private final DocumentStorageUseCase storage;
     private final DocumentRecordPort records;
@@ -362,7 +363,7 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
         int[] droppedFollowUp = {0};
 
         Flux<Void> values = Flux.fromIterable(result.valuesOrEmpty())
-                .concatMap(value -> store(document, cropCutter.cutValue(value.sourceSpan(), value.name(), value.value(), byPage), itemId("v", observations.size()))
+                .concatMap(value -> cropForValue(document, value, byPage, itemId("v", observations.size()))
                         .doOnNext(key -> observations.add(new VerifiedItems.Observation(
                                 document.patientId(), value.name(),
                                 markers.canonicalFor(value.name(), value.canonicalName()).orElse(null),
@@ -424,6 +425,39 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
             items.add(new ContextItem("referral", c.referral().text(), null, c.referral().sourceSpan()));
         }
         return items;
+    }
+
+    /**
+     * A value's crop key: the OCR-located crop when there is one, otherwise the model's region — but only
+     * after something independent has re-read that region and found the value in it.
+     *
+     * <p>The OCR path is unchanged and still first: when Vision produced the value's text, its word boxes
+     * are the most reliable thing we have and the crop needs no second opinion, because the text check
+     * inside {@code cutValue} already is one. The region path exists for the 30-of-85 case where Vision
+     * never produced the text at all, and there the model's box is the only claim available — so it is
+     * verified before it is stored, never on the strength of the same model that proposed it (DR-12).</p>
+     */
+    private Mono<String> cropForValue(Document document, ExtractionResult.Value value,
+                                      Map<Integer, PageOcr> byPage, String itemId) {
+        CropCutter.Cut located = cropCutter.cutValue(value.sourceSpan(), value.name(), value.value(), byPage);
+        if (located.bytes().isPresent()) {
+            return store(document, located, itemId);
+        }
+        CropCutter.Cut region = cropCutter.cutRegion(value.sourceRegion(), byPage);
+        if (region.bytes().isEmpty()) {
+            return Mono.empty();
+        }
+        byte[] crop = region.bytes().orElseThrow();
+        return cropVerifier.verify(document.id(), crop, value.name(), value.value())
+                .flatMap(outcome -> {
+                    if (!outcome.verified()) {
+                        log.debug("[baymax] region crop not confirmed documentId={} item={}", document.id(), itemId);
+                        return Mono.empty();
+                    }
+                    log.info("[baymax] value recovered from the page image documentId={} item={} readBy={}",
+                            document.id(), itemId, outcome.readBy());
+                    return store(document, region, itemId);
+                });
     }
 
     private Mono<String> crop(Document document, ExtractionResult.SourceSpan span, String anchor,
