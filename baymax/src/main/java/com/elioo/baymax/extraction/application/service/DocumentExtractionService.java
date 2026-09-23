@@ -232,13 +232,21 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
         // with no locatable crop is never persisted (crop_key is NOT NULL, "no number without its source"),
         // so a lab report can pass every confidence check and still show the family nothing. lab10 did
         // exactly that: DONE at 0.9, one value extracted, one dropped, zero shown.
+        // DR-31 amends DR-28: a document that shows nothing after cropping is DONE, not NEEDS_RETAKE. The
+        // confidence gate above judged the READING and passed it; the crop locator failing says nothing about
+        // the photo. Retaking would tell a family with a clear page that their photo is unclear, they would
+        // send the same page again, and it would fail the same way — and because a retaken document persists
+        // no extraction, the finding would be discarded on every attempt. lab10 was exactly that: a clear
+        // page, read at 0.9, whose one value was an out-of-range uric acid.
+        //
+        // The extraction is persisted, nothing is shown, and the dropped values still reach urgency
+        // (UrgencyService.unverifiedValues). NEEDS_RETAKE is for weak reading, never for our own locator.
         return verify(document, pages, result)
                 .flatMap(items -> {
                     if (showsNothingItShould(result, items, thresholds)) {
-                        return finish(document, Document.Status.NEEDS_RETAKE,
-                                "nothing from the %s of this %s could be shown with its source"
-                                        .formatted(gatingSectionOf(result, thresholds), typeOf(result)),
-                                attempt, result, null);
+                        log.warn("[baymax] document shows nothing after cropping documentId={} section={} — "
+                                        + "kept as DONE, values unverified (DR-31)",
+                                document.id(), gatingSectionOf(result, thresholds));
                     }
                     return finish(document, Document.Status.DONE, null, attempt, result, items);
                 });

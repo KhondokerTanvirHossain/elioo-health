@@ -368,25 +368,32 @@ class DocumentExtractionServiceTest {
     }
 
     /**
-     * DR-28: a lab report that would show the family NOTHING is retaken, however confident the read was.
+     * DR-31: a lab report that shows NOTHING after cropping is DONE, not retaken.
      *
-     * <p>lab10 in batch 2 was exactly this — DONE at 0.9 confidence, one value extracted, its crop
-     * unlocatable, zero values shown. The confidence gate had already passed because it judges what was
-     * EXTRACTED; this judges what survives cropping, which is what the family actually sees.
+     * <p>lab10 in batch 2 was a clear page read correctly at 0.9 confidence whose single value — an
+     * out-of-range uric acid — could not be located for a crop. Retaking it would tell the family their photo
+     * is unclear when it is not, they would send the same page, and it would fail identically; and because a
+     * retaken document persists no extraction, the finding would be thrown away each time. The reading gate
+     * judges the photo; the locator's failure is ours.
      */
     @Test
-    void aLabReportShowingNothingAfterCroppingIsRetaken() throws Exception {
+    void aLabReportShowingNothingAfterCroppingIsKeptNotRetaken() throws Exception {
         replyWith(GOOD_REPLY.replace("HbA1c", "Ferritin"));   // not on the stub page: no crop, nothing shown
 
         StepVerifier.create(service.process(received(1), List.of(pageJpeg())))
                 .assertNext(d -> {
-                    assertThat(d.status()).isEqualTo(Document.Status.NEEDS_RETAKE);
-                    assertThat(d.statusReason()).contains("values").contains("could be shown with its source");
+                    assertThat(d.status()).as("a clear page read correctly is not the family's problem to fix")
+                            .isEqualTo(Document.Status.DONE);
+                    assertThat(d.statusReason()).isNull();
                 })
                 .verifyComplete();
 
+        // the extraction IS persisted, so the dropped value survives for urgency to see
+        ArgumentCaptor<VerifiedItems> items = ArgumentCaptor.forClass(VerifiedItems.class);
+        verify(records).saveExtraction(any(), items.capture());
+        assertThat(items.getValue().observations()).as("nothing could be cropped, so nothing is shown").isEmpty();
+        assertThat(items.getValue().unverified().values()).isEqualTo(1);
         verify(storage, never()).storeCrop(any(), any(), any(), anyString(), any());
-        verify(records, never()).saveExtraction(any(), any());
     }
 
     /**

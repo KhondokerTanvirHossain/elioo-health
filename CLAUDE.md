@@ -119,6 +119,11 @@ Key files when changing behaviour:
   lab report that read nothing; the first implementation's `typeOf()` read an unset column, so every document
   became `"other"` — prescriptions passed and a blurry lab report would have sailed through. Only the
   second test caught it, and only because it existed before the code.
+- **A scoring harness manufactures findings as readily as it hides them.** Batch 2's unit column read 65/74
+  until eight of the nine "misses" turned out to be the scorer failing to Unicode-fold MICRO SIGN (U+00B5)
+  against GREEK SMALL LETTER MU (U+03BC) — visually identical, semantically identical, different code points.
+  The real number was 73/74. A harness result is evidence about the harness until a mismatch has been looked
+  at by value; never open an investigation into a defect a tool reported without first confirming the tool.
 - **A red replay must fail ON the defect, not merely fail.** Read the failure message and confirm it names the
   bug: `expected: DEFERRED but was: DROPPED`, `duplicate key value violates unique constraint`. A guard whose
   replay died on a `NullPointerException` in its own Mockito matcher was red, looked like a successful replay and

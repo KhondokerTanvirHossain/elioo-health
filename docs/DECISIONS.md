@@ -450,3 +450,23 @@ the cap was set for single-bubble readability, WhatsApp allows 4,096, and it mus
 loses their dosing instructions. A medicine line is never truncated and never dropped; the split falls on a
 line boundary. Measured across the production documents before building: 0 of 4 exceeded 600, but the headroom
 is 5 medicines at the observed mean line length, so a 6-medicine prescription overflows.
+
+## DR-31 | 2026-09-22 | A locator failure is not a retake
+
+**Decision:** Amends DR-28. A lab report whose extraction passes the confidence gate but shows zero values
+after cropping is **DONE, not NEEDS_RETAKE**. Its extraction is persisted; no value is shown; unverified
+values may raise urgency; the message says the values could not be checked against the photo and points to
+the original. **NEEDS_RETAKE is reserved for weak reading, never for our locator's failure.**
+
+**Why:** a clear, correctly-read photo would otherwise be retaken forever — the family is told their photo is
+unclear, retakes it, and hits the same locator failure — and because a retaken document persists no
+extraction, the abnormal value is discarded each time. lab10 is exactly this: a clear page, read correctly at
+0.9 confidence, whose single value carried an out-of-range uric acid.
+
+**Supersedes:** DR-28's zero-shown clause.
+
+*Engineering note.* The distinction is whose failure it was. The confidence gate judges the READING and may
+legitimately ask for another photo. The crop locator judges whether we can point at the text we read, and its
+failure says nothing about the photo — asking the family to fix it is both false and futile. DR-28's other
+half stands: values dropped for want of a crop still participate in urgency, may raise it and never lower it,
+and are never shown or named in the body.

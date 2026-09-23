@@ -10,6 +10,11 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
+import com.fasterxml.jackson.databind.JsonNode;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Set;
+import lombok.extern.slf4j.Slf4j;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -29,6 +34,7 @@ import java.util.Optional;
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class UrgencyService {
 
     private final BaymaxProperties properties;
@@ -44,6 +50,23 @@ public class UrgencyService {
                 case CRITICAL_HIGH, CRITICAL_LOW -> a = a.raise(Urgency.NOW, "value_critical:" + name);
                 case OUTSIDE -> a = a.raise(Urgency.THIS_WEEK, "value_outside_range:" + name);
                 default -> { }                               // inside the range, or no printed range: nothing
+            }
+        }
+
+        // DR-28: a value we read but could not point at on the page is never shown — and must still be able to
+        // raise urgency. It is not persisted (crop_key is NOT NULL), so it is absent from facts.values() and
+        // invisible to the loop above. lab10 was one value, out of range, dropped for want of a crop: the only
+        // finding on the page, silently discarded by the rule meant to catch it.
+        //
+        // raise() only ever moves urgency up, so an unverified value cannot lower a verdict the shown values
+        // already reached. The reason carries the marker name, never the number: a value we could not verify
+        // does not get to put a figure in front of a family.
+        for (Map<String, Object> v : unverifiedValues(facts)) {
+            String name = String.valueOf(v.getOrDefault("canonical_name", v.get("name"))).toLowerCase(Locale.ROOT);
+            switch (criticalKind(v, text)) {
+                case CRITICAL_HIGH, CRITICAL_LOW -> a = a.raise(Urgency.NOW, "unverified_value_critical:" + name);
+                case OUTSIDE -> a = a.raise(Urgency.THIS_WEEK, "unverified_value_outside_range:" + name);
+                default -> { }
             }
         }
 
@@ -87,6 +110,59 @@ public class UrgencyService {
         }
         return false;
     }
+
+
+    /**
+     * Values the model read that never became observations, because no crop could be located for them.
+     *
+     * <p>Recovered from the stored extraction and matched against what IS persisted: anything in the
+     * extraction with no corresponding observation was dropped. Returns nothing when the document records no
+     * drops, so a document with a complete set costs no work and behaves exactly as before.
+     */
+    private List<Map<String, Object>> unverifiedValues(DocumentFacts facts) {
+        if (facts.document().unverified() == null || facts.document().unverified().values() == 0) {
+            return List.of();
+        }
+        String json = facts.document().extractionJson();
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            JsonNode values = MAPPER.readTree(json).path("values");
+            Set<String> shown = facts.values().stream()
+                    .map(v -> key(String.valueOf(v.get("name")), String.valueOf(v.get("value"))))
+                    .collect(java.util.stream.Collectors.toSet());
+            List<Map<String, Object>> out = new ArrayList<>();
+            for (JsonNode v : values) {
+                String name = v.path("name").asText("");
+                String value = v.path("value").asText("");
+                if (shown.contains(key(name, value))) {
+                    continue;
+                }
+                Map<String, Object> row = new HashMap<>();
+                row.put("name", name);
+                row.put("canonical_name", v.path("canonical_name").asText(null));
+                row.put("value", value);
+                row.put("ref_low", v.path("ref_low").isNull() ? null : v.path("ref_low").asText(null));
+                row.put("ref_high", v.path("ref_high").isNull() ? null : v.path("ref_high").asText(null));
+                out.add(row);
+            }
+            return out;
+        } catch (RuntimeException | com.fasterxml.jackson.core.JsonProcessingException e) {
+            // an unreadable extraction is not a reason to escalate or to fail
+            log.warn("[baymax] could not read unverified values documentId={}: {}",
+                    facts.document().id(), e.toString());
+            return List.of();
+        }
+    }
+
+    private static String key(String name, String value) {
+        return (name == null ? "" : name.trim().toLowerCase(Locale.ROOT)) + "|"
+                + (value == null ? "" : value.trim());
+    }
+
+    private static final com.fasterxml.jackson.databind.ObjectMapper MAPPER =
+            new com.fasterxml.jackson.databind.ObjectMapper();
 
     static Optional<Double> number(Object raw) {
         if (raw == null) {
