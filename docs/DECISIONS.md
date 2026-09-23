@@ -470,3 +470,29 @@ legitimately ask for another photo. The crop locator judges whether we can point
 failure says nothing about the photo — asking the family to fix it is both false and futile. DR-28's other
 half stands: values dropped for want of a crop still participate in urgency, may raise it and never lower it,
 and are never shown or named in the body.
+
+## DR-32 | 2026-09-24 | A crop may come from the image, but never on the model's word alone
+
+**Decision:** when a value's crop cannot be located in the OCR text, it may be cut from a **region** the
+model reports on the page image (`source_region`, normalised 0–1). That crop is stored **only** if an
+independent reader — Vision OCR on the crop, or, when OCR reads nothing, a model shown the crop and nothing
+else — reads the value back out of it, under the same digit-boundary rule as the locator. The reader is
+never told what it is looking for. Anything short of confirmation leaves the value unshown, exactly as a
+locator failure does today (DR-31).
+
+**Why:** 30 of 85 cropped values in batch 2 were lost as `TEXT_NOT_ON_PAGE` — every one legible on the page.
+Extraction reads the image; the locator could only search text Vision produced, and no string rule over that
+text can find text Vision never produced. Relaxing the locator's match on digit boundaries recovered exactly
+zero. The region recovers 24 of 29 on a like-for-like rerun, at $0.0045 per document.
+
+**What it does not change:** DR-12 stands unweakened. A crop is still stored only when something other than
+the extraction confirms its contents — the change is that the confirming evidence is now a second reading of
+the crop rather than a lookup in the OCR text. The model's box is a proposal, never evidence.
+
+*Engineering note.* The failure this guards against is DR-12's original one wearing new clothes: a model that
+misreads a table by one row produces a confident box over the wrong number, and storing it would put a
+picture of a different value under this value's name — worse than showing nothing. A region covering more
+than a third of the page is discarded as a shrug rather than a pointer. lab10 is the proof the check bites:
+its crop failed OCR, failed the model, and stayed unshown. Every one of the 24 recoveries was confirmed by
+OCR, so the model fallback is currently the refusal path rather than the recovery path; if batch 3 confirms
+that, it can be dropped for 3% of the verification cost.
