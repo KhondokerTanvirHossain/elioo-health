@@ -29,11 +29,38 @@ public record ExtractionResult(
             @JsonProperty("canonical_name") String canonicalName,
             String value,
             String unit,
+            /**
+             * The SELECTED range, filled by code (DR-30) — not by the model. Present only when the page
+             * printed a numeric range and, where several were printed, one of them applies.
+             */
             @JsonProperty("ref_low") String refLow,
             @JsonProperty("ref_high") String refHigh,
+            /**
+             * The reference exactly as printed, whenever it is not a plain pair of numbers: "Nil",
+             * "Negative", "Upto 37", "Male: 13.0-18.0, Female: 11.5-16.5", a tier table. DR-29 exists
+             * because this field did not: a word reference had nowhere to go and the model invented a
+             * numeric range instead — lab2's "Nil" arrived as ref_low 0, ref_high 2, driving urgency.
+             */
+            @JsonProperty("ref_text") String refText,
+            /** The printed tier a value falls in, for tiered references ("Borderline High"). */
+            String band,
+            /** Every printed range with its qualifier; code selects the applicable one (DR-30). */
+            List<Range> ranges,
+            /**
+             * A mark the PAGE prints — a letter, a symbol, printed wording, a colour. Never the model's own
+             * comparison: that is {@code status}, and it is computed in code.
+             */
             String flag,
             @JsonProperty("source_span") SourceSpan sourceSpan
     ) {
+
+        /** One printed reference range and the qualifier it was printed under ("Male", "Adult", "1-5y"). */
+        public record Range(String low, String high, String qualifier) {
+        }
+
+        public List<Range> ranges() {
+            return ranges == null ? List.of() : ranges;
+        }
         public boolean isCritical() {
             return "critical".equalsIgnoreCase(flag);
         }

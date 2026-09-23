@@ -86,14 +86,61 @@
               "string",
               "null"
             ],
-            "maxLength": 40
+            "maxLength": 40,
+            "description": "Lower bound ONLY when the page prints a plain numeric range. Leave null for a word reference, a one-sided reference, a tier table, or when several ranges are printed — those go to ref_text and ranges[]. NEVER invent a bound: a page printing 'Nil' has no 0, and a page printing 'Upto 37' has no lower bound."
           },
           "ref_high": {
             "type": [
               "string",
               "null"
             ],
-            "maxLength": 40
+            "maxLength": 40,
+            "description": "Upper bound ONLY when the page prints it as a number. Same rule as ref_low: transcribe, never infer."
+          },
+          "ref_text": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The reference EXACTLY as printed, whenever it is not a plain pair of numbers: 'Nil', 'Negative', 'Clear', 'Upto 37', 'Male: 13.0-18.0, Female: 11.5-16.5', a tier table, a relative reference. Copy the wording; do not translate or normalise it."
+          },
+          "band": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "For a tiered reference, the printed tier this value falls in — 'Desirable', 'Borderline High'. The tiers are not per-value ranges."
+          },
+          "ranges": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "description": "Every range the page prints for this value, each with the qualifier it was printed under ('Male', 'Female', 'Adult', 'Child', an age band). Transcribe them ALL; do not choose between them — the applicable one is selected downstream.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "low": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "high": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "qualifier": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "The printed qualifier, verbatim: 'Male', 'Adult', '1-5 years'."
+                }
+              }
+            }
           },
           "flag": {
             "type": [
@@ -106,7 +153,8 @@
               "high",
               "critical",
               null
-            ]
+            ],
+            "description": "A mark the PAGE prints next to the value — a letter (H, L), a symbol (*), printed wording ('High'), or a colour ('red') when the value is coloured with no letter. Leave null when the page prints no mark. NEVER derive this by comparing the value to a range: whether a value is abnormal is decided downstream, not here."
           },
           "source_span": {
             "$ref": "#/$defs/source_span"
