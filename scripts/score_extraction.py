@@ -36,10 +36,15 @@ def norm(value):
 
     Bangla and other non-Latin text is compared as-is: stripping it to [a-z0-9] would erase it entirely.
     An empty string and a missing field are the same thing, which is how the labels are written.
+
+    NFKC first, because visually identical characters are not automatically equal code points: a unit written
+    with MICRO SIGN (U+00B5) and one written with GREEK SMALL LETTER MU (U+03BC) look the same on the page and
+    mean the same thing. Without this, 8 of the 9 "unit misses" in the batch-2 baseline were the scorer
+    failing to fold micro, not the model misreading a unit.
     """
     if value is None:
         return ""
-    text = fold_digits(str(value).strip().lower())
+    text = fold_digits(unicodedata.normalize("NFKC", str(value)).strip().lower())
     if not text:
         return ""
     if any(ord(c) > 0x7F for c in text):
