@@ -110,6 +110,9 @@
           },
           "source_span": {
             "$ref": "#/$defs/source_span"
+          },
+          "source_region": {
+            "$ref": "#/$defs/source_region"
           }
         }
       }
@@ -368,6 +371,44 @@
         "end": {
           "type": "integer",
           "minimum": 0
+        }
+      }
+    },
+    "source_region": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "page",
+        "left",
+        "top",
+        "right",
+        "bottom"
+      ],
+      "description": "Where on the page IMAGE you read this item, as a fraction of page width and height (0.0-1.0, top-left origin). Give this for every item, and give it from what you SEE, not from the OCR text: it is the only way to keep a value the OCR text does not contain. Point at the value's own row - tight around the label and the number, never a whole table or a whole page. A region covering more than about a third of the page is discarded.",
+      "properties": {
+        "page": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "left": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "top": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "right": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "bottom": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
         }
       }
     }

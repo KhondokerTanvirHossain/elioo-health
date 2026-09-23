@@ -124,6 +124,18 @@ Key files when changing behaviour:
   against GREEK SMALL LETTER MU (U+03BC) — visually identical, semantically identical, different code points.
   The real number was 73/74. A harness result is evidence about the harness until a mismatch has been looked
   at by value; never open an investigation into a defect a tool reported without first confirming the tool.
+- **A tool that regenerates an input must never overwrite the human judgement layered on top of it.** The
+  measurement's foundation is the most dangerous thing in the repo to write to, and it is usually written by
+  the same tool that produces the numbers. `draft-labels.sh` was re-run against `docs/testset/batch2/expected/`
+  to measure a fix and replaced ten labels Tanvir had verified field by field against the images with fresh
+  drafts saying `"verified": false`. The corpus is git-ignored because it holds patient data, so there was no
+  commit and no backup: the verification every number in BASELINE.md rests on was destroyed by the tool whose
+  output those numbers describe. **Any writer pointed at a directory holding human work checks for that work
+  and refuses, snapshots before writing, and makes the escape hatch an explicit flag** — `draft_label.py`
+  refuses a `"verified": true` file (and an unparseable one, which is not *known* to be a draft), the shell
+  script snapshots `expected/` before the first write and stops the run when any verified label is present.
+  Guarded in both directions by `scripts/test_draft_label_guard.py`. Distinct from the flattering-failure
+  family: not a check that could not fail, but a destructive write with no check at all.
 - **A red replay must fail ON the defect, not merely fail.** Read the failure message and confirm it names the
   bug: `expected: DEFERRED but was: DROPPED`, `duplicate key value violates unique constraint`. A guard whose
   replay died on a `NullPointerException` in its own Mockito matcher was red, looked like a successful replay and

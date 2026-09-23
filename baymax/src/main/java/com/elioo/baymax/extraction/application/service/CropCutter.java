@@ -50,7 +50,13 @@ public class CropCutter {
         /** The item's text is not on the page, exactly or fuzzily: the model paraphrased or invented. */
         TEXT_NOT_ON_PAGE,
         /** The text was located but its words carry no box, or the box would be most of the page. */
-        UNCROPPABLE
+        UNCROPPABLE,
+        /** Cut from the region the model pointed at on the page image, because no OCR word carried the text. */
+        MODEL_REGION,
+        /** The model gave no region, or one that is not a usable box. */
+        NO_REGION,
+        /** The region covers so much of the page that it points at nothing. */
+        REGION_TOO_LARGE
     }
 
     /** A crop plus how it was found, for callers that want the reason (the replay harness, the log). */
@@ -137,6 +143,56 @@ public class CropCutter {
         }
         Optional<byte[]> bytes = cutWords(page, located);
         return new Cut(bytes.isPresent() ? Outcome.RELOCATED : Outcome.UNCROPPABLE, bytes);
+    }
+
+    /**
+     * Cuts the rectangle the model pointed at on the page image, ignoring OCR entirely.
+     *
+     * <p>This is the last resort and the only one that can work when Vision never produced the value's text:
+     * 30 of 85 cropped values in batch 2 were lost as {@code TEXT_NOT_ON_PAGE}, every one legible on the
+     * page. No string rule over OCR text can find text OCR did not produce.</p>
+     *
+     * <p>What comes back is a proposal. The model's box is not evidence that the value is inside it — a
+     * table misread by one row yields a confident box over the wrong number — so a region crop is stored
+     * only after {@link CropVerifier} has re-read it independently (DR-12).</p>
+     */
+    public Cut cutRegion(ExtractionResult.SourceRegion region, Map<Integer, PageOcr> pagesByNumber) {
+        if (region == null || !region.isUsable()) {
+            return new Cut(Outcome.NO_REGION, Optional.empty());
+        }
+        PageOcr page = pagesByNumber.get(region.page());
+        if (page == null) {
+            return new Cut(Outcome.PAGE_MISSING, Optional.empty());
+        }
+        if (!region.isPointer()) {
+            log.debug("[baymax] region refused on page {}: it covers most of the page", page.pageNo());
+            return new Cut(Outcome.REGION_TOO_LARGE, Optional.empty());
+        }
+        try {
+            BufferedImage image = ImageIO.read(new ByteArrayInputStream(
+                    Base64.getDecoder().decode(page.imageBase64())));
+            if (image == null) {
+                log.warn("[baymax] region crop skipped: page {} image unreadable", page.pageNo());
+                return new Cut(Outcome.UNCROPPABLE, Optional.empty());
+            }
+            var box = region.toPixels(image.getWidth(), image.getHeight());
+            int pad = properties.getExtract().getCropPaddingPx();
+            int x = Math.max(0, box.left() - pad);
+            int y = Math.max(0, box.top() - pad);
+            int w = Math.min(image.getWidth() - x, box.width() + 2 * pad);
+            int h = Math.min(image.getHeight() - y, box.height() + 2 * pad);
+            if (w <= 0 || h <= 0) {
+                return new Cut(Outcome.UNCROPPABLE, Optional.empty());
+            }
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            if (!ImageIO.write(image.getSubimage(x, y, w, h), "jpg", out)) {
+                return new Cut(Outcome.UNCROPPABLE, Optional.empty());
+            }
+            return new Cut(Outcome.MODEL_REGION, Optional.of(out.toByteArray()));
+        } catch (IOException | IllegalArgumentException e) {
+            log.warn("[baymax] region crop failed on page {}: {}", page.pageNo(), e.getMessage());
+            return new Cut(Outcome.UNCROPPABLE, Optional.empty());
+        }
     }
 
     private Optional<byte[]> cutWords(PageOcr page, List<PageOcr.PositionedWord> hits) {
