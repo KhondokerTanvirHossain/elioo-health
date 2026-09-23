@@ -443,6 +443,9 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
         if (located.bytes().isPresent()) {
             return store(document, located, itemId);
         }
+        if (!properties.getExtract().isRecoverCropsFromImage()) {
+            return Mono.empty();
+        }
         CropCutter.Cut region = cropCutter.cutRegion(value.sourceRegion(), byPage);
         if (region.bytes().isEmpty()) {
             return Mono.empty();

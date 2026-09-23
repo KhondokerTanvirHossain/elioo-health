@@ -47,7 +47,7 @@ public class ExtractionPromptBuilder {
                   "patient_hint": string | null,      // the patient name or id as printed, if any
                   "document_date": "YYYY-MM-DD" | null,
                   "facility": string | null,          // hospital, clinic or lab name as printed
-                  "values":    [ { "name", "canonical_name", "value", "unit", "ref_low", "ref_high", "flag", "source_span" } ],
+                  "values":    [ { "name", "canonical_name", "value", "unit", "ref_low", "ref_high", "flag", "source_span", "source_region" } ],
                   "medicines": [ { "name", "dose_text", "route", "frequency_text", "timing_text", "duration_text", "source_span" } ],
                   "follow_up": [ { "instruction", "due_date", "source_span" } ],
                   "clinical_context": {
@@ -121,6 +121,25 @@ public class ExtractionPromptBuilder {
             p.append("\nThe page images are attached in order. The OCR text below is a machine reading of them ")
                     .append("and may contain errors; when the image and the text disagree, trust the image, but ")
                     .append("keep source_span pointing at the OCR text.\n");
+
+            p.append("\nSOURCE REGIONS (for every value)\n");
+            p.append("""
+                    Each value must also carry source_region: {"page": n, "left": x1, "top": y1, "right": x2, \
+                    "bottom": y2}, where the value sits on the page IMAGE, as fractions of page width and \
+                    height from the top-left corner (0.0 to 1.0). Take these from what you SEE, not from the \
+                    OCR text.
+
+                    This is the only way to keep a value the OCR text does not contain. The OCR often splits \
+                    or drops a table cell, and a value the server cannot find in the text is discarded and \
+                    never reaches the family however clearly you read it — a value whose region you give \
+                    survives that.
+
+                    Point at the value's own row: tight around the label and the number, the way a person \
+                    would underline it. A region covering more than about a third of the page is treated as \
+                    pointing at nothing and discarded. A region that covers the wrong row is worse than none, \
+                    because the family would be shown a picture of a different number, so where you are not \
+                    sure of the position, omit source_region rather than guess.
+                    """);
         }
 
         p.append("\nOCR TEXT\n");

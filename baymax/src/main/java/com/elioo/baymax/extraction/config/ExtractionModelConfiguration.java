@@ -2,7 +2,9 @@ package com.elioo.baymax.extraction.config;
 
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.extraction.application.service.CropVerifier;
+import com.elioo.baymax.aicall.application.service.MeteredLlmClient;
 import com.elioo.baymax.aicall.application.service.MeteredVisionOcr;
+import com.elioo.baymax.aicall.domain.AiCallPurpose;
 import com.elioo.healthcare.gcp.vision.model.VisionOcrRequest;
 import com.elioo.healthcare.llm.api.LlmClient;
 import com.elioo.healthcare.llm.model.LlmImage;
@@ -166,13 +168,13 @@ public class ExtractionModelConfiguration {
      * stays unshown — the safe direction, and the same outcome as today.</p>
      */
     @Bean
-    public CropVerifier cropVerifier(MeteredVisionOcr ocr,
+    public CropVerifier cropVerifier(MeteredVisionOcr ocr, MeteredLlmClient metered,
                                      @Qualifier(VISION_CLIENT) ObjectProvider<BaymaxModelClient> visionClient,
                                      BaymaxProperties properties) {
         LlmClient vision = BaymaxModelClient.unwrap(visionClient.getIfAvailable());
 
         CropVerifier.CropReader ocrReader = (documentId, crop) -> ocr
-                .detectDocumentText(documentId, VisionOcrRequest.withLanguages(
+                .readCrop(documentId, VisionOcrRequest.withLanguages(
                         java.util.Base64.getEncoder().encodeToString(crop), java.util.List.of("bn", "en")))
                 .mapNotNull(response -> response.fullText() == null || response.fullText().isBlank()
                         ? null : response.fullText());
@@ -190,7 +192,8 @@ public class ExtractionModelConfiguration {
                             + "explanation and no guesses. If you cannot read it, output nothing.",
                     null, properties.getExtract().getCropVerifyMaxTokens(),
                     null, null, null, null, false);
-            return vision.invoke(request.withImages(java.util.List.of(LlmImage.jpeg(crop))))
+            return metered.using(vision).invoke(AiCallPurpose.CROP_VERIFY, documentId,
+                            request.withImages(java.util.List.of(LlmImage.jpeg(crop))))
                     .mapNotNull(response -> response.content() == null || response.content().isBlank()
                             ? null : response.content());
         };

@@ -283,6 +283,15 @@ public class BaymaxProperties {
          * and an unbounded one would be the most expensive thing in the pipeline.
          */
         private int cropVerifyMaxTokens = 100;
+        /**
+         * Whether a value whose crop cannot be located in the OCR text may be recovered from the region the
+         * model pointed at on the page image (always subject to independent verification).
+         *
+         * <p>Exists so a before/after measurement can run on ONE build with ONE gate. The first attempt to
+         * measure the locator fix compared two runs whose gates differed, which credited a document with
+         * recovering three values when it had simply failed the confidence gate and never been cropped.</p>
+         */
+        private boolean recoverCropsFromImage = true;
     }
 
     /** A chronic marker the pipeline recognises by any of its aliases. Config, not code. */
