@@ -100,34 +100,84 @@ def stopgap_verdict(value, ref_low, ref_high):
     return "THIS_WEEK", f"{x:g} is below the printed lower limit {low:g}"
 
 
-def marker_tokens(s):
+MARKERS_FILE = "baymax/src/main/resources/markers.properties"
+
+
+def load_alias_table(path):
     """
-    The words in a printed marker name, so "S-POTASSIUM" and "Serum Potassium" both offer "potassium".
+    The real alias table, so this report matches what the code would match.
 
-    Deliberately generous HERE and nowhere else: this is a REVIEW document, and a threshold that fails to
-    match only because a lab wrote "S-POTASSIUM" would hide the single most important row from the doctor —
-    the batch-2 under-escalation. The running system is stricter: it matches on canonical_name from
-    MarkerMatcher's alias table, and any marker missing from that table is reported below as a gap, because
-    a threshold that cannot be reached is a threshold that does not exist.
+    An earlier version of this script guessed with word tokens, and a separate Python copy of MarkerMatcher
+    drifted from the Java within an hour — it reported one mapping that did not exist and missed one that
+    did. The alias table is read here rather than approximated; the exact resolution order below mirrors
+    MarkerMatcher, and EveryThresholdIsReachableTest asserts the same properties against the real matcher.
     """
-    return {w for w in re.split(r"[^a-z0-9]+", fold(s)) if len(w) > 2}
-
-
-def match_threshold(thresholds, name, canonical, unit):
-    want_unit = unit_key(unit)
-    names = {fold(canonical), fold(name)}
-    tokens = marker_tokens(name) | marker_tokens(canonical)
-    for t in thresholds:
-        if not t["canonical"] or t["unit"] != want_unit:
+    rows = {}
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            m = re.match(r"baymax\.markers\[(\d+)]\.([a-z\-]+)=(.*)", line.strip())
+            if m:
+                rows.setdefault(int(m.group(1)), {})[m.group(2)] = m.group(3).strip()
+    by_alias, exclusions = {}, {}
+    for _, row in sorted(rows.items()):
+        canonical = row.get("canonical", "").strip()
+        if not canonical:
             continue
-        if t["canonical"] in names or t["canonical"] in tokens:
-            return t
+        by_alias.setdefault(normalise_name(canonical), canonical)
+        for alias in row.get("aliases", "").split(","):
+            key = normalise_name(alias)
+            if key:
+                by_alias.setdefault(key, canonical)
+        excluded = [normalise_name(a) for a in row.get("not-aliases", "").split(",") if normalise_name(a)]
+        if excluded:
+            exclusions[canonical] = excluded
+    return by_alias, exclusions
+
+
+def normalise_name(value):
+    """Mirrors MarkerMatcher.normalise: lower-case, punctuation to spaces, whitespace collapsed."""
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9%/]+", " ", (value or "").lower())).strip()
+
+
+def canonical_for(name, canonical, aliases):
+    by_alias, exclusions = aliases
+    for candidate in (canonical, name):
+        key = normalise_name(candidate)
+        if not key:
+            continue
+
+        def excluded(marker):
+            return any(bad in key for bad in exclusions.get(marker, []))
+
+        exact = by_alias.get(key)
+        if exact and not excluded(exact):
+            return exact
+        best = None
+        for alias, marker in by_alias.items():
+            if alias in key and not excluded(marker):
+                if best is None or len(alias) > len(best[0]):
+                    best = (alias, marker)
+        if best:
+            return best[1]
     return None
 
 
-def proposed_verdict(thresholds, name, canonical, unit, value, ref_low, ref_high):
+def match_threshold(thresholds, name, canonical, unit, aliases):
+    """A threshold matches only when the CANONICAL marker and the unit both match — as the code does."""
+    resolved = canonical_for(name, canonical, aliases)
+    if not resolved:
+        return None
+    want_unit = unit_key(unit)
+    for t in thresholds:
+        if t["canonical"] == normalise_name(resolved).replace(" ", "_") or t["canonical"] == resolved:
+            if t["unit"] == want_unit:
+                return t
+    return None
+
+
+def proposed_verdict(thresholds, name, canonical, unit, value, ref_low, ref_high, aliases):
     """What the proposed table would say. Falls back to the stopgap when no row covers this marker+unit."""
-    t = match_threshold(thresholds, name, canonical, unit)
+    t = match_threshold(thresholds, name, canonical, unit, aliases)
     if t is None:
         level, why = stopgap_verdict(value, ref_low, ref_high)
         return level, f"no threshold for this marker/unit — falls back to stopgap ({why})", None
@@ -149,7 +199,7 @@ def proposed_verdict(thresholds, name, canonical, unit, value, ref_low, ref_high
     return "ROUTINE", f"{x:g} within the proposed thresholds", t
 
 
-def assess(label, thresholds):
+def assess(label, thresholds, aliases):
     """Highest verdict across the report's values, under each rule, with the marker that drove it."""
     worst = {"stopgap": ("ROUTINE", "", ""), "proposed": ("ROUTINE", "", "")}
     per_value = []
@@ -159,7 +209,7 @@ def assess(label, thresholds):
         unit, value = v.get("unit") or "", v.get("value")
         s_level, s_why = stopgap_verdict(value, v.get("ref_low"), v.get("ref_high"))
         p_level, p_why, t = proposed_verdict(thresholds, name, canonical, unit, value,
-                                             v.get("ref_low"), v.get("ref_high"))
+                                             v.get("ref_low"), v.get("ref_high"), aliases)
         per_value.append((name, value, unit, s_level, s_why, p_level, p_why, t))
         if RANK[s_level] > RANK[worst["stopgap"][0]]:
             worst["stopgap"] = (s_level, name, s_why)
@@ -172,6 +222,7 @@ def main():
     if not os.path.exists(THRESHOLDS_FILE):
         sys.exit(f"missing {THRESHOLDS_FILE}")
     thresholds = load_thresholds(THRESHOLDS_FILE)
+    aliases = load_alias_table(MARKERS_FILE)
     active = [t for t in thresholds if t["status"] != "proposed"]
     if active:
         sys.exit(f"REFUSING: {len(active)} threshold(s) are not 'proposed'. This dry run describes an "
@@ -192,7 +243,7 @@ def main():
 
     rows = []
     for stem in sorted(labels, key=lambda s: (len(s), s)):
-        worst, per_value = assess(labels[stem], thresholds)
+        worst, per_value = assess(labels[stem], thresholds, aliases)
         rows.append((stem, worst, per_value))
 
     print("# Urgency dry run — the live rule today vs the proposed thresholds\n")
@@ -246,30 +297,6 @@ def main():
         escalating = [f"{s} ({lv.replace('_',' ')})" for s, lv in where if lv != "ROUTINE"]
         note = f" — **escalates today on:** {', '.join(escalating)}" if escalating else ""
         print(f"- **{name}** ({unit or 'no unit'}){note}")
-
-    # A threshold the running system could never reach is a threshold that does not exist. The app joins a
-    # value to a threshold on canonical_name, which MarkerMatcher derives from the alias table; a marker
-    # absent from that table can never be canonicalised, so its threshold can never fire however carefully a
-    # doctor sets it. This dry run matches more loosely on purpose, so without this section the table would
-    # look complete while the code could not use it.
-    print("\n## Engineering gap: thresholds the running system cannot reach yet\n")
-    aliases = set()
-    app_properties = "medscribe-ai/src/main/resources/application.properties"
-    if os.path.exists(app_properties):
-        with open(app_properties, encoding="utf-8") as f:
-            for line in f:
-                m = re.match(r"baymax\.markers\[\d+]\.canonical=(.*)", line.strip())
-                if m:
-                    aliases.add(fold(m.group(1)))
-    unreachable = sorted({t["canonical"] for t in thresholds if t["canonical"] not in aliases})
-    if not unreachable:
-        print("_None: every proposed threshold names a marker the canonicaliser knows._")
-    else:
-        print("These markers have a proposed threshold but **no entry in the canonical marker table**, so the "
-              "code cannot match a reading to the threshold. This is a code/config task, not a clinical one, "
-              "and it must be done before any of these rows is switched on:\n")
-        for canonical in unreachable:
-            print(f"- `{canonical}`")
 
 
 if __name__ == "__main__":

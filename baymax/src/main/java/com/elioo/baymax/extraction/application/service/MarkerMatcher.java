@@ -20,6 +20,8 @@ import java.util.Optional;
 public class MarkerMatcher {
 
     private final Map<String, String> byAlias = new LinkedHashMap<>();
+    /** canonical marker -> names that must never resolve to it, however well they match. */
+    private final Map<String, java.util.List<String>> exclusions = new LinkedHashMap<>();
 
     public MarkerMatcher(BaymaxProperties properties) {
         for (BaymaxProperties.Marker marker : properties.getMarkers()) {
@@ -33,6 +35,13 @@ public class MarkerMatcher {
                 if (!key.isEmpty()) {
                     byAlias.putIfAbsent(key, marker.getCanonical().trim());
                 }
+            }
+            java.util.List<String> excluded = marker.getNotAliases().stream()
+                    .map(MarkerMatcher::normalise)
+                    .filter(s -> !s.isEmpty())
+                    .toList();
+            if (!excluded.isEmpty()) {
+                exclusions.put(marker.getCanonical().trim(), excluded);
             }
         }
     }
@@ -53,19 +62,41 @@ public class MarkerMatcher {
             return Optional.empty();
         }
         String exact = byAlias.get(key);
-        if (exact != null) {
+        if (exact != null && !isExcluded(exact, key)) {
             return Optional.of(exact);
         }
         // "s. creatinine (serum)" should still find "creatinine"; longest alias wins to avoid
         // matching "ldl" inside an unrelated word.
+        //
+        // Exclusions are applied to the CANDIDATES, not to the winner alone: "Non-HDL Cholesterol" matches
+        // both "hdl" and "total cholesterol", and dropping the excluded match lets the correct one win
+        // instead of losing the name entirely.
         return byAlias.entrySet().stream()
                 .filter(e -> key.contains(e.getKey()))
+                .filter(e -> !isExcluded(e.getValue(), key))
                 .max(Map.Entry.comparingByKey(java.util.Comparator.comparingInt(String::length)))
                 .map(Map.Entry::getValue);
     }
 
+    /**
+     * True when this name is one the marker explicitly disowns.
+     *
+     * <p>The substring fallback is deliberately generous, which is how "S-POTASSIUM" finds potassium without
+     * an entry for every prefix a lab might print. The cost is that it also matches names that merely contain
+     * a marker's letters: "Non-HDL Cholesterol" resolved to {@code hdl}, whose threshold is direction-
+     * inverted, so a bad result would have been read as a protective one.</p>
+     */
+    private boolean isExcluded(String canonical, String normalisedName) {
+        for (String excluded : exclusions.getOrDefault(canonical, java.util.List.of())) {
+            if (normalisedName.contains(excluded)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** Lower-case, punctuation to spaces, whitespace collapsed: "S. Creatinine" and "s creatinine" agree. */
-    static String normalise(String value) {
+    public static String normalise(String value) {
         if (value == null) {
             return "";
         }

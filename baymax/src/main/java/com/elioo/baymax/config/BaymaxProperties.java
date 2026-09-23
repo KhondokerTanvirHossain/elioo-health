@@ -309,5 +309,15 @@ public class BaymaxProperties {
     public static class Marker {
         private String canonical;
         private List<String> aliases = new ArrayList<>();
+        /**
+         * Names that must NEVER map to this marker, even though the substring fallback would catch them.
+         *
+         * <p>"Non-HDL Cholesterol" contains "hdl" and canonicalised to it, which matters because HDL's
+         * threshold is direction-inverted: a high non-HDL is bad and a high HDL is protective, so the wrong
+         * match reads a bad result as a good one. "Mean Platelet Volume" contains "platelet" and would have
+         * been judged against a platelet-count threshold. A marker is excluded when its name contains any of
+         * these, and exclusion beats every alias.</p>
+         */
+        private List<String> notAliases = new ArrayList<>();
     }
 }
