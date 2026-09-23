@@ -178,4 +178,69 @@ class ProposedThresholdsAreInertTest {
                 .as("HDL 75 is protective, not an emergency")
                 .isEqualTo(Urgency.ROUTINE);
     }
+
+    /**
+     * The unit that nearly slipped through. The config states creatinine's SI row as "umol/L" (ASCII u,
+     * because a properties file is edited by hand), and a lab prints "µmol/L" with MICRO SIGN. NFKC folds
+     * MICRO SIGN onto GREEK SMALL LETTER MU — not onto ASCII "u" — so the two do NOT match on normalisation
+     * alone, and the threshold would silently never fire on a real page.
+     *
+     * <p>Silently is the problem. The value falls back to the stopgap and nothing looks broken, so a doctor
+     * signs off a creatinine threshold and it does nothing for every lab that prints the proper symbol.</p>
+     */
+    @Test
+    void aUnitWrittenWithMicroSignMatchesTheSameUnitWrittenWithAsciiU() {
+        configure(new MarkerThreshold("creatinine", "umol/L", null, 442.0, null, 133.0,
+                false, MarkerThreshold.Direction.NORMAL, MarkerThreshold.Status.ACTIVE, false, "UKKA"));
+
+        var facts = factsWith(Map.of("name", "Creatinine", "canonical_name", "creatinine",
+                "value", "500", "unit", "\u00b5mol/L", "ref_low", "59", "ref_high", "104"));
+
+        // The LEVEL cannot prove this: 500 against a printed 59-104 is 4.8x the limit, so the stopgap
+        // returns NOW too and the assertion would pass whether or not the threshold matched. The REASON is
+        // what distinguishes them — "|threshold:UKKA" only appears when the unit actually matched.
+        var assessed = urgency.assess(facts);
+
+        assertThat(assessed.reasons())
+                .as("a page printing MICRO SIGN must reach the threshold written with ASCII u")
+                .anySatisfy(r -> assertThat(r).contains("threshold:UKKA"));
+        assertThat(assessed.reasons())
+                .as("and must NOT have fallen through to the stopgap")
+                .noneSatisfy(r -> assertThat(r).contains("stopgap"));
+        assertThat(assessed.level()).isEqualTo(Urgency.NOW);
+    }
+
+    /** And the Greek letter, which is what NFKC actually normalises MICRO SIGN to. */
+    @Test
+    void aUnitWrittenWithGreekMuAlsoMatches() {
+        configure(new MarkerThreshold("creatinine", "umol/L", null, 442.0, null, 133.0,
+                false, MarkerThreshold.Direction.NORMAL, MarkerThreshold.Status.ACTIVE, false, "UKKA"));
+
+        var facts = factsWith(Map.of("name", "Creatinine", "canonical_name", "creatinine",
+                "value", "500", "unit", "\u03bcmol/L", "ref_low", "59", "ref_high", "104"));
+
+        assertThat(urgency.assess(facts).reasons())
+                .as("same check on the reason, for the same reason")
+                .anySatisfy(r -> assertThat(r).contains("threshold:UKKA"));
+    }
+
+    /** Folding micro onto u must not make genuinely different units equal. */
+    @Test
+    void foldingMicroDoesNotMakeDifferentUnitsEqual() {
+        configure(new MarkerThreshold("creatinine", "umol/L", null, 442.0, null, 133.0,
+                false, MarkerThreshold.Direction.NORMAL, MarkerThreshold.Status.ACTIVE, false, "UKKA"));
+
+        // In range for mmol/L, and far below the umol/L threshold's numbers. If the units were folded
+        // together this would read 5.0 against a 442 threshold and pass as ROUTINE by luck; what proves the
+        // units stayed separate is the REASON — it must be the stopgap's fallback, not the threshold.
+        var facts = factsWith(Map.of("name", "Creatinine", "canonical_name", "creatinine",
+                "value", "0.09", "unit", "mmol/L", "ref_low", "0.06", "ref_high", "0.11"));
+
+        var assessed = urgency.assess(facts);
+
+        assertThat(assessed.level()).isEqualTo(Urgency.ROUTINE);
+        assertThat(assessed.reasons())
+                .as("mmol/L must not be answered by the umol/L row — a 1000x error must not be folded away")
+                .noneSatisfy(r -> assertThat(r).contains("UKKA"));
+    }
 }

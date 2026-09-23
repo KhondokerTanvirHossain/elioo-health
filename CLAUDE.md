@@ -119,6 +119,13 @@ Key files when changing behaviour:
   lab report that read nothing; the first implementation's `typeOf()` read an unset column, so every document
   became `"other"` — prescriptions passed and a blurry lab report would have sailed through. Only the
   second test caught it, and only because it existed before the code.
+- **When two rules can produce the same verdict, asserting the verdict does not say which rule ran.** The
+  per-marker threshold tests asserted `NOW` for creatinine 500 µmol/L — but 500 against a printed 59–104 is
+  4.8× the limit, so the 2× stopgap returns `NOW` as well. The tests passed while the unit match was broken
+  (`µmol/L` never matched `umol/L`, because NFKC folds MICRO SIGN onto Greek mu and not onto ASCII `u`), and
+  a signed-off creatinine threshold would have silently done nothing. They became honest only by asserting
+  on the reason (`|threshold:<source>` vs `|stopgap`), which is why urgency reasons now carry the identity of
+  the rule that produced them. Wherever a fallback exists, assert the path, not just the outcome.
 - **A scoring harness manufactures findings as readily as it hides them.** Batch 2's unit column read 65/74
   until eight of the nine "misses" turned out to be the scorer failing to Unicode-fold MICRO SIGN (U+00B5)
   against GREEK SMALL LETTER MU (U+03BC) — visually identical, semantically identical, different code points.

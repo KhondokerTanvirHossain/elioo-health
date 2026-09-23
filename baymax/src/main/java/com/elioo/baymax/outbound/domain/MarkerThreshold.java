@@ -89,9 +89,13 @@ public record MarkerThreshold(
         if (s == null) {
             return "";
         }
-        // NFKC folds MICRO SIGN (U+00B5) onto GREEK SMALL LETTER MU (U+03BC): the same defect that
+        // NFKC folds MICRO SIGN (U+00B5) onto GREEK SMALL LETTER MU (U+03BC) — but NOT onto ASCII "u", and
+        // a properties file edited by hand says "umol/L" while the lab prints "µmol/L". Without the last
+        // step those are two different units, the threshold silently never matches, and a signed-off
+        // creatinine rule does nothing for every lab that prints the proper symbol. The same character pair
         // manufactured eight false unit misses in the batch-2 scorer.
         return java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFKC)
+                .replace('μ', 'u')                  // GREEK SMALL LETTER MU, which MICRO SIGN becomes
                 .replaceAll("\\s+", "")
                 .toLowerCase(Locale.ROOT);
     }
