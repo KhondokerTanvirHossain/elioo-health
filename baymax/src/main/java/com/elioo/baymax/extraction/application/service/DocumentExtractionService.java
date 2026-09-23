@@ -189,8 +189,37 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
         return Mono.fromCallable(() -> new Attempt(
                 response.modelId() != null ? response.modelId() : String.valueOf(modelOverride),
                 client.providerName(),
-                reader.read(response.content())));
+                reader.read(refuseTruncated(response))));
     }
+
+    /**
+     * The reply's text, unless the model stopped because it ran out of output tokens.
+     *
+     * <p>A truncated reply is a <b>failure, never a partial success</b>. Cut off mid-array it may still
+     * parse — or be repaired into something that parses — and would then be stored as an ordinary success
+     * holding a fraction of the page, with a confidence score describing only the part that survived. The
+     * family would be shown a short report and told nothing was missing, which is the worst shape a defect
+     * can take here: silent, plausible, and about a medical document.</p>
+     *
+     * <p>This has never fired. It was written while investigating batch 2's run-to-run variance — lab2 read
+     * 29 values in one run and 14 in the next — and that turned out NOT to be truncation: 2524 and 4816
+     * output tokens against an 8192 ceiling, and the shorter reply carried a complete {@code confidence} and
+     * {@code clinical_context}, fields that come last and cannot survive a cut. The guard stays because the
+     * failure is silent and the only reason it has not happened is that no page has been long enough yet.</p>
+     */
+    static String refuseTruncated(LlmResponse response) {
+        String stop = response.stopReason();
+        if (stop != null && TRUNCATED_STOP_REASONS.contains(stop.toLowerCase(java.util.Locale.ROOT))) {
+            throw new ExtractionJsonReader.InvalidExtractionException(
+                    "the model hit its output limit (stop_reason=" + stop + "), so the reply is incomplete "
+                            + "and any values it contains are only part of the page");
+        }
+        return response.content();
+    }
+
+    /** Anthropic says max_tokens; an OpenAI-compatible API says length. Both mean the same cut. */
+    private static final java.util.Set<String> TRUNCATED_STOP_REASONS =
+            java.util.Set.of("max_tokens", "length", "max_output_tokens");
 
     /** Read back out of the reply for the cost log; a malformed reply simply has no confidence. */
     private Double confidenceOf(LlmResponse response) {
