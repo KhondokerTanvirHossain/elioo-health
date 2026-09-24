@@ -628,6 +628,92 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
                         r.documentId(), r.outcome(), r.values(), r.medicines(), r.followUps(), r.context(), r.unverified()));
     }
 
+    /**
+     * Measures the verification rate for one document, writing nothing.
+     *
+     * <p>Deliberately NOT built on {@link #recrop}, which deletes the document's crops and items and rewrites
+     * the row. This must be safe to run across every document in production, including ones a family is
+     * looking at, so it re-OCRs the stored pages, cuts crops in memory, asks the verifier, counts, and throws
+     * the crops away. The only side effects are the Vision and verification calls, which are metered like any
+     * other.</p>
+     */
+    @Override
+    public Mono<VerificationRate> verificationRate(UUID documentId) {
+        return records.find(documentId)
+                .switchIfEmpty(Mono.error(BaymaxException.notFound("document_not_found", "no document with id " + documentId)))
+                .flatMap(document -> {
+                    if (document.extractionJson() == null) {
+                        return Mono.just(new VerificationRate(documentId, document.documentType(),
+                                String.valueOf(document.status()), "no_extraction", 0, 0, document.confidenceOverall()));
+                    }
+                    ExtractionResult result = reader.readStored(document.extractionJson());
+                    List<String> gating = properties.getExtract().getGatingSections()
+                            .getOrDefault(typeOf(result), List.of());
+                    if (gating.isEmpty()) {
+                        return Mono.just(new VerificationRate(documentId, typeOf(result),
+                                String.valueOf(document.status()), "no_gating_sections", 0, 0,
+                                document.confidenceOverall()));
+                    }
+                    return storedPages(document)
+                            .flatMap(pages -> countConfirmedGatingItems(document, pages, result, gating)
+                                    .map(confirmed -> new VerificationRate(documentId, typeOf(result),
+                                            String.valueOf(document.status()), "measured",
+                                            confirmed, gatingItemCount(result, gating), document.confidenceOverall())));
+                })
+                .doOnNext(r -> log.info("[baymax] verification rate documentId={} type={} status={} outcome={} "
+                                + "confirmed={}/{} confidence={}",
+                        r.documentId(), r.documentType(), r.status(), r.outcome(), r.confirmed(), r.extracted(),
+                        r.confidence()));
+    }
+
+    private int gatingItemCount(ExtractionResult result, List<String> gating) {
+        int total = 0;
+        for (String section : gating) {
+            total += itemCount(result, section);
+        }
+        return total;
+    }
+
+    /**
+     * Cuts each gating item's crop in memory and asks the verifier whether the page shows it. Nothing is
+     * stored: this is a measurement, and it runs over documents in production.
+     */
+    private Mono<Integer> countConfirmedGatingItems(Document document, List<PageOcr> pages,
+                                                    ExtractionResult result, List<String> gating) {
+        Map<Integer, PageOcr> byPage = CropCutter.byPageNumber(pages);
+        Flux<Boolean> values = gating.contains("values")
+                ? Flux.fromIterable(result.valuesOrEmpty())
+                        .concatMap(v -> confirmedInMemory(document, v, byPage))
+                : Flux.empty();
+        // Medicines and follow-ups gate a prescription. They carry no source_region, so only the OCR-located
+        // crop can confirm them — which is itself the honest answer for those sections today.
+        Flux<Boolean> medicines = gating.contains("medicines")
+                ? Flux.fromIterable(result.medicinesOrEmpty())
+                        .map(m -> cropCutter.cut(m.sourceSpan(), m.name(), byPage).bytes().isPresent())
+                : Flux.empty();
+        Flux<Boolean> followUps = gating.contains("follow_up")
+                ? Flux.fromIterable(result.followUpOrEmpty())
+                        .map(f -> cropCutter.cut(f.sourceSpan(), f.instruction(), byPage).bytes().isPresent())
+                : Flux.empty();
+
+        return Flux.concat(values, medicines, followUps).filter(Boolean::booleanValue).count()
+                .map(Long::intValue);
+    }
+
+    private Mono<Boolean> confirmedInMemory(Document document, ExtractionResult.Value value,
+                                            Map<Integer, PageOcr> byPage) {
+        CropCutter.Cut located = cropCutter.cutValue(value.sourceSpan(), value.name(), value.value(), byPage);
+        if (located.bytes().isPresent()) {
+            return Mono.just(true);
+        }
+        CropCutter.Cut region = cropCutter.cutRegion(value.sourceRegion(), byPage);
+        if (region.bytes().isEmpty()) {
+            return Mono.just(false);
+        }
+        return cropVerifier.verify(document.id(), region.bytes().orElseThrow(), value.name(), value.value())
+                .map(CropVerifier.Outcome::verified);
+    }
+
     @Override
     public Flux<RecropReport> recropAll() {
         return records.idsWithStatus(Document.Status.DONE).concatMap(this::recrop);

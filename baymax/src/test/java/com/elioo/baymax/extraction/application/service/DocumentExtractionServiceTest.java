@@ -537,6 +537,40 @@ class DocumentExtractionServiceTest {
                 STORED_JSON, 0.93, Document.Status.DONE, null, "anthropic/claude-sonnet-5", null, 1, NOW, NOW);
     }
 
+    /**
+     * The verification-rate probe is a MEASUREMENT: it must not write anything.
+     *
+     * <p>It is meant to run across every document in production, including ones a family is looking at right
+     * now, so that the retake gate can be compared against an objective signal before anything changes. Its
+     * neighbour {@code recrop} deletes crops and items and rewrites the row — measuring with that would
+     * destroy live data to answer a question about it, which is exactly what the drafting rerun did to ten
+     * verified labels.</p>
+     *
+     * <p>Asserted with {@code never()} on every write port rather than by reading the code, because "it does
+     * not write" is a property of the whole call graph and not of the lines the author happened to look at.</p>
+     */
+    @Test
+    void verificationRateMeasuresWithoutWritingAnything() throws Exception {
+        when(records.find(DOC)).thenReturn(Mono.just(doneDocument()));
+        when(storage.pageBytes(FAMILY, PATIENT, DOC, 1)).thenReturn(Mono.just(pageJpeg()));
+
+        StepVerifier.create(service.verificationRate(DOC))
+                .assertNext(r -> {
+                    assertThat(r.outcome()).isEqualTo("measured");
+                    assertThat(r.extracted()).as("one value in the stored extraction").isEqualTo(1);
+                    assertThat(r.confidence()).as("the model's own score, carried for comparison").isEqualTo(0.93);
+                    assertThat(r.rate()).isPresent();
+                })
+                .verifyComplete();
+
+        verify(storage, never()).deleteCrops(any(), any(), any());
+        verify(storage, never()).storeCrop(any(), any(), any(), anyString(), any());
+        verify(records, never()).deleteItems(any());
+        verify(records, never()).saveExtraction(any(), any());
+        verify(records, never()).update(any());
+        verify(metered, never()).invoke(any(), any(), any(LlmRequest.class), any());
+    }
+
     @Test
     void recropWipesOldCropsAndItemsThenReVerifiesFromStoredJsonWithoutAModelCall() throws Exception {
         when(records.find(DOC)).thenReturn(Mono.just(doneDocument()));
