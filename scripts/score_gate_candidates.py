@@ -35,20 +35,36 @@ MIN_VERIFIED_ITEMS = 3         # a one-value page cannot pass the override on a 
 MIN_VERIFICATION_RATE = 0.80
 
 
-def load_answer_key(path):
-    """The human column out of the review table: document -> yes | no | partly."""
-    key = {}
+def load_answer_key(path, context_path):
+    """
+    The human column out of the review table, mapped back onto every document that shares the image.
+
+    The review is deduplicated: 27 retaken documents are only 8 distinct images, one of them re-uploaded
+    twelve times by test runs. Asking for the same page twelve times would have been both wasteful and a
+    way to weight one page twelve-fold in the score. CONTEXT.md carries the image -> documents mapping.
+    """
+    answers = {}
     for line in open(path, encoding="utf-8"):
         if not line.startswith("|") or "images/" not in line:
             continue
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        m = re.search(r"`([0-9a-f]{8})`", cells[1])
+        m = re.search(r"\[(page\d+)]", cells[1])
         if not m:
             continue
-        answer = cells[-1].strip().lower()
+        answer = cells[4].strip().lower()
         if answer in ("yes", "no", "partly"):
-            key[m.group(1)] = answer
-    return key
+            answers[m.group(1)] = (answer, cells[5].strip())
+
+    key = {}
+    page = None
+    for line in open(context_path, encoding="utf-8"):
+        m = re.match(r"- \*\*(page\d+)\*\*: (.+)", line.strip())
+        if m:
+            page = m.group(1)
+            if page in answers:
+                for doc in re.findall(r"`([0-9a-f]{8})`", m.group(2)):
+                    key[doc] = answers[page]
+    return key, answers
 
 
 def load_rates(path):
@@ -73,15 +89,20 @@ def load_agreement(path):
     return out
 
 
-def score(name, decisions, key):
-    """decisions: document -> True when the candidate RETAKES it."""
+def score(name, decisions, key, partly_needs_retake):
+    """
+    decisions: document -> True when the candidate RETAKES it.
+
+    `partly` is scored BOTH ways rather than decided up front. Whether half a readable report should be sent
+    back is a product judgement, not an arithmetic one, and the difference between the two scorings is
+    itself the finding: if a candidate only wins under one reading of `partly`, it has not won.
+    """
     missed_bad, false_retake, correct = [], [], 0
-    for doc, answer in key.items():
+    for doc, (answer, _note) in key.items():
         if doc not in decisions:
             continue
         retaken = decisions[doc]
-        # "partly" counts as a page that SHOULD be retaken: half a report is not a report.
-        should_retake = answer in ("no", "partly")
+        should_retake = answer == "no" or (answer == "partly" and partly_needs_retake)
         if retaken == should_retake:
             correct += 1
         elif should_retake and not retaken:
@@ -95,7 +116,8 @@ def score(name, decisions, key):
 def main():
     if len(sys.argv) < 3:
         sys.exit(__doc__)
-    key = load_answer_key(sys.argv[1])
+    context_path = sys.argv[1].replace("REVIEW.md", "CONTEXT.md")
+    key, answers = load_answer_key(sys.argv[1], context_path)
     rates = load_rates(sys.argv[2])
     agreement = load_agreement(sys.argv[3] if len(sys.argv) > 3 else None)
 
@@ -118,33 +140,40 @@ def main():
         if doc in agreement:
             agree[doc] = not agreement[doc]
 
-    results = [score("a. CURRENT (confidence only)", current, key),
-               score("b. OVERRIDE (confidence AND verification)", override, key)]
-    if agree:
-        results.append(score("c. AGREEMENT (two extractions)", agree, key))
-
-    readable = sum(1 for a in key.values() if a == "yes")
     print("# Retake gate candidates, scored against a human answer key\n")
-    print(f"Answer key: **{len(key)} documents** reviewed — {readable} readable, "
-          f"{sum(1 for a in key.values() if a == 'no')} unreadable, "
-          f"{sum(1 for a in key.values() if a == 'partly')} partly.\n")
-    print("Every document here was RETAKEN by the current gate, so a readable one is a false retake that "
-          "already happened.\n")
-    print("| candidate | n | correct | missed bad pages | false retakes |")
-    print("|---|---|---|---|---|")
-    for r in results:
-        print(f"| {r['name']} | {r['n']} | {r['correct']} | **{len(r['missed_bad'])}** | "
-              f"**{len(r['false_retake'])}** |")
+    print(f"**{len(answers)} distinct pages reviewed**, covering {len(key)} retaken documents "
+          f"(the same image was re-uploaded by test runs).\n")
+    counts = {a: sum(1 for v, _ in answers.values() if v == a) for a in ("yes", "no", "partly")}
+    print(f"- readable: **{counts['yes']}**   unreadable: **{counts['no']}**   partly: **{counts['partly']}**\n")
+    print("Every document scored here was RETAKEN by the current gate, so a page answered `yes` is a false "
+          "retake that already happened.\n")
 
-    print("\n## What each candidate gets wrong\n")
-    for r in results:
+    for partly_retake in (True, False):
+        label = "`partly` = retake" if partly_retake else "`partly` = accept"
+        results = [score("a. CURRENT (confidence only)", current, key, partly_retake),
+                   score("b. OVERRIDE (confidence AND verification)", override, key, partly_retake)]
+        if agree:
+            results.append(score("c. AGREEMENT (two extractions)", agree, key, partly_retake))
+
+        print(f"## Scored with {label}\n")
+        print("| candidate | documents | correct | missed bad pages | false retakes |")
+        print("|---|---|---|---|---|")
+        for r in results:
+            print(f"| {r['name']} | {r['n']} | {r['correct']} | **{len(r['missed_bad'])}** | "
+                  f"**{len(r['false_retake'])}** |")
+        print()
+
+    print("## What each candidate gets wrong (`partly` = retake)\n")
+    for r in [score("a. CURRENT", current, key, True),
+              score("b. OVERRIDE", override, key, True)] + (
+              [score("c. AGREEMENT", agree, key, True)] if agree else []):
         print(f"### {r['name']}\n")
         if r["missed_bad"]:
             print(f"- **missed bad pages** ({len(r['missed_bad'])}): "
-                  f"{', '.join('`' + d + '`' for d in r['missed_bad'])}")
+                  f"{', '.join('`' + d + '`' for d in sorted(set(r['missed_bad'])))}")
         if r["false_retake"]:
             print(f"- **false retakes** ({len(r['false_retake'])}): "
-                  f"{', '.join('`' + d + '`' for d in r['false_retake'])}")
+                  f"{', '.join('`' + d + '`' for d in sorted(set(r['false_retake'])))}")
         if not r["missed_bad"] and not r["false_retake"]:
             print("- nothing wrong on this set")
         print()
@@ -154,7 +183,7 @@ def main():
     print(f"- OVERRIDE: retake when confidence < {MIN_CONFIDENCE} AND NOT "
           f"(rate >= {MIN_VERIFICATION_RATE} AND confirmed >= {MIN_VERIFIED_ITEMS})")
     print("- AGREEMENT: retake when two extractions of the same image read different values")
-    print("\n\"partly\" is scored as a page that SHOULD be retaken: half a report is not a report.")
+    print("\n**If a candidate wins under one reading of `partly` and loses under the other, it has not won.**")
 
 
 if __name__ == "__main__":
