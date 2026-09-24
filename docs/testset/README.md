@@ -1,5 +1,25 @@
 # Evaluation corpus
 
+## ⚠ MEASURED ON PDF SCREENSHOTS, NOT PHONE PHOTOS
+
+**Every accuracy figure produced from this corpus is best-case input.** All 20 documents in batch 1 and
+batch 2 are PNG files with no camera metadata — pages rendered from PDFs, not photographed. Verified
+2026-09-25 by inspecting the files.
+
+Medioo's real input is a family photographing a paper report on a phone: dim light, tilt, shadow, folds,
+glare, a cropped edge, a thumb over a corner. **None of that is represented here.** Reading accuracy, crop
+recovery, retake rates and confidence scores are all measured on the easy case, and the gap to real numbers
+is unmeasured — not small, not large, unknown.
+
+This also limits what the retake gate can be tested against. On this corpus the gate produced 25 false
+retakes and 0 true ones, because **there is no bad photo here to reject**. "Do not reject good pages" is
+testable; "do reject bad pages" is not.
+
+**Batch 3a** — the same documents photographed on a phone, ~10 in ordinary conditions and ~10 deliberately
+bad — is the first measurement on real input. **Until it lands, no figure from this corpus should be quoted
+as "how well Medioo reads a report" without this paragraph attached.**
+
+
 **These are real patient documents. This whole directory is git-ignored except this file, and must never be
 committed.** If you ever see a document or a label in `git status` as staged, stop and remove it from the
 index before committing anything.

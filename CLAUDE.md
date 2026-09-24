@@ -119,6 +119,17 @@ Key files when changing behaviour:
   lab report that read nothing; the first implementation's `typeOf()` read an unset column, so every document
   became `"other"` — prescriptions passed and a blurry lab report would have sailed through. Only the
   second test caught it, and only because it existed before the code.
+- **A scorer that pairs on a non-unique field manufactures misses.** `match_values` matched a label row to
+  the first extracted row with the same name and consumed it, so lab1's differential — which prints each
+  cell type twice, an absolute count and a percentage — paired `Neutrophil 2.25 10^3/µL` with
+  `Neutrophil 41.9 %`. Both readings were then "wrong", two correct `Others` rows scored as inventions, and
+  the harness reported 88.2% where the truth was 97.3%. **The labels and the model were both right.** This
+  is the alias matcher's defect one layer up: there, names collided because matching used a substring; here,
+  rows collided because pairing used a field that is not unique. **Whenever a harness joins two lists, the
+  join key must be something that actually identifies a row — name AND unit AND section — and the fix needs
+  a test in the dangerous direction too, that two genuinely different rows sharing that key are still not
+  merged.** Adding `specimen` to extraction then broke pairing a second way, because a field present on one
+  side and absent on the other blocked the match: a harness must tolerate a field the labels predate.
 - **When two rules can produce the same verdict, asserting the verdict does not say which rule ran.** The
   per-marker threshold tests asserted `NOW` for creatinine 500 µmol/L — but 500 against a printed 59–104 is
   4.8× the limit, so the 2× stopgap returns `NOW` as well. The tests passed while the unit match was broken
