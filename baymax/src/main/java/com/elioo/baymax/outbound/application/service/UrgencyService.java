@@ -233,16 +233,100 @@ public class UrgencyService {
     private static final com.fasterxml.jackson.databind.ObjectMapper MAPPER =
             new com.fasterxml.jackson.databind.ObjectMapper();
 
+    /** A comparison operator: the lab declined to give a number, so there is no reading to compare. */
+    private static final java.util.regex.Pattern BOUNDED =
+            java.util.regex.Pattern.compile("[<>\u2264\u2265]|<=|>=");
+
+    /** The number itself, with optional sign, thousands groups and a decimal point or comma. */
+    private static final java.util.regex.Pattern NUMBER =
+            java.util.regex.Pattern.compile("-?\\d+(?:[.,]\\d+)*");
+
+    /**
+     * The reading a cell states, or empty when it does not state one.
+     *
+     * <p>This used to delete every character except digits, {@code .} and {@code -} and parse what was left.
+     * On batch 2 that gave the right answer every time — by luck, not by reading: {@code "80.30 L"},
+     * {@code "> 89"}, {@code "6,100"} and {@code "08"} all happened to survive it. <b>The luck runs out on a
+     * decimal comma:</b> a European {@code "1,5"} stripped to {@code "15"}, a tenfold error, silently, on a
+     * number a family is shown and a threshold is applied to.</p>
+     *
+     * <p>Empty is the safe answer and is used freely. A value with no reading escalates nothing and is shown
+     * as printed; a value read WRONGLY reaches a family as a number. So a bound ({@code "> 89"}), a range
+     * ({@code "0-2"}), two numbers in one cell ({@code "130 / 80"}) and an ambiguous comma ({@code "1,23"} —
+     * 1.23 or 123?) are all refused rather than guessed.</p>
+     */
     static Optional<Double> number(Object raw) {
         if (raw == null) {
             return Optional.empty();
         }
-        String s = DocumentFacts.fold(String.valueOf(raw)).replaceAll("[^0-9.\\-]", "");
-        if (s.isEmpty() || s.equals("-") || s.equals(".")) {
+        String text = DocumentFacts.fold(String.valueOf(raw));
+        if (text.isBlank() || BOUNDED.matcher(text).find()) {
             return Optional.empty();
         }
+        // A unit can carry digits ("10^3/uL"), and they are not part of the reading. The value is printed
+        // first, so the unit is cut away before the number is looked for.
+        text = text.replaceAll("\\b10\\s*\\^?\\s*\\d+\\s*/.*$", " ").trim();
+
+        java.util.regex.Matcher m = NUMBER.matcher(text);
+        if (!m.find()) {
+            return Optional.empty();
+        }
+        String first = m.group();
+        // A minus that is not the sign — "1.5-", "--2" — is a mark we do not understand, not a reading. The
+        // number pattern never captures it, so it has to be caught on the surrounding text.
+        int after = m.end();
+        if ((after < text.length() && text.charAt(after) == '-')
+                || (m.start() > 0 && text.charAt(m.start() - 1) == '-')) {
+            return Optional.empty();
+        }
+        // Two separate numbers in one cell is a range or a pair (a blood pressure), not a reading. A second
+        // match that is not simply the same digits repeated means we cannot say which number is THE value.
+        if (m.find()) {
+            return Optional.empty();
+        }
+        // Anything left over that is a digit means the cut above missed something; refuse rather than read a
+        // fragment. Letters and symbols (a flag "L", a unit, brackets) are fine and expected.
+        String remainder = text.replace(first, " ");
+        if (remainder.chars().anyMatch(Character::isDigit)) {
+            return Optional.empty();
+        }
+        return parseGrouped(first);
+    }
+
+    /**
+     * Turns one matched number into a value, deciding what a comma means.
+     *
+     * <p>{@code "1,234"} is a thousands group; {@code "1,5"} is a decimal comma; {@code "1,23"} is genuinely
+     * both — 1.23 in Europe, an impossible group of two digits elsewhere — and is refused. The rule is the
+     * group's length: exactly three digits after every comma is a separator, one or more than three is a
+     * decimal comma, and two is ambiguous.</p>
+     */
+    private static Optional<Double> parseGrouped(String token) {
+        boolean negative = token.startsWith("-");
+        String digits = negative ? token.substring(1) : token;
+        if (digits.startsWith(".") || digits.startsWith(",") || digits.endsWith("-")) {
+            return Optional.empty();
+        }
+        String[] parts = digits.split("[.,]", -1);
+        if (parts.length > 1) {
+            char separator = digits.charAt(digits.indexOf(parts[0]) + parts[0].length());
+            String tail = parts[parts.length - 1];
+            if (separator == ',' && parts.length == 2) {
+                if (tail.length() == 2) {
+                    return Optional.empty();                 // "1,23": decimal comma or bad grouping?
+                }
+                if (tail.length() != 3) {
+                    digits = parts[0] + "." + tail;           // "1,5" is one and a half
+                } else {
+                    digits = parts[0] + tail;                // "6,100" is six thousand one hundred
+                }
+            } else if (separator == ',') {
+                digits = String.join("", parts);             // "1,234,567"
+            }
+        }
         try {
-            return Optional.of(Double.parseDouble(s));
+            double value = Double.parseDouble(digits);
+            return Optional.of(negative ? -value : value);
         } catch (NumberFormatException e) {
             return Optional.empty();
         }
