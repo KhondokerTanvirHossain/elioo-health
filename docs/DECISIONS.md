@@ -377,6 +377,23 @@ clicked one. **That is accidental protection, not a control** — it disappears 
 exactly the moment real families start receiving messages. Rotation is paired with the fix rather than done
 first, because rotating into a log that still records the value buys nothing.
 
+
+**Done, 2026-09-25 — the logging half.** `IWebFilter.redactSecrets` replaces the value of any
+credential-bearing query parameter before the URI reaches a log line, on **both** directions and in all three
+places the filter leaked: the request `Uri`, the request `Query Params` map, and the response `Uri`. DR-23
+named only the URI; the query-params map was a third channel found while fixing it.
+
+Matched on the whole parameter name, case-insensitively, never as a substring — `tokenizer=bert` and
+`keyword=fever` survive. **Over-redaction is its own failure:** a log that hides `page=2` makes a real
+incident harder to diagnose and the next person turns the filter off, so the non-secret parameters are
+asserted to survive verbatim.
+
+Verified on a running app, not only in unit tests: an opt-out link and a WhatsApp handshake were requested and
+the log contains zero occurrences of either secret, with `p`, `hub.mode` and `hub.challenge` intact.
+
+**Still outstanding: the `BAYMAX_WA_VERIFY_TOKEN` rotation.** The token already in the production log stays
+valid until it is rotated, so the leak is closed but not undone. One dashboard edit and one restart, on the
+server — it needs Tanvir, and it is still a week-0 blocker.
 ## DR-24 | 2026-09-21 | A retake does not consume a free-tier slot
 
 **Decision:** NEEDS_RETAKE documents do not count against the free-tier monthly limit; only DONE consumes a

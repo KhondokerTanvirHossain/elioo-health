@@ -48,6 +48,75 @@ public class IWebFilter implements WebFilter {
                 .contextWrite(ctx -> ctx.put("mdcContextMap", mdcContextMap)); // put the MDC context into the subscriber context
     }
 
+
+    /**
+     * DR-23: parameter names whose VALUE is a credential and must never reach the log.
+     *
+     * <p>Matched on the whole name, case-insensitively, never as a substring: {@code tokenizer=bert} and
+     * {@code keyword=fever} are not credentials, and redacting them would make a real incident harder to
+     * diagnose. A log nobody trusts gets turned off, so over-redaction is its own failure.</p>
+     */
+    private static final java.util.Set<String> SECRET_PARAMS = java.util.Set.of(
+            "t", "token", "verify_token", "hub.verify_token", "key", "secret", "api_key", "apikey",
+            "access_token", "refresh_token", "auth", "authorization", "password", "passwd", "pwd",
+            "signature", "sig", "hmac", "otp", "code");
+
+    /**
+     * The URI with any credential-bearing query parameter's value replaced.
+     *
+     * <p>Two credentials were reaching the production log through this filter. The WhatsApp verify token was
+     * written on every Meta handshake and accumulated. BMX-8's opt-out link,
+     * {@code /app/nudges/opt-out?p=<patientId>&t=<HMAC>}, has carried an unauthenticated access token in a
+     * query string since #33 — and stayed out of the log only because the review gate has never released a
+     * nudge, so no family has clicked one. The first click would have logged a working token for a real
+     * patient.</p>
+     *
+     * <p>Applied to every place the URI or its parameters reach a log line, in both directions. Never throws:
+     * logging must not be able to break a request.</p>
+     */
+    static String redactSecrets(String uri) {
+        if (uri == null) {
+            return null;
+        }
+        int q = uri.indexOf('?');
+        if (q < 0 || q == uri.length() - 1) {
+            return uri;
+        }
+        try {
+            String[] pairs = uri.substring(q + 1).split("&", -1);
+            StringBuilder out = new StringBuilder(uri.substring(0, q + 1));
+            for (int i = 0; i < pairs.length; i++) {
+                if (i > 0) {
+                    out.append('&');
+                }
+                String pair = pairs[i];
+                int eq = pair.indexOf('=');
+                if (eq < 0) {
+                    out.append(pair);                                  // a bare flag carries no value
+                    continue;
+                }
+                String name = pair.substring(0, eq);
+                out.append(name).append('=')
+                        .append(SECRET_PARAMS.contains(name.toLowerCase(java.util.Locale.ROOT))
+                                ? "REDACTED" : pair.substring(eq + 1));
+            }
+            return out.toString();
+        } catch (RuntimeException e) {
+            // A URI we cannot split is one we certainly must not log in full.
+            return uri.substring(0, q + 1) + "REDACTED";
+        }
+    }
+
+    /** Query parameters for the log, with credential values replaced — same rule as the URI. */
+    private static Map<String, java.util.List<String>> redactParams(
+            org.springframework.util.MultiValueMap<String, String> params) {
+        Map<String, java.util.List<String>> safe = new java.util.LinkedHashMap<>();
+        params.forEach((name, values) ->
+                safe.put(name, SECRET_PARAMS.contains(name.toLowerCase(java.util.Locale.ROOT))
+                        ? java.util.List.of("REDACTED") : values));
+        return safe;
+    }
+
     private void logRequest(ServerHttpRequest request) {
         if (request.getURI().getPath().contains("actuator") || request.getURI().getPath().contains("swagger")) {
             return;
@@ -63,11 +132,11 @@ public class IWebFilter implements WebFilter {
                          Acceptable Media Type {}
                         """,
                 request.getLocalAddress(),
-                request.getURI(),
+                redactSecrets(String.valueOf(request.getURI())),
                 request.getMethod(),
                 request.getHeaders(),
                 request.getPath(),
-                request.getQueryParams(),
+                redactParams(request.getQueryParams()),
                 request.getHeaders().getContentType(),
                 request.getHeaders().getAccept());
     }
@@ -87,7 +156,7 @@ public class IWebFilter implements WebFilter {
                              Content type : {}
                             """,
                     serverWebExchange.getRequest().getLocalAddress(),
-                    serverWebExchange.getRequest().getURI(),
+                    redactSecrets(String.valueOf(serverWebExchange.getRequest().getURI())),
                     serverWebExchange.getRequest().getPath(),
                     serverWebExchange.getResponse().getHeaders(),
                     serverWebExchange.getResponse().getStatusCode(),
