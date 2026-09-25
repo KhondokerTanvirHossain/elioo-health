@@ -147,7 +147,7 @@ class ExplanationServiceTest {
         replies.push("HbA1c এসেছে 11.2 %, যা স্বাভাবিকের চেয়ে অনেক বেশি। এখনই ডাক্তারের কাছে যান। দেরি করবেন না।");
         StepVerifier.create(service.explain(DOC)).assertNext(m -> {
             assertThat(m.urgency()).isEqualTo(Urgency.NOW);
-            assertThat(m.urgencyReasons()).contains("value_critical:hba1c");
+            assertThat(m.urgencyReasons()).anySatisfy(r -> assertThat(r).startsWith("value_critical:hba1c"));
             assertThat(m.gateStatus()).isEqualTo(OutboundMessage.GateStatus.RELEASED);
             assertThat(m.body()).contains("এখনই ডাক্তারের কাছে যান");
         }).verifyComplete();

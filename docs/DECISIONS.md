@@ -377,6 +377,23 @@ clicked one. **That is accidental protection, not a control** — it disappears 
 exactly the moment real families start receiving messages. Rotation is paired with the fix rather than done
 first, because rotating into a log that still records the value buys nothing.
 
+
+**Done, 2026-09-25 — the logging half.** `IWebFilter.redactSecrets` replaces the value of any
+credential-bearing query parameter before the URI reaches a log line, on **both** directions and in all three
+places the filter leaked: the request `Uri`, the request `Query Params` map, and the response `Uri`. DR-23
+named only the URI; the query-params map was a third channel found while fixing it.
+
+Matched on the whole parameter name, case-insensitively, never as a substring — `tokenizer=bert` and
+`keyword=fever` survive. **Over-redaction is its own failure:** a log that hides `page=2` makes a real
+incident harder to diagnose and the next person turns the filter off, so the non-secret parameters are
+asserted to survive verbatim.
+
+Verified on a running app, not only in unit tests: an opt-out link and a WhatsApp handshake were requested and
+the log contains zero occurrences of either secret, with `p`, `hub.mode` and `hub.challenge` intact.
+
+**Still outstanding: the `BAYMAX_WA_VERIFY_TOKEN` rotation.** The token already in the production log stays
+valid until it is rotated, so the leak is closed but not undone. One dashboard edit and one restart, on the
+server — it needs Tanvir, and it is still a week-0 blocker.
 ## DR-24 | 2026-09-21 | A retake does not consume a free-tier slot
 
 **Decision:** NEEDS_RETAKE documents do not count against the free-tier monthly limit; only DONE consumes a
@@ -450,3 +467,49 @@ the cap was set for single-bubble readability, WhatsApp allows 4,096, and it mus
 loses their dosing instructions. A medicine line is never truncated and never dropped; the split falls on a
 line boundary. Measured across the production documents before building: 0 of 4 exceeded 600, but the headroom
 is 5 medicines at the observed mean line length, so a 6-medicine prescription overflows.
+
+## DR-31 | 2026-09-22 | A locator failure is not a retake
+
+**Decision:** Amends DR-28. A lab report whose extraction passes the confidence gate but shows zero values
+after cropping is **DONE, not NEEDS_RETAKE**. Its extraction is persisted; no value is shown; unverified
+values may raise urgency; the message says the values could not be checked against the photo and points to
+the original. **NEEDS_RETAKE is reserved for weak reading, never for our locator's failure.**
+
+**Why:** a clear, correctly-read photo would otherwise be retaken forever — the family is told their photo is
+unclear, retakes it, and hits the same locator failure — and because a retaken document persists no
+extraction, the abnormal value is discarded each time. lab10 is exactly this: a clear page, read correctly at
+0.9 confidence, whose single value carried an out-of-range uric acid.
+
+**Supersedes:** DR-28's zero-shown clause.
+
+*Engineering note.* The distinction is whose failure it was. The confidence gate judges the READING and may
+legitimately ask for another photo. The crop locator judges whether we can point at the text we read, and its
+failure says nothing about the photo — asking the family to fix it is both false and futile. DR-28's other
+half stands: values dropped for want of a crop still participate in urgency, may raise it and never lower it,
+and are never shown or named in the body.
+
+## DR-32 | 2026-09-24 | A crop may come from the image, but never on the model's word alone
+
+**Decision:** when a value's crop cannot be located in the OCR text, it may be cut from a **region** the
+model reports on the page image (`source_region`, normalised 0–1). That crop is stored **only** if an
+independent reader — Vision OCR on the crop, or, when OCR reads nothing, a model shown the crop and nothing
+else — reads the value back out of it, under the same digit-boundary rule as the locator. The reader is
+never told what it is looking for. Anything short of confirmation leaves the value unshown, exactly as a
+locator failure does today (DR-31).
+
+**Why:** 30 of 85 cropped values in batch 2 were lost as `TEXT_NOT_ON_PAGE` — every one legible on the page.
+Extraction reads the image; the locator could only search text Vision produced, and no string rule over that
+text can find text Vision never produced. Relaxing the locator's match on digit boundaries recovered exactly
+zero. The region recovers 24 of 29 on a like-for-like rerun, at $0.0045 per document.
+
+**What it does not change:** DR-12 stands unweakened. A crop is still stored only when something other than
+the extraction confirms its contents — the change is that the confirming evidence is now a second reading of
+the crop rather than a lookup in the OCR text. The model's box is a proposal, never evidence.
+
+*Engineering note.* The failure this guards against is DR-12's original one wearing new clothes: a model that
+misreads a table by one row produces a confident box over the wrong number, and storing it would put a
+picture of a different value under this value's name — worse than showing nothing. A region covering more
+than a third of the page is discarded as a shrug rather than a pointer. lab10 is the proof the check bites:
+its crop failed OCR, failed the model, and stayed unshown. Every one of the 24 recoveries was confirmed by
+OCR, so the model fallback is currently the refusal path rather than the recovery path; if batch 3 confirms
+that, it can be dropped for 3% of the verification cost.

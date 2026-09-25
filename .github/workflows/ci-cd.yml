@@ -31,6 +31,29 @@ jobs:
           distribution: temurin
           java-version: "21"
       - uses: gradle/actions/setup-gradle@v4
+      # Testcontainers pulls its images at test time, and a registry problem then fails the BUILD rather than
+      # the pull: four acceptance tests — every one that needs MinIO — died with ContainerFetchException ->
+      # ConditionTimeoutException, ~7 minutes each, on two consecutive runs, on a branch that touches no
+      # container config. main was last green on 2026-09-23, so this blocks every merge, not one branch.
+      #
+      # Pre-pulling moves the failure to a step that SAYS WHY. Testcontainers reports only "fetch failed";
+      # docker pull prints the registry's actual response. MinIO left Docker Hub, so its image comes from
+      # quay.io — and pulling it from a laptop with no Docker Hub route returns "unauthorized", which could
+      # be a MinIO access change or could be local, and the CI log could not tell the two apart.
+      #
+      # continue-on-error so this diagnoses without becoming a second way to block the build.
+      - name: Pre-pull test container images
+        continue-on-error: true
+        run: |
+          for image in \
+            postgres:17-alpine \
+            quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z \
+            testcontainers/ryuk:0.7.0
+          do
+            echo "::group::docker pull $image"
+            docker pull "$image" || echo "::warning::pull failed for $image (see output above for the registry's reason)"
+            echo "::endgroup::"
+          done
       - name: Build (unit tests + context test against service Postgres)
         run: ./gradlew build --no-daemon
         env:

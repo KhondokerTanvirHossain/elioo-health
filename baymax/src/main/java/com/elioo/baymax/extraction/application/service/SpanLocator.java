@@ -126,6 +126,55 @@ public final class SpanLocator {
      * carries {@code name}, nearest the claimed offset. Returns the whole line, so the crop shows the reading
      * in its context rather than a bare number.
      */
+
+    /**
+     * Whether {@code value} appears on {@code line} as a value in its own right, both already normalised.
+     *
+     * <p>Bounded by DIGITS, not by spaces. The space-delimited rule rejected every value printed with
+     * something attached — "2.1 L" in one cell, "80.30 L", a value in brackets — and twelve values across
+     * batch 2 lost their crops because of it, all of them on the page.
+     *
+     * <p>A prefix or substring match would be worse than the bug it fixes: "2.1" would hit "12.1", "2.15"
+     * and "0.21", crop THAT row and store it as this value's source. A wrong crop is not a missing crop — it
+     * is a number certified by a picture of a different number, which is the defect DR-12 exists to prevent.
+     * So the only forbidden neighbours are a digit and a decimal point; a unit, a flag letter, a bracket or
+     * nothing at all may sit against it.
+     */
+    static boolean valueAppearsOn(String rawLine, String value) {
+        if (rawLine == null || value == null) {
+            return false;
+        }
+        Normalized line = Normalized.of(rawLine);
+        String want = normalize(value);
+        if (want.isBlank() || line.text().isBlank()) {
+            return false;
+        }
+        int from = 0;
+        while (true) {
+            int at = line.text().indexOf(want, from);
+            if (at < 0) {
+                return false;
+            }
+            // Boundaries are checked on the RAW text, because normalisation turns a decimal point into a
+            // space: "2.1.3" becomes "2 1 3", where "2 1" sits between spaces and looks like a clean match.
+            int rawStart = line.origin()[at];
+            int rawEnd = line.origin()[at + want.length() - 1];
+            if (!continuesNumber(rawLine, rawStart - 1) && !continuesNumber(rawLine, rawEnd + 1)) {
+                return true;
+            }
+            from = at + 1;
+        }
+    }
+
+    /** True when the character at {@code index} would make the match part of a larger number. */
+    private static boolean continuesNumber(String text, int index) {
+        if (index < 0 || index >= text.length()) {
+            return false;
+        }
+        char c = text.charAt(index);
+        return Character.isDigit(c) || c == '.' || c == ',';
+    }
+
     public static Optional<Range> locateValueOnNamedLine(PageOcr page, ExtractionResult.SourceSpan claimed,
                                                           String name, String value) {
         String wantName = normalize(name), wantValue = normalize(value);
@@ -137,7 +186,7 @@ public final class SpanLocator {
         int bestDistance = Integer.MAX_VALUE;
         for (Range line : lines(page.text())) {
             String text = normalize(page.text().substring(line.start(), line.end()));
-            boolean hasValue = (" " + text + " ").contains(" " + wantValue + " ");
+            boolean hasValue = valueAppearsOn(text, wantValue);
             boolean hasName = wantName.isBlank() || text.contains(wantName);
             if (hasValue && hasName) {
                 int distance = Math.abs(line.start() - claimedStart);

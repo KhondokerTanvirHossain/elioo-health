@@ -42,6 +42,34 @@ public class RecropHandler {
                 });
     }
 
+    /**
+     * {@code GET /admin/documents/{id}/verification-rate} — measures, changes nothing.
+     *
+     * <p>A GET because it is read-only, unlike its POST neighbours: this is meant to be run across every
+     * document in production, including ones a family is looking at, to compare the retake gate against an
+     * objective signal before the gate is touched.</p>
+     */
+    public Mono<ServerResponse> verificationRate(ServerRequest request) {
+        UUID id;
+        try {
+            id = UUID.fromString(request.pathVariable("id"));
+        } catch (IllegalArgumentException e) {
+            return Mono.error(BaymaxException.badRequest("invalid_request", "document id must be a UUID"));
+        }
+        return recrop.verificationRate(id).flatMap(r -> {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("document_id", r.documentId().toString());
+            m.put("document_type", r.documentType());
+            m.put("status", r.status());
+            m.put("outcome", r.outcome());
+            m.put("confirmed", r.confirmed());
+            m.put("extracted", r.extracted());
+            m.put("rate", r.rate().orElse(null));
+            m.put("model_confidence", r.confidence());
+            return ServerResponse.ok().bodyValue(m);
+        });
+    }
+
     private static Map<String, Object> body(RecropUseCase.RecropReport r) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("document_id", r.documentId().toString());

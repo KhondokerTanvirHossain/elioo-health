@@ -45,6 +45,18 @@ public interface NudgeDataPort {
     Flux<MedicationRow> medicationsOfPatient(UUID patientId);
 
     /** Observations of one canonical marker for a patient, oldest first. */
+    /**
+     * Every reading of a marker for a patient, oldest first, IN EVERY UNIT.
+     *
+     * <p>The unit is deliberately not a query parameter. A caller does not know which unit it wants until it
+     * has seen the series — the trend rule compares readings in the most recent reading's unit, and which
+     * unit that is comes from the last row. Filtering in SQL would need the answer before the question.
+     *
+     * <p><b>A consumer that compares these numerically MUST group by unit first</b>
+     * ({@code NudgeRules.inLatestUnit}). Bangladeshi labs report creatinine in mg/dL and some regional labs
+     * in µmol/L, about 88x apart, so an ungrouped comparison reads a change of lab as a rising trend and
+     * tells a family to see a doctor about a normal result.
+     */
     Flux<ObservationRow> observationsOf(UUID patientId, String canonicalName);
 
     /** When the patient's last document was received, empty if none. */

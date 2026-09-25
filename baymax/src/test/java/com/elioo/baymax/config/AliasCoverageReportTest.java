@@ -1,0 +1,133 @@
+package com.elioo.baymax.config;
+
+import com.elioo.baymax.extraction.application.service.MarkerMatcher;
+import com.elioo.baymax.outbound.domain.MarkerThreshold;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIf;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.annotation.Configuration;
+
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
+
+/**
+ * Writes the alias coverage report using the REAL {@link MarkerMatcher}, not a reimplementation of it.
+ *
+ * <p>The first version of this report was a Python replica of the matching rules, and it drifted within the
+ * hour: it claimed "RBC total count" resolved to {@code bilirubin_total} when it did not, and missed that
+ * "Appearance" resolved to {@code neutrophil_absolute} when it did. A report that describes a system other
+ * than the one running is worse than no report — it sends someone to fix a mapping that is already correct
+ * while a real one stays broken. Same family as the batch-2 scorer that manufactured eight unit misses.</p>
+ *
+ * <p>So the corpus is read here and put through the actual matcher. The report lands beside the corpus,
+ * which is git-ignored, because value names on real reports are patient data. This is a report generator
+ * rather than an assertion: it is skipped when the corpus is absent, so CI is unaffected.</p>
+ */
+class AliasCoverageReportTest {
+
+    private static final Path CORPUS = Path.of("../docs/testset/batch2/expected");
+
+    @Configuration
+    @EnableConfigurationProperties(BaymaxProperties.class)
+    static class Config {
+    }
+
+    static boolean corpusIsPresent() {
+        return Files.isDirectory(CORPUS);
+    }
+
+    private ApplicationContextRunner runner() {
+        return new ApplicationContextRunner()
+                .withUserConfiguration(Config.class)
+                .withInitializer(context -> {
+                    for (String resource : List.of("marker-thresholds.properties", "markers.properties")) {
+                        try {
+                            new org.springframework.boot.env.PropertiesPropertySourceLoader()
+                                    .load(resource, new org.springframework.core.io.ClassPathResource(resource))
+                                    .forEach(s -> context.getEnvironment().getPropertySources().addFirst(s));
+                        } catch (java.io.IOException e) {
+                            throw new IllegalStateException(resource + " is missing", e);
+                        }
+                    }
+                });
+    }
+
+    @Test
+    @EnabledIf("corpusIsPresent")
+    void writeTheCoverageReport() {
+        runner().run(context -> {
+            BaymaxProperties properties = context.getBean(BaymaxProperties.class);
+            MarkerMatcher matcher = new MarkerMatcher(properties);
+            Set<String> withThreshold = properties.getOutbound().getMarkerThresholds().stream()
+                    .map(MarkerThreshold::canonicalName).collect(java.util.stream.Collectors.toSet());
+
+            ObjectMapper mapper = new ObjectMapper();
+            Set<String> names = new TreeSet<>();
+            Set<String> unverified = new TreeSet<>();
+            for (File file : java.util.Objects.requireNonNull(CORPUS.toFile().listFiles(
+                    (d, n) -> n.endsWith(".json")))) {
+                JsonNode label = mapper.readTree(file);
+                if (!label.path("verified").asBoolean(false)) {
+                    unverified.add(file.getName().replace(".json", ""));
+                    continue;
+                }
+                for (JsonNode v : label.path("values")) {
+                    String name = v.path("name").asText("").trim();
+                    if (!name.isEmpty()) {
+                        names.add(name);
+                    }
+                }
+            }
+
+            TreeMap<String, String> reachesThreshold = new TreeMap<>();
+            TreeMap<String, String> trendOnly = new TreeMap<>();
+            TreeSet<String> unresolved = new TreeSet<>();
+            for (String name : names) {
+                var canonical = matcher.canonicalFor(name, null);
+                if (canonical.isEmpty()) {
+                    unresolved.add(name);
+                } else if (withThreshold.contains(canonical.get())) {
+                    reachesThreshold.put(name, canonical.get());
+                } else {
+                    trendOnly.put(name, canonical.get());
+                }
+            }
+
+            StringBuilder out = new StringBuilder();
+            out.append("# Alias coverage across batch 2\n\n")
+                    .append("Generated by `AliasCoverageReportTest` using the real `MarkerMatcher` — not a ")
+                    .append("reimplementation, which drifted from the code within an hour the first time.\n\n");
+            if (!unverified.isEmpty()) {
+                out.append("> Excluded, label not verified: ").append(String.join(", ", unverified)).append("\n\n");
+            }
+            out.append("- **").append(names.size()).append("** distinct value names on the verified labels\n")
+                    .append("- **").append(reachesThreshold.size())
+                    .append("** reach a marker that has a proposed threshold\n")
+                    .append("- **").append(trendOnly.size())
+                    .append("** canonicalise but have no threshold (trend only; urgency uses the stopgap)\n")
+                    .append("- **").append(unresolved.size())
+                    .append("** do not canonicalise — these can never reach a threshold\n\n");
+
+            out.append("## Reaches a proposed threshold\n\n| Value name as printed | Canonical marker |\n|---|---|\n");
+            reachesThreshold.forEach((n, c) -> out.append("| ").append(n).append(" | `").append(c).append("` |\n"));
+
+            out.append("\n## Canonicalises, no threshold\n\n");
+            trendOnly.forEach((n, c) -> out.append("- ").append(n).append(" → `").append(c).append("`\n"));
+
+            out.append("\n## Does not canonicalise\n\n")
+                    .append("Each is a question for the doctor: give it a threshold, or confirm it should ")
+                    .append("never raise urgency on its own.\n\n");
+            unresolved.forEach(n -> out.append("- ").append(n).append('\n'));
+
+            Files.writeString(CORPUS.getParent().resolve("ALIAS_COVERAGE.md"), out.toString());
+        });
+    }
+}

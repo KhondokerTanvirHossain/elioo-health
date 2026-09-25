@@ -29,6 +29,8 @@ public class BaymaxAdminRouter {
                 // literal before {id}: "recrop" must not be read as a document id
                 .POST(BASE_PATH + "/documents/recrop", recrop::all)
                 .POST(BASE_PATH + "/documents/{id}/recrop", recrop::one)
+                // GET: read-only by design — it measures the verification rate and writes nothing
+                .GET(BASE_PATH + "/documents/{id}/verification-rate", recrop::verificationRate)
                 .POST(BASE_PATH + "/nudges/evaluate", (ServerRequest req) -> nudges.evaluateAll()
                         .flatMap(n -> ServerResponse.ok().bodyValue(java.util.Map.of("composed", n))))
                 .GET(BASE_PATH + "/messages/pending", review::pending)

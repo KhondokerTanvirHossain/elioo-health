@@ -1,7 +1,15 @@
 package com.elioo.baymax.extraction.config;
 
 import com.elioo.baymax.config.BaymaxProperties;
+import com.elioo.baymax.extraction.application.service.CropVerifier;
+import com.elioo.baymax.aicall.application.service.MeteredLlmClient;
+import com.elioo.baymax.aicall.application.service.MeteredVisionOcr;
+import com.elioo.baymax.aicall.domain.AiCallPurpose;
+import com.elioo.healthcare.gcp.vision.model.VisionOcrRequest;
 import com.elioo.healthcare.llm.api.LlmClient;
+import com.elioo.healthcare.llm.model.LlmImage;
+import com.elioo.healthcare.llm.model.LlmRequest;
+import reactor.core.publisher.Mono;
 import com.elioo.healthcare.llm.config.LlmProperties;
 import com.elioo.healthcare.llm.provider.anthropic.AnthropicLlmClient;
 import com.elioo.healthcare.llm.provider.openai.OpenAiCompatibleLlmClient;
@@ -148,6 +156,49 @@ public class ExtractionModelConfiguration {
         }
         boolean sendImages = properties.getExtract().isSendImages() && vision != null && vision.supportsImages();
         return new ExtractionClients(cheap, vision, strong, sendImages);
+    }
+
+    /**
+     * The two independent readers that decide whether a region crop may be stored.
+     *
+     * <p>Independence is the whole point: neither reader is the extraction, and neither is told what the
+     * value is supposed to be. Vision OCR goes first because it is cheap and a tight crop is easy to read;
+     * a model that sees only the crop is asked only when OCR reads nothing at all, which is precisely the
+     * case that loses values today. If a reader is not configured it simply reads nothing, and the value
+     * stays unshown — the safe direction, and the same outcome as today.</p>
+     */
+    @Bean
+    public CropVerifier cropVerifier(MeteredVisionOcr ocr, MeteredLlmClient metered,
+                                     @Qualifier(VISION_CLIENT) ObjectProvider<BaymaxModelClient> visionClient,
+                                     BaymaxProperties properties) {
+        LlmClient vision = BaymaxModelClient.unwrap(visionClient.getIfAvailable());
+
+        CropVerifier.CropReader ocrReader = (documentId, crop) -> ocr
+                .readCrop(documentId, VisionOcrRequest.withLanguages(
+                        java.util.Base64.getEncoder().encodeToString(crop), java.util.List.of("bn", "en")))
+                .mapNotNull(response -> response.fullText() == null || response.fullText().isBlank()
+                        ? null : response.fullText());
+
+        CropVerifier.CropReader modelReader = (documentId, crop) -> {
+            if (vision == null || !vision.supportsImages()) {
+                return Mono.empty();
+            }
+            // The prompt says nothing about what is expected: it asks only for what is in the picture. A
+            // reader told the value it should find is not an independent check, it is a leading question,
+            // and it would certify a crop of the wrong row exactly as readily as the right one.
+            LlmRequest request = new LlmRequest(
+                    "What text is in this image?",
+                    "Transcribe every character you can see in this image. Output only the text, with no "
+                            + "explanation and no guesses. If you cannot read it, output nothing.",
+                    null, properties.getExtract().getCropVerifyMaxTokens(),
+                    null, null, null, null, false);
+            return metered.using(vision).invoke(AiCallPurpose.CROP_VERIFY, documentId,
+                            request.withImages(java.util.List.of(LlmImage.jpeg(crop))))
+                    .mapNotNull(response -> response.content() == null || response.content().isBlank()
+                            ? null : response.content());
+        };
+
+        return new CropVerifier(ocrReader, modelReader);
     }
 
     /**
