@@ -187,14 +187,56 @@ public class NudgeRules {
                         .flatMap(rows -> Mono.justOrEmpty(trendOf(patient, marker, rows, rising.contains(marker)))));
     }
 
+    /**
+     * The readings that share the MOST RECENT reading's unit, in order.
+     *
+     * <p>The latest unit wins because the trend is about where the patient is now: a series that moved from
+     * mg/dL to µmol/L is a patient whose current lab reports in µmol/L, and the older numbers are not
+     * comparable to it. Units are folded with NFKC and whitespace removed, so "umol/L", "µmol/L" and
+     * "\u03bcmol/L" are one unit — MICRO SIGN normalises onto GREEK SMALL LETTER MU, and both are then
+     * mapped onto ASCII "u" because a properties file or a label is typed by hand.</p>
+     */
+    private static List<ObservationRow> inLatestUnit(List<ObservationRow> rows) {
+        if (rows.isEmpty()) {
+            return rows;
+        }
+        String latest = unitKey(rows.get(rows.size() - 1).unit());
+        List<ObservationRow> kept = new ArrayList<>();
+        for (ObservationRow r : rows) {
+            if (unitKey(r.unit()).equals(latest)) {
+                kept.add(r);
+            }
+        }
+        return kept;
+    }
+
+    /** Units compare folded, never converted: "mg/dL" and "µmol/L" are two units and stay two. */
+    private static String unitKey(String unit) {
+        if (unit == null) {
+            return "";
+        }
+        return java.text.Normalizer.normalize(unit, java.text.Normalizer.Form.NFKC)
+                .replace('\u03bc', 'u')
+                .replaceAll("\\s+", "")
+                .toLowerCase(java.util.Locale.ROOT);
+    }
+
     /** The current monotonic run at the end of the series; a candidate when it is long enough and in the wrong direction. */
     Optional<NudgeCandidate> trendOf(PatientRef patient, String marker, List<ObservationRow> rows, boolean risingIsWrong) {
         // distinct document dates only (PO ruling 2026-09-19): several readings on one day are one report, and the
         // first reading of a day stands for it — the rule exists for slow decline nobody noticed, not for a day's repeats
+        // A TREND ACROSS A UNIT CHANGE IS NOT A TREND. Bangladeshi labs report creatinine in mg/dL and some
+        // regional labs in µmol/L, numbers about 88x apart, so a patient who changes lab produces
+        // "1.1 mg/dL -> 1.3 mg/dL -> 65 µmol/L": three rising readings to a comparison that ignores units,
+        // and a nudge telling a family to see a doctor about a perfectly normal result. Only readings in the
+        // SAME unit as the most recent one are compared; the rest are set aside, not converted. Converting
+        // would be worse — a wrong factor turns a normal result into an emergency silently.
+        List<ObservationRow> sameUnit = inLatestUnit(rows);
+
         List<ObservationRow> numeric = new ArrayList<>();
         List<Double> values = new ArrayList<>();
         LocalDate lastDate = null;
-        for (ObservationRow r : rows) {
+        for (ObservationRow r : sameUnit) {
             Optional<Double> v = numeric(r.value());
             LocalDate day = LocalDate.ofInstant(r.observedAt(), zone());
             if (v.isEmpty() || day.equals(lastDate)) {
