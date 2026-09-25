@@ -15,6 +15,16 @@ public record ExtractionResult(
         @JsonProperty("document_type") String documentType,
         @JsonProperty("patient_hint") String patientHint,
         @JsonProperty("document_date") String documentDate,
+        /**
+         * True when the printed date is genuinely ambiguous and the page cannot settle it — lab8 prints
+         * {@code 07/11/2021} throughout, which is 7 November or 11 July with nothing to decide between them.
+         *
+         * <p>{@code documentDate} is still filled with the day-first reading: a null date loses the report
+         * from the timeline entirely, which is worse than a date that might be wrong. This flag is how
+         * anything downstream can tell a convention from a reading. Null on every document extracted before
+         * the field existed, which reads as "not flagged" rather than "uncertain".</p>
+         */
+        @JsonProperty("document_date_uncertain") Boolean documentDateUncertain,
         String facility,
         List<Value> values,
         List<Medicine> medicines,

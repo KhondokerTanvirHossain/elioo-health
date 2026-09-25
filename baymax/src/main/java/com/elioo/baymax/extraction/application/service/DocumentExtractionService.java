@@ -738,6 +738,6 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
         String provider = slash > 0 ? model.substring(0, slash) : "unknown";
         String name = slash > 0 ? model.substring(slash + 1) : model;
         ExtractionResult.Confidence confidence = new ExtractionResult.Confidence(document.confidenceOverall(), null, null, null, null);
-        return new Attempt(name, provider, new ExtractionResult(null, null, null, null, null, null, null, null, null, confidence));
+        return new Attempt(name, provider, new ExtractionResult(null, null, null, null, null, null, null, null, null, null, confidence));
     }
 }

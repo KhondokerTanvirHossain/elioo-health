@@ -96,6 +96,14 @@ public class ExtractionPromptBuilder {
                 .append("\"৩ মাস পর আসবেন\" on a document dated 2026-08-06 gives due_date 2026-11-06, with the ")
                 .append("instruction still transcribed verbatim. Null only when the page states no timing.\n");
         p.append("- Dates as YYYY-MM-DD. A date with no year on the page is null, not guessed.\n");
+        p.append("- DATES ARE DAY-FIRST. Bangladeshi reports write the day first: 04/07/2024 is 4 July 2024, ")
+                .append("not 4 April. Read day-first unless the page itself proves otherwise — a month ")
+                .append("spelled out, or a companion date that only makes sense one way.\n");
+        p.append("- When the page CANNOT settle the order, still fill document_date with the day-first ")
+                .append("reading and set document_date_uncertain to true. 07/11/2021 with no other date on ")
+                .append("the page and no spelled-out month is 7 November by convention, not by reading, and ")
+                .append("we need to know which it was. A day above 12 (25/03/2024), a spelled-out month or a ")
+                .append("second date that proves the order means it is NOT uncertain.\n");
         p.append("- A prescription has medicines and clinical context, usually no lab values. A lab report ")
                 .append("has values and usually no medicines. Do not pad the empty one.\n");
         p.append("- For an imaging report, record only what the radiologist wrote. Never describe the image.\n");
