@@ -27,7 +27,10 @@ services:
 
   # Object storage for Baymax page images and crops (S3 API). Bucket `baymax` is created by minio-init.
   minio:
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    # Mirrored to GHCR and pinned BY DIGEST: quay.io began refusing quay.io/minio/minio on 2026-09-25
+    # ("unauthorized", every tag), which blocked every merge. Same MinIO version, different registry.
+    # A tag can be repointed at different bytes; a digest cannot. Source tag: RELEASE.2025-09-07T16-13-09Z.
+    image: ghcr.io/khondokertanvirhossain/elioo-health/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     container_name: medscribe-minio
     command: server /data --console-address ":9001"
     environment:
@@ -40,7 +43,8 @@ services:
       - medscribe-minio:/data
 
   minio-init:
-    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    # Mirrored and digest-pinned for the same reason. Source tag: RELEASE.2025-08-13T08-35-41Z.
+    image: ghcr.io/khondokertanvirhossain/elioo-health/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
     depends_on:
       - minio
     entrypoint: >
