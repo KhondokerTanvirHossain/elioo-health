@@ -30,6 +30,11 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+      # DR-36: a README told contributors never to commit real patient data, and the same commit broke the
+      # rule — two real medical records then sat in a public repo for three weeks. Runs before the build so
+      # it fails in seconds rather than after 30 minutes of tests.
+      - name: Refuse undeclared test fixtures
+        run: scripts/check-test-fixtures.sh
       - uses: gradle/actions/setup-gradle@v4
       # Testcontainers pulls its images at test time, and a registry problem then fails the BUILD rather than
       # the pull: four acceptance tests — every one that needs MinIO — died with ContainerFetchException ->

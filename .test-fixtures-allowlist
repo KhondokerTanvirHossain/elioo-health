@@ -1,0 +1,10 @@
+# Synthetic test fixtures, one path per line.
+#
+# Every image under src/test/resources must appear here, or scripts/check-test-fixtures.sh fails the build.
+# See DR-36: two real patient medical records sat in this repository from its first public commit because a
+# README asked people not to commit them, and a README cannot refuse.
+#
+# A fixture belongs here ONLY if it is synthetic — invented patient, invented values, invented facility.
+# A real medical record found on the public web is still a real record and does not qualify.
+#
+# Add the path in the SAME commit that adds the file, and say in the commit message where it came from.

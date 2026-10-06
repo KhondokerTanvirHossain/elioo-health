@@ -513,3 +513,37 @@ than a third of the page is discarded as a shrug rather than a pointer. lab10 is
 its crop failed OCR, failed the model, and stayed unshown. Every one of the 24 recoveries was confirmed by
 OCR, so the model fallback is currently the refusal path rather than the recovery path; if batch 3 confirms
 that, it can be dropped for 3% of the verification cost.
+
+## DR-36 | 2026-10-06 | No real patient document in the repository, enforced by a check and not a README
+
+**Decision:** no real medical document may be committed to this repository, in any form, for any purpose —
+**including a real record obtained from a public source.** Every image under `src/test/resources` must be a
+synthetic fixture declared in `.test-fixtures-allowlist`, and `scripts/check-test-fixtures.sh` fails the
+build otherwise. The real evaluation corpus stays git-ignored, as it already was.
+
+**Why:** two real patient lab reports — named patients, hospital identifiers, referring and reporting
+clinicians, full results — sat in `medscribe-ai/src/test/resources/test-images/` from the repository's first
+public commit (`5529cb6`, 2026-09-11) until 2026-10-06. They were removed from all history with
+`git filter-repo` (runbook: `docs/HISTORY_REWRITE.md`), along with a real personal phone number in four test
+files.
+
+**The detail that decided the enforcement mechanism:** a `README.md` in that same directory said, in bold,
+*"Never use real patient data in test images… Remove all PHI."* **The rule was written and broken in the same
+commit, and nothing noticed for three weeks.** A rule in prose asks every contributor to read it, remember it
+and apply it under deadline. A check asks nothing.
+
+**Already-public is not an exemption.** The two images were downloaded from a Google image search, so no
+disclosure was caused by this repository and no notification was owed — that is why no GitHub Support
+cache-purge request was filed. It changed nothing about the removal. A medical record on the public web is
+still a real person's record; shipping one in a test fixture normalises it, and the next contributor reads
+the repository rather than the README.
+
+**Supersedes:** none. Extends the standing rule that the corpus is git-ignored, from "do not commit the
+corpus" to "no real document anywhere, enforced".
+
+*Engineering note.* The allowlist starts **empty** — the only two entries were the files being removed, so
+there is no grandfathered exception to argue about later. Adding a fixture means adding its path in the same
+commit and saying in the commit message where it came from, which turns an unreviewable binary blob into a
+one-line diff a reviewer can actually see. The check is written for bash 3.2 so it runs on a developer's
+machine as well as the runner: a guard that only fires in CI lets someone commit the thing locally and find
+out thirty minutes later.
