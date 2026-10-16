@@ -52,7 +52,7 @@ jobs:
         run: |
           for image in \
             postgres:17-alpine \
-            quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z \
+            docker.io/bitnamilegacy/minio@sha256:6dabb4a2088c9a79908de3bc05f4586c23ad2182c8908e7e3acbf61c1467fb20 \
             testcontainers/ryuk:0.7.0
           do
             echo "::group::docker pull $image"

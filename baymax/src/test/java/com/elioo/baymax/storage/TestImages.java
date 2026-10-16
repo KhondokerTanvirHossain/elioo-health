@@ -1,42 +1,42 @@
 package com.elioo.baymax.storage;
 
+import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * The container images the acceptance tests run against, in one place and pinned by digest.
+ * The S3 server the storage tests run against, in one place and pinned by digest.
  *
- * <p><b>Why a mirror.</b> On 2026-09-25 quay.io began answering {@code unauthorized: access to the requested
- * resource is not authorized} for {@code quay.io/minio/minio}, every tag. The runner proved it was quay and
- * not the network: {@code postgres:17-alpine} and {@code testcontainers/ryuk:0.7.0} pulled fine in the same
- * job. Four acceptance tests — every one that needs MinIO — failed with {@code ContainerFetchException}, and
- * because the image is pinned on {@code main} since PR #5, <b>every merge was blocked, hotfixes included</b>.
- * The images are now mirrored to GHCR, which this repo already uses for the deployable.</p>
+ * <p><b>Why this image.</b> MinIO withdrew its public images: {@code quay.io/minio/minio} answers
+ * "unauthorized" for every tag since 2026-09-25, and {@code minio/minio} is gone from Docker Hub (404). A
+ * mirror pushed to GHCR from an Apple-silicon Mac held only {@code linux/arm64}, which the {@code linux/amd64}
+ * CI runner cannot use. {@code bitnamilegacy/minio} is real MinIO, pulls anonymously, and the pinned digest is a
+ * multi-arch index with both {@code linux/amd64} and {@code linux/arm64}. All four storage test classes passed
+ * against it.
  *
- * <p><b>Why the same MinIO version rather than a different S3 fake.</b> These tests are about our S3 adapter,
- * not about MinIO. Swapping the fake would change what they prove, and a test whose meaning changed while
- * nobody was looking is worse than a slow one.</p>
+ * <p><b>Known cost.</b> {@code bitnamilegacy} is frozen — Bitnami moved its free images there in 2025 and no
+ * longer updates them. That is acceptable for a test fixture that holds synthetic data on a throwaway
+ * container. If it disappears, {@code rustfs/rustfs} was verified as the fallback (same digest is served from
+ * Docker Hub and quay.io).
  *
- * <p><b>Why by digest.</b> A tag can be repointed at different bytes; a digest cannot. The digest below is
- * the image that was actually running when these tests last passed, so a mirror that drifted — or a tag
- * someone re-pushed — fails the pull instead of silently testing against something else. The tag is kept
- * beside it for readability only; the digest is what Docker resolves.</p>
- *
- * <p><b>Why one constant and not four.</b> Each of the four MinIO tests declared its own copy of the image
- * string. Four copies of a version are four chances to update three of them.</p>
+ * <p><b>Why by digest.</b> A tag can be repointed at different bytes; a digest cannot.
  */
 public final class TestImages {
 
-    /** MinIO, mirrored from {@code quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z}. */
+    /** {@code bitnamilegacy/minio}, multi-arch index digest (linux/amd64 + linux/arm64). */
     public static final String MINIO =
-            "ghcr.io/khondokertanvirhossain/elioo-health/minio@sha256:"
-                    + "14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e";
+            "docker.io/bitnamilegacy/minio@sha256:6dabb4a2088c9a79908de3bc05f4586c23ad2182c8908e7e3acbf61c1467fb20";
 
     /**
-     * The same image presented to Testcontainers as a substitute for {@code minio/minio}, which its
-     * {@code MinIOContainer} expects by name. Without this the container refuses an unfamiliar image.
+     * A MinIO container ready for the storage tests.
+     *
+     * <p>The Bitnami image runs as a non-root user (uid 1001) with no {@code /data} directory, so the default
+     * {@code MinIOContainer} command fails with "file access denied". Its writable data directory is
+     * {@code /bitnami/minio/data}; the entrypoint passes a {@code server ...} command straight to {@code minio},
+     * so MinIOContainer's credentials and health check work unchanged.
      */
-    public static DockerImageName minio() {
-        return DockerImageName.parse(MINIO).asCompatibleSubstituteFor("minio/minio");
+    public static MinIOContainer minioContainer() {
+        return new MinIOContainer(DockerImageName.parse(MINIO).asCompatibleSubstituteFor("minio/minio"))
+                .withCommand("server", "--console-address", ":9001", "/bitnami/minio/data");
     }
 
     private TestImages() {

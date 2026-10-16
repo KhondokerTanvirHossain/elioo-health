@@ -56,7 +56,7 @@ class TextractAdapterIntegrationTest {
     private OcrPort ocrPort;  // Will auto-wire TextractAdapter
 
     private String sampleImageBase64;
-    private static final String TEST_IMAGE_PATH = "src/test/resources/test-images/blood-test-report.png";
+    private static final String TEST_IMAGE_PATH = "src/test/resources/test-images/synthetic-blood-report.png";
 
     @BeforeEach
     void setUp() throws IOException {
@@ -347,7 +347,7 @@ class TextractAdapterIntegrationTest {
      * Note: This creates a large enough base64 string to pass image quality validation.
      * However, it uses repeated valid base64 data (AAAA = null bytes) which may not
      * produce meaningful OCR results. For proper OCR testing, provide a real medical
-     * report image at: src/test/resources/test-images/blood-test-report.png
+     * report image at: src/test/resources/test-images/synthetic-blood-report.png
      */
     private String createAcceptableSizeTestImage() {
         // Create valid base64 string of acceptable size (~1 MB decoded)

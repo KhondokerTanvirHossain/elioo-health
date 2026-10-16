@@ -54,7 +54,7 @@ class FamilyDeletionAcceptanceTest {
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
     @Container
-    static final MinIOContainer MINIO = new MinIOContainer(com.elioo.baymax.storage.TestImages.minio());
+    static final MinIOContainer MINIO = com.elioo.baymax.storage.TestImages.minioContainer();
 
     @BeforeAll
     static void createBucket() {
