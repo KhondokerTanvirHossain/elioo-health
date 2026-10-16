@@ -70,6 +70,16 @@ class DocumentExtractionServiceTest {
 
     private DocumentExtractionService service;
 
+    /**
+     * A verifier whose readers see nothing, which is what these mocked-port tests need: no real page image
+     * is involved, so no region crop could be confirmed anyway, and the region path must then behave
+     * exactly as the pipeline did before it existed — the value is dropped. Tests for the verifier's own
+     * behaviour live in {@link CropVerifierTest}.
+     */
+    private static final CropVerifier NO_CROP_VERIFIER =
+            new CropVerifier((documentId, crop) -> reactor.core.publisher.Mono.empty(),
+                    (documentId, crop) -> reactor.core.publisher.Mono.empty());
+
     private static final String GOOD_REPLY = """
             {"document_type":"lab_report","document_date":"2026-03-14","facility":"Popular",
              "values":[{"name":"HbA1c","canonical_name":"hba1c","value":"8.2","unit":"%",
@@ -106,7 +116,7 @@ class DocumentExtractionServiceTest {
                 new ExtractionClients(cheap, null, null, false),
                 new ExtractionPromptBuilder(properties),
                 new ExtractionJsonReader(new ObjectMapper()),
-                new CropCutter(properties), new MarkerMatcher(properties),
+                new CropCutter(properties), NO_CROP_VERIFIER, new MarkerMatcher(properties),
                 storage, records, properties, new ObjectMapper(),
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
@@ -123,7 +133,7 @@ class DocumentExtractionServiceTest {
                 new ExtractionClients(cheap, null, strong, false),
                 new ExtractionPromptBuilder(properties),
                 new ExtractionJsonReader(new ObjectMapper()),
-                new CropCutter(properties), new MarkerMatcher(properties),
+                new CropCutter(properties), NO_CROP_VERIFIER, new MarkerMatcher(properties),
                 storage, records, properties, new ObjectMapper(),
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
@@ -368,25 +378,32 @@ class DocumentExtractionServiceTest {
     }
 
     /**
-     * DR-28: a lab report that would show the family NOTHING is retaken, however confident the read was.
+     * DR-31: a lab report that shows NOTHING after cropping is DONE, not retaken.
      *
-     * <p>lab10 in batch 2 was exactly this — DONE at 0.9 confidence, one value extracted, its crop
-     * unlocatable, zero values shown. The confidence gate had already passed because it judges what was
-     * EXTRACTED; this judges what survives cropping, which is what the family actually sees.
+     * <p>lab10 in batch 2 was a clear page read correctly at 0.9 confidence whose single value — an
+     * out-of-range uric acid — could not be located for a crop. Retaking it would tell the family their photo
+     * is unclear when it is not, they would send the same page, and it would fail identically; and because a
+     * retaken document persists no extraction, the finding would be thrown away each time. The reading gate
+     * judges the photo; the locator's failure is ours.
      */
     @Test
-    void aLabReportShowingNothingAfterCroppingIsRetaken() throws Exception {
+    void aLabReportShowingNothingAfterCroppingIsKeptNotRetaken() throws Exception {
         replyWith(GOOD_REPLY.replace("HbA1c", "Ferritin"));   // not on the stub page: no crop, nothing shown
 
         StepVerifier.create(service.process(received(1), List.of(pageJpeg())))
                 .assertNext(d -> {
-                    assertThat(d.status()).isEqualTo(Document.Status.NEEDS_RETAKE);
-                    assertThat(d.statusReason()).contains("values").contains("could be shown with its source");
+                    assertThat(d.status()).as("a clear page read correctly is not the family's problem to fix")
+                            .isEqualTo(Document.Status.DONE);
+                    assertThat(d.statusReason()).isNull();
                 })
                 .verifyComplete();
 
+        // the extraction IS persisted, so the dropped value survives for urgency to see
+        ArgumentCaptor<VerifiedItems> items = ArgumentCaptor.forClass(VerifiedItems.class);
+        verify(records).saveExtraction(any(), items.capture());
+        assertThat(items.getValue().observations()).as("nothing could be cropped, so nothing is shown").isEmpty();
+        assertThat(items.getValue().unverified().values()).isEqualTo(1);
         verify(storage, never()).storeCrop(any(), any(), any(), anyString(), any());
-        verify(records, never()).saveExtraction(any(), any());
     }
 
     /**
@@ -518,6 +535,40 @@ class DocumentExtractionServiceTest {
     private Document doneDocument() {
         return new Document(DOC, PATIENT, FAMILY, "lab_report", java.time.LocalDate.parse("2026-03-14"), "Popular",
                 STORED_JSON, 0.93, Document.Status.DONE, null, "anthropic/claude-sonnet-5", null, 1, NOW, NOW);
+    }
+
+    /**
+     * The verification-rate probe is a MEASUREMENT: it must not write anything.
+     *
+     * <p>It is meant to run across every document in production, including ones a family is looking at right
+     * now, so that the retake gate can be compared against an objective signal before anything changes. Its
+     * neighbour {@code recrop} deletes crops and items and rewrites the row — measuring with that would
+     * destroy live data to answer a question about it, which is exactly what the drafting rerun did to ten
+     * verified labels.</p>
+     *
+     * <p>Asserted with {@code never()} on every write port rather than by reading the code, because "it does
+     * not write" is a property of the whole call graph and not of the lines the author happened to look at.</p>
+     */
+    @Test
+    void verificationRateMeasuresWithoutWritingAnything() throws Exception {
+        when(records.find(DOC)).thenReturn(Mono.just(doneDocument()));
+        when(storage.pageBytes(FAMILY, PATIENT, DOC, 1)).thenReturn(Mono.just(pageJpeg()));
+
+        StepVerifier.create(service.verificationRate(DOC))
+                .assertNext(r -> {
+                    assertThat(r.outcome()).isEqualTo("measured");
+                    assertThat(r.extracted()).as("one value in the stored extraction").isEqualTo(1);
+                    assertThat(r.confidence()).as("the model's own score, carried for comparison").isEqualTo(0.93);
+                    assertThat(r.rate()).isPresent();
+                })
+                .verifyComplete();
+
+        verify(storage, never()).deleteCrops(any(), any(), any());
+        verify(storage, never()).storeCrop(any(), any(), any(), anyString(), any());
+        verify(records, never()).deleteItems(any());
+        verify(records, never()).saveExtraction(any(), any());
+        verify(records, never()).update(any());
+        verify(metered, never()).invoke(any(), any(), any(LlmRequest.class), any());
     }
 
     @Test

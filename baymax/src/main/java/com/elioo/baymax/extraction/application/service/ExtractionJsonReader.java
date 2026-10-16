@@ -13,6 +13,7 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.util.Iterator;
 import java.io.InputStream;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -45,6 +46,35 @@ public class ExtractionJsonReader {
         }
     }
 
+    /**
+     * Removes value rows the page printed with no result, before the schema sees them.
+     *
+     * <p>A panel often lists tests that were ordered and not performed: name and reference range printed,
+     * result column blank. Transcribing those faithfully is right — it is what is on the page — but the
+     * schema requires a non-empty {@code value}, so three blank rows in lab9 rejected the entire document
+     * and lost every real result with it. The family was told their photo could not be read, for a page
+     * that had been read correctly.</p>
+     *
+     * <p>A row with no result carries nothing a family could be shown and no number that could be checked
+     * against a crop, so it is dropped individually, exactly as a value with no locatable crop is. Every
+     * other malformation is still refused: this tolerates one known shape, it does not weaken validation.</p>
+     */
+    private static int dropValuelessRows(JsonNode node) {
+        JsonNode values = node == null ? null : node.get("values");
+        if (values == null || !values.isArray()) {
+            return 0;
+        }
+        int dropped = 0;
+        for (Iterator<JsonNode> it = values.elements(); it.hasNext(); ) {
+            JsonNode value = it.next().get("value");
+            if (value != null && value.isTextual() && value.asText().isBlank()) {
+                it.remove();
+                dropped++;
+            }
+        }
+        return dropped;
+    }
+
     public ExtractionResult read(String rawReply) {
         JsonNode node;
         try {
@@ -53,6 +83,10 @@ public class ExtractionJsonReader {
             node = mapper.readTree(LlmJsonExtractor.extract(rawReply));
         } catch (IOException | RuntimeException e) {
             throw new InvalidExtractionException("The reply was not valid JSON: " + e.getMessage());
+        }
+        int blankRows = dropValuelessRows(node);
+        if (blankRows > 0) {
+            log.info("[baymax] dropped {} value row(s) printed with no result", blankRows);
         }
         Set<ValidationMessage> problems = schema.validate(node);
         if (!problems.isEmpty()) {

@@ -30,7 +30,35 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+      # DR-36: a README told contributors never to commit real patient data, and the same commit broke the
+      # rule — two real medical records then sat in a public repo for three weeks. Runs before the build so
+      # it fails in seconds rather than after 30 minutes of tests.
+      - name: Refuse undeclared test fixtures
+        run: scripts/check-test-fixtures.sh
       - uses: gradle/actions/setup-gradle@v4
+      # Testcontainers pulls its images at test time, and a registry problem then fails the BUILD rather than
+      # the pull: four acceptance tests — every one that needs MinIO — died with ContainerFetchException ->
+      # ConditionTimeoutException, ~7 minutes each, on two consecutive runs, on a branch that touches no
+      # container config. main was last green on 2026-09-23, so this blocks every merge, not one branch.
+      #
+      # Pre-pulling moves the failure to a step that SAYS WHY. Testcontainers reports only "fetch failed";
+      # docker pull prints the registry's actual response. MinIO left Docker Hub, so its image comes from
+      # quay.io — and pulling it from a laptop with no Docker Hub route returns "unauthorized", which could
+      # be a MinIO access change or could be local, and the CI log could not tell the two apart.
+      #
+      # continue-on-error so this diagnoses without becoming a second way to block the build.
+      - name: Pre-pull test container images
+        continue-on-error: true
+        run: |
+          for image in \
+            postgres:17-alpine \
+            docker.io/bitnamilegacy/minio@sha256:6dabb4a2088c9a79908de3bc05f4586c23ad2182c8908e7e3acbf61c1467fb20 \
+            testcontainers/ryuk:0.7.0
+          do
+            echo "::group::docker pull $image"
+            docker pull "$image" || echo "::warning::pull failed for $image (see output above for the registry's reason)"
+            echo "::endgroup::"
+          done
       - name: Build (unit tests + context test against service Postgres)
         run: ./gradlew build --no-daemon
         env:

@@ -47,6 +47,87 @@ class NudgeRulesTest {
         return new ObservationRow(UUID.randomUUID(), UUID.randomUUID(), "S. Creatinine", value, "mg/dL", Instant.parse(date + "T00:00:00Z"), "crop-" + value);
     }
 
+    static ObservationRow obs(String value, String unit, String date) {
+        return new ObservationRow(UUID.randomUUID(), UUID.randomUUID(), "S. Creatinine", value, unit,
+                Instant.parse(date + "T00:00:00Z"), "crop-" + value);
+    }
+
+    /**
+     * A TREND ACROSS A UNIT CHANGE IS NOT A TREND.
+     *
+     * <p>Bangladeshi labs report creatinine in mg/dL; lab7 in the corpus reports it in µmol/L. The numbers
+     * differ by a factor of about 88, so a patient who changes lab produces
+     * {@code 1.1 mg/dL -> 1.3 mg/dL -> 65 µmol/L} — three rising readings to a query with no unit predicate,
+     * and a rising-creatinine nudge telling a family to see a doctor about a result that is perfectly normal.
+     * DR-17's distinct-dates rule makes it less likely, not impossible.</p>
+     */
+    @Test
+    void aSeriesThatChangesUnitIsNotATrend() {
+        List<ObservationRow> acrossUnits = List.of(
+                obs("1.1", "mg/dL", "2026-01-01"),
+                obs("1.3", "mg/dL", "2026-02-01"),
+                obs("65", "umol/L", "2026-03-01"));   // normal in SI, ~88x the mg/dL number
+
+        assertThat(rules.trendOf(chronic, "creatinine", acrossUnits, true))
+                .as("65 µmol/L is a normal creatinine; only the unit changed")
+                .isEmpty();
+    }
+
+    /** THE OTHER DIRECTION: a genuine rise within one unit must still fire, or the rule stops working. */
+    @Test
+    void aRiseWithinOneUnitIsStillATrend() {
+        List<ObservationRow> sameUnit = List.of(
+                obs("1.1", "mg/dL", "2026-01-01"),
+                obs("1.3", "mg/dL", "2026-02-01"),
+                obs("1.6", "mg/dL", "2026-03-01"));
+
+        assertThat(rules.trendOf(chronic, "creatinine", sameUnit, true))
+                .as("three rising readings in one unit is exactly what the rule is for")
+                .isPresent();
+    }
+
+    /**
+     * The longest run IN ONE UNIT is what counts, not the longest run overall. A patient with two readings
+     * in mg/dL, one in µmol/L, then two more in mg/dL has no three-reading run in either unit.
+     */
+    @Test
+    void theRunIsMeasuredWithinAUnitNotAcrossTheSeries() {
+        List<ObservationRow> mixed = List.of(
+                obs("1.1", "mg/dL", "2026-01-01"),
+                obs("1.3", "mg/dL", "2026-02-01"),
+                obs("65", "umol/L", "2026-03-01"),
+                obs("1.5", "mg/dL", "2026-04-01"));
+
+        // mg/dL alone gives 1.1, 1.3, 1.5 — three rising readings on distinct dates, which IS a trend.
+        assertThat(rules.trendOf(chronic, "creatinine", mixed, true))
+                .as("the mg/dL readings form a real rising run once the µmol/L reading is set aside")
+                .isPresent();
+    }
+
+    /** Units compare after NFKC folding: "umol/L" and "µmol/L" are one unit, not two. */
+    @Test
+    void microSignAndAsciiUAreTheSameUnit() {
+        List<ObservationRow> sameUnitTwoSpellings = List.of(
+                obs("70", "umol/L", "2026-01-01"),
+                obs("90", "\u00b5mol/L", "2026-02-01"),
+                obs("120", "\u03bcmol/L", "2026-03-01"));
+
+        assertThat(rules.trendOf(chronic, "creatinine", sameUnitTwoSpellings, true))
+                .as("one unit spelled three ways is still one rising series")
+                .isPresent();
+    }
+
+    /** A missing unit on every row behaves as it always did: one series, compared numerically. */
+    @Test
+    void rowsWithNoUnitAreStillOneSeries() {
+        List<ObservationRow> noUnits = List.of(
+                obs("1.1", null, "2026-01-01"),
+                obs("1.3", null, "2026-02-01"),
+                obs("1.6", null, "2026-03-01"));
+
+        assertThat(rules.trendOf(chronic, "creatinine", noUnits, true)).isPresent();
+    }
+
     @Test
     void threeRisingReadingsFireOnceAFourthDoesNotAReversalReArms() {
         List<ObservationRow> rows = new ArrayList<>(List.of(obs("1.1", "2026-03-01"), obs("1.3", "2026-06-01"), obs("1.5", "2026-09-01")));

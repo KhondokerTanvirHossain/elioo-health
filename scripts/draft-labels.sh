@@ -15,6 +15,11 @@
 # score a file that does not say true. Scoring a model against its own unchecked output measures nothing —
 # it would report the model's agreement with itself as accuracy.
 #
+# A VERIFIED LABEL IS NEVER OVERWRITTEN. This script once replaced ten verified labels with fresh drafts;
+# the corpus is git-ignored, so there was no commit and no backup, and the verification every accuracy
+# number rests on was gone. draft_label.py now refuses a verified file (pass --force to mean it), and the
+# whole directory is snapshotted below before anything is written. Guard: scripts/test_draft_label_guard.py.
+#
 # Prints counts and cost only, never a value or any document text: the drafts hold the content and they are
 # git-ignored with the corpus.
 set -euo pipefail
@@ -28,6 +33,23 @@ OUT="$TESTSET/expected"
 [ -d "$TESTSET" ] || { echo "no corpus at $TESTSET" >&2; exit 1; }
 command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
 mkdir -p "$OUT"
+
+# Snapshot every existing label before a single one is written. Cheap, and the one thing that would have
+# made the batch 2 loss a non-event. Copied to a timestamped sibling, never moved: the corpus is
+# git-ignored, so a copy on disk is the only history these files have.
+if [ -n "$(ls -A "$OUT" 2>/dev/null)" ]; then
+  SNAPSHOT="$OUT.$(date +%Y%m%dT%H%M%S).bak"
+  cp -R "$OUT" "$SNAPSHOT"
+  VERIFIED=$(grep -l '"verified": *true' "$OUT"/*.json 2>/dev/null | wc -l | tr -d ' ')
+  echo "snapshot: $(ls "$OUT" | wc -l | tr -d ' ') labels -> $SNAPSHOT ($VERIFIED verified)"
+  if [ "$VERIFIED" != "0" ] && [ "${FORCE:-}" != "1" ]; then
+    echo >&2
+    echo "$VERIFIED label(s) in $OUT are VERIFIED. This run would refuse them one by one." >&2
+    echo "Restore or move them first, or re-run with FORCE=1 to replace them deliberately." >&2
+    exit 1
+  fi
+fi
+[ "${FORCE:-}" = "1" ] && DRAFT_FORCE="--force" || DRAFT_FORCE=""
 
 api() { curl -sS -H "X-Baymax-Admin-Token: $TOKEN" "$@"; }
 now_ms() { python3 -c 'import time;print(int(time.time()*1000))'; }
@@ -65,7 +87,7 @@ for FILE in "$TESTSET"/*.jpg "$TESTSET"/*.jpeg "$TESTSET"/*.jfif "$TESTSET"/*.pn
   done
   END=$(now_ms)
 
-  echo "$RESULT" | python3 scripts/draft_label.py "$OUT/$STEM.json" "$STEM" "$((END - START))"
+  echo "$RESULT" | python3 scripts/draft_label.py "$OUT/$STEM.json" "$STEM" "$((END - START))" $DRAFT_FORCE
   case "$STATUS" in
     DONE) WRITTEN=$((WRITTEN + 1)) ;;
     NEEDS_RETAKE) RETAKEN=$((RETAKEN + 1)) ;;

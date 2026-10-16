@@ -17,6 +17,36 @@ class BaymaxPropertiesBindingTest {
     static class Config {
     }
 
+    /**
+     * The before/after crop measurement runs both arms on ONE build and switches this flag between them, so
+     * a flag that silently failed to bind would make the "before" arm secretly identical to the "after" arm
+     * and the recovery count meaningless. Asserted on the exact environment-variable spelling used to run it.
+     */
+    @Test
+    void theImageRecoveryFlagBindsFromItsEnvironmentVariableName() {
+        // A real environment source: only this one applies Spring's UNDERSCORE -> dot relaxation, which is
+        // exactly what the measurement run relies on. A system property with the same spelling does NOT
+        // bind, and asserting on one would have passed the test while the flag stayed on.
+        new ApplicationContextRunner()
+                .withUserConfiguration(Config.class)
+                .withInitializer(context -> context.getEnvironment().getPropertySources().addFirst(
+                        new org.springframework.core.env.SystemEnvironmentPropertySource(
+                                org.springframework.core.env.StandardEnvironment
+                                        .SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME,
+                                java.util.Map.of("BAYMAX_EXTRACT_RECOVER_CROPS_FROM_IMAGE", "false"))))
+                .run(context -> assertThat(context.getBean(BaymaxProperties.class)
+                        .getExtract().isRecoverCropsFromImage())
+                        .as("BAYMAX_EXTRACT_RECOVER_CROPS_FROM_IMAGE=false must turn image recovery OFF")
+                        .isFalse());
+
+        new ApplicationContextRunner()
+                .withUserConfiguration(Config.class)
+                .run(context -> assertThat(context.getBean(BaymaxProperties.class)
+                        .getExtract().isRecoverCropsFromImage())
+                        .as("on by default")
+                        .isTrue());
+    }
+
     @Test
     void bracketedModelKeysBind() {
         new ApplicationContextRunner()

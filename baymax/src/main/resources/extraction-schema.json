@@ -36,7 +36,14 @@
         "null"
       ],
       "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-      "description": "ISO date as written on the document; null when the page does not state one"
+      "description": "ISO date as written on the document; null when the page does not state one. Bangladeshi reports are DAY-FIRST: 04/07/2024 is 4 July 2024, not 4 April. Use day-first unless the page itself proves otherwise (a companion date that only parses one way, or a month spelled out). Never infer a missing year from today."
+    },
+    "document_date_uncertain": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "True when the printed date is genuinely ambiguous and nothing on the page settles it: 07/11/2021 could be 7 November or 11 July, and a page with no second date and no spelled-out month cannot say which. Still fill document_date with the day-first reading, and set this so the server knows it was a convention and not a reading. False or null when the date is unambiguous (a day above 12, a spelled-out month, or a companion date that proves the order)."
     },
     "facility": {
       "type": [
@@ -110,6 +117,23 @@
           },
           "source_span": {
             "$ref": "#/$defs/source_span"
+          },
+          "source_region": {
+            "$ref": "#/$defs/source_region"
+          },
+          "specimen": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "blood",
+              "urine",
+              "stool",
+              "other",
+              null
+            ],
+            "description": "Which sample this value was measured in, taken from the section heading the row sits under (\"URINE R/E\", \"BIOCHEMISTRY\", \"COMPLETE BLOOD COUNT\"). Null when the page does not say. Never guess from the test name: the same word can name a blood test and a urine finding, and treating a urine result as a blood result applies the wrong reference range."
           }
         }
       }
@@ -368,6 +392,44 @@
         "end": {
           "type": "integer",
           "minimum": 0
+        }
+      }
+    },
+    "source_region": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "page",
+        "left",
+        "top",
+        "right",
+        "bottom"
+      ],
+      "description": "Where on the page IMAGE you read this item, as a fraction of page width and height (0.0-1.0, top-left origin). Give this for every item, and give it from what you SEE, not from the OCR text: it is the only way to keep a value the OCR text does not contain. Point at the value's own row - tight around the label and the number, never a whole table or a whole page. A region covering more than about a third of the page is discarded.",
+      "properties": {
+        "page": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "left": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "top": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "right": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "bottom": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
         }
       }
     }

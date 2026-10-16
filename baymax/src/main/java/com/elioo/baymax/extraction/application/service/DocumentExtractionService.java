@@ -63,6 +63,7 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
     private final ExtractionPromptBuilder prompts;
     private final ExtractionJsonReader reader;
     private final CropCutter cropCutter;
+    private final CropVerifier cropVerifier;
     private final MarkerMatcher markers;
     private final DocumentStorageUseCase storage;
     private final DocumentRecordPort records;
@@ -188,8 +189,37 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
         return Mono.fromCallable(() -> new Attempt(
                 response.modelId() != null ? response.modelId() : String.valueOf(modelOverride),
                 client.providerName(),
-                reader.read(response.content())));
+                reader.read(refuseTruncated(response))));
     }
+
+    /**
+     * The reply's text, unless the model stopped because it ran out of output tokens.
+     *
+     * <p>A truncated reply is a <b>failure, never a partial success</b>. Cut off mid-array it may still
+     * parse — or be repaired into something that parses — and would then be stored as an ordinary success
+     * holding a fraction of the page, with a confidence score describing only the part that survived. The
+     * family would be shown a short report and told nothing was missing, which is the worst shape a defect
+     * can take here: silent, plausible, and about a medical document.</p>
+     *
+     * <p>This has never fired. It was written while investigating batch 2's run-to-run variance — lab2 read
+     * 29 values in one run and 14 in the next — and that turned out NOT to be truncation: 2524 and 4816
+     * output tokens against an 8192 ceiling, and the shorter reply carried a complete {@code confidence} and
+     * {@code clinical_context}, fields that come last and cannot survive a cut. The guard stays because the
+     * failure is silent and the only reason it has not happened is that no page has been long enough yet.</p>
+     */
+    static String refuseTruncated(LlmResponse response) {
+        String stop = response.stopReason();
+        if (stop != null && TRUNCATED_STOP_REASONS.contains(stop.toLowerCase(java.util.Locale.ROOT))) {
+            throw new ExtractionJsonReader.InvalidExtractionException(
+                    "the model hit its output limit (stop_reason=" + stop + "), so the reply is incomplete "
+                            + "and any values it contains are only part of the page");
+        }
+        return response.content();
+    }
+
+    /** Anthropic says max_tokens; an OpenAI-compatible API says length. Both mean the same cut. */
+    private static final java.util.Set<String> TRUNCATED_STOP_REASONS =
+            java.util.Set.of("max_tokens", "length", "max_output_tokens");
 
     /** Read back out of the reply for the cost log; a malformed reply simply has no confidence. */
     private Double confidenceOf(LlmResponse response) {
@@ -232,13 +262,21 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
         // with no locatable crop is never persisted (crop_key is NOT NULL, "no number without its source"),
         // so a lab report can pass every confidence check and still show the family nothing. lab10 did
         // exactly that: DONE at 0.9, one value extracted, one dropped, zero shown.
+        // DR-31 amends DR-28: a document that shows nothing after cropping is DONE, not NEEDS_RETAKE. The
+        // confidence gate above judged the READING and passed it; the crop locator failing says nothing about
+        // the photo. Retaking would tell a family with a clear page that their photo is unclear, they would
+        // send the same page again, and it would fail the same way — and because a retaken document persists
+        // no extraction, the finding would be discarded on every attempt. lab10 was exactly that: a clear
+        // page, read at 0.9, whose one value was an out-of-range uric acid.
+        //
+        // The extraction is persisted, nothing is shown, and the dropped values still reach urgency
+        // (UrgencyService.unverifiedValues). NEEDS_RETAKE is for weak reading, never for our own locator.
         return verify(document, pages, result)
                 .flatMap(items -> {
                     if (showsNothingItShould(result, items, thresholds)) {
-                        return finish(document, Document.Status.NEEDS_RETAKE,
-                                "nothing from the %s of this %s could be shown with its source"
-                                        .formatted(gatingSectionOf(result, thresholds), typeOf(result)),
-                                attempt, result, null);
+                        log.warn("[baymax] document shows nothing after cropping documentId={} section={} — "
+                                        + "kept as DONE, values unverified (DR-31)",
+                                document.id(), gatingSectionOf(result, thresholds));
                     }
                     return finish(document, Document.Status.DONE, null, attempt, result, items);
                 });
@@ -354,10 +392,10 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
         int[] droppedFollowUp = {0};
 
         Flux<Void> values = Flux.fromIterable(result.valuesOrEmpty())
-                .concatMap(value -> store(document, cropCutter.cutValue(value.sourceSpan(), value.name(), value.value(), byPage), itemId("v", observations.size()))
+                .concatMap(value -> cropForValue(document, value, byPage, itemId("v", observations.size()))
                         .doOnNext(key -> observations.add(new VerifiedItems.Observation(
                                 document.patientId(), value.name(),
-                                markers.canonicalFor(value.name(), value.canonicalName()).orElse(null),
+                                markers.canonicalFor(value.name(), value.canonicalName(), value.specimen()).orElse(null),
                                 value.value(), value.unit(), value.refLow(), value.refHigh(), value.flag(),
                                 key, observedAt)))
                         .switchIfEmpty(Mono.fromRunnable(() -> droppedValues[0]++))
@@ -416,6 +454,42 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
             items.add(new ContextItem("referral", c.referral().text(), null, c.referral().sourceSpan()));
         }
         return items;
+    }
+
+    /**
+     * A value's crop key: the OCR-located crop when there is one, otherwise the model's region — but only
+     * after something independent has re-read that region and found the value in it.
+     *
+     * <p>The OCR path is unchanged and still first: when Vision produced the value's text, its word boxes
+     * are the most reliable thing we have and the crop needs no second opinion, because the text check
+     * inside {@code cutValue} already is one. The region path exists for the 30-of-85 case where Vision
+     * never produced the text at all, and there the model's box is the only claim available — so it is
+     * verified before it is stored, never on the strength of the same model that proposed it (DR-12).</p>
+     */
+    private Mono<String> cropForValue(Document document, ExtractionResult.Value value,
+                                      Map<Integer, PageOcr> byPage, String itemId) {
+        CropCutter.Cut located = cropCutter.cutValue(value.sourceSpan(), value.name(), value.value(), byPage);
+        if (located.bytes().isPresent()) {
+            return store(document, located, itemId);
+        }
+        if (!properties.getExtract().isRecoverCropsFromImage()) {
+            return Mono.empty();
+        }
+        CropCutter.Cut region = cropCutter.cutRegion(value.sourceRegion(), byPage);
+        if (region.bytes().isEmpty()) {
+            return Mono.empty();
+        }
+        byte[] crop = region.bytes().orElseThrow();
+        return cropVerifier.verify(document.id(), crop, value.name(), value.value())
+                .flatMap(outcome -> {
+                    if (!outcome.verified()) {
+                        log.debug("[baymax] region crop not confirmed documentId={} item={}", document.id(), itemId);
+                        return Mono.empty();
+                    }
+                    log.info("[baymax] value recovered from the page image documentId={} item={} readBy={}",
+                            document.id(), itemId, outcome.readBy());
+                    return store(document, region, itemId);
+                });
     }
 
     private Mono<String> crop(Document document, ExtractionResult.SourceSpan span, String anchor,
@@ -554,6 +628,92 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
                         r.documentId(), r.outcome(), r.values(), r.medicines(), r.followUps(), r.context(), r.unverified()));
     }
 
+    /**
+     * Measures the verification rate for one document, writing nothing.
+     *
+     * <p>Deliberately NOT built on {@link #recrop}, which deletes the document's crops and items and rewrites
+     * the row. This must be safe to run across every document in production, including ones a family is
+     * looking at, so it re-OCRs the stored pages, cuts crops in memory, asks the verifier, counts, and throws
+     * the crops away. The only side effects are the Vision and verification calls, which are metered like any
+     * other.</p>
+     */
+    @Override
+    public Mono<VerificationRate> verificationRate(UUID documentId) {
+        return records.find(documentId)
+                .switchIfEmpty(Mono.error(BaymaxException.notFound("document_not_found", "no document with id " + documentId)))
+                .flatMap(document -> {
+                    if (document.extractionJson() == null) {
+                        return Mono.just(new VerificationRate(documentId, document.documentType(),
+                                String.valueOf(document.status()), "no_extraction", 0, 0, document.confidenceOverall()));
+                    }
+                    ExtractionResult result = reader.readStored(document.extractionJson());
+                    List<String> gating = properties.getExtract().getGatingSections()
+                            .getOrDefault(typeOf(result), List.of());
+                    if (gating.isEmpty()) {
+                        return Mono.just(new VerificationRate(documentId, typeOf(result),
+                                String.valueOf(document.status()), "no_gating_sections", 0, 0,
+                                document.confidenceOverall()));
+                    }
+                    return storedPages(document)
+                            .flatMap(pages -> countConfirmedGatingItems(document, pages, result, gating)
+                                    .map(confirmed -> new VerificationRate(documentId, typeOf(result),
+                                            String.valueOf(document.status()), "measured",
+                                            confirmed, gatingItemCount(result, gating), document.confidenceOverall())));
+                })
+                .doOnNext(r -> log.info("[baymax] verification rate documentId={} type={} status={} outcome={} "
+                                + "confirmed={}/{} confidence={}",
+                        r.documentId(), r.documentType(), r.status(), r.outcome(), r.confirmed(), r.extracted(),
+                        r.confidence()));
+    }
+
+    private int gatingItemCount(ExtractionResult result, List<String> gating) {
+        int total = 0;
+        for (String section : gating) {
+            total += itemCount(result, section);
+        }
+        return total;
+    }
+
+    /**
+     * Cuts each gating item's crop in memory and asks the verifier whether the page shows it. Nothing is
+     * stored: this is a measurement, and it runs over documents in production.
+     */
+    private Mono<Integer> countConfirmedGatingItems(Document document, List<PageOcr> pages,
+                                                    ExtractionResult result, List<String> gating) {
+        Map<Integer, PageOcr> byPage = CropCutter.byPageNumber(pages);
+        Flux<Boolean> values = gating.contains("values")
+                ? Flux.fromIterable(result.valuesOrEmpty())
+                        .concatMap(v -> confirmedInMemory(document, v, byPage))
+                : Flux.empty();
+        // Medicines and follow-ups gate a prescription. They carry no source_region, so only the OCR-located
+        // crop can confirm them — which is itself the honest answer for those sections today.
+        Flux<Boolean> medicines = gating.contains("medicines")
+                ? Flux.fromIterable(result.medicinesOrEmpty())
+                        .map(m -> cropCutter.cut(m.sourceSpan(), m.name(), byPage).bytes().isPresent())
+                : Flux.empty();
+        Flux<Boolean> followUps = gating.contains("follow_up")
+                ? Flux.fromIterable(result.followUpOrEmpty())
+                        .map(f -> cropCutter.cut(f.sourceSpan(), f.instruction(), byPage).bytes().isPresent())
+                : Flux.empty();
+
+        return Flux.concat(values, medicines, followUps).filter(Boolean::booleanValue).count()
+                .map(Long::intValue);
+    }
+
+    private Mono<Boolean> confirmedInMemory(Document document, ExtractionResult.Value value,
+                                            Map<Integer, PageOcr> byPage) {
+        CropCutter.Cut located = cropCutter.cutValue(value.sourceSpan(), value.name(), value.value(), byPage);
+        if (located.bytes().isPresent()) {
+            return Mono.just(true);
+        }
+        CropCutter.Cut region = cropCutter.cutRegion(value.sourceRegion(), byPage);
+        if (region.bytes().isEmpty()) {
+            return Mono.just(false);
+        }
+        return cropVerifier.verify(document.id(), region.bytes().orElseThrow(), value.name(), value.value())
+                .map(CropVerifier.Outcome::verified);
+    }
+
     @Override
     public Flux<RecropReport> recropAll() {
         return records.idsWithStatus(Document.Status.DONE).concatMap(this::recrop);
@@ -578,6 +738,6 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
         String provider = slash > 0 ? model.substring(0, slash) : "unknown";
         String name = slash > 0 ? model.substring(slash + 1) : model;
         ExtractionResult.Confidence confidence = new ExtractionResult.Confidence(document.confidenceOverall(), null, null, null, null);
-        return new Attempt(name, provider, new ExtractionResult(null, null, null, null, null, null, null, null, null, confidence));
+        return new Attempt(name, provider, new ExtractionResult(null, null, null, null, null, null, null, null, null, null, confidence));
     }
 }

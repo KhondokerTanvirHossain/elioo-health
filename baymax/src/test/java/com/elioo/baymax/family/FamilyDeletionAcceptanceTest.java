@@ -50,12 +50,11 @@ class FamilyDeletionAcceptanceTest {
     static final String BUCKET = "baymax";
     static final String TOKEN = "admin-test-token";
     static final byte[] JPEG = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 0, 0x10, 'J', 'F', 'I', 'F', 0, 1};
-    static final String MINIO_IMAGE = "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z";
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
     @Container
-    static final MinIOContainer MINIO = new MinIOContainer(DockerImageName.parse(MINIO_IMAGE).asCompatibleSubstituteFor("minio/minio"));
+    static final MinIOContainer MINIO = com.elioo.baymax.storage.TestImages.minioContainer();
 
     @BeforeAll
     static void createBucket() {

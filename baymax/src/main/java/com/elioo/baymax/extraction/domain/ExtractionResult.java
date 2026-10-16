@@ -15,6 +15,16 @@ public record ExtractionResult(
         @JsonProperty("document_type") String documentType,
         @JsonProperty("patient_hint") String patientHint,
         @JsonProperty("document_date") String documentDate,
+        /**
+         * True when the printed date is genuinely ambiguous and the page cannot settle it — lab8 prints
+         * {@code 07/11/2021} throughout, which is 7 November or 11 July with nothing to decide between them.
+         *
+         * <p>{@code documentDate} is still filled with the day-first reading: a null date loses the report
+         * from the timeline entirely, which is worse than a date that might be wrong. This flag is how
+         * anything downstream can tell a convention from a reading. Null on every document extracted before
+         * the field existed, which reads as "not flagged" rather than "uncertain".</p>
+         */
+        @JsonProperty("document_date_uncertain") Boolean documentDateUncertain,
         String facility,
         List<Value> values,
         List<Medicine> medicines,
@@ -32,7 +42,19 @@ public record ExtractionResult(
             @JsonProperty("ref_low") String refLow,
             @JsonProperty("ref_high") String refHigh,
             String flag,
-            @JsonProperty("source_span") SourceSpan sourceSpan
+            @JsonProperty("source_span") SourceSpan sourceSpan,
+            /**
+             * Where the model SAW this value on the page image. The span points into the OCR text and is
+             * lost whenever Vision split or missed the cell; the region survives that, which is the whole
+             * point of it. Always a proposal — {@code CropVerifier} decides what may be stored.
+             */
+            @JsonProperty("source_region") SourceRegion sourceRegion,
+            /**
+             * The sample this value was measured in, from the section heading the row sits under — not
+             * guessed from the test name. "Calcium-Oxalate" under URINE R/E is a crystal, not serum calcium;
+             * without the specimen the two are one word and the wrong reference range gets applied.
+             */
+            String specimen
     ) {
         public boolean isCritical() {
             return "critical".equalsIgnoreCase(flag);
@@ -112,6 +134,64 @@ public record ExtractionResult(
     public record SourceSpan(int page, int start, int end) {
         public boolean isUsable() {
             return page >= 1 && end > start && start >= 0;
+        }
+    }
+
+    /**
+     * Where on the page IMAGE the model read an item, as a fraction of page width and height.
+     *
+     * <p>{@link SourceSpan} points into the OCR text, which is why 30 of 85 cropped values in batch 2 were
+     * lost as {@code TEXT_NOT_ON_PAGE}: extraction reads the image and can see a table cell that Vision
+     * split or missed, and the locator could only search text that Vision produced. The region is the model
+     * pointing at pixels instead, so a value readable in the image is croppable even when OCR never
+     * produced its text.</p>
+     *
+     * <p>Normalised, never pixels: the page is downscaled before it is sent, so the model does not know the
+     * rendered size. Absolute coordinates would mean a different part of the page at a different scale, and
+     * would do so silently.</p>
+     *
+     * <p>A region is a proposal, never evidence. It says where to cut; {@code CropVerifier} decides whether
+     * what was cut may be stored (DR-12).</p>
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record SourceRegion(int page, double left, double top, double right, double bottom) {
+
+        /** Above this fraction of the page, a "region" is the page — a shrug, not a pointer. */
+        private static final double MAX_PAGE_FRACTION = 0.35;
+
+        public boolean isUsable() {
+            return page >= 1 && right > left && bottom > top
+                    && left >= 0 && top >= 0 && right <= 1 && bottom <= 1;
+        }
+
+        /**
+         * True when the region actually points at something: usable, and small enough that cropping it
+         * shows one row rather than the whole report. A crop of most of the page as the source of a single
+         * number is DR-12's 116-of-137 failure in a new costume.
+         */
+        public boolean isPointer() {
+            return isUsable() && (right - left) * (bottom - top) <= MAX_PAGE_FRACTION;
+        }
+
+        /** The box in pixels on an image of this size, clamped so it can never escape the image. */
+        public PixelBox toPixels(int width, int height) {
+            return new PixelBox(
+                    clamp(left * width, width), clamp(top * height, height),
+                    clamp(right * width, width), clamp(bottom * height, height));
+        }
+
+        private static int clamp(double v, int max) {
+            return (int) Math.max(0, Math.min(max, Math.round(v)));
+        }
+
+        public record PixelBox(int left, int top, int right, int bottom) {
+            public int width() {
+                return right - left;
+            }
+
+            public int height() {
+                return bottom - top;
+            }
         }
     }
 

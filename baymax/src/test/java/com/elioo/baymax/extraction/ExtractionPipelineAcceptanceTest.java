@@ -68,13 +68,11 @@ import static org.mockito.Mockito.when;
 class ExtractionPipelineAcceptanceTest {
 
     static final String BUCKET = "baymax";
-    static final String MINIO_IMAGE = "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z";
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
     @Container
-    static final MinIOContainer MINIO = new MinIOContainer(
-            DockerImageName.parse(MINIO_IMAGE).asCompatibleSubstituteFor("minio/minio"));
+    static final MinIOContainer MINIO = com.elioo.baymax.storage.TestImages.minioContainer();
 
     static final String REPLY = """
             {"document_type":"lab_report","document_date":"2026-03-14","facility":"Popular",

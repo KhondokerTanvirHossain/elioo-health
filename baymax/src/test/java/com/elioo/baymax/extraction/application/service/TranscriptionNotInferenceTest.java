@@ -185,6 +185,30 @@ class TranscriptionNotInferenceTest {
         assertThat(prompt).contains("no normalisation");
     }
 
+    /**
+     * MEASURED DEFECT, not a hypothetical. lab2 is a urine report with 28 findings; one run returned 14, and
+     * every one of the 14 it dropped read "Nil" — Amorphous Phosphate, Calcium-Oxalate, Candida, Granular
+     * Cast, RBC Cast, Spermatozoa, Trichomonas, Triple-phosphate, Urates, Uric acid, WBC Cast and the rest.
+     * The model was deciding that negatives were not worth listing.
+     *
+     * <p>A negative result is a result. "Nil" means the lab looked for this and did not find it, which is
+     * clinically different from the test not having been done — and a family comparing our summary against
+     * their own page would find half the rows missing with nothing to say why.</p>
+     */
+    @Test
+    void theInstructionsRequireNegativeAndNormalRowsToBeListed() {
+        String prompt = new ExtractionPromptBuilder(new BaymaxProperties())
+                .userPrompt(List.of(new com.elioo.baymax.extraction.domain.PageOcr(
+                        1, "text", List.of(), "aGk=", 0.9)), false);
+
+        assertThat(prompt).contains("EVERY ROW THAT HAS A PRINTED RESULT IS LISTED");
+        assertThat(prompt).contains("Nil");
+        assertThat(prompt).contains("Negative");
+        assertThat(prompt)
+                .as("the instruction must say what a blank row is, or it reads as 'invent a row for everything'")
+                .contains("result column BLANK is skipped");
+    }
+
     @Test
     void clinicalContextCountsTowardsTheItemTotalSoDropsAreVisible() {
         ExtractionResult result = reader.read(PARKINSONS_PAGE);

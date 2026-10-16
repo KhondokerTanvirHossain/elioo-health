@@ -89,6 +89,19 @@ class BaymaxAutoConfigurationTest {
                         .hasMessageContaining("inline comment"));
     }
 
+    /**
+     * The crop verifier must exist whenever the module does. Its readers are what stand between a region
+     * the model pointed at and a crop stored as a value's source (DR-12), so a context that silently lacks
+     * the bean would fail at boot — and the application context test does not enable baymax, so nothing
+     * else in the build constructs it.
+     */
+    @Test
+    void theCropVerifierIsBuiltWheneverTheModuleIsEnabled() {
+        runner().withPropertyValues("baymax.enabled=true").run(context ->
+                assertThat(context).hasSingleBean(
+                        com.elioo.baymax.extraction.application.service.CropVerifier.class));
+    }
+
     @Test
     void disabledByDefault() {
         runner().run(context -> {

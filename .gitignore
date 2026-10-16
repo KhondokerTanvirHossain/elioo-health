@@ -91,8 +91,13 @@ HELP.md
 # Evaluation corpus: real patient documents. Never commit — PHI in a public repo.
 # Tanvir supplies the files locally; hand-labelled expectations live beside them.
 # The README is the labelling template and carries no patient data, so it is versioned; nothing else is.
+# The real evaluation corpus is patient data and is never committed (DR-36).
 /docs/testset/*
 !/docs/testset/README.md
+# Synthetic fixtures ARE committed: invented patients, invented values, invented facilities. They exist so
+# the scorer has something to run against in CI without a real document anywhere near the repository.
+!/docs/testset/synthetic/
+!/docs/testset/synthetic/**
 
 # Timestamped backups of the local env file — they contain live API keys
 .env*.bak.*

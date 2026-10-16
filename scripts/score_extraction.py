@@ -39,7 +39,10 @@ def norm(value):
     """
     if value is None:
         return ""
-    text = fold_digits(str(value).strip().lower())
+    # NFKC first: MICRO SIGN (U+00B5) and GREEK SMALL LETTER MU (U+03BC) are visually and semantically the
+    # same character in "10^3/µL", and the pair has now manufactured false misses twice — eight unit misses
+    # in v1, and eight paired-row misses here once pairing began to key on the unit.
+    text = fold_digits(unicodedata.normalize("NFKC", str(value)).strip().lower())
     if not text:
         return ""
     if any(ord(c) > 0x7F for c in text):
@@ -86,20 +89,91 @@ def value_matches(want, got):
     return bool(canonical) and norm(want.get("name")) in marker_aliases().get(canonical, set())
 
 
+def strip_unit_suffix(name, unit):
+    """
+    "Neutrophil %" and "Neutrophil" + unit "%" are the same row named two ways.
+
+    A lab that prints a cell type twice — once absolute, once as a percentage — gives extraction no way to
+    distinguish the rows except by unit, so it often folds the unit into the name. The label writes the unit
+    in its own field. Neither is wrong; they must still pair.
+    """
+    n, u = norm(name), norm(unit)
+    if u and n.endswith(" " + u):
+        return n[: -(len(u) + 1)].strip()
+    return n
+
+
+def pairing_key(row):
+    """
+    What makes a row unique: its name AND its unit, then the section it sits in.
+
+    Name alone is NOT unique, and treating it as though it were is what made the scorer report eight
+    correctly-read values as wrong. lab1's differential carries "Neutrophil" twice (2.25 10^3/uL and 41.9 %)
+    and lab2 carries "Others" twice (chemical and microscopic). Keying on a non-unique field is the alias
+    matcher's defect one layer up.
+    """
+    # Brackets are taken off the RAW name: norm() turns punctuation into spaces, so by then
+    # "Others (Chemical)" has become "others chemical" and the section is no longer separable.
+    raw = row.get("name") or ""
+    section = norm(row.get("section") or row.get("specimen") or "")
+    bracketed = re.findall(r"\(([^)]*)\)", raw)
+    if bracketed:
+        # Only treat a bracketed word as a SECTION when it is not the unit: "Cholesterol (Total)" is a name.
+        tail = norm(bracketed[-1])
+        if tail and tail != norm(row.get("unit")):
+            raw = re.sub(r"\s*\([^)]*\)", "", raw)
+            section = section or tail
+    return strip_unit_suffix(raw, row.get("unit")), norm(row.get("unit")), section
+
+
 def match_values(expected, actual):
-    """A value counts as correct when the name matches and both value and unit agree."""
+    """
+    A value counts as correct when it pairs with the right extracted row and both value and unit agree.
+
+    Pairing runs in three passes, each more forgiving than the last, and every pass consumes the row it
+    matched so no extracted row can answer for two labels:
+
+      1. exact (name, unit, section) — the only pass that can tell two same-named rows apart
+      2. (name, unit) — the same row with no section recorded on either side
+      3. name alone, through the alias table — the pre-existing behaviour, for everything unambiguous
+
+    The order matters: running the loose pass first is exactly the bug, because it lets the label's absolute
+    row consume the extraction's percentage row and scores a correct reading as wrong.
+    """
     hits, misses = 0, []
     remaining = list(actual)
+
+    def take(predicate):
+        for candidate in remaining:
+            if predicate(candidate):
+                remaining.remove(candidate)
+                return candidate
+        return None
+
+    pending = []
     for want in expected:
-        found = None
-        for got in remaining:
-            if value_matches(want, got):
-                found = got
-                break
+        want_key = pairing_key(want)
+        found = take(lambda got: pairing_key(got) == want_key)
+        if found is None:
+            found = take(lambda got: pairing_key(got)[:2] == want_key[:2])
+        if found is None:
+            pending.append(want)
+            continue
+        pending.append((want, found))
+
+    resolved = []
+    for item in pending:
+        if isinstance(item, tuple):
+            resolved.append(item)
+            continue
+        want = item
+        found = take(lambda got: value_matches(want, got))
+        resolved.append((want, found))
+
+    for want, found in resolved:
         if found is None:
             misses.append({"field": "values", "reason": "not found", "name": want.get("name")})
             continue
-        remaining.remove(found)
         if number_eq(want.get("value"), found.get("value")) and norm(want.get("unit")) == norm(found.get("unit")):
             hits += 1
         else:

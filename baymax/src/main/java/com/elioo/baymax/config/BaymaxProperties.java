@@ -190,6 +190,16 @@ public class BaymaxProperties {
         private List<String> doctorFirstMarkers = new ArrayList<>(List.of("ডাক্তার", "হাসপাতাল"));
         /** DR-18: during the pilot every nudge waits for the reviewer, whatever its urgency and whatever gateMode says. */
         private boolean gateNudges = true;
+        /**
+         * Per-marker urgency thresholds, per unit, as a clinician states them — the replacement for the
+         * 2×/0.5× stopgap above, which batch 2 showed to be wrong in both directions.
+         *
+         * <p><b>Every entry ships as {@code status: proposed} and is inert.</b> Only {@code active} can
+         * change a family's message, so a doctor's sign-off is a config change rather than a code change.
+         * {@code ProposedThresholdsAreInertTest} asserts that a proposed entry which WOULD change a verdict
+         * does not, and that an active one does.</p>
+         */
+        private List<com.elioo.baymax.outbound.domain.MarkerThreshold> markerThresholds = new ArrayList<>();
     }
 
     /** The proactive engine (BMX-8, DR-17, DR-18). All rules read stored data only; the policy is enforced centrally. */
@@ -277,6 +287,21 @@ public class BaymaxProperties {
         private int maxPages = 10;
         /** Padding around a source-span bounding box when cutting the crop, in pixels. */
         private int cropPaddingPx = 12;
+        /**
+         * Output cap for the model that re-reads a crop when OCR read nothing. A crop is one row, so the
+         * answer is a few words; this is small on purpose, because the call happens per unlocatable value
+         * and an unbounded one would be the most expensive thing in the pipeline.
+         */
+        private int cropVerifyMaxTokens = 100;
+        /**
+         * Whether a value whose crop cannot be located in the OCR text may be recovered from the region the
+         * model pointed at on the page image (always subject to independent verification).
+         *
+         * <p>Exists so a before/after measurement can run on ONE build with ONE gate. The first attempt to
+         * measure the locator fix compared two runs whose gates differed, which credited a document with
+         * recovering three values when it had simply failed the confidence gate and never been cropped.</p>
+         */
+        private boolean recoverCropsFromImage = true;
     }
 
     /** A chronic marker the pipeline recognises by any of its aliases. Config, not code. */
@@ -284,5 +309,15 @@ public class BaymaxProperties {
     public static class Marker {
         private String canonical;
         private List<String> aliases = new ArrayList<>();
+        /**
+         * Names that must NEVER map to this marker, even though the substring fallback would catch them.
+         *
+         * <p>"Non-HDL Cholesterol" contains "hdl" and canonicalised to it, which matters because HDL's
+         * threshold is direction-inverted: a high non-HDL is bad and a high HDL is protective, so the wrong
+         * match reads a bad result as a good one. "Mean Platelet Volume" contains "platelet" and would have
+         * been judged against a platelet-count threshold. A marker is excluded when its name contains any of
+         * these, and exclusion beats every alias.</p>
+         */
+        private List<String> notAliases = new ArrayList<>();
     }
 }

@@ -43,7 +43,9 @@ class UrgencyServiceTest {
     void aValueAtTwiceTheUpperLimitIsNow() {
         var a = service.assess(facts(List.of(value("HbA1c", "11.2", "4.0", "5.6")), List.of(), Map.of(), "{}"));
         assertThat(a.level()).isEqualTo(Urgency.NOW);
-        assertThat(a.reasons()).contains("value_critical:hba1c");
+        // The reason names the marker AND the rule that produced it: "|stopgap" marks a verdict reached by
+        // the 2x multiple nobody has signed off, so it can never be mistaken for a clinician's threshold.
+        assertThat(a.reasons()).anySatisfy(r -> assertThat(r).startsWith("value_critical:hba1c"));
     }
 
     /** ≤ 0.5 × ref_low → NOW. Range 4.0–5.6: 2.0 is exactly half of 4.0. */

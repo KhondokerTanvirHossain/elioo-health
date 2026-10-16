@@ -119,6 +119,41 @@ Key files when changing behaviour:
   lab report that read nothing; the first implementation's `typeOf()` read an unset column, so every document
   became `"other"` — prescriptions passed and a blurry lab report would have sailed through. Only the
   second test caught it, and only because it existed before the code.
+- **A scorer that pairs on a non-unique field manufactures misses.** `match_values` matched a label row to
+  the first extracted row with the same name and consumed it, so lab1's differential — which prints each
+  cell type twice, an absolute count and a percentage — paired `Neutrophil 2.25 10^3/µL` with
+  `Neutrophil 41.9 %`. Both readings were then "wrong", two correct `Others` rows scored as inventions, and
+  the harness reported 88.2% where the truth was 97.3%. **The labels and the model were both right.** This
+  is the alias matcher's defect one layer up: there, names collided because matching used a substring; here,
+  rows collided because pairing used a field that is not unique. **Whenever a harness joins two lists, the
+  join key must be something that actually identifies a row — name AND unit AND section — and the fix needs
+  a test in the dangerous direction too, that two genuinely different rows sharing that key are still not
+  merged.** Adding `specimen` to extraction then broke pairing a second way, because a field present on one
+  side and absent on the other blocked the match: a harness must tolerate a field the labels predate.
+- **When two rules can produce the same verdict, asserting the verdict does not say which rule ran.** The
+  per-marker threshold tests asserted `NOW` for creatinine 500 µmol/L — but 500 against a printed 59–104 is
+  4.8× the limit, so the 2× stopgap returns `NOW` as well. The tests passed while the unit match was broken
+  (`µmol/L` never matched `umol/L`, because NFKC folds MICRO SIGN onto Greek mu and not onto ASCII `u`), and
+  a signed-off creatinine threshold would have silently done nothing. They became honest only by asserting
+  on the reason (`|threshold:<source>` vs `|stopgap`), which is why urgency reasons now carry the identity of
+  the rule that produced them. Wherever a fallback exists, assert the path, not just the outcome.
+- **A scoring harness manufactures findings as readily as it hides them.** Batch 2's unit column read 65/74
+  until eight of the nine "misses" turned out to be the scorer failing to Unicode-fold MICRO SIGN (U+00B5)
+  against GREEK SMALL LETTER MU (U+03BC) — visually identical, semantically identical, different code points.
+  The real number was 73/74. A harness result is evidence about the harness until a mismatch has been looked
+  at by value; never open an investigation into a defect a tool reported without first confirming the tool.
+- **A tool that regenerates an input must never overwrite the human judgement layered on top of it.** The
+  measurement's foundation is the most dangerous thing in the repo to write to, and it is usually written by
+  the same tool that produces the numbers. `draft-labels.sh` was re-run against `docs/testset/batch2/expected/`
+  to measure a fix and replaced ten labels Tanvir had verified field by field against the images with fresh
+  drafts saying `"verified": false`. The corpus is git-ignored because it holds patient data, so there was no
+  commit and no backup: the verification every number in BASELINE.md rests on was destroyed by the tool whose
+  output those numbers describe. **Any writer pointed at a directory holding human work checks for that work
+  and refuses, snapshots before writing, and makes the escape hatch an explicit flag** — `draft_label.py`
+  refuses a `"verified": true` file (and an unparseable one, which is not *known* to be a draft), the shell
+  script snapshots `expected/` before the first write and stops the run when any verified label is present.
+  Guarded in both directions by `scripts/test_draft_label_guard.py`. Distinct from the flattering-failure
+  family: not a check that could not fail, but a destructive write with no check at all.
 - **A red replay must fail ON the defect, not merely fail.** Read the failure message and confirm it names the
   bug: `expected: DEFERRED but was: DROPPED`, `duplicate key value violates unique constraint`. A guard whose
   replay died on a `NullPointerException` in its own Mockito matcher was red, looked like a successful replay and

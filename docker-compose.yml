@@ -25,31 +25,24 @@ services:
       timeout: 3s
       retries: 10
 
-  # Object storage for Baymax page images and crops (S3 API). Bucket `baymax` is created by minio-init.
+  # Object storage for Baymax page images and crops (S3 API) — local dev only; production uses real AWS S3.
+  # bitnamilegacy/minio, pinned BY DIGEST to a multi-arch index (linux/amd64 + linux/arm64). MinIO withdrew its
+  # own public images (quay.io answers "unauthorized", Docker Hub 404), and the GHCR mirror was arm64-only.
+  # Bitnami creates the `baymax` bucket itself (MINIO_DEFAULT_BUCKETS, private), so no mc init container.
+  # Runs as uid 1001, so it gets its own volume: the old root-owned medscribe-minio volume is not writable by it.
   minio:
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    image: docker.io/bitnamilegacy/minio@sha256:6dabb4a2088c9a79908de3bc05f4586c23ad2182c8908e7e3acbf61c1467fb20
     container_name: medscribe-minio
-    command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_DEFAULT_BUCKETS: baymax
     ports:
       - "9000:9000"
       - "9001:9001"
     volumes:
-      - medscribe-minio:/data
-
-  minio-init:
-    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
-    depends_on:
-      - minio
-    entrypoint: >
-      /bin/sh -c "
-      until mc alias set local http://minio:9000 minioadmin minioadmin >/dev/null 2>&1; do sleep 1; done;
-      mc mb -p local/baymax;
-      mc anonymous set none local/baymax;
-      echo 'bucket baymax ready'"
+      - medscribe-minio-data:/bitnami/minio/data
 
 volumes:
   medscribe-pgdata:
-  medscribe-minio:
+  medscribe-minio-data:
