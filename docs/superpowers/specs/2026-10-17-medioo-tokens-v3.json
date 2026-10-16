@@ -1,0 +1,578 @@
+{
+ "name": "Medioo",
+ "version": 3,
+ "meta": {
+  "source": "Medioo UX deep dive 2026-10-17, evolved from DR-14 tokens in baymax.css"
+ },
+ "color": {
+  "themes": [
+   "light",
+   "dark"
+  ],
+  "tokens": [
+   {
+    "name": "bg",
+    "value": {
+     "light": "#f8f6f1",
+     "dark": "#0e1a22"
+    },
+    "usage": "Page background (warm paper / deep ink). Evolves --c-bg."
+   },
+   {
+    "name": "surface",
+    "value": {
+     "light": "#ffffff",
+     "dark": "#15232d"
+    },
+    "usage": "Cards, bot chat bubbles, sheets at rest. Evolves --c-surface."
+   },
+   {
+    "name": "surface-2",
+    "value": {
+     "light": "#efece4",
+     "dark": "#1c2c37"
+    },
+    "usage": "Quiet blocks, quiet buttons, neutral chips; dark-mode elevated level 1. Evolves --c-surface-2."
+   },
+   {
+    "name": "surface-3",
+    "value": {
+     "light": "#e6e1d6",
+     "dark": "#243642"
+    },
+    "usage": "Pressed state of quiet surfaces; dark-mode sheets/dialogs (elevated). New."
+   },
+   {
+    "name": "text",
+    "value": {
+     "light": "#0a2e4d",
+     "dark": "#e9eef0"
+    },
+    "usage": "Primary text and icons (on-surface). 12.9:1 on bg light, 15.1:1 dark. Evolves --c-text."
+   },
+   {
+    "name": "text-muted",
+    "value": {
+     "light": "#4f5f5c",
+     "dark": "#a3b2b5"
+    },
+    "usage": "Secondary text, meta, timestamps (on-surface-variant). Darkened from #566663 so it clears 5.6:1 on surface-2. Evolves --c-muted."
+   },
+   {
+    "name": "line",
+    "value": {
+     "light": "#e9e4da",
+     "dark": "#2b3b46"
+    },
+    "usage": "Decorative dividers and card hairlines only (1.27:1, not a control boundary). Evolves --c-line."
+   },
+   {
+    "name": "outline",
+    "value": {
+     "light": "#7d8a88",
+     "dark": "#71838b"
+    },
+    "usage": "Boundaries of interactive controls: text fields, checkboxes, outlined buttons (>=3:1, WCAG 1.4.11). New; replaces --c-line on inputs."
+   },
+   {
+    "name": "primary",
+    "value": {
+     "light": "#06788a",
+     "dark": "#5fc4d3"
+    },
+    "usage": "Filled primary buttons, active tab, links on emphasis, focus-adjacent accents. Teal from the Mio asset. Evolves --c-accent."
+   },
+   {
+    "name": "on-primary",
+    "value": {
+     "light": "#ffffff",
+     "dark": "#00313a"
+    },
+    "usage": "Text/icons on primary (5.17:1 light, 6.88:1 dark). Evolves --c-on-accent."
+   },
+   {
+    "name": "primary-pressed",
+    "value": {
+     "light": "#05606e",
+     "dark": "#84d5e0"
+    },
+    "usage": "Hover/pressed primary. Replaces today's hover-to-ink, which made a hovered primary button look like the dark destructive button. New."
+   },
+   {
+    "name": "primary-container",
+    "value": {
+     "light": "#ddf1f4",
+     "dark": "#0e3d47"
+    },
+    "usage": "Tonal buttons, selected chips, active tab indicator pill, Mio avatar ground. Evolves --c-accent-soft."
+   },
+   {
+    "name": "on-primary-container",
+    "value": {
+     "light": "#0a2e4d",
+     "dark": "#cdeef3"
+    },
+    "usage": "Text on primary-container. Use this, not primary, for small text on the tint (primary on tint is 4.42:1 and fails AA)."
+   },
+   {
+    "name": "bubble-me",
+    "value": {
+     "light": "#e0f3f1",
+     "dark": "#16393f"
+    },
+    "usage": "The family's own chat bubble (right side). Evolves --c-me."
+   },
+   {
+    "name": "brand-green",
+    "value": {
+     "light": "#2ee0a5",
+     "dark": "#2ee0a5"
+    },
+    "usage": "Wordmark 'oo' and illustration accents only. Never text, never status. Evolves --c-brand-2."
+   },
+   {
+    "name": "brand-dot",
+    "value": {
+     "light": "#b91c1c",
+     "dark": "#ff9b92"
+    },
+    "usage": "Wordmark dot only; the one non-urgency red, sanctioned by DR-14 amendment."
+   },
+   {
+    "name": "focus",
+    "value": {
+     "light": "#0a2e4d",
+     "dark": "#9fdbe6"
+    },
+    "usage": "3px focus ring, 2px offset, on every focusable element. Evolves --c-focus."
+   },
+   {
+    "name": "scrim",
+    "value": {
+     "light": "#0a2e4d66",
+     "dark": "#00000099"
+    },
+    "usage": "Behind sheets and dialogs."
+   },
+   {
+    "name": "status-inside",
+    "value": {
+     "light": "#06697a",
+     "dark": "#7fd0dc"
+    },
+    "usage": "Value verdict INSIDE only (value, ref_low and ref_high all parse and the value lies inside). Check-in-circle icon + 'সীমার মধ্যে'. Never on a document, never for a one-sided or missing range, never green, never 'all fine'."
+   },
+   {
+    "name": "status-inside-container",
+    "value": {
+     "light": "#e3f2f4",
+     "dark": "#103840"
+    },
+    "usage": "Chip ground for the INSIDE value chip only. Not used for ROUTINE documents (they have no chip)."
+   },
+   {
+    "name": "status-soon",
+    "value": {
+     "light": "#92400e",
+     "dark": "#f4c06a"
+    },
+    "usage": "THIS_WEEK document urgency (calendar icon + urgency.this_week verbatim) AND value rows whose per-value verdict is OUTSIDE (▲/▼ icon + 'সীমার বেশি'/'সীমার কম'), so a row and the banner it feeds share one colour."
+   },
+   {
+    "name": "status-soon-container",
+    "value": {
+     "light": "#fdf0c4",
+     "dark": "#3a2b12"
+    },
+    "usage": "THIS_WEEK banner/chip ground and the OUTSIDE value-row tint."
+   },
+   {
+    "name": "status-now",
+    "value": {
+     "light": "#b91c1c",
+     "dark": "#ff9b92"
+    },
+    "usage": "RESERVED. NOW-level urgency on any surface, CRITICAL value rows, emergency card: octagon-exclamation icon + urgency.now / emergency template verbatim."
+   },
+   {
+    "name": "status-now-container",
+    "value": {
+     "light": "#fdeae6",
+     "dark": "#421717"
+    },
+    "usage": "RESERVED. NOW banner ground. Evolves --c-urgent-soft."
+   },
+   {
+    "name": "status-now-solid",
+    "value": {
+     "light": "#b91c1c",
+     "dark": "#c62828"
+    },
+    "usage": "RESERVED. Filled NOW chip/banner header, with on-status-now text (6.47:1 light, 5.62:1 dark)."
+   },
+   {
+    "name": "on-status-now",
+    "value": {
+     "light": "#ffffff",
+     "dark": "#ffffff"
+    },
+    "usage": "Text on status-now-solid."
+   },
+   {
+    "name": "status-unknown",
+    "value": {
+     "light": "#4f5f5c",
+     "dark": "#a3b2b5"
+    },
+    "usage": "Value verdict UNKNOWN: value or range does not parse ('> 89', '130 / 80', 'Positive'), one-sided or missing range, partial read, processing. Dashed-circle icon + 'কাগজে মিলিয়ে দেখুন' or 'রিপোর্টে সীমা লেখা নেই'. No bar. Never implies normal."
+   },
+   {
+    "name": "status-unknown-container",
+    "value": {
+     "light": "#efece4",
+     "dark": "#1c2c37"
+    },
+    "usage": "Ground for UNKNOWN value chips, review-state chips and the retake card."
+   },
+   {
+    "name": "danger",
+    "value": {
+     "light": "#0a2e4d",
+     "dark": "#e9eef0"
+    },
+    "usage": "Destructive buttons (delete family, remove document): dark ink, never red. Always behind a confirm step. Evolves --c-danger."
+   },
+   {
+    "name": "on-danger",
+    "value": {
+     "light": "#ffffff",
+     "dark": "#0e1a22"
+    },
+    "usage": "Text on danger."
+   },
+   {
+    "name": "warn-container",
+    "value": {
+     "light": "#fff6e5",
+     "dark": "#33280f"
+    },
+    "usage": "Non-urgency notices (retake requested, offline, OTP problems). Not an urgency colour. Evolves --c-warn-soft."
+   },
+   {
+    "name": "warn-line",
+    "value": {
+     "light": "#f0dcae",
+     "dark": "#5a4719"
+    },
+    "usage": "Border of warn notices. Evolves --c-warn-line."
+   }
+  ]
+ },
+ "type": {
+  "families": {
+   "sans": "\"Noto Sans\", \"Noto Sans Bengali\", system-ui, sans-serif",
+   "numeric": "\"Noto Sans\", \"Noto Sans Bengali\", system-ui, sans-serif"
+  },
+  "groups": [
+   {
+    "name": "display",
+    "family": "sans",
+    "styles": [
+     {
+      "name": "display",
+      "fontSize": "34px",
+      "lineHeight": "52px",
+      "fontWeight": 700
+     },
+     {
+      "name": "title-1",
+      "fontSize": "28px",
+      "lineHeight": "42px",
+      "fontWeight": 700
+     },
+     {
+      "name": "title-2",
+      "fontSize": "22px",
+      "lineHeight": "34px",
+      "fontWeight": 700
+     },
+     {
+      "name": "title-3",
+      "fontSize": "20px",
+      "lineHeight": "32px",
+      "fontWeight": 600
+     }
+    ]
+   },
+   {
+    "name": "text",
+    "family": "sans",
+    "styles": [
+     {
+      "name": "headline",
+      "fontSize": "17px",
+      "lineHeight": "27px",
+      "fontWeight": 600
+     },
+     {
+      "name": "body",
+      "fontSize": "17px",
+      "lineHeight": "28px",
+      "fontWeight": 400
+     },
+     {
+      "name": "body-strong",
+      "fontSize": "17px",
+      "lineHeight": "28px",
+      "fontWeight": 600
+     },
+     {
+      "name": "callout",
+      "fontSize": "16px",
+      "lineHeight": "26px",
+      "fontWeight": 400
+     },
+     {
+      "name": "subhead",
+      "fontSize": "15px",
+      "lineHeight": "24px",
+      "fontWeight": 400
+     },
+     {
+      "name": "footnote",
+      "fontSize": "14px",
+      "lineHeight": "22px",
+      "fontWeight": 400
+     }
+    ]
+   },
+   {
+    "name": "label",
+    "family": "sans",
+    "styles": [
+     {
+      "name": "label-large",
+      "fontSize": "17px",
+      "lineHeight": "26px",
+      "fontWeight": 600
+     },
+     {
+      "name": "label",
+      "fontSize": "15px",
+      "lineHeight": "24px",
+      "fontWeight": 600
+     },
+     {
+      "name": "label-small",
+      "fontSize": "14px",
+      "lineHeight": "22px",
+      "fontWeight": 600
+     },
+     {
+      "name": "caption-latin",
+      "fontSize": "13px",
+      "lineHeight": "18px",
+      "fontWeight": 500
+     }
+    ]
+   },
+   {
+    "name": "numeric",
+    "family": "numeric",
+    "styles": [
+     {
+      "name": "value-large",
+      "fontSize": "28px",
+      "lineHeight": "34px",
+      "fontWeight": 700
+     },
+     {
+      "name": "value",
+      "fontSize": "20px",
+      "lineHeight": "26px",
+      "fontWeight": 700
+     },
+     {
+      "name": "unit",
+      "fontSize": "14px",
+      "lineHeight": "20px",
+      "fontWeight": 500
+     },
+     {
+      "name": "range",
+      "fontSize": "14px",
+      "lineHeight": "20px",
+      "fontWeight": 400
+     }
+    ]
+   }
+  ]
+ },
+ "spacing": {
+  "tokens": [
+   {
+    "name": "sp-0",
+    "value": "2px",
+    "usage": "Hairline nudges, chip icon gap. New."
+   },
+   {
+    "name": "sp-1",
+    "value": "4px",
+    "usage": "Icon-to-label inside chips. Kept."
+   },
+   {
+    "name": "sp-2",
+    "value": "8px",
+    "usage": "Minimum gap between adjacent touch targets (Android guidance 8dp). Kept."
+   },
+   {
+    "name": "sp-3",
+    "value": "12px",
+    "usage": "Padding around bezeled controls (HIG ~12pt); bubble gap. Kept."
+   },
+   {
+    "name": "sp-4",
+    "value": "16px",
+    "usage": "Page side gutter, card padding. Kept."
+   },
+   {
+    "name": "sp-5",
+    "value": "24px",
+    "usage": "Padding around unbezeled controls (HIG ~24pt); section gap inside a screen. Kept."
+   },
+   {
+    "name": "sp-6",
+    "value": "32px",
+    "usage": "Between screen sections. Kept."
+   },
+   {
+    "name": "sp-7",
+    "value": "48px",
+    "usage": "Minimum touch target edge (Material 48dp); footer top margin. Kept."
+   },
+   {
+    "name": "sp-8",
+    "value": "72px",
+    "usage": "Landing section rhythm. Kept."
+   },
+   {
+    "name": "target-min",
+    "value": "48px",
+    "usage": "Minimum height/width of every tappable control (satisfies HIG 44pt and Material 48dp). New."
+   },
+   {
+    "name": "tabbar-h",
+    "value": "64px",
+    "usage": "Bottom tab bar height, plus env(safe-area-inset-bottom). New."
+   },
+   {
+    "name": "composer-h",
+    "value": "56px",
+    "usage": "Chat composer minimum height, grows to 5 lines. New."
+   },
+   {
+    "name": "w-app",
+    "value": "560px",
+    "usage": "App column max width. Kept."
+   },
+   {
+    "name": "w-page",
+    "value": "920px",
+    "usage": "Marketing/landing max width. Kept."
+   },
+   {
+    "name": "chip-pad-y",
+    "value": "6px",
+    "usage": "Minimum vertical padding of single-line chips (allows 1.4 line-height for Bangla)."
+   },
+   {
+    "name": "now-strip-h",
+    "value": "48px",
+    "usage": "Collapsed NOW strip once the chat thread scrolls; still undismissable, still red, still names the patient."
+   }
+  ]
+ },
+ "radius": {
+  "tokens": [
+   {
+    "name": "r-xs",
+    "value": "6px",
+    "usage": "Value crops, small thumbnails, range bar ends. New (Material extra-small ~4dp)."
+   },
+   {
+    "name": "r-s",
+    "value": "10px",
+    "usage": "Inputs' inner elements, document thumbnails, focus ring. Kept."
+   },
+   {
+    "name": "r-m",
+    "value": "16px",
+    "usage": "Cards, banners, chat bubbles. Kept (Material large 16dp)."
+   },
+   {
+    "name": "r-l",
+    "value": "24px",
+    "usage": "Large cards, empty-state panels. Kept."
+   },
+   {
+    "name": "r-xl",
+    "value": "28px",
+    "usage": "Bottom sheet top corners, dialogs (Material extra-large 28dp). New."
+   },
+   {
+    "name": "r-tail",
+    "value": "4px",
+    "usage": "The tail corner of a chat bubble. New (was a literal 4px in baymax.css)."
+   },
+   {
+    "name": "r-pill",
+    "value": "999px",
+    "usage": "Buttons, chips, tab indicator, language toggle. Kept."
+   }
+  ]
+ },
+ "shadow": {
+  "tokens": [
+   {
+    "name": "shadow-0",
+    "value": {
+     "light": "none",
+     "dark": "none"
+    },
+    "usage": "Flat content on bg."
+   },
+   {
+    "name": "shadow-1",
+    "value": {
+     "light": "0 1px 2px #2b25230a, 0 6px 20px #2b25230f",
+     "dark": "0 0 0 1px #2b3b46"
+    },
+    "usage": "Cards, bot bubbles. Light = today's --shadow; dark = tonal surface + hairline (HIG base vs elevated), shadows are invisible on dark."
+   },
+   {
+    "name": "shadow-2",
+    "value": {
+     "light": "0 -1px 0 #e9e4da, 0 -4px 16px #2b252314",
+     "dark": "0 -1px 0 #2b3b46"
+    },
+    "usage": "Sticky composer and bottom tab bar (shadow points up)."
+   },
+   {
+    "name": "shadow-3",
+    "value": {
+     "light": "0 12px 40px #0a2e4d29",
+     "dark": "0 0 0 1px #2b3b46, 0 12px 40px #00000080"
+    },
+    "usage": "Bottom sheets, dialogs (on surface / surface-3 in dark)."
+   },
+   {
+    "name": "shadow-toast",
+    "value": {
+     "light": "0 8px 24px #0a2e4d33",
+     "dark": "0 8px 24px #00000099"
+    },
+    "usage": "Toasts and snackbars."
+   }
+  ]
+ }
+}

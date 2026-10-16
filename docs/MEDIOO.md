@@ -10,6 +10,14 @@
 Read this and [DECISIONS.md](DECISIONS.md) before any Baymax work. Product decisions come from the Baymax PO
 project via BMX tickets; do not change scope, safety rules or pricing on your own — propose in the build report.
 
+> **Experience design (PO-approved 2026-10-17).** The companion experience — one brain behind web and WhatsApp, every
+> message answered, code in charge of numbers, urgency, medicines and refusals — is specified in
+> [superpowers/specs/2026-10-17-medioo-companion-experience-design.md](superpowers/specs/2026-10-17-medioo-companion-experience-design.md),
+> drawn in the **Medioo Experience** canvas (https://claude.ai/artifact/X9xDXZEL2FgU5hv5bRQT2i) and the **Medioo Design
+> System** (https://claude.ai/artifact/F7Kj5uHkfv4nmPWVrDhimZ; tokens v3 also in the repo beside the spec). Build order:
+> [superpowers/plans/2026-10-17-medioo-roadmap.md](superpowers/plans/2026-10-17-medioo-roadmap.md). Where this brief and
+> the spec disagree on UX, the spec is newer; hard constraints below still win unless the spec names the amendment.
+
 ## What this is
 MedScribe is becoming Medioo (codename Baymax): a WhatsApp-first health-memory assistant for Bangladeshi families. A family owner (one WhatsApp number) sends photos of reports/prescriptions for one or more patient profiles (parents). The system extracts, explains in Bangla (text + voice), assigns urgency, files to a per-patient timeline, and proactively nudges the family. Full product doc: [PRODUCT.md](PRODUCT.md).
 

@@ -175,8 +175,9 @@ Key files when changing behaviour:
   entry in the price table records its source and the date fetched.
 - Never point a destructive command (`mv`, `rm`, a redirect that overwrites) at a glob that could match
   production credentials. Copy, with an exact filename.
-- Branching (since 2026-09-12): `main` is protected; the "Build and test" check must pass and direct pushes are
-  rejected, admins included. Work on a branch (`feat/...`, `fix/...`), open a PR with
+- Branching (since 2026-09-12): `main` takes changes only through PRs whose "Build and test" check is green. GitHub
+  does **not** enforce this on this private repo (DR-38: the protection API answers 403), so it is process: never push
+  to `main`, and merge only when the PR is rebased, `mergeStateStatus` is `CLEAN` and checks are green. Work on a branch (`feat/...`, `fix/...`), open a PR with
   `env -u GITHUB_TOKEN gh pr create`, merge when green. Every merge to `main` deploys to production.
 
 ## Environment facts (2026-09)
