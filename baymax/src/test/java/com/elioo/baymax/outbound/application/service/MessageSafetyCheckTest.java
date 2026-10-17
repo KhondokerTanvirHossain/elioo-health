@@ -55,4 +55,19 @@ class MessageSafetyCheckTest {
         assertThat(f.numbers()).doesNotContain("42").doesNotContain("7777");
         assertThat(check.violations("HbA1c 9.8 আর 42 দিন। ডাক্তার", f, Urgency.THIS_WEEK)).contains("number_not_in_extraction:42");
     }
+
+    /**
+     * What the log may carry of a violation list. An allow-list: only details known to be a size or configured copy
+     * survive; every other detail (a stored medicine, a value, a name, a number the model wrote) is cut to its code,
+     * so a code added later with patient text after the colon is safe by default.
+     */
+    @Test
+    void theLoggableFormKeepsCodesAndOnlyTheDetailsThatAreNotPatientText() {
+        List<String> violations = List.of("verbatim_missing:Tab. Napa Extend 665 mg", "number_not_in_extraction:42",
+                "too_long:640", "forbidden_phrase:ওষুধ খান", "doctor_first_missing", "empty_body", "some_future_code:রহিমা");
+
+        assertThat(MessageSafetyCheck.forLog(violations)).containsExactly("verbatim_missing", "number_not_in_extraction",
+                "too_long:640", "forbidden_phrase:ওষুধ খান", "doctor_first_missing", "empty_body", "some_future_code");
+        assertThat(MessageSafetyCheck.forLog(List.of())).isEmpty();
+    }
 }

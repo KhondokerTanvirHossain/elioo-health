@@ -125,13 +125,17 @@ public class ExplanationService implements ExplainDocumentUseCase {
                     if (violations.isEmpty()) {
                         return Mono.just(first);
                     }
-                    log.info("[baymax] explanation rejected once documentId={} violations={}", facts.document().id(), violations);
+                    log.info("[baymax] explanation rejected once documentId={} violations={}", facts.document().id(),
+                            MessageSafetyCheck.forLog(violations));
+                    log.debug("[baymax] explanation rejected once detail documentId={} violations={}", facts.document().id(), violations);
                     return generate(facts, assessed, skeleton, violations).flatMap(second -> {
                         List<String> again = safety.violations(second, facts, assessed.level());
                         if (again.isEmpty()) {
                             return Mono.just(second);
                         }
-                        log.warn("[baymax] explanation failed closed documentId={} violations={}", facts.document().id(), again);
+                        log.warn("[baymax] explanation failed closed documentId={} violations={}", facts.document().id(),
+                                MessageSafetyCheck.forLog(again));
+                        log.debug("[baymax] explanation failed closed detail documentId={} violations={}", facts.document().id(), again);
                         return Mono.empty();
                     });
                 });
