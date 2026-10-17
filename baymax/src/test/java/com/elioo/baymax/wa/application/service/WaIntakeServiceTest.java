@@ -231,4 +231,24 @@ class WaIntakeServiceTest {
         assertThat(WaIntakeService.e164("")).isEmpty();
         assertThat(WaIntakeService.e164(null)).isEmpty();
     }
+
+    /** onImage logged e.toString(), which for a WebClientResponseException is "404 … from GET <signed URL>". */
+    @Test
+    void theIntakeErrorLogCarriesNoExceptionText() {
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(WaIntakeService.class);
+        var logged = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        logged.start();
+        logger.addAppender(logged);
+        try {
+            familyWith(patient("মা"));
+            when(graph.downloadMedia("MEDIA-13")).thenReturn(Mono.error(new RuntimeException(
+                    "404 Not Found from GET https://lookaside.fbsbx.com/whatsapp_business/attachments/?mid=1&hash=SECRET")));
+            service.onImage(FROM, "MEDIA-13").block();
+            String all = String.join("\n", logged.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage).toList());
+            assertThat(all).as("the line exists").contains("wa intake failed");
+            assertThat(all).as("the media URL and its token must never reach the log").doesNotContain("SECRET").doesNotContain("lookaside");
+        } finally {
+            logger.detachAppender(logged);
+        }
+    }
 }

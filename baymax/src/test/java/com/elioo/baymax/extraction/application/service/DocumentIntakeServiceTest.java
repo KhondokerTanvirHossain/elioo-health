@@ -231,4 +231,29 @@ class DocumentIntakeServiceTest {
                         && b.reason().equals("document_not_found"))
                 .verify();
     }
+
+    /** Finding 2: the explanation error's message carries medicine text (MedicineTranscription.elided), logged at ERROR. */
+    @Test
+    void anExplanationErrorIsLoggedWithoutThePatientTextItCarries() throws Exception {
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(DocumentIntakeService.class);
+        var logged = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        logged.start();
+        logger.addAppender(logged);
+        try {
+            Document done = new Document(UUID.randomUUID(), PATIENT, FAMILY, "prescription", null, null, "{}", 0.9,
+                    Document.Status.DONE, null, "m", null, 1, NOW, NOW);
+            when(extraction.process(any(), any())).thenReturn(Mono.just(done));
+            when(explainer.explain(done.id())).thenReturn(Mono.error(new IllegalStateException(
+                    "medicine instruction is abbreviated, not transcribed: [frequency_text:Cap. DDR ১+০+০ ... ১+০+১]")));
+
+            service.accept(PATIENT, List.of(jpeg("a.jpg"))).block();
+            verify(nudges, org.mockito.Mockito.timeout(2000)).onDocumentDone(done.id());
+
+            String all = String.join("\n", logged.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage).toList());
+            assertThat(all).contains("explanation failed")
+                    .as("patient medicine text must not reach the log").doesNotContain("Cap. DDR").doesNotContain("১+০+০");
+        } finally {
+            logger.detachAppender(logged);
+        }
+    }
 }
