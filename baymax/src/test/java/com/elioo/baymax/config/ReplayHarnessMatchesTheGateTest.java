@@ -27,6 +27,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  * actually iterates for its emptiness check, and the table its confidence check actually reads, because a harness
  * that defines the right dict and never uses it would pass a name check (CLAUDE.md: a check that cannot fail for the
  * reason it exists). Every extraction is asserted non-empty first, so a renamed variable cannot pass vacuously.</p>
+ *
+ * <p>This reads the source, so it cannot say what the harness's functions DO with the tables: a {@code lowest_gated}
+ * that ignored its table kept every check here green. What the harness decides is compared with what the gate
+ * decides, case by case, in {@code DocumentExtractionServiceTest.theReplayHarnessDecidesEveryCaseAsTheGateDoes}.</p>
+ *
+ * <p>Limit: "deployed" here means the {@code new BaymaxProperties()} defaults, not the bound production config. It is
+ * honest only while no {@code BAYMAX_EXTRACT_GATING_SECTIONS*} / {@code BAYMAX_EXTRACT_EXPECTED_SECTIONS*} (or
+ * {@code baymax.extract.*-sections}) override exists anywhere — none does in the repo; the server env is checked by
+ * hand before a gate change merges.</p>
  */
 class ReplayHarnessMatchesTheGateTest {
 
