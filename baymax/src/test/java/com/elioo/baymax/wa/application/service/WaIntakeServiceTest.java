@@ -241,12 +241,41 @@ class WaIntakeServiceTest {
         logger.addAppender(logged);
         try {
             familyWith(patient("মা"));
-            when(graph.downloadMedia("MEDIA-13")).thenReturn(Mono.error(new RuntimeException(
-                    "404 Not Found from GET https://lookaside.fbsbx.com/whatsapp_business/attachments/?mid=1&hash=SECRET")));
+            // what WaGraphClient.download actually throws: its message is "404 Not Found from GET <signed URL>"
+            when(graph.downloadMedia("MEDIA-13")).thenReturn(Mono.error(
+                    org.springframework.web.reactive.function.client.WebClientResponseException.create(404, "Not Found",
+                            org.springframework.http.HttpHeaders.EMPTY, new byte[0], java.nio.charset.StandardCharsets.UTF_8,
+                            new org.springframework.mock.http.client.MockClientHttpRequest(org.springframework.http.HttpMethod.GET,
+                                    java.net.URI.create("https://lookaside.fbsbx.com/whatsapp_business/attachments/?mid=1&hash=SECRET")))));
             service.onImage(FROM, "MEDIA-13").block();
             String all = String.join("\n", logged.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage).toList());
             assertThat(all).as("the line exists").contains("wa intake failed");
             assertThat(all).as("the media URL and its token must never reach the log").doesNotContain("SECRET").doesNotContain("lookaside");
+        } finally {
+            logger.detachAppender(logged);
+        }
+    }
+
+    /** The reply-failed line printed e.toString(); a provider error can name the recipient. Class name only. */
+    @Test
+    void aFailedReplyIsLoggedWithoutTheExceptionText() {
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(WaIntakeService.class);
+        var logged = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        logged.start();
+        logger.addAppender(logged);
+        try {
+            PatientProfile ma = patient("মা");
+            familyWith(ma);
+            when(graph.sendText(anyString(), anyString())).thenReturn(Mono.error(new RuntimeException(
+                    "(#131026) Message undeliverable to " + E164)));
+            when(intake.accept(eq(ma.id()), any())).thenReturn(Mono.just(mock(Document.class)));
+
+            service.onImage(FROM, "MEDIA-7").block();
+
+            String all = String.join("\n", logged.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage).toList());
+            assertThat(all).as("the line exists").contains("wa outbound failed");
+            assertThat(all).as("provider prose and the number never reach the log").doesNotContain("undeliverable")
+                    .doesNotContain(FROM);
         } finally {
             logger.detachAppender(logged);
         }

@@ -232,13 +232,33 @@ class DocumentIntakeServiceTest {
                 .verify();
     }
 
-    /** Finding 2: the explanation error's message carries medicine text (MedicineTranscription.elided), logged at ERROR. */
-    @Test
-    void anExplanationErrorIsLoggedWithoutThePatientTextItCarries() throws Exception {
+    private static ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> captureAtDebug() {
         ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(DocumentIntakeService.class);
         var logged = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
         logged.start();
         logger.addAppender(logged);
+        // DEBUG on, so the test sees the detail line exists and still asserts nothing above DEBUG carries it;
+        // at INFO the detail line would simply not be emitted and the check would pass for the wrong reason
+        logger.setLevel(ch.qos.logback.classic.Level.DEBUG);
+        return logged;
+    }
+
+    private static void release(ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> logged) {
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(DocumentIntakeService.class);
+        logger.detachAppender(logged);
+        logger.setLevel(null);
+    }
+
+    private static String at(ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> logged,
+                             java.util.function.Predicate<ch.qos.logback.classic.Level> level) {
+        return String.join("\n", logged.list.stream().filter(e -> level.test(e.getLevel()))
+                .map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage).toList());
+    }
+
+    /** Finding 2: the explanation error's message carries medicine text (MedicineTranscription.elided), logged at ERROR. */
+    @Test
+    void anExplanationErrorIsLoggedWithoutThePatientTextItCarries() throws Exception {
+        var logged = captureAtDebug();
         try {
             Document done = new Document(UUID.randomUUID(), PATIENT, FAMILY, "prescription", null, null, "{}", 0.9,
                     Document.Status.DONE, null, "m", null, 1, NOW, NOW);
@@ -249,11 +269,37 @@ class DocumentIntakeServiceTest {
             service.accept(PATIENT, List.of(jpeg("a.jpg"))).block();
             verify(nudges, org.mockito.Mockito.timeout(2000)).onDocumentDone(done.id());
 
-            String all = String.join("\n", logged.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage).toList());
-            assertThat(all).contains("explanation failed")
+            String aboveDebug = at(logged, l -> l.isGreaterOrEqual(ch.qos.logback.classic.Level.INFO));
+            assertThat(aboveDebug).contains("explanation failed")
                     .as("patient medicine text must not reach the log").doesNotContain("Cap. DDR").doesNotContain("১+০+০");
+            assertThat(at(logged, l -> l == ch.qos.logback.classic.Level.DEBUG))
+                    .as("the detail is kept, at DEBUG only").contains("explanation failure detail").contains("Cap. DDR");
         } finally {
-            logger.detachAppender(logged);
+            release(logged);
+        }
+    }
+
+    /** The nudge-check line printed e.getMessage(); a nudge failure can carry the same stored strings. */
+    @Test
+    void aNudgeCheckErrorIsLoggedWithoutItsText() throws Exception {
+        var logged = captureAtDebug();
+        try {
+            Document done = new Document(UUID.randomUUID(), PATIENT, FAMILY, "prescription", null, null, "{}", 0.9,
+                    Document.Status.DONE, null, "m", null, 1, NOW, NOW);
+            when(extraction.process(any(), any())).thenReturn(Mono.just(done));
+            when(nudges.onDocumentDone(done.id())).thenReturn(Mono.error(new IllegalStateException(
+                    "nudge body over the cap: Tab. Napa Extend 665 mg ১+০+১")));
+
+            service.accept(PATIENT, List.of(jpeg("a.jpg"))).block();
+            verify(nudges, org.mockito.Mockito.timeout(2000)).onDocumentDone(done.id());
+            org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(2))
+                    .until(() -> at(logged, l -> true).contains("document finished"));
+
+            String aboveDebug = at(logged, l -> l.isGreaterOrEqual(ch.qos.logback.classic.Level.INFO));
+            assertThat(aboveDebug).as("the line exists").contains("nudge check failed");
+            assertThat(aboveDebug).as("exception text is never logged above DEBUG").doesNotContain("Napa");
+        } finally {
+            release(logged);
         }
     }
 }

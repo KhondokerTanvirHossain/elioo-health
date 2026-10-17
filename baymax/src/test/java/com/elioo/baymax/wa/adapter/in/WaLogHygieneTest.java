@@ -122,4 +122,56 @@ class WaLogHygieneTest {
         assertNoWamidAndNoNumber(log);
         assertThat(log).contains("wa delivered id=" + row.id()).contains("ref=" + Redact.id(OUT));
     }
+
+    private WebTestClient webhook(WaIntakeService intake) {
+        BaymaxProperties props = new BaymaxProperties();
+        props.getWa().setEnabled(true);
+        props.getWa().setVerifyToken("v");
+        props.getWa().setAppSecret(APP_SECRET);
+        return WebTestClient.bindToRouterFunction(new WaWebhookRouter()
+                .baymaxWaRoutes(new WaWebhookHandler(props, new ObjectMapper(), intake), new ErrorResponseFilter())).build();
+    }
+
+    /**
+     * A validly signed body that is not JSON. The parse-error line printed e.toString(), and Jackson's message
+     * quotes the token it choked on: whatever the family wrote, in the log at ERROR.
+     */
+    @Test
+    void aSignedCallbackThatIsNotJsonIsLoggedWithoutItsText() throws Exception {
+        byte[] body = ("{\"entry\":[{\"changes\":[{\"value\":{\"messages\":[{\"from\":\"" + FROM
+                + "\",\"text\":{\"body\": NapaExtend665mg}}]}}]}]}").getBytes(StandardCharsets.UTF_8);
+
+        webhook(mock(WaIntakeService.class)).post().uri(WaWebhookRouter.WEBHOOK_PATH)
+                .header("X-Hub-Signature-256", WaSignature.sign(body, APP_SECRET))
+                .contentType(MediaType.APPLICATION_JSON).bodyValue(body).exchange();
+
+        String log = everything();
+        assertThat(log).as("the line exists").contains("did not parse as JSON");
+        assertThat(log).as("the body is the family's text: never in the log").doesNotContain("NapaExtend665mg");
+        assertNoWamidAndNoNumber(log);
+    }
+
+    /** The delivery-failed line printed e.toString(); a provider error can name the recipient. Class name only. */
+    @Test
+    void aFailedDeliveryIsLoggedByCodeAndClassOnly() {
+        WaMessagingPort graph = mock(WaMessagingPort.class);
+        when(graph.sendText(anyString(), anyString())).thenReturn(Mono.error(new IllegalStateException(
+                "(#131026) Message undeliverable to " + E164 + " for " + IN)));
+        HealthRecordPort records = mock(HealthRecordPort.class);
+        UUID family = UUID.randomUUID();
+        when(records.findFamily(any())).thenReturn(Mono.just(
+                new FamilyAccount(family, E164, "Rahim", FamilyAccount.Plan.FREE, Instant.EPOCH, Instant.EPOCH)));
+        BaymaxProperties props = new BaymaxProperties();
+        props.getWa().setAllowlist(List.of(E164));
+        OutboundMessage row = new OutboundMessage(UUID.randomUUID(), family, null, UUID.randomUUID(),
+                OutboundMessage.Kind.EXPLANATION, Urgency.ROUTINE, List.of(), "লেখা", OutboundMessage.GateStatus.RELEASED,
+                null, null, null, null, Instant.EPOCH);
+
+        new WhatsAppMessageDelivery(graph, records, props).deliver(row).block();
+
+        String log = everything();
+        assertThat(log).as("the line exists").contains("wa delivery failed id=" + row.id());
+        assertThat(log).as("provider prose is never logged").doesNotContain("undeliverable");
+        assertNoWamidAndNoNumber(log);
+    }
 }

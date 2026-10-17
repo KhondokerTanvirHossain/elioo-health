@@ -39,6 +39,7 @@ class WaGraphClientTest {
 
     private ListAppender<ILoggingEvent> logged;
     private Logger clientLogger;
+    private Level levelBefore;
     private final List<String> requestedUris = new ArrayList<>();
 
     @BeforeEach
@@ -47,12 +48,14 @@ class WaGraphClientTest {
         logged = new ListAppender<>();
         logged.start();
         clientLogger.addAppender(logged);
+        levelBefore = clientLogger.getLevel();
         clientLogger.setLevel(Level.TRACE);
     }
 
     @AfterEach
     void releaseLogs() {
         clientLogger.detachAppender(logged);
+        clientLogger.setLevel(levelBefore);
     }
 
     /** Answers each call in turn with the given bodies, recording the URI it was asked for. */
@@ -120,7 +123,7 @@ class WaGraphClientTest {
         assertThat(wamid).isEqualTo(out1);
         String log = everythingLogged();
         // it asserted the wamid WAS logged, holding the leak in place; the digest is what correlates now
-        assertThat(log).contains("ref=" + Redact.id(out1)).doesNotContain(out1);
+        assertThat(log).doesNotContain(out1).contains("ref=" + Redact.id(out1));
         assertThat(log).as("a recipient number is not a log line").doesNotContain("+8801700000000");
         assertThat(log).as("message content never reaches the log").doesNotContain("মায়ের রিপোর্ট দেখে নিলাম");
     }
@@ -134,7 +137,10 @@ class WaGraphClientTest {
         assertThat(client.sendText("+8801700000000", "ok").block()).isEqualTo(wamid);
 
         String log = everythingLogged();
+        // the base64 body too: a line that dropped the "wamid." prefix still prints the number, and plain digits
+        // never appear inside base64, so the digit check alone could not see it
         assertThat(log).as("a wamid in the log is the phone number in the log").doesNotContain(wamid)
+                .doesNotContain(wamid.substring("wamid.".length(), "wamid.".length() + 16))
                 .doesNotContain("8801700000000");
         assertThat(log).as("the line exists, carrying the digest").contains("ref=" + Redact.id(wamid));
     }
