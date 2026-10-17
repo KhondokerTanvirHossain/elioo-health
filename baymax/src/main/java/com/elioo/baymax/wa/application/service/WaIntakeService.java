@@ -12,6 +12,7 @@ import com.elioo.baymax.outbound.application.service.Copy;
 import com.elioo.baymax.outbound.application.service.UrgencyLines;
 import com.elioo.baymax.outbound.domain.OutboundMessage;
 import com.elioo.baymax.wa.application.port.out.WaMessagingPort;
+import com.elioo.baymax.wa.domain.WaInbound;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -19,7 +20,9 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 
 /**
@@ -60,27 +63,62 @@ public class WaIntakeService {
         IGNORED
     }
 
+    /** What the intake can read: a PDF or a JPEG/PNG photo sent as a file (PageRenderer decides by magic bytes). */
+    private static final Set<String> READABLE_FILES = Set.of("application/pdf", "image/jpeg", "image/png");
+
     /**
-     * The one entry point from the webhook. Interim (plan PR 6 task 6.3): it keeps today's behaviour for text, image and
-     * document, so this commit regresses nothing; task 6.5 answers every other type.
+     * The one entry point from the webhook. Every message a family sends gets exactly one reply (Phase 0); the only
+     * silences are the two events that carry nothing from the family ({@link WaInbound#expectsReply}). The switch is
+     * exhaustive over Type, so a new Type does not compile without a reply.
      */
-    public Mono<Outcome> onInbound(com.elioo.baymax.wa.domain.WaInbound in) {
+    public Mono<Outcome> onInbound(WaInbound in) {
+        if (!in.expectsReply()) {
+            log.info("[baymax] wa inbound needs no reply type={}", in.type());
+            return Mono.just(Outcome.IGNORED);
+        }
+        String number = e164(in.from());
         return switch (in.type()) {
-            case TEXT -> onText(in.from(), in.text());
-            case IMAGE, DOCUMENT -> onImage(in.from(), in.mediaId());
-            default -> Mono.just(Outcome.ACCEPTED);
+            case IMAGE -> onImage(in.from(), in.mediaId(), "wa.received");
+            case DOCUMENT -> readable(in.mimeType())
+                    ? onImage(in.from(), in.mediaId(), "wa.received.file")
+                    // refused before any download or ack: a DOCX acknowledged and then dropped was silence by another name
+                    : withFamily(number, f -> reply(number, "wa.unsupported_file", Outcome.REPLIED,
+                            "document type not readable"), "document");
+            // a reaction's emoji goes through the router: 👍 is a thanks, 😢 is not and gets the fallback
+            case TEXT, INTERACTIVE, BUTTON, REACTION -> onText(in.from(), in.text());
+            case STICKER -> withFamily(number, f -> thanks(number, f), "sticker");
+            // D13: a fixed reply plus the red-flag line; nothing can listen yet, so nothing is downloaded
+            case AUDIO -> withFamily(number, f -> replyWithRedFlag(number, "wa.voice", "voice note"), "voice note");
+            case VIDEO -> withFamily(number, f -> replyWithRedFlag(number, "wa.video", "video"), "video");
+            case LOCATION, CONTACTS, OTHER -> withFamily(number, f -> replyWithRedFlag(number, "wa.fallback",
+                    "type " + in.type()), "message");
+            case SYSTEM -> Mono.just(Outcome.IGNORED);   // unreachable: expectsReply() is false for SYSTEM
         };
+    }
+
+    /** Blank or missing mime: let PageRenderer's magic bytes decide (a failure there still replies, plan PR 7). */
+    static boolean readable(String mimeType) {
+        if (mimeType == null || mimeType.isBlank()) {
+            return true;
+        }
+        return READABLE_FILES.contains(mimeType.split(";")[0].trim().toLowerCase(Locale.ROOT));
+    }
+
+    /** A photo, acknowledged with "ছবিটা পেয়েছি". */
+    public Mono<Outcome> onImage(String from, String mediaId) {
+        return onImage(from, mediaId, "wa.received");
     }
 
     /**
      * @param from   the sender's WhatsApp number as Meta reports it, digits only and no plus
-     * @param mediaId the image to fetch
+     * @param mediaId the image or file to fetch
+     * @param ackKey  the acknowledgement: wa.received for a photo, wa.received.file for a PDF
      */
-    public Mono<Outcome> onImage(String from, String mediaId) {
+    Mono<Outcome> onImage(String from, String mediaId, String ackKey) {
         String number = e164(from);
         return records.findFamilyByWhatsapp(number)
                 .flatMap(family -> records.patientsOf(family.id()).collectList()
-                        .flatMap(patients -> withPatients(number, mediaId, patients)))
+                        .flatMap(patients -> withPatients(number, mediaId, patients, ackKey)))
                 // defer: switchIfEmpty evaluates its argument at assembly time, so an eager reply(...) here
                 // sent the unknown-sender message on EVERY inbound image, known families included
                 .switchIfEmpty(Mono.defer(() -> reply(number, "wa.unknown", Outcome.UNKNOWN_SENDER,
@@ -95,7 +133,7 @@ public class WaIntakeService {
                 });
     }
 
-    private Mono<Outcome> withPatients(String number, String mediaId, List<PatientProfile> patients) {
+    private Mono<Outcome> withPatients(String number, String mediaId, List<PatientProfile> patients, String ackKey) {
         if (patients.isEmpty()) {
             return reply(number, "wa.unknown", Outcome.UNKNOWN_SENDER, "family has no patient yet");
         }
@@ -106,8 +144,8 @@ public class WaIntakeService {
                     Map.of("link", properties.getOutbound().getPublicBaseUrl() + "/app"));
         }
         PatientProfile patient = patients.get(0);
-        return send(number, copy.bn("wa.received", Map.of()))
-                .then(graph.downloadMedia(mediaId))
+        return send(number, copy.bn(ackKey, Map.of()))
+                .then(Mono.defer(() -> graph.downloadMedia(mediaId)))
                 .flatMap(bytes -> intake.accept(patient.id(), List.of(new Upload(mediaId + ".jpg", bytes))))
                 .doOnNext(document -> log.info("[baymax] wa intake accepted documentId={} patientId={} bytes>0",
                         document.id(), patient.id()))

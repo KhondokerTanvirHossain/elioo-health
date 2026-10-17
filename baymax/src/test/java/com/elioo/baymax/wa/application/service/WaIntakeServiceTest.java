@@ -12,6 +12,7 @@ import com.elioo.baymax.outbound.application.service.Copy;
 import com.elioo.baymax.outbound.domain.OutboundMessage;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.wa.application.port.out.WaMessagingPort;
+import com.elioo.baymax.wa.domain.WaInbound;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -411,6 +412,157 @@ class WaIntakeServiceTest {
         }
         assertThat(sentBodies()).as("synonyms got silence — the defect").hasSize(4)
                 .allMatch(b -> b.equals(bn("wa.no_document")));
+    }
+
+    private static WaInbound docx() {
+        return new WaInbound("w", FROM, WaInbound.Type.DOCUMENT, "", "MEDIA-D",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    }
+
+    @Test
+    void anUnReactionIsTheOnlyReactionNotAnswered() {
+        familyWith(patient("মা"));
+        service.onInbound(new WaInbound("w0", FROM, WaInbound.Type.REACTION, "", "", "")).block();
+        verify(graph, never()).sendText(anyString(), anyString());
+        service.onInbound(new WaInbound("w1", FROM, WaInbound.Type.REACTION, "👍", "", "")).block();
+        assertThat(sentBodies()).as("a 👍 on a Medioo message got silence — the defect")
+                .containsExactly(bn("wa.thanks") + "\n" + bn("safety.red_flag_line"));
+    }
+
+    /** Two directions: 👍 is thanks, 😢 is not, and must not be answered "ঠিক আছে" — it gets the fallback. */
+    @Test
+    void anUnhappyReactionGetsTheFallbackNotTheThanks() {
+        familyWith(patient("মা"));
+        service.onInbound(new WaInbound("w2", FROM, WaInbound.Type.REACTION, "😢", "", "")).block();
+        assertThat(sentBodies()).as("a 😢 reaction got silence — the defect")
+                .containsExactly(bn("wa.fallback") + "\n" + bn("safety.red_flag_line"));
+    }
+
+    @Test
+    void aStickerIsAnsweredAsAThanks() {
+        familyWith(patient("মা"));
+        service.onInbound(new WaInbound("w", FROM, WaInbound.Type.STICKER, "", "MEDIA-S", "image/webp")).block();
+        assertThat(sentBodies()).as("a sticker got silence — the defect")
+                .containsExactly(bn("wa.thanks") + "\n" + bn("safety.red_flag_line"));
+        verify(graph, never()).downloadMedia(anyString());
+    }
+
+    /** D13: fixed reply plus the red-flag line; nothing here can listen, so nothing is downloaded. */
+    @Test
+    void aVoiceNoteGetsTheFixedReplyAndTheRedFlagLine() {
+        familyWith(patient("মা"));
+        service.onInbound(new WaInbound("w", FROM, WaInbound.Type.AUDIO, "", "MEDIA-V", "audio/ogg; codecs=opus")).block();
+        assertThat(sentBodies()).containsExactly(bn("wa.voice") + "\n" + bn("safety.red_flag_line"));
+        verify(graph, never()).downloadMedia(anyString());
+    }
+
+    @Test
+    void aVideoGetsTheFixedReplyAndTheRedFlagLine() {
+        familyWith(patient("মা"));
+        service.onInbound(new WaInbound("w", FROM, WaInbound.Type.VIDEO, "", "MEDIA-X", "video/mp4")).block();
+        assertThat(sentBodies()).containsExactly(bn("wa.video") + "\n" + bn("safety.red_flag_line"));
+        verify(graph, never()).downloadMedia(anyString());
+    }
+
+    @Test
+    void aLocationGetsTheFallbackWithTheRedFlagLine() {
+        familyWith(patient("মা"));
+        service.onInbound(new WaInbound("w", FROM, WaInbound.Type.LOCATION, "", "", "")).block();
+        assertThat(sentBodies()).containsExactly(bn("wa.fallback") + "\n" + bn("safety.red_flag_line"));
+    }
+
+    /** A button tap carries its title as words; "বিস্তারিত" reaches the detail path like the typed word. */
+    @Test
+    void aButtonTapIsAnsweredLikeTheWordsOnIt() {
+        familyWith(patient("মা"));
+        when(documents.latestDoneDocument(FAMILY)).thenReturn(Mono.empty());
+        service.onInbound(new WaInbound("w", FROM, WaInbound.Type.INTERACTIVE, "বিস্তারিত", "", "")).block();
+        assertThat(sentBodies()).containsExactly(bn("wa.no_document"));
+    }
+
+    /** Meta's own notice (a changed number) carries nothing the family sent: no reply, and nothing is read. */
+    @Test
+    void aSystemNoticeIsNotAnswered() {
+        assertThat(service.onInbound(new WaInbound("w", FROM, WaInbound.Type.SYSTEM, "", "", "")).block())
+                .isEqualTo(WaIntakeService.Outcome.IGNORED);
+        verify(graph, never()).sendText(anyString(), anyString());
+        verify(records, never()).findFamilyByWhatsapp(anyString());
+    }
+
+    @Test
+    void aWordFileIsRefusedWithAReasonBeforeAnythingIsDownloadedOrAcknowledged() {
+        familyWith(patient("মা"));
+        service.onInbound(docx()).block();
+        assertThat(sentBodies()).containsExactly(bn("wa.unsupported_file"));
+        verify(graph, never()).downloadMedia(anyString());
+        verify(intake, never()).accept(any(), any());
+    }
+
+    @Test
+    void aPdfIsAcknowledgedAsAFileAndFiled() {
+        PatientProfile ma = patient("মা");
+        familyWith(ma);
+        when(intake.accept(eq(ma.id()), any())).thenReturn(Mono.just(mock(Document.class)));
+        service.onInbound(new WaInbound("w", FROM, WaInbound.Type.DOCUMENT, "", "MEDIA-P", "application/pdf")).block();
+        assertThat(sentBodies()).containsExactly(bn("wa.received.file"));
+        verify(intake).accept(eq(ma.id()), any());
+    }
+
+    /** The photo path is unchanged: "ছবিটা পেয়েছি", then the document is filed. */
+    @Test
+    void aPhotoThroughTheEntryPointIsAcknowledgedAsAPhotoAndFiled() {
+        PatientProfile ma = patient("মা");
+        familyWith(ma);
+        when(intake.accept(eq(ma.id()), any())).thenReturn(Mono.just(mock(Document.class)));
+        service.onInbound(new WaInbound("w", FROM, WaInbound.Type.IMAGE, "", "MEDIA-I", "image/jpeg")).block();
+        assertThat(sentBodies()).containsExactly(bn("wa.received"));
+        verify(intake).accept(eq(ma.id()), any());
+    }
+
+    @Test
+    void aVoiceNoteFromAnUnknownNumberGetsTheUnknownSenderReply() {
+        when(records.findFamilyByWhatsapp(E164)).thenReturn(Mono.empty());
+        service.onInbound(new WaInbound("w", FROM, WaInbound.Type.AUDIO, "", "M", "audio/ogg")).block();
+        assertThat(sentBodies()).containsExactly(bn("wa.unknown"));
+    }
+
+    @Test
+    void aWordFileFromAnUnknownNumberGetsTheUnknownSenderReply() {
+        when(records.findFamilyByWhatsapp(E164)).thenReturn(Mono.empty());
+        service.onInbound(docx()).block();
+        assertThat(sentBodies()).containsExactly(bn("wa.unknown"));
+    }
+
+    /** Blank or missing mime: PageRenderer's magic bytes decide. Parameters after ";" do not defeat the match. */
+    @Test
+    void readableFilesAreJudgedByTheirMimeTypeOnly() {
+        assertThat(WaIntakeService.readable("application/pdf")).isTrue();
+        assertThat(WaIntakeService.readable("Image/JPEG; charset=binary")).isTrue();
+        assertThat(WaIntakeService.readable("")).isTrue();
+        assertThat(WaIntakeService.readable(null)).isTrue();
+        assertThat(WaIntakeService.readable("application/vnd.openxmlformats-officedocument.wordprocessingml.document")).isFalse();
+        assertThat(WaIntakeService.readable("application/msword")).isFalse();
+        assertThat(WaIntakeService.readable("text/plain")).isFalse();
+    }
+
+    /** Logs carry route names and sizes, never the text or the number (CLAUDE.md; WaWebhookHandler.maskedNumber). */
+    @Test
+    void theIntakeLogNeverCarriesWhatTheFamilyWroteOrTheirNumber() {
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(WaIntakeService.class);
+        var logged = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        logged.start();
+        logger.addAppender(logged);
+        try {
+            familyWith(patient("মা"));
+            service.onText(FROM, "আম্মার বুকে ব্যথা").block();
+            service.onInbound(new WaInbound(com.elioo.baymax.wa.WaFixtures.wamid(FROM, 3), FROM, WaInbound.Type.AUDIO,
+                    "", "MEDIA-V", "audio/ogg")).block();
+            String all = String.join("\n", logged.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage).toList());
+            assertThat(all).contains("route=FALLBACK").doesNotContain("বুকে").doesNotContain("1700000000")
+                    .doesNotContain("wamid.");
+        } finally {
+            logger.detachAppender(logged);
+        }
     }
 
     @Test
