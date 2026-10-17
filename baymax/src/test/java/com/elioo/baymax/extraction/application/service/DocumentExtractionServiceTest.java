@@ -496,6 +496,86 @@ class DocumentExtractionServiceTest {
         verify(records, atLeastOnce()).update(any());
     }
 
+    /**
+     * Everything logged at INFO and above, the attached throwable's message included: a stack trace prints the
+     * message as its first line, so passing the exception to an ERROR line logs its text as surely as "{}" does.
+     */
+    private static String atInfoAndAbove(ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> logged) {
+        StringBuilder all = new StringBuilder();
+        for (ch.qos.logback.classic.spi.ILoggingEvent e : logged.list) {
+            if (!e.getLevel().isGreaterOrEqual(ch.qos.logback.classic.Level.INFO)) {
+                continue;
+            }
+            all.append(e.getFormattedMessage()).append('\n');
+            for (ch.qos.logback.classic.spi.IThrowableProxy t = e.getThrowableProxy(); t != null; t = t.getCause()) {
+                all.append(t.getClassName()).append(": ").append(t.getMessage()).append('\n');
+            }
+        }
+        return all.toString();
+    }
+
+    private static ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> captureExtractionLog() {
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(DocumentExtractionService.class);
+        var logged = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        logged.start();
+        logger.addAppender(logged);
+        return logged;
+    }
+
+    private static void release(ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> logged) {
+        ((ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(DocumentExtractionService.class)).detachAppender(logged);
+    }
+
+    /** A reply that is not JSON, with a medicine as the token Jackson chokes on: Jackson quotes it in its message. */
+    private static final String NOT_JSON_WITH_A_MEDICINE = "{\"medicines\": NapaExtend665mg}";
+
+    /**
+     * The repair line logged the reader's message at INFO, and the failure line logged it at ERROR with the
+     * exception attached. That message is "The reply was not valid JSON: " + Jackson's, and Jackson quotes the
+     * token it could not read, which is the model's transcription of the patient's paper.
+     */
+    @Test
+    void aMalformedReplyIsLoggedWithoutTheModelTextItQuotes() throws Exception {
+        var logged = captureExtractionLog();
+        try {
+            replyWith(NOT_JSON_WITH_A_MEDICINE, NOT_JSON_WITH_A_MEDICINE);
+
+            StepVerifier.create(service.process(received(1), List.of(pageJpeg())))
+                    .assertNext(d -> {
+                        assertThat(d.status()).isEqualTo(Document.Status.FAILED);
+                        // V5: status_reason is "developer-facing, no patient text", and it is logged with the status
+                        assertThat(d.statusReason()).isEqualTo("The reply was not valid JSON");
+                    })
+                    .verifyComplete();
+
+            String log = atInfoAndAbove(logged);
+            assertThat(log).as("the lines exist").contains("repairing extraction reply").contains("extraction failed");
+            assertThat(log).as("the model's reply is patient text: never above DEBUG").doesNotContain("NapaExtend665mg");
+        } finally {
+            release(logged);
+        }
+    }
+
+    /** The same text reaches the escalation line when the strong model's reply is the one that does not parse. */
+    @Test
+    void aFailedEscalationIsLoggedWithoutTheModelTextItQuotes() throws Exception {
+        var logged = captureExtractionLog();
+        try {
+            withStrongClient();
+            replyWith(GOOD_REPLY.replace("0.93", "0.81"), NOT_JSON_WITH_A_MEDICINE, NOT_JSON_WITH_A_MEDICINE);
+
+            StepVerifier.create(service.process(received(1), List.of(pageJpeg())))
+                    .assertNext(d -> assertThat(d.confidenceOverall()).isEqualTo(0.81))
+                    .verifyComplete();
+
+            String log = atInfoAndAbove(logged);
+            assertThat(log).as("the line exists").contains("escalation failed");
+            assertThat(log).as("the model's reply is patient text: never above DEBUG").doesNotContain("NapaExtend665mg");
+        } finally {
+            release(logged);
+        }
+    }
+
     @Test
     void aPageWithNoReadableTextNeedsARetakeWithoutCallingAModel() throws Exception {
         when(ocr.detectDocumentText(any(), any())).thenReturn(Mono.just(
