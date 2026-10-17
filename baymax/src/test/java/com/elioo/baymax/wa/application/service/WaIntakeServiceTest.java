@@ -35,8 +35,8 @@ import static org.mockito.Mockito.when;
  */
 class WaIntakeServiceTest {
 
-    private static final String FROM = "8801793399171";
-    private static final String E164 = "+8801793399171";
+    private static final String FROM = "8801700000000";
+    private static final String E164 = "+8801700000000";
     private static final UUID FAMILY = UUID.randomUUID();
 
     private final HealthRecordPort records = mock(HealthRecordPort.class);
@@ -53,7 +53,7 @@ class WaIntakeServiceTest {
     void wire() {
         props.getWa().setEnabled(true);
         props.getWa().setAllowlist(List.of(E164));
-        when(graph.sendText(anyString(), anyString())).thenReturn(Mono.just("wamid.REPLY"));
+        when(graph.sendText(anyString(), anyString())).thenReturn(Mono.just(com.elioo.baymax.wa.WaFixtures.wamid(FROM, 9)));
         when(graph.downloadMedia(anyString())).thenReturn(Mono.just(new byte[]{1, 2, 3}));
         service = new WaIntakeService(records, documents, explainer, intake, graph, new Copy(), props);
     }
@@ -226,8 +226,8 @@ class WaIntakeServiceTest {
 
     @Test
     void metaNumbersAreNormalisedToE164() {
-        assertThat(WaIntakeService.e164("8801793399171")).isEqualTo("+8801793399171");
-        assertThat(WaIntakeService.e164("+8801793399171")).isEqualTo("+8801793399171");
+        assertThat(WaIntakeService.e164("8801700000000")).isEqualTo("+8801700000000");
+        assertThat(WaIntakeService.e164("+8801700000000")).isEqualTo("+8801700000000");
         assertThat(WaIntakeService.e164("")).isEmpty();
         assertThat(WaIntakeService.e164(null)).isEmpty();
     }

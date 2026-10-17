@@ -112,15 +112,16 @@ class WaGraphClientTest {
 
     @Test
     void sendTextReturnsTheProviderMessageIdAndLogsNeitherBodyNorNumber() {
-        WaGraphClient client = clientReturning("{\"messages\":[{\"id\":\"wamid.OUT1\"}]}");
+        String out1 = WaFixtures.wamid("8801700000000", 1);
+        WaGraphClient client = clientReturning("{\"messages\":[{\"id\":\"" + out1 + "\"}]}");
 
-        String wamid = client.sendText("+8801793399171", "মায়ের রিপোর্ট দেখে নিলাম").block();
+        String wamid = client.sendText("+8801700000000", "মায়ের রিপোর্ট দেখে নিলাম").block();
 
-        assertThat(wamid).isEqualTo("wamid.OUT1");
+        assertThat(wamid).isEqualTo(out1);
         String log = everythingLogged();
         // it asserted the wamid WAS logged, holding the leak in place; the digest is what correlates now
-        assertThat(log).contains("ref=" + Redact.id("wamid.OUT1")).doesNotContain("wamid.OUT1");
-        assertThat(log).as("a recipient number is not a log line").doesNotContain("+8801793399171");
+        assertThat(log).contains("ref=" + Redact.id(out1)).doesNotContain(out1);
+        assertThat(log).as("a recipient number is not a log line").doesNotContain("+8801700000000");
         assertThat(log).as("message content never reaches the log").doesNotContain("মায়ের রিপোর্ট দেখে নিলাম");
     }
 
@@ -140,8 +141,8 @@ class WaGraphClientTest {
 
     @Test
     void sendTextPostsToThePhoneNumberIdsMessagesEndpoint() {
-        clientReturning("{\"messages\":[{\"id\":\"wamid.OUT2\"}]}")
-                .sendText("+8801793399171", "ok").block();
+        clientReturning("{\"messages\":[{\"id\":\"" + WaFixtures.wamid("8801700000000", 2) + "\"}]}")
+                .sendText("+8801700000000", "ok").block();
 
         assertThat(requestedUris).singleElement().asString()
                 .contains("/1412074765313019/messages");
