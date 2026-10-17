@@ -66,4 +66,30 @@ class HeaderRedactionTest {
         // THE OTHER DIRECTION: the headers that make an incident debuggable survive verbatim
         assertThat(log).contains("Mozilla/5.0 test-agent").contains("/app/home");
     }
+
+    /**
+     * The RUNBOOK leak counter greps the log for a credential header that is not followed by REDACTED. It can only
+     * do that if the redacted line keeps the format the unredacted one had ({@code Name:"value"}, HttpHeaders'
+     * own); a Map's {@code Name=[value]} silently made the counter read 0 whatever the log held.
+     */
+    @Test
+    void theRedactedHeaderKeepsTheFormatTheLeakCounterGrepsFor() {
+        String log = run(MockServerHttpRequest.get("/app/home")
+                        .header("X-Baymax-Admin-Token", "ADMINTOKEN9c1d")
+                        .header(HttpHeaders.COOKIE, "baymax_session=SESSIONTOKEN7f3a")
+                        .build(),
+                "baymax_session=NEWSESSION4b8e; Path=/app; HttpOnly");
+
+        assertThat(log).contains("X-Baymax-Admin-Token:\"REDACTED\"").contains("Cookie:\"REDACTED\"")
+                .contains("Set-Cookie:\"REDACTED\"");
+    }
+
+    /** The response half on its own: a Set-Cookie that opens a session is a login, even with no cookie sent. */
+    @Test
+    void aSetCookieAloneNeverReachesTheLog() {
+        String log = run(MockServerHttpRequest.post("/app/login/verify").build(),
+                "baymax_session=NEWSESSION4b8e; Path=/app; HttpOnly");
+
+        assertThat(log).contains("Response Sending To").doesNotContain("NEWSESSION4b8e").doesNotContain("baymax_session=");
+    }
 }

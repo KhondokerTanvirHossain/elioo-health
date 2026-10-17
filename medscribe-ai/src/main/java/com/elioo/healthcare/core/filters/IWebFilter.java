@@ -73,9 +73,13 @@ public class IWebFilter implements WebFilter {
     /**
      * Headers for the log, with every credential header's values replaced by {@code REDACTED}. The other headers
      * (user agent, content type, trace id) survive verbatim: they are what makes an incident debuggable.
+     *
+     * <p>A copy of the same type, so the log line keeps HttpHeaders' own format ({@code Name:"value"}): the RUNBOOK
+     * leak counter greps for a credential header NOT followed by {@code "REDACTED"}, and a different format would
+     * make it read 0 whatever the log held.</p>
      */
-    static Map<String, java.util.List<String>> redactHeaders(org.springframework.http.HttpHeaders headers) {
-        Map<String, java.util.List<String>> safe = new java.util.LinkedHashMap<>();
+    static org.springframework.http.HttpHeaders redactHeaders(org.springframework.http.HttpHeaders headers) {
+        org.springframework.http.HttpHeaders safe = new org.springframework.http.HttpHeaders();
         headers.forEach((name, values) ->
                 safe.put(name, SECRET_HEADERS.contains(name.toLowerCase(java.util.Locale.ROOT))
                         ? values.stream().map(v -> "REDACTED").toList() : values));
