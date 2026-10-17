@@ -95,17 +95,42 @@ number id and WABA id are set and well-formed (it names the variable, never the 
 
 ## Leak counters
 
-After every deploy, from the server. Each count is **0**; anything else is a credential, a phone number or a
-wamid (base64 of the phone number) in the log. Count only; never print the matching lines.
+After every deploy, on the server. Each count is **0** unless marked; anything else is a credential, a phone number
+or a wamid (base64 of the phone number) in the log. Count only; never print the matching lines.
+
+Two formats every count depends on, both checked against real output (PR 1):
+
+- **The console log is coloured.** The level is wrapped in ANSI codes (`[ESC[1;31mERROR ESC[0;39m]`), so a plain
+  `grep ' ERROR '` never matches and reads 0 whatever happened. Every count below strips the codes first.
+- **Header lines keep HttpHeaders' own format**, `Name:"value"`, and a redacted header reads `Name:"REDACTED"`
+  (`IWebFilter.redactHeaders` returns an `HttpHeaders` for exactly this reason). A grep written for any other
+  format — `Name: value`, `Name=[value]` — reads 0 on a leak. Header names are matched case-insensitively, since a
+  proxy hop may lowercase them.
 
 ```bash
-docker logs medscribe-ai --since 15m 2>&1 | grep -cE ' ERROR |refusing to start'                       # 0, or each line explained
-docker logs medscribe-ai --since 15m 2>&1 | grep -cE 'baymax_session=|X-Baymax-Admin-Token: [^R]|wamid\.'  # 0
-docker logs medscribe-ai --since 15m 2>&1 | grep 'wa inbound ref=' | tail -1 | grep -cE 'ref=[0-9a-f]{12} '  # 1 after a WhatsApp message: ids are digests
+L() { docker logs medscribe-ai --since 15m 2>&1 | sed 's/\x1b\[[0-9;]*m//g'; }
+L | grep -cE '\[ERROR\]|refusing to start'                                                   # 0, or each line explained
+L | grep -ciE 'baymax_session=|wamid\.'                                                        # 0: a session id or a wamid
+L | grep -oiE '(x-baymax-admin-token|authorization|cookie|x-hub-signature-256):"[^"]*"' | grep -vc ':"REDACTED"$'  # 0: a credential header in clear
+L | grep 'wa inbound ref=' | tail -1 | grep -cE 'ref=[0-9a-f]{12} '                             # 1 after a WhatsApp message: ids are digests
 ```
 
-Redacted headers read `REDACTED` (`[^R]` above lets those through). A non-zero second count means: rotate
-`BAYMAX_ADMIN_TOKEN`, consider revoking live sessions, and find the log line before the next deploy.
+A non-zero second or third count means: rotate `BAYMAX_ADMIN_TOKEN`, consider revoking live sessions
+(`UPDATE baymax.web_session SET revoked_at = now() WHERE revoked_at IS NULL`), and find the log line before the
+next deploy.
+
+**Before the deploy that first redacts headers (PR 1), once:** the same counts over the whole life of the running
+container decide whether the admin token must be rotated. Take them **before merging**: the deploy removes the
+container (`deploy.sh`, `docker rm -f`) and its log with it, and the log files inside the container go too (no
+volume). They cover this container only; any earlier container's log is already gone, so if the admin routes were
+ever called in production, rotate whatever the count says.
+
+```bash
+B() { docker logs medscribe-ai 2>&1 | sed 's/\x1b\[[0-9;]*m//g'; }
+B | grep -oiE 'x-baymax-admin-token:"[^"]*"' | grep -vc ':"REDACTED"$'   # admin-token values in clear
+B | grep -c 'baymax_session='                                                # session cookies in clear
+B | grep -c 'wamid\.'                                                        # wamids
+```
 
 ### Why the keys must be empty, and `credentials=instance-role` present
 
