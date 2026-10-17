@@ -64,6 +64,7 @@ absent on any server where Baymax should not run.
 | `BAYMAX_PUBLIC_BASE_URL` | `https://medioo.eliooo.org` (set 2026-09-19) | Builds the timeline links in outbound messages. Default in application.properties is the same host; set explicitly so a host change is one env edit + restart. |
 | `BAYMAX_GATE_NUDGES` | blank (defaults true) | DR-18: every nudge parked for the reviewer during the pilot, whatever `BAYMAX_GATE_MODE` says. Set `false` only after the PO ends the pilot gate. |
 | `BAYMAX_NUDGE_ENABLED` | blank (defaults true) | The hourly proactive job (BMX-8). Set `false` on any box that must never message a family. `BAYMAX_NUDGE_CRON` overrides the schedule (default `0 5 * * * *`). |
+| `BAYMAX_RECOVERY_ENABLED` | blank (defaults true) | F9b: at startup, finish the documents the previous container left RECEIVED/PROCESSING, and explain recent ones that finished but were never explained. Set `false` **only** to stop a crash loop (see "Documents a restart interrupted"). |
 | `BAYMAX_STORAGE_BUCKET` | `elioo-baymax-prod` | blank ⇒ no storage bean; the module still loads but every storage call fails at call time |
 | `BAYMAX_STORAGE_REGION` | `ap-south-1` | |
 | `BAYMAX_STORAGE_CREDENTIALS` | `instance-role` | **critical**, see below |
@@ -243,6 +244,41 @@ docker logs medscribe-ai 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep '\[baymax\]'
 Patient text never appears at INFO. Prompts, model replies and OCR text are DEBUG only; `ai_call_log` and
 `stored_object` hold ids, counts, money and timings, never content.
 
+
+## Documents a restart interrupted (F9b)
+
+A deploy is `docker rm -f` + `docker run`, and processing is detached, so whatever was being read when the old
+container died is left RECEIVED or PROCESSING. Once the new instance is ready it sweeps them, one at a time, in the
+background (the health check does not wait for it):
+
+- the cutoff is the instant the instance started; anything updated after that is this instance's own work and is
+  never touched;
+- created more than 7 days ago (`baymax.recovery.max-age`): reported `skipped_too_old`, left as it is, nobody messaged;
+- each re-run is counted in `document.recovery_attempts` and committed **before** the work; after 2
+  (`baymax.recovery.max-attempts`) the document is failed `interrupted_repeatedly`, so a document that kills the JVM
+  cannot crash-loop the container;
+- pages not all in the `stored_object` ledger: failed `pages_missing_after_restart`;
+- otherwise its leftover crops and items are cleared and it is re-run from its stored pages (model cost again);
+- a document that reached DONE / NEEDS_RETAKE but has no explanation or retake message is explained if it was
+  updated in the last 6 hours (`baymax.recovery.explain-max-age`); older ones are only counted, at WARN.
+
+```bash
+docker logs medscribe-ai --since 15m 2>&1 | grep -E 'recovery documentId=|recovery sweep|recovery: .* never explained'
+```
+
+One `[baymax] recovery documentId=<uuid> outcome=<code>` line per document (`reprocessed`, `explained`,
+`skipped_too_old`, `failed_interrupted_repeatedly`, `failed_pages_missing`, `error`), then
+`[baymax] recovery sweep done documents=<n>`. `outcome=error` (for example S3 unavailable) leaves the document as it
+was, to be retried at the next start. A WARN `recovery: <n> finished document(s) older than PT6H were never explained`
+is a count only; nothing was sent.
+
+**Crash loop** (the container restarts every few minutes and the log shows a recovery line just before each death):
+back up `~/medscribe.env`, add `BAYMAX_RECOVERY_ENABLED=false`, redeploy at the running tag, then find the document
+by its `recovery documentId=` line and look at it before turning recovery back on. The attempt counter stops the
+loop on its own after two restarts; the switch is for when two is too many.
+
+Known gap: a restart in the second or two between the webhook's 200 and the document row being created leaves no
+document to recover.
 
 ## Running the nudge job by hand (BMX-8)
 

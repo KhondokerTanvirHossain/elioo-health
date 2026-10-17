@@ -59,7 +59,8 @@ class DocumentIntakeServiceTest {
     @BeforeEach
     void setUp() {
         service = new DocumentIntakeService(records, documents, freeTier, storage, new PageRenderer(),
-                extraction, properties, Clock.fixed(NOW, ZoneOffset.UTC), explainer, nudges);
+                properties, Clock.fixed(NOW, ZoneOffset.UTC),
+                new DocumentProcessingChain(extraction, explainer, nudges, documents, Clock.fixed(NOW, ZoneOffset.UTC)));
         when(explainer.explain(any())).thenReturn(Mono.empty());
         when(nudges.onDocumentDone(any())).thenReturn(Mono.empty());
 
@@ -232,21 +233,28 @@ class DocumentIntakeServiceTest {
                 .verify();
     }
 
+    /** F9b moved the explain and nudge lines into DocumentProcessingChain; the intake still logs the finish. */
+    private static final List<Class<?>> LOGGERS = List.of(DocumentIntakeService.class, DocumentProcessingChain.class);
+
     private static ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> captureAtDebug() {
-        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(DocumentIntakeService.class);
         var logged = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
         logged.start();
-        logger.addAppender(logged);
-        // DEBUG on, so the test sees the detail line exists and still asserts nothing above DEBUG carries it;
-        // at INFO the detail line would simply not be emitted and the check would pass for the wrong reason
-        logger.setLevel(ch.qos.logback.classic.Level.DEBUG);
+        for (Class<?> owner : LOGGERS) {
+            ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(owner);
+            logger.addAppender(logged);
+            // DEBUG on, so the test sees the detail line exists and still asserts nothing above DEBUG carries it;
+            // at INFO the detail line would simply not be emitted and the check would pass for the wrong reason
+            logger.setLevel(ch.qos.logback.classic.Level.DEBUG);
+        }
         return logged;
     }
 
     private static void release(ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> logged) {
-        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(DocumentIntakeService.class);
-        logger.detachAppender(logged);
-        logger.setLevel(null);
+        for (Class<?> owner : LOGGERS) {
+            ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(owner);
+            logger.detachAppender(logged);
+            logger.setLevel(null);
+        }
     }
 
     private static String at(ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> logged,

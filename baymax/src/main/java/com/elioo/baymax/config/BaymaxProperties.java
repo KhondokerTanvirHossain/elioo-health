@@ -33,6 +33,7 @@ public class BaymaxProperties {
     private Wa wa = new Wa();
     private Outbound outbound = new Outbound();
     private Nudge nudge = new Nudge();
+    private Recovery recovery = new Recovery();
     private List<Marker> markers = new ArrayList<>();
 
     @Data
@@ -229,6 +230,19 @@ public class BaymaxProperties {
         /** DR-17: markers where rising is wrong; {@code trendEitherWay} where either direction is. */
         private List<String> trendRising = new ArrayList<>(List.of("hba1c", "fasting_glucose", "creatinine", "bp_systolic", "bp_diastolic", "ldl"));
         private List<String> trendEitherWay = new ArrayList<>(List.of("tsh"));
+    }
+
+    /** F9b: the startup sweep that finishes documents a restart interrupted. */
+    @Data
+    public static class Recovery {
+        /** Set false only to stop a crash loop (BAYMAX_RECOVERY_ENABLED). */
+        private boolean enabled = true;
+        /** Re-runs per document before it is failed {@code interrupted_repeatedly}. */
+        private int maxAttempts = 2;
+        /** Documents created longer ago than this are reported {@code skipped_too_old} and never touched. */
+        private Duration maxAge = Duration.ofDays(7);
+        /** A finished document never explained is explained only if updated within this window; older ones are counted. */
+        private Duration explainMaxAge = Duration.ofHours(6);
     }
 
     @Data
