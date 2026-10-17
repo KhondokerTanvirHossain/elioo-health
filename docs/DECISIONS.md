@@ -171,6 +171,11 @@ The reviewer is whoever presents the admin token; the optional `X-Baymax-Reviewe
 `tanvir`) and is stored on the row. Notification of a pending message is `ReviewerNotificationPort` — the log until
 BMX-10 puts it on WhatsApp. Nothing PENDING is ever delivered without an explicit approve (asserted in tests).
 
+*Amended 2026-10-17 (PO, D5):* the stored, code-computed urgency shows on every surface whatever the gate state. On
+WhatsApp a PENDING NOW/THIS_WEEK document gets its fixed urgency line at once. A PENDING **body** is still never
+delivered: "Nothing PENDING is ever delivered" now reads "No PENDING body is ever delivered". Spec:
+`docs/superpowers/specs/2026-10-17-medioo-companion-experience-design.md` §2 F3.
+
 ## DR-14 | 2026-09-18 | Visual direction for the Baymax web app
 
 **Decision:** Visual direction for the Baymax web app: white / soft red / warm neutral palette, rounded and calm
@@ -547,3 +552,47 @@ commit and saying in the commit message where it came from, which turns an unrev
 one-line diff a reviewer can actually see. The check is written for bash 3.2 so it runs on a developer's
 machine as well as the runner: a guard that only fires in CI lets someone commit the thing locally and find
 out thirty minutes later.
+
+## DR-37 | 2026-10-17 | The companion (chat) is core MVP scope
+
+**Decision:** Medioo answers every message, on the web and on WhatsApp, from one companion brain grounded in the
+family's own records (PO, D1). Code is in charge of numbers, urgency, medicines, diagnoses, patient identity and
+refusals; the model only words facts code has already checked. Recorded with it: **D4** "what is this medicine for?"
+stays refused (DR-16 unchanged); **D8** code-built answers are unlimited and model-worded answers are capped at 6 per
+family-month, counted on what was sent; **D13** a voice note gets a fixed reply plus the red-flag line now, Bangla
+speech-to-text later; and the standing direction **"fully automated first"**: production runs `gate=off` and the
+reviewer workflow and portal come later.
+
+**Why:** Tanvir, testing as a user on 2026-10-16, found that "Hi" got silence, only one exact word brought the detail,
+and nothing could be asked. A records service that cannot be spoken to reads as twenty-year-old technology. Push
+(nudges) stays the moat; chat is added to it, not substituted for it.
+
+**Amends:** PRODUCT §4 "MVP in" (chat added). Retires the UI rule "no urgency anywhere in the UI" in favour of spec
+principle 3 (urgency always visible, only up). Spec: `docs/superpowers/specs/2026-10-17-medioo-companion-experience-design.md`;
+design artifacts and plan linked from its header.
+
+## DR-38 | 2026-10-16 | Open source is paused; the repository stays private
+
+**Decision:** the repository is private and the open-source release is paused (PO, Sprint 1 brief). The prepared
+history rewrite (`docs/HISTORY_REWRITE.md`) is not run while the repository stays private.
+
+**Why:** the product is moving fast with real families in view; publishing can be revisited once DR-36's enforcement
+has been in place long enough to trust.
+
+**Consequence found 2026-10-17:** GitHub does not enforce branch protection or rulesets on a private repository on
+this plan (the API answers 403, "Upgrade to GitHub Pro or make this repository public"). `main` is therefore not
+technically protected; the "Build and test" check is enforced by process (CLAUDE.md, Branching).
+
+## DR-39 | 2026-10-17 | Sign-in is inbound-first
+
+**Decision:** the web sign-in code is fetched, not pushed (PO, D2, with D36 and D37 as recommended). The family texts
+"কোড" to Medioo on WhatsApp and `issueCodeFor(sender)` mints a fresh code for the number WhatsApp has proved, within the
+existing rate limit. The web mints nothing and never says a code was sent; the rate-limit message goes only to
+WhatsApp; the `wa.me` deep link appears on `/app` only, never on the landing page; no code appears in any log above
+DEBUG. Effective from the Phase 1a sign-in PR.
+
+**Why:** only a code's hash is stored, so a code cannot be fetched later; a push outside WhatsApp's 24-hour window
+needs an approved template, and an open web form that sends to any number would become a sender to arbitrary numbers.
+A message the family sends first opens the window and proves the number in one step.
+
+**Supersedes:** BMX-5's log-only delivery (`LogOtpDelivery`), which stays as a fallback that logs no code.
