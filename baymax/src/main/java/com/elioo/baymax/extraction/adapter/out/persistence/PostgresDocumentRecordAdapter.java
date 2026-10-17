@@ -334,4 +334,15 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
         return db.sql("SELECT id FROM " + S + ".document WHERE status = :s ORDER BY created_at")
                 .bind("s", status.name()).map((row, meta) -> row.get("id", UUID.class)).all();
     }
+
+    @Override
+    public Mono<Integer> markRecoveryAttempt(UUID documentId, Instant interruptedBefore) {
+        return db.sql("UPDATE " + S + ".document SET recovery_attempts = recovery_attempts + 1 "
+                        + "WHERE id = :id AND status IN ('RECEIVED','PROCESSING') AND updated_at < :before "
+                        + "RETURNING recovery_attempts")
+                .bind("id", documentId)
+                .bind("before", OffsetDateTime.ofInstant(interruptedBefore, ZoneOffset.UTC))
+                .map((row, meta) -> row.get("recovery_attempts", Integer.class))
+                .one();
+    }
 }

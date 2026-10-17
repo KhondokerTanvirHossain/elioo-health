@@ -38,12 +38,10 @@ public class DocumentIntakeService implements DocumentIntakeUseCase {
     private final FreeTierUseCase freeTier;
     private final DocumentStorageUseCase storage;
     private final PageRenderer renderer;
-    private final DocumentExtractionService extraction;
     private final BaymaxProperties properties;
     private final Clock clock;
-    private final com.elioo.baymax.outbound.application.port.in.ExplainDocumentUseCase explainer;
-    /** BMX-8: medicine_changed fires on extraction completion; the other rules wait for the hour. */
-    private final com.elioo.baymax.nudge.application.port.in.NudgeUseCase nudges;
+    /** F9b: extract → explain → nudges, shared with the startup recovery sweep. */
+    private final DocumentProcessingChain chain;
 
     @Override
     public Mono<Document> accept(UUID patientId, List<Upload> uploads) {
@@ -84,34 +82,12 @@ public class DocumentIntakeService implements DocumentIntakeUseCase {
 
     /**
      * Processing is deliberately detached: the HTTP response is 202 and the work continues. Errors are
-     * recorded on the document by the pipeline itself, so nothing is lost when this subscription ends.
+     * recorded on the document by the pipeline itself, so nothing is lost when this subscription ends; a restart
+     * that kills it leaves the document RECEIVED/PROCESSING, which the startup recovery sweep re-runs (F9b).
      */
     private void startProcessing(Document document, List<byte[]> pages) {
-        extraction.process(document, pages)
+        chain.run(document, pages)
                 .subscribeOn(Schedulers.boundedElastic())
-                // BMX-6: once the document is DONE or NEEDS_RETAKE, compose the family's message; a failure
-                // there is logged and never undoes the extraction
-                .flatMap(done -> explainer.explain(done.id())
-                        .doOnNext(m -> log.info("[baymax] message composed documentId={} kind={} urgency={} gate={}",
-                                done.id(), m.kind(), m.urgency(), m.gateStatus()))
-                        .onErrorResume(e -> {
-                            // the message can carry medicine text (MedicineTranscription.elided): class at ERROR,
-                            // detail at DEBUG only
-                            log.error("[baymax] explanation failed documentId={} error={}", done.id(),
-                                    e.getClass().getSimpleName());
-                            log.debug("[baymax] explanation failure detail documentId={}: {}", done.id(), e.getMessage());
-                            return Mono.empty();
-                        })
-                        .thenReturn(done))
-                // BMX-8: the medicine_changed rule looks at this prescription against the previous one; a failure is
-                // logged and never undoes anything. chronic_flags are never touched from here (asserted).
-                .flatMap(done -> nudges.onDocumentDone(done.id())
-                        .onErrorResume(e -> {
-                            log.error("[baymax] nudge check failed documentId={} error={}", done.id(),
-                                    e.getClass().getSimpleName());
-                            return Mono.empty();
-                        })
-                        .thenReturn(done))
                 .subscribe(
                         done -> log.info("[baymax] document finished documentId={} status={}",
                                 done.id(), done.status()),

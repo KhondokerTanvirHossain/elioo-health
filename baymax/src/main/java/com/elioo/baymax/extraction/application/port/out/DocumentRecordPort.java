@@ -90,4 +90,11 @@ public interface DocumentRecordPort {
 
     /** Ids of every document in a status, oldest first. */
     Flux<UUID> idsWithStatus(Document.Status status);
+
+    /**
+     * F9b: increments and commits {@code recovery_attempts}, returning the new count. Empty when the document is no
+     * longer RECEIVED/PROCESSING or was updated at or after {@code interruptedBefore} (the subscription that is
+     * running it belongs to this instance), so two sweeps cannot both claim it.
+     */
+    Mono<Integer> markRecoveryAttempt(UUID documentId, Instant interruptedBefore);
 }
