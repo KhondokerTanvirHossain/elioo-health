@@ -552,11 +552,15 @@ class WaIntakeServiceTest {
         try {
             familyWith(patient("মা"));
             service.onText(FROM, "আম্মার বুকে ব্যথা").block();
-            service.onInbound(new WaInbound(com.elioo.baymax.wa.WaFixtures.wamid(FROM, 3), FROM, WaInbound.Type.AUDIO,
-                    "", "MEDIA-V", "audio/ogg")).block();
+            String wamid = com.elioo.baymax.wa.WaFixtures.wamid(FROM, 3);
+            service.onInbound(new WaInbound(wamid, FROM, WaInbound.Type.AUDIO, "", "MEDIA-V", "audio/ogg")).block();
             String all = String.join("\n", logged.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage).toList());
+            String base64 = wamid.substring("wamid.".length());
             assertThat(all).contains("route=FALLBACK").doesNotContain("বুকে").doesNotContain("1700000000")
                     .doesNotContain("wamid.");
+            // the prefix alone is not the wamid: a line printing the base64 body, or the digits decoded from it, leaks too
+            assertThat(all).as("a wamid is base64 of the number").doesNotContain(wamid).doesNotContain(base64.substring(0, 16))
+                    .doesNotContain(com.elioo.baymax.wa.WaFixtures.decodedDigits(wamid));
         } finally {
             logger.detachAppender(logged);
         }
