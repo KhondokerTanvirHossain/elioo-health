@@ -104,13 +104,22 @@ class ReplayHarnessMatchesTheGateTest {
         sameTable(dict(harness(), "GATING_SECTIONS"), deployed().getGatingSections(), "gating sections");
     }
 
-    /** The table the deployed gate checks for emptiness: {@code missingExpectedSection} reads gatingSections. */
+    @Test
+    void expectedSectionsAreTheDeployedOnes() throws IOException {
+        sameTable(dict(harness(), "EXPECTED_SECTIONS"), deployed().getExpectedSections(), "expected sections");
+    }
+
+    /**
+     * The table the deployed gate checks for emptiness: {@code missingExpectedSection} reads expectedSections (RX).
+     * Before RX it read gatingSections, and this test, then comparing against that table, was what caught the
+     * harness still modelling the pre-DR-27 gate.
+     */
     @Test
     void theCurrentModelChecksEmptinessOnTheTableTheDeployedGateDoes() throws IOException {
         String source = harness();
         String table = captured(function(source, "current_gate"), "for section in (\\w+)\\.get\\(",
                 "current_gate checks emptiness by iterating a sections table");
-        sameTable(dict(source, table), deployed().getGatingSections(), "emptiness");
+        sameTable(dict(source, table), deployed().getExpectedSections(), "emptiness");
     }
 
     /** The table the deployed gate reads for confidence: {@code lowestPresentSection} reads gatingSections. */

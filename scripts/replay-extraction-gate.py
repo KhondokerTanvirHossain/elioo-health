@@ -14,7 +14,7 @@ retaken, all prescriptions: the artefact in every retake rate measured up to 202
 Usage:
     set -a; source .env.supabase; set +a
     python3 scripts/replay-extraction-gate.py                 # the deployed gate against the pre-2026-09-21 one
-    python3 scripts/replay-extraction-gate.py --model fixed   # the RX correction (emptiness on EXPECTED_SECTIONS)
+    python3 scripts/replay-extraction-gate.py --model dr27    # the gate before RX (emptiness on GATING_SECTIONS)
     python3 scripts/replay-extraction-gate.py --json          # machine-readable, for a build report
 
 Keep the constants below in step with BaymaxProperties.Extract. They are duplicated deliberately: this script
@@ -30,8 +30,8 @@ import sys
 MIN_CONFIDENCE_OVERALL = 0.80
 MIN_CONFIDENCE_SECTION = 0.70
 
-# BaymaxProperties.Extract.gatingSections (DR-27) — the sections whose confidence can force a retake. As deployed,
-# the gate ALSO checks these for emptiness, which retakes a clearly read prescription with no follow-up (RX).
+# BaymaxProperties.Extract.gatingSections (DR-27) — the sections whose confidence can force a retake. Confidence
+# only: an empty gating section is skipped. Before RX the gate also checked these for emptiness (model "dr27").
 GATING_SECTIONS = {
     "lab_report": ["values"],
     "prescription": ["medicines", "follow_up"],
@@ -40,8 +40,8 @@ GATING_SECTIONS = {
     "other": [],
 }
 
-# The sections a type must actually carry, read as empty = a failed read (the pre-DR-27 table, #47). Not yet in
-# BaymaxProperties: the "fixed" model checks emptiness on this table and confidence on GATING_SECTIONS.
+# BaymaxProperties.Extract.expectedSections (RX) — the sections a type must actually carry; read as empty is a
+# failed read, whatever confidence the model claims.
 EXPECTED_SECTIONS = {
     "lab_report": ["values"],
     "prescription": ["medicines"],
@@ -94,18 +94,7 @@ def lowest_gated(sections, gated):
 
 
 def current_gate(overall, sections, document_type):
-    """The gate as deployed (DR-27, #52): emptiness AND confidence on the gating sections."""
-    if overall < MIN_CONFIDENCE_OVERALL:
-        return "NEEDS_RETAKE", "overall"
-    for section in GATING_SECTIONS.get(document_type, []):
-        if sections.get(section, (None, 0))[1] == 0:
-            return "NEEDS_RETAKE", f"missing {section}"
-    lowest = lowest_gated(sections, GATING_SECTIONS.get(document_type, []))
-    return ("NEEDS_RETAKE", "section") if lowest < MIN_CONFIDENCE_SECTION else ("DONE", "-")
-
-
-def fixed_gate(overall, sections, document_type):
-    """The RX correction: emptiness on the expected sections, confidence on the gating sections."""
+    """The gate as deployed (RX): emptiness on the expected sections, confidence on the gating sections."""
     if overall < MIN_CONFIDENCE_OVERALL:
         return "NEEDS_RETAKE", "overall"
     for section in EXPECTED_SECTIONS.get(document_type, []):
@@ -115,15 +104,27 @@ def fixed_gate(overall, sections, document_type):
     return ("NEEDS_RETAKE", "section") if lowest < MIN_CONFIDENCE_SECTION else ("DONE", "-")
 
 
-MODELS = {"current": current_gate, "fixed": fixed_gate}
+def dr27_gate(overall, sections, document_type):
+    """The gate from DR-27 (#52) until RX: emptiness AND confidence on the gating sections, so a clearly read
+    prescription with no follow-up was retaken."""
+    if overall < MIN_CONFIDENCE_OVERALL:
+        return "NEEDS_RETAKE", "overall"
+    for section in GATING_SECTIONS.get(document_type, []):
+        if sections.get(section, (None, 0))[1] == 0:
+            return "NEEDS_RETAKE", f"missing {section}"
+    lowest = lowest_gated(sections, GATING_SECTIONS.get(document_type, []))
+    return ("NEEDS_RETAKE", "section") if lowest < MIN_CONFIDENCE_SECTION else ("DONE", "-")
+
+
+MODELS = {"current": current_gate, "dr27": dr27_gate}
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--json", action="store_true", help="machine-readable output")
     parser.add_argument("--model", choices=sorted(MODELS), default="current",
-                        help="which gate to replay against the pre-2026-09-21 one: 'current' is the deployed "
-                             "gate (DR-27), 'fixed' the RX correction (default: current)")
+                        help="which gate to replay against the pre-2026-09-21 one: 'current' is the gate in "
+                             "this checkout (RX), 'dr27' the one before RX (default: current)")
     args = parser.parse_args()
     gate = MODELS[args.model]
 

@@ -312,10 +312,14 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
      * The first section this document type expects that came back with nothing, or null when all are present.
      * "Expects" comes from config, not from the model: a prescription never carries lab values, so an empty
      * values[] there is the page, not the read.
+     *
+     * <p>Reads {@code expectedSections}, never {@code gatingSections} (RX): a prescription's follow-up gates on
+     * confidence when it was read, but most prescriptions carry none, and reading the gating list here retook
+     * every one of them as an unclear photo.</p>
      */
     private static String missingExpectedSection(ExtractionResult result,
                                                  BaymaxProperties.Extract thresholds) {
-        for (String section : thresholds.getGatingSections().getOrDefault(typeOf(result), List.of())) {
+        for (String section : thresholds.getExpectedSections().getOrDefault(typeOf(result), List.of())) {
             if (itemCount(result, section) == 0) {
                 return section;
             }
@@ -324,7 +328,7 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
     }
 
     /**
-     * The lowest confidence among sections that actually have content, plus any expected-and-present section.
+     * The lowest confidence among the gating sections that actually have content.
      * A section with nothing in it is excluded — confidence in an empty section is a number about nothing, and
      * including it rejected clear prescriptions because values[] scored 0.0 (eleventh flattering failure: a
      * gate firing for a reason unrelated to what it exists for).

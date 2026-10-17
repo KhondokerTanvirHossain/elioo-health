@@ -322,6 +322,89 @@ class DocumentExtractionServiceTest {
     }
 
     /**
+     * RX: a prescription with medicines and no follow-up instruction is a complete prescription. DR-27 made follow_up
+     * a gating section and the emptiness check reads the gating list, so this page was retaken as unclear. Batch 1
+     * had a follow-up on 1 of 10 prescriptions.
+     */
+    @Test
+    void aPrescriptionWithNoFollowUpIsDoneNotRetaken() throws Exception {
+        // the medicine is named for text the stub OCR page carries, so its span resolves and it survives cropping
+        // (see aPrescriptionWithNoLabValuesIsDoneNotRetaken)
+        replyWith("""
+                {"document_type":"prescription","document_date":"2026-09-19","facility":"Shapla Diagnostics",
+                 "values":[],
+                 "medicines":[{"name":"HbA1c","dose_text":"30 mg","frequency_text":"1+0+0",
+                               "timing_text":"before meal","source_span":{"page":1,"start":0,"end":5}}],
+                 "follow_up":[],
+                 "clinical_context":{"chief_complaint":[],"history":[],"examination":[],
+                                     "diagnosis":[],"investigations_advised":[],"advice":[],"referral":null},
+                 "confidence":{"overall":0.9,"values":0.0,"medicines":0.9,"follow_up":0.0,
+                               "clinical_context":0.85}}
+                """);
+
+        StepVerifier.create(service.process(received(1), List.of(pageJpeg())))
+                .assertNext(d -> {
+                    // the reason first: emptiness and confidence both yield NEEDS_RETAKE, so the reason names the
+                    // rule that ran
+                    assertThat(d.statusReason()).as("no follow-up written is the page, not a failed read; the rule "
+                            + "that ran").isNull();
+                    assertThat(d.status()).isEqualTo(Document.Status.DONE);
+                })
+                .verifyComplete();
+        verify(records).saveExtraction(any(), any());
+    }
+
+    /** The dangerous direction: a prescription with NO medicines read is still a failed read. */
+    @Test
+    void aPrescriptionWithNoMedicinesIsStillRetaken() throws Exception {
+        replyWith("""
+                {"document_type":"prescription","document_date":"2026-09-19","facility":"Shapla Diagnostics",
+                 "values":[],"medicines":[],
+                 "follow_up":[{"instruction":"৫ দিন পর আসবেন","due_date":"2026-09-24",
+                               "source_span":{"page":1,"start":0,"end":5}}],
+                 "clinical_context":{"chief_complaint":[],"history":[],"examination":[],
+                                     "diagnosis":[],"investigations_advised":[],"advice":[],"referral":null},
+                 "confidence":{"overall":0.95,"values":0.0,"medicines":0.95,"follow_up":0.9,
+                               "clinical_context":0.9}}
+                """);
+
+        StepVerifier.create(service.process(received(1), List.of(pageJpeg())))
+                .assertNext(d -> {
+                    assertThat(d.status()).isEqualTo(Document.Status.NEEDS_RETAKE);
+                    assertThat(d.statusReason()).as("the emptiness rule ran, on the section a prescription must carry")
+                            .isEqualTo("nothing was read from the medicines of this prescription");
+                })
+                .verifyComplete();
+        verify(records, never()).saveExtraction(any(), any());
+    }
+
+    /** Confidence still gates a follow-up that WAS read: a weakly read due date is a weak read. */
+    @Test
+    void aPrescriptionWhoseFollowUpWasReadWeaklyIsStillRetaken() throws Exception {
+        replyWith("""
+                {"document_type":"prescription","document_date":"2026-09-19","facility":"Shapla Diagnostics",
+                 "values":[],
+                 "medicines":[{"name":"HbA1c","dose_text":"30 mg","frequency_text":"1+0+0",
+                               "timing_text":"before meal","source_span":{"page":1,"start":0,"end":5}}],
+                 "follow_up":[{"instruction":"৭ দিন পর আসবেন","due_date":"2026-09-26",
+                               "source_span":{"page":1,"start":6,"end":9}}],
+                 "clinical_context":{"chief_complaint":[],"history":[],"examination":[],
+                                     "diagnosis":[],"investigations_advised":[],"advice":[],"referral":null},
+                 "confidence":{"overall":0.9,"values":0.0,"medicines":0.9,"follow_up":0.5,
+                               "clinical_context":0.85}}
+                """);
+
+        StepVerifier.create(service.process(received(1), List.of(pageJpeg())))
+                .assertNext(d -> {
+                    assertThat(d.status()).isEqualTo(Document.Status.NEEDS_RETAKE);
+                    assertThat(d.statusReason()).as("the confidence rule ran, on the section that was read")
+                            .isEqualTo("part of the document was not read confidently enough (0.50)");
+                })
+                .verifyComplete();
+        verify(records, never()).saveExtraction(any(), any());
+    }
+
+    /**
      * BMX-5b: offsets past the end of the text used to drop the item. The item's text is on the page, so
      * it is now cropped from where the text actually is — and stored with that crop.
      */
