@@ -8,9 +8,14 @@ import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
 import com.elioo.baymax.storage.domain.DeletionReport;
 import com.elioo.baymax.storage.domain.ObjectKind;
 import com.elioo.baymax.storage.domain.StoredObject;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
@@ -136,6 +141,22 @@ class DocumentRecoveryServiceTest {
         verify(chain, never()).run(any(), any());
     }
 
+    /** The boundary of the attempt limit: the max-attempts-th re-run still runs; only the one after it fails. */
+    @Test
+    void theLastAllowedAttemptIsStillReRun() {
+        Document d = stuck(Document.Status.PROCESSING, BOOT.minusSeconds(40), 1);
+        when(documents.idsWithStatus(Document.Status.PROCESSING)).thenReturn(Flux.just(d.id()));
+        when(documents.markRecoveryAttempt(d.id(), BOOT))
+                .thenReturn(Mono.just(properties.getRecovery().getMaxAttempts()));   // 2 of 2
+        when(storage.objectsOf(d.id())).thenReturn(Flux.just(page(d.id(), 1)));
+        when(storage.pageBytes(FAMILY, PATIENT, d.id(), 1)).thenReturn(Mono.just(JPEG));
+        when(chain.run(any(), any())).thenReturn(Mono.just(d.withStatus(Document.Status.DONE, null, BOOT.plusSeconds(60))));
+
+        StepVerifier.create(service.recoverInterrupted(BOOT).map(RecoveryReport::outcome))
+                .expectNext("reprocessed").verifyComplete();
+        verify(chain, never()).fail(any(), anyString());
+    }
+
     @Test
     void aDocumentWhosePagesWereNeverAllStoredIsFailedWithAReason() {
         Document d = stuck(Document.Status.RECEIVED, BOOT.minusSeconds(40), 2);
@@ -193,15 +214,32 @@ class DocumentRecoveryServiceTest {
         verify(chain, never()).run(any(), any());
     }
 
-    /** The other direction: an unexplained document older than the window is only counted, never messaged. */
+    /**
+     * The other direction: an unexplained document older than the window is only counted, never messaged. That nothing
+     * is explained here is guaranteed by the stub ({@code unexplainedSince} is empty); which documents fall outside the
+     * window is the SQL's job and is asserted on real Postgres in {@code DocumentRecoveryAcceptanceTest}. What this
+     * service owns is that the count is not swallowed: the WARN line carries it.
+     */
     @Test
     void anOldUnexplainedDocumentIsCountedNotMessaged() {
         Instant since = BOOT.plusSeconds(30).minus(properties.getRecovery().getExplainMaxAge());
         when(documents.unexplainedSince(any(), any())).thenReturn(Flux.empty());
         when(documents.countUnexplainedBefore(since)).thenReturn(Mono.just(3L));
+        Logger logger = (Logger) LoggerFactory.getLogger(DocumentRecoveryService.class);
+        ListAppender<ILoggingEvent> logged = new ListAppender<>();
+        logged.start();
+        logger.addAppender(logged);
+        try {
+            StepVerifier.create(service.recoverInterrupted(BOOT)).verifyComplete();
+        } finally {
+            logger.detachAppender(logged);
+        }
 
-        StepVerifier.create(service.recoverInterrupted(BOOT)).verifyComplete();
         verify(documents).countUnexplainedBefore(since);
         verify(chain, never()).explainOnly(any());
+        assertThat(logged.list).filteredOn(e -> e.getLevel() == Level.WARN)
+                .extracting(ILoggingEvent::getFormattedMessage)
+                .as("the never-explained count, at WARN")
+                .containsExactly("[baymax] recovery: 3 finished document(s) older than PT6H were never explained");
     }
 }

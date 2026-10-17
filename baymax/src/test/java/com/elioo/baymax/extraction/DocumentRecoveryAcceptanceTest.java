@@ -6,6 +6,7 @@ import com.elioo.baymax.extraction.application.port.out.DocumentRecordPort;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.RecoveryReport;
 import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
+import com.elioo.baymax.storage.domain.StorageKeys;
 import com.elioo.healthcare.llm.config.LlmAutoConfiguration;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -25,6 +26,7 @@ import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.CreateBucketRequest;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -36,6 +38,7 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -62,14 +65,18 @@ class DocumentRecoveryAcceptanceTest {
 
     @BeforeAll
     static void createBucket() {
-        try (S3Client admin = S3Client.builder()
+        try (S3Client admin = adminClient()) {
+            admin.createBucket(CreateBucketRequest.builder().bucket(BUCKET).build());
+        }
+    }
+
+    private static S3Client adminClient() {
+        return S3Client.builder()
                 .endpointOverride(URI.create(MINIO.getS3URL())).region(Region.US_EAST_1).forcePathStyle(true)
                 .httpClientBuilder(UrlConnectionHttpClient.builder())
                 .credentialsProvider(StaticCredentialsProvider.create(
                         AwsBasicCredentials.create(MINIO.getUserName(), MINIO.getPassword())))
-                .build()) {
-            admin.createBucket(CreateBucketRequest.builder().bucket(BUCKET).build());
-        }
+                .build();
     }
 
     private ReactiveWebApplicationContextRunner runner() {
@@ -128,7 +135,7 @@ class DocumentRecoveryAcceptanceTest {
 
             // status_reason is cut at 180 characters, before Postgres names the constraint; the DEBUG detail line
             // carries the whole exception chain, so a re-run that collides with its own leftover crop says so here
-            assertThat(failureDetails(logged))
+            assertThat(failureDetails(logged, doc.id()))
                     .as("extraction failures while recovering (exception chain)").isEmpty();
             assertThat(scalar("select coalesce(status_reason, '') from baymax.document where id = '" + doc.id() + "'"))
                     .as("why the recovered document did not finish").isEmpty();
@@ -137,7 +144,7 @@ class DocumentRecoveryAcceptanceTest {
                     .as("one crop per value, the leftover replaced, not duplicated").isEqualTo("1");
             assertThat(scalar("select count(*) from baymax.observation where document_id = '" + doc.id() + "'")).isEqualTo("1");
             assertThat(scalar("select recovery_attempts from baymax.document where id = '" + doc.id() + "'")).isEqualTo("1");
-            assertThat(reports).extracting(RecoveryReport::outcome).containsExactly("reprocessed");
+            assertThat(outcomesFor(reports, doc.id())).containsExactly("reprocessed");
         });
     }
 
@@ -159,9 +166,91 @@ class DocumentRecoveryAcceptanceTest {
     }
 
     /**
-     * The SQL behind "finished but never explained": a DONE document with an explanation row is not picked, one
-     * without is, and one older than the window is only counted. Pinned a day in the past so the other tests'
-     * documents, all updated "now", cannot fall inside either window.
+     * The guard in {@code markRecoveryAttempt}'s own SQL. Everywhere else the service's Java filter on
+     * {@code updatedAt} runs first and hides it, so it is called directly: a document updated at the cutoff (this
+     * instance's own work) or no longer RECEIVED/PROCESSING is not counted, and an interrupted one is counted once per
+     * sweep.
+     */
+    @Test
+    void markRecoveryAttemptCountsOnlyAnInterruptedDocumentUpdatedBeforeTheCutoff() {
+        runner().run(context -> {
+            UUID family = UUID.randomUUID();
+            UUID patient = UUID.randomUUID();
+            seedFamily(family, patient);
+            DocumentRecordPort records = context.getBean(DocumentRecordPort.class);
+            Instant cutoff = Instant.now().minus(Duration.ofHours(1)).truncatedTo(ChronoUnit.SECONDS);
+
+            Document atCutoff = processing(records, patient, family, cutoff);
+            Document finished = done(records, patient, family, cutoff.minusSeconds(60));
+            Document interrupted = processing(records, patient, family, cutoff.minusSeconds(60));
+
+            assertThat(records.markRecoveryAttempt(atCutoff.id(), cutoff).blockOptional())
+                    .as("PROCESSING but updated at the cutoff: this instance's own work").isEmpty();
+            assertThat(records.markRecoveryAttempt(finished.id(), cutoff).blockOptional())
+                    .as("DONE before the cutoff: nothing was interrupted").isEmpty();
+            assertThat(scalar("select string_agg(recovery_attempts::text, ',' order by updated_at) from baymax.document"
+                    + " where id in ('" + atCutoff.id() + "','" + finished.id() + "')"))
+                    .as("neither was counted").isEqualTo("0,0");
+            assertThat(records.markRecoveryAttempt(interrupted.id(), cutoff).blockOptional()).contains(1);
+            assertThat(records.markRecoveryAttempt(interrupted.id(), cutoff.plusSeconds(1)).blockOptional())
+                    .as("the next restart's sweep").contains(2);
+        });
+    }
+
+    /** chain.fail on a real database: the reason survives, and the attempt that found the pages missing is counted. */
+    @Test
+    void aDocumentWhosePagesWereNeverStoredIsFailedWithItsReason() {
+        runner().run(context -> {
+            UUID family = UUID.randomUUID();
+            UUID patient = UUID.randomUUID();
+            seedFamily(family, patient);
+            Document lost = context.getBean(DocumentRecordPort.class)
+                    .create(Document.received(patient, family, 1, Instant.now().minusSeconds(600))).block();
+
+            List<RecoveryReport> reports = context.getBean(DocumentRecoveryUseCase.class)
+                    .recoverInterrupted(Instant.now()).collectList().block(Duration.ofSeconds(60));
+
+            assertThat(outcomesFor(reports, lost.id())).containsExactly("failed_pages_missing");
+            assertThat(scalar("select status || '/' || coalesce(status_reason, '') || '/' || recovery_attempts"
+                    + " from baymax.document where id = '" + lost.id() + "'"))
+                    .isEqualTo("FAILED/pages_missing_after_restart/1");
+        });
+    }
+
+    /**
+     * The crash-loop bound on a real database: the attempt is committed BEFORE the work, so a re-run that errors (the
+     * page's ledger row exists, its object is gone from the bucket) still leaves it counted. Were the increment rolled
+     * back with the work, a document that kills the JVM would be re-run on every restart for ever.
+     */
+    @Test
+    void anAttemptThatErrorsStaysCounted() {
+        runner().run(context -> {
+            UUID family = UUID.randomUUID();
+            UUID patient = UUID.randomUUID();
+            seedFamily(family, patient);
+            DocumentRecordPort records = context.getBean(DocumentRecordPort.class);
+            Document doc = processing(records, patient, family, Instant.now().minusSeconds(600));
+            context.getBean(DocumentStorageUseCase.class).storePage(family, patient, doc.id(), 1, pageJpeg()).block();
+            try (S3Client admin = adminClient()) {
+                admin.deleteObject(DeleteObjectRequest.builder().bucket(BUCKET)
+                        .key(StorageKeys.page(family, patient, doc.id(), 1)).build());
+            }
+
+            List<RecoveryReport> reports = context.getBean(DocumentRecoveryUseCase.class)
+                    .recoverInterrupted(Instant.now()).collectList().block(Duration.ofSeconds(60));
+
+            assertThat(outcomesFor(reports, doc.id())).containsExactly("error");
+            assertThat(scalar("select status || '/' || recovery_attempts from baymax.document where id = '" + doc.id() + "'"))
+                    .as("left as it was, the attempt counted").isEqualTo("PROCESSING/1");
+        });
+    }
+
+    /**
+     * The SQL behind "finished but never explained": a DONE document with an explanation row is not picked, nor a
+     * NEEDS_RETAKE one with a retake row (or every restart within the window would ask the family again and escalate
+     * to retake.second); one with no message, or with only a detail or nudge row, is picked; one older than the
+     * window is only counted. Pinned a day in the past so the other tests' documents, all updated "now", cannot fall
+     * inside either window.
      */
     @Test
     void unexplainedSinceFindsADoneDocumentWithNoMessageAndNotOneWithAnExplanation() {
@@ -175,12 +264,21 @@ class DocumentRecoveryAcceptanceTest {
 
             Document explained = done(records, patient, family, before.minus(Duration.ofHours(1)));
             Document silent = done(records, patient, family, before.minus(Duration.ofHours(2)));
+            Document retaken = finished(records, patient, family, Document.Status.NEEDS_RETAKE,
+                    before.minus(Duration.ofMinutes(170)));
+            Document detailOnly = done(records, patient, family, before.minus(Duration.ofMinutes(160)));
+            Document nudgeOnly = done(records, patient, family, before.minus(Duration.ofMinutes(150)));
             Document old = done(records, patient, family, since.minus(Duration.ofHours(1)));
-            sql("insert into baymax.outbound_message (family_id, patient_id, document_id, kind, urgency, gate_status) values ('"
-                    + family + "','" + patient + "','" + explained.id() + "','explanation','routine','released')");
+            message(family, patient, explained, "explanation");
+            message(family, patient, retaken, "retake");
+            message(family, patient, detailOnly, "detail");
+            message(family, patient, nudgeOnly, "nudge");
 
-            assertThat(records.unexplainedSince(since, before).collectList().block())
-                    .as("inside the window and never explained").containsExactly(silent.id());
+            List<UUID> listed = records.unexplainedSince(since, before).collectList().block();
+            assertThat(listed).as("a retake message answers a NEEDS_RETAKE document").doesNotContain(retaken.id());
+            assertThat(listed).as("a detail or nudge row is not an explanation").contains(detailOnly.id(), nudgeOnly.id());
+            assertThat(listed).as("inside the window and never explained, oldest first")
+                    .containsExactly(detailOnly.id(), nudgeOnly.id(), silent.id());
             assertThat(records.countUnexplainedBefore(since).block())
                     .as("older than the window, never explained: counted, not listed").isEqualTo(1L);
             assertThat(old.id()).isNotIn(records.unexplainedSince(since, before).collectList().block());
@@ -188,8 +286,28 @@ class DocumentRecoveryAcceptanceTest {
     }
 
     private static Document done(DocumentRecordPort records, UUID patient, UUID family, Instant at) {
+        return finished(records, patient, family, Document.Status.DONE, at);
+    }
+
+    private static Document processing(DocumentRecordPort records, UUID patient, UUID family, Instant at) {
         Document created = records.create(Document.received(patient, family, 1, at)).block();
-        return records.update(created.withStatus(Document.Status.DONE, null, at)).block();
+        return records.update(created.withStatus(Document.Status.PROCESSING, null, at)).block();
+    }
+
+    private static Document finished(DocumentRecordPort records, UUID patient, UUID family, Document.Status status,
+                                     Instant at) {
+        Document created = records.create(Document.received(patient, family, 1, at)).block();
+        return records.update(created.withStatus(status, null, at)).block();
+    }
+
+    private static void message(UUID family, UUID patient, Document document, String kind) throws Exception {
+        sql("insert into baymax.outbound_message (family_id, patient_id, document_id, kind, urgency, gate_status) values ('"
+                + family + "','" + patient + "','" + document.id() + "','" + kind + "','routine','released')");
+    }
+
+    /** Outcomes the sweep reported for one document; the sweep also reports the other tests' leftovers. */
+    private static List<String> outcomesFor(List<RecoveryReport> reports, UUID documentId) {
+        return reports.stream().filter(r -> r.documentId().equals(documentId)).map(RecoveryReport::outcome).toList();
     }
 
     private static ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> captureExtractionFailures() {
@@ -209,11 +327,15 @@ class DocumentRecoveryAcceptanceTest {
         logger.setLevel(null);
     }
 
-    /** Every "extraction failure detail" event, as the messages of its exception chain. */
+    /**
+     * The "extraction failure detail" events for one document, as the messages of its exception chain. Per document:
+     * the class shares one database, and every sweep also re-runs what the other tests left RECEIVED/PROCESSING.
+     */
     private static List<String> failureDetails(
-            ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> logged) {
+            ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> logged, UUID documentId) {
         return logged.list.stream()
-                .filter(e -> e.getFormattedMessage().contains("extraction failure detail"))
+                .filter(e -> e.getFormattedMessage().contains("extraction failure detail")
+                        && e.getFormattedMessage().contains(documentId.toString()))
                 .map(e -> {
                     StringBuilder chain = new StringBuilder();
                     for (var t = e.getThrowableProxy(); t != null; t = t.getCause()) {
