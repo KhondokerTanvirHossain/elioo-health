@@ -23,7 +23,7 @@ import java.util.stream.IntStream;
 /**
  * F9b: a deploy is {@code docker rm -f} (deploy.sh), and processing is a detached subscription, so whatever was in
  * flight is killed and would sit in RECEIVED/PROCESSING forever. At startup this re-runs those documents from their
- * stored pages — sequentially (1200 MB container), each attempt claimed and counted before the work, and bounded:
+ * stored pages — sequentially (1200 MB container), each attempt counted and committed before the work, and bounded:
  * after {@code max-attempts} the document is failed, so a document that kills the JVM cannot crash-loop the
  * container. Documents older than {@code max-age} are only reported, never touched. A document that finished but
  * died before {@code explain()} is explained if it was updated within {@code explain-max-age}; older ones are only

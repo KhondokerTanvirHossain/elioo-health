@@ -94,7 +94,9 @@ public interface DocumentRecordPort {
     /**
      * F9b: increments and commits {@code recovery_attempts}, returning the new count. Empty when the document is no
      * longer RECEIVED/PROCESSING or was updated at or after {@code interruptedBefore} (the subscription that is
-     * running it belongs to this instance), so two sweeps cannot both claim it.
+     * running it belongs to this instance). This counts the attempt; it is not a claim: neither {@code status} nor
+     * {@code updated_at} changes, so two sweeps with similar cutoffs would both get a row. Only one sweep runs because
+     * deploy.sh runs one container (fixed name, fixed host port).
      */
     Mono<Integer> markRecoveryAttempt(UUID documentId, Instant interruptedBefore);
 
