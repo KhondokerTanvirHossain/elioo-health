@@ -89,7 +89,8 @@ public final class InMemoryOutboundMessages implements OutboundMessagePort {
         return Mono.just(0L);
     }
 
-    /** F4. Deliberately no @Override: on the pre-fix port this is an extra method, so the red replay compiles. */
+    /** F4. (Written without @Override first, so the Task 5.2 red replay compiled against the pre-fix port.) */
+    @Override
     public Mono<OutboundMessage> latestOfKind(UUID documentId, OutboundMessage.Kind kind) {
         OutboundMessage last = null;
         for (OutboundMessage m : rows.values()) {                 // insertion order is creation order
@@ -101,9 +102,10 @@ public final class InMemoryOutboundMessages implements OutboundMessagePort {
     }
 
     /**
-     * F4, no @Override for the same reason. A Set here CANNOT fail like Postgres does; the real claim is one UPDATE and
-     * is tested for concurrency in DetailCacheAcceptanceTest. This fake only lets wiring tests count deliveries.
+     * F4. A Set here CANNOT fail like Postgres does; the real claim is one UPDATE and is tested for concurrency in
+     * DetailCacheAcceptanceTest. This fake only lets wiring tests count deliveries.
      */
+    @Override
     public Mono<OutboundMessage> claimDelivery(UUID id) {
         OutboundMessage m = rows.get(id);
         if (m == null || m.sentAt() != null || !m.isDeliverable() || !claimed.add(id)) {

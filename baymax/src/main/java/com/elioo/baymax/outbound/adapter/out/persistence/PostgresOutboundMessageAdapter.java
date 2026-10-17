@@ -5,6 +5,9 @@ import com.elioo.baymax.outbound.application.port.out.OutboundMessagePort;
 import com.elioo.baymax.outbound.domain.MessageCount;
 import com.elioo.baymax.outbound.domain.OutboundMessage;
 import com.elioo.baymax.outbound.domain.Urgency;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.r2dbc.spi.Row;
 import lombok.RequiredArgsConstructor;
 import org.springframework.r2dbc.core.DatabaseClient;
@@ -35,7 +38,7 @@ public class PostgresOutboundMessageAdapter implements OutboundMessagePort {
                         + "VALUES (:family, :patient, :document, :kind, :urgency, :reasons, :body, :status, :sent, :created) RETURNING " + COLS)
                 .bind("family", m.familyId()).bind("kind", m.kind().dbValue()).bind("urgency", m.urgency().dbValue())
                 .bind("status", m.gateStatus().dbValue()).bind("created", at(m.createdAt()))
-                .bind("reasons", String.join(",", m.urgencyReasons() == null ? List.of() : m.urgencyReasons()));
+                .bind("reasons", encodeReasons(m.urgencyReasons()));
         spec = m.patientId() == null ? spec.bindNull("patient", UUID.class) : spec.bind("patient", m.patientId());
         spec = m.documentId() == null ? spec.bindNull("document", UUID.class) : spec.bind("document", m.documentId());
         spec = m.body() == null ? spec.bindNull("body", String.class) : spec.bind("body", m.body());
@@ -60,7 +63,9 @@ public class PostgresOutboundMessageAdapter implements OutboundMessagePort {
 
     @Override
     public Mono<Void> markSent(UUID id, Instant sentAt) {
-        return db.sql("UPDATE " + T + " SET sent_at = :sent WHERE id = :id").bind("sent", at(sentAt)).bind("id", id).then();
+        // delivery_status = NULL: a claim ('pending') taken before the log adapter ran must not sit beside sent_at (V14)
+        return db.sql("UPDATE " + T + " SET sent_at = :sent, delivery_status = NULL WHERE id = :id")
+                .bind("sent", at(sentAt)).bind("id", id).then();
     }
 
     /**
@@ -96,6 +101,23 @@ public class PostgresOutboundMessageAdapter implements OutboundMessagePort {
     }
 
     @Override
+    public Mono<OutboundMessage> latestOfKind(UUID documentId, OutboundMessage.Kind kind) {
+        return db.sql("SELECT " + COLS + " FROM " + T + " WHERE document_id = :d AND kind = :k "
+                        + "ORDER BY created_at DESC, (gate_status IN ('released', 'approved') AND body IS NOT NULL) DESC, id DESC LIMIT 1")
+                .bind("d", documentId).bind("k", kind.dbValue())
+                .map((row, meta) -> from(row)).one();
+    }
+
+    @Override
+    public Mono<OutboundMessage> claimDelivery(UUID id) {
+        // one statement, so two concurrent asks cannot both win; V14's CHECKs hold ('pending' with sent_at NULL)
+        return db.sql("UPDATE " + T + " SET delivery_status = 'pending' WHERE id = :id AND sent_at IS NULL "
+                        + "AND (delivery_status IS NULL OR delivery_status = 'failed') "
+                        + "AND gate_status IN ('released', 'approved') AND body IS NOT NULL RETURNING " + COLS)
+                .bind("id", id).map((row, meta) -> from(row)).one();
+    }
+
+    @Override
     public Flux<MessageCount> counts(Instant from, Instant to) {
         return db.sql("SELECT urgency, gate_status, count(*) AS n FROM " + T + " WHERE created_at >= :from AND created_at < :to "
                         + "GROUP BY urgency, gate_status ORDER BY urgency, gate_status")
@@ -103,6 +125,36 @@ public class PostgresOutboundMessageAdapter implements OutboundMessagePort {
                 .map((row, meta) -> new MessageCount(Urgency.fromDbValue(row.get("urgency", String.class)),
                         OutboundMessage.GateStatus.fromDbValue(row.get("gate_status", String.class)), row.get("n", Long.class)))
                 .all();
+    }
+
+    private static final ObjectMapper JSON = new ObjectMapper();
+
+    /**
+     * F4: reasons are stored as a JSON array. They embed marker names, and marker names carry commas
+     * ({@code value_critical:cholesterol, total|stopgap}); the comma-joined form split one reason into two on read,
+     * so a cache keyed on reasons could never hit against the real database.
+     */
+    static String encodeReasons(List<String> reasons) {
+        try {
+            return JSON.writeValueAsString(reasons == null ? List.of() : reasons);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("urgency reasons are not encodable", e);
+        }
+    }
+
+    /** A JSON array (written from F4 on); anything else is the legacy comma-joined form and reads as it always did. */
+    static List<String> decodeReasons(String stored) {
+        if (stored == null || stored.isBlank()) {
+            return List.of();
+        }
+        if (stored.startsWith("[")) {
+            try {
+                return List.copyOf(JSON.readValue(stored, new TypeReference<List<String>>() { }));
+            } catch (JsonProcessingException e) {
+                throw new IllegalStateException("urgency reasons are not a JSON array of strings", e);
+            }
+        }
+        return Arrays.asList(stored.split(","));
     }
 
     private static OffsetDateTime at(Instant i) {
@@ -119,7 +171,7 @@ public class PostgresOutboundMessageAdapter implements OutboundMessagePort {
         return new OutboundMessage(row.get("id", UUID.class), row.get("family_id", UUID.class), row.get("patient_id", UUID.class),
                 row.get("document_id", UUID.class), OutboundMessage.Kind.fromDbValue(row.get("kind", String.class)),
                 Urgency.fromDbValue(row.get("urgency", String.class)),
-                reasons == null || reasons.isBlank() ? List.of() : Arrays.asList(reasons.split(",")),
+                decodeReasons(reasons),
                 row.get("body", String.class), OutboundMessage.GateStatus.fromDbValue(row.get("gate_status", String.class)),
                 row.get("reviewer", String.class), row.get("reject_reason", String.class),
                 instant(row, "decided_at"), instant(row, "sent_at"), instant(row, "created_at"));

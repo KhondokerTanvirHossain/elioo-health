@@ -225,6 +225,22 @@ public class ExplanationService implements ExplainDocumentUseCase {
     }
 
     /**
+     * A cached DETAIL answers only for the urgency it was composed at. Urgency can rise after composition
+     * (follow_up_past_due is date-driven), and a stale row would understate it — so a row at a LOWER level, or the
+     * same level for different reasons, is recomposed. A row at a HIGHER level is kept: nothing lowers urgency (HC2;
+     * F1 makes this central in phase 1b). FAILED_SAFETY and REJECTED rows are hits too: regenerating until the
+     * checklist passes would make it a filter over chance, and recomposing after a reject would route around the
+     * reviewer.
+     */
+    static boolean stillCurrent(OutboundMessage cached, UrgencyAssessment now) {
+        if (cached.urgency() != now.level()) {
+            return cached.urgency().isAtLeast(now.level());
+        }
+        return new java.util.HashSet<>(cached.urgencyReasons() == null ? List.of() : cached.urgencyReasons())
+                .equals(new java.util.HashSet<>(now.reasons()));
+    }
+
+    /**
      * May the ROUTINE message say "everything is within the normal range"?
      *
      * <p>Only when the document actually carries values with printed ranges and every one of them is inside.
