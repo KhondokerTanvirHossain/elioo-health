@@ -5,6 +5,8 @@ import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
+import com.elioo.baymax.outbound.application.port.in.ExplainDocumentUseCase;
+import com.elioo.baymax.outbound.application.port.out.MessageDeliveryPort;
 import com.elioo.baymax.outbound.application.port.out.OutboundMessagePort;
 import com.elioo.baymax.outbound.domain.DeliveryOutcome;
 import com.elioo.baymax.outbound.domain.OutboundMessage;
@@ -22,7 +24,11 @@ import org.springframework.boot.test.context.runner.ReactiveWebApplicationContex
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 import java.sql.Connection;
@@ -37,6 +43,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -268,6 +275,43 @@ class DetailCacheAcceptanceTest {
             assertThat(column(stored.id(), "sent_at")).isNotNull();
             assertThat(column(stored.id(), "delivery_status")).isNull();
         });
+    }
+
+    /** End to end on Postgres: two asks deliver one stored row at the same instant; the channel sees it once. */
+    @Test
+    void twoConcurrentDeliversOfOneRowHandItToTheChannelOnce() {
+        CountingDelivery.CALLS.set(0);
+        runner().withUserConfiguration(CountingDelivery.class).run(context -> {
+            OutboundMessagePort messages = context.getBean(OutboundMessagePort.class);
+            HealthRecordPort records = context.getBean(HealthRecordPort.class);
+            ExplainDocumentUseCase explainer = context.getBean(ExplainDocumentUseCase.class);
+            Instant t = Instant.parse("2026-10-20T13:30:00Z");
+            FamilyAccount family = records.createFamily(new FamilyAccount(
+                    null, "+8801700000809", "Momena", FamilyAccount.Plan.FREE, t, t)).block();
+            OutboundMessage stored = messages.save(row(family.id(), UUID.randomUUID(), OutboundMessage.Kind.DETAIL, "বিস্তারিত", t)).block();
+
+            Flux.range(0, 2)
+                    .flatMap(i -> explainer.deliver(stored).subscribeOn(Schedulers.parallel()), 2)
+                    .collectList().block(Duration.ofSeconds(30));
+
+            assertThat(CountingDelivery.CALLS.get()).as("deliveries handed to the channel for one row").isEqualTo(1);
+            assertThat(column(stored.id(), "delivery_status")).isEqualTo("sent");
+            assertThat(column(stored.id(), "sent_at")).isNotNull();
+        });
+    }
+
+    @Configuration
+    static class CountingDelivery {
+        static final AtomicInteger CALLS = new AtomicInteger();
+
+        @Bean
+        @Primary
+        MessageDeliveryPort countingDelivery() {
+            return m -> {
+                int n = CALLS.incrementAndGet();
+                return Mono.just(DeliveryOutcome.sent(WaFixtures.wamid("8801700000809", n)));
+            };
+        }
     }
 
     private static void execute(String sql) throws Exception {

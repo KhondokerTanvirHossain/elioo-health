@@ -19,6 +19,9 @@ import com.elioo.healthcare.llm.model.LlmResponse;
 import com.elioo.healthcare.llm.model.TokenUsage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -92,6 +95,9 @@ class ExplanationServiceTest {
         when(messages.consecutiveRetakes(FAMILY)).thenReturn(Mono.just(0L));
         when(documents.clinicalContextOf(DOC)).thenReturn(Mono.empty());
         when(documents.medicinesOf(DOC)).thenReturn(Flux.empty());
+        // F4: no cached DETAIL unless a test says so; a claim succeeds on the row save() last returned
+        when(messages.latestOfKind(any(), any())).thenReturn(Mono.empty());
+        when(messages.claimDelivery(any())).thenAnswer(i -> messages.find(i.getArgument(0)));
     }
 
     private void done(Map<String, Object>... values) {
@@ -295,5 +301,200 @@ class ExplanationServiceTest {
         verify(delivery).deliver(sent.capture());
         String reassurance = new Copy().bn("explanation.routine", Map.of()).split("\n")[1];   // সব কিছু স্বাভাবিক সীমার মধ্যে আছে।
         assertThat(sent.getValue().body()).as("a truly all-inside report must keep its reassurance").contains(reassurance);
+    }
+
+    // ---- F4: compose, release and deliver are three steps; DETAIL is cached per document ----
+
+    private static final String NOW_REPLY = "HbA1c এসেছে 11.2 %, যা স্বাভাবিকের চেয়ে অনেক বেশি। এখনই ডাক্তারের কাছে যান। দেরি করবেন না।";
+
+    private static OutboundMessage storedDetail(Urgency urgency, List<String> reasons, OutboundMessage.GateStatus status, String body) {
+        return new OutboundMessage(UUID.randomUUID(), FAMILY, PATIENT, DOC, OutboundMessage.Kind.DETAIL, urgency, reasons,
+                body, status, null, null, null, null, NOW);
+    }
+
+    /** F4: composition is pure — no row, no reviewer, no delivery — in both gate modes; the gate status is decided. */
+    @ParameterizedTest
+    @ValueSource(strings = {"off", "urgency"})
+    void composeCheckedNeitherSavesNorParksNorDelivers(String mode) {
+        properties.getOutbound().setGateMode(mode);
+        done(CRITICAL);
+        replies.push(NOW_REPLY);
+
+        StepVerifier.create(service.composeChecked(DOC, OutboundMessage.Kind.DETAIL)).assertNext(m -> {
+            assertThat(m.id()).isNull();
+            assertThat(m.kind()).isEqualTo(OutboundMessage.Kind.DETAIL);
+            assertThat(m.urgency()).isEqualTo(Urgency.NOW);
+            assertThat(m.gateStatus()).isEqualTo(mode.equals("off") ? OutboundMessage.GateStatus.RELEASED : OutboundMessage.GateStatus.PENDING);
+            assertThat(m.body()).contains(new Copy().bn("urgency.now", Map.of()));
+        }).verifyComplete();
+        verify(messages, never()).save(any());
+        verify(reviewer, never()).notifyPending(any());
+        verify(delivery, never()).deliver(any());
+    }
+
+    @Test
+    void composeCheckedForDetailOnARetakeDocumentIsEmpty() {
+        when(documents.find(DOC)).thenReturn(Mono.just(new Document(DOC, PATIENT, FAMILY, null, null, null, null, 0.6,
+                Document.Status.NEEDS_RETAKE, "blurry", null, null, 1, NOW, NOW)));
+        StepVerifier.create(service.composeChecked(DOC, OutboundMessage.Kind.DETAIL)).verifyComplete();
+        StepVerifier.create(service.composeChecked(DOC, OutboundMessage.Kind.EXPLANATION))
+                .assertNext(m -> assertThat(m.kind()).isEqualTo(OutboundMessage.Kind.RETAKE)).verifyComplete();
+        verify(messages, never()).save(any());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"off", "urgency"})
+    void releaseParksAPendingMessageAndDeliversOnlyAReleasedOne(String mode) {
+        properties.getOutbound().setGateMode(mode);
+        done(CRITICAL);
+        replies.push(NOW_REPLY);
+        OutboundMessage composed = service.composeChecked(DOC, OutboundMessage.Kind.EXPLANATION).block();
+
+        OutboundMessage released = service.release(composed).block();
+
+        verify(messages, times(1)).save(any());
+        if (mode.equals("off")) {
+            verify(delivery, times(1)).deliver(any());
+            verify(reviewer, never()).notifyPending(any());
+        } else {
+            assertThat(released.gateStatus()).isEqualTo(OutboundMessage.GateStatus.PENDING);
+            verify(delivery, never()).deliver(any());
+            verify(reviewer, times(1)).notifyPending(any());
+        }
+    }
+
+    @Test
+    void releaseRefusesAMessageThatIsAlreadyStored() {
+        StepVerifier.create(service.release(storedDetail(Urgency.ROUTINE, List.of(), OutboundMessage.GateStatus.RELEASED, "x")))
+                .expectErrorSatisfies(e -> assertThat(e).isInstanceOf(IllegalStateException.class).hasMessageContaining("unsaved"))
+                .verify();
+        verify(messages, never()).save(any());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = OutboundMessage.GateStatus.class, names = {"PENDING", "REJECTED", "FAILED_SAFETY"})
+    void deliverRefusesAnythingNotReleasedOrApproved(OutboundMessage.GateStatus status) {
+        StepVerifier.create(service.deliver(storedDetail(Urgency.NOW, List.of(), status, "unreviewed")))
+                .expectErrorSatisfies(e -> assertThat(e).isInstanceOf(IllegalStateException.class)
+                        .hasMessageContaining("gate=" + status.dbValue()))
+                .verify();
+        verify(delivery, never()).deliver(any());
+    }
+
+    /** The cache, protected direction: same urgency and reasons → the stored row, no model call, no new row. */
+    @Test
+    void detailReturnsTheCachedRowWhenTheUrgencyIsUnchanged() {
+        done(NORMAL);
+        OutboundMessage cached = storedDetail(Urgency.ROUTINE, List.of(), OutboundMessage.GateStatus.RELEASED, "আগের বিস্তারিত");
+        when(messages.latestOfKind(DOC, OutboundMessage.Kind.DETAIL)).thenReturn(Mono.just(cached));
+
+        StepVerifier.create(service.detail(DOC)).expectNext(cached).verifyComplete();
+        verify(metered, never()).invoke(any(), any(), any(LlmRequest.class));
+        verify(messages, never()).save(any());
+        verify(delivery, never()).deliver(any());
+    }
+
+    /** The cache, dangerous direction: urgency rose since the row was stored → recompose; a stale row would understate it. */
+    @Test
+    void detailIsRecomposedWhenTheUrgencyHasRisenSinceItWasCached() {
+        done(CRITICAL);
+        when(messages.latestOfKind(DOC, OutboundMessage.Kind.DETAIL)).thenReturn(Mono.just(
+                storedDetail(Urgency.ROUTINE, List.of(), OutboundMessage.GateStatus.RELEASED, "আগের বিস্তারিত")));
+        replies.push(NOW_REPLY);
+
+        StepVerifier.create(service.detail(DOC)).assertNext(m -> {
+            assertThat(m.urgency()).isEqualTo(Urgency.NOW);
+            assertThat(m.body()).isNotEqualTo("আগের বিস্তারিত");
+        }).verifyComplete();
+        verify(metered, times(1)).invoke(eq(AiCallPurpose.EXPLAIN), any(), any(LlmRequest.class));
+        verify(delivery, never()).deliver(any());
+    }
+
+    /** HC2 in the cache: a cached row at a HIGHER urgency than a fresh assessment is kept, never replaced by a lower one. */
+    @Test
+    void aCachedDetailAtAHigherUrgencyIsNeverReplacedByALowerOne() {
+        done(NORMAL);
+        OutboundMessage cached = storedDetail(Urgency.NOW, List.of("value_critical:hba1c|stopgap"), OutboundMessage.GateStatus.RELEASED, "জরুরি");
+        when(messages.latestOfKind(DOC, OutboundMessage.Kind.DETAIL)).thenReturn(Mono.just(cached));
+
+        StepVerifier.create(service.detail(DOC)).expectNext(cached).verifyComplete();
+        verify(messages, never()).save(any());
+    }
+
+    /** Fail-closed is final for that urgency: regenerating until the checklist passes would make it a filter over chance. */
+    @Test
+    void aCachedDetailThatFailedSafetyIsNotRegeneratedOnEveryAsk() {
+        done(NORMAL);
+        OutboundMessage cached = storedDetail(Urgency.ROUTINE, List.of(), OutboundMessage.GateStatus.FAILED_SAFETY, null);
+        when(messages.latestOfKind(DOC, OutboundMessage.Kind.DETAIL)).thenReturn(Mono.just(cached));
+
+        StepVerifier.create(service.detail(DOC)).expectNext(cached).verifyComplete();
+        verify(metered, never()).invoke(any(), any(), any(LlmRequest.class));
+    }
+
+    /** A miss stores the composed DETAIL (parked if PENDING) and never delivers it — delivery is the caller's call. */
+    @ParameterizedTest
+    @ValueSource(strings = {"off", "urgency"})
+    void aDetailCacheMissIsStoredButNotDelivered(String mode) {
+        properties.getOutbound().setGateMode(mode);
+        done(CRITICAL);
+        replies.push(NOW_REPLY);
+
+        OutboundMessage m = service.detail(DOC).block();
+
+        assertThat(m.id()).isNotNull();
+        assertThat(m.sentAt()).isNull();
+        verify(messages, times(1)).save(any());
+        verify(delivery, never()).deliver(any());
+        verify(reviewer, times(mode.equals("urgency") ? 1 : 0)).notifyPending(any());
+    }
+
+    /** Same level, different reasons: the new reason must reach the family, so the cache misses and recomposes. */
+    @Test
+    void detailIsRecomposedWhenTheLevelIsTheSameButTheReasonsChanged() {
+        done(CRITICAL);
+        when(messages.latestOfKind(DOC, OutboundMessage.Kind.DETAIL)).thenReturn(Mono.just(storedDetail(Urgency.NOW,
+                List.of("value_critical:another_marker|stopgap"), OutboundMessage.GateStatus.RELEASED, "পুরনো বিস্তারিত")));
+        replies.push(NOW_REPLY);
+
+        StepVerifier.create(service.detail(DOC)).assertNext(m -> assertThat(m.body()).isNotEqualTo("পুরনো বিস্তারিত"))
+                .verifyComplete();
+        verify(metered, times(1)).invoke(eq(AiCallPurpose.EXPLAIN), any(), any(LlmRequest.class));
+    }
+
+    /** A REJECTED detail is a hit: recomposing after a reject would route around the reviewer. */
+    @Test
+    void aCachedRejectedDetailIsReturnedNotRecomposed() {
+        done(NORMAL);
+        OutboundMessage cached = storedDetail(Urgency.ROUTINE, List.of(), OutboundMessage.GateStatus.REJECTED, "x");
+        when(messages.latestOfKind(DOC, OutboundMessage.Kind.DETAIL)).thenReturn(Mono.just(cached));
+
+        StepVerifier.create(service.detail(DOC)).expectNext(cached).verifyComplete();
+        verify(metered, never()).invoke(any(), any(), any(LlmRequest.class));
+        verify(messages, never()).save(any());
+    }
+
+    /** deliver hands a row to the channel only after winning the claim; a lost claim is empty, not a second send. */
+    @Test
+    void deliverOnALostClaimSendsNothing() {
+        OutboundMessage stored = storedDetail(Urgency.ROUTINE, List.of(), OutboundMessage.GateStatus.RELEASED, "বিস্তারিত");
+        // the row exists, so only the lost claim can stop the send (not an absent row)
+        when(messages.find(stored.id())).thenReturn(Mono.just(stored));
+        org.mockito.Mockito.doReturn(Mono.empty()).when(messages).claimDelivery(stored.id());
+
+        StepVerifier.create(service.deliver(stored)).verifyComplete();
+        verify(delivery, never()).deliver(any());
+    }
+
+    /** The protected direction of the claim: a won claim hands exactly the claimed row to the channel, once. */
+    @Test
+    void deliverOnAWonClaimHandsTheRowToTheChannelOnce() {
+        OutboundMessage stored = storedDetail(Urgency.ROUTINE, List.of(), OutboundMessage.GateStatus.RELEASED, "বিস্তারিত");
+        org.mockito.Mockito.doReturn(Mono.just(stored)).when(messages).claimDelivery(stored.id());
+        when(messages.find(stored.id())).thenReturn(Mono.just(stored));
+
+        StepVerifier.create(service.deliver(stored)).expectNextCount(1).verifyComplete();
+        verify(delivery, times(1)).deliver(stored);
+        verify(messages).markSent(eq(stored.id()), eq(NOW));
     }
 }

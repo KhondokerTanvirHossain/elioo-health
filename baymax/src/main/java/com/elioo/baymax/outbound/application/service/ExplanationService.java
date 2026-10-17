@@ -40,6 +40,11 @@ import java.util.UUID;
  *
  * <p>Urgency is assessed once, before composition, and asserted afterwards: the stored message carries the
  * urgency it was assessed at, or nothing is stored.
+ *
+ * <p>F4: composition, persistence and delivery are three steps. {@link #composeChecked} composes and decides the gate
+ * status and touches nothing; {@link #release} stores (and parks a PENDING row with the reviewer); {@link #deliver} is
+ * the only path from this service to {@link MessageDeliveryPort}, behind an atomic claim on the row, so a row reaches
+ * a family at most once. DETAIL is cached per document while its urgency is current ({@link #stillCurrent}).
  */
 @Slf4j
 @Service
@@ -62,23 +67,38 @@ public class ExplanationService implements ExplainDocumentUseCase {
 
     @Override
     public Mono<OutboundMessage> explain(UUID documentId) {
-        return compose(documentId, false);
+        return composeChecked(documentId, OutboundMessage.Kind.EXPLANATION).flatMap(this::release);
+    }
+
+    @Override
+    public Mono<OutboundMessage> composeChecked(UUID documentId, OutboundMessage.Kind kind) {
+        if (kind != OutboundMessage.Kind.EXPLANATION && kind != OutboundMessage.Kind.DETAIL) {
+            return Mono.error(new IllegalArgumentException("composeChecked composes EXPLANATION or DETAIL, not " + kind));
+        }
+        return documents.find(documentId)
+                .switchIfEmpty(Mono.error(BaymaxException.notFound("document_not_found", "no document with id " + documentId)))
+                .flatMap(document -> switch (document.status()) {
+                    // a detail request on a retake used to file ANOTHER retake row and escalate the next retake copy
+                    case NEEDS_RETAKE -> kind == OutboundMessage.Kind.EXPLANATION ? retake(document) : Mono.<OutboundMessage>empty();
+                    case DONE -> facts(document).flatMap(facts -> compose(facts, kind, urgency.assess(facts)));
+                    default -> Mono.<OutboundMessage>empty();
+                });
     }
 
     @Override
     public Mono<OutboundMessage> detail(UUID documentId) {
-        return compose(documentId, true);
-    }
-
-    private Mono<OutboundMessage> compose(UUID documentId, boolean detail) {
         return documents.find(documentId)
                 .switchIfEmpty(Mono.error(BaymaxException.notFound("document_not_found", "no document with id " + documentId)))
-                .flatMap(document -> switch (document.status()) {
-                    case NEEDS_RETAKE -> retake(document);
-                    case DONE -> facts(document).flatMap(facts -> documents.medicinesOf(document.id()).collectList()
-                            .flatMap(medicines -> explanation(facts, medicines, detail)));
-                    default -> Mono.empty();
-                });
+                .filter(document -> document.status() == Document.Status.DONE)
+                .flatMap(document -> facts(document).flatMap(facts -> {
+                    UrgencyAssessment assessed = urgency.assess(facts);
+                    return messages.latestOfKind(documentId, OutboundMessage.Kind.DETAIL)
+                            .filter(cached -> stillCurrent(cached, assessed))
+                            .doOnNext(cached -> log.info("[baymax] detail cache hit documentId={} messageId={} gate={}",
+                                    documentId, cached.id(), cached.gateStatus().dbValue()))
+                            .switchIfEmpty(Mono.defer(() -> compose(facts, OutboundMessage.Kind.DETAIL, assessed)
+                                    .flatMap(this::store)));
+                }));
     }
 
     /**
@@ -91,7 +111,8 @@ public class ExplanationService implements ExplainDocumentUseCase {
         return messages.consecutiveRetakes(document.familyId()).defaultIfEmpty(0L).flatMap(before -> {
             String key = before >= 2 ? "retake.third" : before == 1 ? "retake.second" : "retake";
             String body = copy.bn(key, Map.of());
-            return release(new OutboundMessage(null, document.familyId(), document.patientId(), document.id(),
+            // composed only: release() stores and delivers it, so composeChecked stays free of side effects
+            return Mono.just(new OutboundMessage(null, document.familyId(), document.patientId(), document.id(),
                     OutboundMessage.Kind.RETAKE, Urgency.ROUTINE, List.of("retake_" + (before + 1)), body,
                     gate.decide(Urgency.ROUTINE), null, null, null, null, clock.instant()));
         });
@@ -108,14 +129,19 @@ public class ExplanationService implements ExplainDocumentUseCase {
     }
 
     /**
-     * @param medicines the document's stored medicines (DR-16): never in the skeleton, never in the prompt; after
-     *                  the model's text has passed the checklist they are appended verbatim, then verified
-     *                  character for character against the store
+     * Composes one EXPLANATION or DETAIL from the facts at the urgency already assessed. Loads the document's stored
+     * medicines (DR-16): never in the skeleton, never in the prompt; after the model's text has passed the checklist
+     * they are appended verbatim, then verified character for character against the store. Saves nothing.
      */
-    private Mono<OutboundMessage> explanation(DocumentFacts facts, List<Map<String, Object>> medicines, boolean detail) {
-        UrgencyAssessment assessed = urgency.assess(facts);
+    private Mono<OutboundMessage> compose(DocumentFacts facts, OutboundMessage.Kind kind, UrgencyAssessment assessed) {
+        return documents.medicinesOf(facts.document().id()).collectList()
+                .flatMap(medicines -> compose(facts, kind, assessed, medicines));
+    }
+
+    private Mono<OutboundMessage> compose(DocumentFacts facts, OutboundMessage.Kind kind, UrgencyAssessment assessed,
+                                          List<Map<String, Object>> medicines) {
+        boolean detail = kind == OutboundMessage.Kind.DETAIL;
         String skeleton = skeleton(facts, assessed, detail);
-        OutboundMessage.Kind kind = detail ? OutboundMessage.Kind.DETAIL : OutboundMessage.Kind.EXPLANATION;
 
         // nothing stands out and nothing is urgent: the template is the whole message, the model adds nothing
         boolean templateOnly = !detail && assessed.level() == Urgency.ROUTINE;
@@ -192,36 +218,55 @@ public class ExplanationService implements ExplainDocumentUseCase {
                 .switchIfEmpty(Mono.fromSupplier(() -> new OutboundMessage(null, facts.document().familyId(), facts.document().patientId(),
                         facts.document().id(), kind, assessed.level(), assessed.reasons(), null,
                         OutboundMessage.GateStatus.FAILED_SAFETY, null, null, null, null, clock.instant())))
-                .flatMap(message -> {
-                    // urgency is never lowered by any later stage: the row must carry what was assessed
-                    if (message.urgency() != assessed.level()) {
-                        return Mono.error(new IllegalStateException("urgency changed after assessment"));
-                    }
-                    return message.gateStatus() == OutboundMessage.GateStatus.FAILED_SAFETY ? messages.save(message) : release(message);
-                });
+                // urgency is never lowered by any later stage: the row must carry what was assessed
+                .flatMap(message -> message.urgency() != assessed.level()
+                        ? Mono.<OutboundMessage>error(new IllegalStateException("urgency changed after assessment"))
+                        : Mono.just(message));
     }
 
-    /** Persist, then either park it with the reviewer or hand it to delivery. Nothing PENDING is delivered. */
-    private Mono<OutboundMessage> release(OutboundMessage message) {
-        if (message.gateStatus() == OutboundMessage.GateStatus.PENDING) {
-            return messages.save(message).flatMap(saved -> reviewer.notifyPending(saved).thenReturn(saved));
+    @Override
+    public Mono<OutboundMessage> release(OutboundMessage composed) {
+        if (composed.id() != null) {
+            return Mono.error(new IllegalStateException("release takes a composed, unsaved message; got id=" + composed.id()));
+        }
+        return store(composed).flatMap(saved -> saved.gateStatus() == OutboundMessage.GateStatus.RELEASED
+                ? deliver(saved) : Mono.just(saved));
+    }
+
+    /** Persist only: PENDING is parked with the reviewer, FAILED_SAFETY is recorded, RELEASED waits for deliver(). */
+    private Mono<OutboundMessage> store(OutboundMessage m) {
+        return switch (m.gateStatus()) {
+            case PENDING -> messages.save(m).flatMap(saved -> reviewer.notifyPending(saved).thenReturn(saved));
+            case FAILED_SAFETY -> messages.save(m);
+            // sentAt stays NULL (V13/V14): only a provider acceptance sets it, and nothing has been attempted yet.
+            // Setting it at save time was the same lie approve() used to tell.
+            case RELEASED -> messages.save(new OutboundMessage(null, m.familyId(), m.patientId(), m.documentId(), m.kind(),
+                    m.urgency(), m.urgencyReasons(), m.body(), OutboundMessage.GateStatus.RELEASED, null, null, null, null, m.createdAt()));
+            case APPROVED, REJECTED -> Mono.error(new IllegalStateException("only the reviewer decides " + m.gateStatus().dbValue()));
+        };
+    }
+
+    @Override
+    public Mono<OutboundMessage> deliver(OutboundMessage stored) {
+        if (stored.id() == null || !stored.isDeliverable()) {
+            return Mono.error(new IllegalStateException("not deliverable: id=" + stored.id()
+                    + " gate=" + (stored.gateStatus() == null ? null : stored.gateStatus().dbValue())));
         }
         Instant now = clock.instant();
-        // sentAt stays NULL here: V13 says only a provider acceptance sets it, and nothing has been attempted
-        // yet. Setting it at save time was the same lie approve() used to tell — a row claiming delivery of a
-        // message that may never arrive.
-        OutboundMessage toSend = new OutboundMessage(message.id(), message.familyId(), message.patientId(), message.documentId(),
-                message.kind(), message.urgency(), message.urgencyReasons(), message.body(), OutboundMessage.GateStatus.RELEASED,
-                null, null, null, null, message.createdAt());
-        return messages.save(toSend).flatMap(saved -> delivery.deliver(saved)
-                .onErrorResume(e -> {
-                    log.error("[baymax] released message delivery threw id={} : {}", saved.id(), e.toString());
-                    return Mono.just(DeliveryOutcome.failed(DeliveryOutcome.SEND_FAILED));
-                })
-                .flatMap(outcome -> outcome.status() == null
-                        // the log adapter delivered nothing; keep v1 behaviour and stamp sent_at
-                        ? messages.markSent(saved.id(), now).then(messages.find(saved.id()))
-                        : messages.recordDelivery(saved.id(), outcome, now)));
+        // F4: a row reaches the channel at most once. The claim is one UPDATE … WHERE sent_at IS NULL AND
+        // (delivery_status IS NULL OR delivery_status = 'failed') RETURNING; empty means another caller holds the row.
+        return messages.claimDelivery(stored.id())
+                .flatMap(claimed -> delivery.deliver(claimed)
+                        .onErrorResume(e -> {
+                            // exception text can carry a provider URL or error body: class name above DEBUG
+                            log.error("[baymax] released message delivery threw id={} error={}", stored.id(), e.getClass().getSimpleName());
+                            log.debug("[baymax] released message delivery threw detail id={}: {}", stored.id(), e.toString());
+                            return Mono.just(DeliveryOutcome.failed(DeliveryOutcome.SEND_FAILED));
+                        })
+                        .flatMap(outcome -> outcome.status() == null
+                                // the log adapter delivered nothing; stamp sent_at (markSent also clears the claim)
+                                ? messages.markSent(stored.id(), now).then(messages.find(stored.id()))
+                                : messages.recordDelivery(stored.id(), outcome, now)));
     }
 
     /**

@@ -22,7 +22,11 @@ public record OutboundMessage(UUID id, UUID familyId, UUID patientId, UUID docum
         }
     }
 
-    /** RELEASED = not gated, handed to delivery at once. PENDING is never delivered without an explicit approve. */
+    /**
+     * RELEASED = not gated; deliverable. Whether it was delivered is {@code sent_at} / {@code delivery_status} (V13),
+     * not this status — a DETAIL stored for the web is RELEASED and undelivered. PENDING is never delivered without
+     * an explicit approve.
+     */
     public enum GateStatus {
         RELEASED, PENDING, APPROVED, REJECTED, FAILED_SAFETY;
 

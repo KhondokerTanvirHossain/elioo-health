@@ -32,6 +32,12 @@ class ReviewGateServiceTest {
     private final ReviewGateService service = new ReviewGateService(messages, delivery, Clock.fixed(NOW, ZoneOffset.UTC));
     private final UUID id = UUID.randomUUID();
 
+    @org.junit.jupiter.api.BeforeEach
+    void wire() {
+        // F4: approve claims the row before delivering; by default the claim succeeds on whatever find() returns
+        when(messages.claimDelivery(any())).thenAnswer(i -> messages.find(i.getArgument(0)));
+    }
+
     private OutboundMessage pending() {
         return new OutboundMessage(id, UUID.randomUUID(), null, UUID.randomUUID(), OutboundMessage.Kind.EXPLANATION, Urgency.NOW,
                 List.of("value_critical:hba1c"), "body", OutboundMessage.GateStatus.PENDING, null, null, null, null, NOW);
@@ -115,5 +121,42 @@ class ReviewGateServiceTest {
                 List.of(), "body", OutboundMessage.GateStatus.RELEASED, null, null, null, NOW, NOW)));
         StepVerifier.create(service.approve(id, "tanvir")).expectErrorMatches(e -> ((BaymaxException) e).status().value() == 409).verify();
         verify(delivery, never()).deliver(any());
+    }
+
+    /**
+     * F4: two approves of one PENDING row (two reviewer tabs, a double click) both pass pendingOrError before either
+     * decides. The claim is what stops the second delivery: a lost claim returns the decided row and sends nothing.
+     */
+    @Test
+    void aSecondApproveOfTheSameRowDoesNotDeliverAgain() {
+        OutboundMessage approved = new OutboundMessage(id, null, null, null, OutboundMessage.Kind.EXPLANATION,
+                Urgency.NOW, List.of(), "body", OutboundMessage.GateStatus.APPROVED, "tanvir", null, NOW, null, NOW);
+        when(messages.find(id)).thenReturn(Mono.just(pending()));
+        when(messages.decide(eq(id), eq(OutboundMessage.GateStatus.APPROVED), eq("tanvir"), isNull(), eq(NOW)))
+                .thenReturn(Mono.just(approved));
+        org.mockito.Mockito.doReturn(Mono.empty()).when(messages).claimDelivery(id);
+
+        StepVerifier.create(service.approve(id, "tanvir")).expectNext(approved).verifyComplete();
+        verify(delivery, never()).deliver(any());
+        verify(messages, never()).recordDelivery(any(), any(), any());
+        verify(messages, never()).markSent(any(), any());
+    }
+
+    /** The protected direction: a won claim delivers the claimed (approved) row, exactly once. */
+    @Test
+    void anApproveThatWinsTheClaimDeliversTheApprovedRowOnce() {
+        OutboundMessage approved = new OutboundMessage(id, null, null, null, OutboundMessage.Kind.EXPLANATION,
+                Urgency.NOW, List.of(), "body", OutboundMessage.GateStatus.APPROVED, "tanvir", null, NOW, null, NOW);
+        when(messages.find(id)).thenReturn(Mono.just(pending()));
+        when(messages.decide(eq(id), eq(OutboundMessage.GateStatus.APPROVED), eq("tanvir"), isNull(), eq(NOW)))
+                .thenReturn(Mono.just(approved));
+        org.mockito.Mockito.doReturn(Mono.just(approved)).when(messages).claimDelivery(id);
+        when(delivery.deliver(any())).thenReturn(Mono.just(com.elioo.baymax.outbound.domain.DeliveryOutcome.sent(
+                com.elioo.baymax.wa.WaFixtures.wamid("8801700000000"))));
+        when(messages.recordDelivery(eq(id), any(), eq(NOW))).thenReturn(Mono.just(approved));
+
+        StepVerifier.create(service.approve(id, "tanvir")).expectNextCount(1).verifyComplete();
+        verify(messages).claimDelivery(id);
+        verify(delivery, org.mockito.Mockito.times(1)).deliver(approved);
     }
 }

@@ -16,7 +16,10 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.UUID;
 
-/** Approve delivers; reject records the reason and never delivers. Only PENDING rows can be decided. */
+/**
+ * Approve delivers; reject records the reason and never delivers. Only PENDING rows can be decided. Approve claims the
+ * row before handing it to the channel (F4), so an approved row reaches the family at most once.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -47,17 +50,29 @@ public class ReviewGateService implements ReviewGateUseCase {
                 // decidedAt is set here; sentAt stays NULL until a provider actually accepts the message
                 .flatMap(m -> messages.decide(messageId, OutboundMessage.GateStatus.APPROVED, reviewer, null, now))
                 .doOnNext(m -> log.info("[baymax] message approved id={} by={} urgency={}", m.id(), reviewer, m.urgency()))
-                .flatMap(m -> delivery.deliver(m)
-                        .onErrorResume(e -> {
-                            log.error("[baymax] message delivery threw id={} : {}", m.id(), e.toString());
-                            return Mono.just(DeliveryOutcome.failed(DeliveryOutcome.SEND_FAILED));
-                        })
-                        .flatMap(outcome -> outcome.status() == null
-                                // the log adapter delivered nothing; keep v1 behaviour and stamp sent_at
-                                ? messages.markSent(m.id(), now).then(messages.find(m.id()))
-                                : messages.recordDelivery(m.id(), outcome, now)
-                                        .doOnNext(saved -> log.info("[baymax] message delivery recorded id={} status={} error={}",
-                                                saved.id(), outcome.status(), outcome.error()))));
+                // F4: claim before delivering, so two approves of one row (two tabs, a double click) send it once
+                .flatMap(m -> messages.claimDelivery(m.id())
+                        .map(java.util.Optional::of)
+                        .defaultIfEmpty(java.util.Optional.empty())
+                        .flatMap(won -> won.isEmpty() ? lostClaim(m) : delivery.deliver(won.get())
+                                .onErrorResume(e -> {
+                                    // exception text can carry a provider URL or error body: class name above DEBUG
+                                    log.error("[baymax] message delivery threw id={} error={}", m.id(), e.getClass().getSimpleName());
+                                    log.debug("[baymax] message delivery threw detail id={}: {}", m.id(), e.toString());
+                                    return Mono.just(DeliveryOutcome.failed(DeliveryOutcome.SEND_FAILED));
+                                })
+                                .flatMap(outcome -> outcome.status() == null
+                                        // the log adapter delivered nothing; keep v1 behaviour and stamp sent_at
+                                        ? messages.markSent(m.id(), now).then(messages.find(m.id()))
+                                        : messages.recordDelivery(m.id(), outcome, now)
+                                                .doOnNext(saved -> log.info("[baymax] message delivery recorded id={} status={} error={}",
+                                                        saved.id(), outcome.status(), outcome.error())))));
+    }
+
+    /** Another approve holds (or already used) this row's delivery claim: the decision stands, nothing is sent again. */
+    private Mono<OutboundMessage> lostClaim(OutboundMessage decided) {
+        log.info("[baymax] message approved but not delivered again id={} — the delivery claim is held", decided.id());
+        return Mono.just(decided);
     }
 
     @Override
