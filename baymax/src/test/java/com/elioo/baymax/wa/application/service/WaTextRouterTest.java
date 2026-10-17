@@ -32,6 +32,24 @@ class WaTextRouterTest {
         assertThat(WaTextRouter.route("নমস্কার")).isEqualTo(GREETING_NAMASKAR);
     }
 
+    /**
+     * Spec §7.4, mirror the greeting without assuming religion: আদাব is common in Hindu families and must be mirrored,
+     * not answered "can't answer this"; the colloquial সালামালাইকুম is a salam. Two directions: neither is mistaken for
+     * the other.
+     */
+    @Test
+    void adabIsMirroredAsAdabAndTheColloquialSalamIsASalam() {
+        for (String adab : List.of("আদাব", "আদাব।", "Adab", "adab!")) {
+            // by name, so this replays against a router that has no such route yet
+            assertThat(WaTextRouter.route(adab).name()).as(adab).isEqualTo("GREETING_ADAB");
+        }
+        for (String salam : List.of("সালামালাইকুম", "slamalikum", "Salamalaikum", "slamalaikum", "salamualaikum")) {
+            assertThat(WaTextRouter.route(salam)).as(salam).isEqualTo(GREETING_SALAM);
+        }
+        assertThat(WaTextRouter.route("সালাম").name()).isNotEqualTo("GREETING_ADAB");
+        assertThat(WaTextRouter.route("নমস্কার").name()).isNotEqualTo("GREETING_ADAB");
+    }
+
     @Test
     void everyDetailPhrasingIsADetailRequest() {
         for (String d : List.of("বিস্তারিত", "  বিস্তারিত।  ", "বিস্তারিত বলুন", "আরো বলুন", "আরও বলো", "বুঝিয়ে বলুন",

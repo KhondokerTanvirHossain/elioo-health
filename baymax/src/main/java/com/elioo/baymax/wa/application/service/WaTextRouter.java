@@ -15,11 +15,14 @@ import java.util.stream.Collectors;
  */
 public final class WaTextRouter {
 
-    public enum Route { GREETING_HELLO, GREETING_SALAM, GREETING_NAMASKAR, DETAIL, THANKS, FALLBACK }
+    public enum Route { GREETING_HELLO, GREETING_SALAM, GREETING_NAMASKAR, GREETING_ADAB, DETAIL, THANKS, FALLBACK }
 
     private static final Set<String> SALAM = words("সালাম", "আসসালামু আলাইকুম", "আস্সালামু আলাইকুম", "আসসালামুয়ালাইকুম",
-            "salam", "slm", "assalamu alaikum", "assalamualaikum", "asalamualaikum", "assalamu alaykum", "as salamu alaikum");
+            "সালামালাইকুম", "salam", "slm", "assalamu alaikum", "assalamualaikum", "asalamualaikum", "assalamu alaykum",
+            "as salamu alaikum", "salamalaikum", "salamualaikum", "slamalikum", "slamalaikum");
     private static final Set<String> NAMASKAR = words("নমস্কার", "namaskar", "nomoskar", "nomoshkar");
+    /** Spec §7.4: আদাব is common in Hindu families; mirrored like নমস্কার, never answered with the fallback. */
+    private static final Set<String> ADAB = words("আদাব", "adab", "adaab");
     private static final Set<String> HELLO = words("hi", "hii", "hello", "helo", "hey", "hlw", "hlo", "হাই", "হ্যালো",
             "হেলো", "kemon acho", "kemon achen", "kemon aso", "kemon asen", "kmn acho", "কেমন আছো", "কেমন আছেন", "কেমন আছ",
             "good morning", "good evening", "শুভ সকাল");
@@ -56,6 +59,9 @@ public final class WaTextRouter {
         }
         if (NAMASKAR.contains(n)) {
             return Route.GREETING_NAMASKAR;
+        }
+        if (ADAB.contains(n)) {
+            return Route.GREETING_ADAB;
         }
         if (HELLO.contains(n)) {
             return Route.GREETING_HELLO;

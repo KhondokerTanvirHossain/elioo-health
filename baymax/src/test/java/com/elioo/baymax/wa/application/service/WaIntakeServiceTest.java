@@ -381,6 +381,17 @@ class WaIntakeServiceTest {
         assertThat(sentBodies().get(1)).startsWith(bn("wa.greeting.hello")).doesNotContain("আসসালাম");
     }
 
+    /** আদাব is mirrored with আদাব, never with সালাম and never with the fallback (spec §7.4). */
+    @Test
+    void adabIsAnsweredWithAdab() {
+        familyWith(patient("মা"));
+        service.onText(FROM, "আদাব").block();
+        assertThat(sentBodies()).as("\"আদাব\" gets " + "exactly one reply (0 = silence, the defect; 2 or more = a double send)")
+                .hasSize(1);
+        assertThat(sentBodies().get(0)).as("mirrored, not the fallback").startsWith("আদাব।")
+                .contains(bn("wa.greeting.intro")).doesNotContain("আসসালাম").doesNotContain(bn("safety.red_flag_line"));
+    }
+
     @Test
     void anythingElseGetsTheHonestFallbackWithTheRedFlagLine() {
         familyWith(patient("মা"));

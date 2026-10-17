@@ -167,7 +167,7 @@ public class WaIntakeService {
         log.info("[baymax] wa text route={} chars={}", route, text == null ? 0 : text.length());
         return withFamily(number, family -> switch (route) {
             case DETAIL -> answerLatestDetail(number, family);
-            case GREETING_HELLO, GREETING_SALAM, GREETING_NAMASKAR -> greet(number, route);
+            case GREETING_HELLO, GREETING_SALAM, GREETING_NAMASKAR, GREETING_ADAB -> greet(number, route);
             case THANKS -> thanks(number, family);
             case FALLBACK -> replyWithRedFlag(number, "wa.fallback", "text not understood");
         }, "text");
@@ -187,6 +187,7 @@ public class WaIntakeService {
         String opener = copy.bn(switch (route) {
             case GREETING_SALAM -> "wa.greeting.salam";
             case GREETING_NAMASKAR -> "wa.greeting.namaskar";
+            case GREETING_ADAB -> "wa.greeting.adab";
             default -> "wa.greeting.hello";
         }, Map.of());
         log.info("[baymax] wa reply key=wa.greeting route={}", route);
