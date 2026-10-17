@@ -277,11 +277,11 @@ class DocumentRecoveryAcceptanceTest {
             List<UUID> listed = records.unexplainedSince(since, before).collectList().block();
             assertThat(listed).as("a retake message answers a NEEDS_RETAKE document").doesNotContain(retaken.id());
             assertThat(listed).as("a detail or nudge row is not an explanation").contains(detailOnly.id(), nudgeOnly.id());
+            assertThat(listed).as("older than the 6-hour window: counted, never listed").doesNotContain(old.id());
             assertThat(listed).as("inside the window and never explained, oldest first")
                     .containsExactly(detailOnly.id(), nudgeOnly.id(), silent.id());
             assertThat(records.countUnexplainedBefore(since).block())
                     .as("older than the window, never explained: counted, not listed").isEqualTo(1L);
-            assertThat(old.id()).isNotIn(records.unexplainedSince(since, before).collectList().block());
         });
     }
 
