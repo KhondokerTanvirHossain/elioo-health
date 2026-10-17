@@ -354,7 +354,11 @@ class ExplanationServiceTest {
 
         verify(messages, times(1)).save(any());
         if (mode.equals("off")) {
-            verify(delivery, times(1)).deliver(any());
+            // the claimed path, not any delivery at all: RELEASED, claimed first, then handed to the channel once
+            assertThat(released.gateStatus()).isEqualTo(OutboundMessage.GateStatus.RELEASED);
+            org.mockito.InOrder order = org.mockito.Mockito.inOrder(messages, delivery);
+            order.verify(messages).claimDelivery(released.id());
+            order.verify(delivery, times(1)).deliver(any());
             verify(reviewer, never()).notifyPending(any());
         } else {
             assertThat(released.gateStatus()).isEqualTo(OutboundMessage.GateStatus.PENDING);
@@ -472,6 +476,52 @@ class ExplanationServiceTest {
         StepVerifier.create(service.detail(DOC)).expectNext(cached).verifyComplete();
         verify(metered, never()).invoke(any(), any(), any(LlmRequest.class));
         verify(messages, never()).save(any());
+    }
+
+    /**
+     * The cache, dangerous direction for the DOCUMENT (DR-12 class): a re-crop rewrites a DONE document's items and
+     * stamps updated_at while urgency and reasons can stay the same. A DETAIL composed before that is about values the
+     * record no longer holds, and serving it would send them; it is recomposed.
+     */
+    @Test
+    void aCachedDetailComposedBeforeTheDocumentLastChangedIsRecomposed() {
+        doneUpdatedAt(NOW, NORMAL);
+        when(messages.latestOfKind(DOC, OutboundMessage.Kind.DETAIL)).thenReturn(Mono.just(storedDetailAt(
+                NOW.minusSeconds(3600), Urgency.ROUTINE, List.of(), OutboundMessage.GateStatus.RELEASED, "আগের বিস্তারিত")));
+        replies.push("HbA1c 5.0, স্বাভাবিক 4.0–5.6।");
+
+        StepVerifier.create(service.detail(DOC))
+                .assertNext(m -> assertThat(m.body()).as("a DETAIL older than the document's last change was served")
+                        .isNotEqualTo("আগের বিস্তারিত"))
+                .verifyComplete();
+        verify(metered, times(1)).invoke(eq(AiCallPurpose.EXPLAIN), any(), any(LlmRequest.class));
+        verify(messages, times(1)).save(any());
+    }
+
+    /** The protected direction: a row composed at or after the document's last change is a hit (no model call). */
+    @ParameterizedTest
+    @ValueSource(longs = {0, 3600})
+    void aCachedDetailComposedAtOrAfterTheDocumentLastChangedIsAHit(long secondsAfterUpdate) {
+        doneUpdatedAt(NOW.minusSeconds(7200), NORMAL);
+        OutboundMessage cached = storedDetailAt(NOW.minusSeconds(7200 - secondsAfterUpdate), Urgency.ROUTINE, List.of(),
+                OutboundMessage.GateStatus.RELEASED, "আগের বিস্তারিত");
+        when(messages.latestOfKind(DOC, OutboundMessage.Kind.DETAIL)).thenReturn(Mono.just(cached));
+
+        StepVerifier.create(service.detail(DOC)).expectNext(cached).verifyComplete();
+        verify(metered, never()).invoke(any(), any(), any(LlmRequest.class));
+        verify(messages, never()).save(any());
+    }
+
+    private void doneUpdatedAt(Instant updatedAt, Map<String, Object>... values) {
+        when(documents.find(DOC)).thenReturn(Mono.just(new Document(DOC, PATIENT, FAMILY, "lab_report", LocalDate.parse("2026-09-14"), "Popular",
+                "{}", 0.93, Document.Status.DONE, null, "anthropic/claude-sonnet-5", null, 1, NOW.minusSeconds(86_400), updatedAt)));
+        when(documents.observationsOf(DOC)).thenReturn(Flux.fromArray(values));
+    }
+
+    private static OutboundMessage storedDetailAt(Instant createdAt, Urgency urgency, List<String> reasons,
+                                                  OutboundMessage.GateStatus status, String body) {
+        return new OutboundMessage(UUID.randomUUID(), FAMILY, PATIENT, DOC, OutboundMessage.Kind.DETAIL, urgency, reasons,
+                body, status, null, null, null, null, createdAt);
     }
 
     /** deliver hands a row to the channel only after winning the claim; a lost claim is empty, not a second send. */

@@ -89,7 +89,14 @@ public final class InMemoryOutboundMessages implements OutboundMessagePort {
         return Mono.just(0L);
     }
 
-    /** F4. (Written without @Override first, so the Task 5.2 red replay compiled against the pre-fix port.) */
+    /**
+     * F4. (Written without @Override first, so the Task 5.2 red replay compiled against the pre-fix port.)
+     *
+     * <p>NOT Postgres's order. This returns the last row INSERTED; Postgres orders by created_at DESC, then deliverable
+     * first, then id DESC. Wiring tests run on a fixed clock, so their rows share one created_at and the two can
+     * disagree. No test may depend on which of two same-instant DETAIL rows this picks — that ordering is asserted
+     * against the real query in DetailCacheAcceptanceTest.
+     */
     @Override
     public Mono<OutboundMessage> latestOfKind(UUID documentId, OutboundMessage.Kind kind) {
         OutboundMessage last = null;
