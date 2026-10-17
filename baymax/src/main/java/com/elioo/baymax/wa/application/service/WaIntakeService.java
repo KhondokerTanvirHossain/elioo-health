@@ -8,6 +8,8 @@ import com.elioo.baymax.extraction.domain.Upload;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.outbound.application.service.Copy;
+import com.elioo.baymax.outbound.application.service.UrgencyLines;
+import com.elioo.baymax.outbound.domain.OutboundMessage;
 import com.elioo.baymax.wa.application.port.out.WaMessagingPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -96,6 +98,10 @@ public class WaIntakeService {
      * A text message. Every explanation ends with an invitation — বিস্তারিত শুনতে চাইলে লিখুন "বিস্তারিত" —
      * so that word must be answered: a family following an instruction we gave them and getting silence is the
      * same failure as a photo vanishing. Anything else is acknowledged and logged, as phase 1 intends.
+     *
+     * <p>The body is delivered by the delivery port, never sent from here (F4): before F4 this method sent
+     * {@code message.body()} itself after {@code detail()} had already delivered it, and under the urgency gate it
+     * sent a PENDING body nobody had reviewed.
      */
     public Mono<Outcome> onText(String from, String text) {
         String number = e164(from);
@@ -103,14 +109,40 @@ public class WaIntakeService {
                 .flatMap(family -> isDetailRequest(text)
                         ? documents.latestDoneDocument(family.id())
                                 .flatMap(document -> explainer.detail(document.id()))
-                                .flatMap(message -> message.body() == null || message.body().isBlank()
-                                        ? Mono.just(Outcome.FAILED)
-                                        : send(number, message.body()).thenReturn(Outcome.ACCEPTED))
+                                .flatMap(message -> answerDetail(number, message))
                                 .switchIfEmpty(Mono.defer(() -> reply(number, "wa.no_document", Outcome.ACCEPTED,
                                         "detail asked for but no readable document yet")))
                         : Mono.just(Outcome.ACCEPTED))
                 .switchIfEmpty(Mono.defer(() -> reply(number, "wa.unknown", Outcome.UNKNOWN_SENDER,
                         "text from unknown sender")));
+    }
+
+    /**
+     * F4: this method never sends a composed body. A released or approved row not yet delivered goes through
+     * explainer.deliver, which claims the row (at most once), records the provider's outcome (V13/V14) and is refused by
+     * the delivery adapter for anything unreviewed. Every other state gets fixed copy: PENDING the "being checked" line,
+     * REJECTED and FAILED_SAFETY the paper link, an already-delivered detail a pointer to it. Urgent documents lead with
+     * the UrgencyLines block (D5): the urgency is never held back for review.
+     */
+    private Mono<Outcome> answerDetail(String number, OutboundMessage m) {
+        return switch (m.gateStatus()) {
+            case RELEASED, APPROVED -> m.sentAt() == null
+                    ? explainer.deliver(m)
+                            .map(d -> d.sentAt() != null ? Outcome.ACCEPTED : Outcome.FAILED)
+                            // the claim was lost: a concurrent ask is delivering this very row right now
+                            .switchIfEmpty(Mono.defer(() -> fixed(number, m, "wa.detail.already_sent", "detail being delivered")))
+                    : fixed(number, m, "wa.detail.already_sent", "detail already delivered");
+            case PENDING -> fixed(number, m, "wa.detail.pending", "detail pending review");
+            case REJECTED, FAILED_SAFETY -> fixed(number, m, "wa.detail.unavailable", "detail withheld");
+        };
+    }
+
+    private Mono<Outcome> fixed(String number, OutboundMessage m, String key, String why) {
+        String text = UrgencyLines.lead(copy, m.urgency(), copy.bn(key,
+                Map.of("link", properties.getOutbound().getPublicBaseUrl() + "/app/documents/" + m.documentId())));
+        log.info("[baymax] wa detail answered documentId={} gate={} urgency={} reason={} chars={}",
+                m.documentId(), m.gateStatus().dbValue(), m.urgency().dbValue(), why, text.length());
+        return send(number, text).thenReturn(Outcome.ACCEPTED);
     }
 
     /** The invitation is literal; accept the word with or without surrounding whitespace or punctuation. */

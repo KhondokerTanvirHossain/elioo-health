@@ -9,15 +9,20 @@ import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.outbound.application.service.Copy;
+import com.elioo.baymax.outbound.domain.OutboundMessage;
+import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.wa.application.port.out.WaMessagingPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -180,24 +185,143 @@ class WaIntakeServiceTest {
         assertThat(sent.getAllValues()).containsExactly(copy.bn("wa.received", java.util.Map.of()));
     }
 
+    private static final UUID DOC = UUID.randomUUID();
+
+    private void latestDone() {
+        Document doc = mock(Document.class);
+        when(doc.id()).thenReturn(DOC);
+        when(documents.latestDoneDocument(FAMILY)).thenReturn(Mono.just(doc));
+    }
+
+    private static OutboundMessage detailRow(OutboundMessage.GateStatus status, Urgency urgency, String body, Instant sentAt) {
+        return new OutboundMessage(UUID.randomUUID(), FAMILY, null, DOC, OutboundMessage.Kind.DETAIL, urgency, List.of(),
+                body, status, null, null, null, sentAt, Instant.EPOCH);
+    }
+
+    private String link() {
+        return props.getOutbound().getPublicBaseUrl() + "/app/documents/" + DOC;
+    }
+
     /**
-     * Every explanation ends with বিস্তারিত শুনতে চাইলে লিখুন "বিস্তারিত". A family following that instruction
-     * and getting silence is the same failure as a photo vanishing — the first production run did exactly that.
+     * Every explanation ends with বিস্তারিত শুনতে চাইলে লিখুন "বিস্তারিত", so the word must be answered. The body
+     * reaches the family through deliver() — the delivery port records the outcome — and never from onText (F4).
+     * This replaces theWordTheExplanationInvitesIsAnswered, which asserted that onText sent the body itself: it mocked
+     * the delivering detail() and so could not see the second send. It encoded the defect.
      */
     @Test
-    void theWordTheExplanationInvitesIsAnswered() {
+    void theInvitedWordIsAnsweredByDeliveringTheStoredDetailNotBySendingItHere() {
         familyWith(patient("মা"));
-        com.elioo.baymax.extraction.domain.Document doc = mock(com.elioo.baymax.extraction.domain.Document.class);
-        UUID docId = UUID.randomUUID();
-        when(doc.id()).thenReturn(docId);
-        when(documents.latestDoneDocument(FAMILY)).thenReturn(Mono.just(doc));
-        com.elioo.baymax.outbound.domain.OutboundMessage detail =
-                mock(com.elioo.baymax.outbound.domain.OutboundMessage.class);
-        when(detail.body()).thenReturn("বিস্তারিত: সব স্বাভাবিক");
-        when(explainer.detail(docId)).thenReturn(Mono.just(detail));
+        latestDone();
+        OutboundMessage stored = detailRow(OutboundMessage.GateStatus.RELEASED, Urgency.ROUTINE, "বিস্তারিত: সব স্বাভাবিক", null);
+        when(explainer.detail(DOC)).thenReturn(Mono.just(stored));
+        when(explainer.deliver(stored)).thenReturn(Mono.just(detailRow(OutboundMessage.GateStatus.RELEASED, Urgency.ROUTINE,
+                stored.body(), Instant.EPOCH)));
 
         assertThat(service.onText(FROM, "বিস্তারিত").block()).isEqualTo(WaIntakeService.Outcome.ACCEPTED);
-        verify(graph).sendText(eq(E164), eq("বিস্তারিত: সব স্বাভাবিক"));
+        verify(explainer).deliver(stored);
+        verify(graph, never()).sendText(anyString(), anyString());
+    }
+
+    @Test
+    void aDetailAlreadyDeliveredIsNotSentAgain() {
+        familyWith(patient("মা"));
+        latestDone();
+        when(explainer.detail(DOC)).thenReturn(Mono.just(
+                detailRow(OutboundMessage.GateStatus.RELEASED, Urgency.ROUTINE, "বিস্তারিত: সব স্বাভাবিক", Instant.EPOCH)));
+
+        service.onText(FROM, "বিস্তারিত").block();
+
+        verify(explainer, never()).deliver(any());
+        verify(graph).sendText(E164, new Copy().bn("wa.detail.already_sent", Map.of("link", link())));
+    }
+
+    /** A concurrent ask holds the claim on this very row: the second ask gets the pointer, never a second body. */
+    @Test
+    void aDetailWhoseDeliveryClaimIsHeldGetsThePointerNotTheBody() {
+        familyWith(patient("মা"));
+        latestDone();
+        OutboundMessage stored = detailRow(OutboundMessage.GateStatus.RELEASED, Urgency.ROUTINE, "বিস্তারিত: সব স্বাভাবিক", null);
+        when(explainer.detail(DOC)).thenReturn(Mono.just(stored));
+        when(explainer.deliver(stored)).thenReturn(Mono.empty());
+
+        service.onText(FROM, "বিস্তারিত").block();
+
+        verify(graph).sendText(E164, new Copy().bn("wa.detail.already_sent", Map.of("link", link())));
+        verify(graph, never()).sendText(E164, stored.body());
+    }
+
+    /** D5 on WhatsApp: a pending NOW gets its urgency line verbatim at once, the red-flag line, and never the body. */
+    @Test
+    void aPendingNowDetailGetsTheUrgencyAndTheRedFlagLineNeverTheBody() {
+        familyWith(patient("মা"));
+        latestDone();
+        when(explainer.detail(DOC)).thenReturn(Mono.just(
+                detailRow(OutboundMessage.GateStatus.PENDING, Urgency.NOW, "অপরীক্ষিত লেখা", null)));
+        Copy copy = new Copy();
+
+        service.onText(FROM, "বিস্তারিত").block();
+
+        verify(explainer, never()).deliver(any());
+        ArgumentCaptor<String> sent = ArgumentCaptor.forClass(String.class);
+        verify(graph).sendText(eq(E164), sent.capture());
+        assertThat(sent.getValue()).isEqualTo(String.join("\n", copy.bn("urgency.now", Map.of()),
+                copy.bn("safety.red_flag_line", Map.of()), copy.bn("wa.detail.pending", Map.of())));
+        assertThat(sent.getValue()).isNotEqualTo("অপরীক্ষিত লেখা");
+        assertThat(sent.getValue().length()).isLessThanOrEqualTo(props.getOutbound().getMaxChars());
+    }
+
+    @Test
+    void aPendingRoutineDetailGetsThePendingLineAlone() {
+        familyWith(patient("মা"));
+        latestDone();
+        when(explainer.detail(DOC)).thenReturn(Mono.just(detailRow(OutboundMessage.GateStatus.PENDING, Urgency.ROUTINE, "x", null)));
+        service.onText(FROM, "বিস্তারিত").block();
+        verify(graph).sendText(E164, new Copy().bn("wa.detail.pending", Map.of()));
+    }
+
+    /** F3: REJECTED and FAILED_SAFETY get the urgency (if any) and the paper link — never "দেখা হচ্ছে", never silence. */
+    @ParameterizedTest
+    @EnumSource(value = OutboundMessage.GateStatus.class, names = {"REJECTED", "FAILED_SAFETY"})
+    void aWithheldDetailIsAnsweredWithTheUrgencyAndTheLink(OutboundMessage.GateStatus status) {
+        familyWith(patient("মা"));
+        latestDone();
+        when(explainer.detail(DOC)).thenReturn(Mono.just(detailRow(status, Urgency.THIS_WEEK, null, null)));
+        Copy copy = new Copy();
+
+        service.onText(FROM, "বিস্তারিত").block();
+
+        String expected = String.join("\n", copy.bn("urgency.this_week", Map.of()), copy.bn("safety.red_flag_line", Map.of()),
+                copy.bn("wa.detail.unavailable", Map.of("link", link())));
+        verify(graph).sendText(E164, expected);
+        assertThat(expected).doesNotContain("দেখা হচ্ছে");
+    }
+
+    /** CLAUDE.md: the cap is asserted on what was SENT — every gate state × urgency × delivered-or-not, through onText. */
+    @Test
+    void everyFixedDetailReplyActuallySentFitsTheCap() {
+        familyWith(patient("মা"));
+        latestDone();
+        List<String> sent = new java.util.ArrayList<>();
+        for (OutboundMessage.GateStatus status : OutboundMessage.GateStatus.values()) {
+            for (Urgency urgency : Urgency.values()) {
+                for (Instant sentAt : java.util.Arrays.asList(null, Instant.EPOCH)) {
+                    org.mockito.Mockito.clearInvocations(graph);
+                    OutboundMessage row = detailRow(status, urgency,
+                            status == OutboundMessage.GateStatus.FAILED_SAFETY ? null : "লেখা", sentAt);
+                    when(explainer.detail(DOC)).thenReturn(Mono.just(row));
+                    when(explainer.deliver(any())).thenReturn(Mono.just(row));
+                    service.onText(FROM, "বিস্তারিত").block();
+                    ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+                    verify(graph, org.mockito.Mockito.atLeast(0)).sendText(eq(E164), body.capture());
+                    for (String b : body.getAllValues()) {
+                        assertThat(b.length()).as(status + "/" + urgency + "/" + sentAt + ": " + b)
+                                .isLessThanOrEqualTo(props.getOutbound().getMaxChars());
+                        sent.add(b);
+                    }
+                }
+            }
+        }
+        assertThat(sent).as("vacuous if no fixed reply was sent").hasSizeGreaterThanOrEqualTo(9);
     }
 
     @Test
