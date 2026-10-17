@@ -81,11 +81,16 @@ public class NudgeComposer implements ComposeNudgeUseCase {
                     if (v.isEmpty()) {
                         return Mono.just(first);
                     }
-                    log.info("[baymax] nudge rejected once rule={} patientId={} violations={}", c.rule(), c.patientId(), v);
+                    // codes only above DEBUG: a verbatim_missing detail is the stored medicine, value or name
+                    log.info("[baymax] nudge rejected once rule={} patientId={} violations={}", c.rule(), c.patientId(),
+                            MessageSafetyCheck.forLog(v));
+                    log.debug("[baymax] nudge rejected once detail patientId={} violations={}", c.patientId(), v);
                     return generate(c, skeleton, budget, v).filter(second -> {
                         List<String> again = violations(second, budget, allowed, optOutLink, urgency, verbatim);
                         if (!again.isEmpty()) {
-                            log.warn("[baymax] nudge failed closed rule={} patientId={} violations={}", c.rule(), c.patientId(), again);
+                            log.warn("[baymax] nudge failed closed rule={} patientId={} violations={}", c.rule(), c.patientId(),
+                                    MessageSafetyCheck.forLog(again));
+                            log.debug("[baymax] nudge failed closed detail patientId={} violations={}", c.patientId(), again);
                         }
                         return again.isEmpty();
                     });
@@ -122,7 +127,9 @@ public class NudgeComposer implements ComposeNudgeUseCase {
                 null, null, null, null, message.createdAt());
         return messages.save(toSend).flatMap(saved -> delivery.deliver(saved)
                 .onErrorResume(e -> {
-                    log.error("[baymax] released message delivery threw id={} : {}", saved.id(), e.toString());
+                    // exception text can carry a provider URL or error body: class name above DEBUG
+                    log.error("[baymax] released message delivery threw id={} error={}", saved.id(), e.getClass().getSimpleName());
+                    log.debug("[baymax] released message delivery threw detail id={}: {}", saved.id(), e.toString());
                     return Mono.just(DeliveryOutcome.failed(DeliveryOutcome.SEND_FAILED));
                 })
                 .flatMap(outcome -> outcome.status() == null

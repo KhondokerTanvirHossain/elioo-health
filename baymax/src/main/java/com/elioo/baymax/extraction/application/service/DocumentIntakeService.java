@@ -95,7 +95,11 @@ public class DocumentIntakeService implements DocumentIntakeUseCase {
                         .doOnNext(m -> log.info("[baymax] message composed documentId={} kind={} urgency={} gate={}",
                                 done.id(), m.kind(), m.urgency(), m.gateStatus()))
                         .onErrorResume(e -> {
-                            log.error("[baymax] explanation failed documentId={}: {}", done.id(), e.getMessage());
+                            // the message can carry medicine text (MedicineTranscription.elided): class at ERROR,
+                            // detail at DEBUG only
+                            log.error("[baymax] explanation failed documentId={} error={}", done.id(),
+                                    e.getClass().getSimpleName());
+                            log.debug("[baymax] explanation failure detail documentId={}: {}", done.id(), e.getMessage());
                             return Mono.empty();
                         })
                         .thenReturn(done))
@@ -103,15 +107,16 @@ public class DocumentIntakeService implements DocumentIntakeUseCase {
                 // logged and never undoes anything. chronic_flags are never touched from here (asserted).
                 .flatMap(done -> nudges.onDocumentDone(done.id())
                         .onErrorResume(e -> {
-                            log.error("[baymax] nudge check failed documentId={}: {}", done.id(), e.getMessage());
+                            log.error("[baymax] nudge check failed documentId={} error={}", done.id(),
+                                    e.getClass().getSimpleName());
                             return Mono.empty();
                         })
                         .thenReturn(done))
                 .subscribe(
                         done -> log.info("[baymax] document finished documentId={} status={}",
                                 done.id(), done.status()),
-                        error -> log.error("[baymax] document processing ended in error documentId={}: {}",
-                                document.id(), error.getMessage()));
+                        error -> log.error("[baymax] document processing ended in error documentId={} error={}",
+                                document.id(), error.getClass().getSimpleName()));
     }
 
     @Override

@@ -13,14 +13,29 @@ import java.util.Locale;
 import java.util.Set;
 
 /**
- * The checklist as code, run on every generated body (BMX-6). Returns violation codes; an empty list is the
- * only pass. Codes, never text, so they can be logged.
+ * The checklist as code, run on every generated body (BMX-6). Returns violations as {@code code} or
+ * {@code code:detail}; an empty list is the only pass. The detail is what the repair prompt needs and can be patient
+ * text ({@code verbatim_missing:<a stored medicine>}), so a list is logged only through {@link #forLog}.
  */
 @Component
 @RequiredArgsConstructor
 public class MessageSafetyCheck {
 
     private final BaymaxProperties properties;
+
+    /** Codes whose detail is a size or configured copy, never patient text: the only details the log keeps. */
+    private static final Set<String> LOGGABLE_DETAIL = Set.of("too_long", "forbidden_phrase");
+
+    /**
+     * The violations as the log may carry them: every code, and a detail only where it is a size or configured copy.
+     * An allow-list, so a code added later with patient text after the colon is cut to its code by default.
+     */
+    public static List<String> forLog(List<String> violations) {
+        return violations.stream().map(v -> {
+            int colon = v.indexOf(':');
+            return colon < 0 || LOGGABLE_DETAIL.contains(v.substring(0, colon)) ? v : v.substring(0, colon);
+        }).toList();
+    }
 
     public List<String> violations(String body, DocumentFacts facts, Urgency urgency) {
         return violations(body, facts.numbers(), facts.link(), urgency);

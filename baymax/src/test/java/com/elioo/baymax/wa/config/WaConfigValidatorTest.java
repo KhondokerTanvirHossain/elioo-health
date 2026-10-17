@@ -28,7 +28,7 @@ class WaConfigValidatorTest {
         wa.setVerifyToken(GOOD_VERIFY);
         wa.setPhoneNumberId("1412074765313019");
         wa.setWabaId("4407553579467225");
-        wa.setAllowlist(List.of("+8801793399171"));
+        wa.setAllowlist(List.of("+8801700000000"));
         return p;
     }
 
@@ -120,7 +120,7 @@ class WaConfigValidatorTest {
         assertThatThrownBy(() -> validate(ids)).hasMessageContaining("BAYMAX_WA_WABA_ID").hasMessageContaining("digits only");
 
         BaymaxProperties allow = valid();
-        allow.getWa().setAllowlist(List.of("01793399171"));
+        allow.getWa().setAllowlist(List.of("01700000000"));
         assertThatThrownBy(() -> validate(allow)).hasMessageContaining("E.164");
     }
 

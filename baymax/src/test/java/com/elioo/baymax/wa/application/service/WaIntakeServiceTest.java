@@ -35,8 +35,8 @@ import static org.mockito.Mockito.when;
  */
 class WaIntakeServiceTest {
 
-    private static final String FROM = "8801793399171";
-    private static final String E164 = "+8801793399171";
+    private static final String FROM = "8801700000000";
+    private static final String E164 = "+8801700000000";
     private static final UUID FAMILY = UUID.randomUUID();
 
     private final HealthRecordPort records = mock(HealthRecordPort.class);
@@ -53,7 +53,7 @@ class WaIntakeServiceTest {
     void wire() {
         props.getWa().setEnabled(true);
         props.getWa().setAllowlist(List.of(E164));
-        when(graph.sendText(anyString(), anyString())).thenReturn(Mono.just("wamid.REPLY"));
+        when(graph.sendText(anyString(), anyString())).thenReturn(Mono.just(com.elioo.baymax.wa.WaFixtures.wamid(FROM, 9)));
         when(graph.downloadMedia(anyString())).thenReturn(Mono.just(new byte[]{1, 2, 3}));
         service = new WaIntakeService(records, documents, explainer, intake, graph, new Copy(), props);
     }
@@ -226,9 +226,58 @@ class WaIntakeServiceTest {
 
     @Test
     void metaNumbersAreNormalisedToE164() {
-        assertThat(WaIntakeService.e164("8801793399171")).isEqualTo("+8801793399171");
-        assertThat(WaIntakeService.e164("+8801793399171")).isEqualTo("+8801793399171");
+        assertThat(WaIntakeService.e164("8801700000000")).isEqualTo("+8801700000000");
+        assertThat(WaIntakeService.e164("+8801700000000")).isEqualTo("+8801700000000");
         assertThat(WaIntakeService.e164("")).isEmpty();
         assertThat(WaIntakeService.e164(null)).isEmpty();
+    }
+
+    /** onImage logged e.toString(), which for a WebClientResponseException is "404 … from GET <signed URL>". */
+    @Test
+    void theIntakeErrorLogCarriesNoExceptionText() {
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(WaIntakeService.class);
+        var logged = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        logged.start();
+        logger.addAppender(logged);
+        try {
+            familyWith(patient("মা"));
+            // what WaGraphClient.download actually throws: its message is "404 Not Found from GET <signed URL>"
+            when(graph.downloadMedia("MEDIA-13")).thenReturn(Mono.error(
+                    org.springframework.web.reactive.function.client.WebClientResponseException.create(404, "Not Found",
+                            org.springframework.http.HttpHeaders.EMPTY, new byte[0], java.nio.charset.StandardCharsets.UTF_8,
+                            new org.springframework.mock.http.client.MockClientHttpRequest(org.springframework.http.HttpMethod.GET,
+                                    java.net.URI.create("https://lookaside.fbsbx.com/whatsapp_business/attachments/?mid=1&hash=SECRET")))));
+            service.onImage(FROM, "MEDIA-13").block();
+            String all = String.join("\n", logged.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage).toList());
+            assertThat(all).as("the line exists").contains("wa intake failed");
+            assertThat(all).as("the media URL and its token must never reach the log").doesNotContain("SECRET").doesNotContain("lookaside");
+        } finally {
+            logger.detachAppender(logged);
+        }
+    }
+
+    /** The reply-failed line printed e.toString(); a provider error can name the recipient. Class name only. */
+    @Test
+    void aFailedReplyIsLoggedWithoutTheExceptionText() {
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(WaIntakeService.class);
+        var logged = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        logged.start();
+        logger.addAppender(logged);
+        try {
+            PatientProfile ma = patient("মা");
+            familyWith(ma);
+            when(graph.sendText(anyString(), anyString())).thenReturn(Mono.error(new RuntimeException(
+                    "(#131026) Message undeliverable to " + E164)));
+            when(intake.accept(eq(ma.id()), any())).thenReturn(Mono.just(mock(Document.class)));
+
+            service.onImage(FROM, "MEDIA-7").block();
+
+            String all = String.join("\n", logged.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage).toList());
+            assertThat(all).as("the line exists").contains("wa outbound failed");
+            assertThat(all).as("provider prose and the number never reach the log").doesNotContain("undeliverable")
+                    .doesNotContain(FROM);
+        } finally {
+            logger.detachAppender(logged);
+        }
     }
 }

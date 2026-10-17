@@ -76,7 +76,10 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
         return records.update(document.withStatus(Document.Status.PROCESSING, null, clock.instant()))
                 .then(runPipeline(document, pages))
                 .onErrorResume(error -> {
-                    log.error("[baymax] extraction failed documentId={}: {}", document.id(), error.getMessage(), error);
+                    // the message (and the stack trace's first line) can quote the model's reply: class at ERROR,
+                    // message and trace at DEBUG only
+                    log.error("[baymax] extraction failed documentId={} error={}", document.id(), error.getClass().getSimpleName());
+                    log.debug("[baymax] extraction failure detail documentId={}", document.id(), error);
                     return finish(document, Document.Status.FAILED, shortReason(error), null, null, null);
                 })
                 .flatMap(done -> records.refreshCost(done.id()).thenReturn(done));
@@ -133,8 +136,9 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
                     return callModel(document, pages, strong, strongModel)
                             .map(escalated -> escalated.confidence() >= cheap.confidence() ? escalated : cheap)
                             .onErrorResume(e -> {
-                                log.warn("[baymax] escalation failed documentId={}, keeping the cheap result: {}",
-                                        document.id(), e.getMessage());
+                                log.warn("[baymax] escalation failed documentId={}, keeping the cheap result error={}",
+                                        document.id(), e.getClass().getSimpleName());
+                                log.debug("[baymax] escalation failure detail documentId={}: {}", document.id(), e.getMessage());
                                 return Mono.just(cheap);
                             });
                 });
@@ -162,7 +166,9 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
                 .invoke(AiCallPurpose.EXTRACT, document.id(), request, this::confidenceOf)
                 .flatMap(response -> parse(response, client, modelOverride)
                         .onErrorResume(ExtractionJsonReader.InvalidExtractionException.class, invalid -> {
-                            log.info("[baymax] repairing extraction reply documentId={}: {}",
+                            // Jackson's message quotes the token it could not read, from the model's reply
+                            log.info("[baymax] repairing extraction reply documentId={}", document.id());
+                            log.debug("[baymax] repairing extraction reply detail documentId={}: {}",
                                     document.id(), invalid.getMessage());
                             LlmRequest repair = buildRequest(
                                     prompts.repairPrompt(prompt, invalid.getMessage()),
@@ -596,7 +602,16 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
     }
 
     /** Error text for the status column: short, developer-facing, never patient content. */
+    /**
+     * The status_reason column is "developer-facing, no patient text" (V5) and is logged with the status. A reader
+     * failure's message ends in Jackson's or the schema's detail, which quotes the model's reply, so only its fixed
+     * lead ("The reply was not valid JSON") is kept.
+     */
     private static String shortReason(Throwable error) {
+        if (error instanceof ExtractionJsonReader.InvalidExtractionException && error.getMessage() != null) {
+            int colon = error.getMessage().indexOf(": ");
+            return colon < 0 ? error.getClass().getSimpleName() : error.getMessage().substring(0, colon);
+        }
         String message = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
         String firstLine = message.lines().findFirst().orElse(message);
         return firstLine.length() > 180 ? firstLine.substring(0, 180) : firstLine;

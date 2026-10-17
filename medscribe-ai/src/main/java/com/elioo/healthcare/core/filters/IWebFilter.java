@@ -62,6 +62,31 @@ public class IWebFilter implements WebFilter {
             "signature", "sig", "hmac", "otp", "code");
 
     /**
+     * Header names whose VALUE is a credential: a session cookie, the Set-Cookie that opens a session, a bearer
+     * token, the admin token, Meta's webhook signature. Any one of them in the log is a working login for whoever
+     * can read it. Matched on the whole name, case-insensitively, as {@link #SECRET_PARAMS} is.
+     */
+    private static final java.util.Set<String> SECRET_HEADERS = java.util.Set.of(
+            "cookie", "set-cookie", "authorization", "proxy-authorization", "x-baymax-admin-token",
+            "x-hub-signature-256");
+
+    /**
+     * Headers for the log, with every credential header's values replaced by {@code REDACTED}. The other headers
+     * (user agent, content type, trace id) survive verbatim: they are what makes an incident debuggable.
+     *
+     * <p>A copy of the same type, so the log line keeps HttpHeaders' own format ({@code Name:"value"}): the RUNBOOK
+     * leak counter greps for a credential header NOT followed by {@code "REDACTED"}, and a different format would
+     * make it read 0 whatever the log held.</p>
+     */
+    static org.springframework.http.HttpHeaders redactHeaders(org.springframework.http.HttpHeaders headers) {
+        org.springframework.http.HttpHeaders safe = new org.springframework.http.HttpHeaders();
+        headers.forEach((name, values) ->
+                safe.put(name, SECRET_HEADERS.contains(name.toLowerCase(java.util.Locale.ROOT))
+                        ? values.stream().map(v -> "REDACTED").toList() : values));
+        return safe;
+    }
+
+    /**
      * The URI with any credential-bearing query parameter's value replaced.
      *
      * <p>Two credentials were reaching the production log through this filter. The WhatsApp verify token was
@@ -134,7 +159,7 @@ public class IWebFilter implements WebFilter {
                 request.getLocalAddress(),
                 redactSecrets(String.valueOf(request.getURI())),
                 request.getMethod(),
-                request.getHeaders(),
+                redactHeaders(request.getHeaders()),
                 request.getPath(),
                 redactParams(request.getQueryParams()),
                 request.getHeaders().getContentType(),
@@ -158,7 +183,7 @@ public class IWebFilter implements WebFilter {
                     serverWebExchange.getRequest().getLocalAddress(),
                     redactSecrets(String.valueOf(serverWebExchange.getRequest().getURI())),
                     serverWebExchange.getRequest().getPath(),
-                    serverWebExchange.getResponse().getHeaders(),
+                    redactHeaders(serverWebExchange.getResponse().getHeaders()),
                     serverWebExchange.getResponse().getStatusCode(),
                     serverWebExchange.getResponse().getHeaders().getContentType()
             );

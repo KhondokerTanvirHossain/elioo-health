@@ -147,4 +147,75 @@ class NudgeComposerTest {
         verify(metered, org.mockito.Mockito.atLeastOnce()).invoke(eq(AiCallPurpose.NUDGE), any(), req.capture());
         assertThat(req.getValue().systemPrompt()).doesNotContain("Under 200 characters");   // the model is told its budget, not the cap
     }
+
+    /**
+     * The checklist's violations name the stored string the model left out ({@code verbatim_missing:<medicine>}),
+     * and they were logged at INFO and WARN: a medicine, its dose or the patient's name in the production log on
+     * every nudge the model phrased badly. The codes are what the log needs; the strings go to DEBUG only.
+     */
+    @Test
+    void aNudgeThatDropsAStoredMedicineLogsTheCodeNotTheMedicine() {
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(NudgeComposer.class);
+        ch.qos.logback.classic.Level before = logger.getLevel();
+        var logged = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        logged.start();
+        logger.addAppender(logged);
+        logger.setLevel(ch.qos.logback.classic.Level.DEBUG);
+        try {
+            NudgeCandidate course = new NudgeCandidate(NudgeRule.COURSE_ENDING, F, P, "রহিমা", "course:1", NudgeUrgency.ROUTINE,
+                    Map.of("medicine", "Tab. Napa Extend 665 mg", "duration_text", "৭ দিন", "end_date", "২১ সেপ্টেম্বর"),
+                    Set.of("665", "7", "21"), List.of("c"), java.time.LocalDate.parse("2026-09-21"));
+            String dropsTheMedicine = "রহিমা-এর একটি ওষুধের মেয়াদ ২১ সেপ্টেম্বর শেষ হচ্ছে। ডাক্তারকে জিজ্ঞেস করুন।";
+            replies.push(dropsTheMedicine);
+            replies.push(dropsTheMedicine);
+
+            OutboundMessage m = composer.compose(course, LINK).block();
+
+            assertThat(m.gateStatus()).isEqualTo(OutboundMessage.GateStatus.FAILED_SAFETY);
+            String atInfoAndAbove = logged.list.stream()
+                    .filter(e -> e.getLevel().isGreaterOrEqual(ch.qos.logback.classic.Level.INFO))
+                    .map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
+                    .collect(java.util.stream.Collectors.joining("\n"));
+            assertThat(atInfoAndAbove).as("the lines exist, with the machine code")
+                    .contains("nudge rejected once").contains("nudge failed closed").contains("verbatim_missing");
+            assertThat(atInfoAndAbove).as("a stored medicine, dose or name is patient text: never above DEBUG")
+                    .doesNotContain("Napa").doesNotContain("665").doesNotContain("৭ দিন").doesNotContain("রহিমা");
+            // the detail is still there for whoever turns DEBUG on
+            assertThat(logged.list.stream().filter(e -> e.getLevel() == ch.qos.logback.classic.Level.DEBUG)
+                    .map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage))
+                    .anyMatch(line -> line.contains("Tab. Napa Extend 665 mg"));
+        } finally {
+            logger.detachAppender(logged);
+            logger.setLevel(before);
+        }
+    }
+
+    /** A delivery adapter's exception text can carry a URL or a provider error body: class name only above DEBUG. */
+    @Test
+    void aDeliveryThatThrowsIsLoggedByClassNotByItsText() {
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(NudgeComposer.class);
+        var logged = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        logged.start();
+        logger.addAppender(logged);
+        try {
+            props.getOutbound().setGateNudges(false);
+            props.getOutbound().setGateMode("off");
+            when(delivery.deliver(any())).thenReturn(Mono.error(new IllegalStateException(
+                    "400 Bad Request from POST https://graph.facebook.com/v21.0/1/messages?to=+8801700000000&secret=SECRET")));
+            when(messages.recordDelivery(any(), any(), any())).thenAnswer(i -> Mono.justOrEmpty(lastSaved.get()));
+            NudgeCandidate follow = new NudgeCandidate(NudgeRule.FOLLOW_UP_DUE, F, P, "মা", "follow_up:1", NudgeUrgency.ROUTINE,
+                    Map.of("instruction", "Follow up after 1 month", "due_date", "২১ সেপ্টেম্বর"), Set.of("1", "21"), List.of("c"), java.time.LocalDate.parse("2026-09-21"));
+            replies.push("মা-এর ফলো-আপের তারিখ কাছে এসে গেছে: ২১ সেপ্টেম্বর। প্রেসক্রিপশনে লেখা: \"Follow up after 1 month\"।");
+
+            composer.compose(follow, LINK).block();
+
+            String all = logged.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
+                    .collect(java.util.stream.Collectors.joining("\n"));
+            assertThat(all).as("the line exists").contains("released message delivery threw");
+            assertThat(all).as("exception text is never logged above DEBUG").doesNotContain("SECRET")
+                    .doesNotContain("8801700000000").doesNotContain("graph.facebook.com");
+        } finally {
+            logger.detachAppender(logged);
+        }
+    }
 }

@@ -1,5 +1,6 @@
 package com.elioo.baymax.wa.application.service;
 
+import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.common.error.FreeTierExceededException;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.extraction.application.port.in.DocumentIntakeUseCase;
@@ -65,7 +66,9 @@ public class WaIntakeService {
                 .onErrorResume(FreeTierExceededException.class, e ->
                         reply(number, "wa.free_tier", Outcome.FREE_TIER, "free tier exhausted"))
                 .onErrorResume(e -> {
-                    log.error("[baymax] wa intake failed mediaId={} : {}", mediaId, e.toString());
+                    // e.toString() of a WebClientResponseException is "404 … from GET <signed media URL>"
+                    log.error("[baymax] wa intake failed mediaId={} error={}", mediaId,
+                            e instanceof BaymaxException b ? "BaymaxException:" + b.reason() : e.getClass().getSimpleName());
                     return Mono.just(Outcome.FAILED);
                 });
     }
@@ -141,7 +144,7 @@ public class WaIntakeService {
         return graph.sendText(number, body)
                 .onErrorResume(e -> {
                     // the reply failing must not lose the document that was already accepted
-                    log.error("[baymax] wa outbound failed: {}", e.toString());
+                    log.error("[baymax] wa outbound failed error={}", e.getClass().getSimpleName());
                     return Mono.empty();
                 })
                 .then();

@@ -1,5 +1,6 @@
 package com.elioo.baymax.wa.adapter.out;
 
+import com.elioo.baymax.common.redact.Redact;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.extern.slf4j.Slf4j;
@@ -101,6 +102,6 @@ public class WaGraphClient implements com.elioo.baymax.wa.application.port.out.W
                 .bodyValue(payload)
                 .retrieve().bodyToMono(JsonNode.class)
                 .map(node -> node.path("messages").path(0).path("id").asText(""))
-                .doOnNext(id -> log.info("[baymax] wa outbound sent wamid={} chars={}", id, body.length()));
+                .doOnNext(id -> log.info("[baymax] wa outbound sent ref={} chars={}", Redact.id(id), body.length()));
     }
 }

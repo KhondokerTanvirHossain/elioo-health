@@ -19,6 +19,13 @@ import static org.mockito.Mockito.when;
 /** BMX-6b: Baymax serves /, the app lives at /app, old /baymax URLs 301, the language is a cookie. */
 class BaymaxWebUiRouterTest {
 
+    /**
+     * A Bangladeshi mobile number however it is written: +880 / 880 / 0, ASCII or Bangla digits, with or without a
+     * space or hyphen between groups. Java's \\d does not match Bangla digits, and the page is in Bangla.
+     */
+    static final java.util.regex.Pattern BD_MOBILE = java.util.regex.Pattern.compile(
+            "(?:\\+?[8৮][8৮][0০][\\s-]?|[0০])[1১][3-9৩-৯](?:[\\s-]?[0-9০-৯]){8}");
+
     private final WebAuthUseCase auth = mock(WebAuthUseCase.class);
     private final WebTestClient client;
 
@@ -29,6 +36,18 @@ class BaymaxWebUiRouterTest {
         client = WebTestClient.bindToRouterFunction(new BaymaxWebUiRouter().baymaxWebUiRoutes(ui, sessions)).build();
     }
 
+    /** The page check is only as good as its pattern: every way the number is written, and not a date or a price. */
+    @Test
+    void thePhonePatternCatchesEveryWayANumberIsWrittenAndNothingElse() {
+        for (String number : java.util.List.of("+8801700000000", "8801700000000", "01700000000", "০১৭০০০০০০০০",
+                "+৮৮০১৭০০০০০০০০", "+880 1700-000000", "+880 1700 000 000", "০১৭০০-০০০০০০")) {
+            assertThat(BD_MOBILE.matcher(number).find()).as(number).isTrue();
+        }
+        for (String other : java.util.List.of("২০২৬-০৯-২১", "2026-09-21", "১.১ → ১.৩ → ১.৫", "৳ ১,২০০", "HbA1c 8.2")) {
+            assertThat(BD_MOBILE.matcher(other).find()).as(other).isFalse();
+        }
+    }
+
     @Test
     void theLandingPageIsBanglaByDefaultAndCarriesTheDisclaimerAndNoExternalRequests() {
         String html = client.get().uri("/").exchange().expectStatus().isOk()
@@ -37,7 +56,7 @@ class BaymaxWebUiRouterTest {
         assertThat(html).contains("চিকিৎসা পরামর্শ নয়").contains("Medioo").contains("Elioo Health");
         // every CTA is the app login until WhatsApp exists (BMX-10): no wa.me, no dead button, no placeholder address
         assertThat(html).contains("class=\"cta\" href=\"/app\"").doesNotContain("wa.me").doesNotContain("example.com").doesNotContain("XXXX");
-        assertThat(html).contains("href=\"mailto:k.tanvir.hossain@gmail.com\"").doesNotContain("8801793399171");   // the pilot number is never on the page
+        assertThat(html).contains("href=\"mailto:k.tanvir.hossain@gmail.com\"").doesNotContainPattern(BD_MOBILE);   // no phone number, in any form, is on the page
         // the trend renders once, inside its own span — not a span between every character
         assertThat(html).containsOnlyOnce("<span class=\"nw\">১.১ → ১.৩ → ১.৫</span>").doesNotContain("<span class=\"nw\"></span>");
         assertThat(html).doesNotContain("<script").doesNotContain("src=\"http").doesNotContain("href=\"http://");

@@ -21,7 +21,8 @@ class WaWebhookRouterTest {
     private static final String APP_SECRET = "app-secret-under-test";
     private static final String BODY = """
             {"object":"whatsapp_business_account","entry":[{"changes":[{"value":{"messages":[
-              {"id":"wamid.TEST","type":"image","from":"8801793399171"}]}}]}]}""";
+              {"id":"%s","type":"image","from":"8801700000000"}]}}]}]}""".formatted(
+            com.elioo.baymax.wa.WaFixtures.wamid("8801700000000"));
 
     private WebTestClient client() {
         BaymaxProperties props = new BaymaxProperties();
@@ -93,7 +94,7 @@ class WaWebhookRouterTest {
     /** A phone number never reaches a log line in clear — BMX-5 keeps it in family_account alone. */
     @Test
     void numbersAreMaskedToTheLastFourDigits() {
-        assertThat(WaWebhookHandler.maskedNumber("8801793399171")).isEqualTo("****9171");
+        assertThat(WaWebhookHandler.maskedNumber("8801700000000")).isEqualTo("****0000");
         assertThat(WaWebhookHandler.maskedNumber("123")).isEqualTo("****");
         assertThat(WaWebhookHandler.maskedNumber(null)).isEqualTo("****");
     }
