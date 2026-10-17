@@ -31,6 +31,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -57,6 +58,9 @@ class DocumentRecoveryServiceTest {
         when(storage.deleteCrops(any(), any(), any())).thenReturn(Mono.just(new DeletionReport("p/", 0, 0)));
         when(chain.fail(any(), anyString())).thenAnswer(i -> Mono.just(((Document) i.getArgument(0))
                 .withStatus(Document.Status.FAILED, i.getArgument(1), BOOT)));
+
+        when(documents.unexplainedSince(any(), any())).thenReturn(Flux.empty());
+        when(documents.countUnexplainedBefore(any())).thenReturn(Mono.just(0L));
     }
 
     private Document stuck(Document.Status status, Instant updatedAt, int pages) {
@@ -173,5 +177,31 @@ class DocumentRecoveryServiceTest {
         verify(documents, never()).markRecoveryAttempt(any(), any());
         verify(documents, never()).update(any());
         verify(chain, never()).fail(any(), anyString());   // a paper from weeks ago never messages the family
+    }
+
+    /** Died after DONE, before explain(): no message row exists. Recent → explained once through the chain. */
+    @Test
+    void aRecentDocumentThatFinishedButWasNeverExplainedIsExplainedOnce() {
+        Document d = stuck(Document.Status.DONE, BOOT.minusSeconds(600), 1);
+        when(documents.unexplainedSince(BOOT.plusSeconds(30).minus(properties.getRecovery().getExplainMaxAge()), BOOT))
+                .thenReturn(Flux.just(d.id()));
+        when(chain.explainOnly(d)).thenReturn(Mono.just(d));
+
+        StepVerifier.create(service.recoverInterrupted(BOOT).map(RecoveryReport::outcome))
+                .expectNext("explained").verifyComplete();
+        verify(chain, times(1)).explainOnly(d);
+        verify(chain, never()).run(any(), any());
+    }
+
+    /** The other direction: an unexplained document older than the window is only counted, never messaged. */
+    @Test
+    void anOldUnexplainedDocumentIsCountedNotMessaged() {
+        Instant since = BOOT.plusSeconds(30).minus(properties.getRecovery().getExplainMaxAge());
+        when(documents.unexplainedSince(any(), any())).thenReturn(Flux.empty());
+        when(documents.countUnexplainedBefore(since)).thenReturn(Mono.just(3L));
+
+        StepVerifier.create(service.recoverInterrupted(BOOT)).verifyComplete();
+        verify(documents).countUnexplainedBefore(since);
+        verify(chain, never()).explainOnly(any());
     }
 }

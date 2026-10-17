@@ -345,4 +345,30 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
                 .map((row, meta) -> row.get("recovery_attempts", Integer.class))
                 .one();
     }
+
+    /** A finished document with no family-facing message about it. Detail and nudge rows do not count. */
+    private static final String NEVER_EXPLAINED = "d.status IN ('DONE','NEEDS_RETAKE') AND NOT EXISTS (SELECT 1 FROM "
+            + S + ".outbound_message m WHERE m.document_id = d.id AND m.kind IN ('explanation','retake'))";
+
+    @Override
+    public Flux<UUID> unexplainedSince(Instant since, Instant before) {
+        return db.sql("SELECT d.id FROM " + S + ".document d WHERE " + NEVER_EXPLAINED
+                        + " AND d.updated_at >= :since AND d.updated_at < :before ORDER BY d.updated_at")
+                .bind("since", OffsetDateTime.ofInstant(since, ZoneOffset.UTC))
+                .bind("before", OffsetDateTime.ofInstant(before, ZoneOffset.UTC))
+                .map((row, meta) -> row.get("id", UUID.class))
+                .all();
+    }
+
+    @Override
+    public Mono<Long> countUnexplainedBefore(Instant since) {
+        return db.sql("SELECT COUNT(*) FROM " + S + ".document d WHERE " + NEVER_EXPLAINED + " AND d.updated_at < :since")
+                .bind("since", OffsetDateTime.ofInstant(since, ZoneOffset.UTC))
+                .map((row, meta) -> {
+                    Long count = row.get(0, Long.class);
+                    return count == null ? 0L : count;
+                })
+                .one()
+                .defaultIfEmpty(0L);
+    }
 }

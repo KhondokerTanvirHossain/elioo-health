@@ -97,4 +97,13 @@ public interface DocumentRecordPort {
      * running it belongs to this instance), so two sweeps cannot both claim it.
      */
     Mono<Integer> markRecoveryAttempt(UUID documentId, Instant interruptedBefore);
+
+    /**
+     * F9b: DONE or NEEDS_RETAKE documents updated in {@code [since, before)} that have no explanation or retake
+     * message — the process died between extraction and {@code explain()}. Oldest first.
+     */
+    Flux<UUID> unexplainedSince(Instant since, Instant before);
+
+    /** How many finished documents updated before {@code since} were never explained; counted, never messaged. */
+    Mono<Long> countUnexplainedBefore(Instant since);
 }

@@ -158,6 +158,40 @@ class DocumentRecoveryAcceptanceTest {
         });
     }
 
+    /**
+     * The SQL behind "finished but never explained": a DONE document with an explanation row is not picked, one
+     * without is, and one older than the window is only counted. Pinned a day in the past so the other tests'
+     * documents, all updated "now", cannot fall inside either window.
+     */
+    @Test
+    void unexplainedSinceFindsADoneDocumentWithNoMessageAndNotOneWithAnExplanation() {
+        runner().run(context -> {
+            UUID family = UUID.randomUUID();
+            UUID patient = UUID.randomUUID();
+            seedFamily(family, patient);
+            DocumentRecordPort records = context.getBean(DocumentRecordPort.class);
+            Instant before = Instant.now().minus(Duration.ofDays(1));
+            Instant since = before.minus(Duration.ofHours(6));
+
+            Document explained = done(records, patient, family, before.minus(Duration.ofHours(1)));
+            Document silent = done(records, patient, family, before.minus(Duration.ofHours(2)));
+            Document old = done(records, patient, family, since.minus(Duration.ofHours(1)));
+            sql("insert into baymax.outbound_message (family_id, patient_id, document_id, kind, urgency, gate_status) values ('"
+                    + family + "','" + patient + "','" + explained.id() + "','explanation','routine','released')");
+
+            assertThat(records.unexplainedSince(since, before).collectList().block())
+                    .as("inside the window and never explained").containsExactly(silent.id());
+            assertThat(records.countUnexplainedBefore(since).block())
+                    .as("older than the window, never explained: counted, not listed").isEqualTo(1L);
+            assertThat(old.id()).isNotIn(records.unexplainedSince(since, before).collectList().block());
+        });
+    }
+
+    private static Document done(DocumentRecordPort records, UUID patient, UUID family, Instant at) {
+        Document created = records.create(Document.received(patient, family, 1, at)).block();
+        return records.update(created.withStatus(Document.Status.DONE, null, at)).block();
+    }
+
     private static ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> captureExtractionFailures() {
         ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory
                 .getLogger(com.elioo.baymax.extraction.application.service.DocumentExtractionService.class);

@@ -25,7 +25,9 @@ import java.util.stream.IntStream;
  * flight is killed and would sit in RECEIVED/PROCESSING forever. At startup this re-runs those documents from their
  * stored pages — sequentially (1200 MB container), each attempt claimed and counted before the work, and bounded:
  * after {@code max-attempts} the document is failed, so a document that kills the JVM cannot crash-loop the
- * container. Documents older than {@code max-age} are only reported, never touched.
+ * container. Documents older than {@code max-age} are only reported, never touched. A document that finished but
+ * died before {@code explain()} is explained if it was updated within {@code explain-max-age}; older ones are only
+ * counted, so a first deploy cannot text a family about last week's paper.
  */
 @Slf4j
 @Service
@@ -40,6 +42,12 @@ public class DocumentRecoveryService implements DocumentRecoveryUseCase {
 
     @Override
     public Flux<RecoveryReport> recoverInterrupted(Instant cutoff) {
+        return Flux.concat(interrupted(cutoff), Flux.defer(() -> unexplained(cutoff)))
+                .doOnNext(r -> log.info("[baymax] recovery documentId={} outcome={}", r.documentId(), r.outcome()));
+    }
+
+    /** RECEIVED or PROCESSING when the previous instance died: re-run, fail, or leave alone. */
+    private Flux<RecoveryReport> interrupted(Instant cutoff) {
         Instant tooOld = clock.instant().minus(properties.getRecovery().getMaxAge());
         return Flux.concat(documents.idsWithStatus(Document.Status.PROCESSING), documents.idsWithStatus(Document.Status.RECEIVED))
                 .concatMap(documents::find)                                    // sequential: 1200 MB container
@@ -49,8 +57,27 @@ public class DocumentRecoveryService implements DocumentRecoveryUseCase {
                         : recover(d, cutoff).onErrorResume(e -> {
                             log.error("[baymax] recovery errored documentId={}: {}", d.id(), e.getClass().getSimpleName());
                             return Mono.just(new RecoveryReport(d.id(), "error"));
+                        }));
+    }
+
+    /** DONE or NEEDS_RETAKE with no message: explained if recent, only counted if older (a late text about an old paper helps nobody). */
+    private Flux<RecoveryReport> unexplained(Instant cutoff) {
+        Instant since = clock.instant().minus(properties.getRecovery().getExplainMaxAge());
+        return documents.unexplainedSince(since, cutoff)
+                .concatMap(documents::find)
+                .concatMap(d -> chain.explainOnly(d).thenReturn(new RecoveryReport(d.id(), "explained"))
+                        .onErrorResume(e -> {
+                            log.error("[baymax] recovery explain errored documentId={}: {}", d.id(), e.getClass().getSimpleName());
+                            return Mono.just(new RecoveryReport(d.id(), "error"));
                         }))
-                .doOnNext(r -> log.info("[baymax] recovery documentId={} outcome={}", r.documentId(), r.outcome()));
+                .concatWith(documents.countUnexplainedBefore(since)
+                        .doOnNext(n -> {
+                            if (n > 0) {
+                                log.warn("[baymax] recovery: {} finished document(s) older than {} were never explained", n,
+                                        properties.getRecovery().getExplainMaxAge());
+                            }
+                        })
+                        .thenMany(Flux.<RecoveryReport>empty()));
     }
 
     private Mono<RecoveryReport> recover(Document d, Instant cutoff) {
