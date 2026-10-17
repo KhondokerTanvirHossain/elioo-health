@@ -4,7 +4,9 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.elioo.baymax.common.redact.Redact;
 import com.elioo.baymax.config.BaymaxProperties;
+import com.elioo.baymax.wa.WaFixtures;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -116,9 +118,24 @@ class WaGraphClientTest {
 
         assertThat(wamid).isEqualTo("wamid.OUT1");
         String log = everythingLogged();
-        assertThat(log).contains("wamid.OUT1");
+        // it asserted the wamid WAS logged, holding the leak in place; the digest is what correlates now
+        assertThat(log).contains("ref=" + Redact.id("wamid.OUT1")).doesNotContain("wamid.OUT1");
         assertThat(log).as("a recipient number is not a log line").doesNotContain("+8801793399171");
         assertThat(log).as("message content never reaches the log").doesNotContain("মায়ের রিপোর্ট দেখে নিলাম");
+    }
+
+    /** A wamid is base64 of the recipient's number: the sent line carries its digest, never the id or the digits. */
+    @Test
+    void aSentMessageIsLoggedByDigest() {
+        String wamid = WaFixtures.wamid("8801700000000", 3);
+        WaGraphClient client = clientReturning("{\"messages\":[{\"id\":\"" + wamid + "\"}]}");
+
+        assertThat(client.sendText("+8801700000000", "ok").block()).isEqualTo(wamid);
+
+        String log = everythingLogged();
+        assertThat(log).as("a wamid in the log is the phone number in the log").doesNotContain(wamid)
+                .doesNotContain("8801700000000");
+        assertThat(log).as("the line exists, carrying the digest").contains("ref=" + Redact.id(wamid));
     }
 
     @Test

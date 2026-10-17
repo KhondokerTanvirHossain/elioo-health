@@ -1,5 +1,6 @@
 package com.elioo.baymax.wa.adapter.in;
 
+import com.elioo.baymax.common.redact.Redact;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -21,8 +22,9 @@ import java.nio.charset.StandardCharsets;
  * statuses; the body is read as raw bytes and its {@code X-Hub-Signature-256} checked before anything parses
  * it, because the HMAC is over the bytes as received.
  *
- * <p>Logs carry message ids, direction and outcome — never message content and never a sender's number in
- * clear, which is why the number is only ever logged through {@link #maskedNumber}.
+ * <p>Logs carry message-id digests, direction and outcome — never message content and never a sender's number
+ * in clear, which is why the number is only ever logged through {@link #maskedNumber} and a wamid (base64 of the
+ * number) only through {@link Redact#id}.
  */
 @Slf4j
 @Component
@@ -86,7 +88,9 @@ public class WaWebhookHandler {
                 .doOnNext(this::logCallback)
                 .flatMap(this::dispatch)
                 .onErrorResume(e -> {
-                    log.error("[baymax] wa webhook: signed callback did not parse as JSON: {}", e.toString());
+                    // a Jackson parse error quotes the body it choked on, which is patient text: class name only
+                    log.error("[baymax] wa webhook: signed callback did not parse as JSON error={}",
+                            e.getClass().getSimpleName());
                     return Mono.empty();
                 })
                 .then();
@@ -121,7 +125,8 @@ public class WaWebhookHandler {
     private void subscribe(Mono<com.elioo.baymax.wa.application.service.WaIntakeService.Outcome> work, String from) {
         work.subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
                 .subscribe(outcome -> log.info("[baymax] wa intake done outcome={} from={}", outcome, maskedNumber(from)),
-                        error -> log.error("[baymax] wa intake errored from={}: {}", maskedNumber(from), error.toString()));
+                        error -> log.error("[baymax] wa intake errored from={} error={}", maskedNumber(from),
+                                error.getClass().getSimpleName()));
     }
 
     private void logCallback(JsonNode root) {
@@ -129,13 +134,13 @@ public class WaWebhookHandler {
             for (JsonNode change : entry.path("changes")) {
                 JsonNode value = change.path("value");
                 for (JsonNode message : value.path("messages")) {
-                    log.info("[baymax] wa inbound id={} type={} from={}",
-                            message.path("id").asText(""), message.path("type").asText(""),
+                    log.info("[baymax] wa inbound ref={} type={} from={}",
+                            Redact.id(message.path("id").asText("")), message.path("type").asText(""),
                             maskedNumber(message.path("from").asText("")));
                 }
                 for (JsonNode status : value.path("statuses")) {
-                    log.info("[baymax] wa status id={} status={} recipient={}",
-                            status.path("id").asText(""), status.path("status").asText(""),
+                    log.info("[baymax] wa status ref={} status={} recipient={}",
+                            Redact.id(status.path("id").asText("")), status.path("status").asText(""),
                             maskedNumber(status.path("recipient_id").asText("")));
                 }
             }

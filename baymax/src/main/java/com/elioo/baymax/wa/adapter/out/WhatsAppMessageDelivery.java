@@ -1,5 +1,6 @@
 package com.elioo.baymax.wa.adapter.out;
 
+import com.elioo.baymax.common.redact.Redact;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.outbound.application.port.out.MessageDeliveryPort;
@@ -63,13 +64,14 @@ public class WhatsAppMessageDelivery implements MessageDeliveryPort {
         }
         return messaging.sendText(number, message.body())
                 .map(wamid -> {
-                    log.info("[baymax] wa delivered id={} wamid={} urgency={} chars={}",
-                            message.id(), wamid, message.urgency(), message.body().length());
+                    log.info("[baymax] wa delivered id={} ref={} urgency={} chars={}",
+                            message.id(), Redact.id(wamid), message.urgency(), message.body().length());
                     return DeliveryOutcome.sent(wamid);
                 })
                 .onErrorResume(e -> {
                     String code = classify(e);
-                    log.error("[baymax] wa delivery failed id={} error={} : {}", message.id(), code, e.toString());
+                    log.error("[baymax] wa delivery failed id={} error={} cause={}", message.id(), code,
+                            e.getClass().getSimpleName());
                     return Mono.just(DeliveryOutcome.failed(code));
                 });
     }

@@ -57,7 +57,7 @@ public final class WaSignature {
             mac.init(new SecretKeySpec(appSecret.getBytes(StandardCharsets.UTF_8), ALGORITHM));
             return MessageDigest.isEqual(mac.doFinal(body), provided);
         } catch (Exception e) {
-            log.error("[baymax] wa webhook: signature check failed to run: {}", e.toString());
+            log.error("[baymax] wa webhook: signature check failed to run error={}", e.getClass().getSimpleName());
             return false;
         }
     }
