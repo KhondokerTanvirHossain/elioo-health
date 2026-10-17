@@ -56,10 +56,31 @@ class CopyInstructionsHaveHandlersTest {
                 .as("the copy must still be inviting at least one typed reply, or this test is vacuous")
                 .isNotEmpty();
 
-        List<String> unhandled = invited.stream().filter(word -> !WaIntakeService.isDetailRequest(word)).toList();
+        List<String> unhandled = invited.stream()
+                .filter(word -> WaTextRouter.route(word) == WaTextRouter.Route.FALLBACK).toList();
         assertThat(unhandled)
                 .as("every word the copy tells a family to type must be recognised inbound — a family "
                         + "following our own instruction and getting silence is the bug this guards")
                 .isEmpty();
+    }
+
+    /** The English mirror invites typed replies too ('reply "detail"', 'type "detail"'); each must route. */
+    @Test
+    void everyWordTheEnglishCopyAsksAFamilyToTypeIsRecognisedToo() throws Exception {
+        Properties en = load("baymax/messages_en.properties");
+        List<String> invited = new ArrayList<>();
+        for (String key : en.stringPropertyNames()) {
+            String value = en.getProperty(key);
+            String lower = value.toLowerCase(java.util.Locale.ROOT);
+            if (!lower.contains("reply") && !lower.contains("type")) {
+                continue;
+            }
+            Matcher m = INVITED_WORD.matcher(value);
+            while (m.find()) {
+                invited.add(m.group(1).trim());
+            }
+        }
+        assertThat(invited).as("vacuous if the English copy invites nothing").isNotEmpty();
+        assertThat(invited.stream().filter(w -> WaTextRouter.route(w) == WaTextRouter.Route.FALLBACK).toList()).isEmpty();
     }
 }

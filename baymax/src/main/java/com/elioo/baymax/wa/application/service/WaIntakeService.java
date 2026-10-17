@@ -6,6 +6,7 @@ import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.extraction.application.port.in.DocumentIntakeUseCase;
 import com.elioo.baymax.extraction.domain.Upload;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
+import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.outbound.application.service.Copy;
 import com.elioo.baymax.outbound.application.service.UrgencyLines;
@@ -19,9 +20,12 @@ import reactor.core.publisher.Mono;
 
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 /**
- * Turns an inbound WhatsApp image into a document on the family's timeline (BMX-10 phase 1).
+ * Answers every inbound WhatsApp message exactly once (Phase 0) and turns an inbound image or PDF into a document on
+ * the family's timeline (BMX-10 phase 1). Text is routed by {@link WaTextRouter}, whole message only, with zero model
+ * calls: greeting, the detail words, thanks, and an honest fallback that carries the red-flag line.
  *
  * <p>Resolution is sender → family → patient. Every branch that cannot reach {@code accept} answers the family
  * on WhatsApp rather than only the log: <b>a photo that vanishes in silence is the worst outcome of the
@@ -49,7 +53,11 @@ public class WaIntakeService {
 
     /** Why an inbound image did not become a document; each carries the reply the family receives. */
     public enum Outcome {
-        ACCEPTED, UNKNOWN_SENDER, AMBIGUOUS_PATIENT, FREE_TIER, FAILED
+        ACCEPTED, UNKNOWN_SENDER, AMBIGUOUS_PATIENT, FREE_TIER, FAILED,
+        /** A fixed-copy reply was sent (greeting, thanks, fallback, voice, video, no document yet). */
+        REPLIED,
+        /** Nothing the family sent, so nothing to answer: a Meta system notice, or a reaction being removed. */
+        IGNORED
     }
 
     /**
@@ -107,9 +115,9 @@ public class WaIntakeService {
     }
 
     /**
-     * A text message. Every explanation ends with an invitation — বিস্তারিত শুনতে চাইলে লিখুন "বিস্তারিত" —
-     * so that word must be answered: a family following an instruction we gave them and getting silence is the
-     * same failure as a photo vanishing. Anything else is acknowledged and logged, as phase 1 intends.
+     * Text, a button tap's title, or the words of a quick reply. Every message gets exactly one reply, and none is
+     * silent (Phase 0): before, anything but the literal বিস্তারিত/detail/bistarito was acknowledged in the log and
+     * the family heard nothing. {@link WaTextRouter} matches the whole message; the route is logged, the text is not.
      *
      * <p>The body is delivered by the delivery port, never sent from here (F4): before F4 this method sent
      * {@code message.body()} itself after {@code detail()} had already delivered it, and under the urgency gate it
@@ -117,16 +125,60 @@ public class WaIntakeService {
      */
     public Mono<Outcome> onText(String from, String text) {
         String number = e164(from);
+        WaTextRouter.Route route = WaTextRouter.route(text);
+        log.info("[baymax] wa text route={} chars={}", route, text == null ? 0 : text.length());
+        return withFamily(number, family -> switch (route) {
+            case DETAIL -> answerLatestDetail(number, family);
+            case GREETING_HELLO, GREETING_SALAM, GREETING_NAMASKAR -> greet(number, route);
+            case THANKS -> thanks(number, family);
+            case FALLBACK -> replyWithRedFlag(number, "wa.fallback", "text not understood");
+        }, "text");
+    }
+
+    /** The detail answer (F4): the latest DONE document's DETAIL row, answered by answerDetail. */
+    private Mono<Outcome> answerLatestDetail(String number, FamilyAccount family) {
+        return documents.latestDoneDocument(family.id())
+                .flatMap(document -> explainer.detail(document.id()))
+                .flatMap(message -> answerDetail(number, message))
+                .switchIfEmpty(Mono.defer(() -> reply(number, "wa.no_document", Outcome.REPLIED,
+                        "detail asked for but no readable document yet")));
+    }
+
+    /** Mirrors the family's greeting and never assumes religion (spec §7.4); zero model calls (W1). */
+    private Mono<Outcome> greet(String number, WaTextRouter.Route route) {
+        String opener = copy.bn(switch (route) {
+            case GREETING_SALAM -> "wa.greeting.salam";
+            case GREETING_NAMASKAR -> "wa.greeting.namaskar";
+            default -> "wa.greeting.hello";
+        }, Map.of());
+        log.info("[baymax] wa reply key=wa.greeting route={}", route);
+        return send(number, String.join("\n", opener, copy.bn("wa.greeting.intro", Map.of()),
+                copy.bn("wa.greeting.none", Map.of())))
+                .thenReturn(Outcome.REPLIED);
+    }
+
+    /** W12 without the standing urgency, which is plan PR 7: a one-line close plus the red-flag line. */
+    private Mono<Outcome> thanks(String number, FamilyAccount family) {
+        return replyWithRedFlag(number, "wa.thanks", "thanks");
+    }
+
+    private Mono<Outcome> withFamily(String number, Function<FamilyAccount, Mono<Outcome>> known, String what) {
         return records.findFamilyByWhatsapp(number)
-                .flatMap(family -> isDetailRequest(text)
-                        ? documents.latestDoneDocument(family.id())
-                                .flatMap(document -> explainer.detail(document.id()))
-                                .flatMap(message -> answerDetail(number, message))
-                                .switchIfEmpty(Mono.defer(() -> reply(number, "wa.no_document", Outcome.ACCEPTED,
-                                        "detail asked for but no readable document yet")))
-                        : Mono.just(Outcome.ACCEPTED))
+                .flatMap(known)
+                // defer: an eager reply(...) here would send the unknown-sender text to every known family too
                 .switchIfEmpty(Mono.defer(() -> reply(number, "wa.unknown", Outcome.UNKNOWN_SENDER,
-                        "text from unknown sender")));
+                        what + " from unknown sender")));
+    }
+
+    private Mono<Outcome> replyWithRedFlag(String number, String key, String why) {
+        log.info("[baymax] wa reply key={} reason={}", key, why);
+        return send(number, withRedFlag(copy.bn(key, Map.of()))).thenReturn(Outcome.REPLIED);
+    }
+
+    /** Phase 0: every fallback, thanks, voice, video and sticker reply carries the approved red-flag line, once. */
+    private String withRedFlag(String body) {
+        String line = copy.bn("safety.red_flag_line", Map.of());
+        return body.contains(line) ? body : body + "\n" + line;
     }
 
     /**
@@ -155,15 +207,6 @@ public class WaIntakeService {
         log.info("[baymax] wa detail answered documentId={} gate={} urgency={} reason={} chars={}",
                 m.documentId(), m.gateStatus().dbValue(), m.urgency().dbValue(), why, text.length());
         return send(number, text).thenReturn(Outcome.ACCEPTED);
-    }
-
-    /** The invitation is literal; accept the word with or without surrounding whitespace or punctuation. */
-    static boolean isDetailRequest(String text) {
-        if (text == null) {
-            return false;
-        }
-        String trimmed = text.trim().replaceAll("[।.!?,]+$", "");
-        return trimmed.equals("বিস্তারিত") || trimmed.equalsIgnoreCase("detail") || trimmed.equalsIgnoreCase("bistarito");
     }
 
     private Mono<Outcome> reply(String number, String key, Outcome outcome, String why) {

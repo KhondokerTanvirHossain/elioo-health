@@ -12,6 +12,7 @@ import com.elioo.baymax.outbound.application.service.Copy;
 import com.elioo.baymax.outbound.domain.OutboundMessage;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.wa.application.port.out.WaMessagingPort;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -324,28 +325,100 @@ class WaIntakeServiceTest {
         assertThat(sent).as("vacuous if no fixed reply was sent").hasSizeGreaterThanOrEqualTo(9);
     }
 
+    private final Copy copy = new Copy();
+
+    private String bn(String key) {
+        return copy.bn(key, Map.of());
+    }
+
+    private List<String> sentBodies() {
+        ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+        verify(graph, org.mockito.Mockito.atLeast(0)).sendText(eq(E164), body.capture());
+        return body.getAllValues();
+    }
+
+    /** CLAUDE.md: a limit is asserted on the thing actually sent, after every insertion. Every reply in every test is checked. */
+    @AfterEach
+    void everyReplyActuallySentFitsTheCap() {
+        for (var call : org.mockito.Mockito.mockingDetails(graph).getInvocations()) {
+            if (call.getMethod().getName().equals("sendText")) {
+                String body = call.getArgument(1);
+                assertThat(body.length()).as("sent: " + body).isLessThanOrEqualTo(props.getOutbound().getMaxChars());
+            }
+        }
+    }
+
+    /**
+     * Inverted from anOrdinaryTextIsAcknowledgedWithoutAReply, which asserted the silence Phase 0 removes. A test
+     * whose name encodes the defect is evidence of it (CLAUDE.md). "ধন্যবাদ" is a thanks and is answered once.
+     */
     @Test
-    void anOrdinaryTextIsAcknowledgedWithoutAReply() {
+    void aThankYouIsAnsweredOnce() {
         familyWith(patient("মা"));
-        assertThat(service.onText(FROM, "ধন্যবাদ").block()).isEqualTo(WaIntakeService.Outcome.ACCEPTED);
-        verify(graph, never()).sendText(anyString(), anyString());
+        when(documents.latestDoneDocument(FAMILY)).thenReturn(Mono.empty());
+        service.onText(FROM, "ধন্যবাদ").block();
+        assertThat(sentBodies()).as("a family's thank-you got silence — the defect").hasSize(1);
+        assertThat(sentBodies().get(0)).startsWith(bn("wa.thanks")).endsWith(bn("safety.red_flag_line"));
+    }
+
+    @Test
+    void hiIsAnsweredWithAGreetingThatSaysWhatToDoNext() {
+        familyWith(patient("মা"));
+        when(documents.latestDoneDocument(FAMILY)).thenReturn(Mono.empty());
+        service.onText(FROM, "Hi").block();
+        assertThat(sentBodies()).as("\"Hi\" got silence (spec §0) — the defect").hasSize(1);
+        assertThat(sentBodies().get(0)).startsWith(bn("wa.greeting.hello"))
+                .contains(bn("wa.greeting.intro")).contains(bn("wa.greeting.none"));
+    }
+
+    /** Mirror the greeting; never assume religion (spec §7.4). */
+    @Test
+    void salamIsAnsweredWithSalamAndKemonAchoIsNot() {
+        familyWith(patient("মা"));
+        when(documents.latestDoneDocument(FAMILY)).thenReturn(Mono.empty());
+        service.onText(FROM, "আসসালামু আলাইকুম").block();
+        service.onText(FROM, "kemon acho").block();
+        assertThat(sentBodies()).as("both greetings got silence — the defect").hasSize(2);
+        assertThat(sentBodies().get(0)).startsWith(bn("wa.greeting.salam"));
+        assertThat(sentBodies().get(1)).startsWith(bn("wa.greeting.hello")).doesNotContain("আসসালাম");
+    }
+
+    @Test
+    void anythingElseGetsTheHonestFallbackWithTheRedFlagLine() {
+        familyWith(patient("মা"));
+        service.onText(FROM, "আম্মা কাল থেকে খুব দুর্বল").block();
+        assertThat(sentBodies()).as("free text got silence — the defect").hasSize(1);
+        assertThat(sentBodies()).containsExactly(bn("wa.fallback") + "\n" + bn("safety.red_flag_line"));
+    }
+
+    /** Whole-message rule, dangerous direction: the detail word inside a symptom message must not trigger detail. */
+    @Test
+    void aRuleWordInsideALongerMessageGetsTheFallbackNotTheRule() {
+        familyWith(patient("মা"));
+        service.onText(FROM, "বিস্তারিত — আম্মার খুব জ্বর").block();
+        assertThat(sentBodies()).as("silence — the defect").hasSize(1);
+        verify(explainer, never()).detail(any());
+        assertThat(sentBodies().get(0)).contains(bn("safety.red_flag_line"));
+    }
+
+    /** The synonyms reach the same detail path as the literal word. */
+    @Test
+    void detailSynonymsAreAnsweredLikeTheInvitedWord() {
+        familyWith(patient("মা"));
+        when(documents.latestDoneDocument(FAMILY)).thenReturn(Mono.empty());
+        for (String s : List.of("details", "আরো বলুন", "bistarito bolen", "explain")) {
+            service.onText(FROM, s).block();
+        }
+        assertThat(sentBodies()).as("synonyms got silence — the defect").hasSize(4)
+                .allMatch(b -> b.equals(bn("wa.no_document")));
     }
 
     @Test
     void askingForDetailBeforeAnyReadableDocumentSaysSoRatherThanNothing() {
         familyWith(patient("মা"));
         when(documents.latestDoneDocument(FAMILY)).thenReturn(Mono.empty());
-        assertThat(service.onText(FROM, "বিস্তারিত").block()).isEqualTo(WaIntakeService.Outcome.ACCEPTED);
-        verify(graph).sendText(eq(E164), anyString());
-    }
-
-    @Test
-    void theInvitedWordIsRecognisedWithPunctuationOrInEnglish() {
-        assertThat(WaIntakeService.isDetailRequest("বিস্তারিত")).isTrue();
-        assertThat(WaIntakeService.isDetailRequest("  বিস্তারিত।  ")).isTrue();
-        assertThat(WaIntakeService.isDetailRequest("detail")).isTrue();
-        assertThat(WaIntakeService.isDetailRequest("ধন্যবাদ")).isFalse();
-        assertThat(WaIntakeService.isDetailRequest(null)).isFalse();
+        assertThat(service.onText(FROM, "বিস্তারিত").block()).isEqualTo(WaIntakeService.Outcome.REPLIED);
+        verify(graph).sendText(E164, bn("wa.no_document"));
     }
 
     @Test
