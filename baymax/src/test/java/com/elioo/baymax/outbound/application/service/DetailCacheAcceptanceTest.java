@@ -126,7 +126,11 @@ class DetailCacheAcceptanceTest {
         });
     }
 
-    /** Rows saved at the same instant (a FAILED_SAFETY attempt and its released successor) read back the same way every time. */
+    /**
+     * Rows saved at the same instant (a FAILED_SAFETY attempt and its released successor) read back deliverable first.
+     * The ids are chosen so that the last tie-break, {@code id DESC}, would pick the FAILED_SAFETY row on its own: only
+     * the deliverable-first clause can make this pass, every time, rather than on a coin flip over random uuids.
+     */
     @Test
     void rowsSavedAtTheSameInstantComeBackDeliverableFirstOnEveryRead() {
         runner().run(context -> {
@@ -136,13 +140,15 @@ class DetailCacheAcceptanceTest {
             FamilyAccount family = records.createFamily(new FamilyAccount(
                     null, "+8801700000803", "Salma", FamilyAccount.Plan.FREE, t, t)).block();
             UUID doc = UUID.randomUUID();
-            messages.save(new OutboundMessage(null, family.id(), null, doc, OutboundMessage.Kind.EXPLANATION, Urgency.NOW,
-                    List.of(), null, OutboundMessage.GateStatus.FAILED_SAFETY, null, null, null, null, t)).block();
-            OutboundMessage released = messages.save(row(family.id(), doc, OutboundMessage.Kind.EXPLANATION, "কোডের লেখা", t)).block();
+            UUID failedId = UUID.fromString("ffffffff-ffff-4fff-bfff-ffffffffffff");
+            UUID releasedId = UUID.fromString("00000000-0000-4000-8000-000000000001");
+            execute("INSERT INTO baymax.outbound_message (id, family_id, document_id, kind, urgency, urgency_reasons, body, gate_status, created_at) "
+                    + "VALUES ('" + failedId + "','" + family.id() + "','" + doc + "','explanation','now','[]',NULL,'failed_safety','" + t + "')");
+            execute("INSERT INTO baymax.outbound_message (id, family_id, document_id, kind, urgency, urgency_reasons, body, gate_status, created_at) "
+                    + "VALUES ('" + releasedId + "','" + family.id() + "','" + doc + "','explanation','routine','[]','কোডের লেখা','released','" + t + "')");
 
-            for (int i = 0; i < 5; i++) {
-                assertThat(messages.latestOfKind(doc, OutboundMessage.Kind.EXPLANATION).block().id()).isEqualTo(released.id());
-            }
+            assertThat(messages.latestOfKind(doc, OutboundMessage.Kind.EXPLANATION).block().id())
+                    .as("the FAILED_SAFETY row won the same-instant tie").isEqualTo(releasedId);
         });
     }
 
@@ -271,6 +277,32 @@ class DetailCacheAcceptanceTest {
 
             assertThat(column(stored.id(), "sent_at")).isNotNull();
             assertThat(column(stored.id(), "delivery_status")).isNull();
+        });
+    }
+
+    /**
+     * The two rows whose delivery_status is NULL with sent_at set — one stamped by the log adapter (markSent clears the
+     * claim) and one written before V13 — rest on {@code sent_at IS NULL} alone. Neither may be claimed again.
+     */
+    @Test
+    void aRowAlreadyStampedSentCannotBeClaimedEvenWithNoDeliveryStatus() {
+        runner().run(context -> {
+            OutboundMessagePort messages = context.getBean(OutboundMessagePort.class);
+            HealthRecordPort records = context.getBean(HealthRecordPort.class);
+            Instant t = Instant.parse("2026-10-20T13:15:00Z");
+            FamilyAccount family = records.createFamily(new FamilyAccount(
+                    null, "+8801700000811", "Ayesha", FamilyAccount.Plan.FREE, t, t)).block();
+            OutboundMessage logged = messages.save(row(family.id(), UUID.randomUUID(), OutboundMessage.Kind.DETAIL, "বিস্তারিত", t)).block();
+            messages.claimDelivery(logged.id()).block();
+            messages.markSent(logged.id(), t.plusSeconds(1)).block();
+            UUID legacy = UUID.randomUUID();
+            execute("INSERT INTO baymax.outbound_message (id, family_id, document_id, kind, urgency, urgency_reasons, body, gate_status, sent_at) "
+                    + "VALUES ('" + legacy + "','" + family.id() + "','" + UUID.randomUUID() + "','detail','routine','[]','x','released','" + t + "')");
+            assertThat(column(logged.id(), "delivery_status")).as("vacuity: only sent_at stands between it and a claim").isNull();
+            assertThat(column(legacy, "delivery_status")).isNull();
+
+            assertThat(messages.claimDelivery(logged.id()).blockOptional()).as("the log-stamped row was claimed again").isEmpty();
+            assertThat(messages.claimDelivery(legacy).blockOptional()).as("a legacy sent row was claimed again").isEmpty();
         });
     }
 
