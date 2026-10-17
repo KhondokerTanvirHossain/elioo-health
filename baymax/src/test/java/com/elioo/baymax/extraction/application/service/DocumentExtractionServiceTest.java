@@ -322,6 +322,231 @@ class DocumentExtractionServiceTest {
     }
 
     /**
+     * RX: a prescription with medicines and no follow-up instruction is a complete prescription. DR-27 made follow_up
+     * a gating section and the emptiness check reads the gating list, so this page was retaken as unclear. Batch 1
+     * had a follow-up on 1 of 10 prescriptions.
+     */
+    @Test
+    void aPrescriptionWithNoFollowUpIsDoneNotRetaken() throws Exception {
+        // the medicine is named for text the stub OCR page carries, so its span resolves and it survives cropping
+        // (see aPrescriptionWithNoLabValuesIsDoneNotRetaken)
+        replyWith("""
+                {"document_type":"prescription","document_date":"2026-09-19","facility":"Shapla Diagnostics",
+                 "values":[],
+                 "medicines":[{"name":"HbA1c","dose_text":"30 mg","frequency_text":"1+0+0",
+                               "timing_text":"before meal","source_span":{"page":1,"start":0,"end":5}}],
+                 "follow_up":[],
+                 "clinical_context":{"chief_complaint":[],"history":[],"examination":[],
+                                     "diagnosis":[],"investigations_advised":[],"advice":[],"referral":null},
+                 "confidence":{"overall":0.9,"values":0.0,"medicines":0.9,"follow_up":0.0,
+                               "clinical_context":0.85}}
+                """);
+
+        StepVerifier.create(service.process(received(1), List.of(pageJpeg())))
+                .assertNext(d -> {
+                    // the reason first: emptiness and confidence both yield NEEDS_RETAKE, so the reason names the
+                    // rule that ran
+                    assertThat(d.statusReason()).as("no follow-up written is the page, not a failed read; the rule "
+                            + "that ran").isNull();
+                    assertThat(d.status()).isEqualTo(Document.Status.DONE);
+                })
+                .verifyComplete();
+        verify(records).saveExtraction(any(), any());
+    }
+
+    /** The dangerous direction: a prescription with NO medicines read is still a failed read. */
+    @Test
+    void aPrescriptionWithNoMedicinesIsStillRetaken() throws Exception {
+        replyWith("""
+                {"document_type":"prescription","document_date":"2026-09-19","facility":"Shapla Diagnostics",
+                 "values":[],"medicines":[],
+                 "follow_up":[{"instruction":"৫ দিন পর আসবেন","due_date":"2026-09-24",
+                               "source_span":{"page":1,"start":0,"end":5}}],
+                 "clinical_context":{"chief_complaint":[],"history":[],"examination":[],
+                                     "diagnosis":[],"investigations_advised":[],"advice":[],"referral":null},
+                 "confidence":{"overall":0.95,"values":0.0,"medicines":0.95,"follow_up":0.9,
+                               "clinical_context":0.9}}
+                """);
+
+        StepVerifier.create(service.process(received(1), List.of(pageJpeg())))
+                .assertNext(d -> {
+                    assertThat(d.status()).isEqualTo(Document.Status.NEEDS_RETAKE);
+                    assertThat(d.statusReason()).as("the emptiness rule ran, on the section a prescription must carry")
+                            .isEqualTo("nothing was read from the medicines of this prescription");
+                })
+                .verifyComplete();
+        verify(records, never()).saveExtraction(any(), any());
+    }
+
+    /** Confidence still gates a follow-up that WAS read: a weakly read due date is a weak read. */
+    @Test
+    void aPrescriptionWhoseFollowUpWasReadWeaklyIsStillRetaken() throws Exception {
+        replyWith("""
+                {"document_type":"prescription","document_date":"2026-09-19","facility":"Shapla Diagnostics",
+                 "values":[],
+                 "medicines":[{"name":"HbA1c","dose_text":"30 mg","frequency_text":"1+0+0",
+                               "timing_text":"before meal","source_span":{"page":1,"start":0,"end":5}}],
+                 "follow_up":[{"instruction":"৭ দিন পর আসবেন","due_date":"2026-09-26",
+                               "source_span":{"page":1,"start":6,"end":9}}],
+                 "clinical_context":{"chief_complaint":[],"history":[],"examination":[],
+                                     "diagnosis":[],"investigations_advised":[],"advice":[],"referral":null},
+                 "confidence":{"overall":0.9,"values":0.0,"medicines":0.9,"follow_up":0.5,
+                               "clinical_context":0.85}}
+                """);
+
+        StepVerifier.create(service.process(received(1), List.of(pageJpeg())))
+                .assertNext(d -> {
+                    assertThat(d.status()).isEqualTo(Document.Status.NEEDS_RETAKE);
+                    assertThat(d.statusReason()).as("the confidence rule ran, on the section that was read")
+                            .isEqualTo("part of the document was not read confidently enough (0.50)");
+                })
+                .verifyComplete();
+        verify(records, never()).saveExtraction(any(), any());
+    }
+
+    // --- the replay harness decides like this gate ---------------------------------------------------
+
+    /**
+     * One stored extraction, as the replay harness sees it: the overall confidence and, per section, its confidence
+     * and how many items were read. {@code expected} is "STATUS rule", in the harness's vocabulary.
+     */
+    private record GateCase(String name, String type, double overall,
+                            double values, int nValues, double medicines, int nMedicines,
+                            double followUp, int nFollowUp, double clinicalContext, String expected) {
+
+        String reply() {
+            String value = """
+                    {"name":"HbA1c","canonical_name":"hba1c","value":"8.2","unit":"%","flag":"high",
+                     "source_span":{"page":1,"start":0,"end":5}}""";
+            String medicine = """
+                    {"name":"HbA1c","dose_text":"30 mg","frequency_text":"1+0+0","timing_text":"before meal",
+                     "source_span":{"page":1,"start":0,"end":5}}""";
+            String followUp = """
+                    {"instruction":"৭ দিন পর আসবেন","due_date":"2026-09-26",
+                     "source_span":{"page":1,"start":6,"end":9}}""";
+            return """
+                    {"document_type":"%s","document_date":"2026-09-19","facility":"Shapla Diagnostics",
+                     "values":[%s],"medicines":[%s],"follow_up":[%s],
+                     "clinical_context":{"chief_complaint":[],"history":[],"examination":[],
+                                         "diagnosis":[],"investigations_advised":[],"advice":[],"referral":null},
+                     "confidence":{"overall":%s,"values":%s,"medicines":%s,"follow_up":%s,"clinical_context":%s}}
+                    """.formatted(type, repeat(value, nValues), repeat(medicine, nMedicines),
+                    repeat(followUp, nFollowUp), overall, values, medicines, this.followUp, clinicalContext);
+        }
+
+        /** The harness's {@code sections} argument: name -> [confidence, items read]; clinical_context counts 1. */
+        java.util.Map<String, List<Object>> sections() {
+            return java.util.Map.of("values", List.of(values, nValues), "medicines", List.of(medicines, nMedicines),
+                    "follow_up", List.of(followUp, nFollowUp), "clinical_context", List.of(clinicalContext, 1));
+        }
+
+        private static String repeat(String item, int n) {
+            return String.join(",", java.util.Collections.nCopies(n, item));
+        }
+    }
+
+    /**
+     * Each case exercises one rule, and between them every rule and every exemption the gate has: the empty gating
+     * section that is skipped (RX), the section that gates nothing for its type (clinical_context, DR-27), the type
+     * that gates nothing at all, and each of the three ways to a retake.
+     */
+    private static final List<GateCase> GATE_CASES = List.of(
+            new GateCase("prescription, medicines read, no follow-up written (RX)", "prescription", 0.9,
+                    0.0, 0, 0.9, 1, 0.0, 0, 0.85, "DONE -"),
+            new GateCase("prescription, nothing read from medicines", "prescription", 0.95,
+                    0.0, 0, 0.95, 0, 0.9, 1, 0.9, "NEEDS_RETAKE missing medicines"),
+            new GateCase("prescription, follow-up read weakly", "prescription", 0.9,
+                    0.0, 0, 0.9, 1, 0.5, 1, 0.85, "NEEDS_RETAKE section"),
+            new GateCase("lab report, clinical_context weak, values strong (lab1, DR-27)", "lab_report", 0.9,
+                    0.92, 1, 0.0, 0, 0.0, 0, 0.6, "DONE -"),
+            new GateCase("lab report, nothing read from values", "lab_report", 0.9,
+                    0.9, 0, 0.0, 0, 0.0, 0, 0.9, "NEEDS_RETAKE missing values"),
+            new GateCase("lab report, values read weakly", "lab_report", 0.9,
+                    0.6, 1, 0.0, 0, 0.0, 0, 0.9, "NEEDS_RETAKE section"),
+            new GateCase("other document, a weak section gates nothing", "other", 0.9,
+                    0.5, 1, 0.0, 0, 0.0, 0, 0.5, "DONE -"),
+            new GateCase("lab report read weakly overall", "lab_report", 0.7,
+                    0.9, 1, 0.0, 0, 0.0, 0, 0.9, "NEEDS_RETAKE overall"));
+
+    /** The gate's verdict as the harness would print it: the status and the rule that produced it. */
+    private static String gateOutcome(Document d) {
+        String reason = d.statusReason();
+        if (reason == null) {
+            return d.status() + " -";
+        }
+        if (reason.startsWith("the document was not read confidently enough")) {
+            return d.status() + " overall";
+        }
+        java.util.regex.Matcher missing = java.util.regex.Pattern.compile("^nothing was read from the (\\w+) of ")
+                .matcher(reason);
+        if (missing.find()) {
+            return d.status() + " missing " + missing.group(1);
+        }
+        if (reason.startsWith("part of the document was not read confidently enough")) {
+            return d.status() + " section";
+        }
+        return d.status() + " UNMAPPED: " + reason;
+    }
+
+    /** Runs the harness's own {@code current_gate} on every case, without a database: the function, not its text. */
+    private static List<String> harnessOutcomes(List<GateCase> cases) throws Exception {
+        java.nio.file.Path harness = java.nio.file.Path.of("../scripts/replay-extraction-gate.py");
+        assertThat(harness).as("the replay harness is where this test expects it").isRegularFile();
+        String driver = String.join("\n",
+                "import importlib.util, json, sys",
+                "spec = importlib.util.spec_from_file_location('harness', sys.argv[1])",
+                "harness = importlib.util.module_from_spec(spec)",
+                "spec.loader.exec_module(harness)",
+                "out = []",
+                "for c in json.load(sys.stdin):",
+                "    sections = {name: tuple(v) for name, v in c['sections'].items()}",
+                "    status, rule = harness.current_gate(c['overall'], sections, c['type'])",
+                "    out.append(f'{status} {rule}')",
+                "print(json.dumps(out))");
+        List<java.util.Map<String, Object>> input = cases.stream()
+                .map(c -> java.util.Map.<String, Object>of("type", c.type(), "overall", c.overall(),
+                        "sections", c.sections()))
+                .toList();
+        Process python = new ProcessBuilder("python3", "-I", "-c", driver, harness.toString()).start();
+        try (var stdin = python.getOutputStream()) {
+            stdin.write(new ObjectMapper().writeValueAsBytes(input));
+        }
+        String stdout = new String(python.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        String stderr = new String(python.getErrorStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(python.waitFor(30, java.util.concurrent.TimeUnit.SECONDS)).as("the harness finished").isTrue();
+        assertThat(python.exitValue()).as("the harness ran: %s", stderr).isZero();
+        return List.of(new ObjectMapper().readValue(stdout, String[].class));
+    }
+
+    /**
+     * {@code scripts/replay-extraction-gate.py} is the only way to see what a gate change does to every document in
+     * production, and a model of the gate that is not the gate prints numbers that look like evidence. Reading its
+     * tables out of the source ({@code ReplayHarnessMatchesTheGateTest}) does not say what its functions DO with
+     * them: a {@code lowest_gated} that ignored its table and took the minimum over every section — the pre-DR-27
+     * semantics, clinical_context included — kept every table check green. So the harness's {@code current_gate}
+     * is run on each case and its verdict compared, rule included, with what this gate actually decides on the same
+     * extraction. Both sides are derived; the {@code expected} column only pins that the cases still cover every rule.
+     */
+    @Test
+    void theReplayHarnessDecidesEveryCaseAsTheGateDoes() throws Exception {
+        List<String> gate = new java.util.ArrayList<>();
+        for (GateCase c : GATE_CASES) {
+            replyWith(c.reply());
+            Document d = service.process(received(1), List.of(pageJpeg())).block();
+            assertThat(d).as(c.name()).isNotNull();
+            gate.add(gateOutcome(d));
+        }
+        List<String> harness = harnessOutcomes(GATE_CASES);
+
+        assertThat(harness).as("one harness verdict per case").hasSameSizeAs(GATE_CASES);
+        for (int i = 0; i < GATE_CASES.size(); i++) {
+            GateCase c = GATE_CASES.get(i);
+            assertThat(gate.get(i)).as("the gate, on: %s", c.name()).isEqualTo(c.expected());
+            assertThat(harness.get(i)).as("the harness's current_gate, on: %s", c.name()).isEqualTo(gate.get(i));
+        }
+    }
+
+    /**
      * BMX-5b: offsets past the end of the text used to drop the item. The item's text is on the page, so
      * it is now cropped from where the text actually is — and stored with that crop.
      */
