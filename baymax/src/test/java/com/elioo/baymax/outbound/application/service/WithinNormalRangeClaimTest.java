@@ -81,4 +81,75 @@ class WithinNormalRangeClaimTest {
     void aDocumentWithNoValuesAtAllCannotMakeTheClaim() {
         assertThat(ExplanationService.canSayWithinNormalRange(facts(List.of()))).isFalse();
     }
+
+    private static DocumentFacts factsWithUnverified(List<Map<String, Object>> values, int unverifiedValues) {
+        java.time.Instant t = java.time.Instant.parse("2026-10-20T09:00:00Z");
+        Document document = new Document(java.util.UUID.randomUUID(), java.util.UUID.randomUUID(), java.util.UUID.randomUUID(),
+                "lab_report", null, null, "{}", 0.9, Document.Status.DONE, null, null, null, 1, t, t,
+                new com.elioo.baymax.extraction.domain.VerifiedItems.Unverified(unverifiedValues, 0, 0, 0), null);
+        return new DocumentFacts(document, "Test Patient", values, List.of(), Map.of(), "https://x/y");
+    }
+
+    // ---- the dangerous direction: each of these was CLAIMED "all normal" before D35 ----
+
+    /** The live gap: a one-sided printed range and a blank flag. 250 is not inside "<100"; nothing compared them. */
+    @Test
+    void anLdlOf250AgainstALessThan100RangeWithABlankFlagCannotMakeTheClaim() {
+        assertThat(ExplanationService.canSayWithinNormalRange(facts(List.of(
+                value("LDL", "250", null, "<100", "")))))
+                .as("LDL 250 against '<100' was told 'everything is within the normal range' (D35)")
+                .isFalse();
+    }
+
+    @Test
+    void aOneSidedNumericRangeIsNotARangeAValueCanBeInside() {
+        assertThat(ExplanationService.canSayWithinNormalRange(facts(List.of(
+                value("LDL", "250", null, "100", null))))).isFalse();
+        assertThat(ExplanationService.canSayWithinNormalRange(facts(List.of(
+                value("LDL", "250", "", "100", null))))).isFalse();
+    }
+
+    /** Code beats the model: the flag may withdraw the claim, never grant it. */
+    @Test
+    void aValueOutsideItsRangeByCodeCannotBeRescuedByTheModelsNormalFlag() {
+        assertThat(ExplanationService.canSayWithinNormalRange(facts(List.of(
+                value("Creatinine", "2.4", "0.6", "1.1", "normal")))))
+                .as("the model's flag said normal; 2.4 is outside 0.6–1.1")
+                .isFalse();
+    }
+
+    /** No reading means no comparison, and no comparison means no claim (UrgencyService.number refuses these). */
+    @Test
+    void valuesThatDoNotParseAsOneReadingCannotMakeTheClaim() {
+        assertThat(ExplanationService.canSayWithinNormalRange(facts(List.of(value("eGFR", "> 89", "60", "120", ""))))).isFalse();
+        assertThat(ExplanationService.canSayWithinNormalRange(facts(List.of(value("HBsAg", "Positive", "Negative", "Negative", ""))))).isFalse();
+        assertThat(ExplanationService.canSayWithinNormalRange(facts(List.of(value("TSH", "1,23", "0.5", "1.5", ""))))).isFalse();
+        assertThat(ExplanationService.canSayWithinNormalRange(facts(List.of(value("BP", "130 / 80", "90", "140", ""))))).isFalse();
+    }
+
+    @Test
+    void anInvertedRangeHasNoInside() {
+        assertThat(ExplanationService.canSayWithinNormalRange(facts(List.of(value("X", "7", "10", "5", ""))))).isFalse();
+    }
+
+    /** DR-28: a value read but dropped for want of a crop is still on the page; the claim would cover it unseen. */
+    @Test
+    void aDocumentWithAnUnverifiedValueCannotMakeTheClaim() {
+        assertThat(ExplanationService.canSayWithinNormalRange(factsWithUnverified(List.of(
+                value("HbA1c", "5.2", "4.0", "5.6", "")), 1))).isFalse();
+    }
+
+    // ---- the protected direction: a truly all-inside report still says so ----
+
+    @Test
+    void aReportWhoseEveryValueIsInsideByCodeMayMakeTheClaimEvenWithBlankFlags() {
+        assertThat(ExplanationService.canSayWithinNormalRange(facts(List.of(
+                value("HbA1c", "5.2", "4.0", "5.6", ""),
+                value("WBC", "6,100", "4,000", "11,000", null),
+                value("Creatinine", "1.1", "0.6", "1.1", null)))))       // the boundary is inside
+                .isTrue();
+        assertThat(ExplanationService.canSayWithinNormalRange(factsWithUnverified(List.of(
+                value("HbA1c", "৫.২", "৪.০", "৫.৬", "normal")), 0)))    // Bangla digits fold
+                .isTrue();
+    }
 }

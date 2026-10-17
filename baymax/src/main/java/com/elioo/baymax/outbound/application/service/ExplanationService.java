@@ -235,21 +235,25 @@ public class ExplanationService implements ExplainDocumentUseCase {
      *
      * <p>ROUTINE itself is unchanged and correct: a diagnosis on a prescription is not a reason to see a
      * doctor, because the doctor just wrote it (PO ruling 2026-09-18). What was wrong was the reassurance.
+     *
+     * <p>2026-10: the claim also needs every value INSIDE by code ({@link UrgencyService#insideByCode}). Range
+     * strings existing and a blank model flag are not evidence; LDL 250 against '<100' was claimed normal (D35).
+     * The model's flag and critical mark may withdraw the claim, never grant it.
      */
     static boolean canSayWithinNormalRange(DocumentFacts facts) {
         List<Map<String, Object>> values = facts.values();
         if (values == null || values.isEmpty()) {
             return false;
         }
-        boolean anyWithRange = false;
+        // DR-28: a value read but not shown (no crop) is still on the page; the claim would cover it unseen
+        if (facts.document().unverified().values() > 0) {
+            return false;
+        }
         for (Map<String, Object> value : values) {
-            boolean hasLow = value.get("ref_low") != null && !String.valueOf(value.get("ref_low")).isBlank();
-            boolean hasHigh = value.get("ref_high") != null && !String.valueOf(value.get("ref_high")).isBlank();
-            if (!hasLow && !hasHigh) {
-                // a value we cannot place against a printed range: the claim would cover it without evidence
+            if (!UrgencyService.insideByCode(value)) {
                 return false;
             }
-            anyWithRange = true;
+            // the model's flag and critical mark may only WITHDRAW the claim, never grant it
             String flag = value.get("flag") == null ? "" : String.valueOf(value.get("flag"));
             if (!flag.isBlank() && !"normal".equalsIgnoreCase(flag)) {
                 return false;
@@ -258,7 +262,7 @@ public class ExplanationService implements ExplainDocumentUseCase {
                 return false;
             }
         }
-        return anyWithRange;
+        return true;
     }
 
     /** The fixed skeleton: template lines with the extraction's own numbers. */
