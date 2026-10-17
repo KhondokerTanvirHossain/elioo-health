@@ -53,6 +53,18 @@ public class WaIntakeService {
     }
 
     /**
+     * The one entry point from the webhook. Interim (plan PR 6 task 6.3): it keeps today's behaviour for text, image and
+     * document, so this commit regresses nothing; task 6.5 answers every other type.
+     */
+    public Mono<Outcome> onInbound(com.elioo.baymax.wa.domain.WaInbound in) {
+        return switch (in.type()) {
+            case TEXT -> onText(in.from(), in.text());
+            case IMAGE, DOCUMENT -> onImage(in.from(), in.mediaId());
+            default -> Mono.just(Outcome.ACCEPTED);
+        };
+    }
+
+    /**
      * @param from   the sender's WhatsApp number as Meta reports it, digits only and no plus
      * @param mediaId the image to fetch
      */

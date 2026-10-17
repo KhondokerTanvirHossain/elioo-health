@@ -29,8 +29,11 @@ class WaWebhookRouterTest {
         props.getWa().setEnabled(true);
         props.getWa().setVerifyToken(VERIFY_TOKEN);
         props.getWa().setAppSecret(APP_SECRET);
-        WaWebhookHandler handler = new WaWebhookHandler(props, new ObjectMapper(),
-                org.mockito.Mockito.mock(com.elioo.baymax.wa.application.service.WaIntakeService.class));
+        var intake = org.mockito.Mockito.mock(com.elioo.baymax.wa.application.service.WaIntakeService.class);
+        // an unstubbed Mono-returning mock answers null, which would fail dispatch for a reason that is not the test's
+        org.mockito.Mockito.when(intake.onInbound(org.mockito.ArgumentMatchers.any())).thenReturn(
+                reactor.core.publisher.Mono.just(com.elioo.baymax.wa.application.service.WaIntakeService.Outcome.ACCEPTED));
+        WaWebhookHandler handler = new WaWebhookHandler(props, new ObjectMapper(), intake);
         return WebTestClient.bindToRouterFunction(
                 new WaWebhookRouter().baymaxWaRoutes(handler, new ErrorResponseFilter())).build();
     }
