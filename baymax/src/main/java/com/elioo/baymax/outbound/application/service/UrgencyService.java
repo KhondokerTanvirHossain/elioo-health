@@ -365,14 +365,14 @@ public class UrgencyService {
      * INSIDE by code (D35, and F2's INSIDE verdict when it lands): the value and BOTH printed bounds parse as one
      * reading each ({@link #number}) and low ≤ value ≤ high. A one-sided range ("<100"), a bound, a pair, an
      * ambiguous comma, a qualitative result or an inverted range is not inside — it is unknown, and unknown never
-     * supports a reassurance.
+     * supports a reassurance. (An inverted range needs no clause of its own: no value satisfies low ≤ v ≤ high when
+     * low > high.)
      */
     static boolean insideByCode(Map<String, Object> v) {
         Optional<Double> value = number(v.get("value"));
         Optional<Double> low = number(v.get("ref_low"));
         Optional<Double> high = number(v.get("ref_high"));
         return value.isPresent() && low.isPresent() && high.isPresent()
-                && low.get() <= high.get()
                 && value.get() >= low.get() && value.get() <= high.get();
     }
 

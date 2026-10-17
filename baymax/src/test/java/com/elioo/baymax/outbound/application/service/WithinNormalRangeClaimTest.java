@@ -109,6 +109,42 @@ class WithinNormalRangeClaimTest {
                 value("LDL", "250", "", "100", null))))).isFalse();
     }
 
+    // A value that MEETS its one-sided range: these fail only if a one-sided range is treated as inside. 250 is
+    // above 100 under any reading of "<100", so the cases above cannot tell "one-sided is unknown" from "a missing
+    // bound is no limit". 90 against "<100" can; these are the t2 phone fixture's values.
+
+    @Test
+    void anLdlOf90AgainstALessThan100RangeIsNotInside() {
+        assertThat(ExplanationService.canSayWithinNormalRange(facts(List.of(
+                value("LDL", "90", null, "<100", "")))))
+                .as("LDL 90 against '<100' is a one-sided range: unknown, not inside (D35)")
+                .isFalse();
+    }
+
+    @Test
+    void anLdlOf90AgainstAnUpperBoundOnlyIsNotInside() {
+        assertThat(ExplanationService.canSayWithinNormalRange(facts(List.of(
+                value("LDL", "90", null, "100", null)))))
+                .as("LDL 90 with ref_low null and ref_high 100 is one-sided: unknown, not inside (D35)")
+                .isFalse();
+    }
+
+    @Test
+    void anLdlOf90AgainstAnUpperBoundAndABlankLowIsNotInside() {
+        assertThat(ExplanationService.canSayWithinNormalRange(facts(List.of(
+                value("LDL", "90", "", "100", null)))))
+                .as("LDL 90 with ref_low blank and ref_high 100 is one-sided: unknown, not inside (D35)")
+                .isFalse();
+    }
+
+    @Test
+    void anHdlOf52AgainstAGreaterThan40RangeIsNotInside() {
+        assertThat(ExplanationService.canSayWithinNormalRange(facts(List.of(
+                value("HDL", "52", ">40", null, "")))))
+                .as("HDL 52 against '>40' is a one-sided range: unknown, not inside (D35)")
+                .isFalse();
+    }
+
     /** Code beats the model: the flag may withdraw the claim, never grant it. */
     @Test
     void aValueOutsideItsRangeByCodeCannotBeRescuedByTheModelsNormalFlag() {
@@ -118,18 +154,65 @@ class WithinNormalRangeClaimTest {
                 .isFalse();
     }
 
-    /** No reading means no comparison, and no comparison means no claim (UrgencyService.number refuses these). */
+    // No reading means no comparison, and no comparison means no claim (UrgencyService.number refuses these).
+    // One test per case, so each one's red on the pre-fix source is visible on its own.
+
     @Test
-    void valuesThatDoNotParseAsOneReadingCannotMakeTheClaim() {
-        assertThat(ExplanationService.canSayWithinNormalRange(facts(List.of(value("eGFR", "> 89", "60", "120", ""))))).isFalse();
-        assertThat(ExplanationService.canSayWithinNormalRange(facts(List.of(value("HBsAg", "Positive", "Negative", "Negative", ""))))).isFalse();
-        assertThat(ExplanationService.canSayWithinNormalRange(facts(List.of(value("TSH", "1,23", "0.5", "1.5", ""))))).isFalse();
-        assertThat(ExplanationService.canSayWithinNormalRange(facts(List.of(value("BP", "130 / 80", "90", "140", ""))))).isFalse();
+    void aBoundAsTheValueCannotMakeTheClaim() {
+        assertThat(ExplanationService.canSayWithinNormalRange(facts(List.of(value("eGFR", "> 89", "60", "120", "")))))
+                .as("'> 89' is a bound, not a reading").isFalse();
     }
 
     @Test
+    void aQualitativeResultCannotMakeTheClaim() {
+        assertThat(ExplanationService.canSayWithinNormalRange(facts(List.of(value("HBsAg", "Positive", "Negative", "Negative", "")))))
+                .as("'Positive' against 'Negative' has no number to compare").isFalse();
+    }
+
+    @Test
+    void anAmbiguousCommaCannotMakeTheClaim() {
+        assertThat(ExplanationService.canSayWithinNormalRange(facts(List.of(value("TSH", "1,23", "0.5", "1.5", "")))))
+                .as("'1,23' is 1.23 or 123; it is not read").isFalse();
+    }
+
+    @Test
+    void aPairInOneCellCannotMakeTheClaim() {
+        assertThat(ExplanationService.canSayWithinNormalRange(facts(List.of(value("BP", "130 / 80", "90", "140", "")))))
+                .as("'130 / 80' is two readings, not one").isFalse();
+    }
+
+    /**
+     * Documents an implied property, not a separate code path: no value satisfies low <= v <= high when low > high,
+     * so an inverted range is never inside. It is red on the pre-fix source (which never compared at all), but no
+     * clause of insideByCode exists for it alone.
+     */
+    @Test
     void anInvertedRangeHasNoInside() {
         assertThat(ExplanationService.canSayWithinNormalRange(facts(List.of(value("X", "7", "10", "5", ""))))).isFalse();
+    }
+
+    // ---- the withdraw-only rules: inside by code, so only the flag or the critical mark can withdraw ----
+
+    /** The model's flag alone withdraws: the value is inside by code, so no other rule produces this verdict. */
+    @Test
+    void aValueInsideByCodeIsWithdrawnByTheModelsNonNormalFlag() {
+        assertThat(ExplanationService.canSayWithinNormalRange(facts(List.of(
+                value("HbA1c", "5.2", "4.0", "5.6", "high")))))
+                .as("5.2 is inside 4.0-5.6 by code; only the model's 'high' flag can withdraw the claim")
+                .isFalse();
+    }
+
+    /**
+     * The critical mark alone withdraws. Reachable: UrgencyService does not read the {@code critical} field (it reads
+     * the page's own marker words), so a value marked critical but inside by code arrives here at ROUTINE.
+     */
+    @Test
+    void aValueInsideByCodeIsWithdrawnByItsCriticalMark() {
+        Map<String, Object> marked = value("HbA1c", "5.2", "4.0", "5.6", "");
+        marked.put("critical", true);
+        assertThat(ExplanationService.canSayWithinNormalRange(facts(List.of(marked))))
+                .as("5.2 is inside 4.0-5.6 by code; only the critical mark can withdraw the claim")
+                .isFalse();
     }
 
     /** DR-28: a value read but dropped for want of a crop is still on the page; the claim would cover it unseen. */

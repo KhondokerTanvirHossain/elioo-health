@@ -264,6 +264,27 @@ class ExplanationServiceTest {
                 .contains(filedLine);
     }
 
+    /**
+     * D35 on the sent body, with a value that MEETS its one-sided range (the t2 fixture's LDL). 250 is above 100 under
+     * any reading, so the test above cannot fail for "one-sided counted as inside"; this one can.
+     */
+    @Test
+    void aRoutineReportWithLdl90AgainstALessThan100RangeIsSentAsFiledNotAsAllNormal() {
+        done(new java.util.HashMap<>(Map.of("name", "LDL", "value", "90", "ref_high", "<100")));
+        service.explain(DOC).block();
+
+        ArgumentCaptor<OutboundMessage> sent = ArgumentCaptor.forClass(OutboundMessage.class);
+        verify(delivery).deliver(sent.capture());
+        Copy copy = new Copy();
+        String reassurance = copy.bn("explanation.routine", Map.of()).split("\n")[1];       // সব কিছু স্বাভাবিক সীমার মধ্যে আছে।
+        String filedLine = copy.bn("explanation.routine.filed", Map.of()).split("\n")[2];   // কাগজে যা লেখা আছে নিচে তুলে দিলাম।
+        assertThat(sent.getValue().urgency()).as("90 meets '<100'; nothing raises urgency").isEqualTo(Urgency.ROUTINE);
+        assertThat(sent.getValue().body())
+                .as("LDL 90 against '<100' is one-sided, not inside: must not be told everything is normal (D35)")
+                .doesNotContain(reassurance)
+                .contains(filedLine);
+    }
+
     /** The protected direction, on the sent body: a report whose every value is inside by code still reassures. */
     @Test
     void aRoutineReportWhoseEveryValueIsInsideIsSentWithTheReassuranceLine() {
