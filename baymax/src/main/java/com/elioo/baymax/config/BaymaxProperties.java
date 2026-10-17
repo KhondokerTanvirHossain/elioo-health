@@ -254,7 +254,10 @@ public class BaymaxProperties {
         private int maxOutputTokens = 8192;
         /** Below this overall confidence the document needs a retake; nothing but the document row is written. */
         private double minConfidenceOverall = 0.80;
-        /** Below this, any single section (values, medicines, follow-up) forces a retake. */
+        /**
+         * Below this, a {@link #gatingSections gating section} for the document type that was READ (not empty)
+         * forces a retake. Other sections, and an empty gating section, never do.
+         */
         private double minConfidenceSection = 0.70;
         /**
          * Which sections must CARRY something, by {@code document_type}: one read as empty is a failed read,
