@@ -24,9 +24,6 @@ import org.springframework.boot.test.context.runner.ReactiveWebApplicationContex
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Primary;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -280,8 +277,14 @@ class DetailCacheAcceptanceTest {
     /** End to end on Postgres: two asks deliver one stored row at the same instant; the channel sees it once. */
     @Test
     void twoConcurrentDeliversOfOneRowHandItToTheChannelOnce() {
-        CountingDelivery.CALLS.set(0);
-        runner().withUserConfiguration(CountingDelivery.class).run(context -> {
+        AtomicInteger calls = new AtomicInteger();
+        // registered programmatically, never as a @Configuration: the auto-configuration component-scans
+        // com.elioo.baymax, so an annotated test class here would leak a third @Primary into every other context test
+        MessageDeliveryPort counting = m -> {
+            int n = calls.incrementAndGet();
+            return Mono.just(DeliveryOutcome.sent(WaFixtures.wamid("8801700000809", n)));
+        };
+        runner().withBean("countingDelivery", MessageDeliveryPort.class, () -> counting, bd -> bd.setPrimary(true)).run(context -> {
             OutboundMessagePort messages = context.getBean(OutboundMessagePort.class);
             HealthRecordPort records = context.getBean(HealthRecordPort.class);
             ExplainDocumentUseCase explainer = context.getBean(ExplainDocumentUseCase.class);
@@ -294,24 +297,10 @@ class DetailCacheAcceptanceTest {
                     .flatMap(i -> explainer.deliver(stored).subscribeOn(Schedulers.parallel()), 2)
                     .collectList().block(Duration.ofSeconds(30));
 
-            assertThat(CountingDelivery.CALLS.get()).as("deliveries handed to the channel for one row").isEqualTo(1);
+            assertThat(calls.get()).as("deliveries handed to the channel for one row").isEqualTo(1);
             assertThat(column(stored.id(), "delivery_status")).isEqualTo("sent");
             assertThat(column(stored.id(), "sent_at")).isNotNull();
         });
-    }
-
-    @Configuration
-    static class CountingDelivery {
-        static final AtomicInteger CALLS = new AtomicInteger();
-
-        @Bean
-        @Primary
-        MessageDeliveryPort countingDelivery() {
-            return m -> {
-                int n = CALLS.incrementAndGet();
-                return Mono.just(DeliveryOutcome.sent(WaFixtures.wamid("8801700000809", n)));
-            };
-        }
     }
 
     private static void execute(String sql) throws Exception {
