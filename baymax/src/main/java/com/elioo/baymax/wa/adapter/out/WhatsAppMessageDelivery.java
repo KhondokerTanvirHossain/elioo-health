@@ -26,8 +26,10 @@ import java.util.List;
  * undelivered rather than retried blind. If that turns out to be common it is a finding about review latency,
  * which is what the pilot needs to learn before the gate opens to families.
  *
- * <p>Nothing PENDING reaches here: {@code ReviewGateService} is the only caller and only for an explicit
- * approve or a released message.
+ * <p>Nothing unreviewed is sent from here, whichever caller hands it over (F4): a row that is not RELEASED or
+ * APPROVED with a body is refused with {@code not_released} and logged at ERROR. This used to be a claim
+ * ("ReviewGateService is the only caller") while {@code WaIntakeService.onText} sent bodies around it; the rule
+ * now lives where every release path — explanation, approve, nudges — meets it.
  */
 @Slf4j
 @Component
@@ -42,9 +44,15 @@ public class WhatsAppMessageDelivery implements MessageDeliveryPort {
 
     @Override
     public Mono<DeliveryOutcome> deliver(OutboundMessage message) {
-        if (message.body() == null || message.body().isBlank()) {
-            // a safety-check failure stores the row with no body; there is nothing to send and that is correct
-            log.warn("[baymax] wa delivery skipped id={} — no body", message.id());
+        if (!message.isDeliverable()) {
+            // DR-13 / F4: only RELEASED or APPROVED rows with a body reach a family, whichever caller handed it over
+            log.error("[baymax] wa delivery refused id={} gate={} — not released or approved", message.id(),
+                    message.gateStatus() == null ? null : message.gateStatus().dbValue());
+            return Mono.just(DeliveryOutcome.failed(DeliveryOutcome.NOT_RELEASED));
+        }
+        if (message.body().isBlank()) {
+            // nothing to send; a blank body is never a message
+            log.warn("[baymax] wa delivery skipped id={} — blank body", message.id());
             return Mono.just(DeliveryOutcome.failed(DeliveryOutcome.SEND_FAILED));
         }
         return records.findFamily(message.familyId())

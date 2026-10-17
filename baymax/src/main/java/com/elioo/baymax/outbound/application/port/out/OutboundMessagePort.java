@@ -21,6 +21,10 @@ public interface OutboundMessagePort {
     Mono<OutboundMessage> decide(UUID messageId, OutboundMessage.GateStatus status, String reviewer, String reason,
                                  Instant decidedAt);
 
+    /**
+     * The log adapter's path, which delivers nothing: stamps sent_at with its v1 meaning ("handed over") and clears
+     * any delivery claim, so a claimed row it stamps still satisfies V14.
+     */
     Mono<Void> markSent(UUID messageId, Instant sentAt);
 
     /**
@@ -35,6 +39,18 @@ public interface OutboundMessagePort {
 
     /** The newest deliverable message for a document, for the timeline. */
     Mono<OutboundMessage> latestDeliverable(UUID documentId);
+
+    /**
+     * The newest message of this kind for a document, whatever its gate state — the DETAIL cache (F4). Ties on
+     * created_at prefer a deliverable row, then the larger id, so the answer is the same on every read.
+     */
+    Mono<OutboundMessage> latestOfKind(UUID documentId, OutboundMessage.Kind kind);
+
+    /**
+     * F4: atomically take the right to hand this row to the channel. Emits the row when THIS call took it; empty
+     * when it was sent, is being sent, or is not deliverable. A failed delivery may be claimed again.
+     */
+    Mono<OutboundMessage> claimDelivery(UUID id);
 
     Flux<MessageCount> counts(Instant from, Instant to);
 

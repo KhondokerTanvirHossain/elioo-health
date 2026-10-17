@@ -155,7 +155,11 @@ public class DocumentHandler {
         }
     }
 
-    /** The longer explanation, on request, for a document the caller may see; same gate and safety rules. */
+    /**
+     * The longer explanation, on request, for a document the caller may see; same gate and safety rules. It is SHOWN
+     * here and never texted to the family as a side effect (F4): the stored DETAIL row is cached per document, and
+     * only a WhatsApp ask delivers it.
+     */
     public Mono<ServerResponse> detail(ServerRequest request) {
         UUID documentId;
         try {

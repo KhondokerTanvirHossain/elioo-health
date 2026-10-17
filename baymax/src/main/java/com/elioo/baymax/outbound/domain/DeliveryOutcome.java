@@ -30,6 +30,8 @@ public record DeliveryOutcome(Status status, String messageId, String error) {
     public static final String TOKEN_INVALID = "token_invalid";
     public static final String NOT_ALLOWLISTED = "not_allowlisted";
     public static final String SEND_FAILED = "send_failed";
+    /** The row was not released or approved; the adapter refused it. An invariant breach, never expected. */
+    public static final String NOT_RELEASED = "not_released";
 
     public static DeliveryOutcome sent(String messageId) {
         return new DeliveryOutcome(Status.SENT, messageId, null);
