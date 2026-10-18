@@ -20,6 +20,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -58,6 +59,8 @@ final class WebUiTestKit {
             when(auth.authenticate("tok")).thenReturn(Mono.just(new WebSession(
                     UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100009"), FAMILY, NOW, NOW, NOW.plusSeconds(600))));
         }
+        // a patient with no nudge row reads as "reminders on"; a test that needs a row stubs that patient
+        when(nudgeData.patient(any())).thenReturn(Mono.empty());
         this.sessions = new SessionAuthFilter(auth, properties);
         this.router = buildRouter();
         this.client = WebTestClient.bindToRouterFunction(router).build();
