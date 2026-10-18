@@ -251,7 +251,7 @@ public class WebUiHandler {
                 %s
                 <form method="post" action="%s/verify">
                   <label for="c">%s</label>
-                  <input id="c" type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required>
+                  <input id="c" type="text" name="code" inputmode="numeric" pattern="[0-9০-৯]{6}" maxlength="6" autocomplete="one-time-code" required>
                   <button type="submit">%s</button>
                 </form>
                 <p class="small"><a href="%s/">%s</a></p>
