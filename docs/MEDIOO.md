@@ -17,6 +17,7 @@ project via BMX tickets; do not change scope, safety rules or pricing on your ow
 > System** (https://claude.ai/artifact/F7Kj5uHkfv4nmPWVrDhimZ; tokens v3 also in the repo beside the spec). Build order:
 > [superpowers/plans/2026-10-17-medioo-roadmap.md](superpowers/plans/2026-10-17-medioo-roadmap.md). Where this brief and
 > the spec disagree on UX, the spec is newer; hard constraints below still win unless the spec names the amendment.
+> Web portal (Phase 1b, Phase 2, web half of Phase 4; PO direction 2026-10-19, everything on the web, WhatsApp only for the sign-in code): [superpowers/plans/2026-10-19-medioo-web-portal.md](superpowers/plans/2026-10-19-medioo-web-portal.md).
 
 ## What this is
 MedScribe is becoming Medioo (codename Baymax): a WhatsApp-first health-memory assistant for Bangladeshi families. A family owner (one WhatsApp number) sends photos of reports/prescriptions for one or more patient profiles (parents). The system extracts, explains in Bangla (text + voice), assigns urgency, files to a per-patient timeline, and proactively nudges the family. Full product doc: [PRODUCT.md](PRODUCT.md).
