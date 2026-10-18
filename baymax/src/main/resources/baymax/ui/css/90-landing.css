@@ -4,6 +4,9 @@ main.page{max-width:none;padding:0}
 .land .top{padding:var(--sp-4) max(var(--sp-4),env(safe-area-inset-right)) var(--sp-2) max(var(--sp-4),env(safe-area-inset-left));margin:0 auto}
 .wm{display:inline-flex;align-items:center;min-height:var(--target-min);text-decoration:none}
 .tagline{display:block;font-size:var(--fs-footnote);line-height:var(--lh-footnote);color:var(--c-text-muted);margin-top:var(--sp-1)}
+/* s01: wordmark, language and log in share one row at 360 px; the tagline takes the row under it */
+.land .top>div:first-child{display:contents}
+.land .tagline{order:1;flex-basis:100%;margin-top:0}
 .land .actions a.login{display:inline-flex;align-items:center;min-height:var(--target-min);font-weight:600;color:var(--c-primary);text-decoration:none;padding:var(--sp-2) 0 var(--sp-2) var(--sp-2)}
 .sec{padding:var(--sp-8) 0}
 .alt{background:var(--c-surface)}
