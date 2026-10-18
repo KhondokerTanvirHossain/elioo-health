@@ -1,8 +1,8 @@
 200
 Cache-Control: max-age=86400, public
-Content-Length: 14185
+Content-Length: 14614
 Content-Type: text/css;charset=UTF-8
-ETag: "e6b97503"
+ETag: "e06a475d"
 
 /* Medioo design tokens (DR-14, palette from the medioo wordmark and the Mio mascot, 2026-09-19). The ONLY place a
    colour, radius, spacing step or type size is written. Pages consume tokens; a literal anywhere else fails
@@ -113,6 +113,12 @@ button.quiet:hover,.btn.quiet:hover{background:var(--c-line);color:var(--c-text)
 .foot .about{margin-top:var(--sp-2)}
 .foot{margin-top:var(--sp-7);padding:var(--sp-4) 0 var(--sp-5);border-top:1px solid var(--c-line);color:var(--c-muted);font-size:var(--fs-s)}
 
+/* 20-shell: app shell, tabs, sheets (A5, C1). Tokens only. */
+/* 30-family: the family tab (A6, E1, E2). Tokens only. */
+/* 40-papers: the papers tab, the timeline (C3). Tokens only. */
+/* 50-chat: the chat tab, attention stack, composer (C4). Tokens only. */
+/* 60-result: reading, result, retake and detail pages (A9, A12, B2-B6). Tokens only. */
+/* 70-upload: the add-report sheet and the page tray (A7, D4). Tokens only. */
 /* landing — the storytelling page (BMX-6d). Chat bubbles, one motion, no script. */
 main.page{max-width:none;padding:0}
 .wrap{max-width:592px;margin:0 auto;padding:0 var(--sp-4)}
