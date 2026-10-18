@@ -66,10 +66,18 @@ public class UiCopy {
      * the web shows the year always, it has no "today" to omit it against), on an English page ISO as before.
      */
     public String date(Lang lang, LocalDate date) {
+        return Html.esc(dateText(lang, date));
+    }
+
+    /**
+     * As {@link #date(Lang, LocalDate)}, not escaped: for passing as an argument to {@link #t}, which escapes its
+     * arguments itself, so the date is escaped exactly once.
+     */
+    public String dateText(Lang lang, LocalDate date) {
         if (date == null) {
             return "";
         }
-        return Html.esc(lang == Lang.BN ? BanglaDate.format(date, null) : date.toString());
+        return lang == Lang.BN ? BanglaDate.format(date, null) : date.toString();
     }
 
     /** As {@link #date(Lang, LocalDate)} for a date stored as text; text that is not an ISO date is shown as written. */

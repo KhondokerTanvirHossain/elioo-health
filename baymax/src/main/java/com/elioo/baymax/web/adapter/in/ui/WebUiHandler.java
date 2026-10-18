@@ -299,7 +299,7 @@ public class WebUiHandler {
                         .append("<span class=\"meta\">").append(copy.t(lang, "patients.years", p.patient().age())).append("</span>")
                         .append(p.owner() ? "" : " <span class=\"tag\">" + copy.t(lang, "patients.shared") + "</span>")
                         .append("<div class=\"meta\">").append(copy.t(lang, "patients.docs", p.documents()))
-                        .append(p.lastDocumentAt() == null ? "" : " · " + copy.t(lang, "patients.last", copy.date(lang, java.time.LocalDate.ofInstant(p.lastDocumentAt(), java.time.ZoneOffset.UTC))))
+                        .append(p.lastDocumentAt() == null ? "" : " · " + copy.t(lang, "patients.last", copy.dateText(lang, java.time.LocalDate.ofInstant(p.lastDocumentAt(), java.time.ZoneOffset.UTC))))
                         .append("</div></a>");
             }
             return app(lang, b.toString());
