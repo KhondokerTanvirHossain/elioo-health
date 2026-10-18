@@ -14,8 +14,6 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
-import java.util.List;
-
 /**
  * Delivers an approved message over WhatsApp (BMX-10 phase 1), replacing the log adapter when the channel is
  * on. {@code @Primary} so it wins the injection point; with the flag unset this bean does not exist and
@@ -64,8 +62,7 @@ public class WhatsAppMessageDelivery implements MessageDeliveryPort {
     }
 
     private Mono<DeliveryOutcome> send(OutboundMessage message, String number) {
-        List<String> allowlist = properties.getWa().getAllowlist();
-        if (!allowlist.isEmpty() && allowlist.stream().noneMatch(a -> a.trim().equals(number))) {
+        if (!properties.getWa().permits(number)) {
             // enforced here, not left to the Meta test number's own restriction, which disappears in production
             log.warn("[baymax] wa delivery refused id={} — recipient not on BAYMAX_WA_ALLOWLIST (phase 1)", message.id());
             return Mono.just(DeliveryOutcome.failed(DeliveryOutcome.NOT_ALLOWLISTED));
@@ -86,9 +83,10 @@ public class WhatsAppMessageDelivery implements MessageDeliveryPort {
 
     /**
      * Provider prose is never stored — the row carries a machine code. The two cases worth telling apart are a
-     * closed session window (expected, and a latency signal) and a dead token (an operational alarm).
+     * closed session window (expected, and a latency signal) and a dead token (an operational alarm). Public: the
+     * login-code delivery classifies its failures the same way.
      */
-    static String classify(Throwable e) {
+    public static String classify(Throwable e) {
         String text = String.valueOf(e.getMessage()).toLowerCase(java.util.Locale.ROOT);
         if (text.contains("re-engagement") || text.contains("24 hour") || text.contains("24-hour")
                 || text.contains("outside the allowed window") || text.contains("131047")) {

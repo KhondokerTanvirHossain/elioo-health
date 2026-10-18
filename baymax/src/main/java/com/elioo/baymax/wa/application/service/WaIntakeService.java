@@ -262,8 +262,7 @@ public class WaIntakeService {
      * disappears the moment we move to a production number. A refusal is logged, never silently dropped.
      */
     private Mono<Void> send(String number, String body) {
-        List<String> allowlist = properties.getWa().getAllowlist();
-        if (!allowlist.isEmpty() && allowlist.stream().noneMatch(a -> a.trim().equals(number))) {
+        if (!properties.getWa().permits(number)) {
             log.warn("[baymax] wa outbound refused: recipient is not on BAYMAX_WA_ALLOWLIST (phase 1)");
             return Mono.empty();
         }

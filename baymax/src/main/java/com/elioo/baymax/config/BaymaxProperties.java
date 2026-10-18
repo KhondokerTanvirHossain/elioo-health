@@ -156,6 +156,15 @@ public class BaymaxProperties {
         private List<String> allowlist = new java.util.ArrayList<>();
         /** Pinned in config, not the environment: this is a code-compatibility concern, not a deployment secret. */
         private String graphVersion = "v21.0";
+
+        /**
+         * The one allowlist rule, for every outbound path (intake replies, explanations, login codes). An empty
+         * list is "no phase-1 restriction". Only E.164 matches: callers normalise first, so a number without its
+         * plus is refused rather than guessed at.
+         */
+        public boolean permits(String e164) {
+            return e164 != null && (allowlist.isEmpty() || allowlist.stream().anyMatch(a -> a.trim().equals(e164)));
+        }
     }
 
     /** Explanation, urgency, safety and the review gate (BMX-6, DR-13). */
