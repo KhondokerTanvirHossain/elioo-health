@@ -59,12 +59,15 @@ class AppShellRoutesTest {
     @EnumSource(value = Tab.class, names = {"CHAT", "PAPERS"})
     void twoPatientsAndNoChoiceShowTheChooserAndReadNoOnesPapers(Tab tab) {
         kit.familyWith(ma, baba);
+        // both stubbed, so a page that guessed renders (200) and fails on the guess, not on an unstubbed mock
+        noPapers(ma);
+        noPapers(baba);
         String html = kit.page(tab.path, "bn");
+        verify(kit.timeline, never()).timeline(any(), any(), any());
+        verify(kit.timeline, never()).document(any(), any());
         assertThat(html).contains("কার কাগজ দেখবেন?")
                 .contains("href=\"" + tab.path + "?patient=" + ma.patient().id() + "\"")
                 .contains("href=\"" + tab.path + "?patient=" + baba.patient().id() + "\"");
-        verify(kit.timeline, never()).timeline(any(), any(), any());
-        verify(kit.timeline, never()).document(any(), any());
     }
 
     /** The other direction: one patient is simply in view — no chooser, and the header names her. */
