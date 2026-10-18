@@ -18,7 +18,11 @@ import java.util.regex.Pattern;
 /** The bundle files as written, line by line: what a family's string actually is before Properties merges it. */
 final class BundleFiles {
 
-    private static final Pattern KEY = Pattern.compile("^\\s*([^#!\\s][^=:\\s]*)\\s*[=:]");
+    /** A key is the first token of a line that is not a comment: Properties ends it at '=', ':' or whitespace. */
+    private static final Pattern KEY = Pattern.compile("^\\s*([^#!\\s][^=:\\s]*)");
+
+    /** The file name of a UI bundle part: {@code ui_bn.properties}, {@code ui-shell_en.properties}, … */
+    static final Pattern PART_FILE = Pattern.compile("ui(-[a-z0-9]+)*_(bn|en)\\.properties");
 
     private BundleFiles() {
     }
@@ -29,34 +33,43 @@ final class BundleFiles {
 
     /** key → 1-based line of its first definition; continuation lines (after a trailing backslash) are skipped. */
     static Map<String, Integer> keys(String part, Lang lang) throws IOException {
-        Map<String, Integer> out = new LinkedHashMap<>();
-        List<String> lines = lines(part, lang);
+        return keys(lines(part, lang));
+    }
+
+    static List<String> duplicatesWithin(String part, Lang lang) throws IOException {
+        return duplicatesWithin(lines(part, lang));
+    }
+
+    /** The key each line defines, null for a comment, a blank or a continuation line. */
+    private static List<String> keyPerLine(List<String> lines) {
+        List<String> out = new ArrayList<>();
         boolean continued = false;
-        for (int i = 0; i < lines.size(); i++) {
-            String l = lines.get(i);
-            if (!continued) {
-                Matcher m = KEY.matcher(l);
-                if (m.find()) {
-                    out.putIfAbsent(m.group(1), i + 1);
-                }
-            }
+        for (String l : lines) {
+            Matcher m = KEY.matcher(l);
+            out.add(!continued && m.find() ? m.group(1) : null);
             continued = l.endsWith("\\") && !l.endsWith("\\\\");
         }
         return out;
     }
 
-    static List<String> duplicatesWithin(String part, Lang lang) throws IOException {
+    static Map<String, Integer> keys(List<String> lines) {
+        Map<String, Integer> out = new LinkedHashMap<>();
+        List<String> keys = keyPerLine(lines);
+        for (int i = 0; i < keys.size(); i++) {
+            if (keys.get(i) != null) {
+                out.putIfAbsent(keys.get(i), i + 1);
+            }
+        }
+        return out;
+    }
+
+    static List<String> duplicatesWithin(List<String> lines) {
         Map<String, Integer> seen = new HashMap<>();
         List<String> twice = new ArrayList<>();
-        boolean continued = false;
-        for (String l : lines(part, lang)) {
-            if (!continued) {
-                Matcher m = KEY.matcher(l);
-                if (m.find() && seen.merge(m.group(1), 1, Integer::sum) == 2) {
-                    twice.add(m.group(1));
-                }
+        for (String key : keyPerLine(lines)) {
+            if (key != null && seen.merge(key, 1, Integer::sum) == 2) {
+                twice.add(key);
             }
-            continued = l.endsWith("\\") && !l.endsWith("\\\\");
         }
         return twice;
     }

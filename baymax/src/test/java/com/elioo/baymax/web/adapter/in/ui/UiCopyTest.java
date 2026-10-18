@@ -73,7 +73,7 @@ class UiCopyTest {
     void everyBundlePartOnDiskIsLoaded() throws IOException {
         Set<String> onDisk;
         try (Stream<Path> files = Files.list(Path.of("src/main/resources/baymax"))) {
-            onDisk = files.map(p -> p.getFileName().toString()).filter(n -> n.matches("ui(-[a-z]+)?_(bn|en)\\.properties"))
+            onDisk = files.map(p -> p.getFileName().toString()).filter(n -> BundleFiles.PART_FILE.matcher(n).matches())
                     .map(n -> n.substring(0, n.lastIndexOf('_'))).collect(Collectors.toCollection(TreeSet::new));
         }
         assertThat(onDisk).hasSizeGreaterThanOrEqualTo(7).isEqualTo(new TreeSet<>(UiCopy.PARTS));
