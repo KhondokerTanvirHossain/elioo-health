@@ -35,6 +35,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -97,7 +98,9 @@ class EveryInboundTypeIsAnsweredTest {
         when(intake.accept(any(), any())).thenReturn(Mono.just(mock(Document.class)));
         // the constructor as this PR leaves it (plan Global Constraints table); later PRs update this line with the others.
         // The real service, observed: finished counts intake Monos that have completed, so the test waits on the work itself.
-        WaIntakeService service = new WaIntakeService(records, documents, explainer, intake, graph, copy, props) {
+        com.elioo.baymax.web.application.port.in.WebAuthUseCase auth = mock(com.elioo.baymax.web.application.port.in.WebAuthUseCase.class);
+        when(auth.noteInbound(anyString(), any())).thenReturn(Mono.empty());
+        WaIntakeService service = new WaIntakeService(records, documents, explainer, intake, graph, copy, props, auth) {
             @Override
             public Mono<Outcome> onInbound(WaInbound in) {
                 return super.onInbound(in).doFinally(signal -> finished.incrementAndGet());

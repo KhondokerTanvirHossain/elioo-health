@@ -67,7 +67,7 @@ class BanglaNumbersOnPagesTest {
                         14, 2, 1, 3, "f/p/d/page-1.jpg", NOW)), null)));
         ui = new WebUiHandler(auth, timeline, sessions, new UiCopy(),
                 mock(com.elioo.baymax.nudge.application.port.in.NudgeOptOutUseCase.class),
-                mock(com.elioo.baymax.nudge.application.port.out.NudgeDataPort.class));
+                mock(com.elioo.baymax.nudge.application.port.out.NudgeDataPort.class), new BaymaxProperties());
         client = WebTestClient.bindToRouterFunction(new BaymaxWebUiRouter().baymaxWebUiRoutes(ui, sessions)).build();
     }
 

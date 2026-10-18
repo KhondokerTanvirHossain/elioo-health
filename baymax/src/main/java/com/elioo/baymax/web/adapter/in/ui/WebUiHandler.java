@@ -59,6 +59,15 @@ public class WebUiHandler {
     /** The collaboration address on the landing page (Tanvir, 2026-09-19). */
     static final String CONTACT_EMAIL = "k.tanvir.hossain@gmail.com";
     static final String LOGIN_COOKIE = "baymax_login";
+    /** The login cookie's mark for "WhatsApp accepted the code" (DR-39 amended); absent for every other outcome. */
+    static final String SENT_MARK = "s";
+    /**
+     * How long the code page remembers which number it is for. 30 minutes, up from BMX-5's 10, for the button path
+     * (PO 2026-10-18): the family leaves the browser, opens WhatsApp, sends কোড, waits for the reply and comes back,
+     * and only then does the 10-minute code TTL start. The cookie holds the HMAC and the last three digits, nothing a
+     * longer life exposes; the code itself still expires on its own TTL.
+     */
+    static final Duration LOGIN_COOKIE_TTL = Duration.ofMinutes(30);
     /** Files under classpath {@code baymax/ui/} that {@code /assets/{file}} may serve; nothing else leaves the jar. */
     static final Set<String> ASSETS = Set.of("baymax.css", "favicon.svg", "mio.webp", "mio-head.webp", "medioo.webp", "paper-lab.svg", "paper-rx.svg", "mio.png", "medioo.png", "medioo.svg");
 
@@ -68,6 +77,7 @@ public class WebUiHandler {
     private final UiCopy copy;
     private final com.elioo.baymax.nudge.application.port.in.NudgeOptOutUseCase optOut;
     private final com.elioo.baymax.nudge.application.port.out.NudgeDataPort nudgeData;
+    private final com.elioo.baymax.config.BaymaxProperties properties;
 
     // ---- landing, language, assets --------------------------------------------------------------------
 
@@ -216,47 +226,119 @@ public class WebUiHandler {
     public Mono<ServerResponse> loginPage(ServerRequest request) {
         Lang lang = Lang.of(request);
         return sessions.resolve(request).flatMap(s -> Html.redirect(BASE + "/home"))
-                .switchIfEmpty(Mono.defer(() -> app(lang, top(lang, null, false) + """
-                        <h1>%s</h1>
-                        <form method="post" action="%s/login">
-                          <label for="n">%s</label>
-                          <input id="n" type="tel" name="whatsapp_number" placeholder="01XXXXXXXXX" autocomplete="tel" required>
-                          <button type="submit">%s</button>
-                          <p class="small">%s</p>
-                        </form>
-                        """.formatted(copy.t(lang, "app.home.title"), BASE, copy.t(lang, "login.number"),
-                        copy.t(lang, "login.send"), copy.t(lang, "login.hint")))));
+                .switchIfEmpty(Mono.defer(() -> numberPage(lang, "", null)));
     }
 
+    /**
+     * {@code sign-in-number} (spec §4.2): one field, no fixed prefix, no placeholder digits, no deep link (D37: that
+     * belongs to the code step). The {@code pattern} is a courtesy; the server is the check.
+     */
+    private Mono<ServerResponse> numberPage(Lang lang, String raw, String error) {
+        return app(lang, top(lang, null, false)
+                + "<h1>" + copy.t(lang, "login.title") + "</h1>"
+                + (error == null ? "" : "<div class=\"err\" role=\"alert\">" + error + "</div>")
+                + "<form method=\"post\" action=\"" + BASE + "/login\">"
+                + "<label for=\"n\">" + copy.t(lang, "login.number") + "</label>"
+                + "<input id=\"n\" type=\"tel\" name=\"whatsapp_number\" autocomplete=\"tel\" inputmode=\"tel\""
+                + " pattern=\"[0-9০-৯+ \\-]{8,24}\" value=\"" + esc(raw) + "\" required>"
+                + "<p class=\"small\">" + copy.t(lang, "login.hint") + "</p>"
+                + "<button type=\"submit\">" + copy.t(lang, "login.next") + "</button>"
+                + "</form>");
+    }
+
+    /**
+     * The number, shown back normalised for a yes ("+880 1700-000000 — ঠিক আছে?"); only the confirmed number reaches
+     * {@code requestCode}. DR-23: nothing goes into a URL; the login cookie holds the HMAC, the last three digits and,
+     * when WhatsApp accepted an automatic send, the {@code .s} mark the code page reads — never the number.
+     */
     public Mono<ServerResponse> login(ServerRequest request) {
-        return request.formData()
-                .map(form -> Optional.ofNullable(form.getFirst("whatsapp_number")).orElse(""))
-                .flatMap(auth::requestCode)
-                .flatMap(hash -> ServerResponse.seeOther(URI.create(BASE + "/verify"))
-                        .header(HttpHeaders.SET_COOKIE, loginCookie(hash, Duration.ofMinutes(10)).toString())
-                        .build());
+        Lang lang = Lang.of(request);
+        return request.formData().flatMap(form -> {
+            String raw = Optional.ofNullable(form.getFirst("whatsapp_number")).orElse("");
+            Optional<String> number = PhoneDisplay.normalise(raw);
+            if (number.isEmpty()) {
+                return numberPage(lang, raw, copy.t(lang, "login.number.invalid"));
+            }
+            if (!"1".equals(form.getFirst("confirmed"))) {
+                return app(lang, top(lang, null, false)
+                        + "<h1>" + copy.t(lang, "login.title") + "</h1>"
+                        + "<p class=\"number-back\">" + esc(PhoneDisplay.full(number.get())) + "</p>"
+                        + "<p>" + copy.t(lang, "login.number.confirm") + "</p>"
+                        + "<form method=\"post\" action=\"" + BASE + "/login\">"
+                        + "<input type=\"hidden\" name=\"whatsapp_number\" value=\"" + esc(number.get()) + "\">"
+                        + "<input type=\"hidden\" name=\"confirmed\" value=\"1\">"
+                        + "<button type=\"submit\">" + copy.t(lang, "login.number.yes") + "</button> "
+                        + "<a class=\"btn quiet\" href=\"" + BASE + "/\">" + copy.t(lang, "login.number.change") + "</a>"
+                        + "</form>");
+            }
+            return auth.requestCode(number.get())
+                    .flatMap(requested -> ServerResponse.seeOther(URI.create(BASE + "/verify"))
+                            .header(HttpHeaders.SET_COOKIE, loginCookie(requested.phoneHash() + "." + PhoneDisplay.last3(number.get())
+                                    + (requested.sent() ? "." + SENT_MARK : ""), LOGIN_COOKIE_TTL).toString())
+                            .build());
+        });
     }
 
     public Mono<ServerResponse> verifyPage(ServerRequest request) {
         return verifyPage(request, null);
     }
 
+    /**
+     * {@code sign-in-code} (spec §4.3, amended by the PO 2026-10-18: sign-in is free). Two states and no third:
+     * <ul>
+     *   <li>WhatsApp accepted the code the web request sent automatically (the cookie's {@code .s}): the page says so,
+     *       and the code field is the primary action, with a quiet way to fetch another;</li>
+     *   <li>anything else — outside the window, no account, not allowlisted, rate-limited, WhatsApp refused it: the
+     *       one-tap button that opens WhatsApp with কোড typed in. The page never says a code was sent.</li>
+     * </ul>
+     * The two non-sent pages are identical whatever the reason, so the page tells a stranger nothing about a number.
+     * No script: the 5-second poll waits for the phase-1b CSP.
+     */
     private Mono<ServerResponse> verifyPage(ServerRequest request, String error) {
         if (loginHash(request).isEmpty()) {
             return Html.redirect(BASE + "/");
         }
         Lang lang = Lang.of(request);
-        return app(lang, top(lang, null, false) + """
-                <h1>%s</h1>
-                %s
-                <form method="post" action="%s/verify">
-                  <label for="c">%s</label>
-                  <input id="c" type="text" name="code" inputmode="numeric" pattern="[0-9০-৯]{6}" maxlength="6" autocomplete="one-time-code" required>
-                  <button type="submit">%s</button>
-                </form>
-                <p class="small"><a href="%s/">%s</a></p>
-                """.formatted(copy.t(lang, "app.home.title"), error == null ? "" : "<div class=\"err\">" + error + "</div>", BASE,
-                copy.t(lang, "login.code"), copy.t(lang, "login.enter"), BASE, copy.t(lang, "login.other")));
+        boolean sent = loginSent(request);
+        String link = waLink(lang);
+        StringBuilder b = new StringBuilder(top(lang, null, false));
+        b.append("<h1>").append(copy.t(lang, "login.title")).append("</h1>");
+        if (sent) {
+            b.append("<p class=\"lede\" role=\"status\">").append(copy.t(lang, "login.code.sent")).append("</p>");
+        } else {
+            b.append("<p class=\"lede\">").append(copy.t(lang, "login.code.say")).append(" <strong>")
+                    .append(copy.t(lang, "login.code.word")).append("</strong></p>");
+            if (link != null) {
+                b.append("<a class=\"btn wa\" href=\"").append(link).append("\">").append(copy.t(lang, "login.wa.open")).append("</a>")
+                        .append("<p class=\"small\">").append(copy.t(lang, "login.wa.hint")).append("</p>");
+            }
+        }
+        loginTail(request).ifPresent(tail -> b.append("<p class=\"mask\">")
+                .append(copy.t(lang, "login.code.number", "••••••••" + tail)).append("</p>"));
+        if (error != null) {
+            b.append("<div class=\"err\" role=\"alert\">").append(error).append("</div>");
+        }
+        b.append("<form method=\"post\" action=\"").append(BASE).append("/verify\">")
+                .append("<label for=\"c\">").append(copy.t(lang, "login.code")).append("</label>")
+                .append("<input id=\"c\" class=\"code-in\" type=\"text\" name=\"code\" inputmode=\"numeric\" pattern=\"[0-9০-৯]{6}\" maxlength=\"6\" autocomplete=\"one-time-code\" required>")
+                .append("<button type=\"submit\">").append(copy.t(lang, "login.enter")).append("</button>")
+                .append("</form>")
+                .append("<p class=\"small\">").append(copy.t(lang, "login.code.ttl", properties.getAuth().getOtpTtl().toMinutes())).append("</p>");
+        if (sent && link != null) {
+            b.append("<p class=\"small\"><a href=\"").append(link).append("\">").append(copy.t(lang, "login.code.resend")).append("</a></p>");
+        }
+        b.append("<p class=\"small\"><a href=\"").append(BASE).append("/\">").append(copy.t(lang, "login.other")).append("</a></p>");
+        return app(lang, b.toString());
+    }
+
+    /** D37: the wa.me deep link to Medioo's own number with the word typed in; null when no public number is set. */
+    private String waLink(Lang lang) {
+        String number = properties.getWa().getPublicNumber() == null ? "" : properties.getWa().getPublicNumber().trim();
+        if (number.isEmpty()) {
+            return null;
+        }
+        String word = lang == Lang.BN ? "কোড" : "code";
+        return "https://wa.me/" + esc(number) + "?text=" + java.net.URLEncoder.encode(word, java.nio.charset.StandardCharsets.UTF_8);
     }
 
     public Mono<ServerResponse> verify(ServerRequest request) {
@@ -264,6 +346,7 @@ public class WebUiHandler {
         if (hash.isEmpty()) {
             return Html.redirect(BASE + "/");
         }
+        Lang lang = Lang.of(request);
         return request.formData()
                 .map(form -> Optional.ofNullable(form.getFirst("code")).orElse("").trim())
                 .flatMap(code -> auth.verify(hash.get(), code))
@@ -271,9 +354,21 @@ public class WebUiHandler {
                         .header(HttpHeaders.SET_COOKIE, sessions.cookie(issued.token()).toString())
                         .header(HttpHeaders.SET_COOKIE, loginCookie("", Duration.ZERO).toString())
                         .build())
+                .onErrorResume(com.elioo.baymax.web.application.port.in.CodeRejectedException.class,
+                        e -> verifyPage(request, refusal(lang, e.failure())))
                 .onErrorResume(BaymaxException.class, e -> e.status() == HttpStatus.UNAUTHORIZED
-                        ? verifyPage(request, copy.t(Lang.of(request), "login.bad"))
+                        ? verifyPage(request, copy.t(lang, "login.bad.wrong"))
                         : Mono.error(e));
+    }
+
+    /** What happened, and the way to a new code (which is on the page whatever the state). */
+    private String refusal(Lang lang, com.elioo.baymax.web.domain.VerifyFailure failure) {
+        return switch (failure) {
+            case WRONG, NO_CODE -> copy.t(lang, "login.bad.wrong");
+            case EXPIRED -> copy.t(lang, "login.bad.expired");
+            case BURNED -> copy.t(lang, "login.bad.burned", properties.getAuth().getOtpMaxAttempts());
+            case FORMAT -> copy.t(lang, "login.bad.format");
+        };
     }
 
     public Mono<ServerResponse> logout(ServerRequest request) {
@@ -732,9 +827,29 @@ public class WebUiHandler {
         return "<span class=\"" + cls + "\">" + (label != null ? label : copy.t(lang, "status.PROCESSING")) + "</span>";
     }
 
-    private Optional<String> loginHash(ServerRequest request) {
+    /**
+     * {@code <hmac>[.<last three digits>][.s]}. The bare-hash form is still accepted: a cookie from before this release
+     * may be in flight for its ten minutes after the deploy.
+     */
+    private static final java.util.regex.Pattern LOGIN_VALUE =
+            java.util.regex.Pattern.compile("^([0-9a-f]{64})(?:\\.([0-9]{3}))?(?:\\.(" + SENT_MARK + "))?$");
+
+    private Optional<java.util.regex.Matcher> loginValue(ServerRequest request) {
         HttpCookie c = request.cookies().getFirst(LOGIN_COOKIE);
-        return Optional.ofNullable(c).map(HttpCookie::getValue).filter(v -> v.matches("[0-9a-f]{64}"));
+        return Optional.ofNullable(c).map(HttpCookie::getValue).map(LOGIN_VALUE::matcher).filter(java.util.regex.Matcher::matches);
+    }
+
+    private Optional<String> loginHash(ServerRequest request) {
+        return loginValue(request).map(m -> m.group(1));
+    }
+
+    private Optional<String> loginTail(ServerRequest request) {
+        return loginValue(request).map(m -> m.group(2));
+    }
+
+    /** True only when the code request behind this cookie came back SENT: WhatsApp accepted the message. */
+    private boolean loginSent(ServerRequest request) {
+        return loginValue(request).map(m -> m.group(3) != null).orElse(false);
     }
 
     private ResponseCookie loginCookie(String value, Duration maxAge) {

@@ -87,7 +87,8 @@ public class WaGraphClient implements com.elioo.baymax.wa.application.port.out.W
      * Outside it the Cloud API refuses and only an approved template would work — phase 1 has none, so the
      * refusal is surfaced rather than worked around.
      *
-     * @return the provider message id (wamid), for correlating the delivery status callback
+     * @return the provider message id (wamid), for correlating the delivery status callback; never blank — a
+     *         response without one is an error
      */
     @Override
     public Mono<String> sendText(String toNumber, String body) {
@@ -102,6 +103,11 @@ public class WaGraphClient implements com.elioo.baymax.wa.application.port.out.W
                 .bodyValue(payload)
                 .retrieve().bodyToMono(JsonNode.class)
                 .map(node -> node.path("messages").path(0).path("id").asText(""))
+                // a 200 naming no message id is not an acceptance: an error, which every caller already treats as
+                // not delivered. It emitted "" before, and each caller's "accepted" branch ran on it.
+                .flatMap(id -> id.isBlank()
+                        ? Mono.<String>error(new IllegalStateException("graph answered with no message id"))
+                        : Mono.just(id))
                 .doOnNext(id -> log.info("[baymax] wa outbound sent ref={} chars={}", Redact.id(id), body.length()));
     }
 }

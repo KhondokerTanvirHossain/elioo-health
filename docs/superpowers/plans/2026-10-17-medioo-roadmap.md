@@ -72,11 +72,12 @@ the gate in production. The gate decision before real families is open (below).
   |---|---|---|
   | V15 | (applied) | `crop_verify_call_purpose` |
   | **V16** | Phase 0, PR 4 (C2) | `document_recovery_attempts` (F9b) |
-  | **V17** | Phase 0, PR 8 (C1) | `inbound_message` (F9a) |
-  | **V18** | Phase 0, PR 9 (B2) | `outbound_failure_kind` |
-  | **V19** | Phase 1b.1–1b.2 | `document_urgency_and_value_verdict` (F1 + F2) |
-  | **V20** | Phase 1b.3 | `retake_reason_code_and_timeline_date` (F5) |
-  | V21+ | Phase 2 onward | the next free number when written; the phase sections say "next free `V<n>`" |
+  | **V17** | Phase 1a, PR 12 (1a-ii) | `wa_last_inbound` (PO 2026-10-18, DR-39 amended: the free sign-in window); PR 12 merged ahead of PRs 7–10 |
+  | **V18** | Phase 0, PR 8 (C1) | `inbound_message` (F9a) — was V17 until 2026-10-18 |
+  | **V19** | Phase 0, PR 9 (B2) | `outbound_failure_kind` — was V18 until 2026-10-18 |
+  | **V20** | Phase 1b.1–1b.2 | `document_urgency_and_value_verdict` (F1 + F2) |
+  | **V21** | Phase 1b.3 | `retake_reason_code_and_timeline_date` (F5) |
+  | V22+ | Phase 2 onward | the next free number when written; the phase sections say "next free `V<n>`" |
 
   The spec's §2 and §12 still say "V16" for F1/F5; that label predates this allocation and is superseded by it.
 - **A table added in any phase goes into both delete paths** (`PostgresHealthRecordAdapter.deleteFamily/deletePatient`).
@@ -130,11 +131,11 @@ try; and the Graph v21 check becomes the v25.0 bump in PR 10. Until PR 12, "ক�
 | 5 | **A2** F4 | `fix/baymax-detail-compose-release` | compose/release/deliver split, DETAIL cache, atomic delivery claim, central gate guard, fixed copy for every gate state, `UrgencyLines`, bundle parity | — | 4 | "বিস্তারিত" once; again: "আগেই পাঠানো হয়েছে" + link |
 | 6 | **B1a** never silent | `feat/baymax-wa-every-message-answered` | Text router, `WaInbound` with every Meta type, greeting/thanks/fallback with red-flag line, voice/video/sticker/reaction/DOCX/PDF replies | — | 5 | The whole try table except failures |
 | 7 | **B1b** urgency and refusals | `feat/baymax-wa-greeting-urgency` | Greeting/thanks restate a standing NOW/THIS_WEEK in any gate state; free tier checked before the ack; failures after the ack are told | — | 6 | "Hi" after a THIS_WEEK paper leads with it |
-| 8 | **C1** F9a idempotency | `fix/baymax-wa-inbound-idempotency` | `inbound_message` keyed by HMAC(wamid), claim before 200, 503 on failure, both delete paths, schema-derived deletion sweep, replay script, unanswered-count WARN | **V17** | 7 | `scripts/wa-replay-callback.sh`: one reply, one `wa inbound duplicate` |
-| 9 | **B2** failure notices | `fix/baymax-every-document-ends-with-a-reply` | `Kind.FAILURE`; FAILED, fail-closed and throwing explanations reply, from one central point every FAILED writer meets | **V18** | 8 | Nothing regressed (re-run PR 6/7 tries); failure paths proven locally |
+| 8 | **C1** F9a idempotency | `fix/baymax-wa-inbound-idempotency` | `inbound_message` keyed by HMAC(wamid), claim before 200, 503 on failure, both delete paths, schema-derived deletion sweep, replay script, unanswered-count WARN | **V18** | 7 | `scripts/wa-replay-callback.sh`: one reply, one `wa inbound duplicate` |
+| 9 | **B2** failure notices | `fix/baymax-every-document-ends-with-a-reply` | `Kind.FAILURE`; FAILED, fail-closed and throwing explanations reply, from one central point every FAILED writer meets | **V19** | 8 | Nothing regressed (re-run PR 6/7 tries); failure paths proven locally |
 | 10 | **C3** Graph v25 + read receipts | `feat/baymax-wa-graph-v25-read-receipts` | Graph v25.0 (v21.0 expires 2027-01-21), `Wa.permits` (one allowlist rule), read ticks and typing behind `BAYMAX_WA_READ_RECEIPTS` | — | 9 | With `typing`: blue ticks + dots on a photo |
 | 11 | **1a-i** numbers and digits | `fix/baymax-number-and-bangla-code` | `normalizeNumber` (00cc, trunk zero, NBSP, en dash); a code typed in Bangla digits is accepted | — | 10 | Sign in as today, type the code in Bangla digits |
-| 12 | **1a-ii** inbound-first sign-in | `feat/baymax-sign-in-whatsapp-code` | `issueCodeFor`, composite OTP delivery (no code above DEBUG), "কোড" route, sign-in pages, validator | — | 11; **env set first** | The full Phase 1a try |
+| 12 | **1a-ii** sign-in by WhatsApp code, free (DR-39 amended 2026-10-18) | `feat/baymax-whatsapp-sign-in` | `Wa.permits` (Task 10.1 first), `issueCodeFor`, the automatic in-window send from the web, composite OTP delivery (no code above DEBUG, never a template), "কোড" route, sign-in pages ("sent" only when Graph accepted it), validator | **V17** | 11; **env set first** | The full Phase 1a try |
 
 ---
 
@@ -160,7 +161,7 @@ the F1 writer hooks in; the JSON encoding of `urgency_reasons` from PR 5), Phase
 
 | Area | Create | Modify |
 |---|---|---|
-| migration | `V19__document_urgency_and_value_verdict.sql`, `V20__retake_reason_code_and_timeline_date.sql` | — |
+| migration | `V20__document_urgency_and_value_verdict.sql`, `V21__retake_reason_code_and_timeline_date.sql` | — |
 | domain | `outbound/domain/ValueVerdict.java`, `outbound/domain/StoredUrgency.java`, `extraction/domain/RetakeReason.java` | `outbound/domain/UrgencyAssessment.java` (add `values`), `extraction/domain/Document.java` (add `statusReasonCode`) |
 | port/service | `outbound/application/port/out/DocumentUrgencyPort.java`, `outbound/application/service/StoredUrgencyService.java` | `UrgencyService.java:58-124` (emit verdicts), `ExplanationService` (compose at the stored level), `extraction/application/service/DocumentProcessingChain.java` (assess and store at extraction finish, before and independent of explain), `DocumentExtractionService.java:80,89,242,251,257,520-547`, `web/application/service/TimelineService.java:65-84` |
 | adapter | `outbound/adapter/out/persistence/PostgresDocumentUrgencyAdapter.java`, `web/adapter/in/BaymaxSecurityHeadersFilter.java` | `PostgresDocumentRecordAdapter.java:74-95,282-286`, `ObservationEntity.java:45-56` (add `id`) |
@@ -174,7 +175,7 @@ from `e4494c1`; re-read them after Phase 0 has merged.)
 
 ### 1b.1 F1: stored urgency, a no-lowering trigger, one central writer (M)
 
-- [ ] **Files.** Create `V19__document_urgency_and_value_verdict.sql`, `DocumentUrgencyPort`, `StoredUrgency`,
+- [ ] **Files.** Create `V20__document_urgency_and_value_verdict.sql`, `DocumentUrgencyPort`, `StoredUrgency`,
   `StoredUrgencyService`, `PostgresDocumentUrgencyAdapter`, and the test
   `baymax/src/test/java/com/elioo/baymax/outbound/adapter/out/persistence/DocumentUrgencyNeverLowersTest.java`.
   Modify `ExplanationService` (compose at the stored max), `DocumentProcessingChain.run` (assess and store at extraction
@@ -255,7 +256,7 @@ class DocumentUrgencyNeverLowersTest {
                     + "('" + family + "','" + withMessages + "','explanation','routine','','released'),"
                     + "('" + family + "','" + withMessages + "','detail','now','[\"value_critical:cholesterol, total|stopgap\"]','released')");
 
-            execute(backfillSqlFromTheMigration());   // read V19's UPDATE block from the classpath, run it again
+            execute(backfillSqlFromTheMigration());   // read V20's UPDATE block from the classpath, run it again
 
             assertThat(scalar("SELECT urgency FROM baymax.document WHERE id = '" + withMessages + "'")).isEqualTo("now");
             assertThat(scalar("SELECT urgency_reasons::text FROM baymax.document WHERE id = '" + withMessages + "'"))
@@ -300,7 +301,7 @@ static final ArchRule urgencyIsAssessedOnlyWhereItIsStored = noClasses()
   `R2dbcDataIntegrityViolationException ... document urgency may not be lowered (now -> routine)`. A "column does not
   exist" failure is **not** a valid replay. The backfill test, replayed with the comma-split read of
   `urgency_reasons`, must fail with `expected: "[\"value_critical:cholesterol, total|stopgap\"]" but was: "[\"value_critical:cholesterol\", \" total|stopgap\"]"`.
-- [ ] **Step 3: implementation.** The V19 urgency part:
+- [ ] **Step 3: implementation.** The V20 urgency part:
 
 ```sql
 -- F1: a document's urgency, written by one writer, only ever raised. Every surface reads this column.
@@ -362,14 +363,14 @@ WHERE d.id = m.document_id;
   `baymax/src/test/java/com/elioo/baymax/outbound/adapter/out/persistence/ValueVerdictNeverSoftensTest.java`
   (Testcontainers). Modify `UrgencyAssessment` (add `List<ValueVerdict> values`, keeping a `(level, reasons)`
   constructor), `UrgencyService.java:62-76` (one verdict per shown value, from the same branch that raises),
-  `ObservationEntity.toView` (add `id`), V19 (`observation.verdict varchar(8) CHECK (verdict IN
+  `ObservationEntity.toView` (add `id`), V20 (`observation.verdict varchar(8) CHECK (verdict IN
   ('inside','unknown','outside','critical'))`, `observation.verdict_reason varchar(160)`, written by `raise` in the same
   transaction), `ExplanationService.standout` (read verdicts, not `criticalKind`), and `canSayWithinNormalRange`
   (every verdict INSIDE, replacing Phase 0's `insideByCode`, which F2 reuses).
 - [ ] **The verdict merge rule (defined here, asserted on Postgres).** F1 keeps `max(old, new)` for the banner, so the
   rows must not soften under it: a row's stored verdict only moves **up** the order INSIDE < UNKNOWN < OUTSIDE <
   CRITICAL, and keeps the reason of the verdict it holds. UNKNOWN outranks INSIDE because it withholds reassurance. A
-  lower re-assessment changes neither row nor banner; a higher one raises both. V19 adds an
+  lower re-assessment changes neither row nor banner; a higher one raises both. V20 adds an
   `observation_verdict_never_softens` trigger of the same shape as F1's, so no writer can store a softer verdict.
 - [ ] **Step 1: failing tests.**
 
@@ -457,13 +458,13 @@ class ValueVerdictTest {
 
 ### 1b.3 F5: retake reason codes and the document-date timeline key (S–M)
 
-- [ ] **Files.** Create `V20__retake_reason_code_and_timeline_date.sql`, `extraction/domain/RetakeReason.java`
+- [ ] **Files.** Create `V21__retake_reason_code_and_timeline_date.sql`, `extraction/domain/RetakeReason.java`
   (`NO_TEXT, LOW_OVERALL, EXPECTED_SECTION_EMPTY, LOW_SECTION`, with `code(String section)`), and the tests
   `baymax/src/test/java/com/elioo/baymax/extraction/adapter/out/persistence/DocumentReasonCodeConstraintTest.java`
   (Testcontainers) and `baymax/src/test/java/com/elioo/baymax/web/adapter/in/ui/RetakeReasonsHaveCopyTest.java`.
   Modify `Document.java` (add `statusReasonCode`), the `finish(...)` calls in `DocumentExtractionService` (FAILED: code
   NULL; each retake path its code), `PostgresDocumentRecordAdapter.writeDocument`, and `DocumentView`.
-- [ ] **V20:**
+- [ ] **V21:**
   `ALTER TABLE document ADD COLUMN status_reason_code varchar(48) NULL CHECK (status_reason_code ~ '^(no_text|low_overall|expected_section_empty:[a-z_]+|low_section:[a-z_]+)$')`;
   `ADD COLUMN timeline_date date GENERATED ALWAYS AS (coalesce(doc_date, (created_at AT TIME ZONE 'UTC')::date)) STORED`;
   `CREATE INDEX document_patient_timeline_idx ON document (patient_id, timeline_date DESC, created_at DESC, id DESC)`.
@@ -881,7 +882,7 @@ least one active row, and no proposed row can fire in production. The PO signs t
 | Entry | When | Status | Content |
 |---|---|---|---|
 | **DR-37** The companion is core MVP scope | PR 0 | Approved (D1) | One brain behind web and WhatsApp that always replies; code produces urgency, numbers, medicines, identity, refusals and emergency replies; the model only phrases over code-built references; push stays the moat. Records D4 (DR-16 unchanged), D8 (6 model-worded answers per family-month, code answers unlimited), D13 (voice: fixed reply + red-flag line now, STT later), and "fully automated first". Amends PRODUCT §4 "MVP in". Retires the UI rule "no urgency anywhere in the UI" (`WebUiHandlerRenderTest.nothingInterpretiveIsRenderedForAFullDocument`), replaced by spec principle 3. |
-| **DR-39** Sign-in is inbound-first | PR 0 | Approved (D2; D36, D37 as recommended) | The family texts "কোড"; `issueCodeFor(sender)` mints for the number WhatsApp proved; the web mints nothing and promises no send; the rate-limit message goes only to WhatsApp (D36); the wa.me link appears on `/app` only (D37); no code in any log above DEBUG. Effective from Phase 1a PR 12. |
+| **DR-39** Sign-in is inbound-first — amended 2026-10-18: sign-in is free | PR 0; amended in PR 12 | Approved (D2; D36, D37 as recommended); amendment by the PO 2026-10-18 (inside the window the web sends the code automatically; "sent" only when Graph accepted it) | The family texts "কোড"; `issueCodeFor(sender)` mints for the number WhatsApp proved; the web mints nothing and promises no send; the rate-limit message goes only to WhatsApp (D36); the wa.me link appears on `/app` only (D37); no code in any log above DEBUG. Effective from Phase 1a PR 12. |
 | **DR-13 amendment** (D5) | PR 0 | Approved | "*Amended 2026-10-17 (PO, D5):* the stored, code-computed urgency shows on every surface whatever the gate state. On WhatsApp a PENDING NOW/THIS_WEEK document gets its fixed urgency line at once. A PENDING **body** is still never delivered: 'Nothing PENDING is ever delivered' now reads 'No PENDING body is ever delivered'." |
 | DR-27 recorded, with its correction | Phase 0 PR 3 | Correction proposed in the build report | DR-27 is cited in code (`BaymaxProperties.java:260`, `DocumentExtractionService.java:332`) but has no entry. Record it with the correction: emptiness gates on `expectedSections` (a prescription needs medicines, a lab report values); `gatingSections` governs confidence only. |
 | DR-13 second amendment (gate option) | Before Phase 5 | Open | Whichever of A/B/C the PO chooses. |
@@ -913,8 +914,9 @@ least one active row, and no proposed row can fire in production. The PO signs t
 ```
 Preflight → PR 0 docs → PR 1 L → PR 2 A1 ┐
                               → PR 3 RX ─┴→ PR 4 C2 (V16) → PR 5 A2 → PR 6 B1a → PR 7 B1b
-          → PR 8 C1 (V17) → PR 9 B2 (V18) → PR 10 C3 → PR 11 1a-i → [env: BAYMAX_WA_PUBLIC_NUMBER] → PR 12 1a-ii
-Phase 1b (V19 F1+F2, V20 F5, look) → 2 → 3 → 4 → 5 → 6 → 7
+          → PR 8 C1 (V18) → PR 9 B2 (V19) → PR 10 C3 → PR 11 1a-i → [env: BAYMAX_WA_PUBLIC_NUMBER] → PR 12 1a-ii (V17)
+          (as merged: PR 11 and PR 12 went ahead of PRs 7–10; PR 12 carries Task 10.1)
+Phase 1b (V20 F1+F2, V21 F5, look) → 2 → 3 → 4 → 5 → 6 → 7
             └ 1b.9 Meta submission ──────────────────────────── (approval) → 7
 D11 doctor package: start drafting during 1b ─────────→ signed before 3
 Gate decision (C recommended): take during 3 ─────────→ before 5

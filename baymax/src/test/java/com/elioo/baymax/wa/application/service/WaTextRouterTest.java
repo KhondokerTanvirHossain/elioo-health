@@ -102,4 +102,21 @@ class WaTextRouterTest {
         assertThat(WaTextRouter.route("বুঝলাম না")).isEqualTo(FALLBACK);
         assertThat(WaTextRouter.route("bujhlam na")).isEqualTo(FALLBACK);
     }
+
+    /** D2: the login words alone ask for a sign-in code; the last is কোড typed as e-kar + aa-kar, which NFKC composes. */
+    @Test
+    void theLoginWordsAloneAreALoginCodeRequest() {
+        for (String s : List.of("কোড", "  কোড ", "কোড।", "code", "Code", "CODE!", "kod", "otp", "OTP", "লগইন",
+                "\u0995\u09C7\u09BE\u09A1")) {
+            assertThat(WaTextRouter.route(s)).as(s).isEqualTo(WaTextRouter.Route.LOGIN_CODE);
+        }
+    }
+
+    /** The other direction: a message that only mentions a code is not a request for one. */
+    @Test
+    void aMessageThatOnlyMentionsACodeIsNotALoginRequest() {
+        for (String s : List.of("আমার কোড আসেনি", "code ta pai nai", "otp ki?", "কোডটা", "promo code")) {
+            assertThat(WaTextRouter.route(s)).as(s).isNotEqualTo(WaTextRouter.Route.LOGIN_CODE);
+        }
+    }
 }

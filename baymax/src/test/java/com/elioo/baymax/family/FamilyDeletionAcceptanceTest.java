@@ -154,6 +154,11 @@ class FamilyDeletionAcceptanceTest {
                         + p + "','" + d + "','Metformin','k','2026-09-01T00:00:00Z')");
             }
             sql("insert into baymax.ai_call_log (document_id, purpose, provider, model, input_tokens) values ('" + docA + "','extract','groq','m',10)");
+            // the number's WhatsApp window (V17), written through the port the intake uses, so the row is real
+            context.getBean(com.elioo.baymax.web.application.port.out.InboundWindowPort.class)
+                    .recordInbound("d".repeat(64), f, java.time.Instant.now()).block();
+            assertThat(scalar("select count(*) from baymax.wa_last_inbound where family_id = '" + f + "'"))
+                    .as("the fixture holds a window row, or the sweep below passes for the wrong reason").isEqualTo("1");
 
             // admin storage self-test against the same bucket
             api.get().uri("/api/v1/baymax/admin/storage/selftest").header(AdminAuthFilter.HEADER, TOKEN)

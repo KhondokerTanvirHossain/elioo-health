@@ -133,7 +133,14 @@ public class PostgresHealthRecordAdapter implements HealthRecordPort {
     @Transactional
     public Mono<DeletionCounts> deleteFamily(UUID familyId, Collection<UUID> documentIds) {
         String patientsOf = "(SELECT id FROM " + S + ".patient_profile WHERE family_id = :family)";
-        return detachCostRows(documentIds)
+        // Lock the family row first. Writers that reference it (noteInbound's wa_last_inbound row on every WhatsApp
+        // message, a document from intake) take a key-share lock on it through their foreign key, so each one either
+        // commits before this lock is granted — and is swept below — or waits and is refused once the row is gone.
+        // Without it an insert landing between its table's DELETE and the family_account DELETE failed the whole
+        // delete on the foreign key and rolled it back: delete-on-request failing at random.
+        return db.sql("SELECT id FROM " + S + ".family_account WHERE id = :family FOR UPDATE").bind("family", familyId)
+                .fetch().all().then()
+                .then(detachCostRows(documentIds))
                 .then(count("audit_event", "DELETE FROM " + S + ".audit_event WHERE family_id = :family", "family", familyId))
                 .flatMap(c -> add(c, "share_member", "DELETE FROM " + S + ".share_member WHERE patient_id IN " + patientsOf, "family", familyId))
                 .flatMap(c -> add(c, "observation", "DELETE FROM " + S + ".observation WHERE patient_id IN " + patientsOf, "family", familyId))
@@ -145,6 +152,8 @@ public class PostgresHealthRecordAdapter implements HealthRecordPort {
                 .flatMap(c -> add(c, "document", "DELETE FROM " + S + ".document WHERE family_id = :family", "family", familyId))
                 .flatMap(c -> add(c, "web_session", "DELETE FROM " + S + ".web_session WHERE family_id = :family", "family", familyId))
                 .flatMap(c -> add(c, "otp_code", "DELETE FROM " + S + ".otp_code WHERE family_id = :family", "family", familyId))
+                // V17: the number's WhatsApp window; a family-scoped fact, so deletePatient leaves it with the family
+                .flatMap(c -> add(c, "wa_last_inbound", "DELETE FROM " + S + ".wa_last_inbound WHERE family_id = :family", "family", familyId))
                 .flatMap(c -> add(c, "patient_profile", "DELETE FROM " + S + ".patient_profile WHERE family_id = :family", "family", familyId))
                 .flatMap(c -> add(c, "family_account", "DELETE FROM " + S + ".family_account WHERE id = :family", "family", familyId));
     }

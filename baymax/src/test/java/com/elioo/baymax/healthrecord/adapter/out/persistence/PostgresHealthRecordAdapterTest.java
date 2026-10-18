@@ -189,6 +189,47 @@ class PostgresHealthRecordAdapterTest {
         });
     }
 
+    /**
+     * Delete-on-request must not fail at random because the family wrote on WhatsApp at that moment. V17's
+     * wa_last_inbound references family_account without cascade, and noteInbound writes it on every inbound message.
+     * Under READ COMMITTED, an insert that commits after deleteFamily's {@code DELETE FROM wa_last_inbound} and before
+     * its {@code DELETE FROM family_account} made the whole delete fail on the foreign key and roll back. The delete
+     * now locks the family row first, so a concurrent writer either finishes before the sweep (and is swept) or waits
+     * and is refused afterwards. Deterministic: the test waits until the delete is actually blocked on the in-flight
+     * insert's lock before committing it, rather than sleeping and hoping.
+     */
+    @Test
+    void aWindowWrittenWhileTheFamilyIsBeingDeletedIsSweptAndNeverFailsTheDelete() {
+        runner().run(context -> {
+            HealthRecordPort port = context.getBean(HealthRecordPort.class);
+            Instant t = Instant.parse("2026-10-18T08:00:00Z");
+            FamilyAccount family = port.createFamily(new FamilyAccount(
+                    null, "+8801700000851", "Race", FamilyAccount.Plan.FREE, t, t)).block();
+
+            try (Connection inflight = connect()) {
+                inflight.setAutoCommit(false);
+                try (Statement s = inflight.createStatement()) {
+                    s.execute("insert into baymax.wa_last_inbound (phone_hash, family_id, last_inbound_at) values ('"
+                            + "d".repeat(64) + "','" + family.id() + "', now())");
+                }
+                java.util.concurrent.CompletableFuture<?> delete = port.deleteFamily(family.id(), List.of()).toFuture();
+                long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
+                while (Integer.parseInt(scalar("select count(*) from pg_stat_activity where wait_event_type = 'Lock'"
+                        + " and datname = current_database()")) == 0) {
+                    assertThat(System.nanoTime()).as("the delete reached the in-flight insert's lock").isLessThan(deadline);
+                    assertThat(delete).as("the delete waits for the in-flight insert").isNotDone();
+                    Thread.sleep(25);
+                }
+                inflight.commit();
+                org.assertj.core.api.Assertions.assertThatCode(() -> delete.get(20, java.util.concurrent.TimeUnit.SECONDS))
+                        .as("delete-on-request succeeds although the family wrote while it ran").doesNotThrowAnyException();
+            }
+            assertThat(scalar("select count(*) from baymax.family_account where id = '" + family.id() + "'")).isEqualTo("0");
+            assertThat(scalar("select count(*) from baymax.wa_last_inbound where family_id = '" + family.id() + "'"))
+                    .as("the window written mid-delete went with the family").isEqualTo("0");
+        });
+    }
+
     private static void seedDocumentWithStatus(UUID family, UUID patient, UUID doc, String createdAt, String status) throws Exception {
         sql("insert into baymax.document (id, patient_id, family_id, status, page_count, created_at, updated_at) values ('"
                 + doc + "','" + patient + "','" + family + "','" + status + "',1,'" + createdAt + "','" + createdAt + "')");

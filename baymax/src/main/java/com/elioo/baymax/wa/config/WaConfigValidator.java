@@ -72,14 +72,32 @@ public class WaConfigValidator {
             }
         }
 
+        if (properties.getAuth().isWebMintsCode()) {
+            problems.add("BAYMAX_AUTH_WEB_MINTS_CODE must be false while BAYMAX_WA_ENABLED=true — the web form must never "
+                    + "send codes to typed numbers (D2, DR-39)");
+        }
+        String publicNumber = trimmedOrEmpty(wa.getPublicNumber());
+        if (!publicNumber.isEmpty() && !publicNumber.matches("[1-9]\\d{7,14}")) {
+            problems.add("BAYMAX_WA_PUBLIC_NUMBER must be digits only, country code first, no plus or spaces (8801…); it is "
+                    + publicNumber.length() + " characters with something else in it");
+        }
+        java.time.Duration window = wa.getServiceWindow();
+        if (window == null || window.isNegative() || window.isZero() || window.compareTo(java.time.Duration.ofHours(24)) > 0) {
+            problems.add("BAYMAX_WA_SERVICE_WINDOW must be more than zero and at most 24h (WhatsApp's free window); it is "
+                    + window);
+        }
+
         if (!problems.isEmpty()) {
             throw new IllegalStateException("WhatsApp channel is enabled but its configuration is malformed:\n  - "
                     + String.join("\n  - ", problems)
                     + "\n\nCheck ~/medscribe.env: an inline '# comment' after a value is NOT stripped by "
                     + "docker --env-file and becomes part of the value. Put comments on their own line.");
         }
-        log.info("[baymax] wa config ok: phoneNumberId={} wabaId={} allowlist={} entries",
-                wa.getPhoneNumberId(), wa.getWabaId(), wa.getAllowlist().size());
+        if (publicNumber.isEmpty()) {
+            log.warn("[baymax] BAYMAX_WA_PUBLIC_NUMBER is blank: the sign-in page will show no WhatsApp button");
+        }
+        log.info("[baymax] wa config ok: phoneNumberId={} wabaId={} allowlist={} entries serviceWindow={}",
+                wa.getPhoneNumberId(), wa.getWabaId(), wa.getAllowlist().size(), window);
     }
 
     private static void required(List<String> problems, String name, String value) {

@@ -36,10 +36,10 @@ public class PostgresOtpStoreAdapter implements OtpStorePort {
     }
 
     @Override
-    public Mono<Long> countLive(String phoneHash, Instant since, Instant now) {
-        return db.sql("SELECT count(*) FROM " + T + " WHERE phone_hash = :phone AND created_at >= :since "
-                        + "AND consumed_at IS NULL AND burned_at IS NULL AND expires_at > :now")
-                .bind("phone", phoneHash).bind("since", at(since)).bind("now", at(now))
+    public Mono<Long> countCreatedSince(String phoneHash, Instant since) {
+        // no state filter, on purpose: a burned or expired code still cost a send (otp_code_phone_created_idx)
+        return db.sql("SELECT count(*) FROM " + T + " WHERE phone_hash = :phone AND created_at >= :since")
+                .bind("phone", phoneHash).bind("since", at(since))
                 .map((row, meta) -> row.get(0, Long.class)).one();
     }
 
@@ -49,6 +49,15 @@ public class PostgresOtpStoreAdapter implements OtpStorePort {
                         + "AND consumed_at IS NULL AND burned_at IS NULL AND expires_at > :now "
                         + "ORDER BY created_at DESC LIMIT 1")
                 .bind("phone", phoneHash).bind("now", at(now))
+                .map((row, meta) -> fromRow(row)).one();
+    }
+
+    @Override
+    public Mono<OtpCode> latestSince(String phoneHash, Instant since) {
+        // otp_code_phone_created_idx (phone_hash, created_at) covers it
+        return db.sql("SELECT " + COLUMNS + " FROM " + T + " WHERE phone_hash = :phone AND created_at >= :since "
+                        + "ORDER BY created_at DESC LIMIT 1")
+                .bind("phone", phoneHash).bind("since", at(since))
                 .map((row, meta) -> fromRow(row)).one();
     }
 

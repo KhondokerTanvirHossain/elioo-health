@@ -36,7 +36,10 @@ class CopyInstructionsHaveHandlersTest {
      */
     private static final java.util.Map<String, WaTextRouter.Route> PROMISED = java.util.Map.of(
             "বিস্তারিত", WaTextRouter.Route.DETAIL,
-            "detail", WaTextRouter.Route.DETAIL);
+            "detail", WaTextRouter.Route.DETAIL,
+            // D2 / DR-39: the login copy invites "কোড" / "code", and it must mint a code, not reach the fallback
+            "কোড", WaTextRouter.Route.LOGIN_CODE,
+            "code", WaTextRouter.Route.LOGIN_CODE);
 
     private static List<String> broken(List<String> invited) {
         return invited.stream()

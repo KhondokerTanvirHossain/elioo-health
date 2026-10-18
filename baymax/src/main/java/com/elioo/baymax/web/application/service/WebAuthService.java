@@ -4,14 +4,19 @@ import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.family.application.service.FamilyAccountService;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
+import com.elioo.baymax.web.application.port.in.CodeRejectedException;
 import com.elioo.baymax.web.application.port.in.WebAuthUseCase;
 import com.elioo.baymax.web.application.port.out.AuditPort;
+import com.elioo.baymax.web.application.port.out.InboundWindowPort;
 import com.elioo.baymax.web.application.port.out.OtpDeliveryPort;
 import com.elioo.baymax.web.application.port.out.OtpStorePort;
 import com.elioo.baymax.web.application.port.out.SessionStorePort;
 import com.elioo.baymax.web.domain.AuditEvent;
+import com.elioo.baymax.web.domain.CodeIssue;
+import com.elioo.baymax.web.domain.CodeRequest;
 import com.elioo.baymax.web.domain.IssuedSession;
 import com.elioo.baymax.web.domain.OtpCode;
+import com.elioo.baymax.web.domain.VerifyFailure;
 import com.elioo.baymax.web.domain.WebSession;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,13 +30,20 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
- * OTP login. The contract that shapes every branch here: a caller learns nothing from a request but the
- * hash it already could have computed, and nothing from a failed verify but "no". So an unknown number, a
- * malformed number, a rate-limited number and a valid one all complete {@link #requestCode} identically,
- * and a wrong code, a burned code, an expired code and a number with no account all fail
- * {@link #verify} with the same 401.
+ * OTP login. A code is minted in exactly two situations (DR-39, amended 2026-10-18: sign-in is free):
+ * <ul>
+ *   <li>the WhatsApp sender asked for one ({@link #issueCodeFor}); their message is the proof of the number and opens
+ *       the window, so the reply is free;</li>
+ *   <li>the web form named a number that has an account, is permitted by the allowlist, and wrote to Medioo inside
+ *       {@code baymax.wa.service-window} ({@link #requestCode}); the code then goes to WhatsApp automatically.</li>
+ * </ul>
+ * Every other request mints nothing and sends nothing, so the open web form is never a sender to arbitrary numbers.
+ * The hourly cap (5 codes per number per rolling hour, counted whatever became of them) applies to both, so it bounds
+ * WhatsApp messages sent and guesses made: at most 5 codes x 5 tries an hour per number. A refused code is a {@link CodeRejectedException}: one 401 shape for the API,
+ * a reason for the web page.
  */
 @Slf4j
 @Service
@@ -39,6 +51,8 @@ import java.util.Optional;
 public class WebAuthService implements WebAuthUseCase {
 
     private static final SecureRandom RANDOM = new SecureRandom();
+    /** How far back a refusal looks for the newest code, to tell EXPIRED and BURNED from NO_CODE. */
+    private static final Duration REFUSAL_LOOKBACK = Duration.ofHours(1);
 
     private final OtpStorePort otps;
     private final SessionStorePort sessions;
@@ -48,6 +62,7 @@ public class WebAuthService implements WebAuthUseCase {
     private final PhoneHasher hasher;
     private final BaymaxProperties properties;
     private final Clock clock;
+    private final InboundWindowPort window;
 
     @Override
     public String hash(String rawWhatsappNumber) {
@@ -55,35 +70,88 @@ public class WebAuthService implements WebAuthUseCase {
     }
 
     @Override
-    public Mono<String> requestCode(String rawWhatsappNumber) {
+    public Mono<CodeRequest> requestCode(String rawWhatsappNumber) {
         final String number;
         try {
             number = FamilyAccountService.normalizeNumber(rawWhatsappNumber);
         } catch (RuntimeException notANumber) {
             // still a 200 upstream; nothing to hash, nothing to send, nothing to say
-            return Mono.just(hasher.sha256("not-a-number:" + rawWhatsappNumber));
+            return Mono.just(new CodeRequest(hasher.sha256("not-a-number:" + rawWhatsappNumber), CodeIssue.NO_ACCOUNT));
         }
         String phoneHash = hasher.phone(number);
         Instant now = clock.instant();
-        BaymaxProperties.Auth cfg = properties.getAuth();
-
         return audit.record(AuditEvent.otp(AuditEvent.Kind.OTP_REQUEST, phoneHash, now))
-                .then(otps.countLive(phoneHash, now.minus(Duration.ofHours(1)), now))
-                .flatMap(live -> {
-                    if (live >= cfg.getOtpMaxLivePerHour()) {
-                        log.info("[baymax] otp request rate-limited phoneHash={} live={}", phoneHash, live);
-                        return Mono.empty();          // silently: the response upstream is the same 200
+                .then(records.findFamilyByWhatsapp(number).map(f -> Optional.of(f.id())).defaultIfEmpty(Optional.empty()))
+                .flatMap(family -> {
+                    if (family.isEmpty()) {
+                        return notSent(phoneHash, CodeIssue.NO_ACCOUNT);           // never an open sender (PO, d)
+                    }
+                    if (properties.getAuth().isWebMintsCode()) {
+                        return mint(number, phoneHash, family.get(), now);        // a laptop with WhatsApp off
+                    }
+                    if (!properties.getWa().permits(number)) {
+                        return notSent(phoneHash, CodeIssue.NOT_PERMITTED);
+                    }
+                    Instant opened = now.minus(properties.getWa().getServiceWindow());
+                    return window.lastInbound(phoneHash)
+                            .filter(last -> !last.isBefore(opened))
+                            .flatMap(last -> mint(number, phoneHash, family.get(), now))
+                            .switchIfEmpty(Mono.defer(() -> notSent(phoneHash, CodeIssue.OUTSIDE_WINDOW)));
+                })
+                .map(issue -> new CodeRequest(phoneHash, issue));
+    }
+
+    @Override
+    public Mono<CodeIssue> issueCodeFor(String verifiedSenderNumber) {
+        // defer: a missing HMAC secret becomes an error signal the caller can answer, not a throw at assembly
+        return Mono.defer(() -> {
+            String number = FamilyAccountService.normalizeNumber(verifiedSenderNumber);
+            String phoneHash = hasher.phone(number);
+            Instant now = clock.instant();
+            return audit.record(AuditEvent.otp(AuditEvent.Kind.OTP_REQUEST, phoneHash, now))
+                    .then(records.findFamilyByWhatsapp(number).map(f -> Optional.of(f.id())).defaultIfEmpty(Optional.empty()))
+                    .flatMap(family -> family.isEmpty() ? notSent(phoneHash, CodeIssue.NO_ACCOUNT)
+                            : !properties.getWa().permits(number) ? notSent(phoneHash, CodeIssue.NOT_PERMITTED)
+                            : mint(number, phoneHash, family.get(), now));
+        });
+    }
+
+    @Override
+    public Mono<Void> noteInbound(String verifiedSenderNumber, Instant sentAt) {
+        return Mono.defer(() -> {
+            String number = FamilyAccountService.normalizeNumber(verifiedSenderNumber);
+            String phoneHash = hasher.phone(number);
+            Instant now = clock.instant();
+            // the send time, not the receipt time: a late retry must not open a window WhatsApp already closed, and
+            // a send time ahead of our clock must not stretch it
+            Instant at = sentAt == null || sentAt.isAfter(now) ? now : sentAt;
+            return records.findFamilyByWhatsapp(number)
+                    .flatMap(family -> window.recordInbound(phoneHash, family.id(), at));
+        });
+    }
+
+    /** The one place a code is made: within the hourly limit, stored hashed, handed to delivery, never logged. */
+    private Mono<CodeIssue> mint(String number, String phoneHash, UUID familyId, Instant now) {
+        BaymaxProperties.Auth cfg = properties.getAuth();
+        // every code made in the rolling hour, whatever its state: the cap bounds sends and guesses, not live codes
+        return otps.countCreatedSince(phoneHash, now.minus(Duration.ofHours(1)))
+                .flatMap(made -> {
+                    if (made >= cfg.getOtpMaxLivePerHour()) {
+                        log.info("[baymax] otp request rate-limited phoneHash={} madeThisHour={}", phoneHash, made);
+                        return Mono.just(CodeIssue.RATE_LIMITED);
                     }
                     String code = sixDigits();
-                    // the family is resolved now, while the number is in hand, and remembered on the row;
-                    // a number with no account gets a code all the same, so the caller sees no difference
-                    return records.findFamilyByWhatsapp(number).map(f -> Optional.of(f.id()))
-                            .defaultIfEmpty(Optional.empty())
-                            .flatMap(family -> otps.create(new OtpCode(null, phoneHash, PhoneHasher.sha256(code),
-                                    family.orElse(null), now.plus(cfg.getOtpTtl()), 0, null, null, now)))
-                            .flatMap(saved -> delivery.deliver(number, phoneHash, code));
-                })
-                .thenReturn(phoneHash);
+                    return otps.create(new OtpCode(null, phoneHash, PhoneHasher.sha256(code), familyId,
+                                    now.plus(cfg.getOtpTtl()), 0, null, null, now))
+                            .flatMap(saved -> delivery.deliver(number, phoneHash, code))
+                            .defaultIfEmpty(false)
+                            .map(accepted -> accepted ? CodeIssue.SENT : CodeIssue.NOT_DELIVERED);
+                });
+    }
+
+    private static Mono<CodeIssue> notSent(String phoneHash, CodeIssue why) {
+        log.info("[baymax] otp request not sent phoneHash={} reason={}", phoneHash, why);
+        return Mono.just(why);
     }
 
     @Override
@@ -95,7 +163,7 @@ public class WebAuthService implements WebAuthUseCase {
             if (e instanceof BaymaxException be && be.status().is5xxServerError()) {
                 return Mono.error(e);           // not configured: say so, that is not an information leak
             }
-            return Mono.error(invalid());
+            return Mono.error(new CodeRejectedException(VerifyFailure.FORMAT));
         }
         return verify(hash, code);
     }
@@ -105,25 +173,36 @@ public class WebAuthService implements WebAuthUseCase {
         Instant now = clock.instant();
         String code = fold(rawCode);
         if (phoneHash == null || code == null || !code.matches("[0-9]{6}")) {
-            return audit.record(AuditEvent.otp(AuditEvent.Kind.OTP_VERIFY_FAIL, phoneHash, now))
-                    .then(Mono.error(invalid()));
+            return refuse(phoneHash, now, VerifyFailure.FORMAT);
         }
         return otps.latestLive(phoneHash, now)
-                .switchIfEmpty(Mono.defer(() -> audit.record(AuditEvent.otp(AuditEvent.Kind.OTP_VERIFY_FAIL, phoneHash, now))
-                        .then(Mono.error(invalid()))))
+                .switchIfEmpty(Mono.defer(() -> whyNoLiveCode(phoneHash, now)
+                        .flatMap(failure -> refuse(phoneHash, now, failure))))
                 .flatMap(otp -> {
                     boolean match = MessageDigest.isEqual(otp.codeHash().getBytes(), PhoneHasher.sha256(code).getBytes());
                     if (!match) {
                         return wrongGuess(otp, phoneHash, now);
                     }
                     if (otp.familyId() == null) {
-                        // right code, no account: the code is spent and the answer is the same "no"
-                        return otps.consume(otp.id(), now)
-                                .then(audit.record(AuditEvent.otp(AuditEvent.Kind.OTP_VERIFY_FAIL, phoneHash, now)))
-                                .then(Mono.error(invalid()));
+                        // right code, no account (a code minted before PR 12 for a typed number): spent, and "no"
+                        return otps.consume(otp.id(), now).then(refuse(phoneHash, now, VerifyFailure.WRONG));
                     }
                     return otps.consume(otp.id(), now).then(open(otp.familyId(), phoneHash, now));
                 });
+    }
+
+    /** No live code: say BURNED or EXPIRED only when the newest recent code really was; anything else is NO_CODE. */
+    private Mono<VerifyFailure> whyNoLiveCode(String phoneHash, Instant now) {
+        return otps.latestSince(phoneHash, now.minus(REFUSAL_LOOKBACK))
+                .map(newest -> newest.burnedAt() != null ? VerifyFailure.BURNED
+                        : newest.consumedAt() != null ? VerifyFailure.NO_CODE
+                        : VerifyFailure.EXPIRED)
+                .defaultIfEmpty(VerifyFailure.NO_CODE);
+    }
+
+    private <T> Mono<T> refuse(String phoneHash, Instant now, VerifyFailure failure) {
+        return audit.record(AuditEvent.otp(AuditEvent.Kind.OTP_VERIFY_FAIL, phoneHash, now))
+                .then(Mono.error(new CodeRejectedException(failure)));
     }
 
     private Mono<IssuedSession> wrongGuess(OtpCode otp, String phoneHash, Instant now) {
@@ -131,7 +210,7 @@ public class WebAuthService implements WebAuthUseCase {
         boolean burn = attempts >= properties.getAuth().getOtpMaxAttempts();
         return otps.recordAttempt(otp.id(), attempts, burn ? now : null)
                 .then(audit.record(AuditEvent.otp(burn ? AuditEvent.Kind.OTP_BURNED : AuditEvent.Kind.OTP_VERIFY_FAIL, phoneHash, now)))
-                .then(Mono.error(invalid()));
+                .then(Mono.error(new CodeRejectedException(burn ? VerifyFailure.BURNED : VerifyFailure.WRONG)));
     }
 
 
@@ -190,10 +269,6 @@ public class WebAuthService implements WebAuthUseCase {
             sb.append(Character.isDigit(c) ? (char) ('0' + Character.digit(c, 10)) : c);
         }
         return sb.toString();
-    }
-
-    private static BaymaxException invalid() {
-        return BaymaxException.unauthorized("invalid_code", "the code is wrong, expired or used");
     }
 
     private static String sixDigits() {

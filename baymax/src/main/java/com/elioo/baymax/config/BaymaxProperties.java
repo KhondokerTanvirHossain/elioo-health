@@ -112,10 +112,19 @@ public class BaymaxProperties {
          * every family out (sessions are keyed by it too) and orphans in-flight codes; nothing else.
          */
         private String hmacSecret = "";
-        /** How a code reaches the family: {@code log} writes it to the server log (v1); WhatsApp is BMX-10. */
-        private String otpDelivery = "log";
+        /**
+         * Local development only: the web form mints a code for an account number without consulting the WhatsApp
+         * window, and the code goes to the log at DEBUG (WhatsApp is off on a laptop). Startup refuses it with
+         * WhatsApp on ({@code WaConfigValidator}): the web form must never become a sender to typed numbers.
+         */
+        private boolean webMintsCode = false;
         private Duration otpTtl = Duration.ofMinutes(10);
-        /** Live (unexpired, unused, unburned) codes allowed per number per hour; beyond it, requests are silently ignored. */
+        /**
+         * Codes made per number per rolling hour, on both paths (web and WhatsApp কোড), counted whatever became of
+         * them: used, burned and expired codes all count. Beyond it nothing is minted or sent (RATE_LIMITED). The name
+         * predates that rule and is kept so {@code BAYMAX_OTP_MAX_LIVE_PER_HOUR} keeps working; it once counted only
+         * live codes, which let a burned code buy another send (review of plan PR 12).
+         */
         private int otpMaxLivePerHour = 5;
         /** Wrong guesses that burn a code. */
         private int otpMaxAttempts = 5;
@@ -130,9 +139,8 @@ public class BaymaxProperties {
 
     /**
      * The WhatsApp channel (BMX-10 phase 1). Entirely off unless {@link #enabled} is true: with it unset every
-     * existing behaviour is unchanged, which is the RUNBOOK contract. OTP is deliberately NOT routed here —
-     * {@code auth.otpDelivery} stays {@code log}, because a blank or expired token must never become a login
-     * outage.
+     * existing behaviour is unchanged, which is the RUNBOOK contract. Login codes go out here (DR-39), always as a
+     * free-form message inside the window the family's own message opened, never as a template.
      */
     @Data
     public static class Wa {
@@ -156,6 +164,26 @@ public class BaymaxProperties {
         private List<String> allowlist = new java.util.ArrayList<>();
         /** Pinned in config, not the environment: this is a code-compatibility concern, not a deployment secret. */
         private String graphVersion = "v21.0";
+        /**
+         * The display number of {@link #phoneNumberId}, digits only (8801…), for the sign-in page's wa.me link
+         * (D37: on /app only, never on the landing page). Blank = the page instructs but shows no link.
+         */
+        private String publicNumber = "";
+        /**
+         * How recent the family's own last message must be for a web sign-in code to be sent to WhatsApp
+         * automatically. WhatsApp's free customer-service window is 24 hours; the default keeps an hour's margin so a
+         * send never races the window closing (PO 2026-10-18). Startup refuses anything above 24 hours.
+         */
+        private Duration serviceWindow = Duration.ofHours(23);
+
+        /**
+         * The one allowlist rule, for every outbound path (intake replies, explanations, login codes). An empty
+         * list is "no phase-1 restriction". Only E.164 matches: callers normalise first, so a number without its
+         * plus is refused rather than guessed at.
+         */
+        public boolean permits(String e164) {
+            return e164 != null && (allowlist.isEmpty() || allowlist.stream().anyMatch(a -> a.trim().equals(e164)));
+        }
     }
 
     /** Explanation, urgency, safety and the review gate (BMX-6, DR-13). */

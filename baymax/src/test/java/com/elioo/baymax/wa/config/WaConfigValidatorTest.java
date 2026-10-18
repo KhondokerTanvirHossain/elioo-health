@@ -136,4 +136,41 @@ class WaConfigValidatorTest {
                     assertThat(e.getMessage()).contains("BAYMAX_WA_VERIFY_TOKEN");
                 });
     }
+
+    /** D2: with WhatsApp on, a web-minted code would make the open form a sender to any typed number. */
+    @Test
+    void theWebFormMayNotMintCodesWhileWhatsappIsOn() {
+        BaymaxProperties p = valid();
+        p.getAuth().setWebMintsCode(true);
+        assertThatThrownBy(() -> validate(p)).hasMessageContaining("BAYMAX_AUTH_WEB_MINTS_CODE");
+    }
+
+    @Test
+    void thePublicNumberForTheDeepLinkIsDigitsOnlyAndBlankIsAllowed() {
+        BaymaxProperties p = valid();
+        p.getWa().setPublicNumber("+880 1700-000000");
+        assertThatThrownBy(() -> validate(p)).hasMessageContaining("BAYMAX_WA_PUBLIC_NUMBER");
+        p.getWa().setPublicNumber("8801700000000");
+        assertThatCode(() -> validate(p)).doesNotThrowAnyException();
+        p.getWa().setPublicNumber("");
+        assertThatCode(() -> validate(p)).doesNotThrowAnyException();
+    }
+
+    /**
+     * PO 2026-10-18: a code is sent free only inside WhatsApp's 24 h window. A margin above 24 h would send into a closed
+     * window (which fails, and the page would then show the button anyway), so it is refused at boot; zero or negative
+     * would never send. 24 h itself is allowed, 23 h is the default.
+     */
+    @Test
+    void theServiceWindowMarginIsPositiveAndAtMostTwentyFourHours() {
+        BaymaxProperties p = valid();
+        p.getWa().setServiceWindow(java.time.Duration.ofHours(25));
+        assertThatThrownBy(() -> validate(p)).hasMessageContaining("BAYMAX_WA_SERVICE_WINDOW");
+        p.getWa().setServiceWindow(java.time.Duration.ZERO);
+        assertThatThrownBy(() -> validate(p)).hasMessageContaining("BAYMAX_WA_SERVICE_WINDOW");
+        p.getWa().setServiceWindow(java.time.Duration.ofHours(24));
+        assertThatCode(() -> validate(p)).doesNotThrowAnyException();
+        p.getWa().setServiceWindow(java.time.Duration.ofHours(23));
+        assertThatCode(() -> validate(p)).doesNotThrowAnyException();
+    }
 }

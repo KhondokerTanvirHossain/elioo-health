@@ -84,9 +84,11 @@ direction **fully automated first**: production stays `BAYMAX_GATE_MODE=off`.
 - **Repeat detail.** A second "বিস্তারিত" for an already-delivered detail gets a pointer
   (`wa.detail.already_sent` + link), never the body again. The greeting copy, the DETAIL synonym list and the try
   tables agree with this. (Open PO ruling, roadmap; the pointer is the default.)
-- **Migrations:** V16 (PR 4), V17 (PR 8), V18 (PR 9). Each of those PRs checks, right before merging, that
+- **Migrations:** V16 (PR 4), V17 (PR 12, `wa_last_inbound` — added by the PO decision of 2026-10-18 and merged ahead
+  of PRs 7–10, see PR 12), V18 (PR 8), V19 (PR 9). Each of those PRs checks, right before merging, that
   `git ls-tree --name-only origin/main baymax/src/main/resources/db/baymax/migration | sort -V | tail -1` prints its
-  predecessor (V15, V16, V17). If not, stop: the allocation table in the roadmap is wrong, fix it there first.
+  predecessor (V15 for PR 4, V16 for PR 12, V17 for PR 8, V18 for PR 9). If not, stop: the allocation table in the
+  roadmap is wrong, fix it there first. (Renumbered 2026-10-18: PR 8 was V17 and PR 9 was V18 before PR 12 took V17.)
 - **Staging and commits:** explicit paths only, never `git add -A`/`git add .`; conventional commits ending with
   `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`; PR bodies end with
   `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
@@ -128,11 +130,11 @@ direction **fully automated first**: production stays `BAYMAX_GATE_MODE=off`.
 | 5 | **A2** — F4 compose / release / deliver | `fix/baymax-detail-compose-release` | PR 4 | — | 5.1–5.8 | M–L |
 | 6 | **B1a** — every message gets one reply | `feat/baymax-wa-every-message-answered` | PR 5 | — | 6.1–6.5 | M |
 | 7 | **B1b** — standing urgency, free tier before the ack, failures after the ack | `feat/baymax-wa-greeting-urgency` | PR 6 | — | 7.1–7.4 | M |
-| 8 | **C1** — F9a inbound idempotency | `fix/baymax-wa-inbound-idempotency` | PR 7 | V17 | 8.1–8.6 | M–L |
-| 9 | **B2** — every document ends with a reply | `fix/baymax-every-document-ends-with-a-reply` | PR 8 | V18 | 9.1–9.4 | M |
+| 8 | **C1** — F9a inbound idempotency | `fix/baymax-wa-inbound-idempotency` | PR 7 | V18 | 8.1–8.6 | M–L |
+| 9 | **B2** — every document ends with a reply | `fix/baymax-every-document-ends-with-a-reply` | PR 8 | V19 | 9.1–9.4 | M |
 | 10 | **C3** — Graph v25.0, one allowlist rule, read receipts | `feat/baymax-wa-graph-v25-read-receipts` | PR 9 | — | 10.1–10.3 | S–M |
 | 11 | **1a-i** — every way of writing a number; Bangla-digit codes | `fix/baymax-number-and-bangla-code` | PR 10 | — | 11.1–11.2 | S |
-| 12 | **1a-ii** — inbound-first sign-in (D2) | `feat/baymax-sign-in-whatsapp-code` | PR 11, **after the env step** | — | 12.0–12.8 | M |
+| 12 | **1a-ii** — sign-in by WhatsApp code, free (D2, DR-39 amended 2026-10-18) | `feat/baymax-whatsapp-sign-in` | PR 11 (+ Task 10.1 as its first commit), **after the env step**; merges ahead of PRs 7–10 | V17 | 12.0–12.8 | M |
 
 Why this order: PR 1 stops live credential and number leaks before anything else ships on top of them. PRs 2 and 3
 are tiny live-defect fixes with no shared files. PR 4 comes next because every later deploy (`docker rm -f`, a SIGKILL)
@@ -152,11 +154,11 @@ and PR 4's chain; PR 10 bumps the Graph version once everything that calls Graph
 | 5 | `outbound/application/service/UrgencyLines.java`; tests `outbound/InMemoryOutboundMessages.java`, `outbound/application/service/MessagesBundleTest.java`, `wa/application/service/DetailDeliveryGuardsTest.java`, `architecture/WaNeverSendsAComposedBodyTest.java`, `architecture/DeliveryCallersClaimFirstTest.java`, `wa/adapter/out/WhatsAppMessageDeliveryTest.java`, `outbound/application/service/DetailCacheAcceptanceTest.java` | `ExplainDocumentUseCase.java`, `ExplanationService.java`, `ReviewGateService.java`, `OutboundMessagePort.java`, `PostgresOutboundMessageAdapter.java`, `OutboundMessage.java`, `DeliveryOutcome.java`, `WhatsAppMessageDelivery.java`, `WaIntakeService.java`, `messages_bn/en.properties`; tests `ExplanationServiceTest.java`, `WaIntakeServiceTest.java`, `ReviewGateServiceTest.java` |
 | 6 | `wa/application/service/WaTextRouter.java`, `wa/domain/WaInbound.java`; tests `WaTextRouterTest`, `wa/adapter/in/WaWebhookDispatchTest`, `wa/adapter/in/EveryInboundTypeIsAnsweredTest` | `WaWebhookHandler.java`, `WaIntakeService.java`, `messages_bn/en.properties`; tests `WaIntakeServiceTest`, `CopyInstructionsHaveHandlersTest` |
 | 7 | — | `WaIntakeService.java`, `WaMessagingPort.java`, `WaGraphClient.java`, `messages_bn/en.properties`; tests `WaIntakeServiceTest`, `WaGraphClientTest`, `BaymaxAutoConfigurationTest` (unchanged, run) |
-| 8 | `V17__inbound_message.sql`; `wa/domain/InboundMessage.java`, `wa/application/port/out/InboundMessagePort.java`, `wa/adapter/out/persistence/PostgresInboundMessageAdapter.java`, `wa/adapter/in/WaInboundStartupReport.java`, `scripts/wa-replay-callback.sh`; tests `PostgresInboundMessageAdapterTest`, `wa/adapter/in/WaInboundIdempotencyAcceptanceTest`, `WaInboundStartupReportTest`, `WaReplayCallbackScriptTest` | `PhoneHasher.java` (`providerId`), `WaWebhookHandler.java`, `WaIntakeService.java`, `WaConfigValidator.java`, `PostgresHealthRecordAdapter.java`; tests `FamilyDeletionAcceptanceTest`, `WaWebhookRouterTest`, `WaIntakeServiceTest`, `WaConfigValidatorTest`; `docs/RUNBOOK.md` |
-| 9 | `V18__outbound_failure_kind.sql`; tests `outbound/FailureKindAcceptanceTest`, `extraction/RecoveredFailureIsToldOnceTest`, `architecture/FailedHasOneWriterTest` | `OutboundMessage.java`, `PostgresOutboundMessageAdapter.java`, `ExplanationService.java`, `ExplainDocumentUseCase.java`, `DocumentRecordPort.java` + adapter (unexplained query), `DocumentRecoveryService.java`, `messages_bn/en.properties`; `ExplanationServiceTest` |
+| 8 | `V18__inbound_message.sql`; `wa/domain/InboundMessage.java`, `wa/application/port/out/InboundMessagePort.java`, `wa/adapter/out/persistence/PostgresInboundMessageAdapter.java`, `wa/adapter/in/WaInboundStartupReport.java`, `scripts/wa-replay-callback.sh`; tests `PostgresInboundMessageAdapterTest`, `wa/adapter/in/WaInboundIdempotencyAcceptanceTest`, `WaInboundStartupReportTest`, `WaReplayCallbackScriptTest` | `PhoneHasher.java` (`providerId`), `WaWebhookHandler.java`, `WaIntakeService.java`, `WaConfigValidator.java`, `PostgresHealthRecordAdapter.java`; tests `FamilyDeletionAcceptanceTest`, `WaWebhookRouterTest`, `WaIntakeServiceTest`, `WaConfigValidatorTest`; `docs/RUNBOOK.md` |
+| 9 | `V19__outbound_failure_kind.sql`; tests `outbound/FailureKindAcceptanceTest`, `extraction/RecoveredFailureIsToldOnceTest`, `architecture/FailedHasOneWriterTest` | `OutboundMessage.java`, `PostgresOutboundMessageAdapter.java`, `ExplanationService.java`, `ExplainDocumentUseCase.java`, `DocumentRecordPort.java` + adapter (unexplained query), `DocumentRecoveryService.java`, `messages_bn/en.properties`; `ExplanationServiceTest` |
 | 10 | — | `BaymaxProperties.java` (`Wa.permits`, `readReceipts`, `graphVersion`), `application.properties`, `WaConfigValidator.java`, `WaMessagingPort.java`, `WaGraphClient.java`, `WaIntakeService.java`, `WhatsAppMessageDelivery.java`; tests `config/WaAllowlistTest` (new), `WaConfigValidatorTest`, `WaGraphClientTest`, `WaIntakeServiceTest`; `docs/RUNBOOK.md` |
 | 11 | — | `FamilyAccountService.java` (`normalizeNumber`), `WebAuthService.java` (`verify` fold); tests `FamilyAccountServiceTest`, `WebAuthServiceTest` |
-| 12 | `web/domain/{CodeIssue,VerifyFailure}.java`, `web/application/port/in/CodeRejectedException.java`, `web/adapter/out/delivery/CompositeOtpDelivery.java`, `web/adapter/in/ui/PhoneDisplay.java`; tests `LogOtpDeliveryTest`, `CompositeOtpDeliveryTest`, `OtpDeliveryWiringTest`, `WaLoginCodeFlowTest`, `SignInPagesTest` | `WebAuthUseCase.java`, `WebAuthService.java`, `OtpStorePort.java` + adapter, `LogOtpDelivery.java`, `BaymaxProperties.Auth`/`Wa`, `WaTextRouter.java`, `WaIntakeService.java`, `WaConfigValidator.java`, `WebUiHandler.java`, `AuthHandler.java`, bundles, `baymax.css`, `application.properties`; tests `WebAuthServiceTest`, `WebPersistenceAdaptersTest`, `WaIntakeServiceTest`, `WaConfigValidatorTest`, `BaymaxWebUiRouterTest`, `WebUiHandlerRenderTest`, `MediooBrandTest`, `BaymaxAuthRouterTest`; `docs/MEDIOO.md`, `docs/RUNBOOK.md`, `medscribe.env.example` |
+| 12 | `V17__wa_last_inbound.sql`, `web/application/port/out/InboundWindowPort.java`, `web/adapter/out/persistence/PostgresInboundWindowAdapter.java`, `web/domain/CodeRequest.java`, `config/WaAllowlistTest` (Task 10.1), `SignInIsFreeAcceptanceTest`; `web/domain/{CodeIssue,VerifyFailure}.java`, `web/application/port/in/CodeRejectedException.java`, `web/adapter/out/delivery/CompositeOtpDelivery.java`, `web/adapter/in/ui/PhoneDisplay.java`; tests `LogOtpDeliveryTest`, `CompositeOtpDeliveryTest`, `OtpDeliveryWiringTest`, `WaLoginCodeFlowTest`, `SignInPagesTest` | `PostgresHealthRecordAdapter.java` (`deleteFamily`), `WhatsAppMessageDelivery.java` (Task 10.1), `WebAuthUseCase.java`, `WebAuthService.java`, `OtpStorePort.java` + adapter, `LogOtpDelivery.java`, `BaymaxProperties.Auth`/`Wa`, `WaTextRouter.java`, `WaIntakeService.java`, `WaConfigValidator.java`, `WebUiHandler.java`, `AuthHandler.java`, bundles, `baymax.css`, `application.properties`; tests `WebAuthServiceTest`, `WebPersistenceAdaptersTest`, `WaIntakeServiceTest`, `WaConfigValidatorTest`, `BaymaxWebUiRouterTest`, `WebUiHandlerRenderTest`, `MediooBrandTest`, `BaymaxAuthRouterTest`; `docs/MEDIOO.md`, `docs/RUNBOOK.md`, `medscribe.env.example` |
 
 (`baymax/...` is `baymax/src/main/java/com/elioo/baymax/` for main code and `baymax/src/test/java/com/elioo/baymax/` for
 tests. Line numbers cited below are from `e4494c1`; after the first PRs merge, re-read the code and anchor on the method,
@@ -238,7 +240,8 @@ Branch `docs/medioo-companion-design` from `origin/main`. Docs only; CI still ru
     amends PRODUCT §4 "MVP in" (`docs/PRODUCT.md:216-229`) and retires the UI rule "no urgency anywhere in the UI"
     (asserted by `WebUiHandlerRenderTest.nothingInterpretiveIsRenderedForAFullDocument`), replaced by spec principle 3.
   - **DR-39 | 2026-10-17 | Sign-in is inbound-first** (D2, with D36 and D37 as recommended): the family texts "কোড";
-    `issueCodeFor(sender)` mints for the number WhatsApp proved; the web mints nothing and promises no send; the
+    `issueCodeFor(sender)` mints for the number WhatsApp proved; the web mints nothing and promises no send (*amended
+    2026-10-18 by the PO: the web sends inside the window, see PR 12*); the
     rate-limit message goes only to WhatsApp; the `wa.me` link appears on `/app` only; no code in any log above DEBUG.
     Effective from PR 12.
   - **Under DR-13**, append: "*Amended 2026-10-17 (PO, D5):* the stored, code-computed urgency shows on every surface
@@ -2756,7 +2759,7 @@ class DetailCacheAcceptanceTest {
     a claimed row it stamps still satisfies `outbound_message_sent_at_requires_acceptance`.
     **Reasons encoding:** `save` binds `urgency_reasons` as a JSON array (`["a","b"]`, written with the adapter's own
     small encoder or Jackson); `from` reads a value starting with `[` as JSON and anything else with the legacy comma
-    split, so rows written before this PR read as before. Phase 1b's V19 backfill reads both forms (roadmap).
+    split, so rows written before this PR read as before. Phase 1b's V20 backfill reads both forms (roadmap).
   - `InMemoryOutboundMessages`: add `@Override` to `latestOfKind` and `claimDelivery`.
 - [ ] **Step 4:** `./gradlew :baymax:test --tests '*DetailCacheAcceptanceTest' --tests '*DeliveryOutcomeAcceptanceTest' --tests '*PostgresOutboundMessageAdapter*'` green.
 - [ ] **Step 5:** stage the port, the adapter, the fake and the test;
@@ -4698,7 +4701,7 @@ static String describe(Throwable e) {
 
 ## PR 8 — C1: the same WhatsApp message twice is answered once (F9a)
 
-Branch `fix/baymax-wa-inbound-idempotency`, from merged PR 7. Migration **V17**.
+Branch `fix/baymax-wa-inbound-idempotency`, from merged PR 7. Migration **V18**.
 
 The webhook answers 200 as soon as the signature is good, then dispatches each message to a detached subscription
 (`WaWebhookHandler.java:66-78,100-125`); nothing records which message ids were handled, so a Meta re-delivery is
@@ -4728,7 +4731,7 @@ no second record and no type switch.
 
 ### Task 8.1: `inbound_message`, keyed by HMAC, against real Postgres
 
-**Files:** create `V17__inbound_message.sql`, `wa/domain/InboundMessage.java`, `wa/application/port/out/InboundMessagePort.java`,
+**Files:** create `V18__inbound_message.sql`, `wa/domain/InboundMessage.java`, `wa/application/port/out/InboundMessagePort.java`,
 `wa/adapter/out/persistence/PostgresInboundMessageAdapter.java`; tests `baymax/src/test/java/com/elioo/baymax/wa/domain/InboundMessageTest.java`,
 `baymax/src/test/java/com/elioo/baymax/wa/adapter/out/persistence/PostgresInboundMessageAdapterTest.java`; modify
 `web/application/service/PhoneHasher.java` (+`providerId`).
@@ -4858,7 +4861,7 @@ class PostgresInboundMessageAdapterTest {
 
 - [ ] **Step 3: Run** → compile errors on `InboundMessage`, `InboundMessagePort` (new behaviour; the defect guard is
   Task 8.3's acceptance test).
-- [ ] **Step 4: Implement.** V17:
+- [ ] **Step 4: Implement.** V18:
 
 ```sql
 -- F9a (Phase 0, PR 8): every inbound WhatsApp message, keyed so that "the same message twice is answered once" is a
@@ -4925,7 +4928,7 @@ public record InboundMessage(UUID id, String providerKey, UUID familyId, UUID pa
   `public String providerId(String id) { return phone("wamid:" + id); }` (the same HMAC, domain-separated; it throws the
   503-shaped `auth_not_configured` when the secret is missing).
 - [ ] **Step 5:** both test classes green; `HexagonalArchitectureTest` green. `git status --ignored --short -- baymax/src | grep '^!!'`
-  prints nothing (new `wa/adapter/out/persistence`). Commit: `feat(baymax): inbound_message keyed by HMAC of the provider id (F9a, V17)`.
+  prints nothing (new `wa/adapter/out/persistence`). Commit: `feat(baymax): inbound_message keyed by HMAC of the provider id (F9a, V18)`.
 
 ### Task 8.2: Both delete paths, and a deletion sweep derived from the schema that cannot pass vacuously
 
@@ -5509,7 +5512,7 @@ shape, from the first number on `BAYMAX_WA_ALLOWLIST`, and POSTs it twice.
 
 ## PR 9 — B2: every document ends with a reply, from one place
 
-Branch `fix/baymax-every-document-ends-with-a-reply`, from merged PR 8. Migration **V18**.
+Branch `fix/baymax-every-document-ends-with-a-reply`, from merged PR 8. Migration **V19**.
 
 Three paths still end in silence after "পড়ে দেখছি": a document that ends FAILED (the 2026-10-16 credits outage;
 `compose`'s `default -> Mono.empty()`), an EXPLANATION that failed safety (the FAILED_SAFETY row is saved and nothing is
@@ -5522,12 +5525,12 @@ value-free; a DETAIL that failed safety keeps PR 5's `wa.detail.unavailable` (un
 PR 5's `DetailDeliveryGuardsTest` already proves the detail arrives once, in both gate modes; no second "arrives once"
 test is added here (it would duplicate those guards).
 
-### Task 9.1: V18 — an outbound kind for failure notices (Testcontainers, both directions)
+### Task 9.1: V19 — an outbound kind for failure notices (Testcontainers, both directions)
 
-**Files:** create `V18__outbound_failure_kind.sql`, `baymax/src/test/java/com/elioo/baymax/outbound/FailureKindAcceptanceTest.java`;
+**Files:** create `V19__outbound_failure_kind.sql`, `baymax/src/test/java/com/elioo/baymax/outbound/FailureKindAcceptanceTest.java`;
 modify `OutboundMessage.java` (`Kind.FAILURE`), `PostgresOutboundMessageAdapter.java` (`consecutiveRetakes`).
 
-- [ ] **Step 1: Preflight** — the latest migration on main is `V17__inbound_message.sql`. **Write the failing test.** Add
+- [ ] **Step 1: Preflight** — the latest migration on main is `V18__inbound_message.sql`. **Write the failing test.** Add
   the enum constant `FAILURE` first, with no migration, so the red is the database refusing:
 
 ```java
@@ -5660,7 +5663,7 @@ ALTER TABLE ${flyway:defaultSchema}.outbound_message ADD CONSTRAINT outbound_mes
   `consecutiveRetakes` change `kind <> 'retake'` to `kind NOT IN ('retake', 'failure')` ("a failure notice is our fault,
   not a readable document, and must not reset the escalation").
 - [ ] **Step 4:** `./gradlew :baymax:test --tests '*FailureKindAcceptanceTest' --tests '*DeliveryOutcomeAcceptanceTest' --tests '*FamilyDeletionAcceptanceTest'` green.
-- [ ] **Step 5:** `feat(baymax): V18 outbound kind 'failure'; a failure notice does not reset retake escalation`.
+- [ ] **Step 5:** `feat(baymax): V19 outbound kind 'failure'; a failure notice does not reset retake escalation`.
 
 ### Task 9.2: FAILED, fail-closed and throwing explanations reply — code-only, value-free
 
@@ -5904,7 +5907,7 @@ class FailedHasOneWriterTest {
 
 ### Task 9.4: Ship
 
-- [ ] **Step 1:** the standard pre-merge (migration check: V17 is the latest on main). PR body: the three silent paths
+- [ ] **Step 1:** the standard pre-merge (migration check: V18 is the latest on main). PR body: the three silent paths
   closed, the central rule and how it is asserted, the inverted test, the copy drafts, and the plain statement that the
   FAILED and FAILED_SAFETY replies were exercised locally and by Testcontainers only.
 - [ ] **Step 2: Local run (the done for this PR).** With `docker compose up -d` and `.env.local`, start the app with the
@@ -6248,8 +6251,42 @@ void aCodeWithSurroundingSpacesOpensTheSession() {
 
 ## PR 12 — 1a-ii: inbound-first sign-in (D2)
 
-Branch `feat/baymax-sign-in-whatsapp-code`, from merged PR 11. After this PR the web mints no codes: the family texts
-"কোড" on WhatsApp and the code comes back there. That is why the WhatsApp half and the web half ship in one PR, and why
+> **Amended by the PO, 2026-10-18 (Tanvir): sign-in must be free.** This section's tasks were built as written except
+> where this note says otherwise; DR-39 records the decision, spec D2 the row.
+> - **The web sends the code automatically when it is free to.** If the typed number (i) has a Medioo account, (ii) is
+>   permitted by the allowlist (`Wa.permits`, Task 10.1, brought forward as PR 12's first commit), and (iii) wrote to
+>   Medioo on WhatsApp within `baymax.wa.service-window` (default `PT23H`, a margin inside WhatsApp's free 24 h window),
+>   `requestCode` mints and sends the code to that WhatsApp as a free-form session message. The code page says
+>   "পাঠানো হয়েছে" **only** when the Graph API accepted the send (`CodeIssue.SENT`, carried as the login cookie's `.s`
+>   mark); on any failure and outside the window it shows the one-tap button (`wa.me/<BAYMAX_WA_PUBLIC_NUMBER>?text=কোড`).
+>   The plan's "the web mints nothing" and "the page never contains পাঠিয়েছি/পাঠানো হয়েছে" are replaced by this rule;
+>   `login.code.sent` is the one login key allowed to say it, and `SignInPagesTest` derives that from the bundles.
+> - **Otherwise the button, and "কোড" on WhatsApp** (Tasks 12.3, 12.6 as written): the reply is inside the window the
+>   family's message just opened, so it is free too.
+> - **Never a template** (authentication, utility or marketing) for codes: they are paid. No code in any log above
+>   DEBUG; `LogOtpDelivery`'s INFO code line is gone (Task 12.2).
+> - **Never an open sender:** no account, nothing minted (the web request no longer mints for unknown numbers). The
+>   hourly cap applies to both paths and counts **every code made** in the rolling hour, whatever became of it
+>   (`OtpStorePort.countCreatedSince` replaces `countLive`, which the review found let five wrong guesses buy another
+>   send without limit): 5 codes x 5 tries per number per hour. DR-23: no number or code in a query string.
+> - **New: V17 `wa_last_inbound`** (one row per number, keyed by the PhoneHasher HMAC — a CHECK refuses anything else —
+>   with a forward-only `last_inbound_at` and a `family_id` FK without cascade). `WaIntakeService.onInbound` records it,
+>   through `WebAuthUseCase.noteInbound`, for every message the family sends; `deleteFamily` removes it and
+>   `FamilyDeletionAcceptanceTest`'s schema-derived sweep covers it. No existing table could stand in: nothing stored
+>   records an inbound text message (documents exist only for photos and files; PR 8's `inbound_message` is unmerged).
+>   PRs 8 and 9 move to V18 and V19; Phase 1b to V20 and V21 (roadmap allocation table).
+> - **Review fixes, same PR (2026-10-19):** the window is recorded at Meta's send `timestamp` (clamped to now) through
+>   `noteInbound(number, sentAt)`, never the receipt time, so a late-retried callback cannot open a closed window;
+>   `WaGraphClient.sendText` errors on a 200 with no message id (it emitted `""`, and every caller's "accepted" branch
+>   ran); `deleteFamily` locks the family row first (`SELECT … FOR UPDATE`), so a message arriving mid-delete cannot
+>   fail it on the `wa_last_inbound` FK; the login cookie lives 30 minutes (`WebUiHandler.LOGIN_COOKIE_TTL`) for the
+>   button path's round trip.
+> - Built on `feat/baymax-whatsapp-sign-in` from `origin/main` at PR 11, ahead of PRs 7–10: the `WaIntakeService`
+>   constructor is `…, properties, auth` until PRs 7–8 land (they append before `auth` and update the call sites).
+
+Branch `feat/baymax-whatsapp-sign-in` (planned as `feat/baymax-sign-in-whatsapp-code`), from merged PR 11. ~~After this PR the web mints no codes: the family texts
+"কোড" on WhatsApp and the code comes back there.~~ *Superseded 2026-10-18 (PO, note above): the web mints and sends
+when the number has an account, is allowlisted and wrote inside the window; otherwise the family texts "কোড".* That is why the WhatsApp half and the web half ship in one PR, and why
 the public number goes into the env **before** the merge.
 
 ### Task 12.0: Tanvir sets the public number first (before the merge, no code)
@@ -6262,7 +6299,7 @@ the public number goes into the env **before** the merge.
   quotes, no spaces, no `^M`, no `#`.
 - [ ] **Step 3:** list the change in the build report. Only then merge PR 12.
 
-### Task 12.1: `issueCodeFor`, a web that mints nothing, typed refusals
+### Task 12.1: `issueCodeFor`, ~~a web that mints nothing~~ (superseded 2026-10-18: the web mints inside the window, note above), typed refusals
 
 **Files:** modify `WebAuthUseCase.java`, `OtpStorePort.java`, `PostgresOtpStoreAdapter.java`, `WebAuthService.java`,
 `BaymaxProperties.Auth` (+`webMintsCode`, −`otpDelivery`); create `web/domain/CodeIssue.java` (`ISSUED, RATE_LIMITED,
@@ -6419,8 +6456,9 @@ void theNewestCodeIsFoundWhateverItsStateButOnlyInsideTheWindowAndTheFamilyKeyIs
   - `WebAuthService`: extract the minting at `:77-84` into `private Mono<Void> mint(String number, String phoneHash,
     UUID familyIdOrNull, Instant now)`. `issueCodeFor` runs in `Mono.defer`, so a missing HMAC secret becomes an
     error signal and is not thrown at assembly. Its steps are normalise → hash → `audit OTP_REQUEST` →
-    `findFamilyByWhatsapp`. Empty → `NO_ACCOUNT`, with nothing minted. Otherwise `countLive ≥ max` →
-    `RATE_LIMITED`, with an INFO log carrying `phoneHash` and `live`. Otherwise `mint(...).thenReturn(ISSUED)`.
+    `findFamilyByWhatsapp`. Empty → `NO_ACCOUNT`, with nothing minted. Otherwise ~~`countLive ≥ max`~~ `countCreatedSince(hash, now − 1h) ≥ max`
+    (superseded 2026-10-19: every code made counts, whatever its state) → `RATE_LIMITED`, with an INFO log carrying
+    `phoneHash` and the count. Otherwise `mint(...).thenReturn(ISSUED)`.
     `requestCode` keeps its normalise/hash, and its 200-for-anything contract. When `!cfg.isWebMintsCode()` it
     returns `Mono.just(phoneHash)` with no audit, because no code was requested. Otherwise it behaves as today.
   - `verify`: keep PR 11's `fold`, then check `code.matches("[0-9]{6}")`, else `FORMAT`. An empty `latestLive`
@@ -6991,7 +7029,8 @@ void confirmingSetsAShortLivedCookieWithOnlyTheHashAndTheLastThreeDigits() {
     Valid and not `confirmed=1` → a confirm view: `<p class="number-back">+880 1700-000000</p><p>login.number.confirm</p>`,
     a form posting hidden `whatsapp_number` (normalised) and `confirmed=1` with the button `login.number.yes`, and
     `<a class="btn quiet" href="/app/">login.number.change</a>`. Valid and confirmed →
-    `auth.requestCode(normalised)`, which mints nothing in production (Task 12.1), then 303 `/app/verify` with
+    `auth.requestCode(normalised)`, which ~~mints nothing in production (Task 12.1)~~ (superseded 2026-10-18: mints and
+    sends only inside the window, PR 12 note), then 303 `/app/verify` with
     `loginCookie(hash + "." + last3, Duration.ofMinutes(30))`. The code lives 10 minutes, but a family may ask again
     from the same page.
   - `loginHash` accepts `^([0-9a-f]{64})(?:\.([0-9]{3}))?$`, because a cookie from the old format may still be in
@@ -7145,8 +7184,8 @@ void theRightCodeOpensTheSessionAndClearsTheLoginCookie() {
 
 ## After Phase 1a
 
-Phase 1b starts from the roadmap (`2026-10-17-medioo-roadmap.md`, "Phase 1b"), with V19 and V20. Carried into it from
-here: the JSON encoding of `outbound_message.urgency_reasons` (PR 5), which V19's backfill reads in both forms; the
+Phase 1b starts from the roadmap (`2026-10-17-medioo-roadmap.md`, "Phase 1b"), with V20 and V21. Carried into it from
+here: the JSON encoding of `outbound_message.urgency_reasons` (PR 5), which V20's backfill reads in both forms; the
 `DocumentProcessingChain` (PR 4), where F1's central writer hooks in; `UrgencyLines` (PR 5), where D11's signed emergency
 template replaces the interim red-flag line in Phase 3; and the open decisions listed in the roadmap (gate mode before
 real families, D11, Meta templates, repeat-detail pointer vs resend, the red-flag line on THIS_WEEK).

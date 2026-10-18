@@ -78,6 +78,8 @@ absent on any server where Baymax should not run.
 | `BAYMAX_STORAGE_ENDPOINT` | any value overrides the AWS endpoint. A whitespace-only value is *not* empty and produces an invalid endpoint override |
 | `BAYMAX_STORAGE_ACCESS_KEY` | any value is used as a static credential |
 | `BAYMAX_STORAGE_SECRET_KEY` | same |
+| `BAYMAX_AUTH_WEB_MINTS_CODE` | laptop only (WhatsApp off): the web form mints for an account number without the window. Startup refuses `true` with `BAYMAX_WA_ENABLED=true` |
+| `BAYMAX_OTP_DELIVERY` | unused since DR-39 (PR 12); delete the line (harmless if left) |
 
 **WhatsApp channel** (BMX-10). All of these are blank on a box where the channel is off; with
 `BAYMAX_WA_ENABLED=true`, `WaConfigValidator` refuses to start unless the token, app secret, verify token, phone
@@ -92,7 +94,20 @@ number id and WABA id are set and well-formed (it names the variable, never the 
 | `BAYMAX_WA_PHONE_NUMBER_ID` | digits only | the sending number's Graph id |
 | `BAYMAX_WA_WABA_ID` | digits only | the WhatsApp Business Account id |
 | `BAYMAX_WA_ALLOWLIST` | comma-separated E.164 numbers | **Tanvir's number only while the gate is off.** Enforced in code on every send; a non-E.164 entry refuses to start. **Blank means no restriction**: every family number would be messaged |
+| `BAYMAX_WA_PUBLIC_NUMBER` | **set**: the display number of `BAYMAX_WA_PHONE_NUMBER_ID`, digits only, country code first (`8801…`), no plus, spaces, quotes or comment | the sign-in page's "WhatsApp খুলে কোড আনুন" link (`wa.me/<n>?text=কোড`, DR-39). Blank = no button (WARN at startup); malformed = startup refused, which takes MedScribe down too, so check it with `cat -A` before the deploy |
+| `BAYMAX_WA_SERVICE_WINDOW` | blank (defaults `PT23H`) | a web sign-in code is sent to WhatsApp automatically only if the number's own last message is at most this old (WhatsApp's free window is 24 h). Startup refuses zero or more than 24 h |
 | `BAYMAX_GATE_MODE` | blank (= `off`) | `off` / `all` / `urgency` (DR-13). Nobody changes it to try something on the phone; a gate change is a PO decision |
+
+## Sign-in codes: break-glass (DR-39)
+
+Codes reach the family only over WhatsApp, and no log line carries one above DEBUG. If a family cannot get a code
+(the log says `otp NOT delivered phoneHash=… reason=window_expired|token_invalid|not_allowlisted|channel_off|send_failed|no_message_id`):
+
+1. Back up the env (`cp ~/medscribe.env ~/medscribe.env.bak-$(date +%Y%m%d-%H%M)`), add
+   `LOGGING_LEVEL_COM_ELIOO_BAYMAX_WEB_ADAPTER_OUT_DELIVERY=DEBUG`, redeploy.
+2. The family sends কোড (or asks on the web). `docker logs medscribe-ai --since 5m 2>&1 | grep 'otp fallback'` shows
+   the code against the phone hash; read it to the family by phone yourself.
+3. Remove the line and redeploy at once: the code is in the log for as long as it stays.
 
 ## Leak counters
 
@@ -114,7 +129,13 @@ L | grep -cE '\[ERROR\]|refusing to start'                                      
 L | grep -ciE 'baymax_session=|wamid\.'                                                        # 0: a session id or a wamid
 L | grep -oiE '(x-baymax-admin-token|authorization|cookie|x-hub-signature-256):"[^"]*"' | grep -vc ':"REDACTED"$'  # 0: a credential header in clear
 L | grep 'wa inbound ref=' | tail -1 | grep -cE 'ref=[0-9a-f]{12} '                             # 1 after a WhatsApp message: ids are digests
+L | grep -cE 'OTP for|otp fallback|\bcode=[0-9]{6}\b'                                        # 0: a sign-in code (DR-39); 0 whenever the DEBUG break-glass is off
+L | grep -c 'otp delivered channel=whatsapp'                                                   # >= 1 after a sign-in try in this window, or the line above passed on an empty log
 ```
+
+The sign-in count matches the field (`code=` and six digits) as well as the two known line shapes, so a code leaking
+in some new wording still counts. It is only meaningful over a window that contains a sign-in: try one (web inside the
+window, or কোড on WhatsApp) within the same `--since 15m`, and check the second line is not 0.
 
 A non-zero second or third count means: rotate `BAYMAX_ADMIN_TOKEN`, consider revoking live sessions
 (`UPDATE baymax.web_session SET revoked_at = now() WHERE revoked_at IS NULL`), and find the log line before the
