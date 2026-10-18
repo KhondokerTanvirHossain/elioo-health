@@ -1,6 +1,7 @@
 package com.elioo.baymax.web.adapter.in.ui;
 
 import java.io.IOException;
+import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -9,6 +10,8 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
+import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -56,5 +59,25 @@ final class BundleFiles {
             continued = l.endsWith("\\") && !l.endsWith("\\\\");
         }
         return twice;
+    }
+
+    /** key → value of one UI bundle part, loaded with Properties in UTF-8 (escapes resolved, as a page sees it). */
+    static Map<String, String> values(String part, Lang lang) throws IOException {
+        return load(Path.of("src/main/resources/baymax/" + part + "_" + lang.code + ".properties"));
+    }
+
+    /** key → value of the WhatsApp message bundle {@code messages_<lang>.properties}. */
+    static Map<String, String> messages(Lang lang) throws IOException {
+        return load(Path.of("src/main/resources/baymax/messages_" + lang.code + ".properties"));
+    }
+
+    private static Map<String, String> load(Path file) throws IOException {
+        Properties p = new Properties();
+        try (Reader r = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+            p.load(r);
+        }
+        Map<String, String> out = new TreeMap<>();
+        p.stringPropertyNames().forEach(k -> out.put(k, p.getProperty(k)));
+        return out;
     }
 }
