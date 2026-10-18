@@ -38,10 +38,24 @@ public class AppTabs implements WebPages {
     @Override
     public RouterFunction<ServerResponse> routes(HandlerFilterFunction<ServerResponse, ServerResponse> requireSession) {
         return RouterFunctions.route()
-                .GET(BASE + "/home", this::home)
+                .GET(BASE + "/home", this::chat)
+                .GET(BASE + "/timeline", this::papers)
+                .GET(BASE + "/family", this::family)
                 .GET(BASE + "/patients/{id}", this::timelinePage)
                 .filter(requireSession)
                 .build();
+    }
+
+    public Mono<ServerResponse> chat(ServerRequest request) {
+        return Html.html(HttpStatus.OK, "");
+    }
+
+    public Mono<ServerResponse> papers(ServerRequest request) {
+        return Html.html(HttpStatus.OK, "");
+    }
+
+    public Mono<ServerResponse> family(ServerRequest request) {
+        return Html.html(HttpStatus.OK, "");
     }
 
     public Mono<ServerResponse> home(ServerRequest request) {

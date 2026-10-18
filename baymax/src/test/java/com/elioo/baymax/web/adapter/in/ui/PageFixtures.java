@@ -89,6 +89,8 @@ final class PageFixtures {
         variant("GET /app/nudges/opt-out", Fixture.get("/app/nudges/opt-out?p=" + ma + "&t=not-a-token", false, Stubs::validOptOutLink).named("badtoken"));
         variant("GET /app/nudges/opt-out", Fixture.get("/app/nudges/opt-out?t=not-a-token", false, k -> { }).named("nopatient"));
         put("GET /app/home", Fixture.get("/app/home", true, Stubs::familyOfMa));
+        put("GET /app/timeline", Fixture.get("/app/timeline", true, Stubs::maTimeline));
+        put("GET /app/family", Fixture.get("/app/family", true, Stubs::familyOfMa));
         put("GET /app/patients/{id}", Fixture.get("/app/patients/" + ma, true, Stubs::maTimeline));
         put("GET /app/patients/{id}/profile", Fixture.get("/app/patients/" + ma + "/profile", true, Stubs::maProfile));
         put("GET /app/documents/{id}/delete", Fixture.get("/app/documents/" + doc + "/delete", true, Stubs::doneLab));
