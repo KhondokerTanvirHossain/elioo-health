@@ -88,16 +88,26 @@ class SignInPagesTest {
         assertThat(code).contains("name=\"code\"");
     }
 
+    /**
+     * The guard can fail; and the only login copy allowed to say "sent" is the one key shown when WhatsApp accepted the
+     * code (DR-39 amended) — derived from the bundles, so a second key that says it fails here.
+     */
     @Test
-    void theGuardCanFailAndNoLoginCopyCarriesTheWordInEitherLanguage() {
+    void theGuardCanFailAndOnlyTheSentStateCarriesTheWordInEitherLanguage() {
         assertThatThrownBy(() -> assertNoSendPromise("<p>কোড পাঠিয়েছি</p>")).isInstanceOf(AssertionError.class);
         UiCopy copy = new UiCopy();
         for (Lang lang : Lang.values()) {
+            java.util.Set<String> saying = new java.util.TreeSet<>();
             for (String key : copy.keys(lang)) {
                 if (key.startsWith("login.")) {
-                    assertNoSendPromise(copy.t(lang, key));
+                    try {
+                        assertNoSendPromise(copy.t(lang, key));
+                    } catch (AssertionError says) {
+                        saying.add(key);
+                    }
                 }
             }
+            assertThat(saying).as(lang + ": login keys that say a code was sent").containsExactly("login.code.sent");
         }
     }
 
@@ -140,5 +150,110 @@ class SignInPagesTest {
                 .expectHeader().value(HttpHeaders.SET_COOKIE, c -> assertThat(c)
                         .startsWith("baymax_login=" + hash + ".171;").contains("HttpOnly").contains("Path=/app")
                         .contains("Max-Age=1800").doesNotContain("01700000171").doesNotContain("8801700000171"));
+    }
+
+    // ---- sign-in-code (spec §4.3, amended 2026-10-18): "sent" only when WhatsApp accepted it, else the button ------
+
+    static final String LOGIN = "c".repeat(64) + ".171";
+    static final String BUTTON = "<a class=\"btn wa\" href=\"https://wa.me/8801700000000?text=%E0%A6%95%E0%A7%8B%E0%A6%A1\">";
+
+    @Test
+    void outsideTheWindowTheCodePageSendsTheFamilyToWhatsappToAskForTheCode() {
+        String html = get("/app/verify", LOGIN);
+        assertThat(html).contains("এখন WhatsApp-এ Medioo-কে লিখুন:").contains("<strong>কোড</strong>")
+                .contains(BUTTON).contains("WhatsApp খুলে কোড আনুন").contains("WhatsApp-এ শুধু Send চাপুন — কোড সাথে সাথে চলে আসবে")
+                .contains("••••••••171")
+                .contains("autocomplete=\"one-time-code\"").contains("inputmode=\"numeric\"").contains("pattern=\"[0-9০-৯]{6}\"")
+                .contains("কোড ১০ মিনিট চলবে").contains("অন্য নম্বর দিন");
+        assertThat(html).doesNotContain("?whatsapp").doesNotContain("?code").doesNotContain("?n=");   // DR-23
+        assertNoSendPromise(html);
+    }
+
+    /** Direction 1: WhatsApp accepted the automatic send, so the page says so, and the primary action is the code field. */
+    @Test
+    void whenWhatsappAcceptedTheCodeThePageSaysItWasSentAndTheButtonStepsBack() {
+        String html = get("/app/verify", LOGIN + ".s");
+        assertThat(html).contains("কোডটা আপনার WhatsApp-এ পাঠানো হয়েছে").contains("••••••••171").contains("name=\"code\"");
+        assertThat(html).as("no primary 'go and fetch it' button over a code that has arrived").doesNotContain("class=\"btn wa\"")
+                .doesNotContain("এখন WhatsApp-এ Medioo-কে লিখুন:");
+        assertThat(html).as("a quiet way to fetch one if the message is slow").contains("কোড আসেনি?")
+                .contains("href=\"https://wa.me/8801700000000?text=%E0%A6%95%E0%A7%8B%E0%A6%A1\"");
+    }
+
+    /**
+     * Both directions, through the form: the page says "sent" for SENT and for nothing else. Every other outcome —
+     * outside the window, no account, off the allowlist, rate-limited, WhatsApp refused it — is the same page with the
+     * button, so the page tells a stranger nothing about which.
+     */
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(CodeIssue.class)
+    void thePageSaysSentOnlyForARequestWhatsappAccepted(CodeIssue issue) {
+        String hash = "d".repeat(64);
+        when(auth.requestCode("+8801700000171")).thenReturn(Mono.just(new CodeRequest(hash, issue)));
+        String cookie = client.post().uri("/app/login").contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .body(BodyInserters.fromFormData(form("whatsapp_number", "01700000171", "confirmed", "1")))
+                .exchange().expectStatus().isSeeOther()
+                .returnResult(Void.class).getResponseHeaders().getFirst(HttpHeaders.SET_COOKIE)
+                .replaceFirst("^baymax_login=([^;]*);.*$", "$1");
+        String html = get("/app/verify", cookie);
+        if (issue == CodeIssue.SENT) {
+            assertThat(cookie).isEqualTo(hash + ".171.s");
+            assertThat(html).contains("কোডটা আপনার WhatsApp-এ পাঠানো হয়েছে").doesNotContain("class=\"btn wa\"");
+        } else {
+            assertThat(cookie).isEqualTo(hash + ".171");
+            assertNoSendPromise(html);
+            assertThat(html).contains(BUTTON);
+        }
+    }
+
+    @Test
+    void aCookieWithAnythingButTheSentMarkAfterItIsNotAStateAndGoesBackToTheNumber() {
+        client.get().uri("/app/verify").cookie("baymax_login", LOGIN + ".sent").exchange()
+                .expectStatus().is3xxRedirection();
+    }
+
+    @Test
+    void inEnglishTheDeepLinkPrefillsCode() {
+        String html = client.get().uri("/app/verify").cookie("baymax_login", LOGIN).cookie("baymax_lang", "en")
+                .exchange().expectBody(String.class).returnResult().getResponseBody();
+        assertThat(html).contains("href=\"https://wa.me/8801700000000?text=code\"").contains("Open WhatsApp to get the code");
+        assertNoSendPromise(html);
+    }
+
+    @Test
+    void withNoPublicNumberThePageStillInstructsAndHasNoDeadLink() {
+        props.getWa().setPublicNumber("");
+        String html = get("/app/verify", LOGIN);
+        assertThat(html).contains("এখন WhatsApp-এ Medioo-কে লিখুন:").doesNotContain("wa.me");
+        assertThat(get("/app/verify", LOGIN + ".s")).contains("পাঠানো হয়েছে").doesNotContain("wa.me");
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "WRONG|কোডটা মেলেনি — যে নম্বর থেকে WhatsApp করেছেন, সেটাই কি এখানে দিয়েছেন?",
+            "NO_CODE|কোডটা মেলেনি — যে নম্বর থেকে WhatsApp করেছেন, সেটাই কি এখানে দিয়েছেন?",
+            "EXPIRED|কোডটার মেয়াদ শেষ",
+            "BURNED|৫ বার ভুল হয়েছে",
+            "FORMAT|৬টা সংখ্যা লিখুন"})
+    void eachRefusalSaysWhatHappenedAndTheWayToANewCodeIsRightThere(com.elioo.baymax.web.domain.VerifyFailure failure, String says) {
+        when(auth.verify(anyString(), anyString())).thenReturn(Mono.error(
+                new com.elioo.baymax.web.application.port.in.CodeRejectedException(failure)));
+        String html = post("/app/verify", form("code", "123456"), LOGIN);
+        assertThat(html).contains("<div class=\"err\" role=\"alert\">" + says).contains("wa.me/8801700000000");
+        assertNoSendPromise(html);
+    }
+
+    @Test
+    void theRightCodeOpensTheSessionAndClearsTheLoginCookie() {
+        java.time.Instant now = java.time.Instant.now();
+        when(auth.verify("c".repeat(64), "483920")).thenReturn(Mono.just(new com.elioo.baymax.web.domain.IssuedSession("tok",
+                new com.elioo.baymax.web.domain.WebSession(java.util.UUID.randomUUID(), java.util.UUID.randomUUID(), now, now, now.plusSeconds(60)))));
+        client.post().uri("/app/verify").cookie("baymax_login", LOGIN + ".s")
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .body(BodyInserters.fromFormData("code", "483920"))
+                .exchange().expectStatus().isSeeOther().expectHeader().valueEquals(HttpHeaders.LOCATION, "/app/home")
+                .expectHeader().values(HttpHeaders.SET_COOKIE, cs -> assertThat(cs)
+                        .anySatisfy(c -> assertThat(c).startsWith("baymax_session=tok"))
+                        .anySatisfy(c -> assertThat(c).startsWith("baymax_login=;").contains("Max-Age=0")));
     }
 }

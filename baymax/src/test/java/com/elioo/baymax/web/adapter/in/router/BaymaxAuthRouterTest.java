@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -47,12 +48,19 @@ class BaymaxAuthRouterTest {
 
     @Test
     void requestAlwaysAnswers200WithTheSameBody() {
-        when(auth.requestCode(anyString())).thenReturn(Mono.just(new com.elioo.baymax.web.domain.CodeRequest("abc", com.elioo.baymax.web.domain.CodeIssue.NO_ACCOUNT)));
-        for (String number : List.of("+8801711111111", "not a number", "")) {
-            client.post().uri("/api/v1/baymax/auth/request").bodyValue(Map.of("whatsapp_number", number))
-                    .exchange().expectStatus().isOk()
-                    .expectBody().jsonPath("$.status").isEqualTo("ok").jsonPath("$.message").exists();
+        // whatever the request came to — sent to WhatsApp or not — the API body is the same: no oracle (DR-39)
+        java.util.Set<String> bodies = new java.util.HashSet<>();
+        for (com.elioo.baymax.web.domain.CodeIssue issue : com.elioo.baymax.web.domain.CodeIssue.values()) {
+            when(auth.requestCode(anyString())).thenReturn(Mono.just(new com.elioo.baymax.web.domain.CodeRequest("abc", issue)));
+            for (String number : List.of("+8801700000000", "not a number", "")) {
+                bodies.add(new String(client.post().uri("/api/v1/baymax/auth/request").bodyValue(Map.of("whatsapp_number", number))
+                        .exchange().expectStatus().isOk()
+                        .expectBody().jsonPath("$.status").isEqualTo("ok")
+                        .jsonPath("$.message").value(m -> assertThat((String) m).doesNotContain("on its way").contains("WhatsApp"))
+                        .returnResult().getResponseBodyContent(), java.nio.charset.StandardCharsets.UTF_8));
+            }
         }
+        assertThat(bodies).hasSize(1);
     }
 
     @Test

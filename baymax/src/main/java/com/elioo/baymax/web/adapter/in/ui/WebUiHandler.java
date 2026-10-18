@@ -276,22 +276,62 @@ public class WebUiHandler {
         return verifyPage(request, null);
     }
 
+    /**
+     * {@code sign-in-code} (spec §4.3, amended by the PO 2026-10-18: sign-in is free). Two states and no third:
+     * <ul>
+     *   <li>WhatsApp accepted the code the web request sent automatically (the cookie's {@code .s}): the page says so,
+     *       and the code field is the primary action, with a quiet way to fetch another;</li>
+     *   <li>anything else — outside the window, no account, not allowlisted, rate-limited, WhatsApp refused it: the
+     *       one-tap button that opens WhatsApp with কোড typed in. The page never says a code was sent.</li>
+     * </ul>
+     * The two non-sent pages are identical whatever the reason, so the page tells a stranger nothing about a number.
+     * No script: the 5-second poll waits for the phase-1b CSP.
+     */
     private Mono<ServerResponse> verifyPage(ServerRequest request, String error) {
         if (loginHash(request).isEmpty()) {
             return Html.redirect(BASE + "/");
         }
         Lang lang = Lang.of(request);
-        return app(lang, top(lang, null, false) + """
-                <h1>%s</h1>
-                %s
-                <form method="post" action="%s/verify">
-                  <label for="c">%s</label>
-                  <input id="c" type="text" name="code" inputmode="numeric" pattern="[0-9০-৯]{6}" maxlength="6" autocomplete="one-time-code" required>
-                  <button type="submit">%s</button>
-                </form>
-                <p class="small"><a href="%s/">%s</a></p>
-                """.formatted(copy.t(lang, "app.home.title"), error == null ? "" : "<div class=\"err\">" + error + "</div>", BASE,
-                copy.t(lang, "login.code"), copy.t(lang, "login.enter"), BASE, copy.t(lang, "login.other")));
+        boolean sent = loginSent(request);
+        String link = waLink(lang);
+        StringBuilder b = new StringBuilder(top(lang, null, false));
+        b.append("<h1>").append(copy.t(lang, "login.title")).append("</h1>");
+        if (sent) {
+            b.append("<p class=\"lede\" role=\"status\">").append(copy.t(lang, "login.code.sent")).append("</p>");
+        } else {
+            b.append("<p class=\"lede\">").append(copy.t(lang, "login.code.say")).append(" <strong>")
+                    .append(copy.t(lang, "login.code.word")).append("</strong></p>");
+            if (link != null) {
+                b.append("<a class=\"btn wa\" href=\"").append(link).append("\">").append(copy.t(lang, "login.wa.open")).append("</a>")
+                        .append("<p class=\"small\">").append(copy.t(lang, "login.wa.hint")).append("</p>");
+            }
+        }
+        loginTail(request).ifPresent(tail -> b.append("<p class=\"mask\">")
+                .append(copy.t(lang, "login.code.number", "••••••••" + tail)).append("</p>"));
+        if (error != null) {
+            b.append("<div class=\"err\" role=\"alert\">").append(error).append("</div>");
+        }
+        b.append("<form method=\"post\" action=\"").append(BASE).append("/verify\">")
+                .append("<label for=\"c\">").append(copy.t(lang, "login.code")).append("</label>")
+                .append("<input id=\"c\" class=\"code-in\" type=\"text\" name=\"code\" inputmode=\"numeric\" pattern=\"[0-9০-৯]{6}\" maxlength=\"6\" autocomplete=\"one-time-code\" required>")
+                .append("<button type=\"submit\">").append(copy.t(lang, "login.enter")).append("</button>")
+                .append("</form>")
+                .append("<p class=\"small\">").append(copy.t(lang, "login.code.ttl", properties.getAuth().getOtpTtl().toMinutes())).append("</p>");
+        if (sent && link != null) {
+            b.append("<p class=\"small\"><a href=\"").append(link).append("\">").append(copy.t(lang, "login.code.resend")).append("</a></p>");
+        }
+        b.append("<p class=\"small\"><a href=\"").append(BASE).append("/\">").append(copy.t(lang, "login.other")).append("</a></p>");
+        return app(lang, b.toString());
+    }
+
+    /** D37: the wa.me deep link to Medioo's own number with the word typed in; null when no public number is set. */
+    private String waLink(Lang lang) {
+        String number = properties.getWa().getPublicNumber() == null ? "" : properties.getWa().getPublicNumber().trim();
+        if (number.isEmpty()) {
+            return null;
+        }
+        String word = lang == Lang.BN ? "কোড" : "code";
+        return "https://wa.me/" + esc(number) + "?text=" + java.net.URLEncoder.encode(word, java.nio.charset.StandardCharsets.UTF_8);
     }
 
     public Mono<ServerResponse> verify(ServerRequest request) {
@@ -299,6 +339,7 @@ public class WebUiHandler {
         if (hash.isEmpty()) {
             return Html.redirect(BASE + "/");
         }
+        Lang lang = Lang.of(request);
         return request.formData()
                 .map(form -> Optional.ofNullable(form.getFirst("code")).orElse("").trim())
                 .flatMap(code -> auth.verify(hash.get(), code))
@@ -306,9 +347,21 @@ public class WebUiHandler {
                         .header(HttpHeaders.SET_COOKIE, sessions.cookie(issued.token()).toString())
                         .header(HttpHeaders.SET_COOKIE, loginCookie("", Duration.ZERO).toString())
                         .build())
+                .onErrorResume(com.elioo.baymax.web.application.port.in.CodeRejectedException.class,
+                        e -> verifyPage(request, refusal(lang, e.failure())))
                 .onErrorResume(BaymaxException.class, e -> e.status() == HttpStatus.UNAUTHORIZED
-                        ? verifyPage(request, copy.t(Lang.of(request), "login.bad"))
+                        ? verifyPage(request, copy.t(lang, "login.bad.wrong"))
                         : Mono.error(e));
+    }
+
+    /** What happened, and the way to a new code (which is on the page whatever the state). */
+    private String refusal(Lang lang, com.elioo.baymax.web.domain.VerifyFailure failure) {
+        return switch (failure) {
+            case WRONG, NO_CODE -> copy.t(lang, "login.bad.wrong");
+            case EXPIRED -> copy.t(lang, "login.bad.expired");
+            case BURNED -> copy.t(lang, "login.bad.burned", properties.getAuth().getOtpMaxAttempts());
+            case FORMAT -> copy.t(lang, "login.bad.format");
+        };
     }
 
     public Mono<ServerResponse> logout(ServerRequest request) {

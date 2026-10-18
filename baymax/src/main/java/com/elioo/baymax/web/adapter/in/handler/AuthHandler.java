@@ -26,9 +26,9 @@ public class AuthHandler {
                 .map(body -> String.valueOf(((Map<String, Object>) body).getOrDefault("whatsapp_number", "")))
                 .defaultIfEmpty("")
                 .flatMap(auth::requestCode)
-                // 200 whatever happened; the body promises nothing about the number
+                // 200 and one body whatever happened (sent to WhatsApp or not): the body says nothing about the number
                 .then(ServerResponse.ok().bodyValue(Map.of("status", "ok",
-                        "message", "if this number has an account, a code is on its way")));
+                        "message", "sign-in codes arrive on WhatsApp: if you do not have one, send the word কোড to Medioo on WhatsApp")));
     }
 
     @SuppressWarnings("unchecked")
