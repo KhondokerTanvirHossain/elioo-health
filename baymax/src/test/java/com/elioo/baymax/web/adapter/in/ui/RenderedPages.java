@@ -1,7 +1,6 @@
 package com.elioo.baymax.web.adapter.in.ui;
 
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.test.web.reactive.server.EntityExchangeResult;
@@ -19,9 +18,10 @@ import java.util.stream.Collectors;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Every page the web UI renders, derived from the router: each GET route of {@link RouteTable} with each of its
- * {@link PageFixtures} fixtures (main and variants), in Bangla (no cookie, what a first visit gets) and in English, on
- * a fresh kit. Only the text/html answers are kept. A page added later is checked by every test that reads this
+ * Every page the web UI renders, derived from the router: each route of {@link RouteTable}, whatever its method, with
+ * each of its {@link PageFixtures} fixtures (main and variants), in Bangla (no cookie, what a first visit gets) and in
+ * English, on a fresh kit. Only the text/html answers are kept: a POST that answers a page (the wrong-code page, the
+ * confirm step, a delete or opt-out result) is a page a family sees and is checked like any other. A page added later is checked by every test that reads this
  * (TouchTargetTest, the head test, and from A4 on NoInlineCodeTest, UploadEntryPointsTest, FirstLoadBudgetTest,
  * PaperIsNeverMediooTest). {@link #exchange} and {@link #render} came from WebPagesCharacterizationTest (deleted in A3).
  */
@@ -33,15 +33,12 @@ final class RenderedPages {
     private RenderedPages() {
     }
 
-    /** {@code "GET <uri>[ #variant] <lang>"} → the HTML body. */
+    /** {@code "<METHOD> <uri>[ #variant] <lang>"} → the HTML body. */
     static Map<String, String> all() {
         List<RouteTable.Route> routes = RouteTable.of(new WebUiTestKit().router);
         assertThat(routes).as("routes read from the router").hasSizeGreaterThanOrEqualTo(20);
         Map<String, String> pages = new LinkedHashMap<>();
         for (RouteTable.Route route : routes) {
-            if (route.method() != HttpMethod.GET) {
-                continue;
-            }
             for (PageFixtures.Fixture f : PageFixtures.allOf(route)) {
                 for (String lang : LANGS) {
                     WebUiTestKit kit = new WebUiTestKit();
@@ -51,12 +48,13 @@ final class RenderedPages {
                     if (type == null || !type.isCompatibleWith(MediaType.TEXT_HTML) || r.getResponseBody() == null) {
                         continue;
                     }
-                    String key = "GET " + f.uri() + (f.name().isEmpty() ? "" : " #" + f.name()) + " " + lang;
+                    String key = route.method().name() + " " + f.uri() + (f.name().isEmpty() ? "" : " #" + f.name()) + " " + lang;
                     pages.put(key, new String(r.getResponseBody(), StandardCharsets.UTF_8));
                 }
             }
         }
-        assertThat(pages).as("HTML pages rendered from the router's GET routes").hasSizeGreaterThanOrEqualTo(10);
+        assertThat(pages).as("HTML pages rendered from the router's routes").hasSizeGreaterThanOrEqualTo(10);
+        assertThat(pages.keySet()).as("pages a POST answers are read too").anyMatch(k -> k.startsWith("POST "));
         return pages;
     }
 

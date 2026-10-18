@@ -21,7 +21,6 @@ class TypeScaleTest {
     private static final Set<String> LATIN_ONLY = Set.of("caption-latin", "badge-latin", "value-large", "value", "unit", "range");
     /** Selectors that only ever hold printed Latin (values, units, ranges, badges, bar ends). */
     private static final Pattern LATIN_SELECTOR = Pattern.compile("\\.(val|unit|range|badge|ends)\\b");
-    private static final Pattern RULE = Pattern.compile("([^{}]+)\\{([^{}]*)}");
 
     @Test
     void everyBanglaStyleTokenIsAtLeastFourteenPixelsWithLineHeightAtLeastOneAndAHalf() {
@@ -47,36 +46,72 @@ class TypeScaleTest {
         assertThat(failures).isEmpty();
     }
 
+    /** The size and optional line-height of a {@code font:} shorthand: the first length or token, then "/" and the next. */
+    private static final Pattern FONT_SIZE = Pattern.compile(
+            "(var\\(--[a-z0-9-]+\\)|[0-9.]+(?:px|rem|em|%|pt|vw|vh)|(?:xx?-)?(?:small|large)|medium|smaller|larger)(?:\\s*/\\s*(var\\(--[a-z0-9-]+\\)|[0-9.]+[a-z%]*|normal))?");
+
+    /**
+     * Every rule, one selector at a time (a selector list is split, so {@code .val,.label} is two rules), through
+     * font-size, line-height and the {@code font:} shorthand alike: sizes only through --fs-* tokens, line-heights only
+     * through --lh-* tokens or a number ≥ 1.5, and the Latin-only sizes and line-heights only on Latin-only selectors.
+     */
     @Test
     void everyRuleSizesTextThroughTheTokensAndLatinSizesStayOnLatinSelectors() {
-        Matcher r = RULE.matcher(Tokens.rules(CSS));
         List<String> failures = new ArrayList<>();
         int sized = 0;
+        int shorthands = 0;
         boolean body = false;
-        while (r.find()) {
-            String selector = r.group(1).trim();
-            String decl = r.group(2);
-            for (Matcher m = Pattern.compile("font-size\\s*:\\s*([^;]+)").matcher(decl); m.find(); ) {
+        for (Css.Rule r : Css.rules(CSS)) {
+            String selector = r.selector();
+            List<String> sizes = new ArrayList<>();
+            List<String> heights = new ArrayList<>();
+            if (r.decls().containsKey("font-size")) {
+                sizes.add(r.decls().get("font-size"));
+            }
+            if (r.decls().containsKey("line-height")) {
+                heights.add(r.decls().get("line-height"));
+            }
+            if (r.decls().containsKey("font")) {
+                String v = r.decls().get("font").replaceAll("\"[^\"]*\"|'[^']*'", "").trim();
+                if (!Set.of("inherit", "initial", "unset").contains(v)) {
+                    shorthands++;
+                    Matcher m = FONT_SIZE.matcher(v);
+                    if (!m.find()) {
+                        failures.add(selector + " font " + v + " has no size the check can read");
+                    } else {
+                        sizes.add(m.group(1));
+                        if (m.group(2) != null) {
+                            heights.add(m.group(2));
+                        }
+                        if (selector.equals("body") && m.group(1).equals("var(--fs-body)") && "var(--lh-body)".equals(m.group(2))) {
+                            body = true;
+                        }
+                    }
+                }
+            }
+            boolean latin = LATIN_SELECTOR.matcher(selector).find();
+            for (String v : sizes) {
                 sized++;
-                String v = m.group(1).trim();
-                Matcher tok = Pattern.compile("var\\(--fs-([a-z0-9-]+)\\)").matcher(v);
+                Matcher tok = Pattern.compile("var\\(--fs-([a-z0-9-]+)\\)").matcher(v.trim());
                 if (!tok.matches()) {
                     failures.add(selector + " font-size " + v);
-                } else if (LATIN_ONLY.contains(tok.group(1)) && !LATIN_SELECTOR.matcher(selector).find()) {
+                } else if (LATIN_ONLY.contains(tok.group(1)) && !latin) {
                     failures.add(selector + " uses the Latin-only size --fs-" + tok.group(1));
                 }
             }
-            for (Matcher m = Pattern.compile("line-height\\s*:\\s*([^;]+)").matcher(decl); m.find(); ) {
-                String v = m.group(1).trim();
-                if (!v.matches("var\\(--lh-[a-z0-9-]+\\)") && !(v.matches("[0-9.]+") && Double.parseDouble(v) >= 1.5)) {
+            for (String v : heights) {
+                Matcher tok = Pattern.compile("var\\(--lh-([a-z0-9-]+)\\)").matcher(v.trim());
+                if (tok.matches()) {
+                    if (LATIN_ONLY.contains(tok.group(1)) && !latin) {
+                        failures.add(selector + " uses the Latin-only line-height --lh-" + tok.group(1));
+                    }
+                } else if (!(v.trim().matches("[0-9.]+") && Double.parseDouble(v.trim()) >= 1.5)) {
                     failures.add(selector + " line-height " + v);
                 }
             }
-            if (selector.equals("body") && decl.contains("var(--fs-body)") && decl.contains("var(--lh-body)")) {
-                body = true;
-            }
         }
-        assertThat(sized).as("font-size declarations read").isGreaterThan(20);
+        assertThat(sized).as("font sizes read (font-size and the font shorthand)").isGreaterThan(20);
+        assertThat(shorthands).as("font shorthands read; the body sets its size through one").isPositive();
         assertThat(body).as("the body rule uses --fs-body/--lh-body").isTrue();
         assertThat(failures).isEmpty();
     }

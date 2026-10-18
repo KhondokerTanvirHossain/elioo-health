@@ -7,7 +7,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.regex.MatchResult;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -87,23 +91,64 @@ class DesignTokensTest {
         }
     }
 
-    /** Spec §8: red means NOW. The status-now tokens and the wordmark dot appear only under now/critical/emergency selectors. */
+    /** The tokens that paint the NOW states and the wordmark dot: red by name. */
+    private static final Set<String> NAMED_RED = Set.of("--c-status-now", "--c-status-now-container", "--c-status-now-solid", "--c-brand-dot");
+
+    /**
+     * Red is decided by value, not by name: every colour token whose value, in light or in dark, is one of the named
+     * red values or has a red hue (within 15° of 0°, HSL saturation ≥ 0.4). A token added under another name with a red
+     * value is still red.
+     */
+    static Set<String> redTokens(String css) {
+        Map<String, String> light = Tokens.light(css), dark = Tokens.dark(css);
+        Set<String> redValues = new HashSet<>();
+        for (String t : NAMED_RED) {
+            redValues.add(light.get(t).toLowerCase());
+            redValues.add(dark.get(t).toLowerCase());
+        }
+        Set<String> red = new TreeSet<>();
+        for (Map<String, String> theme : List.of(light, dark)) {
+            theme.forEach((token, value) -> {
+                if (token.startsWith("--c-") && value.startsWith("#") && (redValues.contains(value.toLowerCase()) || redHue(value))) {
+                    red.add(token);
+                }
+            });
+        }
+        return red;
+    }
+
+    static boolean redHue(String hex) {
+        double r = Integer.parseInt(hex.substring(1, 3), 16) / 255.0, g = Integer.parseInt(hex.substring(3, 5), 16) / 255.0,
+                b = Integer.parseInt(hex.substring(5, 7), 16) / 255.0;
+        double max = Math.max(r, Math.max(g, b)), min = Math.min(r, Math.min(g, b)), d = max - min, l = (max + min) / 2;
+        if (d == 0 || max != r) {
+            return false;
+        }
+        double sat = d / (1 - Math.abs(2 * l - 1));
+        double hue = 60 * (((g - b) / d) % 6);
+        hue = hue < 0 ? hue + 360 : hue;
+        return sat >= 0.4 && (hue <= 15 || hue >= 345);
+    }
+
+    /** Spec §8: red means NOW. Every red token (by value) appears only under now/critical/emergency selectors. */
     @Test
     void redAppearsOnlyInNowCriticalAndEmergencyRules() {
+        Set<String> red = redTokens(CSS);
+        assertThat(red).as("red tokens derived from the values").containsAll(NAMED_RED);
         Matcher rule = Pattern.compile("([^{}]+)\\{([^{}]*)}").matcher(Tokens.rules(CSS));
-        Pattern red = Pattern.compile("var\\(--c-(status-now[a-z-]*|on-status-now|brand-dot)\\)");
-        Pattern allowed = Pattern.compile("\\.(now|critical|emergency)\\b|\\.brand \\.dot");
+        Pattern uses = Pattern.compile("var\\((--c-[a-z0-9-]+)\\)");
+        Pattern allowed = Pattern.compile("\\.(now|critical|emergency)\\b");
         int redRules = 0;
         List<String> offenders = new ArrayList<>();
         while (rule.find()) {
-            Matcher uses = red.matcher(rule.group(2));
-            if (!uses.find()) {
+            List<String> used = uses.matcher(rule.group(2)).results().map(m -> m.group(1)).filter(red::contains).toList();
+            if (used.isEmpty()) {
                 continue;
             }
             redRules++;
             for (String selector : rule.group(1).split(",")) {
                 if (!allowed.matcher(selector).find()) {
-                    offenders.add(selector.trim() + " uses " + uses.group());
+                    offenders.add(selector.trim() + " uses " + used);
                 }
             }
         }
@@ -111,11 +156,29 @@ class DesignTokensTest {
         assertThat(offenders).as("red is reserved for NOW").isEmpty();
     }
 
-    /** DR-14 inside the stylesheet: a colour literal lives in a token block, never in a rule. */
+    /** CSS named and system colours: a colour written as a word is still a literal. */
+    private static final Pattern NAMED_COLOUR = Pattern.compile("(?i)(?<![-\\w])(aliceblue|antiquewhite|aqua|aquamarine|azure|beige|bisque|black|blanchedalmond|blue|blueviolet|brown|burlywood|cadetblue|chartreuse|chocolate|coral|cornflowerblue|cornsilk|crimson|cyan|darkblue|darkcyan|darkgoldenrod|darkgray|darkgreen|darkgrey|darkkhaki|darkmagenta|darkolivegreen|darkorange|darkorchid|darkred|darksalmon|darkseagreen|darkslateblue|darkslategray|darkslategrey|darkturquoise|darkviolet|deeppink|deepskyblue|dimgray|dimgrey|dodgerblue|firebrick|floralwhite|forestgreen|fuchsia|gainsboro|ghostwhite|gold|goldenrod|gray|green|greenyellow|grey|honeydew|hotpink|indianred|indigo|ivory|khaki|lavender|lavenderblush|lawngreen|lemonchiffon|lightblue|lightcoral|lightcyan|lightgoldenrodyellow|lightgray|lightgreen|lightgrey|lightpink|lightsalmon|lightseagreen|lightskyblue|lightslategray|lightslategrey|lightsteelblue|lightyellow|lime|limegreen|linen|magenta|maroon|mediumaquamarine|mediumblue|mediumorchid|mediumpurple|mediumseagreen|mediumslateblue|mediumspringgreen|mediumturquoise|mediumvioletred|midnightblue|mintcream|mistyrose|moccasin|navajowhite|navy|oldlace|olive|olivedrab|orange|orangered|orchid|palegoldenrod|palegreen|paleturquoise|palevioletred|papayawhip|peachpuff|peru|pink|plum|powderblue|purple|rebeccapurple|red|rosybrown|royalblue|saddlebrown|salmon|sandybrown|seagreen|seashell|sienna|silver|skyblue|slateblue|slategray|slategrey|snow|springgreen|steelblue|tan|teal|thistle|tomato|turquoise|violet|wheat|white|whitesmoke|yellow|yellowgreen|accentcolor|accentcolortext|activetext|buttonborder|buttonface|buttontext|canvas|canvastext|field|fieldtext|graytext|highlight|highlighttext|linktext|mark|marktext|selecteditem|selecteditemtext|visitedtext)(?![-\\w])");
+
+    /**
+     * DR-14 inside the stylesheet: a colour literal lives in a token block, never in a rule — hex, rgb(), hsl() and a
+     * colour written as a CSS colour word ({@code color:white}) alike. Values are read with var(), url() and quoted
+     * strings removed, so a token or a font name is never mistaken for one.
+     */
     @Test
     void colourLiteralsLiveOnlyInTheTokenBlocks() {
         String rules = Tokens.rules(CSS);
         assertThat(rules.length()).as("rules remain after removing the token blocks").isGreaterThan(5_000);
         assertThat(Pattern.compile("#[0-9a-fA-F]{3,8}\\b|rgba?\\(|hsla?\\(").matcher(rules).results().map(MatchResult::group).toList()).isEmpty();
+        List<String> words = new ArrayList<>();
+        int values = 0;
+        for (Css.Rule r : Css.rules(CSS)) {
+            for (Map.Entry<String, String> d : r.decls().entrySet()) {
+                values++;
+                String v = d.getValue().replaceAll("var\\([^)]*\\)|url\\([^)]*\\)|\"[^\"]*\"|'[^']*'", " ");
+                NAMED_COLOUR.matcher(v).results().forEach(m -> words.add(r.selector() + " " + d.getKey() + ":" + m.group()));
+            }
+        }
+        assertThat(values).as("declarations read").isGreaterThan(300);
+        assertThat(words).as("colours written as words").isEmpty();
     }
 }
