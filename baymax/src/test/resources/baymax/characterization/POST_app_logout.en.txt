@@ -1,4 +1,0 @@
-303
-Location: /app/
-Set-Cookie: baymax_session=; Path=/app; Max-Age=0; Expires=X; Secure; HttpOnly; SameSite=Lax
-

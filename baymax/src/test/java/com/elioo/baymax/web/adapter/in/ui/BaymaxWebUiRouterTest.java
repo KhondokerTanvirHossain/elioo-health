@@ -7,6 +7,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Mono;
 
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -156,5 +157,18 @@ class BaymaxWebUiRouterTest {
         for (String notACode : java.util.List.of("12345", "১২৩৪৫", "1234567", "12345a", "abcdef")) {
             assertThat(browser.matcher(notACode).matches()).as("pattern \"%s\" must refuse %s", attr.group(1), notACode).isFalse();
         }
+    }
+
+    /** Spec §10: never maximum-scale or user-scalable=no (WCAG 1.4.4); colour-scheme and theme-color follow the tokens. */
+    @Test
+    void everyPageCanBeZoomedAndFollowsTheSystemTheme() {
+        Map<String, String> pages = RenderedPages.all();
+        assertThat(pages).hasSizeGreaterThan(10);
+        pages.forEach((where, html) -> assertThat(html).as(where)
+                .contains("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-fit=cover\">")
+                .doesNotContain("maximum-scale").doesNotContain("user-scalable")
+                .contains("<meta name=\"color-scheme\" content=\"light dark\">")
+                .contains("content=\"" + Tokens.LIGHT_BG + "\">").contains("content=\"" + Tokens.DARK_BG + "\">"));
+        assertThat(Tokens.LIGHT_BG).startsWith("#").isNotEqualTo(Tokens.DARK_BG);
     }
 }

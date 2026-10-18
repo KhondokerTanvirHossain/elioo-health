@@ -1,5 +1,0 @@
-404
-Content-Length: 841
-Content-Type: text/html
-
-<!doctype html><html lang="bn"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>আপনার স্বাস্থ্য নথি</title><link rel="stylesheet" href="/assets/baymax.css?v=e06a475d"><link rel="icon" type="image/svg+xml" href="/assets/favicon.svg?v=16118d4c"></head><body><main class="app"><h1>দুঃখিত</h1><div class="err">এই লিংকটি সঠিক নয় বা মেয়াদ শেষ।</div><footer class="foot">এটি একটি তথ্য ও রেকর্ড রাখার সেবা, চিকিৎসা পরামর্শ নয়। সব সময় ডাক্তারের সাথে নিশ্চিত হয়ে নিন।</footer></main></body></html>

@@ -103,7 +103,10 @@ final class Html {
         }
         return "<!doctype html><html lang=\"" + lang.code + "\"><head><meta charset=\"utf-8\">"
                 + (head.refreshSeconds() > 0 ? "<meta http-equiv=\"refresh\" content=\"" + head.refreshSeconds() + "\">" : "")
-                + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+                + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-fit=cover\">"
+                + "<meta name=\"color-scheme\" content=\"light dark\">"
+                + "<meta name=\"theme-color\" media=\"(prefers-color-scheme: light)\" content=\"" + Tokens.LIGHT_BG + "\">"
+                + "<meta name=\"theme-color\" media=\"(prefers-color-scheme: dark)\" content=\"" + Tokens.DARK_BG + "\">"
                 + (head.index() ? "" : "<meta name=\"robots\" content=\"noindex\">")
                 + "<title>" + head.title() + "</title><link rel=\"stylesheet\" href=\"" + CSS_HREF + "\"><link rel=\"icon\" type=\"image/svg+xml\" href=\"" + ICON_HREF + "\"></head><body><main class=\""
                 + (wide ? "page" : "app") + "\">" + body
