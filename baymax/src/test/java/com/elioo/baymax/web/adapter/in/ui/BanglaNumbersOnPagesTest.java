@@ -45,7 +45,7 @@ class BanglaNumbersOnPagesTest {
 
     private final WebUiTestKit kit = new WebUiTestKit();
     private final TimelineUseCase timeline = kit.timeline;
-    private final WebUiHandler ui = kit.ui;
+    private final DocumentPages ui = kit.documents;
     private final WebTestClient client = kit.client;
 
     BanglaNumbersOnPagesTest() {

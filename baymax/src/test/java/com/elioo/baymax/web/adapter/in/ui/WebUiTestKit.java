@@ -42,8 +42,8 @@ final class WebUiTestKit {
     final SessionAuthFilter sessions;
     final RouterFunction<ServerResponse> router;
     final WebTestClient client;
-    /** R1.1 only: the single handler, for the render tests. R1.2 replaces it with the per-screen handlers. */
-    WebUiHandler ui;
+    /** The document screen, for the render tests that call {@code render(...)} directly. */
+    DocumentPages documents;
 
     WebUiTestKit() {
         this(mock(WebAuthUseCase.class), new BaymaxProperties(), true);
@@ -63,10 +63,15 @@ final class WebUiTestKit {
         this.client = WebTestClient.bindToRouterFunction(router).build();
     }
 
-    /** R1.1: today's single handler. R1.2 replaces this body with the per-screen handlers; nothing else changes. */
+    /** The per-screen handlers, as Spring composes them: this is the one place their constructors are written in tests. */
     private RouterFunction<ServerResponse> buildRouter() {
-        ui = new WebUiHandler(auth, timeline, sessions, copy, optOut, nudgeData, properties);
-        return new BaymaxWebUiRouter().baymaxWebUiRoutes(ui, sessions);
+        PageChrome chrome = new PageChrome(copy, sessions);
+        documents = new DocumentPages(timeline, copy, chrome);
+        List<WebPages> pages = List.of(new LandingPages(copy, chrome), new SignInPages(auth, sessions, copy, chrome, properties),
+                new OptOutPages(optOut, copy, chrome), new AppTabs(timeline, copy, chrome), documents,
+                new ProfilePages(timeline, optOut, nudgeData, copy, chrome), new UploadUiHandler(timeline, chrome),
+                new AssetHandler());
+        return new BaymaxWebUiRouter().baymaxWebUiRoutes(pages, sessions, chrome);
     }
 
     PatientSummary ma(long documents) {

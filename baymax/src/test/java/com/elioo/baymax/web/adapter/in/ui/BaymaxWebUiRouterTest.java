@@ -139,7 +139,7 @@ class BaymaxWebUiRouterTest {
      */
     @Test
     void theCodeFieldLetsBanglaDigitsThroughAndStillRefusesWhatIsNotACode() {
-        String html = client.get().uri("/app/verify").cookie(WebUiHandler.LOGIN_COOKIE, "a".repeat(64))
+        String html = client.get().uri("/app/verify").cookie(SignInPages.LOGIN_COOKIE, "a".repeat(64))
                 .exchange().expectStatus().isOk().expectBody(String.class).returnResult().getResponseBody();
         java.util.regex.Matcher input = java.util.regex.Pattern.compile("<input[^>]*name=\"code\"[^>]*>").matcher(html);
         assertThat(input.find()).as("the verify page has a code field").isTrue();

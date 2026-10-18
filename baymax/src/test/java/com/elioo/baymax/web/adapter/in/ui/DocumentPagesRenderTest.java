@@ -10,9 +10,9 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /** What the document page shows and, more importantly, what it never shows. */
-class WebUiHandlerRenderTest {
+class DocumentPagesRenderTest {
 
-    private final WebUiHandler ui = new WebUiTestKit().ui;
+    private final DocumentPages ui = new WebUiTestKit().documents;
     private final UUID id = UUID.randomUUID();
 
     /** Acceptance: given unverified items, the count is shown and the items themselves never appear. */
