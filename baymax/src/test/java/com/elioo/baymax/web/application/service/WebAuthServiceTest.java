@@ -205,12 +205,17 @@ class WebAuthServiceTest {
         StepVerifier.create(service.verify(hash, " " + deliveredCode.get() + "\u00A0")).expectNextCount(1).verifyComplete();
     }
 
-    /** Folding only removes spaces and maps digits: anything else in the code is still refused. */
+    /**
+     * Folding only removes spaces and maps digits: anything else in the code is still refused. The right code with a
+     * letter inside or after it is the case that fails if folding ever starts dropping letters; the others are
+     * refused for their length whatever folding does.
+     */
     @Test
     void aCodeWithLettersOrTooFewDigitsIsStillRefused() {
         String hash = service.requestCode(NUMBER).block();
         String right = deliveredCode.get();
-        for (String typed : java.util.List.of(right.substring(0, 5), right + "0", right.substring(0, 5) + "x", "")) {
+        for (String typed : java.util.List.of(right.substring(0, 3) + "x" + right.substring(3), right + "x", "-" + right,
+                right.substring(0, 5), right + "0", right.substring(0, 5) + "x", "")) {
             StepVerifier.create(service.verify(hash, typed)).expectError(BaymaxException.class).verify();
         }
         verify(sessions, never()).create(anyString(), any(), any(), any());

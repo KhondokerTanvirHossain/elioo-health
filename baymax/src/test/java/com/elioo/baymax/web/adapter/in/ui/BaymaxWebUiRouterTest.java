@@ -148,6 +148,9 @@ class BaymaxWebUiRouterTest {
         assertThat(input.find()).as("the verify page has a code field").isTrue();
         java.util.regex.Matcher attr = java.util.regex.Pattern.compile("pattern=\"([^\"]*)\"").matcher(input.group());
         assertThat(attr.find()).as("the code field carries a pattern: " + input.group()).isTrue();
+        // Browsers compile pattern as a JS regex with the v flag; Java's engine is used here as a stand-in. For a
+        // plain character class with ranges, as now, the two agree. A pattern using syntax where they differ (\p{..},
+        // set operations, \d inside v-mode classes, nested classes) is not proven by this test: check it in a browser.
         java.util.regex.Pattern browser = java.util.regex.Pattern.compile("^(?:" + attr.group(1) + ")$");
 
         for (String code : java.util.List.of("123456", "০১২৩৪৫", "৬৭৮৯০৯")) {
