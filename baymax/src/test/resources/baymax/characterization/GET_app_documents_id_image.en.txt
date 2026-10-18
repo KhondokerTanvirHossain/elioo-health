@@ -1,0 +1,4 @@
+302
+Cache-Control: private, no-store
+Location: https://storage.example/signed
+

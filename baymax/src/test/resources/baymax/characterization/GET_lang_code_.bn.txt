@@ -1,0 +1,4 @@
+303
+Location: /app/home
+Set-Cookie: baymax_lang=en; Path=/; Max-Age=31536000; Expires=X; Secure; SameSite=Lax
+

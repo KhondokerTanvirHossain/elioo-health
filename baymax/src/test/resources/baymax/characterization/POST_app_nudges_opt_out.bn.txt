@@ -1,0 +1,5 @@
+200
+Content-Length: 1334
+Content-Type: text/html
+
+<!doctype html><html lang="bn"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>আপনার স্বাস্থ্য নথি</title><link rel="stylesheet" href="/assets/baymax.css?v=e6b97503"><link rel="icon" type="image/svg+xml" href="/assets/favicon.svg?v=16118d4c"></head><body><main class="app"><div class="top"><a class="brand" href="/app/"><img alt="Medioo" src="/assets/medioo.webp?v=265b4306" width="123" height="44"></a><div class="actions"><nav class="lang" aria-label="language"><a href="/lang/bn?back=%2Fapp%2F" aria-current="true" hreflang="bn">বাংলা</a><a href="/lang/en?back=%2Fapp%2F" aria-current="false" hreflang="en">English</a></nav></div></div><h1>বার্তা বন্ধ করুন</h1><div class="card">এই রোগীর জন্য বার্তা বন্ধ করা হয়েছে। এখন থেকে কোনো বার্তা যাবে না।</div><footer class="foot">এটি একটি তথ্য ও রেকর্ড রাখার সেবা, চিকিৎসা পরামর্শ নয়। সব সময় ডাক্তারের সাথে নিশ্চিত হয়ে নিন।</footer></main></body></html>

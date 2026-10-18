@@ -1,17 +1,13 @@
 package com.elioo.baymax.web.adapter.in.ui;
 
-import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.extraction.domain.DocumentView;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
-import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
-import com.elioo.baymax.web.application.port.in.WebAuthUseCase;
 import com.elioo.baymax.web.domain.FamilyOverview;
 import com.elioo.baymax.web.domain.PatientSummary;
 import com.elioo.baymax.web.domain.TimelineEntry;
 import com.elioo.baymax.web.domain.TimelinePage;
-import com.elioo.baymax.web.domain.WebSession;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Mono;
@@ -28,9 +24,7 @@ import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
@@ -43,21 +37,18 @@ import static org.mockito.Mockito.when;
  */
 class BanglaNumbersOnPagesTest {
 
-    private static final Instant NOW = Instant.parse("2026-10-18T09:00:00Z");
-    private static final UUID FAMILY = UUID.randomUUID();
+    private static final Instant NOW = WebUiTestKit.NOW;
+    private static final UUID FAMILY = WebUiTestKit.FAMILY;
     private static final UUID PATIENT = UUID.randomUUID();
     private static final Pattern META = Pattern.compile("class=\"(?:meta|small)\">([^<]*)<");
     private static final Pattern ASCII_DIGIT = Pattern.compile("[0-9]");
 
-    private final WebAuthUseCase auth = mock(WebAuthUseCase.class);
-    private final TimelineUseCase timeline = mock(TimelineUseCase.class);
-    private final WebUiHandler ui;
-    private final WebTestClient client;
+    private final WebUiTestKit kit = new WebUiTestKit();
+    private final TimelineUseCase timeline = kit.timeline;
+    private final DocumentPages ui = kit.documents;
+    private final WebTestClient client = kit.client;
 
     BanglaNumbersOnPagesTest() {
-        SessionAuthFilter sessions = new SessionAuthFilter(auth, new BaymaxProperties());
-        when(auth.authenticate(anyString())).thenReturn(Mono.empty());
-        when(auth.authenticate("tok")).thenReturn(Mono.just(new WebSession(UUID.randomUUID(), FAMILY, NOW, NOW, NOW.plusSeconds(600))));
         PatientProfile ma = new PatientProfile(PATIENT, FAMILY, "Test Patient", 60, PatientProfile.Sex.FEMALE, List.of("diabetes"), NOW, NOW);
         when(timeline.me(FAMILY)).thenReturn(Mono.just(new FamilyOverview(
                 new FamilyAccount(FAMILY, "+8801700000000", "Tanvir", FamilyAccount.Plan.FREE, NOW, NOW),
@@ -65,10 +56,6 @@ class BanglaNumbersOnPagesTest {
         when(timeline.timeline(eq(FAMILY), eq(PATIENT), any())).thenReturn(Mono.just(new TimelinePage(List.of(
                 new TimelineEntry(UUID.randomUUID(), LocalDate.parse("2026-10-12"), false, "lab_report", null, "DONE",
                         14, 2, 1, 3, "f/p/d/page-1.jpg", NOW)), null)));
-        ui = new WebUiHandler(auth, timeline, sessions, new UiCopy(),
-                mock(com.elioo.baymax.nudge.application.port.in.NudgeOptOutUseCase.class),
-                mock(com.elioo.baymax.nudge.application.port.out.NudgeDataPort.class), new BaymaxProperties());
-        client = WebTestClient.bindToRouterFunction(new BaymaxWebUiRouter().baymaxWebUiRoutes(ui, sessions)).build();
     }
 
     private String page(String path, String lang) {

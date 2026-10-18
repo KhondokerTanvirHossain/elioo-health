@@ -11,9 +11,7 @@ import com.elioo.baymax.wa.WaFixtures;
 import com.elioo.baymax.wa.application.port.out.WaMessagingPort;
 import com.elioo.baymax.wa.application.service.WaIntakeService;
 import com.elioo.baymax.wa.domain.WaInbound;
-import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.adapter.out.delivery.CompositeOtpDelivery;
-import com.elioo.baymax.web.application.port.in.TimelineUseCase;
 import com.elioo.baymax.web.application.port.out.AuditPort;
 import com.elioo.baymax.web.application.port.out.InboundWindowPort;
 import com.elioo.baymax.web.application.port.out.OtpStorePort;
@@ -139,11 +137,7 @@ class SignInIsFreeAcceptanceTest {
                 audit, records, hasher, props, Clock.fixed(NOW, ZoneOffset.UTC), window);
         intake = new WaIntakeService(records, mock(DocumentRecordPort.class), mock(ExplainDocumentUseCase.class),
                 mock(DocumentIntakeUseCase.class), graph, new Copy(), props, auth);
-        SessionAuthFilter filter = new SessionAuthFilter(auth, props);
-        WebUiHandler ui = new WebUiHandler(auth, mock(TimelineUseCase.class), filter, new UiCopy(),
-                mock(com.elioo.baymax.nudge.application.port.in.NudgeOptOutUseCase.class),
-                mock(com.elioo.baymax.nudge.application.port.out.NudgeDataPort.class), props);
-        web = WebTestClient.bindToRouterFunction(new BaymaxWebUiRouter().baymaxWebUiRoutes(ui, filter)).build();
+        web = new WebUiTestKit(auth, props, false).client;
     }
 
     /** The family's own WhatsApp message, through the one entry point; then forget the reply it got. */

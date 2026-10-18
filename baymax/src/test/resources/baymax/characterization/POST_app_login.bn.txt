@@ -1,0 +1,4 @@
+303
+Location: /app/verify
+Set-Cookie: baymax_login=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.000; Path=/app; Max-Age=1800; Expires=X; Secure; HttpOnly; SameSite=Lax
+

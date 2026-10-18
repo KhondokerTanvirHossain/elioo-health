@@ -1,8 +1,6 @@
 package com.elioo.baymax.web.adapter.in.ui;
 
 import com.elioo.baymax.config.BaymaxProperties;
-import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
-import com.elioo.baymax.web.application.port.in.TimelineUseCase;
 import com.elioo.baymax.web.application.port.in.WebAuthUseCase;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
@@ -12,7 +10,6 @@ import reactor.core.publisher.Mono;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -30,13 +27,10 @@ class BaymaxWebUiRouterTest {
     private final WebTestClient client;
 
     BaymaxWebUiRouterTest() {
-        SessionAuthFilter sessions = new SessionAuthFilter(auth, new BaymaxProperties());
-        when(auth.authenticate(anyString())).thenReturn(Mono.empty());
         // the public number IS configured, so "no wa.me on the landing page" is tested against a number that could leak
         BaymaxProperties props = new BaymaxProperties();
         props.getWa().setPublicNumber("8801700000000");
-        WebUiHandler ui = new WebUiHandler(auth, mock(TimelineUseCase.class), sessions, new UiCopy(), mock(com.elioo.baymax.nudge.application.port.in.NudgeOptOutUseCase.class), mock(com.elioo.baymax.nudge.application.port.out.NudgeDataPort.class), props);
-        client = WebTestClient.bindToRouterFunction(new BaymaxWebUiRouter().baymaxWebUiRoutes(ui, sessions)).build();
+        client = new WebUiTestKit(auth, props, true).client;
     }
 
     /** The page check is only as good as its pattern: every way the number is written, and not a date or a price. */
@@ -145,7 +139,7 @@ class BaymaxWebUiRouterTest {
      */
     @Test
     void theCodeFieldLetsBanglaDigitsThroughAndStillRefusesWhatIsNotACode() {
-        String html = client.get().uri("/app/verify").cookie(WebUiHandler.LOGIN_COOKIE, "a".repeat(64))
+        String html = client.get().uri("/app/verify").cookie(SignInPages.LOGIN_COOKIE, "a".repeat(64))
                 .exchange().expectStatus().isOk().expectBody(String.class).returnResult().getResponseBody();
         java.util.regex.Matcher input = java.util.regex.Pattern.compile("<input[^>]*name=\"code\"[^>]*>").matcher(html);
         assertThat(input.find()).as("the verify page has a code field").isTrue();

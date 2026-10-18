@@ -10,12 +10,14 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.reactive.function.server.HandlerFilterFunction;
 import org.springframework.web.reactive.function.server.HandlerFunction;
 import org.springframework.web.reactive.function.server.RouterFunction;
-import org.springframework.web.reactive.function.server.RouterFunctions;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Mono;
 
-import static com.elioo.baymax.web.adapter.in.ui.WebUiHandler.BASE;
+import java.util.Comparator;
+import java.util.List;
+
+import static com.elioo.baymax.web.adapter.in.ui.PageChrome.BASE;
 
 /**
  * Baymax serves {@code /} (DR-11): the landing page at {@code /}, the app under {@code /app/**}, the
@@ -23,6 +25,9 @@ import static com.elioo.baymax.web.adapter.in.ui.WebUiHandler.BASE;
  * permanent redirect from every old {@code /baymax/**} URL to its {@code /app/**} twin so a saved timeline
  * link still opens. Two filters instead of the JSON ones: no session sends the browser to the login page
  * rather than a 401 body, and errors become small pages in the request's language rather than JSON.
+ *
+ * <p>The router routes nothing itself: each screen's {@link WebPages} publishes its own routes, composed here in
+ * {@link WebPages#order()}, and applies {@code requireSession} to its signed-in routes.
  */
 @Slf4j
 @Configuration
@@ -31,49 +36,18 @@ public class BaymaxWebUiRouter {
     static final String OLD_BASE = "/baymax";
 
     @Bean
-    public RouterFunction<ServerResponse> baymaxWebUiRoutes(WebUiHandler ui, SessionAuthFilter sessions) {
+    public RouterFunction<ServerResponse> baymaxWebUiRoutes(List<WebPages> pages, SessionAuthFilter sessions, PageChrome chrome) {
         HandlerFilterFunction<ServerResponse, ServerResponse> requireSession = (request, next) ->
                 sessions.resolve(request)
                         .flatMap(session -> {
                             request.attributes().put(SessionAuthFilter.SESSION_ATTRIBUTE, session);
                             return next.handle(request);
                         })
-                        .switchIfEmpty(Mono.defer(() -> Html.redirect(BASE + "/")));
-
-        RouterFunction<ServerResponse> open = RouterFunctions.route()
-                .GET("/", ui::landing)
-                .GET("/lang/{code}", ui::switchLang)
-                .GET("/assets/{file}", ui::asset)
-                .GET(OLD_BASE, BaymaxWebUiRouter::movedToApp)
-                .GET(OLD_BASE + "/{*rest}", BaymaxWebUiRouter::movedToApp)
-                .GET(BASE + "/", ui::loginPage)
-                .GET(BASE, ui::loginPage)
-                .POST(BASE + "/login", ui::login)
-                .GET(BASE + "/verify", ui::verifyPage)
-                .POST(BASE + "/verify", ui::verify)
-                .POST(BASE + "/logout", ui::logout)
-                // BMX-8: opt-out from a message link, no session — the link carries an HMAC token
-                .GET(BASE + "/nudges/opt-out", ui::optOutPage)
-                .POST(BASE + "/nudges/opt-out", ui::optOutApply)
-                .build();
-
-        RouterFunction<ServerResponse> signedIn = RouterFunctions.route()
-                .GET(BASE + "/home", ui::home)
-                .GET(BASE + "/patients/{id}", ui::timelinePage)
-                .POST(BASE + "/patients/{id}/upload", ui::upload)
-                .GET(BASE + "/patients/{id}/profile", ui::profilePage)
-                .POST(BASE + "/patients/{id}/profile", ui::saveProfile)
-                .POST(BASE + "/patients/{id}/nudges/opt-out", ui::optOutFromProfile)
-                // literal segments before the {id}-only routes, per the router convention
-                .GET(BASE + "/documents/{id}/delete", ui::confirmDelete)
-                .POST(BASE + "/documents/{id}/delete", ui::delete)
-                .GET(BASE + "/documents/{id}/image", ui::image)
-                .GET(BASE + "/documents/{id}/page/{n}", ui::pageImage)
-                .GET(BASE + "/documents/{id}", ui::documentPage)
-                .filter(requireSession)
-                .build();
-
-        return open.and(signedIn).filter((request, next) -> htmlErrors(ui, request, next));
+                        .switchIfEmpty(Mono.defer(() -> Html.redirect(PageChrome.BASE + "/")));
+        RouterFunction<ServerResponse> all = pages.stream().sorted(Comparator.comparingInt(WebPages::order))
+                .map(p -> p.routes(requireSession)).reduce(RouterFunction::and)
+                .orElseThrow(() -> new IllegalStateException("no web pages registered"));
+        return all.filter((request, next) -> htmlErrors(chrome, request, next));
     }
 
     /** {@code /baymax[/rest][?query]} → 301 {@code /app[/rest][?query]}. */
@@ -85,24 +59,24 @@ public class BaymaxWebUiRouter {
         return ServerResponse.status(HttpStatus.MOVED_PERMANENTLY).header(HttpHeaders.LOCATION, target).build();
     }
 
-    private static Mono<ServerResponse> htmlErrors(WebUiHandler ui, ServerRequest request, HandlerFunction<ServerResponse> next) {
+    private static Mono<ServerResponse> htmlErrors(PageChrome chrome, ServerRequest request, HandlerFunction<ServerResponse> next) {
         return Mono.defer(() -> next.handle(request)).onErrorResume(e -> {
             if (e instanceof BaymaxException be) {
                 String text = switch (be.status()) {
-                    case NOT_FOUND -> ui.text(request, "app.err.notfound");
-                    case FORBIDDEN -> ui.text(request, "app.err.forbidden");
+                    case NOT_FOUND -> chrome.text(request, "app.err.notfound");
+                    case FORBIDDEN -> chrome.text(request, "app.err.forbidden");
                     case UNAUTHORIZED -> null;
-                    case PAYMENT_REQUIRED -> ui.text(request, "app.err.freetier", be.getMessage());
-                    case SERVICE_UNAVAILABLE -> ui.text(request, "app.err.loginoff");
+                    case PAYMENT_REQUIRED -> chrome.text(request, "app.err.freetier", be.getMessage());
+                    case SERVICE_UNAVAILABLE -> chrome.text(request, "app.err.loginoff");
                     default -> Html.esc(be.getMessage());
                 };
                 if (text == null) {
                     return Html.redirect(BASE + "/");
                 }
-                return ui.errorPage(request, be.status(), text);
+                return chrome.errorPage(request, be.status(), text);
             }
             log.error("[baymax] unhandled error on {} {}: {}", request.method(), request.path(), e.getMessage(), e);
-            return ui.errorPage(request, HttpStatus.INTERNAL_SERVER_ERROR, ui.text(request, "app.err.generic"));
+            return chrome.errorPage(request, HttpStatus.INTERNAL_SERVER_ERROR, chrome.text(request, "app.err.generic"));
         });
     }
 }
