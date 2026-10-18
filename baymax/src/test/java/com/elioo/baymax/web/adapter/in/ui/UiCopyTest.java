@@ -70,4 +70,16 @@ class UiCopyTest {
         assertThat(copy.t(Lang.EN, "disclaimer")).contains("not medical advice").contains("doctor");
         assertThat(copy.t(Lang.BN, "disclaimer")).contains("চিকিৎসা পরামর্শ নয়").contains("ডাক্তার");
     }
+
+    /** Rule 13, both directions: a count is Bangla on a Bangla page; text (a value from the paper) never is. */
+    @Test
+    void aNumberArgumentIsBanglaOnABanglaPageAndTextIsNeverConverted() {
+        assertThat(copy.t(Lang.BN, "patients.years", 60)).isEqualTo("৬০ বছর");
+        assertThat(copy.t(Lang.BN, "patients.docs", 10L)).isEqualTo("নথি: ১০");
+        assertThat(copy.t(Lang.BN, "patients.docs", "8.2")).isEqualTo("নথি: 8.2");
+        assertThat(copy.t(Lang.EN, "patients.years", 60)).isEqualTo("60 years");
+        assertThat(copy.date(Lang.BN, java.time.LocalDate.parse("2026-01-05"))).isEqualTo("৫ জানুয়ারি ২০২৬");
+        assertThat(copy.date(Lang.EN, java.time.LocalDate.parse("2026-01-05"))).isEqualTo("2026-01-05");
+        assertThat(copy.date(Lang.BN, "<b>")).isEqualTo("&lt;b&gt;");   // not a date: shown as written, escaped
+    }
 }
