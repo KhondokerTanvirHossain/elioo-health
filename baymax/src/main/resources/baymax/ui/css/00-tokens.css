@@ -1,6 +1,7 @@
 /* Medioo design tokens v3 (2026-10-17, evolving DR-14: teal #06788a, ink #0a2e4d, paper #f8f6f1, amber THIS_WEEK,
    red NOW, destructive dark). The ONLY place a colour is written; DesignTokensTest fails a literal anywhere else.
-   RED IS RESERVED for NOW urgency, critical values and the emergency card; the wordmark dot is its only decoration. */
+   RED IS RESERVED for NOW urgency, critical values and the emergency card; the wordmark is text (A3), so
+   --c-brand-dot stays in the v3 set unused; DesignTokensTest finds red by value, whatever a token is called. */
 :root{
   color-scheme:light dark;
   --c-bg:#f8f6f1;--c-surface:#ffffff;--c-surface-2:#efece4;--c-surface-3:#e6e1d6;

@@ -1,9 +1,8 @@
 /* landing — the storytelling page (BMX-6d). Chat bubbles, one motion, no script. */
 main.page{max-width:none;padding:0}
-.wrap{max-width:592px;margin:0 auto;padding:0 var(--sp-4)}
-.land .top{padding:var(--sp-4) var(--sp-4) var(--sp-2);margin:0 auto}
-.wm{display:inline-flex;align-items:center;min-height:var(--target-min)}
-.wm img{display:block;height:44px;width:auto}
+.wrap{max-width:592px;margin:0 auto;padding:0 max(var(--sp-4),env(safe-area-inset-right)) 0 max(var(--sp-4),env(safe-area-inset-left))}
+.land .top{padding:var(--sp-4) max(var(--sp-4),env(safe-area-inset-right)) var(--sp-2) max(var(--sp-4),env(safe-area-inset-left));margin:0 auto}
+.wm{display:inline-flex;align-items:center;min-height:var(--target-min);text-decoration:none}
 .tagline{display:block;font-size:var(--fs-footnote);line-height:var(--lh-footnote);color:var(--c-text-muted);margin-top:var(--sp-1)}
 .land .actions a.login{display:inline-flex;align-items:center;min-height:var(--target-min);font-weight:600;color:var(--c-primary);text-decoration:none;padding:var(--sp-2) 0 var(--sp-2) var(--sp-2)}
 .sec{padding:var(--sp-8) 0}
@@ -48,7 +47,7 @@ main.page{max-width:none;padding:0}
 .cmp figure{margin:0}
 .cmp figcaption,.cmp .lbl{font-size:var(--fs-footnote);color:var(--c-text-muted);margin:0 0 6px}
 .scan{background:var(--c-surface-2);border-radius:var(--r-m);padding:18px 14px;overflow:hidden}
-.scan div{transform:rotate(-1.4deg);font:400 var(--fs-footnote)/1.5 "Courier New",Courier,monospace;color:var(--c-scan-ink);white-space:nowrap}
+.scan div{transform:rotate(-1.4deg);font:400 var(--fs-footnote)/var(--lh-footnote) var(--font-mono);color:var(--c-scan-ink);white-space:nowrap}
 .scan b{font-weight:700;outline:2px solid var(--c-primary);outline-offset:3px;border-radius:2px}
 .read{background:var(--c-surface);border:1px solid var(--c-line);border-radius:var(--r-m);padding:14px}
 .alt .read{background:var(--c-bg)}
