@@ -16,6 +16,12 @@ public interface OtpStorePort {
     /** The newest live code for this number, if any. */
     Mono<OtpCode> latestLive(String phoneHash, Instant now);
 
+    /**
+     * The newest code for this number created at or after {@code since}, whatever its state (live, used, burned or
+     * expired), so a refusal can say which.
+     */
+    Mono<OtpCode> latestSince(String phoneHash, Instant since);
+
     /** Records a wrong guess; {@code burnedAt} non-null kills the code. */
     Mono<Void> recordAttempt(UUID codeId, int attempts, Instant burnedAt);
 

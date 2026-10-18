@@ -53,6 +53,15 @@ public class PostgresOtpStoreAdapter implements OtpStorePort {
     }
 
     @Override
+    public Mono<OtpCode> latestSince(String phoneHash, Instant since) {
+        // otp_code_phone_created_idx (phone_hash, created_at) covers it
+        return db.sql("SELECT " + COLUMNS + " FROM " + T + " WHERE phone_hash = :phone AND created_at >= :since "
+                        + "ORDER BY created_at DESC LIMIT 1")
+                .bind("phone", phoneHash).bind("since", at(since))
+                .map((row, meta) -> fromRow(row)).one();
+    }
+
+    @Override
     public Mono<Void> recordAttempt(UUID codeId, int attempts, Instant burnedAt) {
         var spec = db.sql("UPDATE " + T + " SET attempts = :attempts, burned_at = :burned WHERE id = :id")
                 .bind("attempts", attempts).bind("id", codeId);

@@ -17,7 +17,8 @@ import reactor.core.publisher.Mono;
 public class LogOtpDelivery implements OtpDeliveryPort {
 
     @Override
-    public Mono<Void> deliver(String whatsappNumber, String phoneHash, String code) {
-        return Mono.fromRunnable(() -> log.info("[baymax] OTP for phoneHash={} code={} (log delivery, BMX-5 v1)", phoneHash, code));
+    public Mono<Boolean> deliver(String whatsappNumber, String phoneHash, String code) {
+        return Mono.fromRunnable(() -> log.info("[baymax] OTP for phoneHash={} code={} (log delivery, BMX-5 v1)", phoneHash, code))
+                .thenReturn(false);
     }
 }

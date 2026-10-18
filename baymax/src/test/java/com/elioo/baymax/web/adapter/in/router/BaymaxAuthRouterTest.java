@@ -47,7 +47,7 @@ class BaymaxAuthRouterTest {
 
     @Test
     void requestAlwaysAnswers200WithTheSameBody() {
-        when(auth.requestCode(anyString())).thenReturn(Mono.just("abc"));
+        when(auth.requestCode(anyString())).thenReturn(Mono.just(new com.elioo.baymax.web.domain.CodeRequest("abc", com.elioo.baymax.web.domain.CodeIssue.NO_ACCOUNT)));
         for (String number : List.of("+8801711111111", "not a number", "")) {
             client.post().uri("/api/v1/baymax/auth/request").bodyValue(Map.of("whatsapp_number", number))
                     .exchange().expectStatus().isOk()

@@ -232,8 +232,8 @@ public class WebUiHandler {
         return request.formData()
                 .map(form -> Optional.ofNullable(form.getFirst("whatsapp_number")).orElse(""))
                 .flatMap(auth::requestCode)
-                .flatMap(hash -> ServerResponse.seeOther(URI.create(BASE + "/verify"))
-                        .header(HttpHeaders.SET_COOKIE, loginCookie(hash, Duration.ofMinutes(10)).toString())
+                .flatMap(requested -> ServerResponse.seeOther(URI.create(BASE + "/verify"))
+                        .header(HttpHeaders.SET_COOKIE, loginCookie(requested.phoneHash(), Duration.ofMinutes(10)).toString())
                         .build());
     }
 

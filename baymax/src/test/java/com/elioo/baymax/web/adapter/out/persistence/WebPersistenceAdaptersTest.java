@@ -150,4 +150,28 @@ class WebPersistenceAdaptersTest {
                     .verify();
         });
     }
+
+    /** A refusal says EXPIRED or BURNED only about the newest code in the window; the insert carries the family FK (V8). */
+    @Test
+    void theNewestCodeIsFoundWhateverItsStateButOnlyInsideTheWindowAndTheFamilyKeyIsEnforced() {
+        runner().run(context -> {
+            OtpStorePort otps = context.getBean(OtpStorePort.class);
+            HealthRecordPort records = context.getBean(HealthRecordPort.class);
+            Instant now = Instant.parse("2026-10-17T10:00:00Z");
+            FamilyAccount f = records.createFamily(new FamilyAccount(null, "+8801700000556", "F", FamilyAccount.Plan.FREE, now, now)).block();
+            otps.create(new OtpCode(null, "hash-latest", "h1", f.id(), now.minusSeconds(6600), 0, null, null, now.minusSeconds(7200))).block();
+            OtpCode newer = otps.create(new OtpCode(null, "hash-latest", "h2", f.id(), now.minusSeconds(60), 0, null, null, now.minusSeconds(660))).block();
+
+            assertThat(otps.latestSince("hash-latest", now.minusSeconds(3600)).block().id()).isEqualTo(newer.id());
+            StepVerifier.create(otps.latestLive("hash-latest", now)).verifyComplete();          // expired, so not live
+            otps.recordAttempt(newer.id(), 5, now.minusSeconds(30)).block();
+            assertThat(otps.latestSince("hash-latest", now.minusSeconds(3600)).block().burnedAt()).isNotNull();
+            StepVerifier.create(otps.latestSince("hash-latest", now.minusSeconds(300))).verifyComplete();   // outside the window
+            StepVerifier.create(otps.latestSince("hash-other", now.minusSeconds(3600))).verifyComplete();
+
+            StepVerifier.create(otps.create(new OtpCode(null, "hash-x", "h3", UUID.randomUUID(), now.plusSeconds(600), 0, null, null, now)))
+                    .expectErrorMatches(e -> e.getMessage().contains("violates foreign key constraint"))
+                    .verify();
+        });
+    }
 }
