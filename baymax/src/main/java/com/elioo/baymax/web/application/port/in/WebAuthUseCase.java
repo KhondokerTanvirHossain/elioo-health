@@ -6,6 +6,8 @@ import com.elioo.baymax.web.domain.IssuedSession;
 import com.elioo.baymax.web.domain.WebSession;
 import reactor.core.publisher.Mono;
 
+import java.time.Instant;
+
 public interface WebAuthUseCase {
 
     /**
@@ -24,10 +26,13 @@ public interface WebAuthUseCase {
     Mono<CodeIssue> issueCodeFor(String verifiedSenderNumber);
 
     /**
-     * The verified sender just wrote to Medioo on WhatsApp, which opens the window in which a code may be sent free.
+     * The verified sender wrote to Medioo on WhatsApp, which opens the window in which a code may be sent free.
      * Recorded under the number's HMAC, and only for a number that has an account.
+     *
+     * @param sentAt when the family sent it (Meta's {@code timestamp}), because WhatsApp's window runs from then and
+     *               a retried callback can arrive hours later; null (no timestamp) or later than now counts as now
      */
-    Mono<Void> noteInbound(String verifiedSenderNumber);
+    Mono<Void> noteInbound(String verifiedSenderNumber, Instant sentAt);
 
     /**
      * Verifies a code against the number's HMAC and opens a session. Every failure is a

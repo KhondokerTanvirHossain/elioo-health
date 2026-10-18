@@ -99,7 +99,7 @@ class EveryInboundTypeIsAnsweredTest {
         // the constructor as this PR leaves it (plan Global Constraints table); later PRs update this line with the others.
         // The real service, observed: finished counts intake Monos that have completed, so the test waits on the work itself.
         com.elioo.baymax.web.application.port.in.WebAuthUseCase auth = mock(com.elioo.baymax.web.application.port.in.WebAuthUseCase.class);
-        when(auth.noteInbound(anyString())).thenReturn(Mono.empty());
+        when(auth.noteInbound(anyString(), any())).thenReturn(Mono.empty());
         WaIntakeService service = new WaIntakeService(records, documents, explainer, intake, graph, copy, props, auth) {
             @Override
             public Mono<Outcome> onInbound(WaInbound in) {

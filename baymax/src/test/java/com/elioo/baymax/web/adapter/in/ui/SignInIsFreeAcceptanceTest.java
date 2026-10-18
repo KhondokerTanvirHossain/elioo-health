@@ -249,6 +249,34 @@ class SignInIsFreeAcceptanceTest {
         verify(graph).sendText(eq(NUMBER), anyString());   // it was tried, and failed
     }
 
+    /**
+     * The window is WhatsApp's, so it runs from when the family sent the message (Meta's {@code timestamp}), not from
+     * when Medioo received the callback. Meta retries a callback it could not deliver — a deploy, a non-200 — for
+     * hours; a message sent 30 hours ago and received now was recorded as "now" and opened a window WhatsApp had
+     * already closed: a code minted, the hour's cap spent, a send Graph refuses.
+     */
+    @Test
+    void aCallbackRetriedLateForAMessageSentThirtyHoursAgoOpensNoWindow() {
+        intake.onInbound(new WaInbound("w-late", FROM, WaInbound.Type.TEXT, "hi", "", "", NOW.minus(Duration.ofHours(30)))).block();
+        clearInvocations(graph);
+        thePageNeverSaysSentAndShowsTheButton(signInOnTheWeb(TYPED));
+        verify(graph, never()).sendText(anyString(), anyString());
+        verify(otps, never()).create(any());
+    }
+
+    /** The other direction: a callback with a recent send time opens it, and a send time ahead of our clock counts as now. */
+    @Test
+    void aCallbackForAMessageSentAnHourAgoOpensTheWindowAndAFutureSendTimeCountsAsNow() {
+        intake.onInbound(new WaInbound("w-ok", FROM, WaInbound.Type.TEXT, "hi", "", "", NOW.minus(Duration.ofHours(1)))).block();
+        assertThat(lastInbound).containsEntry(hasher.phone(NUMBER), NOW.minus(Duration.ofHours(1)));
+        intake.onInbound(new WaInbound("w-skew", FROM, WaInbound.Type.TEXT, "hi", "", "", NOW.plus(Duration.ofHours(5)))).block();
+        assertThat(lastInbound).as("a skewed clock at Meta never stretches the window past now")
+                .containsEntry(hasher.phone(NUMBER), NOW);
+        clearInvocations(graph);
+        assertThat(signInOnTheWeb(TYPED)).endsWith(".s");
+        verify(graph).sendText(eq(NUMBER), anyString());
+    }
+
     /** The button's path, free too: the family texts কোড and the reply inside the window it opened carries a code. */
     @Test
     void outsideTheWindowTheButtonsPathStillGetsTheFamilyACode() {

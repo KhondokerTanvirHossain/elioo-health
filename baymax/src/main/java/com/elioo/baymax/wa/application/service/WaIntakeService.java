@@ -80,8 +80,9 @@ public class WaIntakeService {
         }
         String number = e164(in.from());
         // DR-39 (2026-10-18): every message the family sends opens WhatsApp's free 24 h window, in which a web sign-in
-        // code may be sent automatically. Recorded first; a failure here is logged and never costs the family a reply.
-        return auth.noteInbound(number)
+        // code may be sent automatically. Recorded first, at Meta's send time (a retried callback arrives late); a
+        // failure here is logged and never costs the family a reply.
+        return auth.noteInbound(number, in.timestamp())
                 .onErrorResume(e -> {
                     log.warn("[baymax] wa inbound window not recorded error={}", e.getClass().getSimpleName());
                     return Mono.empty();

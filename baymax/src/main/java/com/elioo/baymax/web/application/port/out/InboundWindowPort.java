@@ -12,7 +12,10 @@ import java.util.UUID;
  */
 public interface InboundWindowPort {
 
-    /** Records an inbound message at {@code at}. The stored time only moves forward. */
+    /**
+     * Records an inbound message sent at {@code at} — the family's send time, not Medioo's receipt time, since the
+     * window is WhatsApp's. The stored time only moves forward.
+     */
     Mono<Void> recordInbound(String phoneHash, UUID familyId, Instant at);
 
     /** The last inbound message from this number; empty when it has never written. */

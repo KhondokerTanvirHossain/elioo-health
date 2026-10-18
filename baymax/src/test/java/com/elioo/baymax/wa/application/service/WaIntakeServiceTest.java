@@ -73,7 +73,7 @@ class WaIntakeServiceTest {
             return com.elioo.baymax.wa.WaFixtures.wamid(FROM, 9);
         }));
         when(graph.downloadMedia(anyString())).thenReturn(Mono.just(new byte[]{1, 2, 3}));
-        when(auth.noteInbound(anyString())).thenReturn(Mono.empty());
+        when(auth.noteInbound(anyString(), any())).thenReturn(Mono.empty());
         // a sender is unknown unless a test says otherwise (familyWith), so no test dies on an unstubbed lookup
         when(records.findFamilyByWhatsapp(anyString())).thenReturn(Mono.empty());
         service = new WaIntakeService(records, documents, explainer, intake, graph, new Copy(), props, auth);
@@ -721,7 +721,7 @@ class WaIntakeServiceTest {
         when(intake.accept(any(), any())).thenReturn(Mono.just(mock(Document.class)));
         service.onInbound(new WaInbound("w", FROM, type, type == WaInbound.Type.REACTION ? "👍" : "hi", "MEDIA-W", "image/jpeg")).block();
         org.mockito.InOrder order = org.mockito.Mockito.inOrder(auth, graph);
-        order.verify(auth).noteInbound(E164);
+        order.verify(auth).noteInbound(eq(E164), any());
         order.verify(graph).sendText(eq(E164), anyString());
     }
 
@@ -730,14 +730,14 @@ class WaIntakeServiceTest {
     void aSystemNoticeOrAWithdrawnReactionOpensNoWindow() {
         service.onInbound(new WaInbound("w", FROM, WaInbound.Type.SYSTEM, "", "", "")).block();
         service.onInbound(new WaInbound("w", FROM, WaInbound.Type.REACTION, "", "", "")).block();
-        verify(auth, never()).noteInbound(anyString());
+        verify(auth, never()).noteInbound(anyString(), any());
     }
 
     /** Recording the window is never worth a silence: if it fails, the family still gets the reply. */
     @Test
     void aWindowThatCannotBeRecordedStillGetsTheReply() {
         familyWith(patient("মা"));
-        when(auth.noteInbound(anyString())).thenReturn(Mono.error(new IllegalStateException("db down")));
+        when(auth.noteInbound(anyString(), any())).thenReturn(Mono.error(new IllegalStateException("db down")));
         assertThat(service.onInbound(new WaInbound("w", FROM, WaInbound.Type.TEXT, "hi", "", "")).block())
                 .isEqualTo(WaIntakeService.Outcome.REPLIED);
         assertThat(sentBodies()).hasSize(1);

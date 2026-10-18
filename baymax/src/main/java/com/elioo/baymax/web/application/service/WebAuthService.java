@@ -117,13 +117,16 @@ public class WebAuthService implements WebAuthUseCase {
     }
 
     @Override
-    public Mono<Void> noteInbound(String verifiedSenderNumber) {
+    public Mono<Void> noteInbound(String verifiedSenderNumber, Instant sentAt) {
         return Mono.defer(() -> {
             String number = FamilyAccountService.normalizeNumber(verifiedSenderNumber);
             String phoneHash = hasher.phone(number);
             Instant now = clock.instant();
+            // the send time, not the receipt time: a late retry must not open a window WhatsApp already closed, and
+            // a send time ahead of our clock must not stretch it
+            Instant at = sentAt == null || sentAt.isAfter(now) ? now : sentAt;
             return records.findFamilyByWhatsapp(number)
-                    .flatMap(family -> window.recordInbound(phoneHash, family.id(), now));
+                    .flatMap(family -> window.recordInbound(phoneHash, family.id(), at));
         });
     }
 

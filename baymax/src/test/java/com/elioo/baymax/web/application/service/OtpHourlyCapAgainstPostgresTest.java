@@ -135,7 +135,7 @@ class OtpHourlyCapAgainstPostgresTest {
             HealthRecordPort records = context.getBean(HealthRecordPort.class);
             DatabaseClient db = context.getBean(DatabaseClient.class);
             records.createFamily(new FamilyAccount(null, NUMBER, "Cap", FamilyAccount.Plan.FREE, T0, T0)).block();
-            auth.noteInbound(NUMBER).block();                 // the family wrote: the web may now send a code
+            auth.noteInbound(NUMBER, T0).block();                 // the family wrote: the web may now send a code
             String hash = auth.hash(NUMBER);
 
             // 1, 2: web requests, each code burned by five wrong guesses (the flood's cycle)

@@ -228,15 +228,25 @@ class WebAuthServiceTest {
 
     @Test
     void anInboundMessageFromAnAccountNumberOpensItsWindowUnderTheHash() {
-        StepVerifier.create(service.noteInbound(NUMBER)).verifyComplete();
+        StepVerifier.create(service.noteInbound(NUMBER, null)).verifyComplete();
         ArgumentCaptor<String> key = ArgumentCaptor.forClass(String.class);
         verify(window).recordInbound(key.capture(), eq(FAMILY), eq(NOW));
         assertThat(key.getValue()).isEqualTo(service.hash(NUMBER)).matches("[0-9a-f]{64}").doesNotContain("8801700000100");
     }
 
+    /** WhatsApp's window runs from the send: Meta's timestamp, never later than our now, never the receipt time. */
+    @Test
+    void theWindowIsRecordedAtTheSendTimeClampedToNow() {
+        Instant sent = NOW.minus(Duration.ofHours(30));
+        service.noteInbound(NUMBER, sent).block();
+        verify(window).recordInbound(anyString(), eq(FAMILY), eq(sent));
+        service.noteInbound(NUMBER, NOW.plusSeconds(3600)).block();
+        verify(window).recordInbound(anyString(), eq(FAMILY), eq(NOW));
+    }
+
     @Test
     void anInboundMessageFromANumberWithNoAccountRecordsNothing() {
-        StepVerifier.create(service.noteInbound(STRANGER)).verifyComplete();
+        StepVerifier.create(service.noteInbound(STRANGER, NOW)).verifyComplete();
         verify(window, never()).recordInbound(anyString(), any(), any());
     }
 
