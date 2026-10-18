@@ -596,3 +596,29 @@ needs an approved template, and an open web form that sends to any number would 
 A message the family sends first opens the window and proves the number in one step.
 
 **Supersedes:** BMX-5's log-only delivery (`LogOtpDelivery`), which stays as a fallback that logs no code.
+
+**Amended 2026-10-18 (PO, Tanvir): sign-in must be free.** Codes reach the family two ways, both inside WhatsApp's free
+24-hour customer-service window and neither through a template:
+
+1. **Automatic, from the web.** When the web sign-in names a number that (i) belongs to a Medioo account, (ii) is
+   permitted by the allowlist rule (`BaymaxProperties.Wa.permits`), and (iii) wrote to Medioo on WhatsApp within
+   `BAYMAX_WA_SERVICE_WINDOW` (default 23 h, a margin inside the 24 h window), Medioo mints a code and sends it to that
+   WhatsApp as a free-form service message. The code page says the code was sent **only** when the Graph API accepted
+   the send; on any failure, and outside the window, it shows the one-tap button instead.
+2. **The button.** "WhatsApp খুলে কোড আনুন" opens `wa.me/<BAYMAX_WA_PUBLIC_NUMBER>?text=কোড`; the family sends "কোড"
+   (or code, kod, otp, লগইন) and `issueCodeFor(sender)` replies with a fresh code inside the window that message opened.
+
+Unchanged and binding: never a WhatsApp template (authentication, utility or marketing) for codes, because they are
+paid; no code in any log above DEBUG (`LogOtpDelivery`'s INFO code line is removed); never an open sender (a number
+with no account is sent nothing, from either path); the 5-per-hour mint limit applies to both paths; DR-23, no number
+or code in a query string. "The web mints nothing and never says a code was sent" above is replaced by rule 1.
+
+The window needs one stored fact: when each account number last wrote. It is V17 `wa_last_inbound`, keyed by the
+PhoneHasher HMAC of the number (a CHECK refuses anything else), forward-only, with a `family_id` FK that both the
+family delete path and the schema-derived deletion sweep cover. No existing table records an inbound text message, so
+it could not be derived without a migration.
+
+**Known trade-off (for the PO):** the code page differs between "sent" and "not sent", so someone typing a stranger's
+number learns that it has an account and wrote to Medioo within the last day, and can cause up to five code messages
+an hour to that number. The page is the same for every not-sent reason, and the API's answer is identical whatever
+happened.
