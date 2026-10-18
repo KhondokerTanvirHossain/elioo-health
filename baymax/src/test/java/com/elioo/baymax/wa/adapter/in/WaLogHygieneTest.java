@@ -82,7 +82,7 @@ class WaLogHygieneTest {
     @Test
     void theWebhookLogsInboundAndStatusCallbacksByDigestOnly() throws Exception {
         WaIntakeService intake = mock(WaIntakeService.class);
-        when(intake.onText(anyString(), anyString())).thenReturn(Mono.just(WaIntakeService.Outcome.ACCEPTED));
+        when(intake.onInbound(any())).thenReturn(Mono.just(WaIntakeService.Outcome.ACCEPTED));
         BaymaxProperties props = new BaymaxProperties();
         props.getWa().setEnabled(true);
         props.getWa().setVerifyToken("v");

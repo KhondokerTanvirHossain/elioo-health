@@ -12,6 +12,8 @@ import com.elioo.baymax.outbound.application.service.Copy;
 import com.elioo.baymax.outbound.domain.OutboundMessage;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.wa.application.port.out.WaMessagingPort;
+import com.elioo.baymax.wa.domain.WaInbound;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -52,13 +54,22 @@ class WaIntakeServiceTest {
     private final DocumentIntakeUseCase intake = mock(DocumentIntakeUseCase.class);
     private final WaMessagingPort graph = mock(WaMessagingPort.class);
     private final BaymaxProperties props = new BaymaxProperties();
+    /**
+     * What actually went out, recorded when the send is SUBSCRIBED, not when sendText is called. WaGraphClient.sendText
+     * is a lazy WebClient Mono that sends nothing until subscribed; a mock that recorded the call counted a reply built
+     * and never sent as a reply, so silence passed (CLAUDE.md: a mock that cannot fail the way production fails).
+     */
+    private final List<Map.Entry<String, String>> delivered = new java.util.concurrent.CopyOnWriteArrayList<>();
     private WaIntakeService service;
 
     @BeforeEach
     void wire() {
         props.getWa().setEnabled(true);
         props.getWa().setAllowlist(List.of(E164));
-        when(graph.sendText(anyString(), anyString())).thenReturn(Mono.just(com.elioo.baymax.wa.WaFixtures.wamid(FROM, 9)));
+        when(graph.sendText(anyString(), anyString())).thenAnswer(inv -> Mono.fromCallable(() -> {
+            delivered.add(Map.entry(inv.<String>getArgument(0), inv.<String>getArgument(1)));
+            return com.elioo.baymax.wa.WaFixtures.wamid(FROM, 9);
+        }));
         when(graph.downloadMedia(anyString())).thenReturn(Mono.just(new byte[]{1, 2, 3}));
         service = new WaIntakeService(records, documents, explainer, intake, graph, new Copy(), props);
     }
@@ -87,7 +98,7 @@ class WaIntakeServiceTest {
         assertThat(uploads.getValue()).singleElement()
                 .satisfies(u -> assertThat(u.bytes()).containsExactly(1, 2, 3));
         // and the family was told the photo arrived, before the slow part
-        verify(graph).sendText(eq(E164), anyString());
+        assertThat(sentBodies()).containsExactly(bn("wa.received"));
     }
 
     /**
@@ -104,9 +115,8 @@ class WaIntakeServiceTest {
 
         verify(intake, never()).accept(any(), any());
         verify(graph, never()).downloadMedia(anyString());
-        ArgumentCaptor<String> sent = ArgumentCaptor.forClass(String.class);
-        verify(graph).sendText(eq(E164), sent.capture());
-        assertThat(sent.getValue()).isNotBlank();
+        assertThat(sentBodies()).containsExactly(new Copy().bn("wa.ambiguous",
+                Map.of("link", props.getOutbound().getPublicBaseUrl() + "/app")));
     }
 
     @Test
@@ -117,7 +127,7 @@ class WaIntakeServiceTest {
                 .isEqualTo(WaIntakeService.Outcome.UNKNOWN_SENDER);
 
         verify(intake, never()).accept(any(), any());
-        verify(graph).sendText(eq(E164), anyString());
+        assertThat(sentBodies()).containsExactly(bn("wa.unknown"));
     }
 
     @Test
@@ -137,7 +147,7 @@ class WaIntakeServiceTest {
                 new FreeTierExceededException(FreeTierExceededException.DOCUMENTS, "free tier")));
 
         assertThat(service.onImage(FROM, "MEDIA-5").block()).isEqualTo(WaIntakeService.Outcome.FREE_TIER);
-        verify(graph, org.mockito.Mockito.atLeastOnce()).sendText(eq(E164), anyString());
+        assertThat(sentBodies()).endsWith(bn("wa.free_tier"));
     }
 
     /** The allowlist is enforced here, not left to the Meta test number's own restriction. */
@@ -176,13 +186,10 @@ class WaIntakeServiceTest {
 
         service.onImage(FROM, "MEDIA-8").block();
 
-        ArgumentCaptor<String> sent = ArgumentCaptor.forClass(String.class);
-        verify(graph, org.mockito.Mockito.atLeastOnce()).sendText(eq(E164), sent.capture());
-        Copy copy = new Copy();
-        assertThat(sent.getAllValues())
+        assertThat(sentBodies())
                 .as("the unknown-sender text must never go to a family that exists")
-                .doesNotContain(copy.bn("wa.unknown", java.util.Map.of()));
-        assertThat(sent.getAllValues()).containsExactly(copy.bn("wa.received", java.util.Map.of()));
+                .doesNotContain(bn("wa.unknown"));
+        assertThat(sentBodies()).containsExactly(bn("wa.received"));
     }
 
     private static final UUID DOC = UUID.randomUUID();
@@ -232,7 +239,7 @@ class WaIntakeServiceTest {
         service.onText(FROM, "বিস্তারিত").block();
 
         verify(explainer, never()).deliver(any());
-        verify(graph).sendText(E164, new Copy().bn("wa.detail.already_sent", Map.of("link", link())));
+        assertThat(sentBodies()).containsExactly(new Copy().bn("wa.detail.already_sent", Map.of("link", link())));
     }
 
     /** A concurrent ask holds the claim on this very row: the second ask gets the pointer, never a second body. */
@@ -246,7 +253,7 @@ class WaIntakeServiceTest {
 
         service.onText(FROM, "বিস্তারিত").block();
 
-        verify(graph).sendText(E164, new Copy().bn("wa.detail.already_sent", Map.of("link", link())));
+        assertThat(sentBodies()).containsExactly(new Copy().bn("wa.detail.already_sent", Map.of("link", link())));
         verify(graph, never()).sendText(E164, stored.body());
     }
 
@@ -262,12 +269,10 @@ class WaIntakeServiceTest {
         service.onText(FROM, "বিস্তারিত").block();
 
         verify(explainer, never()).deliver(any());
-        ArgumentCaptor<String> sent = ArgumentCaptor.forClass(String.class);
-        verify(graph).sendText(eq(E164), sent.capture());
-        assertThat(sent.getValue()).isEqualTo(String.join("\n", copy.bn("urgency.now", Map.of()),
+        assertThat(sentBodies()).containsExactly(String.join("\n", copy.bn("urgency.now", Map.of()),
                 copy.bn("safety.red_flag_line", Map.of()), copy.bn("wa.detail.pending", Map.of())));
-        assertThat(sent.getValue()).isNotEqualTo("অপরীক্ষিত লেখা");
-        assertThat(sent.getValue().length()).isLessThanOrEqualTo(props.getOutbound().getMaxChars());
+        assertThat(sentBodies().get(0)).isNotEqualTo("অপরীক্ষিত লেখা");
+        assertThat(sentBodies().get(0).length()).isLessThanOrEqualTo(props.getOutbound().getMaxChars());
     }
 
     @Test
@@ -276,7 +281,7 @@ class WaIntakeServiceTest {
         latestDone();
         when(explainer.detail(DOC)).thenReturn(Mono.just(detailRow(OutboundMessage.GateStatus.PENDING, Urgency.ROUTINE, "x", null)));
         service.onText(FROM, "বিস্তারিত").block();
-        verify(graph).sendText(E164, new Copy().bn("wa.detail.pending", Map.of()));
+        assertThat(sentBodies()).containsExactly(new Copy().bn("wa.detail.pending", Map.of()));
     }
 
     /** F3: REJECTED and FAILED_SAFETY get the urgency (if any) and the paper link — never "দেখা হচ্ছে", never silence. */
@@ -292,7 +297,7 @@ class WaIntakeServiceTest {
 
         String expected = String.join("\n", copy.bn("urgency.this_week", Map.of()), copy.bn("safety.red_flag_line", Map.of()),
                 copy.bn("wa.detail.unavailable", Map.of("link", link())));
-        verify(graph).sendText(E164, expected);
+        assertThat(sentBodies()).containsExactly(expected);
         assertThat(expected).doesNotContain("দেখা হচ্ছে");
     }
 
@@ -305,15 +310,13 @@ class WaIntakeServiceTest {
         for (OutboundMessage.GateStatus status : OutboundMessage.GateStatus.values()) {
             for (Urgency urgency : Urgency.values()) {
                 for (Instant sentAt : java.util.Arrays.asList(null, Instant.EPOCH)) {
-                    org.mockito.Mockito.clearInvocations(graph);
+                    delivered.clear();
                     OutboundMessage row = detailRow(status, urgency,
                             status == OutboundMessage.GateStatus.FAILED_SAFETY ? null : "লেখা", sentAt);
                     when(explainer.detail(DOC)).thenReturn(Mono.just(row));
                     when(explainer.deliver(any())).thenReturn(Mono.just(row));
                     service.onText(FROM, "বিস্তারিত").block();
-                    ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
-                    verify(graph, org.mockito.Mockito.atLeast(0)).sendText(eq(E164), body.capture());
-                    for (String b : body.getAllValues()) {
+                    for (String b : sentBodies()) {
                         assertThat(b.length()).as(status + "/" + urgency + "/" + sentAt + ": " + b)
                                 .isLessThanOrEqualTo(props.getOutbound().getMaxChars());
                         sent.add(b);
@@ -324,28 +327,262 @@ class WaIntakeServiceTest {
         assertThat(sent).as("vacuous if no fixed reply was sent").hasSizeGreaterThanOrEqualTo(9);
     }
 
+    private final Copy copy = new Copy();
+
+    private String bn(String key) {
+        return copy.bn(key, Map.of());
+    }
+
+    /** The bodies whose send was subscribed, to this family's number, in order. */
+    private List<String> sentBodies() {
+        return delivered.stream().filter(d -> d.getKey().equals(E164)).map(Map.Entry::getValue).toList();
+    }
+
+    /** CLAUDE.md: a limit is asserted on the thing actually sent, after every insertion. Every reply in every test is checked. */
+    @AfterEach
+    void everyReplyActuallySentFitsTheCap() {
+        for (var d : delivered) {
+            assertThat(d.getValue().length()).as("sent: " + d.getValue()).isLessThanOrEqualTo(props.getOutbound().getMaxChars());
+        }
+    }
+
+    /**
+     * Inverted from anOrdinaryTextIsAcknowledgedWithoutAReply, which asserted the silence Phase 0 removes. A test
+     * whose name encodes the defect is evidence of it (CLAUDE.md). "ধন্যবাদ" is a thanks and is answered once.
+     */
     @Test
-    void anOrdinaryTextIsAcknowledgedWithoutAReply() {
+    void aThankYouIsAnsweredOnce() {
         familyWith(patient("মা"));
-        assertThat(service.onText(FROM, "ধন্যবাদ").block()).isEqualTo(WaIntakeService.Outcome.ACCEPTED);
+        when(documents.latestDoneDocument(FAMILY)).thenReturn(Mono.empty());
+        service.onText(FROM, "ধন্যবাদ").block();
+        assertThat(sentBodies()).as("a thank-you gets exactly one reply (0 = silence, the defect; 2 or more = a double send)").hasSize(1);
+        assertThat(sentBodies().get(0)).startsWith(bn("wa.thanks")).endsWith(bn("safety.red_flag_line"));
+    }
+
+    @Test
+    void hiIsAnsweredWithAGreetingThatSaysWhatToDoNext() {
+        familyWith(patient("মা"));
+        when(documents.latestDoneDocument(FAMILY)).thenReturn(Mono.empty());
+        service.onText(FROM, "Hi").block();
+        assertThat(sentBodies()).as("\"Hi\" gets exactly one reply (0 = silence, the defect; 2 or more = a double send) (spec §0)").hasSize(1);
+        assertThat(sentBodies().get(0)).startsWith(bn("wa.greeting.hello"))
+                .contains(bn("wa.greeting.intro")).contains(bn("wa.greeting.none"));
+    }
+
+    /** Mirror the greeting; never assume religion (spec §7.4). */
+    @Test
+    void salamIsAnsweredWithSalamAndKemonAchoIsNot() {
+        familyWith(patient("মা"));
+        when(documents.latestDoneDocument(FAMILY)).thenReturn(Mono.empty());
+        service.onText(FROM, "আসসালামু আলাইকুম").block();
+        service.onText(FROM, "kemon acho").block();
+        assertThat(sentBodies()).as("two greetings get one reply each (fewer = silence, the defect; more = a double send)").hasSize(2);
+        assertThat(sentBodies().get(0)).startsWith(bn("wa.greeting.salam"));
+        assertThat(sentBodies().get(1)).startsWith(bn("wa.greeting.hello")).doesNotContain("আসসালাম");
+    }
+
+    /** আদাব is mirrored with আদাব, never with সালাম and never with the fallback (spec §7.4). */
+    @Test
+    void adabIsAnsweredWithAdab() {
+        familyWith(patient("মা"));
+        service.onText(FROM, "আদাব").block();
+        assertThat(sentBodies()).as("\"আদাব\" gets " + "exactly one reply (0 = silence, the defect; 2 or more = a double send)")
+                .hasSize(1);
+        assertThat(sentBodies().get(0)).as("mirrored, not the fallback").startsWith("আদাব।")
+                .contains(bn("wa.greeting.intro")).doesNotContain("আসসালাম").doesNotContain(bn("safety.red_flag_line"));
+    }
+
+    @Test
+    void anythingElseGetsTheHonestFallbackWithTheRedFlagLine() {
+        familyWith(patient("মা"));
+        service.onText(FROM, "আম্মা কাল থেকে খুব দুর্বল").block();
+        assertThat(sentBodies()).as("free text gets exactly one reply (0 = silence, the defect; 2 or more = a double send)").hasSize(1);
+        assertThat(sentBodies()).containsExactly(bn("wa.fallback") + "\n" + bn("safety.red_flag_line"));
+    }
+
+    /** Whole-message rule, dangerous direction: the detail word inside a symptom message must not trigger detail. */
+    @Test
+    void aRuleWordInsideALongerMessageGetsTheFallbackNotTheRule() {
+        familyWith(patient("মা"));
+        service.onText(FROM, "বিস্তারিত — আম্মার খুব জ্বর").block();
+        assertThat(sentBodies()).as("a rule word inside a longer message gets exactly one reply (0 = silence, the defect; 2 or more = a double send)").hasSize(1);
+        verify(explainer, never()).detail(any());
+        assertThat(sentBodies().get(0)).contains(bn("safety.red_flag_line"));
+    }
+
+    /** The synonyms reach the same detail path as the literal word. */
+    @Test
+    void detailSynonymsAreAnsweredLikeTheInvitedWord() {
+        familyWith(patient("মা"));
+        when(documents.latestDoneDocument(FAMILY)).thenReturn(Mono.empty());
+        for (String s : List.of("details", "আরো বলুন", "bistarito bolen", "explain")) {
+            service.onText(FROM, s).block();
+        }
+        assertThat(sentBodies()).as("four synonyms get one reply each (fewer = silence, the defect; more = a double send)").hasSize(4)
+                .allMatch(b -> b.equals(bn("wa.no_document")));
+    }
+
+    private static WaInbound docx() {
+        return new WaInbound("w", FROM, WaInbound.Type.DOCUMENT, "", "MEDIA-D",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    }
+
+    @Test
+    void anUnReactionIsTheOnlyReactionNotAnswered() {
+        familyWith(patient("মা"));
+        service.onInbound(new WaInbound("w0", FROM, WaInbound.Type.REACTION, "", "", "")).block();
         verify(graph, never()).sendText(anyString(), anyString());
+        service.onInbound(new WaInbound("w1", FROM, WaInbound.Type.REACTION, "👍", "", "")).block();
+        assertThat(sentBodies()).as("a 👍 on a Medioo message gets exactly one reply (0 = silence, the defect; 2 or more = a double send)")
+                .containsExactly(bn("wa.thanks") + "\n" + bn("safety.red_flag_line"));
+    }
+
+    /** Two directions: 👍 is thanks, 😢 is not, and must not be answered "ঠিক আছে" — it gets the fallback. */
+    @Test
+    void anUnhappyReactionGetsTheFallbackNotTheThanks() {
+        familyWith(patient("মা"));
+        service.onInbound(new WaInbound("w2", FROM, WaInbound.Type.REACTION, "😢", "", "")).block();
+        assertThat(sentBodies()).as("a 😢 reaction gets exactly one reply (0 = silence, the defect; 2 or more = a double send)")
+                .containsExactly(bn("wa.fallback") + "\n" + bn("safety.red_flag_line"));
+    }
+
+    @Test
+    void aStickerIsAnsweredAsAThanks() {
+        familyWith(patient("মা"));
+        service.onInbound(new WaInbound("w", FROM, WaInbound.Type.STICKER, "", "MEDIA-S", "image/webp")).block();
+        assertThat(sentBodies()).as("a sticker gets exactly one reply (0 = silence, the defect; 2 or more = a double send)")
+                .containsExactly(bn("wa.thanks") + "\n" + bn("safety.red_flag_line"));
+        verify(graph, never()).downloadMedia(anyString());
+    }
+
+    /** D13: fixed reply plus the red-flag line; nothing here can listen, so nothing is downloaded. */
+    @Test
+    void aVoiceNoteGetsTheFixedReplyAndTheRedFlagLine() {
+        familyWith(patient("মা"));
+        service.onInbound(new WaInbound("w", FROM, WaInbound.Type.AUDIO, "", "MEDIA-V", "audio/ogg; codecs=opus")).block();
+        assertThat(sentBodies()).containsExactly(bn("wa.voice") + "\n" + bn("safety.red_flag_line"));
+        verify(graph, never()).downloadMedia(anyString());
+    }
+
+    @Test
+    void aVideoGetsTheFixedReplyAndTheRedFlagLine() {
+        familyWith(patient("মা"));
+        service.onInbound(new WaInbound("w", FROM, WaInbound.Type.VIDEO, "", "MEDIA-X", "video/mp4")).block();
+        assertThat(sentBodies()).containsExactly(bn("wa.video") + "\n" + bn("safety.red_flag_line"));
+        verify(graph, never()).downloadMedia(anyString());
+    }
+
+    @Test
+    void aLocationGetsTheFallbackWithTheRedFlagLine() {
+        familyWith(patient("মা"));
+        service.onInbound(new WaInbound("w", FROM, WaInbound.Type.LOCATION, "", "", "")).block();
+        assertThat(sentBodies()).containsExactly(bn("wa.fallback") + "\n" + bn("safety.red_flag_line"));
+    }
+
+    /** A button tap carries its title as words; "বিস্তারিত" reaches the detail path like the typed word. */
+    @Test
+    void aButtonTapIsAnsweredLikeTheWordsOnIt() {
+        familyWith(patient("মা"));
+        when(documents.latestDoneDocument(FAMILY)).thenReturn(Mono.empty());
+        service.onInbound(new WaInbound("w", FROM, WaInbound.Type.INTERACTIVE, "বিস্তারিত", "", "")).block();
+        assertThat(sentBodies()).containsExactly(bn("wa.no_document"));
+    }
+
+    /** Meta's own notice (a changed number) carries nothing the family sent: no reply, and nothing is read. */
+    @Test
+    void aSystemNoticeIsNotAnswered() {
+        assertThat(service.onInbound(new WaInbound("w", FROM, WaInbound.Type.SYSTEM, "", "", "")).block())
+                .isEqualTo(WaIntakeService.Outcome.IGNORED);
+        verify(graph, never()).sendText(anyString(), anyString());
+        verify(records, never()).findFamilyByWhatsapp(anyString());
+    }
+
+    @Test
+    void aWordFileIsRefusedWithAReasonBeforeAnythingIsDownloadedOrAcknowledged() {
+        familyWith(patient("মা"));
+        service.onInbound(docx()).block();
+        assertThat(sentBodies()).containsExactly(bn("wa.unsupported_file"));
+        verify(graph, never()).downloadMedia(anyString());
+        verify(intake, never()).accept(any(), any());
+    }
+
+    @Test
+    void aPdfIsAcknowledgedAsAFileAndFiled() {
+        PatientProfile ma = patient("মা");
+        familyWith(ma);
+        when(intake.accept(eq(ma.id()), any())).thenReturn(Mono.just(mock(Document.class)));
+        service.onInbound(new WaInbound("w", FROM, WaInbound.Type.DOCUMENT, "", "MEDIA-P", "application/pdf")).block();
+        assertThat(sentBodies()).containsExactly(bn("wa.received.file"));
+        verify(intake).accept(eq(ma.id()), any());
+    }
+
+    /** The photo path is unchanged: "ছবিটা পেয়েছি", then the document is filed. */
+    @Test
+    void aPhotoThroughTheEntryPointIsAcknowledgedAsAPhotoAndFiled() {
+        PatientProfile ma = patient("মা");
+        familyWith(ma);
+        when(intake.accept(eq(ma.id()), any())).thenReturn(Mono.just(mock(Document.class)));
+        service.onInbound(new WaInbound("w", FROM, WaInbound.Type.IMAGE, "", "MEDIA-I", "image/jpeg")).block();
+        assertThat(sentBodies()).containsExactly(bn("wa.received"));
+        verify(intake).accept(eq(ma.id()), any());
+    }
+
+    @Test
+    void aVoiceNoteFromAnUnknownNumberGetsTheUnknownSenderReply() {
+        when(records.findFamilyByWhatsapp(E164)).thenReturn(Mono.empty());
+        service.onInbound(new WaInbound("w", FROM, WaInbound.Type.AUDIO, "", "M", "audio/ogg")).block();
+        assertThat(sentBodies()).containsExactly(bn("wa.unknown"));
+    }
+
+    @Test
+    void aWordFileFromAnUnknownNumberGetsTheUnknownSenderReply() {
+        when(records.findFamilyByWhatsapp(E164)).thenReturn(Mono.empty());
+        service.onInbound(docx()).block();
+        assertThat(sentBodies()).containsExactly(bn("wa.unknown"));
+    }
+
+    /** Blank or missing mime: PageRenderer's magic bytes decide. Parameters after ";" do not defeat the match. */
+    @Test
+    void readableFilesAreJudgedByTheirMimeTypeOnly() {
+        assertThat(WaIntakeService.readable("application/pdf")).isTrue();
+        assertThat(WaIntakeService.readable("Image/JPEG; charset=binary")).isTrue();
+        assertThat(WaIntakeService.readable("")).isTrue();
+        assertThat(WaIntakeService.readable(null)).isTrue();
+        assertThat(WaIntakeService.readable("application/vnd.openxmlformats-officedocument.wordprocessingml.document")).isFalse();
+        assertThat(WaIntakeService.readable("application/msword")).isFalse();
+        assertThat(WaIntakeService.readable("text/plain")).isFalse();
+    }
+
+    /** Logs carry route names and sizes, never the text or the number (CLAUDE.md; WaWebhookHandler.maskedNumber). */
+    @Test
+    void theIntakeLogNeverCarriesWhatTheFamilyWroteOrTheirNumber() {
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(WaIntakeService.class);
+        var logged = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        logged.start();
+        logger.addAppender(logged);
+        try {
+            familyWith(patient("মা"));
+            service.onText(FROM, "আম্মার বুকে ব্যথা").block();
+            String wamid = com.elioo.baymax.wa.WaFixtures.wamid(FROM, 3);
+            service.onInbound(new WaInbound(wamid, FROM, WaInbound.Type.AUDIO, "", "MEDIA-V", "audio/ogg")).block();
+            String all = String.join("\n", logged.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage).toList());
+            String base64 = wamid.substring("wamid.".length());
+            assertThat(all).contains("route=FALLBACK").doesNotContain("বুকে").doesNotContain("1700000000")
+                    .doesNotContain("wamid.");
+            // the prefix alone is not the wamid: a line printing the base64 body, or the digits decoded from it, leaks too
+            assertThat(all).as("a wamid is base64 of the number").doesNotContain(wamid).doesNotContain(base64.substring(0, 16))
+                    .doesNotContain(com.elioo.baymax.wa.WaFixtures.decodedDigits(wamid));
+        } finally {
+            logger.detachAppender(logged);
+        }
     }
 
     @Test
     void askingForDetailBeforeAnyReadableDocumentSaysSoRatherThanNothing() {
         familyWith(patient("মা"));
         when(documents.latestDoneDocument(FAMILY)).thenReturn(Mono.empty());
-        assertThat(service.onText(FROM, "বিস্তারিত").block()).isEqualTo(WaIntakeService.Outcome.ACCEPTED);
-        verify(graph).sendText(eq(E164), anyString());
-    }
-
-    @Test
-    void theInvitedWordIsRecognisedWithPunctuationOrInEnglish() {
-        assertThat(WaIntakeService.isDetailRequest("বিস্তারিত")).isTrue();
-        assertThat(WaIntakeService.isDetailRequest("  বিস্তারিত।  ")).isTrue();
-        assertThat(WaIntakeService.isDetailRequest("detail")).isTrue();
-        assertThat(WaIntakeService.isDetailRequest("ধন্যবাদ")).isFalse();
-        assertThat(WaIntakeService.isDetailRequest(null)).isFalse();
+        assertThat(service.onText(FROM, "বিস্তারিত").block()).isEqualTo(WaIntakeService.Outcome.REPLIED);
+        assertThat(sentBodies()).containsExactly(bn("wa.no_document"));
     }
 
     @Test

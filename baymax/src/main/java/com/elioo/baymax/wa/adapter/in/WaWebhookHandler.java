@@ -2,6 +2,7 @@ package com.elioo.baymax.wa.adapter.in;
 
 import com.elioo.baymax.common.redact.Redact;
 import com.elioo.baymax.config.BaymaxProperties;
+import com.elioo.baymax.wa.domain.WaInbound;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -13,6 +14,7 @@ import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Mono;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 
 /**
  * The public WhatsApp webhook (BMX-10 phase 1).
@@ -100,26 +102,41 @@ public class WaWebhookHandler {
      * Intake runs detached from the HTTP response: Meta retries anything that is not a prompt 200, and a
      * download plus extraction is far slower than its timeout. The callback is acknowledged as soon as it is
      * stored-and-dispatched, and the family hears back over WhatsApp, not over this response.
+     *
+     * <p>No type is dropped here; the intake answers every one (Phase 0). Before, voice notes, stickers, reactions and
+     * button taps were logged as "ignored" and the family heard nothing.
      */
     private Mono<Void> dispatch(JsonNode root) {
         for (JsonNode entry : root.path("entry")) {
             for (JsonNode change : entry.path("changes")) {
                 for (JsonNode message : change.path("value").path("messages")) {
-                    String from = message.path("from").asText("");
-                    String type = message.path("type").asText("");
-                    if ("image".equals(type)) {
-                        subscribe(intake.onImage(from, message.path("image").path("id").asText("")), from);
-                    } else if ("document".equals(type)) {
-                        subscribe(intake.onImage(from, message.path("document").path("id").asText("")), from);
-                    } else if ("text".equals(type)) {
-                        subscribe(intake.onText(from, message.path("text").path("body").asText("")), from);
-                    } else {
-                        log.info("[baymax] wa inbound ignored type={} from={}", type, maskedNumber(from));
-                    }
+                    WaInbound in = parse(message);
+                    subscribe(intake.onInbound(in), in.from());
                 }
             }
         }
         return Mono.empty();
+    }
+
+    /** Meta's message JSON → WaInbound. Every level is optional, so every read has a default. */
+    static WaInbound parse(JsonNode m) {
+        String meta = m.path("type").asText("");
+        WaInbound.Type type = WaInbound.Type.of(meta);
+        String text = switch (type) {
+            case TEXT -> m.path("text").path("body").asText("");
+            case REACTION -> m.path("reaction").path("emoji").asText("");
+            case INTERACTIVE -> {
+                JsonNode i = m.path("interactive");
+                JsonNode reply = i.has("button_reply") ? i.path("button_reply") : i.path("list_reply");
+                yield reply.path("title").asText(reply.path("id").asText(""));
+            }
+            case BUTTON -> m.path("button").path("text").asText(m.path("button").path("payload").asText(""));
+            default -> "";
+        };
+        JsonNode media = m.path(meta);   // image | document | audio | video | sticker carry {id, mime_type}
+        long ts = m.path("timestamp").asLong(0);   // Meta sends epoch seconds as a string; PR 8 stores it
+        return new WaInbound(m.path("id").asText(""), m.path("from").asText(""), type, text,
+                media.path("id").asText(""), media.path("mime_type").asText(""), ts == 0 ? null : Instant.ofEpochSecond(ts));
     }
 
     private void subscribe(Mono<com.elioo.baymax.wa.application.service.WaIntakeService.Outcome> work, String from) {
