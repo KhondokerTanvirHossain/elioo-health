@@ -97,7 +97,8 @@ class AppShellRoutesTest {
         assertThat(subtree(choices).stream().filter(e -> e.tag().equals("a") && e.classes().contains("pchoice"))
                 .map(e -> e.attrs().get("href")))
                 .containsExactlyInAnyOrder(tab.path + "?patient=" + ma.patient().id(), tab.path + "?patient=" + baba.patient().id());
-        assertThat(subtree(choices)).as("nobody is marked chosen").noneMatch(e -> e.attrs().containsKey("aria-current"));
+        assertThat(subtree(choices).stream().filter(e -> e.attrs().containsKey("aria-current")).map(Dom.Element::describe))
+                .as("choices marked chosen").isEmpty();
     }
 
     /**
@@ -111,8 +112,9 @@ class AppShellRoutesTest {
         noPapers(ma);
         noPapers(baba);
         Dom.Element header = only(Dom.parse(kit.page(tab.path, "bn")), "header", "appbar");
-        assertThat(subtree(header)).as("a switcher in the header").noneMatch(e -> e.classes().contains("switcher"));
-        assertThat(text(header)).doesNotContain("আম্মা").doesNotContain("আব্বু");
+        assertThat(text(header)).as("names in the header").doesNotContain("আম্মা").doesNotContain("আব্বু");
+        assertThat(subtree(header).stream().filter(e -> e.classes().contains("switcher")).map(Dom.Element::describe))
+                .as("a switcher in the header").isEmpty();
     }
 
     /** The other direction: one patient is simply in view — no chooser, and the header names her. */
@@ -209,11 +211,12 @@ class AppShellRoutesTest {
         Dom.Element composer = only(dom, "div", "composer");
         // the whole subtree, so a control nested inside a div of the composer (C4) is still seen
         assertThat(text(composer)).contains(kit.copy.t(Lang.BN, "chat.soon"));
-        assertThat(subtree(composer)).as("controls in the composer")
-                .noneMatch(e -> java.util.Set.of("input", "textarea", "form", "button", "select").contains(e.tag())
-                        || "submit".equals(e.attrs().get("type")) || e.attrs().containsKey("contenteditable"));
+        assertThat(subtree(composer).stream().filter(e -> java.util.Set.of("input", "textarea", "form", "button", "select").contains(e.tag())
+                        || "submit".equals(e.attrs().get("type")) || e.attrs().containsKey("contenteditable")).map(Dom.Element::describe))
+                .as("controls in the composer").isEmpty();
         // and none anywhere on the page: the placeholder can send nothing at all
-        assertThat(dom.all).noneMatch(e -> java.util.Set.of("form", "textarea", "input").contains(e.tag()));
+        assertThat(dom.all.stream().filter(e -> java.util.Set.of("form", "textarea", "input").contains(e.tag())).map(Dom.Element::describe))
+                .as("a form or a field on the chat placeholder").isEmpty();
     }
 
     @Test
