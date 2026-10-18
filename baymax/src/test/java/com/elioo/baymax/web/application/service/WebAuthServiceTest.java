@@ -71,7 +71,7 @@ class WebAuthServiceTest {
         properties.getAuth().setHmacSecret("test-secret");
         service = serviceAt(NOW);
         when(audit.record(any())).thenReturn(Mono.empty());
-        when(otps.countLive(anyString(), any(), any())).thenReturn(Mono.just(0L));
+        when(otps.countCreatedSince(anyString(), any())).thenReturn(Mono.just(0L));
         when(otps.create(any())).thenAnswer(i -> {
             OtpCode c = i.getArgument(0);
             row.set(new OtpCode(UUID.randomUUID(), c.phoneHash(), c.codeHash(), c.familyId(), c.expiresAt(), 0, null, null, c.createdAt()));
@@ -196,7 +196,7 @@ class WebAuthServiceTest {
     @Test
     void theWebPathIsRateLimitedLikeTheWhatsappPath() {
         lastWrote(NUMBER, Duration.ofMinutes(5));
-        when(otps.countLive(anyString(), any(), any())).thenReturn(Mono.just(5L));
+        when(otps.countCreatedSince(anyString(), any())).thenReturn(Mono.just(5L));
         StepVerifier.create(service.requestCode(TYPED)).assertNext(r -> assertThat(r.issue()).isEqualTo(CodeIssue.RATE_LIMITED))
                 .verifyComplete();
         nothingMintedOrSent();
@@ -289,9 +289,9 @@ class WebAuthServiceTest {
 
     @Test
     void theFifthLiveCodeIsTheLastAndTheSixthIsRefusedAsRateLimited() {
-        when(otps.countLive(anyString(), any(), any())).thenReturn(Mono.just(4L));
+        when(otps.countCreatedSince(anyString(), any())).thenReturn(Mono.just(4L));
         StepVerifier.create(service.issueCodeFor(NUMBER)).expectNext(CodeIssue.SENT).verifyComplete();
-        when(otps.countLive(anyString(), any(), any())).thenReturn(Mono.just(5L));
+        when(otps.countCreatedSince(anyString(), any())).thenReturn(Mono.just(5L));
         StepVerifier.create(service.issueCodeFor(NUMBER)).expectNext(CodeIssue.RATE_LIMITED).verifyComplete();
         verify(otps, times(1)).create(any());
     }

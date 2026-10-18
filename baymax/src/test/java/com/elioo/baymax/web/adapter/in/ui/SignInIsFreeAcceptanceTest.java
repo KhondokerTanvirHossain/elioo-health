@@ -112,7 +112,7 @@ class SignInIsFreeAcceptanceTest {
         props.getWa().setPublicNumber("8801700000999");
         hasher = new PhoneHasher(props);
         when(audit.record(any())).thenReturn(Mono.empty());
-        when(otps.countLive(anyString(), any(), any())).thenReturn(Mono.just(0L));
+        when(otps.countCreatedSince(anyString(), any())).thenReturn(Mono.just(0L));
         when(otps.create(any())).thenAnswer(i -> {
             OtpCode c = i.getArgument(0);
             row.set(new OtpCode(UUID.randomUUID(), c.phoneHash(), c.codeHash(), c.familyId(), c.expiresAt(), 0, null, null, c.createdAt()));

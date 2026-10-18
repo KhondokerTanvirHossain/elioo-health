@@ -41,7 +41,8 @@ import java.util.UUID;
  *       {@code baymax.wa.service-window} ({@link #requestCode}); the code then goes to WhatsApp automatically.</li>
  * </ul>
  * Every other request mints nothing and sends nothing, so the open web form is never a sender to arbitrary numbers.
- * The 5-per-hour limit applies to both. A refused code is a {@link CodeRejectedException}: one 401 shape for the API,
+ * The hourly cap (5 codes per number per rolling hour, counted whatever became of them) applies to both, so it bounds
+ * WhatsApp messages sent and guesses made: at most 5 codes x 5 tries an hour per number. A refused code is a {@link CodeRejectedException}: one 401 shape for the API,
  * a reason for the web page.
  */
 @Slf4j
@@ -129,10 +130,11 @@ public class WebAuthService implements WebAuthUseCase {
     /** The one place a code is made: within the hourly limit, stored hashed, handed to delivery, never logged. */
     private Mono<CodeIssue> mint(String number, String phoneHash, UUID familyId, Instant now) {
         BaymaxProperties.Auth cfg = properties.getAuth();
-        return otps.countLive(phoneHash, now.minus(Duration.ofHours(1)), now)
-                .flatMap(live -> {
-                    if (live >= cfg.getOtpMaxLivePerHour()) {
-                        log.info("[baymax] otp request rate-limited phoneHash={} live={}", phoneHash, live);
+        // every code made in the rolling hour, whatever its state: the cap bounds sends and guesses, not live codes
+        return otps.countCreatedSince(phoneHash, now.minus(Duration.ofHours(1)))
+                .flatMap(made -> {
+                    if (made >= cfg.getOtpMaxLivePerHour()) {
+                        log.info("[baymax] otp request rate-limited phoneHash={} madeThisHour={}", phoneHash, made);
                         return Mono.just(CodeIssue.RATE_LIMITED);
                     }
                     String code = sixDigits();

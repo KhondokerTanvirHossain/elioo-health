@@ -119,7 +119,12 @@ public class BaymaxProperties {
          */
         private boolean webMintsCode = false;
         private Duration otpTtl = Duration.ofMinutes(10);
-        /** Live (unexpired, unused, unburned) codes allowed per number per hour; beyond it, requests are silently ignored. */
+        /**
+         * Codes made per number per rolling hour, on both paths (web and WhatsApp কোড), counted whatever became of
+         * them: used, burned and expired codes all count. Beyond it nothing is minted or sent (RATE_LIMITED). The name
+         * predates that rule and is kept so {@code BAYMAX_OTP_MAX_LIVE_PER_HOUR} keeps working; it once counted only
+         * live codes, which let a burned code buy another send (review of plan PR 12).
+         */
         private int otpMaxLivePerHour = 5;
         /** Wrong guesses that burn a code. */
         private int otpMaxAttempts = 5;

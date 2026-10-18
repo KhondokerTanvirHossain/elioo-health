@@ -101,11 +101,13 @@ class WebPersistenceAdaptersTest {
             OtpCode c = otps.create(new OtpCode(null, "hash1", "codehash", f.id(), now.plusSeconds(600), 0, null, null, now)).block();
             assertThat(c.id()).isNotNull();
             assertThat(c.familyId()).isEqualTo(f.id());
-            assertThat(otps.countLive("hash1", now.minusSeconds(3600), now).block()).isEqualTo(1L);
+            assertThat(otps.countCreatedSince("hash1", now.minusSeconds(3600)).block()).isEqualTo(1L);
             assertThat(otps.latestLive("hash1", now).block().id()).isEqualTo(c.id());
             otps.recordAttempt(c.id(), 5, now).block();                           // burned
             StepVerifier.create(otps.latestLive("hash1", now)).verifyComplete();
-            assertThat(otps.countLive("hash1", now.minusSeconds(3600), now).block()).isZero();
+            assertThat(otps.countCreatedSince("hash1", now.minusSeconds(3600)).block())
+                    .as("a burned code still counts toward the hour: it cost a send").isEqualTo(1L);
+            assertThat(otps.countCreatedSince("hash1", now.plusSeconds(1)).block()).as("only codes made since").isZero();
 
             var s = sessions.create("tokhash", f.id(), now, now.plusSeconds(60)).block();
             assertThat(sessions.findLive("tokhash", now).block().familyId()).isEqualTo(f.id());
