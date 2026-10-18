@@ -213,6 +213,7 @@ class SignInIsFreeAcceptanceTest {
     void aFamilyThatHasNotWrittenGetsNothingSentAndTheButton() {
         thePageNeverSaysSentAndShowsTheButton(signInOnTheWeb(TYPED));
         verify(graph, never()).sendText(anyString(), anyString());
+        verify(otps, never()).create(any());
     }
 
     @Test
@@ -229,6 +230,7 @@ class SignInIsFreeAcceptanceTest {
         lastInbound.put(hasher.phone("+8801700000300"), NOW.minusSeconds(60));
         thePageNeverSaysSentAndShowsTheButton(signInOnTheWeb("01700000300"));
         verify(graph, never()).sendText(anyString(), anyString());
+        verify(otps, never()).create(any());
     }
 
     @Test
@@ -237,6 +239,9 @@ class SignInIsFreeAcceptanceTest {
         props.getWa().setAllowlist(List.of("+8801700000300"));
         thePageNeverSaysSentAndShowsTheButton(signInOnTheWeb(TYPED));
         verify(graph, never()).sendText(anyString(), anyString());
+        // not only unsent: never minted. CompositeOtpDelivery's own allowlist check would stop the send even if
+        // requestCode skipped its check, so "nothing sent" alone cannot see a code row made for a refused number
+        verify(otps, never()).create(any());
     }
 
     /** WhatsApp refused the message (window closed early, token, anything): the page must not claim it arrived. */

@@ -86,7 +86,9 @@ class CompositeOtpDeliveryTest {
 
         ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
         verify(wa).sendText(eq(NUMBER), body.capture());
-        verifyNoMoreInteractions(wa);   // a free-form session message and nothing else: never a (paid) template
+        // one sendText and nothing else. This cannot see a template: the port has no template method at all, which is
+        // the real guarantee, asserted structurally in NoTemplateSendExistsTest so that adding one turns a test red
+        verifyNoMoreInteractions(wa);
         assertThat(body.getValue()).contains(CODE).contains("এই কোড কাউকে দেবেন না").contains("Medioo কখনো ফোন করে কোড চায় না");
         assertThat(body.getValue().length()).as("the cap, on the text actually sent").isLessThanOrEqualTo(props.getOutbound().getMaxChars());
         assertThat(logged.list).as("the success line exists, or 'nothing leaked' passes on an empty log")

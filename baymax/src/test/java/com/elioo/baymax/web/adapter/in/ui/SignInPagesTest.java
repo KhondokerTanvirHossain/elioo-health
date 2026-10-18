@@ -71,7 +71,14 @@ class SignInPagesTest {
         return m;
     }
 
-    /** No page says a code was or will be sent unless WhatsApp accepted it (DR-39 amended): a page that does is lying. */
+    /**
+     * No page says a code was or will be sent unless WhatsApp accepted it (DR-39 amended): a page that does is lying.
+     *
+     * <p>A backstop, not the guard. It is a phrase list, and "কোড গেছে" or "Code sent" would pass it. The guards are
+     * structural: the cookie's {@code .s} mark, set only when {@code CodeRequest.sent()} (asserted end to end in
+     * SignInIsFreeAcceptanceTest), and the bundle sweep below that lets exactly one login key say "sent". Do not treat
+     * a green run of this method as proof that a page makes no promise.
+     */
     static void assertNoSendPromise(String html) {
         assertThat(html).doesNotContain("পাঠিয়েছি").doesNotContain("পাঠানো হবে").doesNotContain("পাঠানো হয়েছে")
                 .doesNotContain("will be sent").doesNotContain("on its way").doesNotContainIgnoringCase("we sent");
