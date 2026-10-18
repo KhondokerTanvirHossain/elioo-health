@@ -32,6 +32,8 @@ class BaymaxPathCspTest {
             "/app/add,true", "/app/add,false",
             "/assets/baymax.css,true", "/assets/baymax.css,false", "/lang/en,true", "/lang/en,false"})
     void baymaxPathsGetSelfHostedFontsAndScriptsAndNothingInlineInEitherOrder(String path, boolean medscribeFirst) {
+        // isEqualTo pins the whole policy on the response. The checks after it read that same value: they are the spec
+        // of which directives matter (so a CSP constant that gained 'unsafe-inline' still fails), not a second response.
         assertThat(csp(path, medscribeFirst)).isEqualTo(BaymaxSecurityHeadersFilter.CSP)
                 .contains("font-src 'self'").contains("script-src 'self'").contains("frame-ancestors 'none'")
                 .contains("img-src 'self' https: http: blob:").contains("connect-src 'self'")
@@ -61,7 +63,8 @@ class BaymaxPathCspTest {
         client.get().uri("/app/home").exchange()
                 .expectHeader().valueEquals("Content-Security-Policy", BaymaxSecurityHeadersFilter.CSP)
                 .expectHeader().valueEquals("X-Frame-Options", "DENY")
-                .expectHeader().valueEquals("X-Content-Type-Options", "nosniff");
+                .expectHeader().valueEquals("X-Content-Type-Options", "nosniff")
+                .expectHeader().valueEquals("Referrer-Policy", "strict-origin-when-cross-origin");
         client.get().uri("/medscribeai/").exchange()
                 .expectHeader().valueEquals("Content-Security-Policy", SecurityHeadersFilter.MEDSCRIBE_CSP);
     }

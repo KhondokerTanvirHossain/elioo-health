@@ -60,7 +60,12 @@ final class RenderedPages {
 
     /** One call of a route with a fixture, in a language. */
     static EntityExchangeResult<byte[]> exchange(WebUiTestKit kit, RouteTable.Route route, PageFixtures.Fixture f, String lang) {
-        WebTestClient.RequestBodySpec spec = kit.client.method(route.method()).uri(f.uri());
+        return exchange(kit.client, route, f, lang);
+    }
+
+    /** The same call through a given client: one bound to the kit's router with extra web filters (BaymaxCspRegisteredTest). */
+    static EntityExchangeResult<byte[]> exchange(WebTestClient client, RouteTable.Route route, PageFixtures.Fixture f, String lang) {
+        WebTestClient.RequestBodySpec spec = client.method(route.method()).uri(f.uri());
         if (f.signedIn()) {
             spec = spec.cookie("baymax_session", "tok");
         }
