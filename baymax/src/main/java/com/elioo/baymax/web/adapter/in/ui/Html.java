@@ -22,7 +22,7 @@ final class Html {
     private Html() {
     }
 
-    /** Where the token stylesheet is served (classpath {@code baymax/ui/baymax.css}). */
+    /** Where the token stylesheet is served (the parts under classpath {@code baymax/ui/css/}, concatenated). */
     static final String CSS_PATH = "/assets/baymax.css";
 
     /**
@@ -30,7 +30,7 @@ final class Html {
      * browser may cache the asset for a day and still sees every new build. Without this the first restyle was
      * served stale for a day to anyone who had opened the app before it.
      */
-    static final String CSS_HREF = CSS_PATH + "?v=" + version("/baymax/ui/baymax.css");
+    static final String CSS_HREF = CSS_PATH + "?v=" + AssetHandler.version("baymax.css");
     static final String ICON_HREF = "/assets/favicon.svg?v=" + version("/baymax/ui/favicon.svg");
 
     /**

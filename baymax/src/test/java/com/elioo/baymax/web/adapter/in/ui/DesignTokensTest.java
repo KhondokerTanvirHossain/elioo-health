@@ -3,6 +3,7 @@ package com.elioo.baymax.web.adapter.in.ui;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -18,7 +19,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class DesignTokensTest {
 
     private static final Path UI_SOURCES = Path.of("src/main/java/com/elioo/baymax/web/adapter/in/ui");
-    private static final Path TOKENS = Path.of("src/main/resources/baymax/ui/baymax.css");
+    private static final WebUiTestKit KIT = new WebUiTestKit();
+    /** What the browser receives (CLAUDE.md: assert on the thing sent), never a file on disk. */
+    private static final String CSS = KIT.servedText("/assets/baymax.css");
     private static final Pattern LITERAL = Pattern.compile(
             "#[0-9a-fA-F]{3,8}\\b|\\brgba?\\(|\\bhsla?\\(|border-radius\\s*:|\\bcolor\\s*:\\s*[a-z#]|background\\s*:\\s*[a-z#]|font-size\\s*:\\s*[0-9.]+(px|rem|em)");
 
@@ -39,9 +42,25 @@ class DesignTokensTest {
         }
     }
 
+    /** R2: the stylesheet is the parts in order, byte for byte; a part added on disk but not listed fails here. */
+    @Test
+    void theServedStylesheetIsEveryPartInOrder() throws IOException {
+        List<Path> onDisk;
+        try (Stream<Path> files = Files.list(Path.of("src/main/resources/baymax/ui/css"))) {
+            onDisk = files.filter(p -> p.toString().endsWith(".css")).sorted().toList();
+        }
+        assertThat(onDisk).as("css parts on disk").hasSizeGreaterThanOrEqualTo(9);
+        assertThat(onDisk.stream().map(p -> p.getFileName().toString()).toList()).isEqualTo(AssetHandler.CSS_PARTS);
+        StringBuilder joined = new StringBuilder();
+        for (Path p : onDisk) {
+            joined.append(Files.readString(p, StandardCharsets.UTF_8));
+        }
+        assertThat(CSS).isEqualTo(joined.toString());
+    }
+
     @Test
     void theTokenFileDefinesEveryTokenThePagesUse() throws IOException {
-        String css = Files.readString(TOKENS);
+        String css = CSS;
         assertThat(css).contains(":root{");
         Pattern use = Pattern.compile("var\\((--[a-z0-9-]+)\\)");
         Pattern def = Pattern.compile("(--[a-z0-9-]+)\\s*:");

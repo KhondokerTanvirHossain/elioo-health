@@ -1,0 +1,73 @@
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;background:var(--c-bg)}
+body{margin:0;font:var(--fs-0)/var(--lh) system-ui,-apple-system,"Noto Sans Bengali","Segoe UI",Roboto,sans-serif;color:var(--c-text);background:var(--c-bg);overflow-wrap:anywhere}
+img{max-width:100%;height:auto}
+a{color:var(--c-accent-ink);text-decoration-thickness:1px;text-underline-offset:2px}
+a:hover{color:var(--c-accent)}
+:focus-visible{outline:3px solid var(--c-focus);outline-offset:2px;border-radius:var(--r-s)}
+h1{font-size:var(--fs-3);line-height:1.25;margin:0 0 var(--sp-4);font-weight:700}
+h2{font-size:var(--fs-1);margin:var(--sp-6) 0 var(--sp-3);font-weight:700}
+p{margin:0 0 var(--sp-3)}
+main.app{max-width:var(--w-app);margin:0 auto;padding:var(--sp-4)}
+main.page{max-width:var(--w-page);margin:0 auto;padding:var(--sp-4)}
+
+/* top bar */
+.top{display:flex;justify-content:space-between;align-items:center;gap:var(--sp-2);margin-bottom:var(--sp-4);min-height:44px;white-space:nowrap}
+.top .btn{padding:var(--sp-2) var(--sp-3);min-height:36px;margin:0}
+.top form{margin:0}
+.brand{display:inline-flex;align-items:center;gap:var(--sp-2);text-decoration:none;color:var(--c-text);font-weight:700;font-size:var(--fs-1);white-space:nowrap}
+.brand .dot{width:14px;height:14px;border-radius:var(--r-pill);background:var(--c-urgent);flex:none}
+.brand{flex:none}
+.brand img{height:28px;width:auto;display:block}
+.actions{display:flex;align-items:center;gap:var(--sp-2)}
+
+/* language toggle: two pills, the active one filled */
+.lang{display:inline-flex;border:1px solid var(--c-line);border-radius:var(--r-pill);overflow:hidden;background:var(--c-surface)}
+.lang a{padding:var(--sp-1) var(--sp-2);white-space:nowrap;text-decoration:none;color:var(--c-muted);font-size:var(--fs-s);font-weight:600;transition:background var(--t),color var(--t)}
+.lang a[aria-current=true]{background:var(--c-accent);color:var(--c-on-accent)}
+
+/* surfaces */
+.card{background:var(--c-surface);border:1px solid var(--c-line);border-radius:var(--r-m);padding:var(--sp-4);margin:0 0 var(--sp-3);box-shadow:var(--shadow)}
+a.card{display:block;text-decoration:none;color:inherit;transition:transform var(--t),box-shadow var(--t)}
+a.card:hover{transform:translateY(-1px)}
+.card.ask{background:var(--c-accent-soft);border-color:var(--c-accent)}
+.quiet-block{background:var(--c-surface-2);border-radius:var(--r-m);padding:var(--sp-4);margin:0 0 var(--sp-3)}
+.row{display:flex;gap:var(--sp-3);align-items:flex-start}
+.row img{width:96px;height:96px;object-fit:cover;border-radius:var(--r-s);flex:none;background:var(--c-surface-2)}
+.meta{color:var(--c-muted);font-size:var(--fs-s)}
+.small{font-size:var(--fs-s);color:var(--c-muted)}
+.spaced{margin-top:var(--sp-6)}
+.tag{display:inline-block;padding:2px var(--sp-3);border-radius:var(--r-pill);background:var(--c-info-soft);font-size:var(--fs-s);margin-right:var(--sp-1);color:var(--c-text)}
+.tag.retake{background:var(--c-warn-soft)}
+.warn{background:var(--c-warn-soft);border:1px solid var(--c-warn-line);border-radius:var(--r-m);padding:var(--sp-3) var(--sp-4);margin:var(--sp-3) 0}
+.err{background:var(--c-danger-soft);border:1px solid var(--c-danger-line);border-radius:var(--r-m);padding:var(--sp-3) var(--sp-4);margin:var(--sp-3) 0}
+.item{border-top:1px solid var(--c-line);padding:var(--sp-3) 0}
+.item:first-of-type{border-top:0;padding-top:0}
+.item .text{margin-bottom:var(--sp-2)}
+.crop{display:block;border:1px solid var(--c-line);border-radius:var(--r-s);background:var(--c-surface-2)}
+.page-img{display:block;border:1px solid var(--c-line);border-radius:var(--r-m);margin-bottom:var(--sp-3)}
+.explain{white-space:pre-line}
+
+/* forms */
+label.check{display:flex;align-items:center;gap:var(--sp-2);font-weight:400;margin:var(--sp-2) 0}
+label.check input{width:22px;height:22px}
+label{display:block;margin:var(--sp-4) 0 var(--sp-2);font-weight:600}
+input[type=text],input[type=tel],input[type=file]{width:100%;font-size:var(--fs-1);padding:var(--sp-3) var(--sp-4);border:1px solid var(--c-line);border-radius:var(--r-m);background:var(--c-surface);color:var(--c-text);transition:border-color var(--t)}
+input:focus{border-color:var(--c-accent);outline:none}
+button,.btn{display:inline-block;white-space:nowrap;font:inherit;font-size:var(--fs-0);font-weight:600;padding:var(--sp-3) var(--sp-5);border:0;border-radius:var(--r-pill);background:var(--c-accent);color:var(--c-on-accent);text-decoration:none;cursor:pointer;margin-top:var(--sp-4);min-height:44px;transition:background var(--t),transform var(--t)}
+button:hover,.btn:hover{background:var(--c-accent-ink);color:var(--c-on-accent)}
+button:active,.btn:active{transform:scale(.98)}
+button.danger{background:var(--c-danger)}
+button.quiet,.btn.quiet{background:var(--c-surface-2);color:var(--c-text)}
+button.quiet:hover,.btn.quiet:hover{background:var(--c-line);color:var(--c-text)}
+.top button.quiet{margin:0;padding:var(--sp-2) var(--sp-3);min-height:36px}
+
+/* NOW urgency: the only red surface in the app (BMX-8 nudges never reach it; document messages may) */
+.urgent{background:var(--c-urgent-soft);border:1px solid var(--c-urgent);border-radius:var(--r-m);padding:var(--sp-3) var(--sp-4)}
+.urgent strong{color:var(--c-urgent)}
+@media (max-width:479px){.who{display:none}}
+
+/* footer disclaimer: every page */
+.foot .about{margin-top:var(--sp-2)}
+.foot{margin-top:var(--sp-7);padding:var(--sp-4) 0 var(--sp-5);border-top:1px solid var(--c-line);color:var(--c-muted);font-size:var(--fs-s)}
+
