@@ -61,8 +61,7 @@ public class ProfilePages implements WebPages {
                     .orElseThrow(() -> BaymaxException.notFound("patient_not_found", "no patient with id " + patientId));
             return nudgeData.patient(patientId).map(ref -> ref.optedOut()).defaultIfEmpty(false).flatMap(optedOut -> {
                 List<String> flags = patient.patient().chronicFlags() == null ? List.of() : patient.patient().chronicFlags();
-                StringBuilder b = new StringBuilder(chrome.top(lang, me.family().ownerName(), true));
-                b.append("<p class=\"small\"><a href=\"").append(BASE).append("/patients/").append(patientId).append("\">").append(copy.t(lang, "app.back")).append("</a></p>");
+                StringBuilder b = new StringBuilder(new AppShell(copy).back(lang, Tab.FAMILY.path, "app.back.family"));
                 b.append("<h1>").append(esc(patient.patient().name())).append(" · ").append(copy.t(lang, "profile.title")).append("</h1>");
                 if (saved) {
                     b.append("<div class=\"card\">").append(copy.t(lang, "profile.saved")).append("</div>");
@@ -88,7 +87,7 @@ public class ProfilePages implements WebPages {
                             .append("<button type=\"submit\" class=\"quiet\">").append(copy.t(lang, "profile.nudges.stop")).append("</button></form>");
                 }
                 b.append("</div>");
-                return chrome.app(lang, b.toString());
+                return Html.html(org.springframework.http.HttpStatus.OK, new AppShell(copy).inside(lang, Tab.FAMILY, b.toString()));
             });
         });
     }

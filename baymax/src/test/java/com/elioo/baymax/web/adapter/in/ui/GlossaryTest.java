@@ -29,13 +29,11 @@ class GlossaryTest {
     /** "<lang-part>:<key> <word>" for every violation on main when this test was written. Paste the first red here. */
     static final Set<String> KNOWN = Set.of(
             "messages:line.value_outside_range স্বাভাবিক সীমা",
-            "ui:app.back.patients রোগী",
             "ui:app.home.title নথি",
             "ui:doc.delete নথি",
             "ui:doc.delete.q নথি",
             "ui:doc.delete.warn নথি",
             "ui:doc.deleted নথি",
-            "ui:doc.deleted.back রোগী",
             "ui:landing.c.ref স্বাভাবিক সীমা",
             "ui:optout.done.patient রোগী",
             "ui:optout.family বন্ধ করুন",

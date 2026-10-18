@@ -76,7 +76,7 @@ class BanglaNumbersOnPagesTest {
 
     @Test
     void theHomeCardShowsAgeCountAndLastDateInBanglaDigits() {
-        List<String> meta = metaLines(page("/app/home", "bn"));
+        List<String> meta = metaLines(page("/app/family", "bn"));
         assertThat(meta).contains("৬০ বছর", "নথি: ১০ · শেষ নথি: ১৮ অক্টোবর ২০২৬");
         assertThat(meta).as("no meta line on the Bangla home page carries an ASCII digit")
                 .isNotEmpty().noneMatch(line -> ASCII_DIGIT.matcher(line).find());
@@ -84,16 +84,16 @@ class BanglaNumbersOnPagesTest {
 
     @Test
     void theEnglishHomeCardIsUnchanged() {
-        List<String> meta = metaLines(page("/app/home", "en"));
+        List<String> meta = metaLines(page("/app/family", "en"));
         assertThat(meta).contains("60 years", "Documents: 10 · Last document: 2026-10-18");
     }
 
     @Test
     void theTimelineDateAndCountsAreInBanglaDigitsAndEnglishIsUnchanged() {
-        List<String> bn = metaLines(page("/app/patients/" + PATIENT, "bn"));
+        List<String> bn = metaLines(page("/app/timeline?patient=" + PATIENT, "bn"));
         assertThat(bn).contains("১২ অক্টোবর ২০২৬", "মান ১৪ · ওষুধ ২ · ফলো-আপ ১", "৩ টি অংশ মূল ছবিতে খুঁজে পাওয়া যায়নি");
 
-        List<String> en = metaLines(page("/app/patients/" + PATIENT, "en"));
+        List<String> en = metaLines(page("/app/timeline?patient=" + PATIENT, "en"));
         assertThat(en).contains("2026-10-12", "Values 14 · Medicines 2 · Follow-ups 1", "3 items could not be found in the original image");
     }
 

@@ -1,1 +1,6 @@
 /* 50-chat: the chat tab, attention stack, composer (C4). Tokens only. */
+/* the chat placeholder until C4 (kit §11, §13): a Medioo bubble and a composer bar that says chat is coming */
+body.in-app.has-composer{padding-bottom:calc(var(--tabbar-h) + var(--composer-h) + env(safe-area-inset-bottom))}
+.bubble{max-width:320px;padding:var(--sp-3) var(--sp-4);background:var(--c-surface);color:var(--c-text);border-radius:var(--r-l) var(--r-l) var(--r-l) var(--r-tail);box-shadow:var(--shadow-1)}
+.composer{position:fixed;left:0;right:0;bottom:calc(var(--tabbar-h) + env(safe-area-inset-bottom));z-index:2;display:flex;align-items:center;min-height:var(--composer-h);padding:var(--sp-2) max(var(--sp-3),env(safe-area-inset-right)) var(--sp-2) max(var(--sp-3),env(safe-area-inset-left));background:var(--c-surface);box-shadow:var(--shadow-2)}
+.composer .soon{margin:0;color:var(--c-text-muted);font-size:var(--fs-footnote);line-height:var(--lh-footnote)}

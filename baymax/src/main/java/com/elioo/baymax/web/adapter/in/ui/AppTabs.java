@@ -3,6 +3,7 @@ package com.elioo.baymax.web.adapter.in.ui;
 import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
+import com.elioo.baymax.web.domain.FamilyOverview;
 import com.elioo.baymax.web.domain.PatientSummary;
 import com.elioo.baymax.web.domain.TimelineEntry;
 import com.elioo.baymax.web.domain.WebSession;
@@ -17,11 +18,16 @@ import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Mono;
 
 import java.util.UUID;
+import java.util.function.Function;
 
 import static com.elioo.baymax.web.adapter.in.ui.Html.esc;
 import static com.elioo.baymax.web.adapter.in.ui.PageChrome.BASE;
 
-/** The family's patients and a patient's timeline. */
+/**
+ * The three tabs (spec §3): চ্যাট {@code /app/home}, কাগজপত্র {@code /app/timeline}, পরিবার {@code /app/family}, each in
+ * the {@link AppShell}. Whose papers are in view is {@link ActivePatient}: never guessed between two, so with two or
+ * more and no {@code ?patient=} the চ্যাট and কাগজপত্র tabs show the chooser and read no one's papers.
+ */
 @Component
 @RequiredArgsConstructor
 public class AppTabs implements WebPages {
@@ -38,93 +44,151 @@ public class AppTabs implements WebPages {
     @Override
     public RouterFunction<ServerResponse> routes(HandlerFilterFunction<ServerResponse, ServerResponse> requireSession) {
         return RouterFunctions.route()
-                .GET(BASE + "/home", this::home)
+                .GET(Tab.CHAT.path, this::chat)
+                .GET(Tab.PAPERS.path, this::papers)
+                .GET(Tab.FAMILY.path, this::family)
                 .GET(BASE + "/patients/{id}", this::timelinePage)
                 .filter(requireSession)
                 .build();
     }
 
-    public Mono<ServerResponse> home(ServerRequest request) {
+    record Body(String html, Html.Head head, String bodyClass) {
+        static Body of(String html, Html.Head head) {
+            return new Body(html, head, "");
+        }
+    }
+
+    @FunctionalInterface
+    interface Renderer {
+        Mono<Body> render(ServerRequest request, Lang lang, FamilyOverview me, ActivePatient active);
+    }
+
+    public Mono<ServerResponse> chat(ServerRequest request) {
+        return tab(request, Tab.CHAT, this::chatBody, me -> ActivePatient.resolve(request, me));
+    }
+
+    public Mono<ServerResponse> papers(ServerRequest request) {
+        return tab(request, Tab.PAPERS, this::papersBody, me -> ActivePatient.resolve(request, me));
+    }
+
+    public Mono<ServerResponse> family(ServerRequest request) {
+        return tab(request, Tab.FAMILY, this::familyBody, me -> ActivePatient.resolve(request, me));
+    }
+
+    /**
+     * The old {@code /app/patients/{id}} link (bookmarks, the legacy upload redirect): that patient's কাগজপত্র tab, the
+     * patient taken from the path and checked against this family as {@code ?patient=} is. C1 turns it into a redirect.
+     */
+    public Mono<ServerResponse> timelinePage(ServerRequest request) {
+        String id = request.pathVariable("id");
+        return tab(request, Tab.PAPERS, this::papersBody, me -> new ActivePatient(java.util.Optional.of(ActivePatient.find(me, id)
+                .orElseThrow(() -> BaymaxException.notFound("patient_not_found", "no such patient")))));
+    }
+
+    private Mono<ServerResponse> tab(ServerRequest request, Tab tab, Renderer renderer, Function<FamilyOverview, ActivePatient> resolve) {
         WebSession session = SessionAuthFilter.session(request);
         Lang lang = Lang.of(request);
+        AppShell shell = new AppShell(copy);
         return timeline.me(session.familyId()).flatMap(me -> {
-            StringBuilder b = new StringBuilder(chrome.top(lang, me.family().ownerName(), true));
-            b.append("<h2>").append(copy.t(lang, "patients")).append("</h2>");
-            if (me.patients().isEmpty()) {
-                b.append("<div class=\"card\">").append(copy.t(lang, "patients.none")).append("</div>");
-            }
-            for (PatientSummary p : me.patients()) {
-                b.append("<a class=\"card\" href=\"").append(BASE).append("/patients/").append(p.patient().id()).append("\">")
-                        .append("<strong>").append(esc(p.patient().name())).append("</strong> ")
-                        .append("<span class=\"meta\">").append(copy.t(lang, "patients.years", p.patient().age())).append("</span>")
-                        .append(p.owner() ? "" : " <span class=\"tag\">" + copy.t(lang, "patients.shared") + "</span>")
-                        .append("<div class=\"meta\">").append(copy.t(lang, "patients.docs", p.documents()))
-                        .append(p.lastDocumentAt() == null ? "" : " · " + copy.t(lang, "patients.last", copy.dateText(lang, java.time.LocalDate.ofInstant(p.lastDocumentAt(), java.time.ZoneOffset.UTC))))
-                        .append("</div></a>");
-            }
-            return chrome.app(lang, b.toString());
+            ActivePatient active = resolve.apply(me);
+            Mono<Body> body = active.patient().isEmpty() && tab != Tab.FAMILY
+                    ? Mono.just(Body.of(me.patients().isEmpty() ? shell.noPatients(lang, tab) : shell.chooser(lang, tab, me, active), head(lang, tab)))
+                    : renderer.render(request, lang, me, active);
+            return body.flatMap(b -> Html.html(HttpStatus.OK, shell.page(lang, tab, me, active, b.html(), b.head(), b.bodyClass())));
         });
     }
 
-    public Mono<ServerResponse> timelinePage(ServerRequest request) {
-        WebSession session = SessionAuthFilter.session(request);
-        Lang lang = Lang.of(request);
-        UUID patientId = PageChrome.uuid(request.pathVariable("id"));
+    private Html.Head head(Lang lang, Tab tab) {
+        return Html.Head.of(copy.t(lang, tab.labelKey) + " — " + copy.t(lang, "app.title"));
+    }
+
+    /** C4 replaces this with the attention stack (s06). Until then: the greeting, the papers, the honest composer. */
+    Mono<Body> chatBody(ServerRequest request, Lang lang, FamilyOverview me, ActivePatient active) {
+        PatientSummary p = active.patient().orElseThrow();
+        String owner = me.family().ownerName();
+        String hello = owner == null || owner.isBlank() ? copy.t(lang, "chat.hello.plain") : copy.t(lang, "chat.hello", owner);
+        return Mono.just(new Body("<p class=\"bubble\">" + hello + "</p>"
+                + "<p><a class=\"btn quiet\" href=\"" + Tab.PAPERS.path + "?patient=" + p.patient().id() + "\">"
+                + copy.t(lang, "chat.papers", p.patient().name()) + "</a></p>"
+                + "<div class=\"composer\"><p class=\"soon\">" + copy.t(lang, "chat.soon") + "</p></div>",
+                head(lang, Tab.CHAT), "has-composer"));
+    }
+
+    /** The patient's papers, newest first; reloads itself while one is still being read. */
+    Mono<Body> papersBody(ServerRequest request, Lang lang, FamilyOverview me, ActivePatient active) {
+        PatientSummary patient = active.patient().orElseThrow();
+        UUID patientId = patient.patient().id();
         String cursor = request.queryParam("cursor").orElse(null);
-        return timeline.me(session.familyId()).flatMap(me -> {
-            PatientSummary patient = me.patients().stream().filter(p -> p.patient().id().equals(patientId)).findFirst()
-                    .orElseThrow(() -> BaymaxException.notFound("patient_not_found", "no patient with id " + patientId));
-            return timeline.timeline(session.familyId(), patientId, cursor).flatMap(page -> {
-                StringBuilder b = new StringBuilder(chrome.top(lang, me.family().ownerName(), true));
-                b.append("<p class=\"small\"><a href=\"").append(BASE).append("/home\">").append(copy.t(lang, "app.back.patients")).append("</a></p>");
-                b.append("<h1>").append(esc(patient.patient().name())).append("</h1>");
-                b.append("<p class=\"small\"><a href=\"").append(BASE).append("/patients/").append(patientId).append("/profile\">").append(copy.t(lang, "profile.link")).append("</a></p>");
-                // BMX-8 (PO option 1): a patient with no chronic flags is asked once, here, where the family already is —
-                // nothing infers them, and the silence rule can never fire until someone answers
-                if (patient.patient().chronicFlags() == null || patient.patient().chronicFlags().isEmpty()) {
-                    b.append("<div class=\"card ask\"><strong>").append(copy.t(lang, "timeline.flags.ask")).append("</strong>")
-                            .append("<p class=\"small\">").append(copy.t(lang, "timeline.flags.why")).append("</p>")
-                            .append("<a class=\"btn quiet\" href=\"").append(BASE).append("/patients/").append(patientId).append("/profile\">")
-                            .append(copy.t(lang, "timeline.flags.cta")).append("</a></div>");
-                }
-                if (patient.owner()) {
-                    b.append("<form class=\"card\" method=\"post\" enctype=\"multipart/form-data\" action=\"")
-                            .append(BASE).append("/patients/").append(patientId).append("/upload\">")
-                            .append("<label for=\"f\">").append(copy.t(lang, "timeline.add")).append("</label>")
-                            .append("<input id=\"f\" type=\"file\" name=\"file\" accept=\"image/*,application/pdf\" required>")
-                            .append("<button type=\"submit\">").append(copy.t(lang, "timeline.upload")).append("</button></form>");
-                }
-                b.append("<h2>").append(copy.t(lang, "timeline.docs")).append("</h2>");
-                if (page.entries().isEmpty()) {
-                    b.append("<div class=\"card\">").append(copy.t(lang, "timeline.none")).append("</div>");
-                }
-                for (TimelineEntry e : page.entries()) {
-                    String href = BASE + "/documents/" + e.documentId();
-                    b.append("<div class=\"card\"><div class=\"row\">")
-                            .append("<a href=\"").append(href).append("\"><img alt=\"\" loading=\"lazy\" src=\"")
-                            .append(PageChrome.imageHref(e.documentId(), e.pageOneKey())).append("\"></a>")
-                            .append("<div><div><a href=\"").append(href).append("\"><strong>").append(chrome.documentType(lang, e.documentType()))
-                            .append("</strong></a> ").append(chrome.status(lang, e.status())).append("</div>")
-                            .append("<div class=\"meta\">").append(copy.date(lang, e.date()))
-                            .append(e.dateIsFallback() ? " <span class=\"small\">" + copy.t(lang, "timeline.uploaddate") + "</span>" : "")
-                            .append(e.facility() == null || e.facility().isBlank() ? "" : " · " + esc(e.facility())).append("</div>");
-                    if ("DONE".equals(e.status())) {
-                        b.append("<div class=\"meta\">").append(copy.t(lang, "timeline.counts", e.values(), e.medicines(), e.followUps())).append("</div>");
-                        if (e.unverified() > 0) {
-                            b.append("<div class=\"small\">").append(copy.t(lang, "timeline.unverified", e.unverified())).append("</div>");
-                        }
+        UUID familyId = SessionAuthFilter.session(request).familyId();
+        return timeline.timeline(familyId, patientId, cursor).map(page -> {
+            StringBuilder b = new StringBuilder();
+            b.append("<h1>").append(esc(patient.patient().name())).append("</h1>");
+            b.append("<p class=\"small\"><a href=\"").append(BASE).append("/patients/").append(patientId).append("/profile\">").append(copy.t(lang, "profile.link")).append("</a></p>");
+            // BMX-8 (PO option 1): a patient with no chronic flags is asked once, here, where the family already is —
+            // nothing infers them, and the silence rule can never fire until someone answers
+            if (patient.patient().chronicFlags() == null || patient.patient().chronicFlags().isEmpty()) {
+                b.append("<div class=\"card ask\"><strong>").append(copy.t(lang, "timeline.flags.ask")).append("</strong>")
+                        .append("<p class=\"small\">").append(copy.t(lang, "timeline.flags.why")).append("</p>")
+                        .append("<a class=\"btn quiet\" href=\"").append(BASE).append("/patients/").append(patientId).append("/profile\">")
+                        .append(copy.t(lang, "timeline.flags.cta")).append("</a></div>");
+            }
+            if (patient.owner()) {
+                // A7 replaces the form with the link to the add-report sheet
+                b.append("<form class=\"card\" method=\"post\" enctype=\"multipart/form-data\" action=\"")
+                        .append(BASE).append("/patients/").append(patientId).append("/upload\">")
+                        .append("<label for=\"f\">").append(copy.t(lang, "timeline.add")).append("</label>")
+                        .append("<input id=\"f\" type=\"file\" name=\"file\" accept=\"image/*,application/pdf\" required>")
+                        .append("<button type=\"submit\">").append(copy.t(lang, "timeline.upload")).append("</button></form>");
+            }
+            b.append("<h2>").append(copy.t(lang, "timeline.docs")).append("</h2>");
+            if (page.entries().isEmpty()) {
+                b.append("<div class=\"card\">").append(copy.t(lang, "timeline.none")).append("</div>");
+            }
+            for (TimelineEntry e : page.entries()) {
+                String href = BASE + "/documents/" + e.documentId();
+                b.append("<div class=\"card\"><div class=\"row\">")
+                        .append("<a href=\"").append(href).append("\"><img alt=\"\" loading=\"lazy\" src=\"")
+                        .append(PageChrome.imageHref(e.documentId(), e.pageOneKey())).append("\"></a>")
+                        .append("<div><div><a href=\"").append(href).append("\"><strong>").append(chrome.documentType(lang, e.documentType()))
+                        .append("</strong></a> ").append(chrome.status(lang, e.status())).append("</div>")
+                        .append("<div class=\"meta\">").append(copy.date(lang, e.date()))
+                        .append(e.dateIsFallback() ? " <span class=\"small\">" + copy.t(lang, "timeline.uploaddate") + "</span>" : "")
+                        .append(e.facility() == null || e.facility().isBlank() ? "" : " · " + esc(e.facility())).append("</div>");
+                if ("DONE".equals(e.status())) {
+                    b.append("<div class=\"meta\">").append(copy.t(lang, "timeline.counts", e.values(), e.medicines(), e.followUps())).append("</div>");
+                    if (e.unverified() > 0) {
+                        b.append("<div class=\"small\">").append(copy.t(lang, "timeline.unverified", e.unverified())).append("</div>");
                     }
-                    b.append("</div></div></div>");
                 }
-                if (page.nextCursor() != null) {
-                    b.append("<p><a class=\"btn quiet\" href=\"").append(BASE).append("/patients/").append(patientId)
-                            .append("?cursor=").append(esc(page.nextCursor())).append("\">").append(copy.t(lang, "timeline.more")).append("</a></p>");
-                }
-                // a document still being read: reload every few seconds until it is not
-                boolean inFlight = page.entries().stream().anyMatch(e -> "RECEIVED".equals(e.status()) || "PROCESSING".equals(e.status()));
-                return Html.html(HttpStatus.OK, Html.page(lang, copy.t(lang, "app.home.title"), b.toString(), inFlight ? 5 : 0, false,
-                        copy.t(lang, "disclaimer"), false));
-            });
+                b.append("</div></div></div>");
+            }
+            if (page.nextCursor() != null) {
+                b.append("<p><a class=\"btn quiet\" href=\"").append(Tab.PAPERS.path).append("?patient=").append(patientId)
+                        .append("&amp;cursor=").append(esc(page.nextCursor())).append("\">").append(copy.t(lang, "timeline.more")).append("</a></p>");
+            }
+            // a document still being read: reload every few seconds until it is not
+            boolean inFlight = page.entries().stream().anyMatch(e -> "RECEIVED".equals(e.status()) || "PROCESSING".equals(e.status()));
+            return Body.of(b.toString(), head(lang, Tab.PAPERS).refresh(inFlight ? 5 : 0));
         });
+    }
+
+    /** A6 replaces this with s21. Until then: the patient cards, the language and the logout. */
+    Mono<Body> familyBody(ServerRequest request, Lang lang, FamilyOverview me, ActivePatient active) {
+        StringBuilder b = new StringBuilder("<h1>").append(copy.t(lang, "tab.family")).append("</h1>");
+        if (me.patients().isEmpty()) {
+            b.append("<div class=\"card\">").append(copy.t(lang, "patients.none")).append("</div>");
+        }
+        for (PatientSummary p : me.patients()) {
+            b.append("<a class=\"card\" href=\"").append(BASE).append("/patients/").append(p.patient().id()).append("/profile\">")
+                    .append("<strong>").append(esc(p.patient().name())).append("</strong> ")
+                    .append("<span class=\"meta\">").append(copy.t(lang, "patients.years", p.patient().age())).append("</span>")
+                    .append(p.owner() ? "" : " <span class=\"tag\">" + copy.t(lang, "patients.shared") + "</span>")
+                    .append("<div class=\"meta\">").append(copy.t(lang, "patients.docs", p.documents()))
+                    .append(p.lastDocumentAt() == null ? "" : " · " + copy.t(lang, "patients.last", copy.dateText(lang, java.time.LocalDate.ofInstant(p.lastDocumentAt(), java.time.ZoneOffset.UTC))))
+                    .append("</div></a>");
+        }
+        b.append("<div class=\"acct\">").append(chrome.langToggle(lang, Tab.FAMILY.path))
+                .append(chrome.logout(lang, me.family().ownerName())).append("</div>");
+        return Mono.just(Body.of(b.toString(), head(lang, Tab.FAMILY)));
     }
 }

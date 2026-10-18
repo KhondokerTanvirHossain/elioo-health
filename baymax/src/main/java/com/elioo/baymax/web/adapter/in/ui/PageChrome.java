@@ -75,9 +75,14 @@ public class PageChrome {
         String here = signedIn ? BASE + "/home" : BASE + "/";
         return "<div class=\"top\"><a class=\"brand\" href=\"" + here + "\">" + Html.brand(copy.t(lang, "app.title")) + "</a>"
                 + "<div class=\"actions\">" + langToggle(lang, here)
-                + (signedIn ? "<form method=\"post\" action=\"" + BASE + "/logout\"><button type=\"submit\" class=\"quiet\">"
-                + (who == null ? "" : "<span class=\"who\">" + esc(who) + " · </span>") + copy.t(lang, "app.logout") + "</button></form>" : "")
+                + (signedIn ? logout(lang, who) : "")
                 + "</div></div>";
+    }
+
+    /** The logout button, with whose account it is when known (the top bar, and the পরিবার tab from A5). */
+    String logout(Lang lang, String who) {
+        return "<form method=\"post\" action=\"" + BASE + "/logout\"><button type=\"submit\" class=\"quiet\">"
+                + (who == null ? "" : "<span class=\"who\">" + esc(who) + " · </span>") + copy.t(lang, "app.logout") + "</button></form>";
     }
 
     String langToggle(Lang lang, String back) {
