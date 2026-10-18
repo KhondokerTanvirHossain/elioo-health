@@ -21,8 +21,31 @@ import java.util.Set;
 @Component
 public class AssetHandler implements WebPages {
 
-    /** Files under classpath {@code baymax/ui/} that {@code /assets/{file}} may serve; nothing else leaves the jar. */
-    static final Set<String> ASSETS = Set.of("baymax.css", "favicon.svg", "mio.webp", "mio-head.webp", "medioo.webp", "paper-lab.svg", "paper-rx.svg", "mio.png", "medioo.png", "medioo.svg");
+    /**
+     * Files under classpath {@code baymax/ui/} that {@code /assets/{file}} may serve; nothing else leaves the jar. One per
+     * line, sorted. {@code baymax.css} is not a file: it is {@link #CSS_PARTS} joined (AssetListTest holds this list to
+     * the directory both ways).
+     */
+    static final Set<String> ASSETS = Set.of(
+            "baymax.css",
+            "favicon.svg",
+            "medioo.png",
+            "medioo.svg",
+            "medioo.webp",
+            "mio-head.webp",
+            "mio.png",
+            "mio.webp",
+            "paper-lab.svg",
+            "paper-rx.svg");
+
+    /** Directories under {@code baymax/ui/} that are never served as themselves: the stylesheet's parts. */
+    static final List<String> PRIVATE_DIRS = List.of("css/");
+
+    /**
+     * Listed names that may be absent from the jar: original assets from Tanvir; a slot renders only when
+     * {@code Html.present} finds the file (mascot slot empty by decision).
+     */
+    static final Set<String> OPTIONAL_SLOTS = Set.of("mio.png", "medioo.png", "medioo.svg");
 
     /** The stylesheet's parts, in the order they are served as /assets/baymax.css. Each area appends only to its own. */
     static final List<String> CSS_PARTS = List.of("00-tokens.css", "10-base.css", "20-shell.css", "30-family.css",
