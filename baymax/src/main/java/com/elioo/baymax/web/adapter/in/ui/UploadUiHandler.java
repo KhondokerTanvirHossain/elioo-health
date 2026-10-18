@@ -55,7 +55,7 @@ public class UploadUiHandler implements WebPages {
             return Flux.fromIterable(files).filter(FilePart.class::isInstance).cast(FilePart.class)
                     .concatMap(UploadUiHandler::readBytes).collectList()
                     .flatMap(uploads -> timeline.upload(session.familyId(), patientId, uploads));
-        }).flatMap(d -> Html.redirect(BASE + "/patients/" + patientId));
+        }).flatMap(d -> Html.redirect(Tab.PAPERS.path + "?patient=" + patientId));
     }
 
     private static Mono<Upload> readBytes(FilePart part) {

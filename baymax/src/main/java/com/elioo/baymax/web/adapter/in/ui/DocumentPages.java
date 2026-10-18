@@ -61,7 +61,7 @@ public class DocumentPages implements WebPages {
         UUID documentId = PageChrome.uuid(request.pathVariable("id"));
         return timeline.document(session.familyId(), documentId)
                 .zipWith(timeline.explanationOf(session.familyId(), documentId).map(Optional::of).defaultIfEmpty(Optional.empty()))
-                .flatMap(t -> chrome.app(lang, render(lang, t.getT1(), documentId, t.getT2())));
+                .flatMap(t -> Html.html(HttpStatus.OK, new AppShell(copy).inside(lang, Tab.PAPERS, render(lang, t.getT1(), documentId, t.getT2()))));
     }
 
     String render(DocumentView view, UUID documentId) {
@@ -76,8 +76,8 @@ public class DocumentPages implements WebPages {
      *                    composed — it is the only interpretive text on the page and it passed the checklist
      */
     String render(Lang lang, DocumentView view, UUID documentId, Optional<String> explanation) {
-        StringBuilder b = new StringBuilder(chrome.top(lang, null, true));
-        b.append("<p class=\"small\"><a href=\"").append(BASE).append("/home\">").append(copy.t(lang, "app.back")).append("</a></p>");
+        // the view does not name its patient yet (A12's ResultView does): back to the tab, which asks when there are two
+        StringBuilder b = new StringBuilder(new AppShell(copy).back(lang, Tab.PAPERS.path, "app.back.papers"));
         b.append("<h1>").append(chrome.documentType(lang, view.documentType())).append(" ").append(chrome.status(lang, view.status())).append("</h1>");
         b.append("<div class=\"meta\">").append(copy.date(lang, view.documentDate()))
                 .append(view.facility() == null ? "" : " · " + esc(view.facility())).append("</div>");
@@ -166,7 +166,7 @@ public class DocumentPages implements WebPages {
     public Mono<ServerResponse> confirmDelete(ServerRequest request) {
         UUID documentId = PageChrome.uuid(request.pathVariable("id"));
         Lang lang = Lang.of(request);
-        return chrome.app(lang, chrome.top(lang, null, true) + """
+        return Html.html(HttpStatus.OK, new AppShell(copy).inside(lang, Tab.PAPERS, """
                 <h1>%s</h1>
                 <div class="warn">%s</div>
                 <form method="post" action="%s/documents/%s/delete">
@@ -174,17 +174,17 @@ public class DocumentPages implements WebPages {
                   <a class="btn quiet" href="%s/documents/%s">%s</a>
                 </form>
                 """.formatted(copy.t(lang, "doc.delete.q"), copy.t(lang, "doc.delete.warn"), BASE, documentId,
-                copy.t(lang, "doc.delete.yes"), BASE, documentId, copy.t(lang, "doc.delete.no")));
+                copy.t(lang, "doc.delete.yes"), BASE, documentId, copy.t(lang, "doc.delete.no"))));
     }
 
     public Mono<ServerResponse> delete(ServerRequest request) {
         WebSession session = SessionAuthFilter.session(request);
         Lang lang = Lang.of(request);
         UUID documentId = PageChrome.uuid(request.pathVariable("id"));
-        return timeline.deleteDocument(session.familyId(), documentId).flatMap(report -> chrome.app(lang, chrome.top(lang, null, true)
-                + "<h1>" + copy.t(lang, "doc.deleted") + "</h1><div class=\"card\">" + copy.t(lang, "doc.deleted.objects", report.objectsDeleted())
+        return timeline.deleteDocument(session.familyId(), documentId).flatMap(report -> Html.html(HttpStatus.OK, new AppShell(copy).inside(lang, Tab.PAPERS,
+                "<h1>" + copy.t(lang, "doc.deleted") + "</h1><div class=\"card\">" + copy.t(lang, "doc.deleted.objects", report.objectsDeleted())
                 + "<br>" + copy.t(lang, "doc.deleted.rows", report.ledgerRowsDeleted()) + "</div>"
-                + "<p><a class=\"btn\" href=\"" + BASE + "/home\">" + copy.t(lang, "doc.deleted.back") + "</a></p>"));
+                + "<p>" + new AppShell(copy).back(lang, Tab.PAPERS.path, "app.back.papers") + "</p>")));
     }
 
     // ---- images: signed afresh on every load -------------------------------------------------------

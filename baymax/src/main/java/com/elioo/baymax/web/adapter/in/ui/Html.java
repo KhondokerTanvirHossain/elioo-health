@@ -95,6 +95,28 @@ final class Html {
      * @param disclaimer the footer text; on every page, app and landing alike (BMX-6b safety constraint)
      */
     static String page(Lang lang, Head head, String body, boolean wide, String disclaimer) {
+        return head(lang, head) + "<body><main class=\""
+                + (wide ? "page" : "app") + "\">" + body
+                + "<footer class=\"foot\">" + disclaimer + "</footer></main></body></html>";
+    }
+
+    /**
+     * A signed-in page in the app shell (A5): the same head as {@link #page}, then the header, the page in
+     * {@code main.app} with the disclaimer, and the tab bar. {@code sheet} is drawn over the shell, which is then
+     * {@code inert} so nothing behind the sheet takes a tap or the focus (C1); empty, there is no sheet.
+     *
+     * @param bodyClass a class added to {@code body.in-app} ({@code has-composer} on the chat tab), or empty
+     */
+    static String appPage(Lang lang, Head head, String header, String body, String disclaimer, String tabs, String sheet, String bodyClass) {
+        boolean hasSheet = sheet != null && !sheet.isEmpty();
+        return head(lang, head) + "<body class=\"in-app" + (bodyClass == null || bodyClass.isEmpty() ? "" : " " + bodyClass) + "\">"
+                + "<div class=\"shell\"" + (hasSheet ? " inert" : "") + ">" + header
+                + "<main class=\"app\">" + body + "<footer class=\"foot\">" + disclaimer + "</footer></main>" + tabs + "</div>"
+                + (hasSheet ? sheet : "") + "</body></html>";
+    }
+
+    /** Everything up to and including {@code </head>}: one head for {@link #page} and {@link #appPage}. */
+    private static String head(Lang lang, Head head) {
         // Not rendered yet (A9 renders the first, D4 the second): refused, so a PR that sets one cannot be silently dropped.
         if (head.refreshOnlyWithoutScript()) {
             throw new IllegalStateException("Head.refreshOnlyWithoutScript is not rendered yet");
@@ -109,9 +131,7 @@ final class Html {
                 + "<meta name=\"theme-color\" media=\"(prefers-color-scheme: light)\" content=\"" + Tokens.LIGHT_BG + "\">"
                 + "<meta name=\"theme-color\" media=\"(prefers-color-scheme: dark)\" content=\"" + Tokens.DARK_BG + "\">"
                 + (head.index() ? "" : "<meta name=\"robots\" content=\"noindex\">")
-                + "<title>" + head.title() + "</title><link rel=\"stylesheet\" href=\"" + CSS_HREF + "\"><link rel=\"icon\" type=\"image/svg+xml\" href=\"" + ICON_HREF + "\"></head><body><main class=\""
-                + (wide ? "page" : "app") + "\">" + body
-                + "<footer class=\"foot\">" + disclaimer + "</footer></main></body></html>";
+                + "<title>" + head.title() + "</title><link rel=\"stylesheet\" href=\"" + CSS_HREF + "\"><link rel=\"icon\" type=\"image/svg+xml\" href=\"" + ICON_HREF + "\"></head>";
     }
 
     /** The seven-argument form the screens call today; it is the {@link Head} form, byte for byte (HtmlHeadTest). */

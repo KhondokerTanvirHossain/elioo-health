@@ -1,1 +1,19 @@
 /* 20-shell: app shell, tabs, sheets (A5, C1). Tokens only. */
+/* app shell (spec §3; kit §2, §3, §17). The wordmark's .wm-text rules live in 10-base (A3), shared with the top bar. */
+body.in-app{padding-bottom:calc(var(--tabbar-h) + env(safe-area-inset-bottom))}
+.appbar{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);min-height:var(--header-h);padding:0 max(var(--sp-4),env(safe-area-inset-right)) 0 max(var(--sp-4),env(safe-area-inset-left));background:var(--c-bg);border-bottom:1px solid var(--c-line)}
+.switcher{display:inline-flex;align-items:center;gap:var(--sp-2);min-width:0;min-height:var(--target-min);padding:0 var(--sp-3) 0 6px;border:1px solid var(--c-outline);border-radius:var(--r-pill);background:var(--c-surface);color:var(--c-text);text-decoration:none;font-size:var(--fs-label-large);line-height:var(--lh-label-large);font-weight:600}
+.pav{display:inline-flex;align-items:center;justify-content:center;flex:none;width:34px;height:34px;border-radius:var(--r-pill);background:var(--c-primary-container);color:var(--c-on-primary-container);font-size:var(--fs-label);font-weight:700}
+.tabs{position:fixed;left:0;right:0;bottom:0;z-index:2;display:flex;height:calc(var(--tabbar-h) + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom);background:var(--c-surface);box-shadow:var(--shadow-2)}
+.tabs a{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--sp-0);min-height:var(--target-min);text-decoration:none;color:var(--c-text-muted);font-size:var(--fs-label-small);line-height:var(--lh-label-small);font-weight:600}
+.tabs .pill{display:flex;align-items:center;justify-content:center;width:64px;height:32px;border-radius:var(--r-pill)}
+.tabs a[aria-current=page]{color:var(--c-text);font-weight:700}
+.tabs a[aria-current=page] .pill{background:var(--c-primary-container)}
+.back{display:inline-flex;align-items:center;min-height:var(--target-min);color:var(--c-primary);font-weight:600;text-decoration:none}
+.acct{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-3);margin-top:var(--sp-6)}
+.acct form{margin:0}
+.acct button{margin:0}
+.choices{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--sp-2)}
+.pchoice{display:flex;align-items:center;gap:var(--sp-3);min-height:56px;padding:var(--sp-2) var(--sp-4);border:1px solid var(--c-outline);border-radius:var(--r-pill);background:var(--c-surface);color:var(--c-text);text-decoration:none}
+.pchoice[aria-current=true]{background:var(--c-primary-container);border:2px solid var(--c-primary)}
+.pchoice .meta{display:block}

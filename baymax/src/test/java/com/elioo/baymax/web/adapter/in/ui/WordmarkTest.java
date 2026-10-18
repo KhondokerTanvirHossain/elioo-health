@@ -12,7 +12,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * A3 turns dark mode on, so the wordmark must follow the theme. The raster wordmark's "medi" was fixed navy ink, about
  * 1.66:1 on the dark --c-bg and 1.50:1 on --c-surface: nearly invisible on every top bar in a dark phone. A picture
  * cannot be measured by TokenContrastTest, so the wordmark is drawn as text (s01, s03, kit §2): "Medi" in the theme's
- * ink, which TokenContrastTest measures on every page, and "oo" in --c-brand-green, the logotype it exempts.
+ * ink, which TokenContrastTest measures on every page, and "oo" in --c-brand-green, the logotype it exempts. From A5 the
+ * signed-in pages carry the app shell's header ({@code .appbar}) instead of the top bar; both are read here.
  */
 class WordmarkTest {
 
@@ -28,7 +29,7 @@ class WordmarkTest {
             }
             Dom dom = Dom.parse(html);
             for (Dom.Element top : dom.all) {
-                if (!top.classes().contains("top")) {
+                if (!top.classes().contains("top") && !top.classes().contains("appbar")) {
                     continue;
                 }
                 bars++;
