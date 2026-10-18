@@ -1,10 +1,6 @@
 package com.elioo.baymax.web.adapter.in.ui;
 
-import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.extraction.domain.DocumentView;
-import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
-import com.elioo.baymax.web.application.port.in.TimelineUseCase;
-import com.elioo.baymax.web.application.port.in.WebAuthUseCase;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -12,13 +8,11 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
 
 /** What the document page shows and, more importantly, what it never shows. */
 class WebUiHandlerRenderTest {
 
-    private final WebUiHandler ui = new WebUiHandler(mock(WebAuthUseCase.class), mock(TimelineUseCase.class),
-            new SessionAuthFilter(mock(WebAuthUseCase.class), new BaymaxProperties()), new UiCopy(), mock(com.elioo.baymax.nudge.application.port.in.NudgeOptOutUseCase.class), mock(com.elioo.baymax.nudge.application.port.out.NudgeDataPort.class), new BaymaxProperties());
+    private final WebUiHandler ui = new WebUiTestKit().ui;
     private final UUID id = UUID.randomUUID();
 
     /** Acceptance: given unverified items, the count is shown and the items themselves never appear. */

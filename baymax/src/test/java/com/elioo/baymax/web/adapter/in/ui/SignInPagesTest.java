@@ -1,8 +1,6 @@
 package com.elioo.baymax.web.adapter.in.ui;
 
 import com.elioo.baymax.config.BaymaxProperties;
-import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
-import com.elioo.baymax.web.application.port.in.TimelineUseCase;
 import com.elioo.baymax.web.application.port.in.WebAuthUseCase;
 import com.elioo.baymax.web.domain.CodeIssue;
 import com.elioo.baymax.web.domain.CodeRequest;
@@ -38,12 +36,7 @@ class SignInPagesTest {
 
     SignInPagesTest() {
         props.getWa().setPublicNumber("8801700000000");
-        SessionAuthFilter sessions = new SessionAuthFilter(auth, props);
-        when(auth.authenticate(anyString())).thenReturn(Mono.empty());
-        WebUiHandler ui = new WebUiHandler(auth, mock(TimelineUseCase.class), sessions, new UiCopy(),
-                mock(com.elioo.baymax.nudge.application.port.in.NudgeOptOutUseCase.class),
-                mock(com.elioo.baymax.nudge.application.port.out.NudgeDataPort.class), props);
-        client = WebTestClient.bindToRouterFunction(new BaymaxWebUiRouter().baymaxWebUiRoutes(ui, sessions)).build();
+        client = new WebUiTestKit(auth, props, true).client;
     }
 
     String get(String path, String loginCookie) {
