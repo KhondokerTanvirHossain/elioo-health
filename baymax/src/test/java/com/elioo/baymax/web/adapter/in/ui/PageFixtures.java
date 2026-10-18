@@ -7,9 +7,11 @@ import com.elioo.baymax.storage.domain.DeletionReport;
 import com.elioo.baymax.web.application.port.in.CodeRejectedException;
 import com.elioo.baymax.web.domain.CodeIssue;
 import com.elioo.baymax.web.domain.CodeRequest;
+import com.elioo.baymax.web.domain.IssuedSession;
 import com.elioo.baymax.web.domain.TimelineEntry;
 import com.elioo.baymax.web.domain.TimelinePage;
 import com.elioo.baymax.web.domain.VerifyFailure;
+import com.elioo.baymax.web.domain.WebSession;
 import org.springframework.http.HttpMethod;
 import reactor.core.publisher.Mono;
 
@@ -36,13 +38,39 @@ final class PageFixtures {
 
     enum Body { NONE, FORM, MULTIPART }
 
-    record Fixture(String uri, boolean signedIn, Body body, Map<String, String> form, Consumer<WebUiTestKit> stubs) {
+    /**
+     * One call of a route. {@code name} is empty for a route's main fixture and names a variant otherwise (it becomes
+     * part of the snapshot file name); {@code cookies} are sent besides the session cookie {@code signedIn} adds.
+     */
+    record Fixture(String uri, boolean signedIn, Body body, Map<String, String> form, Map<String, String> cookies,
+                   String name, Consumer<WebUiTestKit> stubs) {
+
+        Fixture(String uri, boolean signedIn, Body body, Map<String, String> form, Consumer<WebUiTestKit> stubs) {
+            this(uri, signedIn, body, form, Map.of(), "", stubs);
+        }
+
         static Fixture get(String uri, boolean signedIn, Consumer<WebUiTestKit> stubs) {
             return new Fixture(uri, signedIn, Body.NONE, Map.of(), stubs);
         }
+
+        Fixture withCookie(String cookie, String value) {
+            Map<String, String> more = new LinkedHashMap<>(cookies);
+            more.put(cookie, value);
+            return new Fixture(uri, signedIn, body, form, Map.copyOf(more), name, stubs);
+        }
+
+        Fixture named(String variant) {
+            return new Fixture(uri, signedIn, body, form, cookies, variant, stubs);
+        }
     }
 
+    /** The baymax_login cookie POST /app/login sets: the number's HMAC and its last three digits, never the number. */
+    static final String LOGIN = "a".repeat(64) + ".000";
+
+    /** One main fixture per route the router publishes. */
     static final Map<String, Fixture> ALL = new LinkedHashMap<>();
+    /** Route key → further fixtures of the same route, for a branch the main fixture does not reach. */
+    static final Map<String, List<Fixture>> VARIANTS = new LinkedHashMap<>();
 
     static {
         String doc = WebUiTestKit.DOC_ID.toString();
@@ -54,8 +82,12 @@ final class PageFixtures {
         put("GET /baymax/{*rest}", Fixture.get("/baymax/patients/" + ma + "?x=1", false, k -> { }));
         put("GET /app/", Fixture.get("/app/", false, k -> { }));
         put("GET /app", Fixture.get("/app", false, k -> { }));
-        put("GET /app/verify", Fixture.get("/app/verify", false, k -> { }));
-        put("GET /app/nudges/opt-out", Fixture.get("/app/nudges/opt-out?t=not-a-token", false, k -> { }));
+        put("GET /app/verify", Fixture.get("/app/verify", false, k -> { }).withCookie("baymax_login", LOGIN));
+        variant("GET /app/verify", Fixture.get("/app/verify", false, k -> { }).withCookie("baymax_login", LOGIN + ".s").named("sent"));
+        variant("GET /app/verify", Fixture.get("/app/verify", false, k -> { }).named("nocookie"));
+        put("GET /app/nudges/opt-out", Fixture.get("/app/nudges/opt-out?p=" + ma + "&t=valid", false, Stubs::validOptOutLink));
+        variant("GET /app/nudges/opt-out", Fixture.get("/app/nudges/opt-out?p=" + ma + "&t=not-a-token", false, Stubs::validOptOutLink).named("badtoken"));
+        variant("GET /app/nudges/opt-out", Fixture.get("/app/nudges/opt-out?t=not-a-token", false, k -> { }).named("nopatient"));
         put("GET /app/home", Fixture.get("/app/home", true, Stubs::familyOfMa));
         put("GET /app/patients/{id}", Fixture.get("/app/patients/" + ma, true, Stubs::maTimeline));
         put("GET /app/patients/{id}/profile", Fixture.get("/app/patients/" + ma + "/profile", true, Stubs::maProfile));
@@ -64,9 +96,15 @@ final class PageFixtures {
         put("GET /app/documents/{id}/page/{n}", Fixture.get("/app/documents/" + doc + "/page/1", true, Stubs::signedUrls));
         put("GET /app/documents/{id}", Fixture.get("/app/documents/" + doc, true, Stubs::doneLab));
         put("POST /app/login", new Fixture("/app/login", false, Body.FORM, Map.of("whatsapp_number", "01700000000", "confirmed", "1"), Stubs::noCode));
-        put("POST /app/verify", new Fixture("/app/verify", false, Body.FORM, Map.of("code", "123456"), Stubs::noCode));
+        variant("POST /app/login", new Fixture("/app/login", false, Body.FORM, Map.of("whatsapp_number", "01700000000"), Stubs::noCode).named("confirm"));
+        variant("POST /app/login", new Fixture("/app/login", false, Body.FORM, Map.of("whatsapp_number", "12"), k -> { }).named("invalid"));
+        put("POST /app/verify", new Fixture("/app/verify", false, Body.FORM, Map.of("code", "123456"), Stubs::noCode).withCookie("baymax_login", LOGIN));
+        variant("POST /app/verify", new Fixture("/app/verify", false, Body.FORM, Map.of("code", "123456"), Stubs::codeAccepted)
+                .withCookie("baymax_login", LOGIN).named("accepted"));
         put("POST /app/logout", new Fixture("/app/logout", true, Body.FORM, Map.of(), Stubs::logsOut));
-        put("POST /app/nudges/opt-out", new Fixture("/app/nudges/opt-out", false, Body.FORM, Map.of("t", "not-a-token", "scope", "patient"), k -> { }));
+        put("POST /app/nudges/opt-out", new Fixture("/app/nudges/opt-out", false, Body.FORM, Map.of("p", ma, "t", "valid", "scope", "patient"), Stubs::validOptOutLink));
+        variant("POST /app/nudges/opt-out", new Fixture("/app/nudges/opt-out", false, Body.FORM, Map.of("p", ma, "t", "valid", "scope", "family"), Stubs::validOptOutLink).named("family"));
+        variant("POST /app/nudges/opt-out", new Fixture("/app/nudges/opt-out", false, Body.FORM, Map.of("p", ma, "t", "not-a-token", "scope", "patient"), Stubs::validOptOutLink).named("badtoken"));
         put("POST /app/patients/{id}/upload", new Fixture("/app/patients/" + ma + "/upload", true, Body.MULTIPART, Map.of(), Stubs::acceptsUpload));
         put("POST /app/patients/{id}/profile", new Fixture("/app/patients/" + ma + "/profile", true, Body.FORM, Map.of("flag", "diabetes"), Stubs::maProfile));
         put("POST /app/patients/{id}/nudges/opt-out", new Fixture("/app/patients/" + ma + "/nudges/opt-out", true, Body.FORM, Map.of("scope", "patient"), Stubs::maProfile));
@@ -80,6 +118,25 @@ final class PageFixtures {
         if (ALL.put(key, f) != null) {
             throw new IllegalStateException("two fixtures for " + key);
         }
+    }
+
+    static void variant(String key, Fixture f) {
+        if (f.name().isEmpty()) {
+            throw new IllegalStateException("a variant of " + key + " needs a name");
+        }
+        List<Fixture> list = VARIANTS.computeIfAbsent(key, x -> new java.util.ArrayList<>());
+        if (list.stream().anyMatch(v -> v.name().equals(f.name()))) {
+            throw new IllegalStateException("two variants named " + f.name() + " for " + key);
+        }
+        list.add(f);
+    }
+
+    /** The route's main fixture, then its variants. */
+    static List<Fixture> allOf(RouteTable.Route route) {
+        List<Fixture> all = new java.util.ArrayList<>();
+        all.add(of(route));
+        all.addAll(VARIANTS.getOrDefault(route.key(), List.of()));
+        return all;
     }
 
     static Fixture of(RouteTable.Route route) {
@@ -150,6 +207,19 @@ final class PageFixtures {
         static void noCode(WebUiTestKit k) {
             when(k.auth.requestCode(anyString())).thenReturn(Mono.just(new CodeRequest("a".repeat(64), CodeIssue.OUTSIDE_WINDOW)));
             when(k.auth.verify(anyString(), anyString())).thenReturn(Mono.error(new CodeRejectedException(VerifyFailure.WRONG)));
+        }
+
+        static void codeAccepted(WebUiTestKit k) {
+            when(k.auth.verify(PageFixtures.LOGIN.substring(0, 64), "123456"))
+                    .thenReturn(Mono.just(new IssuedSession("fresh-session-token", new WebSession(
+                            UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100010"), WebUiTestKit.FAMILY, WebUiTestKit.NOW,
+                            WebUiTestKit.NOW, WebUiTestKit.NOW.plusSeconds(600)))));
+        }
+
+        static void validOptOutLink(WebUiTestKit k) {
+            when(k.optOut.tokenValid(WebUiTestKit.MA_ID, "valid")).thenReturn(true);
+            when(k.optOut.optOutPatient(WebUiTestKit.MA_ID)).thenReturn(Mono.empty());
+            when(k.optOut.optOutFamily(WebUiTestKit.MA_ID)).thenReturn(Mono.empty());
         }
 
         static void logsOut(WebUiTestKit k) {

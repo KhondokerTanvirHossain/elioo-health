@@ -1,3 +1,0 @@
-302
-Location: https://storage.example/signed
-

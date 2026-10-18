@@ -1,0 +1,5 @@
+303
+Location: /app/home
+Set-Cookie: baymax_session=fresh-session-token; Path=/app; Max-Age=2592000; Expires=X; Secure; HttpOnly; SameSite=Lax
+Set-Cookie: baymax_login=; Path=/app; Max-Age=0; Expires=X; Secure; HttpOnly; SameSite=Lax
+
