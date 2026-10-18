@@ -61,6 +61,13 @@ public class WebUiHandler {
     static final String LOGIN_COOKIE = "baymax_login";
     /** The login cookie's mark for "WhatsApp accepted the code" (DR-39 amended); absent for every other outcome. */
     static final String SENT_MARK = "s";
+    /**
+     * How long the code page remembers which number it is for. 30 minutes, up from BMX-5's 10, for the button path
+     * (PO 2026-10-18): the family leaves the browser, opens WhatsApp, sends কোড, waits for the reply and comes back,
+     * and only then does the 10-minute code TTL start. The cookie holds the HMAC and the last three digits, nothing a
+     * longer life exposes; the code itself still expires on its own TTL.
+     */
+    static final Duration LOGIN_COOKIE_TTL = Duration.ofMinutes(30);
     /** Files under classpath {@code baymax/ui/} that {@code /assets/{file}} may serve; nothing else leaves the jar. */
     static final Set<String> ASSETS = Set.of("baymax.css", "favicon.svg", "mio.webp", "mio-head.webp", "medioo.webp", "paper-lab.svg", "paper-rx.svg", "mio.png", "medioo.png", "medioo.svg");
 
@@ -267,7 +274,7 @@ public class WebUiHandler {
             return auth.requestCode(number.get())
                     .flatMap(requested -> ServerResponse.seeOther(URI.create(BASE + "/verify"))
                             .header(HttpHeaders.SET_COOKIE, loginCookie(requested.phoneHash() + "." + PhoneDisplay.last3(number.get())
-                                    + (requested.sent() ? "." + SENT_MARK : ""), Duration.ofMinutes(30)).toString())
+                                    + (requested.sent() ? "." + SENT_MARK : ""), LOGIN_COOKIE_TTL).toString())
                             .build());
         });
     }
