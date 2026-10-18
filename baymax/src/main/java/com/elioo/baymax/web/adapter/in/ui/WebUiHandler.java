@@ -59,6 +59,8 @@ public class WebUiHandler {
     /** The collaboration address on the landing page (Tanvir, 2026-09-19). */
     static final String CONTACT_EMAIL = "k.tanvir.hossain@gmail.com";
     static final String LOGIN_COOKIE = "baymax_login";
+    /** The login cookie's mark for "WhatsApp accepted the code" (DR-39 amended); absent for every other outcome. */
+    static final String SENT_MARK = "s";
     /** Files under classpath {@code baymax/ui/} that {@code /assets/{file}} may serve; nothing else leaves the jar. */
     static final Set<String> ASSETS = Set.of("baymax.css", "favicon.svg", "mio.webp", "mio-head.webp", "medioo.webp", "paper-lab.svg", "paper-rx.svg", "mio.png", "medioo.png", "medioo.svg");
 
@@ -68,6 +70,7 @@ public class WebUiHandler {
     private final UiCopy copy;
     private final com.elioo.baymax.nudge.application.port.in.NudgeOptOutUseCase optOut;
     private final com.elioo.baymax.nudge.application.port.out.NudgeDataPort nudgeData;
+    private final com.elioo.baymax.config.BaymaxProperties properties;
 
     // ---- landing, language, assets --------------------------------------------------------------------
 
@@ -216,25 +219,57 @@ public class WebUiHandler {
     public Mono<ServerResponse> loginPage(ServerRequest request) {
         Lang lang = Lang.of(request);
         return sessions.resolve(request).flatMap(s -> Html.redirect(BASE + "/home"))
-                .switchIfEmpty(Mono.defer(() -> app(lang, top(lang, null, false) + """
-                        <h1>%s</h1>
-                        <form method="post" action="%s/login">
-                          <label for="n">%s</label>
-                          <input id="n" type="tel" name="whatsapp_number" placeholder="01XXXXXXXXX" autocomplete="tel" required>
-                          <button type="submit">%s</button>
-                          <p class="small">%s</p>
-                        </form>
-                        """.formatted(copy.t(lang, "app.home.title"), BASE, copy.t(lang, "login.number"),
-                        copy.t(lang, "login.send"), copy.t(lang, "login.hint")))));
+                .switchIfEmpty(Mono.defer(() -> numberPage(lang, "", null)));
     }
 
+    /**
+     * {@code sign-in-number} (spec §4.2): one field, no fixed prefix, no placeholder digits, no deep link (D37: that
+     * belongs to the code step). The {@code pattern} is a courtesy; the server is the check.
+     */
+    private Mono<ServerResponse> numberPage(Lang lang, String raw, String error) {
+        return app(lang, top(lang, null, false)
+                + "<h1>" + copy.t(lang, "login.title") + "</h1>"
+                + (error == null ? "" : "<div class=\"err\" role=\"alert\">" + error + "</div>")
+                + "<form method=\"post\" action=\"" + BASE + "/login\">"
+                + "<label for=\"n\">" + copy.t(lang, "login.number") + "</label>"
+                + "<input id=\"n\" type=\"tel\" name=\"whatsapp_number\" autocomplete=\"tel\" inputmode=\"tel\""
+                + " pattern=\"[0-9০-৯+ \\-]{8,24}\" value=\"" + esc(raw) + "\" required>"
+                + "<p class=\"small\">" + copy.t(lang, "login.hint") + "</p>"
+                + "<button type=\"submit\">" + copy.t(lang, "login.next") + "</button>"
+                + "</form>");
+    }
+
+    /**
+     * The number, shown back normalised for a yes ("+880 1700-000000 — ঠিক আছে?"); only the confirmed number reaches
+     * {@code requestCode}. DR-23: nothing goes into a URL; the login cookie holds the HMAC, the last three digits and,
+     * when WhatsApp accepted an automatic send, the {@code .s} mark the code page reads — never the number.
+     */
     public Mono<ServerResponse> login(ServerRequest request) {
-        return request.formData()
-                .map(form -> Optional.ofNullable(form.getFirst("whatsapp_number")).orElse(""))
-                .flatMap(auth::requestCode)
-                .flatMap(requested -> ServerResponse.seeOther(URI.create(BASE + "/verify"))
-                        .header(HttpHeaders.SET_COOKIE, loginCookie(requested.phoneHash(), Duration.ofMinutes(10)).toString())
-                        .build());
+        Lang lang = Lang.of(request);
+        return request.formData().flatMap(form -> {
+            String raw = Optional.ofNullable(form.getFirst("whatsapp_number")).orElse("");
+            Optional<String> number = PhoneDisplay.normalise(raw);
+            if (number.isEmpty()) {
+                return numberPage(lang, raw, copy.t(lang, "login.number.invalid"));
+            }
+            if (!"1".equals(form.getFirst("confirmed"))) {
+                return app(lang, top(lang, null, false)
+                        + "<h1>" + copy.t(lang, "login.title") + "</h1>"
+                        + "<p class=\"number-back\">" + esc(PhoneDisplay.full(number.get())) + "</p>"
+                        + "<p>" + copy.t(lang, "login.number.confirm") + "</p>"
+                        + "<form method=\"post\" action=\"" + BASE + "/login\">"
+                        + "<input type=\"hidden\" name=\"whatsapp_number\" value=\"" + esc(number.get()) + "\">"
+                        + "<input type=\"hidden\" name=\"confirmed\" value=\"1\">"
+                        + "<button type=\"submit\">" + copy.t(lang, "login.number.yes") + "</button> "
+                        + "<a class=\"btn quiet\" href=\"" + BASE + "/\">" + copy.t(lang, "login.number.change") + "</a>"
+                        + "</form>");
+            }
+            return auth.requestCode(number.get())
+                    .flatMap(requested -> ServerResponse.seeOther(URI.create(BASE + "/verify"))
+                            .header(HttpHeaders.SET_COOKIE, loginCookie(requested.phoneHash() + "." + PhoneDisplay.last3(number.get())
+                                    + (requested.sent() ? "." + SENT_MARK : ""), Duration.ofMinutes(30)).toString())
+                            .build());
+        });
     }
 
     public Mono<ServerResponse> verifyPage(ServerRequest request) {
@@ -732,9 +767,29 @@ public class WebUiHandler {
         return "<span class=\"" + cls + "\">" + (label != null ? label : copy.t(lang, "status.PROCESSING")) + "</span>";
     }
 
-    private Optional<String> loginHash(ServerRequest request) {
+    /**
+     * {@code <hmac>[.<last three digits>][.s]}. The bare-hash form is still accepted: a cookie from before this release
+     * may be in flight for its ten minutes after the deploy.
+     */
+    private static final java.util.regex.Pattern LOGIN_VALUE =
+            java.util.regex.Pattern.compile("^([0-9a-f]{64})(?:\\.([0-9]{3}))?(?:\\.(" + SENT_MARK + "))?$");
+
+    private Optional<java.util.regex.Matcher> loginValue(ServerRequest request) {
         HttpCookie c = request.cookies().getFirst(LOGIN_COOKIE);
-        return Optional.ofNullable(c).map(HttpCookie::getValue).filter(v -> v.matches("[0-9a-f]{64}"));
+        return Optional.ofNullable(c).map(HttpCookie::getValue).map(LOGIN_VALUE::matcher).filter(java.util.regex.Matcher::matches);
+    }
+
+    private Optional<String> loginHash(ServerRequest request) {
+        return loginValue(request).map(m -> m.group(1));
+    }
+
+    private Optional<String> loginTail(ServerRequest request) {
+        return loginValue(request).map(m -> m.group(2));
+    }
+
+    /** True only when the code request behind this cookie came back SENT: WhatsApp accepted the message. */
+    private boolean loginSent(ServerRequest request) {
+        return loginValue(request).map(m -> m.group(3) != null).orElse(false);
     }
 
     private ResponseCookie loginCookie(String value, Duration maxAge) {

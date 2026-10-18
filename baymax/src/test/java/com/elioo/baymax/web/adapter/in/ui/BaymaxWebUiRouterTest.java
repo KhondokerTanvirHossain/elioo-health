@@ -32,7 +32,10 @@ class BaymaxWebUiRouterTest {
     BaymaxWebUiRouterTest() {
         SessionAuthFilter sessions = new SessionAuthFilter(auth, new BaymaxProperties());
         when(auth.authenticate(anyString())).thenReturn(Mono.empty());
-        WebUiHandler ui = new WebUiHandler(auth, mock(TimelineUseCase.class), sessions, new UiCopy(), mock(com.elioo.baymax.nudge.application.port.in.NudgeOptOutUseCase.class), mock(com.elioo.baymax.nudge.application.port.out.NudgeDataPort.class));
+        // the public number IS configured, so "no wa.me on the landing page" is tested against a number that could leak
+        BaymaxProperties props = new BaymaxProperties();
+        props.getWa().setPublicNumber("8801700000000");
+        WebUiHandler ui = new WebUiHandler(auth, mock(TimelineUseCase.class), sessions, new UiCopy(), mock(com.elioo.baymax.nudge.application.port.in.NudgeOptOutUseCase.class), mock(com.elioo.baymax.nudge.application.port.out.NudgeDataPort.class), props);
         client = WebTestClient.bindToRouterFunction(new BaymaxWebUiRouter().baymaxWebUiRoutes(ui, sessions)).build();
     }
 
@@ -55,7 +58,7 @@ class BaymaxWebUiRouterTest {
         assertThat(html).startsWith("<!doctype html><html lang=\"bn\">");
         assertThat(html).contains("চিকিৎসা পরামর্শ নয়").contains("Medioo").contains("Elioo Health");
         // every CTA is the app login until WhatsApp exists (BMX-10): no wa.me, no dead button, no placeholder address
-        assertThat(html).contains("class=\"cta\" href=\"/app\"").doesNotContain("wa.me").doesNotContain("example.com").doesNotContain("XXXX");
+        assertThat(html).contains("class=\"cta\" href=\"/app\"").doesNotContain("wa.me").doesNotContain("8801700000000").doesNotContain("example.com").doesNotContain("XXXX");
         assertThat(html).contains("href=\"mailto:k.tanvir.hossain@gmail.com\"").doesNotContainPattern(BD_MOBILE);   // no phone number, in any form, is on the page
         // the trend renders once, inside its own span — not a span between every character
         assertThat(html).containsOnlyOnce("<span class=\"nw\">১.১ → ১.৩ → ১.৫</span>").doesNotContain("<span class=\"nw\"></span>");

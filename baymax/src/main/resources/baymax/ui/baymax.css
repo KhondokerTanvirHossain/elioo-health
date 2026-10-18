@@ -194,3 +194,4 @@ main.page .foot p{margin:0}main.page .foot p+p{margin-top:var(--sp-2)}
   .hero .thread{margin-top:var(--sp-2)}
   .cmp{grid-template-columns:1fr 1fr}
 }
+.number-back{font-size:var(--fs-2);font-weight:600;font-variant-numeric:tabular-nums}
