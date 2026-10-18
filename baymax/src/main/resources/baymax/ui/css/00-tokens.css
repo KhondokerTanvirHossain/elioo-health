@@ -1,36 +1,65 @@
-/* Medioo design tokens (DR-14, palette from the medioo wordmark and the Mio mascot, 2026-09-19). The ONLY place a
-   colour, radius, spacing step or type size is written. Pages consume tokens; a literal anywhere else fails
-   DesignTokensTest. Teal is the primary; RED IS RESERVED for NOW-urgency (.urgent, .tag.now) and appears nowhere else —
-   that is what makes "এখনই যান" read as urgent. */
+/* Medioo design tokens v3 (2026-10-17, evolving DR-14: teal #06788a, ink #0a2e4d, paper #f8f6f1, amber THIS_WEEK,
+   red NOW, destructive dark). The ONLY place a colour is written; DesignTokensTest fails a literal anywhere else.
+   RED IS RESERVED for NOW urgency, critical values and the emergency card; the wordmark is text (A3), so
+   --c-brand-dot stays in the v3 set unused; DesignTokensTest finds red by value, whatever a token is called. */
 :root{
-  --c-bg:#f8f6f1;            /* warm paper */
-  --c-surface:#ffffff;
-  --c-surface-2:#efece4;     /* warm neutral, quiet blocks */
-  --c-text:#0a2e4d;          /* ink, from the wordmark's "medi" */
-  --c-muted:#566663;
-  --c-line:#e9e4da;
-  --c-accent:#06788a;        /* teal — primary */
-  --c-accent-ink:#0a2e4d;
-  --c-accent-soft:#ddf1f4;   /* tint */
-  --c-on-accent:#ffffff;
-  --c-me:#e0f3f1;            /* the family's own chat bubble */
-  --c-brand-2:#2ee0a5;       /* the wordmark's green "oo" */
-  --c-week:#92400e;          /* THIS_WEEK tag: amber */
-  --c-week-soft:#fdf0c4;
-  --c-urgent:#b91c1c;        /* RESERVED: NOW urgency */
-  --c-urgent-soft:#fdeae6;
-  --c-info-soft:#eef4f4;
-  --c-warn-soft:#fff6e5;
-  --c-warn-line:#f0dcae;
-  --c-danger:#0a2e4d;        /* destructive buttons are dark, never red */
-  --c-danger-soft:#efece4;
-  --c-danger-line:#cfc6bb;
-  --c-focus:#0a2e4d;
-  --c-dash:#c9c0b0; --c-dot:#a9b6b3; --c-scan-ink:#2a2a2a;
-  --r-s:10px; --r-m:16px; --r-l:24px; --r-pill:999px;
-  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:24px; --sp-6:32px; --sp-7:48px; --sp-8:72px;
-  --fs-s:.9rem; --fs-0:1rem; --fs-1:1.125rem; --fs-2:1.375rem; --fs-3:1.75rem; --fs-4:2.25rem;
-  --lh:1.55; --w-app:560px; --w-page:920px;
+  color-scheme:light dark;
+  --c-bg:#f8f6f1;--c-surface:#ffffff;--c-surface-2:#efece4;--c-surface-3:#e6e1d6;
+  --c-text:#0a2e4d;--c-text-muted:#4f5f5c;--c-line:#e9e4da;--c-outline:#7d8a88;
+  --c-primary:#06788a;--c-on-primary:#ffffff;--c-primary-pressed:#05606e;
+  --c-primary-container:#ddf1f4;--c-on-primary-container:#0a2e4d;
+  --c-bubble-me:#e0f3f1;--c-brand-green:#2ee0a5;--c-brand-dot:#b91c1c;--c-focus:#0a2e4d;--c-scrim:#0a2e4d66;
+  --c-status-inside:#06697a;--c-status-inside-container:#e3f2f4;
+  --c-status-soon:#92400e;--c-status-soon-container:#fdf0c4;
+  --c-status-now:#b91c1c;--c-status-now-container:#fdeae6;--c-status-now-solid:#b91c1c;--c-on-status-now:#ffffff;
+  --c-status-unknown:#4f5f5c;--c-status-unknown-container:#efece4;
+  --c-danger:#0a2e4d;--c-on-danger:#ffffff;--c-warn-container:#fff6e5;--c-warn-line:#f0dcae;
+  --c-paper:#fffdf7;--c-paper-line:#e6e1d6;--c-dash:#c9c0b0;--c-dot:#a9b6b3;--c-scan-ink:#2a2a2a;
+  --shadow-1:0 1px 2px #2b25230a,0 6px 20px #2b25230f;--shadow-2:0 -1px 0 #e9e4da,0 -4px 16px #2b252314;
+  --shadow-3:0 12px 40px #0a2e4d29;--shadow-toast:0 8px 24px #0a2e4d33;
+  --r-xs:6px;--r-s:10px;--r-m:16px;--r-l:24px;--r-xl:28px;--r-tail:4px;--r-pill:999px;
+  --sp-0:2px;--sp-1:4px;--sp-2:8px;--sp-3:12px;--sp-4:16px;--sp-5:24px;--sp-6:32px;--sp-7:48px;--sp-8:72px;
+  --target-min:48px;--header-h:56px;--tabbar-h:64px;--composer-h:56px;--now-strip-h:48px;--chip-pad-y:6px;
+  --w-app:560px;--w-page:920px;
+  --font-sans:"Noto Sans","Noto Sans Bengali",system-ui,sans-serif;--font-latin:"Noto Sans",system-ui,sans-serif;
+  --font-mono:ui-monospace,"SFMono-Regular",Menlo,"Courier New","Noto Sans Bengali",monospace;
+  --fs-display:2.125rem;--lh-display:1.53;--fs-title-1:1.75rem;--lh-title-1:1.5;--fs-title-2:1.375rem;--lh-title-2:1.55;
+  --fs-title-3:1.25rem;--lh-title-3:1.6;--fs-headline:1.0625rem;--lh-headline:1.59;--fs-body:1.0625rem;--lh-body:1.65;
+  --fs-callout:1rem;--lh-callout:1.63;--fs-subhead:.9375rem;--lh-subhead:1.6;--fs-footnote:.875rem;--lh-footnote:1.57;
+  --fs-label-large:1.0625rem;--lh-label-large:1.53;--fs-label:.9375rem;--lh-label:1.6;--fs-label-small:.875rem;--lh-label-small:1.57;
+  --fs-caption-latin:.8125rem;--lh-caption-latin:1.38;--fs-badge-latin:.6875rem;--lh-badge-latin:1.45;--fs-value-large:1.75rem;--lh-value-large:1.21;
+  --fs-value:1.25rem;--lh-value:1.3;--fs-unit:.875rem;--lh-unit:1.43;--fs-range:.875rem;--lh-range:1.43;
   --t:160ms ease;
-  --shadow:0 1px 2px rgba(43,37,35,.04),0 6px 20px rgba(43,37,35,.06);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){
+  --c-bg:#0e1a22;--c-surface:#15232d;--c-surface-2:#1c2c37;--c-surface-3:#243642;
+  --c-text:#e9eef0;--c-text-muted:#a3b2b5;--c-line:#2b3b46;--c-outline:#71838b;
+  --c-primary:#5fc4d3;--c-on-primary:#00313a;--c-primary-pressed:#84d5e0;
+  --c-primary-container:#0e3d47;--c-on-primary-container:#cdeef3;
+  --c-bubble-me:#16393f;--c-brand-green:#2ee0a5;--c-brand-dot:#ff9b92;--c-focus:#9fdbe6;--c-scrim:#00000099;
+  --c-status-inside:#7fd0dc;--c-status-inside-container:#103840;
+  --c-status-soon:#f4c06a;--c-status-soon-container:#3a2b12;
+  --c-status-now:#ff9b92;--c-status-now-container:#421717;--c-status-now-solid:#c62828;--c-on-status-now:#ffffff;
+  --c-status-unknown:#a3b2b5;--c-status-unknown-container:#1c2c37;
+  --c-danger:#e9eef0;--c-on-danger:#0e1a22;--c-warn-container:#33280f;--c-warn-line:#5a4719;
+  --c-paper:#1c2c37;--c-paper-line:#2b3b46;--c-dash:#3a4b56;--c-dot:#71838b;--c-scan-ink:#e9eef0;
+  --shadow-1:0 0 0 1px #2b3b46;--shadow-2:0 -1px 0 #2b3b46;--shadow-3:0 0 0 1px #2b3b46,0 12px 40px #00000080;
+  --shadow-toast:0 8px 24px #00000099;
+}}
+/* the same declarations again, byte for byte (TokenContrastTest.theTwoDarkBlocksAreTheSame); nothing sets data-theme yet,
+   the hook is for a future in-app switch */
+:root[data-theme=dark]{
+  --c-bg:#0e1a22;--c-surface:#15232d;--c-surface-2:#1c2c37;--c-surface-3:#243642;
+  --c-text:#e9eef0;--c-text-muted:#a3b2b5;--c-line:#2b3b46;--c-outline:#71838b;
+  --c-primary:#5fc4d3;--c-on-primary:#00313a;--c-primary-pressed:#84d5e0;
+  --c-primary-container:#0e3d47;--c-on-primary-container:#cdeef3;
+  --c-bubble-me:#16393f;--c-brand-green:#2ee0a5;--c-brand-dot:#ff9b92;--c-focus:#9fdbe6;--c-scrim:#00000099;
+  --c-status-inside:#7fd0dc;--c-status-inside-container:#103840;
+  --c-status-soon:#f4c06a;--c-status-soon-container:#3a2b12;
+  --c-status-now:#ff9b92;--c-status-now-container:#421717;--c-status-now-solid:#c62828;--c-on-status-now:#ffffff;
+  --c-status-unknown:#a3b2b5;--c-status-unknown-container:#1c2c37;
+  --c-danger:#e9eef0;--c-on-danger:#0e1a22;--c-warn-container:#33280f;--c-warn-line:#5a4719;
+  --c-paper:#1c2c37;--c-paper-line:#2b3b46;--c-dash:#3a4b56;--c-dot:#71838b;--c-scan-ink:#e9eef0;
+  --shadow-1:0 0 0 1px #2b3b46;--shadow-2:0 -1px 0 #2b3b46;--shadow-3:0 0 0 1px #2b3b46,0 12px 40px #00000080;
+  --shadow-toast:0 8px 24px #00000099;
 }

@@ -41,9 +41,6 @@ final class Html {
      */
     static final String MASCOT = "/assets/mio.webp";
 
-    /** The medioo wordmark, header of every page. Same rule: one constant, rendered only once the file is in the jar. */
-    static final String WORDMARK = "/assets/medioo.webp";
-
     /** True when the asset behind an {@code /assets/…} path is in the jar, so a slot never shows a broken image. */
     static boolean present(String assetPath) {
         String file = assetPath.substring("/assets/".length());
@@ -54,10 +51,14 @@ final class Html {
         }
     }
 
-    /** The brand mark for a top bar: the wordmark image when present, else the dot and the name. */
+    /**
+     * The brand mark for a top bar: the wordmark drawn as text (s01, s03, kit §2), "Medi" in the theme's ink and "oo" in
+     * brand green, so it follows dark mode. The raster wordmark's fixed navy ink was about 1.6:1 on the dark background
+     * (WordmarkTest). The name is read out once, from {@code title}; the two halves are hidden from screen readers.
+     */
     static String brand(String title) {
-        return present(WORDMARK) ? "<img alt=\"" + esc(title) + "\" src=\"" + WORDMARK + "?v=" + version("/baymax/ui/medioo.webp") + "\" width=\"123\" height=\"44\">"
-                : "<span class=\"dot\"></span>" + title;
+        return "<span class=\"wm-text\" role=\"img\" aria-label=\"" + esc(title) + "\"><span aria-hidden=\"true\">Medi</span>"
+                + "<span class=\"oo\" aria-hidden=\"true\">oo</span></span>";
     }
 
 
@@ -103,7 +104,10 @@ final class Html {
         }
         return "<!doctype html><html lang=\"" + lang.code + "\"><head><meta charset=\"utf-8\">"
                 + (head.refreshSeconds() > 0 ? "<meta http-equiv=\"refresh\" content=\"" + head.refreshSeconds() + "\">" : "")
-                + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+                + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-fit=cover\">"
+                + "<meta name=\"color-scheme\" content=\"light dark\">"
+                + "<meta name=\"theme-color\" media=\"(prefers-color-scheme: light)\" content=\"" + Tokens.LIGHT_BG + "\">"
+                + "<meta name=\"theme-color\" media=\"(prefers-color-scheme: dark)\" content=\"" + Tokens.DARK_BG + "\">"
                 + (head.index() ? "" : "<meta name=\"robots\" content=\"noindex\">")
                 + "<title>" + head.title() + "</title><link rel=\"stylesheet\" href=\"" + CSS_HREF + "\"><link rel=\"icon\" type=\"image/svg+xml\" href=\"" + ICON_HREF + "\"></head><body><main class=\""
                 + (wide ? "page" : "app") + "\">" + body

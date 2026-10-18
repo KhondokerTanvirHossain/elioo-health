@@ -7,6 +7,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Mono;
 
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -156,5 +157,50 @@ class BaymaxWebUiRouterTest {
         for (String notACode : java.util.List.of("12345", "১২৩৪৫", "1234567", "12345a", "abcdef")) {
             assertThat(browser.matcher(notACode).matches()).as("pattern \"%s\" must refuse %s", attr.group(1), notACode).isFalse();
         }
+    }
+
+    /** Spec §10: never maximum-scale or user-scalable=no (WCAG 1.4.4); colour-scheme and theme-color follow the tokens. */
+    @Test
+    void everyPageCanBeZoomedAndFollowsTheSystemTheme() {
+        Map<String, String> pages = RenderedPages.all();
+        assertThat(pages).hasSizeGreaterThan(10);
+        pages.forEach((where, html) -> assertThat(html).as(where)
+                .contains("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-fit=cover\">")
+                .doesNotContain("maximum-scale").doesNotContain("user-scalable")
+                .contains("<meta name=\"color-scheme\" content=\"light dark\">")
+                .contains("<meta name=\"theme-color\" media=\"(prefers-color-scheme: light)\" content=\"" + Tokens.LIGHT_BG + "\">")
+                .contains("<meta name=\"theme-color\" media=\"(prefers-color-scheme: dark)\" content=\"" + Tokens.DARK_BG + "\">"));
+        assertThat(Tokens.LIGHT_BG).startsWith("#").isNotEqualTo(Tokens.DARK_BG);
+    }
+
+    /**
+     * viewport-fit=cover lets a page draw under a notch, so every box that pads a page's content from the screen edge
+     * keeps the safe-area insets in that padding: {@code main} on every rendered page and each landing {@code .wrap},
+     * read from the cascade on the element itself. A box whose padding is 0 pads nothing and is not asked.
+     */
+    @Test
+    void everyPageKeepsItsContentOutOfTheNotch() {
+        java.util.List<Css.Rule> rules = Css.rules(new WebUiTestKit().servedText("/assets/baymax.css"));
+        java.util.Set<String> failures = new java.util.TreeSet<>();
+        int padded = 0;
+        for (Map.Entry<String, String> page : RenderedPages.all().entrySet()) {
+            for (Dom.Element e : Dom.parse(page.getValue()).all) {
+                if (!e.tag().equals("main") && !e.classes().contains("wrap")) {
+                    continue;
+                }
+                java.util.Optional<Css.Rule> w = Css.winner(rules, e, "padding", "padding-left", "padding-right");
+                String value = w.map(r -> String.join(" ", r.decls().getOrDefault("padding", ""), r.decls().getOrDefault("padding-left", ""),
+                        r.decls().getOrDefault("padding-right", ""))).orElse("").trim();
+                if (value.isEmpty() || value.equals("0")) {
+                    continue;
+                }
+                padded++;
+                if (!value.contains("env(safe-area-inset-left)") || !value.contains("env(safe-area-inset-right)")) {
+                    failures.add(page.getKey() + ": " + e.describe() + " pads with " + value + " (" + w.get().selector() + ")");
+                }
+            }
+        }
+        assertThat(padded).as("content boxes with side padding on the rendered pages").isGreaterThan(20);
+        assertThat(failures).isEmpty();
     }
 }

@@ -36,7 +36,7 @@ class SignedInRoutesNeedASessionTest {
             WebUiTestKit kit = new WebUiTestKit();
             PageFixtures.Fixture f = PageFixtures.of(route);
             f.stubs().accept(kit);
-            String answer = WebPagesCharacterizationTest.render(kit, route, anonymous(f), "bn");
+            String answer = RenderedPages.render(kit, route, anonymous(f), "bn");
             if (!answer.equals(SESSION_REDIRECT)) {
                 leaks.add(route.key() + " answered " + answer.substring(0, Math.min(answer.length(), 80)).replace("\n", "⏎"));
                 continue;
@@ -55,7 +55,7 @@ class SignedInRoutesNeedASessionTest {
             WebUiTestKit kit = new WebUiTestKit();
             PageFixtures.Fixture f = PageFixtures.of(route);
             f.stubs().accept(kit);
-            if (WebPagesCharacterizationTest.render(kit, route, anonymous(f), "bn").equals(SESSION_REDIRECT)) {
+            if (RenderedPages.render(kit, route, anonymous(f), "bn").equals(SESSION_REDIRECT)) {
                 closed.add(route.key());
             }
         }

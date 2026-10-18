@@ -1,3 +1,0 @@
-303
-Location: /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100002
-
