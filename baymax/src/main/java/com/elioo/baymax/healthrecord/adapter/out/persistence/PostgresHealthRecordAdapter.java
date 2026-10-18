@@ -145,6 +145,8 @@ public class PostgresHealthRecordAdapter implements HealthRecordPort {
                 .flatMap(c -> add(c, "document", "DELETE FROM " + S + ".document WHERE family_id = :family", "family", familyId))
                 .flatMap(c -> add(c, "web_session", "DELETE FROM " + S + ".web_session WHERE family_id = :family", "family", familyId))
                 .flatMap(c -> add(c, "otp_code", "DELETE FROM " + S + ".otp_code WHERE family_id = :family", "family", familyId))
+                // V17: the number's WhatsApp window; a family-scoped fact, so deletePatient leaves it with the family
+                .flatMap(c -> add(c, "wa_last_inbound", "DELETE FROM " + S + ".wa_last_inbound WHERE family_id = :family", "family", familyId))
                 .flatMap(c -> add(c, "patient_profile", "DELETE FROM " + S + ".patient_profile WHERE family_id = :family", "family", familyId))
                 .flatMap(c -> add(c, "family_account", "DELETE FROM " + S + ".family_account WHERE id = :family", "family", familyId));
     }

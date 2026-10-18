@@ -7,6 +7,7 @@ import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.healthrecord.domain.ShareMember;
+import com.elioo.baymax.web.application.port.out.InboundWindowPort;
 import com.elioo.baymax.web.application.port.out.OtpStorePort;
 import com.elioo.baymax.web.application.port.out.SessionStorePort;
 import com.elioo.baymax.web.domain.OtpCode;
@@ -113,6 +114,40 @@ class WebPersistenceAdaptersTest {
             assertThat(sessions.findLive("tokhash", now.plusSeconds(61)).block()).isNotNull();          // slid
             sessions.revoke("tokhash", now.plusSeconds(40)).block();
             StepVerifier.create(sessions.findLive("tokhash", now.plusSeconds(41))).verifyComplete();   // revoked
+        });
+    }
+
+    /**
+     * PO 2026-10-18 (DR-39 amended): a code is sent to WhatsApp automatically only inside the window the family's own
+     * message opened, so "when did this number last write" must be true. Against a real Postgres, because the rules are
+     * constraints: the family key is a foreign key, the key is an HMAC and never a number, and an older timestamp
+     * arriving late (two webhook callbacks out of order) never moves the window backwards.
+     */
+    @Test
+    void theLastInboundIsKeptPerHashOnlyMovesForwardAndTheFamilyKeyAndTheHashShapeAreEnforced() {
+        runner().run(context -> {
+            InboundWindowPort window = context.getBean(InboundWindowPort.class);
+            HealthRecordPort records = context.getBean(HealthRecordPort.class);
+            Instant t = Instant.parse("2026-10-18T10:00:00Z");
+            FamilyAccount f = records.createFamily(new FamilyAccount(null, "+8801700000555", "F", FamilyAccount.Plan.FREE, t, t)).block();
+            String hash = "a".repeat(64);
+
+            StepVerifier.create(window.lastInbound(hash)).verifyComplete();
+            window.recordInbound(hash, f.id(), t).block();
+            assertThat(window.lastInbound(hash).block()).isEqualTo(t);
+            window.recordInbound(hash, f.id(), t.plusSeconds(600)).block();
+            assertThat(window.lastInbound(hash).block()).isEqualTo(t.plusSeconds(600));
+            window.recordInbound(hash, f.id(), t.minusSeconds(3600)).block();            // a late, older callback
+            assertThat(window.lastInbound(hash).block()).as("the window never moves backwards").isEqualTo(t.plusSeconds(600));
+            StepVerifier.create(window.lastInbound("b".repeat(64))).verifyComplete();
+
+            StepVerifier.create(window.recordInbound("c".repeat(64), UUID.randomUUID(), t))
+                    .expectErrorMatches(e -> e.getMessage().contains("violates foreign key constraint"))
+                    .verify();
+            StepVerifier.create(window.recordInbound("+8801700000555", f.id(), t))
+                    .as("the clear number can never be the key")
+                    .expectErrorMatches(e -> e.getMessage().contains("violates check constraint"))
+                    .verify();
         });
     }
 }
