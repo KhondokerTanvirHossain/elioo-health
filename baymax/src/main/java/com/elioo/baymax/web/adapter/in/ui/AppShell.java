@@ -72,8 +72,9 @@ final class AppShell {
                 + choices(lang, tab, me, active);
     }
 
-    String noPatients(Lang lang) {
-        return "<h1>" + copy.t(lang, "tab.family") + "</h1><div class=\"card\">" + copy.t(lang, "patients.none") + "</div>";
+    /** No patient yet: the tab names itself (C4 and A6 draw the add-parent screens, spec §4.6). */
+    String noPatients(Lang lang, Tab tab) {
+        return "<h1>" + copy.t(lang, tab.labelKey) + "</h1><div class=\"card\">" + copy.t(lang, "patients.none") + "</div>";
     }
 
     String choices(Lang lang, Tab tab, FamilyOverview me, ActivePatient active) {

@@ -92,7 +92,7 @@ public class AppTabs implements WebPages {
         return timeline.me(session.familyId()).flatMap(me -> {
             ActivePatient active = resolve.apply(me);
             Mono<Body> body = active.patient().isEmpty() && tab != Tab.FAMILY
-                    ? Mono.just(Body.of(me.patients().isEmpty() ? shell.noPatients(lang) : shell.chooser(lang, tab, me, active), head(lang, tab)))
+                    ? Mono.just(Body.of(me.patients().isEmpty() ? shell.noPatients(lang, tab) : shell.chooser(lang, tab, me, active), head(lang, tab)))
                     : renderer.render(request, lang, me, active);
             return body.flatMap(b -> Html.html(HttpStatus.OK, shell.page(lang, tab, me, active, b.html(), b.head(), b.bodyClass())));
         });
