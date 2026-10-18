@@ -10,24 +10,38 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.EnumMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
 /**
- * Every visible string of the landing page and the app, per language, from {@code baymax/ui_bn.properties}
- * and {@code baymax/ui_en.properties}. The two files carry the same keys (asserted in a test), so the toggle
- * can never leave a string behind in the other language. Placeholders are {@code {0}}, {@code {1}}… and are
- * replaced verbatim — no MessageFormat, so an apostrophe in copy is just an apostrophe.
+ * Every visible string of the landing page and the app, per language, from the bundle parts {@link #PARTS}
+ * ({@code baymax/ui_bn.properties}, {@code baymax/ui-shell_bn.properties}… and their {@code _en} twins). Each area
+ * owns one part; a key lives in exactly one part (startup refuses a second definition) and in both languages
+ * (asserted in a test), so the toggle can never leave a string behind in the other language. Placeholders are
+ * {@code {0}}, {@code {1}}… and are replaced verbatim — no MessageFormat, so an apostrophe in copy is just an apostrophe.
  */
 @Component
 public class UiCopy {
+
+    /** Bundle parts, loaded in this order; a key may live in one part only (startup refuses a second definition). */
+    static final List<String> PARTS = List.of("ui", "ui-shell", "ui-family", "ui-papers", "ui-chat", "ui-result", "ui-upload");
 
     private final Map<Lang, Properties> bundles = new EnumMap<>(Lang.class);
 
     public UiCopy() {
         for (Lang lang : Lang.values()) {
-            bundles.put(lang, load("/baymax/ui_" + lang.code + ".properties"));
+            Properties all = new Properties();
+            for (String part : PARTS) {
+                Properties p = load("/baymax/" + part + "_" + lang.code + ".properties");
+                for (String key : p.stringPropertyNames()) {
+                    if (all.setProperty(key, p.getProperty(key)) != null) {
+                        throw new IllegalStateException("copy key " + key + " is defined in two bundle parts");
+                    }
+                }
+            }
+            bundles.put(lang, all);
         }
     }
 
@@ -86,6 +100,15 @@ public class UiCopy {
             return "";
         }
         return Html.esc(lang == Lang.BN ? BanglaDate.format(isoDate, null) : isoDate);
+    }
+
+    /** The bundle text as written, unescaped, no arguments: for tests and for URL parameters only, never for HTML. */
+    String raw(Lang lang, String key) {
+        String raw = bundles.get(lang).getProperty(key);
+        if (raw == null) {
+            throw new IllegalArgumentException("no UI copy for key " + key);
+        }
+        return raw;
     }
 
     /** The string if the key exists, else null — for labels keyed by a value from a document. */

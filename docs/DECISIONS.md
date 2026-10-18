@@ -187,7 +187,8 @@ MVP; public brand remains open before commercial launch (§8). Tagline and masco
 **Supersedes:** none.
 
 *Engineering note:* BMX-6b applies this as one token stylesheet (`baymax/src/main/resources/baymax/ui/baymax.css`:
-colour, radius, spacing, type scale) consumed by the landing page and every app page; no colour or radius literal
+colour, radius, spacing, type scale; since 2026-10-19 written as the parts under `baymax/ui/css/` and served as one
+file in `AssetHandler.CSS_PARTS` order) consumed by the landing page and every app page; no colour or radius literal
 outside it (grep-asserted in a test). The mascot is referenced from one place (`Html.MASCOT`) with a placeholder until
 Tanvir's asset lands; the reference images Tanvir sent are Disney's Baymax character and are used as palette/mood
 reference only — never committed or served, because the repo is open-source and the character is Disney IP (§8).

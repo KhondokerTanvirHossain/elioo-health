@@ -1,0 +1,36 @@
+/* Medioo design tokens (DR-14, palette from the medioo wordmark and the Mio mascot, 2026-09-19). The ONLY place a
+   colour, radius, spacing step or type size is written. Pages consume tokens; a literal anywhere else fails
+   DesignTokensTest. Teal is the primary; RED IS RESERVED for NOW-urgency (.urgent, .tag.now) and appears nowhere else —
+   that is what makes "এখনই যান" read as urgent. */
+:root{
+  --c-bg:#f8f6f1;            /* warm paper */
+  --c-surface:#ffffff;
+  --c-surface-2:#efece4;     /* warm neutral, quiet blocks */
+  --c-text:#0a2e4d;          /* ink, from the wordmark's "medi" */
+  --c-muted:#566663;
+  --c-line:#e9e4da;
+  --c-accent:#06788a;        /* teal — primary */
+  --c-accent-ink:#0a2e4d;
+  --c-accent-soft:#ddf1f4;   /* tint */
+  --c-on-accent:#ffffff;
+  --c-me:#e0f3f1;            /* the family's own chat bubble */
+  --c-brand-2:#2ee0a5;       /* the wordmark's green "oo" */
+  --c-week:#92400e;          /* THIS_WEEK tag: amber */
+  --c-week-soft:#fdf0c4;
+  --c-urgent:#b91c1c;        /* RESERVED: NOW urgency */
+  --c-urgent-soft:#fdeae6;
+  --c-info-soft:#eef4f4;
+  --c-warn-soft:#fff6e5;
+  --c-warn-line:#f0dcae;
+  --c-danger:#0a2e4d;        /* destructive buttons are dark, never red */
+  --c-danger-soft:#efece4;
+  --c-danger-line:#cfc6bb;
+  --c-focus:#0a2e4d;
+  --c-dash:#c9c0b0; --c-dot:#a9b6b3; --c-scan-ink:#2a2a2a;
+  --r-s:10px; --r-m:16px; --r-l:24px; --r-pill:999px;
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:24px; --sp-6:32px; --sp-7:48px; --sp-8:72px;
+  --fs-s:.9rem; --fs-0:1rem; --fs-1:1.125rem; --fs-2:1.375rem; --fs-3:1.75rem; --fs-4:2.25rem;
+  --lh:1.55; --w-app:560px; --w-page:920px;
+  --t:160ms ease;
+  --shadow:0 1px 2px rgba(43,37,35,.04),0 6px 20px rgba(43,37,35,.06);
+}
