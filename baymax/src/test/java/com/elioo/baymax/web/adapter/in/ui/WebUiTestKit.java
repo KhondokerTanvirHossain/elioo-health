@@ -71,8 +71,8 @@ final class WebUiTestKit {
         PageChrome chrome = new PageChrome(copy, sessions);
         documents = new DocumentPages(timeline, copy, chrome);
         List<WebPages> pages = List.of(new LandingPages(copy, chrome), new SignInPages(auth, sessions, copy, chrome, properties),
-                new OptOutPages(optOut, copy, chrome), new AppTabs(timeline, copy, chrome), documents,
-                new ProfilePages(timeline, optOut, nudgeData, copy, chrome), new UploadUiHandler(timeline, chrome),
+                new OptOutPages(optOut, copy, chrome), new AppTabs(timeline, copy, chrome, nudgeData), documents,
+                new ProfilePages(timeline, optOut), new UploadUiHandler(timeline, chrome),
                 new AssetHandler());
         return new BaymaxWebUiRouter().baymaxWebUiRoutes(pages, sessions, chrome);
     }
