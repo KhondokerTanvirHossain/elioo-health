@@ -15,7 +15,8 @@ public interface WaMessagingPort {
     /**
      * Sends a free-form session message, valid only inside the 24-hour window the family's own message opened.
      *
-     * @return the provider message id, for correlating the delivery status callback
+     * @return the provider message id, for correlating the delivery status callback. Never blank: a provider answer
+     *         without an id is an error signal, because "no id" is "not accepted" for every caller
      */
     Mono<String> sendText(String toNumber, String body);
 }

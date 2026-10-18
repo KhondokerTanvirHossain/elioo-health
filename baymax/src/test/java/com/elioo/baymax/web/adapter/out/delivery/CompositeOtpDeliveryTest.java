@@ -116,11 +116,27 @@ class CompositeOtpDeliveryTest {
                 });
     }
 
-    /** Graph answering with nothing is not an acceptance. */
+    /**
+     * Graph answering without a message id is not an acceptance. The port can say so two ways — no element, or a
+     * blank one — and only the blank one is what the real client emitted (WaGraphClient mapped a missing id to ""):
+     * the empty-only version of this test was green over a page that said "sent" for a send WhatsApp never accepted.
+     */
+    @Test
+    void aSendThatAnswersWithABlankMessageIdIsNotDelivered() {
+        for (String blank : new String[] {"", "   "}) {
+            when(wa.sendText(anyString(), anyString())).thenReturn(Mono.just(blank));
+            StepVerifier.create(delivery(wa).deliver(NUMBER, HASH, CODE)).as("id '" + blank + "'").expectNext(false).verifyComplete();
+        }
+        assertThat(logged.list).anySatisfy(e -> assertThat(e.getFormattedMessage()).contains("reason=no_message_id"));
+        assertThat(logged.list).noneSatisfy(e -> assertThat(e.getFormattedMessage()).contains("otp delivered"));
+        noLineAtOrAbove(Level.INFO, CODE);
+    }
+
     @Test
     void aSendThatCompletesWithoutAMessageIdIsNotDelivered() {
         when(wa.sendText(anyString(), anyString())).thenReturn(Mono.empty());
         StepVerifier.create(delivery(wa).deliver(NUMBER, HASH, CODE)).expectNext(false).verifyComplete();
+        assertThat(logged.list).anySatisfy(e -> assertThat(e.getFormattedMessage()).contains("reason=no_message_id"));
         noLineAtOrAbove(Level.INFO, CODE);
     }
 

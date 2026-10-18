@@ -45,6 +45,7 @@ public class CompositeOtpDelivery implements OtpDeliveryPort {
         String body = copy.bn("wa.login_code", Map.of("code", code,
                 "minutes", BanglaDate.digits(String.valueOf(properties.getAuth().getOtpTtl().toMinutes()))));
         return Mono.defer(() -> wa.sendText(whatsappNumber, body))
+                .filter(wamid -> wamid != null && !wamid.isBlank())   // no id, no acceptance, whatever the port emits
                 .map(wamid -> {
                     log.info("[baymax] otp delivered channel=whatsapp phoneHash={}", phoneHash);   // no wamid: it is the number
                     return true;

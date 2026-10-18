@@ -153,4 +153,21 @@ class WaGraphClientTest {
         assertThat(requestedUris).singleElement().asString()
                 .contains("/1412074765313019/messages");
     }
+
+    /**
+     * A 200 that names no message id is not an acceptance. It used to emit "" — not empty, not an error — so every
+     * caller's "the provider accepted it" branch ran: the sign-in page said "sent", and a release row could carry a
+     * blank provider id. One rule, here where every caller meets it: no id, an error, which each caller already
+     * treats as not delivered.
+     */
+    @Test
+    void aSendAnsweredWithoutAMessageIdIsAnErrorNeverAnEmptyId() {
+        for (String body : List.of("{\"messages\":[]}", "{}", "{\"messages\":[{\"id\":\"\"}]}", "{\"messages\":[{\"id\":\"  \"}]}")) {
+            reactor.test.StepVerifier.create(clientReturning(body).sendText("+8801700000000", "ok"))
+                    .as(body)
+                    .expectErrorSatisfies(e -> assertThat(e.getMessage()).contains("no message id")
+                            .doesNotContain("8801700000000").doesNotContain("ok\""))
+                    .verify();
+        }
+    }
 }
