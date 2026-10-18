@@ -277,7 +277,10 @@ class FamilyAccountServiceTest {
             "০১৭০০০০০০০০", "০১৭০০-০০০০০০",
             "01700\u00A0000000",                // NBSP from a copy-paste
             "01700\u2013000000",                // en dash from a phone keyboard
-            "(+880) 1700-000000"})
+            "(+880) 1700-000000",
+            "\u202A+880 1700-000000\u202C",    // LRE/PDF direction marks a contact card wraps a number in
+            "\u200E01700000000",                // LRM from a copy out of a WhatsApp chat
+            "880 01700000000"})                 // no plus, trunk 0 kept: same reading as "+880 0..."
     void everyWayABangladeshiNumberIsWrittenNormalisesToOneE164(String typed) {
         assertThat(FamilyAccountService.normalizeNumber(typed)).isEqualTo("+8801700000000");
     }
@@ -290,7 +293,9 @@ class FamilyAccountServiceTest {
 
     /** The other direction: accepting more spellings must not turn a non-number into one. */
     @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.ValueSource(strings = {"1700000000", "017", "+1", "00", "০১৭০০", "abc", "+880 1700"})
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"1700000000", "017", "+1", "00", "০১৭০০", "abc", "+880 1700",
+            "\u200Eabc", "\u202A017\u202C",    // stripping invisible marks must not make a non-number a number
+            "8800", "88001700"})                 // the bare 880 0 rewrite needs a whole 1XXXXXXXXX after it
     void somethingThatIsNotANumberIsStillRefused(String typed) {
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> FamilyAccountService.normalizeNumber(typed))
                 .isInstanceOf(IllegalArgumentException.class);
@@ -299,7 +304,17 @@ class FamilyAccountServiceTest {
     /** All-zero numbers cannot show a digit-order bug; this one folds every Bangla digit it contains, in place. */
     @Test
     void aBanglaNumberFoldsDigitByDigit() {
-        assertThat(FamilyAccountService.normalizeNumber("০১৭০০০০১২৩৪")).isEqualTo("+8801700001234");
-        assertThat(FamilyAccountService.normalizeNumber("০১৭০০ ০০৫৬৭৮")).isEqualTo("+8801700005678");
+        assertThat(FamilyAccountService.normalizeNumber("০১৭০০০০০১২৩")).isEqualTo("+8801700000123");
+        assertThat(FamilyAccountService.normalizeNumber("০১৭০০ ০০০৪৫৬")).isEqualTo("+8801700000456");
+    }
+
+    /**
+     * Chosen on purpose, not by accident: 00 is the international prefix on a Bangladeshi phone, so "0017..." dials
+     * +1 7..., and that is what is stored, even when the family meant 017... with an extra zero. Refusing it would
+     * refuse a real +1 number dialled the way it is dialled in Bangladesh. Open question for the PO in PR 11.
+     */
+    @Test
+    void doubleZeroIsAlwaysTheInternationalPrefixEvenBeforeADigitThatLooksBangladeshi() {
+        assertThat(FamilyAccountService.normalizeNumber("001700000000")).isEqualTo("+1700000000");
     }
 }
