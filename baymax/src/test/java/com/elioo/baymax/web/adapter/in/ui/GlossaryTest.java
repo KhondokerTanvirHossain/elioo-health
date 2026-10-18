@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Spec §7.4 glossary, over every bundle part. The patient by name, never "রোগী"; কাগজ, never "নথি"; "রিপোর্টে লেখা
  * সীমা", never "স্বাভাবিক সীমা"; the tab is "কাগজপত্র"; never "বন্ধ করুন" (a forbidden phrase,
- * BaymaxProperties.Safety#forbiddenPhrases). A ratchet: KNOWN lists what main had on 2026-10-19 and may only shrink
+ * BaymaxProperties.Outbound#forbiddenPhrases). A ratchet: KNOWN lists what main had on 2026-10-19 and may only shrink
  * (D2 empties it).
  */
 class GlossaryTest {
