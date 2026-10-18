@@ -28,7 +28,7 @@ class WebUiHandlerRenderTest {
                 List.of(Map.of("name", "BP", "value", "130", "unit", "mmHg", "crop_key", "f/p/d/crop-v1.jpg")),
                 List.of(), List.of(), null, Map.of("values", 1, "medicines", 2, "follow_up", 0, "total", 3));
         String html = ui.render(view, id);
-        assertThat(html).contains("3 টি অংশ মূল ছবিতে খুঁজে পাওয়া যায়নি");
+        assertThat(html).contains("৩ টি অংশ মূল ছবিতে খুঁজে পাওয়া যায়নি");   // a count on a Bangla page is in Bangla digits (rule 13)
         assertThat(html).contains("130").contains("mmHg");
         assertThat(html).doesNotContain("unverified_values").doesNotContain("medicines\":");
     }

@@ -179,4 +179,45 @@ class WebAuthServiceTest {
         StepVerifier.create(service.verifyNumber(NUMBER, "123456"))
                 .expectErrorMatches(e -> ((BaymaxException) e).status().value() == 503).verify();
     }
+
+    /** Regression guard: Java's \d is ASCII-only, so a code typed on a Bangla keyboard was refused as wrong. */
+    @Test
+    void aCodeTypedInBanglaDigitsOpensTheSession() {
+        String hash = service.requestCode(NUMBER).block();
+        String bangla = com.elioo.baymax.outbound.application.service.BanglaDate.digits(deliveredCode.get());
+        assertThat(bangla).doesNotContainPattern("[0-9\\s]");   // the red can only be \d, never whitespace
+        StepVerifier.create(service.verify(hash, bangla)).expectNextCount(1).verifyComplete();
+    }
+
+    /** The other direction: folding must not turn a wrong code right. */
+    @Test
+    void aBanglaCodeThatFoldsToTheWrongDigitsIsStillWrong() {
+        String hash = service.requestCode(NUMBER).block();
+        StepVerifier.create(service.verify(hash, com.elioo.baymax.outbound.application.service.BanglaDate.digits(wrong())))
+                .expectError(BaymaxException.class).verify();
+        verify(sessions, never()).create(anyString(), any(), any(), any());
+    }
+
+    /** New behaviour (not a replay): spaces from a paste are folded away. ASCII digits, so it says nothing about \d. */
+    @Test
+    void aCodeWithSurroundingSpacesOpensTheSession() {
+        String hash = service.requestCode(NUMBER).block();
+        StepVerifier.create(service.verify(hash, " " + deliveredCode.get() + "\u00A0")).expectNextCount(1).verifyComplete();
+    }
+
+    /**
+     * Folding only removes spaces and maps digits: anything else in the code is still refused. The right code with a
+     * letter inside or after it is the case that fails if folding ever starts dropping letters; the others are
+     * refused for their length whatever folding does.
+     */
+    @Test
+    void aCodeWithLettersOrTooFewDigitsIsStillRefused() {
+        String hash = service.requestCode(NUMBER).block();
+        String right = deliveredCode.get();
+        for (String typed : java.util.List.of(right.substring(0, 3) + "x" + right.substring(3), right + "x", "-" + right,
+                right.substring(0, 5), right + "0", right.substring(0, 5) + "x", "")) {
+            StepVerifier.create(service.verify(hash, typed)).expectError(BaymaxException.class).verify();
+        }
+        verify(sessions, never()).create(anyString(), any(), any(), any());
+    }
 }

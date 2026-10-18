@@ -101,9 +101,10 @@ public class WebAuthService implements WebAuthUseCase {
     }
 
     @Override
-    public Mono<IssuedSession> verify(String phoneHash, String code) {
+    public Mono<IssuedSession> verify(String phoneHash, String rawCode) {
         Instant now = clock.instant();
-        if (phoneHash == null || code == null || !code.matches("\\d{6}")) {
+        String code = fold(rawCode);
+        if (phoneHash == null || code == null || !code.matches("[0-9]{6}")) {
             return audit.record(AuditEvent.otp(AuditEvent.Kind.OTP_VERIFY_FAIL, phoneHash, now))
                     .then(Mono.error(invalid()));
         }
@@ -168,6 +169,27 @@ public class WebAuthService implements WebAuthUseCase {
             return Mono.empty();
         }
         return sessions.revoke(PhoneHasher.sha256(token), clock.instant());
+    }
+
+    /**
+     * A code as the family typed it, as the six ASCII digits that were hashed. Java's {@code \d} is ASCII-only,
+     * so a code typed on a Bangla keyboard (Ridmik, Gboard Bangla) was refused as wrong: every Unicode decimal
+     * digit maps to its ASCII value, and spaces from a paste (including NBSP) are dropped. Nothing else is
+     * touched, so a letter or a seventh digit still fails the shape check.
+     */
+    static String fold(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(raw.length());
+        for (int i = 0; i < raw.length(); i++) {
+            char c = raw.charAt(i);
+            if (Character.isWhitespace(c) || Character.isSpaceChar(c)) {
+                continue;
+            }
+            sb.append(Character.isDigit(c) ? (char) ('0' + Character.digit(c, 10)) : c);
+        }
+        return sb.toString();
     }
 
     private static BaymaxException invalid() {

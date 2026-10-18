@@ -251,7 +251,7 @@ public class WebUiHandler {
                 %s
                 <form method="post" action="%s/verify">
                   <label for="c">%s</label>
-                  <input id="c" type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required>
+                  <input id="c" type="text" name="code" inputmode="numeric" pattern="[0-9০-৯]{6}" maxlength="6" autocomplete="one-time-code" required>
                   <button type="submit">%s</button>
                 </form>
                 <p class="small"><a href="%s/">%s</a></p>
@@ -299,7 +299,7 @@ public class WebUiHandler {
                         .append("<span class=\"meta\">").append(copy.t(lang, "patients.years", p.patient().age())).append("</span>")
                         .append(p.owner() ? "" : " <span class=\"tag\">" + copy.t(lang, "patients.shared") + "</span>")
                         .append("<div class=\"meta\">").append(copy.t(lang, "patients.docs", p.documents()))
-                        .append(p.lastDocumentAt() == null ? "" : " · " + copy.t(lang, "patients.last", p.lastDocumentAt().toString().substring(0, 10)))
+                        .append(p.lastDocumentAt() == null ? "" : " · " + copy.t(lang, "patients.last", copy.dateText(lang, java.time.LocalDate.ofInstant(p.lastDocumentAt(), java.time.ZoneOffset.UTC))))
                         .append("</div></a>");
             }
             return app(lang, b.toString());
@@ -345,7 +345,7 @@ public class WebUiHandler {
                             .append(imageHref(e.documentId(), e.pageOneKey())).append("\"></a>")
                             .append("<div><div><a href=\"").append(href).append("\"><strong>").append(documentType(lang, e.documentType()))
                             .append("</strong></a> ").append(status(lang, e.status())).append("</div>")
-                            .append("<div class=\"meta\">").append(esc(e.date().toString()))
+                            .append("<div class=\"meta\">").append(copy.date(lang, e.date()))
                             .append(e.dateIsFallback() ? " <span class=\"small\">" + copy.t(lang, "timeline.uploaddate") + "</span>" : "")
                             .append(e.facility() == null || e.facility().isBlank() ? "" : " · " + esc(e.facility())).append("</div>");
                     if ("DONE".equals(e.status())) {
@@ -406,7 +406,7 @@ public class WebUiHandler {
         StringBuilder b = new StringBuilder(top(lang, null, true));
         b.append("<p class=\"small\"><a href=\"").append(BASE).append("/home\">").append(copy.t(lang, "app.back")).append("</a></p>");
         b.append("<h1>").append(documentType(lang, view.documentType())).append(" ").append(status(lang, view.status())).append("</h1>");
-        b.append("<div class=\"meta\">").append(esc(view.documentDate() == null ? "" : view.documentDate()))
+        b.append("<div class=\"meta\">").append(copy.date(lang, view.documentDate()))
                 .append(view.facility() == null ? "" : " · " + esc(view.facility())).append("</div>");
 
         explanation.ifPresent(text -> b.append("<div class=\"card\"><div class=\"meta\">").append(copy.t(lang, "doc.summary"))
@@ -433,7 +433,7 @@ public class WebUiHandler {
         section(b, copy.t(lang, "doc.medicines"), view.medicines(), documentId, m -> "<strong>" + esc(m.get("name")) + "</strong> " + esc(m.get("dose_text"))
                 + "<div class=\"meta\">" + esc(m.get("frequency_text")) + " " + esc(m.get("timing_text")) + " " + esc(m.get("duration_text")) + "</div>");
         section(b, copy.t(lang, "doc.followup"), view.followUp(), documentId, m -> esc(m.get("instruction"))
-                + (m.get("due_date") == null ? "" : "<div class=\"meta\">" + esc(m.get("due_date")) + "</div>"));
+                + (m.get("due_date") == null ? "" : "<div class=\"meta\">" + copy.date(lang, String.valueOf(m.get("due_date"))) + "</div>"));
         if (view.clinicalContext() != null && !view.clinicalContext().isEmpty()) {
             b.append("<h2>").append(copy.t(lang, "doc.context")).append("</h2>");
             for (Map.Entry<String, Object> sec : view.clinicalContext().entrySet()) {

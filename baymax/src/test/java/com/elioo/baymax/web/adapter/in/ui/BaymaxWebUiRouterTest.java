@@ -134,4 +134,30 @@ class BaymaxWebUiRouterTest {
             assertThat(html).as(path).contains("<footer class=\"foot\">").contains("চিকিৎসা পরামর্শ নয়");
         }
     }
+
+    /**
+     * Regression guard: the code field's own {@code pattern} was {@code [0-9]{6}}, ASCII only, so the browser refused a
+     * code typed on a Bangla keyboard before the server could fold it. The rule is read from the page served, and
+     * applied the way a browser applies it (anchored, whole value), in both directions.
+     */
+    @Test
+    void theCodeFieldLetsBanglaDigitsThroughAndStillRefusesWhatIsNotACode() {
+        String html = client.get().uri("/app/verify").cookie(WebUiHandler.LOGIN_COOKIE, "a".repeat(64))
+                .exchange().expectStatus().isOk().expectBody(String.class).returnResult().getResponseBody();
+        java.util.regex.Matcher input = java.util.regex.Pattern.compile("<input[^>]*name=\"code\"[^>]*>").matcher(html);
+        assertThat(input.find()).as("the verify page has a code field").isTrue();
+        java.util.regex.Matcher attr = java.util.regex.Pattern.compile("pattern=\"([^\"]*)\"").matcher(input.group());
+        assertThat(attr.find()).as("the code field carries a pattern: " + input.group()).isTrue();
+        // Browsers compile pattern as a JS regex with the v flag; Java's engine is used here as a stand-in. For a
+        // plain character class with ranges, as now, the two agree. A pattern using syntax where they differ (\p{..},
+        // set operations, \d inside v-mode classes, nested classes) is not proven by this test: check it in a browser.
+        java.util.regex.Pattern browser = java.util.regex.Pattern.compile("^(?:" + attr.group(1) + ")$");
+
+        for (String code : java.util.List.of("123456", "০১২৩৪৫", "৬৭৮৯০৯")) {
+            assertThat(browser.matcher(code).matches()).as("pattern \"%s\" must accept %s", attr.group(1), code).isTrue();
+        }
+        for (String notACode : java.util.List.of("12345", "১২৩৪৫", "1234567", "12345a", "abcdef")) {
+            assertThat(browser.matcher(notACode).matches()).as("pattern \"%s\" must refuse %s", attr.group(1), notACode).isFalse();
+        }
+    }
 }
