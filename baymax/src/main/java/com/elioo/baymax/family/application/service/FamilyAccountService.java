@@ -181,7 +181,13 @@ public class FamilyAccountService implements FamilyAccountUseCase {
         for (char c : raw.toCharArray()) {
             folded.append(Character.isDigit(c) ? (char) ('0' + Character.digit(c, 10)) : c);
         }
-        String number = folded.toString().replaceAll("[\\s\\-()]", "");
+        // Separators: any Unicode space (NBSP from a copy-paste is \p{Z}, not \s), hyphen, the dash block
+        // U+2010-U+2015 (a phone keyboard's en dash), the minus sign and parentheses.
+        String number = folded.toString().replaceAll("[\\s\\p{Z}\\-\\u2010-\\u2015\\u2212()]", "");
+        // In this order: the international 00 prefix becomes +, then the trunk 0 kept after +880 on cards is
+        // dropped. Without the second rule "+880 017..." was accepted as +88001..., a different, wrong account.
+        number = number.replaceFirst("^00([1-9]\\d{7,14})$", "+$1");
+        number = number.replaceFirst("^\\+8800(1\\d{9})$", "+880$1");
         if (number.matches("^01\\d{9}$")) {
             number = "+88" + number;
         } else if (number.matches("^8801\\d{9}$")) {

@@ -265,4 +265,41 @@ class FamilyAccountServiceTest {
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> FamilyAccountService.normalizeNumber("1700000000"))
                 .isInstanceOf(IllegalArgumentException.class);   // ten digits, no country: still refused
     }
+
+    /**
+     * Every spelling a phone keyboard, a contact card or a copy-paste produces. The NBSP and the en dash are
+     * written as escapes so an editor cannot silently turn them back into a space and a hyphen.
+     */
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "01700000000", "8801700000000", "+8801700000000", "008801700000000",
+            "+880 01700000000",                 // the trunk 0 kept after the country code, common on cards
+            "০১৭০০০০০০০০", "০১৭০০-০০০০০০",
+            "01700\u00A0000000",                // NBSP from a copy-paste
+            "01700\u2013000000",                // en dash from a phone keyboard
+            "(+880) 1700-000000"})
+    void everyWayABangladeshiNumberIsWrittenNormalisesToOneE164(String typed) {
+        assertThat(FamilyAccountService.normalizeNumber(typed)).isEqualTo("+8801700000000");
+    }
+
+    @Test
+    void foreignNumbersKeepTheirCountryCodeWithPlusOrDoubleZero() {
+        assertThat(FamilyAccountService.normalizeNumber("+44 7700 900123")).isEqualTo("+447700900123");
+        assertThat(FamilyAccountService.normalizeNumber("0044 7700 900123")).isEqualTo("+447700900123");
+    }
+
+    /** The other direction: accepting more spellings must not turn a non-number into one. */
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"1700000000", "017", "+1", "00", "০১৭০০", "abc", "+880 1700"})
+    void somethingThatIsNotANumberIsStillRefused(String typed) {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> FamilyAccountService.normalizeNumber(typed))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    /** All-zero numbers cannot show a digit-order bug; this one folds every Bangla digit it contains, in place. */
+    @Test
+    void aBanglaNumberFoldsDigitByDigit() {
+        assertThat(FamilyAccountService.normalizeNumber("০১৭০০০০১২৩৪")).isEqualTo("+8801700001234");
+        assertThat(FamilyAccountService.normalizeNumber("০১৭০০ ০০৫৬৭৮")).isEqualTo("+8801700005678");
+    }
 }
