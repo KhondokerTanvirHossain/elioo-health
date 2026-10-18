@@ -1,14 +1,17 @@
 package com.elioo.baymax.config;
 
 import com.elioo.baymax.adapter.out.persistence.BaymaxSchemaMigrator;
+import com.elioo.baymax.web.adapter.in.BaymaxSecurityHeadersFilter;
 import org.junit.jupiter.api.Test;
 import com.elioo.healthcare.llm.config.LlmAutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.data.r2dbc.R2dbcDataAutoConfiguration;
 import org.springframework.boot.autoconfigure.r2dbc.R2dbcAutoConfiguration;
+import org.springframework.boot.autoconfigure.web.reactive.WebFluxAutoConfiguration;
 import org.springframework.boot.test.context.runner.ReactiveWebApplicationContextRunner;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.web.reactive.function.server.RouterFunction;
+import org.springframework.web.server.WebFilter;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -100,6 +103,26 @@ class BaymaxAutoConfigurationTest {
         runner().withPropertyValues("baymax.enabled=true").run(context ->
                 assertThat(context).hasSingleBean(
                         com.elioo.baymax.extraction.application.service.CropVerifier.class));
+    }
+
+    /**
+     * D12: the Baymax-path CSP is registered by Baymax's own configuration — the one the deployable loads when
+     * {@code baymax.enabled=true} — and the header reaches the browser through the context's real filter chain. With
+     * the module off there is no such filter, so MedScribe's policy is the only one (DR-2).
+     */
+    @Test
+    void theBaymaxCspFilterIsRegisteredWithTheModuleAndServesItsPolicy() {
+        runner().withConfiguration(AutoConfigurations.of(WebFluxAutoConfiguration.class))
+                .withPropertyValues("baymax.enabled=true").run(context -> {
+                    assertThat(context.getBeansOfType(WebFilter.class).values())
+                            .hasAtLeastOneElementOfType(BaymaxSecurityHeadersFilter.class);
+                    WebTestClient.bindToApplicationContext(context).build()
+                            .get().uri("/app/").exchange()
+                            .expectStatus().isOk()
+                            .expectHeader().valueEquals("Content-Security-Policy", BaymaxSecurityHeadersFilter.CSP);
+                });
+        runner().withPropertyValues("baymax.enabled=false").run(context ->
+                assertThat(context).doesNotHaveBean(BaymaxSecurityHeadersFilter.class));
     }
 
     @Test
