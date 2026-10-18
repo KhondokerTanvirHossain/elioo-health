@@ -6,7 +6,10 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.MatchResult;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
@@ -82,5 +85,37 @@ class DesignTokensTest {
                 }
             }
         }
+    }
+
+    /** Spec §8: red means NOW. The status-now tokens and the wordmark dot appear only under now/critical/emergency selectors. */
+    @Test
+    void redAppearsOnlyInNowCriticalAndEmergencyRules() {
+        Matcher rule = Pattern.compile("([^{}]+)\\{([^{}]*)}").matcher(Tokens.rules(CSS));
+        Pattern red = Pattern.compile("var\\(--c-(status-now[a-z-]*|on-status-now|brand-dot)\\)");
+        Pattern allowed = Pattern.compile("\\.(now|critical|emergency)\\b|\\.brand \\.dot");
+        int redRules = 0;
+        List<String> offenders = new ArrayList<>();
+        while (rule.find()) {
+            Matcher uses = red.matcher(rule.group(2));
+            if (!uses.find()) {
+                continue;
+            }
+            redRules++;
+            for (String selector : rule.group(1).split(",")) {
+                if (!allowed.matcher(selector).find()) {
+                    offenders.add(selector.trim() + " uses " + uses.group());
+                }
+            }
+        }
+        assertThat(redRules).as("rules using the red tokens (an empty parse would pass vacuously)").isPositive();
+        assertThat(offenders).as("red is reserved for NOW").isEmpty();
+    }
+
+    /** DR-14 inside the stylesheet: a colour literal lives in a token block, never in a rule. */
+    @Test
+    void colourLiteralsLiveOnlyInTheTokenBlocks() {
+        String rules = Tokens.rules(CSS);
+        assertThat(rules.length()).as("rules remain after removing the token blocks").isGreaterThan(5_000);
+        assertThat(Pattern.compile("#[0-9a-fA-F]{3,8}\\b|rgba?\\(|hsla?\\(").matcher(rules).results().map(MatchResult::group).toList()).isEmpty();
     }
 }
