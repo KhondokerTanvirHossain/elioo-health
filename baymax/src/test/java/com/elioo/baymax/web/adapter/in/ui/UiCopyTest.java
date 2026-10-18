@@ -2,9 +2,20 @@ package com.elioo.baymax.web.adapter.in.ui;
 
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
+import java.util.regex.MatchResult;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -25,6 +36,47 @@ class UiCopyTest {
         for (String key : copy.keys(Lang.BN)) {
             assertThat(holes(ph, copy.t(Lang.EN, key))).as(key).isEqualTo(holes(ph, copy.t(Lang.BN, key)));
         }
+    }
+
+    /** A key defined twice — in one file or across parts — is a defect Properties hides by keeping the last one. */
+    @Test
+    void noKeyIsDefinedTwiceInAnyPartOrAcrossParts() throws IOException {
+        Map<String, List<String>> where = new TreeMap<>();
+        int files = 0;
+        for (Lang lang : Lang.values()) {
+            for (String part : UiCopy.PARTS) {
+                files++;
+                BundleFiles.keys(part, lang).forEach((key, line) ->
+                        where.computeIfAbsent(lang.code + ":" + key, k -> new ArrayList<>()).add(part + "_" + lang.code + ":" + line));
+                BundleFiles.duplicatesWithin(part, lang).forEach(d -> where.computeIfAbsent(lang.code + ":" + d, k -> new ArrayList<>()).add(part + " (twice)"));
+            }
+        }
+        assertThat(files).isEqualTo(UiCopy.PARTS.size() * Lang.values().length);
+        assertThat(where).as("keys read").hasSizeGreaterThan(300);   // bn + en
+        assertThat(where.entrySet().stream().filter(e -> e.getValue().size() > 1).map(e -> e.getKey() + " at " + e.getValue()).toList())
+                .isEmpty();
+    }
+
+    /** Every key exists in both languages, across all parts, with the same placeholders. */
+    @Test
+    void everyKeyExistsInBothLanguagesWithTheSamePlaceholders() {
+        assertThat(copy.keys(Lang.BN)).hasSizeGreaterThan(150).isEqualTo(copy.keys(Lang.EN));
+        Pattern slot = Pattern.compile("\\{\\d+}");
+        for (String key : copy.keys(Lang.BN)) {
+            assertThat(slot.matcher(copy.raw(Lang.EN, key)).results().map(MatchResult::group).sorted().toList()).as(key)
+                    .isEqualTo(slot.matcher(copy.raw(Lang.BN, key)).results().map(MatchResult::group).sorted().toList());
+        }
+    }
+
+    /** A bundle file on the classpath that UiCopy does not load would be copy that silently never reaches a page. */
+    @Test
+    void everyBundlePartOnDiskIsLoaded() throws IOException {
+        Set<String> onDisk;
+        try (Stream<Path> files = Files.list(Path.of("src/main/resources/baymax"))) {
+            onDisk = files.map(p -> p.getFileName().toString()).filter(n -> n.matches("ui(-[a-z]+)?_(bn|en)\\.properties"))
+                    .map(n -> n.substring(0, n.lastIndexOf('_'))).collect(Collectors.toCollection(TreeSet::new));
+        }
+        assertThat(onDisk).hasSizeGreaterThanOrEqualTo(7).isEqualTo(new TreeSet<>(UiCopy.PARTS));
     }
 
     private static List<String> holes(Pattern ph, String s) {
