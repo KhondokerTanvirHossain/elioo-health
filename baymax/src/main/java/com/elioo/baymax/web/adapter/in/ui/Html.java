@@ -6,6 +6,7 @@ import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Mono;
 
 import java.net.URI;
+import java.util.List;
 
 /**
  * The whole UI is plain HTML rendered on the server: no framework, no build step, nothing to download but
@@ -61,21 +62,51 @@ final class Html {
 
 
     /**
+     * Everything a page's head carries (R2). A PR that needs something new in the head adds a field here (L1: theme,
+     * A9: refresh without script and progress.js, D4: upload.js) instead of another page() overload.
+     *
      * @param title          already HTML-escaped (it comes from {@link UiCopy}); escaping it again showed "&#39;" in the tab
-     * @param lang           the page language, on {@code <html lang>} and in the disclaimer footer
      * @param refreshSeconds when > 0 the page reloads itself after that many seconds — the timeline while a
      *                       document is still being read. Plain HTML, no script.
-     * @param wide           landing layout ({@code main.page}) rather than the app column ({@code main.app})
-     * @param disclaimer     the footer text; on every page, app and landing alike (BMX-6b safety constraint)
+     * @param index          false writes {@code noindex}: every app page; only the landing page is indexed
      */
-    static String page(Lang lang, String title, String body, int refreshSeconds, boolean wide, String disclaimer, boolean index) {
+    record Head(String title, int refreshSeconds, boolean refreshOnlyWithoutScript, List<String> scripts, boolean index) {
+        Head {
+            scripts = scripts == null ? List.of() : List.copyOf(scripts);
+        }
+
+        static Head of(String title) {
+            return new Head(title, 0, false, List.of(), false);
+        }
+
+        Head refresh(int seconds) {
+            return new Head(title, seconds, refreshOnlyWithoutScript, scripts, index);
+        }
+
+        Head indexed() {
+            return new Head(title, refreshSeconds, refreshOnlyWithoutScript, scripts, true);
+        }
+    }
+
+    /**
+     * @param lang       the page language, on {@code <html lang>} and in the disclaimer footer
+     * @param wide       landing layout ({@code main.page}) rather than the app column ({@code main.app})
+     * @param disclaimer the footer text; on every page, app and landing alike (BMX-6b safety constraint)
+     */
+    static String page(Lang lang, Head head, String body, boolean wide, String disclaimer) {
         return "<!doctype html><html lang=\"" + lang.code + "\"><head><meta charset=\"utf-8\">"
-                + (refreshSeconds > 0 ? "<meta http-equiv=\"refresh\" content=\"" + refreshSeconds + "\">" : "")
+                + (head.refreshSeconds() > 0 ? "<meta http-equiv=\"refresh\" content=\"" + head.refreshSeconds() + "\">" : "")
                 + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-                + (index ? "" : "<meta name=\"robots\" content=\"noindex\">")
-                + "<title>" + title + "</title><link rel=\"stylesheet\" href=\"" + CSS_HREF + "\"><link rel=\"icon\" type=\"image/svg+xml\" href=\"" + ICON_HREF + "\"></head><body><main class=\""
+                + (head.index() ? "" : "<meta name=\"robots\" content=\"noindex\">")
+                + "<title>" + head.title() + "</title><link rel=\"stylesheet\" href=\"" + CSS_HREF + "\"><link rel=\"icon\" type=\"image/svg+xml\" href=\"" + ICON_HREF + "\"></head><body><main class=\""
                 + (wide ? "page" : "app") + "\">" + body
                 + "<footer class=\"foot\">" + disclaimer + "</footer></main></body></html>";
+    }
+
+    /** The seven-argument form the screens call today; it is the {@link Head} form, byte for byte (HtmlHeadTest). */
+    static String page(Lang lang, String title, String body, int refreshSeconds, boolean wide, String disclaimer, boolean index) {
+        Head head = Head.of(title).refresh(refreshSeconds);
+        return page(lang, index ? head.indexed() : head, body, wide, disclaimer);
     }
 
     static String version(String resource) {
