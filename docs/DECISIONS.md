@@ -610,15 +610,29 @@ A message the family sends first opens the window and proves the number in one s
 
 Unchanged and binding: never a WhatsApp template (authentication, utility or marketing) for codes, because they are
 paid; no code in any log above DEBUG (`LogOtpDelivery`'s INFO code line is removed); never an open sender (a number
-with no account is sent nothing, from either path); the 5-per-hour mint limit applies to both paths; DR-23, no number
-or code in a query string. "The web mints nothing and never says a code was sent" above is replaced by rule 1.
+with no account is sent nothing, from either path); the hourly cap applies to both paths and counts every code made
+for the number in the rolling hour, whatever became of it (used, burned or expired), so it bounds sends and guesses at
+5 codes x 5 tries per number per hour (review fix: it first counted only live codes, which let five wrong guesses buy
+another send without limit); DR-23, no number or code in a query string. "The web mints nothing and never says a code was sent" above is replaced by rule 1.
 
 The window needs one stored fact: when each account number last wrote. It is V17 `wa_last_inbound`, keyed by the
 PhoneHasher HMAC of the number (a CHECK refuses anything else), forward-only, with a `family_id` FK that both the
 family delete path and the schema-derived deletion sweep cover. No existing table records an inbound text message, so
-it could not be derived without a migration.
+it could not be derived without a migration. The stored time is the family's send time (Meta's `timestamp`, clamped to
+now), not Medioo's receipt time: a callback Meta retries hours later must not open a window WhatsApp already closed.
+A family delete locks the family row first, so a WhatsApp message arriving mid-delete cannot fail it on that FK.
 
-**Known trade-off (for the PO):** the code page differs between "sent" and "not sent", so someone typing a stranger's
-number learns that it has an account and wrote to Medioo within the last day, and can cause up to five code messages
-an hour to that number. The page is the same for every not-sent reason, and the API's answer is identical whatever
-happened.
+**Known trade-offs (for the PO to accept or change):**
+
+- The code page differs between "sent" and "not sent", so someone typing a stranger's number learns that it has an
+  account and wrote to Medioo within the last day, and can cause up to five code messages an hour to that number
+  (120 a day; every reply the family sends, "stop" included, keeps the window open). The page is the same for every
+  not-sent reason, and the API's answer is identical whatever happened.
+- The verify page's typed refusals say more than "wrong". Whoever holds the login cookie for a number (anyone who typed
+  it) and submits any six digits learns whether a code was made for that number in the last hour: "expired" or "used up
+  by wrong tries" means one was, "wrong"/"no code" means none is live. That is mostly what "sent" already reveals, but it
+  also works for the button path's codes, which the web never announced. If the PO wants it closed, the page can show
+  the specific reason only when the cookie carries the sent mark, or only after a real attempt on a live code.
+- Auto-send reaches every account holder inside the window once `BAYMAX_WA_ALLOWLIST` is blank (blank = no phase-1
+  restriction). Until the PO widens it on purpose the allowlist stays set to the pilot numbers; blanking it is a PO step,
+  not an env tidy-up.

@@ -240,7 +240,8 @@ Branch `docs/medioo-companion-design` from `origin/main`. Docs only; CI still ru
     amends PRODUCT §4 "MVP in" (`docs/PRODUCT.md:216-229`) and retires the UI rule "no urgency anywhere in the UI"
     (asserted by `WebUiHandlerRenderTest.nothingInterpretiveIsRenderedForAFullDocument`), replaced by spec principle 3.
   - **DR-39 | 2026-10-17 | Sign-in is inbound-first** (D2, with D36 and D37 as recommended): the family texts "কোড";
-    `issueCodeFor(sender)` mints for the number WhatsApp proved; the web mints nothing and promises no send; the
+    `issueCodeFor(sender)` mints for the number WhatsApp proved; the web mints nothing and promises no send (*amended
+    2026-10-18 by the PO: the web sends inside the window, see PR 12*); the
     rate-limit message goes only to WhatsApp; the `wa.me` link appears on `/app` only; no code in any log above DEBUG.
     Effective from PR 12.
   - **Under DR-13**, append: "*Amended 2026-10-17 (PO, D5):* the stored, code-computed urgency shows on every surface
@@ -6265,18 +6266,27 @@ void aCodeWithSurroundingSpacesOpensTheSession() {
 > - **Never a template** (authentication, utility or marketing) for codes: they are paid. No code in any log above
 >   DEBUG; `LogOtpDelivery`'s INFO code line is gone (Task 12.2).
 > - **Never an open sender:** no account, nothing minted (the web request no longer mints for unknown numbers). The
->   5-per-hour limit applies to both paths. DR-23: no number or code in a query string.
+>   hourly cap applies to both paths and counts **every code made** in the rolling hour, whatever became of it
+>   (`OtpStorePort.countCreatedSince` replaces `countLive`, which the review found let five wrong guesses buy another
+>   send without limit): 5 codes x 5 tries per number per hour. DR-23: no number or code in a query string.
 > - **New: V17 `wa_last_inbound`** (one row per number, keyed by the PhoneHasher HMAC — a CHECK refuses anything else —
 >   with a forward-only `last_inbound_at` and a `family_id` FK without cascade). `WaIntakeService.onInbound` records it,
 >   through `WebAuthUseCase.noteInbound`, for every message the family sends; `deleteFamily` removes it and
 >   `FamilyDeletionAcceptanceTest`'s schema-derived sweep covers it. No existing table could stand in: nothing stored
 >   records an inbound text message (documents exist only for photos and files; PR 8's `inbound_message` is unmerged).
 >   PRs 8 and 9 move to V18 and V19; Phase 1b to V20 and V21 (roadmap allocation table).
+> - **Review fixes, same PR (2026-10-19):** the window is recorded at Meta's send `timestamp` (clamped to now) through
+>   `noteInbound(number, sentAt)`, never the receipt time, so a late-retried callback cannot open a closed window;
+>   `WaGraphClient.sendText` errors on a 200 with no message id (it emitted `""`, and every caller's "accepted" branch
+>   ran); `deleteFamily` locks the family row first (`SELECT … FOR UPDATE`), so a message arriving mid-delete cannot
+>   fail it on the `wa_last_inbound` FK; the login cookie lives 30 minutes (`WebUiHandler.LOGIN_COOKIE_TTL`) for the
+>   button path's round trip.
 > - Built on `feat/baymax-whatsapp-sign-in` from `origin/main` at PR 11, ahead of PRs 7–10: the `WaIntakeService`
 >   constructor is `…, properties, auth` until PRs 7–8 land (they append before `auth` and update the call sites).
 
-Branch `feat/baymax-whatsapp-sign-in` (planned as `feat/baymax-sign-in-whatsapp-code`), from merged PR 11. After this PR the web mints no codes: the family texts
-"কোড" on WhatsApp and the code comes back there. That is why the WhatsApp half and the web half ship in one PR, and why
+Branch `feat/baymax-whatsapp-sign-in` (planned as `feat/baymax-sign-in-whatsapp-code`), from merged PR 11. ~~After this PR the web mints no codes: the family texts
+"কোড" on WhatsApp and the code comes back there.~~ *Superseded 2026-10-18 (PO, note above): the web mints and sends
+when the number has an account, is allowlisted and wrote inside the window; otherwise the family texts "কোড".* That is why the WhatsApp half and the web half ship in one PR, and why
 the public number goes into the env **before** the merge.
 
 ### Task 12.0: Tanvir sets the public number first (before the merge, no code)
@@ -6289,7 +6299,7 @@ the public number goes into the env **before** the merge.
   quotes, no spaces, no `^M`, no `#`.
 - [ ] **Step 3:** list the change in the build report. Only then merge PR 12.
 
-### Task 12.1: `issueCodeFor`, a web that mints nothing, typed refusals
+### Task 12.1: `issueCodeFor`, ~~a web that mints nothing~~ (superseded 2026-10-18: the web mints inside the window, note above), typed refusals
 
 **Files:** modify `WebAuthUseCase.java`, `OtpStorePort.java`, `PostgresOtpStoreAdapter.java`, `WebAuthService.java`,
 `BaymaxProperties.Auth` (+`webMintsCode`, −`otpDelivery`); create `web/domain/CodeIssue.java` (`ISSUED, RATE_LIMITED,
@@ -6446,8 +6456,9 @@ void theNewestCodeIsFoundWhateverItsStateButOnlyInsideTheWindowAndTheFamilyKeyIs
   - `WebAuthService`: extract the minting at `:77-84` into `private Mono<Void> mint(String number, String phoneHash,
     UUID familyIdOrNull, Instant now)`. `issueCodeFor` runs in `Mono.defer`, so a missing HMAC secret becomes an
     error signal and is not thrown at assembly. Its steps are normalise → hash → `audit OTP_REQUEST` →
-    `findFamilyByWhatsapp`. Empty → `NO_ACCOUNT`, with nothing minted. Otherwise `countLive ≥ max` →
-    `RATE_LIMITED`, with an INFO log carrying `phoneHash` and `live`. Otherwise `mint(...).thenReturn(ISSUED)`.
+    `findFamilyByWhatsapp`. Empty → `NO_ACCOUNT`, with nothing minted. Otherwise ~~`countLive ≥ max`~~ `countCreatedSince(hash, now − 1h) ≥ max`
+    (superseded 2026-10-19: every code made counts, whatever its state) → `RATE_LIMITED`, with an INFO log carrying
+    `phoneHash` and the count. Otherwise `mint(...).thenReturn(ISSUED)`.
     `requestCode` keeps its normalise/hash, and its 200-for-anything contract. When `!cfg.isWebMintsCode()` it
     returns `Mono.just(phoneHash)` with no audit, because no code was requested. Otherwise it behaves as today.
   - `verify`: keep PR 11's `fold`, then check `code.matches("[0-9]{6}")`, else `FORMAT`. An empty `latestLive`
@@ -7018,7 +7029,8 @@ void confirmingSetsAShortLivedCookieWithOnlyTheHashAndTheLastThreeDigits() {
     Valid and not `confirmed=1` → a confirm view: `<p class="number-back">+880 1700-000000</p><p>login.number.confirm</p>`,
     a form posting hidden `whatsapp_number` (normalised) and `confirmed=1` with the button `login.number.yes`, and
     `<a class="btn quiet" href="/app/">login.number.change</a>`. Valid and confirmed →
-    `auth.requestCode(normalised)`, which mints nothing in production (Task 12.1), then 303 `/app/verify` with
+    `auth.requestCode(normalised)`, which ~~mints nothing in production (Task 12.1)~~ (superseded 2026-10-18: mints and
+    sends only inside the window, PR 12 note), then 303 `/app/verify` with
     `loginCookie(hash + "." + last3, Duration.ofMinutes(30))`. The code lives 10 minutes, but a family may ask again
     from the same page.
   - `loginHash` accepts `^([0-9a-f]{64})(?:\.([0-9]{3}))?$`, because a cookie from the old format may still be in
