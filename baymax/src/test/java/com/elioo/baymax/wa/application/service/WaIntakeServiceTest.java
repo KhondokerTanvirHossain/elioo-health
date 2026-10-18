@@ -54,6 +54,8 @@ class WaIntakeServiceTest {
     private final DocumentIntakeUseCase intake = mock(DocumentIntakeUseCase.class);
     private final WaMessagingPort graph = mock(WaMessagingPort.class);
     private final BaymaxProperties props = new BaymaxProperties();
+    private final com.elioo.baymax.web.application.port.in.WebAuthUseCase auth =
+            mock(com.elioo.baymax.web.application.port.in.WebAuthUseCase.class);
     /**
      * What actually went out, recorded when the send is SUBSCRIBED, not when sendText is called. WaGraphClient.sendText
      * is a lazy WebClient Mono that sends nothing until subscribed; a mock that recorded the call counted a reply built
@@ -71,7 +73,10 @@ class WaIntakeServiceTest {
             return com.elioo.baymax.wa.WaFixtures.wamid(FROM, 9);
         }));
         when(graph.downloadMedia(anyString())).thenReturn(Mono.just(new byte[]{1, 2, 3}));
-        service = new WaIntakeService(records, documents, explainer, intake, graph, new Copy(), props);
+        when(auth.noteInbound(anyString())).thenReturn(Mono.empty());
+        // a sender is unknown unless a test says otherwise (familyWith), so no test dies on an unstubbed lookup
+        when(records.findFamilyByWhatsapp(anyString())).thenReturn(Mono.empty());
+        service = new WaIntakeService(records, documents, explainer, intake, graph, new Copy(), props, auth);
     }
 
     private PatientProfile patient(String name) {
@@ -640,5 +645,101 @@ class WaIntakeServiceTest {
         } finally {
             logger.detachAppender(logged);
         }
+    }
+
+    // ---- D2 / DR-39: "কোড" asks for a sign-in code; every message opens the free window ------------------------
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"কোড", "  কোড ", "কোড।", "code", "Code", "CODE!", "kod", "otp",
+            "OTP", "লগইন", "\u0995\u09C7\u09BE\u09A1"})   // the last: কোড typed as e-kar + aa-kar, which NFKC composes
+    void everyWayOfAskingForTheLoginCodeIssuesOneAndIntakeItselfSendsNothing(String text) {
+        when(auth.issueCodeFor(E164)).thenReturn(Mono.just(com.elioo.baymax.web.domain.CodeIssue.SENT));
+        assertThat(service.onText(FROM, text).block()).isEqualTo(WaIntakeService.Outcome.LOGIN_CODE);
+        verify(auth).issueCodeFor(E164);
+        assertThat(delivered).as("the code goes out through OtpDeliveryPort only").isEmpty();
+        verify(explainer, never()).detail(any());
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"আমার কোড আসেনি", "code ta pai nai", "photo", "বিস্তারিত",
+            "otp ki?", "কোডটা", "promo code", "hi", ""})
+    void aMessageThatOnlyMentionsACodeIsNotALoginRequest(String text) {
+        familyWith(patient("মা"));
+        when(documents.latestDoneDocument(any())).thenReturn(Mono.empty());
+        // stubbed, so a router that wrongly routes here fails on "never wanted", not on an unstubbed mock
+        when(auth.issueCodeFor(anyString())).thenReturn(Mono.just(com.elioo.baymax.web.domain.CodeIssue.SENT));
+        service.onText(FROM, text).block();
+        verify(auth, never()).issueCodeFor(anyString());
+    }
+
+    @Test
+    void aRateLimitedSenderIsToldOnWhatsappBecauseTheyHaveProvedTheNumber() {
+        when(auth.issueCodeFor(E164)).thenReturn(Mono.just(com.elioo.baymax.web.domain.CodeIssue.RATE_LIMITED));
+        service.onText(FROM, "কোড").block();
+        assertThat(sentBodies()).containsExactly(copy.bn("wa.login_rate_limited", Map.of("minutes",
+                com.elioo.baymax.outbound.application.service.BanglaDate.digits(String.valueOf(props.getAuth().getOtpTtl().toMinutes())))));
+    }
+
+    @Test
+    void aSenderWithNoAccountHearsThatOnceAndNotTheGenericStub() {
+        when(auth.issueCodeFor(E164)).thenReturn(Mono.just(com.elioo.baymax.web.domain.CodeIssue.NO_ACCOUNT));
+        assertThat(service.onText(FROM, "কোড").block()).isEqualTo(WaIntakeService.Outcome.UNKNOWN_SENDER);
+        assertThat(sentBodies()).containsExactly(bn("wa.login_no_account"));
+        verify(records, never()).findFamilyByWhatsapp(anyString());   // the rule runs before the family lookup
+    }
+
+    @Test
+    void aLoginThatCannotBeIssuedIsAnsweredNeverSilent() {
+        when(auth.issueCodeFor(E164)).thenReturn(Mono.error(new com.elioo.baymax.common.error.BaymaxException(
+                org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, "auth_not_configured", "baymax.auth.hmac-secret is not configured")));
+        assertThat(service.onText(FROM, "কোড").block()).isEqualTo(WaIntakeService.Outcome.FAILED);
+        assertThat(sentBodies()).containsExactly(bn("wa.login_off"));
+    }
+
+    /** WhatsApp refused the message carrying the code: the family is told to try again, not left waiting. */
+    @Test
+    void aCodeWhatsappRefusedIsAnsweredNeverSilent() {
+        when(auth.issueCodeFor(E164)).thenReturn(Mono.just(com.elioo.baymax.web.domain.CodeIssue.NOT_DELIVERED));
+        assertThat(service.onText(FROM, "কোড").block()).isEqualTo(WaIntakeService.Outcome.FAILED);
+        assertThat(sentBodies()).containsExactly(bn("wa.login_off"));
+    }
+
+    @Test
+    void noLoginReplyGoesToASenderOffTheAllowlist() {
+        props.getWa().setAllowlist(List.of("+8801700000999"));
+        when(auth.issueCodeFor(E164)).thenReturn(Mono.just(com.elioo.baymax.web.domain.CodeIssue.NOT_PERMITTED));
+        service.onText(FROM, "কোড").block();
+        verify(graph, never()).sendText(anyString(), anyString());
+    }
+
+    /** PO 2026-10-18: every message the family sends opens the window in which a web sign-in code may be sent free. */
+    @ParameterizedTest
+    @EnumSource(value = WaInbound.Type.class, names = {"SYSTEM"}, mode = EnumSource.Mode.EXCLUDE)
+    void everyMessageTheFamilySendsIsRecordedAsTheirLastInboundBeforeTheReply(WaInbound.Type type) {
+        familyWith(patient("মা"));
+        when(documents.latestDoneDocument(any())).thenReturn(Mono.empty());
+        when(intake.accept(any(), any())).thenReturn(Mono.just(mock(Document.class)));
+        service.onInbound(new WaInbound("w", FROM, type, type == WaInbound.Type.REACTION ? "👍" : "hi", "MEDIA-W", "image/jpeg")).block();
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(auth, graph);
+        order.verify(auth).noteInbound(E164);
+        order.verify(graph).sendText(eq(E164), anyString());
+    }
+
+    /** The other direction: what the family did not send opens nothing — Meta's own notice, an emoji taken back. */
+    @Test
+    void aSystemNoticeOrAWithdrawnReactionOpensNoWindow() {
+        service.onInbound(new WaInbound("w", FROM, WaInbound.Type.SYSTEM, "", "", "")).block();
+        service.onInbound(new WaInbound("w", FROM, WaInbound.Type.REACTION, "", "", "")).block();
+        verify(auth, never()).noteInbound(anyString());
+    }
+
+    /** Recording the window is never worth a silence: if it fails, the family still gets the reply. */
+    @Test
+    void aWindowThatCannotBeRecordedStillGetsTheReply() {
+        familyWith(patient("মা"));
+        when(auth.noteInbound(anyString())).thenReturn(Mono.error(new IllegalStateException("db down")));
+        assertThat(service.onInbound(new WaInbound("w", FROM, WaInbound.Type.TEXT, "hi", "", "")).block())
+                .isEqualTo(WaIntakeService.Outcome.REPLIED);
+        assertThat(sentBodies()).hasSize(1);
     }
 }

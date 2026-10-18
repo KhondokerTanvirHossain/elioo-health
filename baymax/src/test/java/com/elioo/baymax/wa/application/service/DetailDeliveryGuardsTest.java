@@ -111,7 +111,8 @@ class DetailDeliveryGuardsTest {
                 new UrgencyService(props, clock), new MessageSafetyCheck(props), new OutboundMessageGate(props),
                 reviewer, whatsapp, new Copy(), props, clock);
         reviewGate = new ReviewGateService(messages, whatsapp, clock);
-        wa = new WaIntakeService(records, documents, explainer, mock(DocumentIntakeUseCase.class), graph, new Copy(), props);
+        wa = new WaIntakeService(records, documents, explainer, mock(DocumentIntakeUseCase.class), graph, new Copy(), props,
+                mock(com.elioo.baymax.web.application.port.in.WebAuthUseCase.class));
 
         when(graph.sendText(anyString(), anyString())).thenAnswer(i -> Mono.just(WaFixtures.wamid(FROM, wamids.incrementAndGet())));
         when(metered.using(any())).thenReturn(metered);

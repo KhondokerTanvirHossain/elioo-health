@@ -15,8 +15,12 @@ import java.util.stream.Collectors;
  */
 public final class WaTextRouter {
 
-    public enum Route { GREETING_HELLO, GREETING_SALAM, GREETING_NAMASKAR, GREETING_ADAB, DETAIL, THANKS, FALLBACK }
+    public enum Route { GREETING_HELLO, GREETING_SALAM, GREETING_NAMASKAR, GREETING_ADAB, DETAIL, THANKS, FALLBACK,
+        /** D2: "কোড" (or code, kod, otp, লগইন) alone: mint a sign-in code for the sender. */
+        LOGIN_CODE }
 
+    /** D2: the whole message asks for a sign-in code. Checked first; "আমার কোড আসেনি" is not a request and falls through. */
+    private static final Set<String> LOGIN = words("কোড", "code", "kod", "otp", "লগইন");
     private static final Set<String> SALAM = words("সালাম", "আসসালামু আলাইকুম", "আস্সালামু আলাইকুম", "আসসালামুয়ালাইকুম",
             "সালামালাইকুম", "salam", "slm", "assalamu alaikum", "assalamualaikum", "asalamualaikum", "assalamu alaykum",
             "as salamu alaikum", "salamalaikum", "salamualaikum", "slamalikum", "slamalaikum");
@@ -50,6 +54,9 @@ public final class WaTextRouter {
         String n = normalise(text);
         if (n.isEmpty()) {
             return Route.FALLBACK;
+        }
+        if (LOGIN.contains(n)) {
+            return Route.LOGIN_CODE;
         }
         if (DETAIL.contains(n)) {
             return Route.DETAIL;

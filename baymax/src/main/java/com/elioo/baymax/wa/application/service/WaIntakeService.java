@@ -53,10 +53,12 @@ public class WaIntakeService {
     private final WaMessagingPort graph;
     private final Copy copy;
     private final BaymaxProperties properties;
+    private final com.elioo.baymax.web.application.port.in.WebAuthUseCase auth;
 
     /** Why an inbound image did not become a document; each carries the reply the family receives. */
     public enum Outcome {
         ACCEPTED, UNKNOWN_SENDER, AMBIGUOUS_PATIENT, FREE_TIER, FAILED,
+        LOGIN_CODE,
         /** A fixed-copy reply was sent (greeting, thanks, fallback, voice, video, no document yet). */
         REPLIED,
         /** Nothing the family sent, so nothing to answer: a Meta system notice, or a reaction being removed. */
@@ -77,6 +79,17 @@ public class WaIntakeService {
             return Mono.just(Outcome.IGNORED);
         }
         String number = e164(in.from());
+        // DR-39 (2026-10-18): every message the family sends opens WhatsApp's free 24 h window, in which a web sign-in
+        // code may be sent automatically. Recorded first; a failure here is logged and never costs the family a reply.
+        return auth.noteInbound(number)
+                .onErrorResume(e -> {
+                    log.warn("[baymax] wa inbound window not recorded error={}", e.getClass().getSimpleName());
+                    return Mono.empty();
+                })
+                .then(Mono.defer(() -> dispatch(in, number)));
+    }
+
+    private Mono<Outcome> dispatch(WaInbound in, String number) {
         return switch (in.type()) {
             case IMAGE -> onImage(in.from(), in.mediaId(), "wa.received");
             case DOCUMENT -> readable(in.mimeType())
@@ -165,11 +178,15 @@ public class WaIntakeService {
         String number = e164(from);
         WaTextRouter.Route route = WaTextRouter.route(text);
         log.info("[baymax] wa text route={} chars={}", route, text == null ? 0 : text.length());
+        if (route == WaTextRouter.Route.LOGIN_CODE) {
+            return loginCode(number);   // before the family lookup: issueCodeFor answers NO_ACCOUNT itself
+        }
         return withFamily(number, family -> switch (route) {
             case DETAIL -> answerLatestDetail(number, family);
             case GREETING_HELLO, GREETING_SALAM, GREETING_NAMASKAR, GREETING_ADAB -> greet(number, route);
             case THANKS -> thanks(number, family);
             case FALLBACK -> replyWithRedFlag(number, "wa.fallback", "text not understood");
+            case LOGIN_CODE -> loginCode(number);   // unreachable: routed above
         }, "text");
     }
 
@@ -180,6 +197,32 @@ public class WaIntakeService {
                 .flatMap(message -> answerDetail(number, message))
                 .switchIfEmpty(Mono.defer(() -> reply(number, "wa.no_document", Outcome.REPLIED,
                         "detail asked for but no readable document yet")));
+    }
+
+    /**
+     * D2: a sign-in code for the number WhatsApp proved. SENT needs no reply here: the OTP delivery has already sent the
+     * code, as a free-form message inside the window this very message opened (DR-39). Every other outcome is answered.
+     */
+    private Mono<Outcome> loginCode(String number) {
+        String minutes = com.elioo.baymax.outbound.application.service.BanglaDate.digits(
+                String.valueOf(properties.getAuth().getOtpTtl().toMinutes()));
+        return auth.issueCodeFor(number)
+                .flatMap(issue -> switch (issue) {
+                    case SENT -> {
+                        log.info("[baymax] wa login code sent");
+                        yield Mono.just(Outcome.LOGIN_CODE);
+                    }
+                    case RATE_LIMITED -> reply(number, "wa.login_rate_limited", Outcome.LOGIN_CODE, "login code rate-limited",
+                            Map.of("minutes", minutes));
+                    case NO_ACCOUNT -> reply(number, "wa.login_no_account", Outcome.UNKNOWN_SENDER, "login code, no account");
+                    // NOT_PERMITTED: send() refuses it again, with its own WARN; OUTSIDE_WINDOW cannot happen for a sender
+                    case NOT_DELIVERED, NOT_PERMITTED, OUTSIDE_WINDOW -> reply(number, "wa.login_off", Outcome.FAILED,
+                            "login code not delivered: " + issue);
+                })
+                .onErrorResume(e -> {
+                    log.error("[baymax] wa login code failed error={}", e.getClass().getSimpleName());
+                    return reply(number, "wa.login_off", Outcome.FAILED, "login code could not be issued");
+                });
     }
 
     /** Mirrors the family's greeting and never assumes religion (spec §7.4); zero model calls (W1). */
