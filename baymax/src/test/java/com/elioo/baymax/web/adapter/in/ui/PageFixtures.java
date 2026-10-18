@@ -91,6 +91,13 @@ final class PageFixtures {
         put("GET /app/home", Fixture.get("/app/home", true, Stubs::familyOfMa));
         put("GET /app/timeline", Fixture.get("/app/timeline", true, Stubs::maTimeline));
         put("GET /app/family", Fixture.get("/app/family", true, Stubs::familyOfMa));
+        // A5: what a family of two sees — the chooser (none chosen), a chosen patient with the switcher, both cards
+        variant("GET /app/home", Fixture.get("/app/home", true, Stubs::familyOfTwo).named("chooser"));
+        variant("GET /app/home", Fixture.get("/app/home?patient=" + ma, true, Stubs::familyOfTwo).named("chosen"));
+        variant("GET /app/home", Fixture.get("/app/home", true, Stubs::familyOfNone).named("nopatient"));
+        variant("GET /app/timeline", Fixture.get("/app/timeline", true, Stubs::maTimelineOfTwo).named("chooser"));
+        variant("GET /app/timeline", Fixture.get("/app/timeline?patient=" + ma, true, Stubs::maTimelineOfTwo).named("chosen"));
+        variant("GET /app/family", Fixture.get("/app/family", true, Stubs::familyOfTwo).named("two"));
         put("GET /app/patients/{id}", Fixture.get("/app/patients/" + ma, true, Stubs::maTimeline));
         put("GET /app/patients/{id}/profile", Fixture.get("/app/patients/" + ma + "/profile", true, Stubs::maProfile));
         put("GET /app/documents/{id}/delete", Fixture.get("/app/documents/" + doc + "/delete", true, Stubs::doneLab));
@@ -166,8 +173,26 @@ final class PageFixtures {
             k.familyWith(k.ma(3));
         }
 
+        /** Ma (owned) and আব্বু (shared with this family): the A5 chooser, switcher and two-card states. */
+        static void familyOfTwo(WebUiTestKit k) {
+            k.familyWith(k.ma(3), k.patient("আব্বু", false, 1));
+        }
+
+        static void familyOfNone(WebUiTestKit k) {
+            k.familyWith();
+        }
+
+        static void maTimelineOfTwo(WebUiTestKit k) {
+            familyOfTwo(k);
+            maPapers(k);
+        }
+
         static void maTimeline(WebUiTestKit k) {
             familyOfMa(k);
+            maPapers(k);
+        }
+
+        private static void maPapers(WebUiTestKit k) {
             when(k.timeline.timeline(eq(WebUiTestKit.FAMILY), eq(WebUiTestKit.MA_ID), any())).thenReturn(Mono.just(new TimelinePage(List.of(
                     new TimelineEntry(DONE_DOC, LocalDate.parse("2026-10-12"), false, "lab_report", "Shapla Diagnostics", "DONE",
                             14, 2, 1, 3, "f/p/" + DONE_DOC + "/page-1.jpg", WebUiTestKit.NOW),

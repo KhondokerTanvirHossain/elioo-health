@@ -33,7 +33,30 @@ class AppShellRoutesTest {
     static String between(String html, String start, String end) {
         int i = html.indexOf(start);
         assertThat(i).as("page contains " + start).isNotNegative();
-        return html.substring(i, html.indexOf(end, i) + end.length());
+        int j = html.indexOf(end, i);
+        assertThat(j).as(start + " is closed by " + end).isNotNegative();
+        return html.substring(i, j + end.length());
+    }
+
+    /** The one element of a page that carries {@code cls}, refused when there are none or several. */
+    static Dom.Element only(Dom dom, String tag, String cls) {
+        List<Dom.Element> found = dom.all.stream().filter(e -> e.tag().equals(tag) && e.classes().contains(cls)).toList();
+        assertThat(found).as(tag + "." + cls + " on the page").hasSize(1);
+        return found.get(0);
+    }
+
+    /** {@code e} and everything under it. */
+    static List<Dom.Element> subtree(Dom.Element e) {
+        List<Dom.Element> out = new java.util.ArrayList<>(List.of(e));
+        for (Dom.Element c : e.children()) {
+            out.addAll(subtree(c));
+        }
+        return out;
+    }
+
+    /** All text under {@code e}, its own and its descendants'. */
+    static String text(Dom.Element e) {
+        return subtree(e).stream().map(Dom.Element::ownText).collect(java.util.stream.Collectors.joining(" "));
     }
 
     @ParameterizedTest
@@ -63,11 +86,33 @@ class AppShellRoutesTest {
         noPapers(ma);
         noPapers(baba);
         String html = kit.page(tab.path, "bn");
+        // PAPERS would read the guessed patient's timeline; CHAT reads nobody's papers even when it guesses, so on
+        // CHAT these two can never fail — the chooser below and the header test after this one are its guards
         verify(kit.timeline, never()).timeline(any(), any(), any());
         verify(kit.timeline, never()).document(any(), any());
-        assertThat(html).contains("কার কাগজ দেখবেন?")
-                .contains("href=\"" + tab.path + "?patient=" + ma.patient().id() + "\"")
-                .contains("href=\"" + tab.path + "?patient=" + baba.patient().id() + "\"");
+        Dom dom = Dom.parse(html);
+        assertThat(dom.unclosed).isEmpty();
+        assertThat(dom.all.stream().filter(e -> e.tag().equals("h1")).map(Dom.Element::ownText)).containsExactly("কার কাগজ দেখবেন?");
+        Dom.Element choices = only(dom, "ul", "choices");
+        assertThat(subtree(choices).stream().filter(e -> e.tag().equals("a") && e.classes().contains("pchoice"))
+                .map(e -> e.attrs().get("href")))
+                .containsExactlyInAnyOrder(tab.path + "?patient=" + ma.patient().id(), tab.path + "?patient=" + baba.patient().id());
+        assertThat(subtree(choices)).as("nobody is marked chosen").noneMatch(e -> e.attrs().containsKey("aria-current"));
+    }
+
+    /**
+     * The header is where a guess would show: the chooser prints both names, so a whole-page check cannot see it. With
+     * two and none chosen, on every tab, the header names no one and has no switcher.
+     */
+    @ParameterizedTest
+    @EnumSource(Tab.class)
+    void twoPatientsAndNoChoiceTheHeaderNamesNoOne(Tab tab) {
+        kit.familyWith(ma, baba);
+        noPapers(ma);
+        noPapers(baba);
+        Dom.Element header = only(Dom.parse(kit.page(tab.path, "bn")), "header", "appbar");
+        assertThat(subtree(header)).as("a switcher in the header").noneMatch(e -> e.classes().contains("switcher"));
+        assertThat(text(header)).doesNotContain("আম্মা").doesNotContain("আব্বু");
     }
 
     /** The other direction: one patient is simply in view — no chooser, and the header names her. */
@@ -91,13 +136,84 @@ class AppShellRoutesTest {
                 .expectStatus().isNotFound();
     }
 
+    /**
+     * A patient this family cannot see is the same 404 on every tab, পরিবার included (one rule in ActivePatient), and so
+     * is an id that is not a UUID at all — never a fallback to the first patient, never anyone's papers.
+     */
+    @ParameterizedTest
+    @EnumSource(Tab.class)
+    void anUnseenOrMalformedPatientIs404OnEveryTab(Tab tab) {
+        kit.familyWith(ma, baba);
+        noPapers(ma);
+        noPapers(baba);
+        for (String asked : List.of(UUID.randomUUID().toString(), "not-a-uuid")) {
+            kit.client.get().uri(tab.path + "?patient=" + asked).cookie("baymax_session", "tok").exchange()
+                    .expectStatus().isNotFound();
+        }
+        verify(kit.timeline, never()).timeline(any(), any(), any());
+    }
+
+    /** The old /app/patients/{id} link: the কাগজপত্র tab of that patient, checked against the family as ?patient= is. */
+    @Test
+    void theLegacyPatientLinkShowsThatPatientsPapersAndNamesHer() {
+        kit.familyWith(ma, baba);
+        noPapers(ma);
+        noPapers(baba);
+        String html = kit.page("/app/patients/" + baba.patient().id(), "bn");
+        assertThat(between(html, "<header class=\"appbar\"", "</header>")).contains("আব্বু").doesNotContain("আম্মা");
+        assertThat(between(html, "<nav class=\"tabs\"", "</nav>")).contains("<a href=\"" + Tab.PAPERS.path + "\" aria-current=\"page\">");
+        verify(kit.timeline).timeline(WebUiTestKit.FAMILY, baba.patient().id(), null);
+        verify(kit.timeline, never()).timeline(any(), eq(ma.patient().id()), any());
+    }
+
+    /** The dangerous direction: an unseen or malformed id on the old link is 404, and no one's papers are read. */
+    @Test
+    void theLegacyPatientLinkWithAPatientThisFamilyCannotSeeIs404() {
+        kit.familyWith(ma, baba);
+        noPapers(ma);
+        noPapers(baba);
+        for (String asked : List.of(UUID.randomUUID().toString(), "not-a-uuid")) {
+            kit.client.get().uri("/app/patients/" + asked).cookie("baymax_session", "tok").exchange().expectStatus().isNotFound();
+        }
+        verify(kit.timeline, never()).timeline(any(), any(), any());
+    }
+
+    /** The legacy upload form lands on the কাগজপত্র tab of the patient it uploaded for. */
+    @Test
+    void anUploadLandsOnThatPatientsPapersTab() {
+        String key = "POST /app/patients/{id}/upload";
+        PageFixtures.Fixture f = PageFixtures.ALL.get(key);
+        f.stubs().accept(kit);
+        var r = RenderedPages.exchange(kit, new RouteTable.Route(PageFixtures.method(key), "/app/patients/{id}/upload"), f, "bn");
+        assertThat(r.getStatus().value()).isEqualTo(303);
+        assertThat(r.getResponseHeaders().getFirst(HttpHeaders.LOCATION)).isEqualTo(Tab.PAPERS.path + "?patient=" + WebUiTestKit.MA_ID);
+    }
+
+    /** No patient yet: the tab says which tab it is, not পরিবার (C4 and A6 draw the add-parent screens). */
+    @ParameterizedTest
+    @EnumSource(value = Tab.class, names = {"CHAT", "PAPERS"})
+    void aFamilyWithNoPatientSeesTheTabItIsOn(Tab tab) {
+        kit.familyWith();
+        Dom dom = Dom.parse(kit.page(tab.path, "bn"));
+        assertThat(dom.all.stream().filter(e -> e.tag().equals("h1")).map(Dom.Element::ownText))
+                .containsExactly(kit.copy.t(Lang.BN, tab.labelKey));
+        verify(kit.timeline, never()).timeline(any(), any(), any());
+    }
+
     /** The চ্যাট placeholder: the composer says chat is coming and can send nothing (C4 keeps this test). */
     @Test
     void theChatComposerSaysChatIsComingAndCannotSend() {
         kit.familyWith(ma);
-        String composer = between(kit.page(Tab.CHAT.path, "bn"), "<div class=\"composer\"", "</div>");
-        assertThat(composer).contains(kit.copy.t(Lang.BN, "chat.soon"))
-                .doesNotContain("<input").doesNotContain("<textarea").doesNotContain("<form").doesNotContain("type=\"submit\"");
+        Dom dom = Dom.parse(kit.page(Tab.CHAT.path, "bn"));
+        assertThat(dom.unclosed).isEmpty();
+        Dom.Element composer = only(dom, "div", "composer");
+        // the whole subtree, so a control nested inside a div of the composer (C4) is still seen
+        assertThat(text(composer)).contains(kit.copy.t(Lang.BN, "chat.soon"));
+        assertThat(subtree(composer)).as("controls in the composer")
+                .noneMatch(e -> java.util.Set.of("input", "textarea", "form", "button", "select").contains(e.tag())
+                        || "submit".equals(e.attrs().get("type")) || e.attrs().containsKey("contenteditable"));
+        // and none anywhere on the page: the placeholder can send nothing at all
+        assertThat(dom.all).noneMatch(e -> java.util.Set.of("form", "textarea", "input").contains(e.tag()));
     }
 
     @Test
