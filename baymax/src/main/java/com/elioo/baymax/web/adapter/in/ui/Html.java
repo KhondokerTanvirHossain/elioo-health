@@ -94,6 +94,13 @@ final class Html {
      * @param disclaimer the footer text; on every page, app and landing alike (BMX-6b safety constraint)
      */
     static String page(Lang lang, Head head, String body, boolean wide, String disclaimer) {
+        // Not rendered yet (A9 renders the first, D4 the second): refused, so a PR that sets one cannot be silently dropped.
+        if (head.refreshOnlyWithoutScript()) {
+            throw new IllegalStateException("Head.refreshOnlyWithoutScript is not rendered yet");
+        }
+        if (!head.scripts().isEmpty()) {
+            throw new IllegalStateException("Head.scripts is not rendered yet");
+        }
         return "<!doctype html><html lang=\"" + lang.code + "\"><head><meta charset=\"utf-8\">"
                 + (head.refreshSeconds() > 0 ? "<meta http-equiv=\"refresh\" content=\"" + head.refreshSeconds() + "\">" : "")
                 + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
