@@ -3,11 +3,13 @@ package com.elioo.baymax.web.adapter.in.ui;
 import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.extraction.domain.DocumentView;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
+import com.elioo.baymax.web.application.port.in.ResultUseCase;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
 import com.elioo.baymax.web.domain.WebSession;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.server.HandlerFilterFunction;
 import org.springframework.web.reactive.function.server.RouterFunction;
@@ -36,6 +38,7 @@ public class DocumentPages implements WebPages {
     private final TimelineUseCase timeline;
     private final UiCopy copy;
     private final PageChrome chrome;
+    private final ResultUseCase results;
 
     @Override
     public int order() {
@@ -50,9 +53,18 @@ public class DocumentPages implements WebPages {
                 .POST(BASE + "/documents/{id}/delete", this::delete)
                 .GET(BASE + "/documents/{id}/image", this::image)
                 .GET(BASE + "/documents/{id}/page/{n}", this::pageImage)
+                .GET(BASE + "/documents/{id}/status", this::documentStatus)
                 .GET(BASE + "/documents/{id}", this::documentPage)
                 .filter(requireSession)
                 .build();
+    }
+
+    /** GET /app/documents/{id}/status: what the poll needs and nothing a log or a cache could leak. */
+    public Mono<ServerResponse> documentStatus(ServerRequest request) {
+        WebSession session = SessionAuthFilter.session(request);
+        return results.status(session.familyId(), PageChrome.uuid(request.pathVariable("id")))
+                .flatMap(s -> ServerResponse.ok().contentType(MediaType.APPLICATION_JSON)
+                        .header(HttpHeaders.CACHE_CONTROL, "private, no-store").bodyValue(Map.of("status", s.name())));
     }
 
     public Mono<ServerResponse> documentPage(ServerRequest request) {

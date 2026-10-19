@@ -115,6 +115,8 @@ final class PageFixtures {
         put("GET /app/documents/{id}/delete", Fixture.get("/app/documents/" + doc + "/delete", true, Stubs::doneLab));
         put("GET /app/documents/{id}/image", Fixture.get("/app/documents/" + doc + "/image?key=f/p/" + doc + "/crop-1.jpg", true, Stubs::signedUrls));
         put("GET /app/documents/{id}/page/{n}", Fixture.get("/app/documents/" + doc + "/page/1", true, Stubs::signedUrls));
+        // A9: the reading page's poll answers JSON, so the derived page tests skip it
+        put("GET /app/documents/{id}/status", Fixture.get("/app/documents/" + doc + "/status", true, Stubs::processingStatus));
         put("GET /app/documents/{id}", Fixture.get("/app/documents/" + doc, true, Stubs::doneLab));
         put("POST /app/login", new Fixture("/app/login", false, Body.FORM, Map.of("whatsapp_number", "01700000000", "confirmed", "1"), Stubs::noCode));
         variant("POST /app/login", new Fixture("/app/login", false, Body.FORM, Map.of("whatsapp_number", "01700000000"), Stubs::noCode).named("confirm"));
@@ -241,6 +243,10 @@ final class PageFixtures {
             when(k.timeline.document(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(view));
             when(k.timeline.explanationOf(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID))
                     .thenReturn(Mono.just("রিপোর্টটি পেয়েছি। এ সপ্তাহের মধ্যে একজন ডাক্তার দেখান।"));
+        }
+
+        static void processingStatus(WebUiTestKit k) {
+            when(k.results.status(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(Document.Status.PROCESSING));
         }
 
         static void sheetForMa(WebUiTestKit k) {

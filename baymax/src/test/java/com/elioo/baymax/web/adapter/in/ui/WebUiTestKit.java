@@ -6,6 +6,7 @@ import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.nudge.application.port.in.NudgeOptOutUseCase;
 import com.elioo.baymax.nudge.application.port.out.NudgeDataPort;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
+import com.elioo.baymax.web.application.port.in.ResultUseCase;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
 import com.elioo.baymax.web.application.port.in.UploadUseCase;
 import com.elioo.baymax.web.application.port.in.WebAuthUseCase;
@@ -39,6 +40,8 @@ final class WebUiTestKit {
     final TimelineUseCase timeline = mock(TimelineUseCase.class);
     final NudgeOptOutUseCase optOut = mock(NudgeOptOutUseCase.class);
     final NudgeDataPort nudgeData = mock(NudgeDataPort.class);
+    /** The document page's read side (A9): the status poll and the reading view. */
+    final ResultUseCase results = mock(ResultUseCase.class);
     final UploadUseCase uploads;
     final BaymaxProperties properties;
     final UiCopy copy = new UiCopy();
@@ -81,7 +84,7 @@ final class WebUiTestKit {
     /** The per-screen handlers, as Spring composes them: this is the one place their constructors are written in tests. */
     private RouterFunction<ServerResponse> buildRouter() {
         PageChrome chrome = new PageChrome(copy, sessions);
-        documents = new DocumentPages(timeline, copy, chrome);
+        documents = new DocumentPages(timeline, copy, chrome, results);
         List<WebPages> pages = List.of(new LandingPages(copy, chrome), new SignInPages(auth, sessions, copy, chrome, properties),
                 new OptOutPages(optOut, copy, chrome), new AppTabs(timeline, copy, chrome, nudgeData), documents,
                 new ProfilePages(timeline, optOut), new UploadUiHandler(uploads, copy, properties),
