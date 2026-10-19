@@ -9,10 +9,12 @@ import com.elioo.baymax.web.application.port.in.CodeRejectedException;
 import com.elioo.baymax.web.domain.CodeIssue;
 import com.elioo.baymax.web.domain.CodeRequest;
 import com.elioo.baymax.web.domain.IssuedSession;
+import com.elioo.baymax.web.domain.ReadingView;
 import com.elioo.baymax.web.domain.TimelineEntry;
 import com.elioo.baymax.web.domain.TimelinePage;
 import com.elioo.baymax.web.domain.UploadOptions;
 import com.elioo.baymax.web.domain.VerifyFailure;
+import com.elioo.baymax.web.domain.ViewerLocale;
 import com.elioo.baymax.web.domain.WebSession;
 import org.springframework.http.HttpMethod;
 import reactor.core.publisher.Mono;
@@ -115,7 +117,12 @@ final class PageFixtures {
         put("GET /app/documents/{id}/delete", Fixture.get("/app/documents/" + doc + "/delete", true, Stubs::doneLab));
         put("GET /app/documents/{id}/image", Fixture.get("/app/documents/" + doc + "/image?key=f/p/" + doc + "/crop-1.jpg", true, Stubs::signedUrls));
         put("GET /app/documents/{id}/page/{n}", Fixture.get("/app/documents/" + doc + "/page/1", true, Stubs::signedUrls));
+        // A9: the reading page's poll answers JSON, so the derived page tests skip it
+        put("GET /app/documents/{id}/status", Fixture.get("/app/documents/" + doc + "/status", true, Stubs::processingStatus));
         put("GET /app/documents/{id}", Fixture.get("/app/documents/" + doc, true, Stubs::doneLab));
+        // A9: the reading page — a paper being read, and one just received for a reader abroad (Dhaka time marked)
+        variant("GET /app/documents/{id}", Fixture.get("/app/documents/" + doc, true, Stubs::processing).named("reading"));
+        variant("GET /app/documents/{id}", Fixture.get("/app/documents/" + doc, true, Stubs::receivedAbroad).named("received"));
         put("POST /app/login", new Fixture("/app/login", false, Body.FORM, Map.of("whatsapp_number", "01700000000", "confirmed", "1"), Stubs::noCode));
         variant("POST /app/login", new Fixture("/app/login", false, Body.FORM, Map.of("whatsapp_number", "01700000000"), Stubs::noCode).named("confirm"));
         variant("POST /app/login", new Fixture("/app/login", false, Body.FORM, Map.of("whatsapp_number", "12"), k -> { }).named("invalid"));
@@ -238,9 +245,33 @@ final class PageFixtures {
                             "timing_text", "after meals", "duration_text", "30 days", "crop_key", crop + "3.jpg")),
                     List.of(Map.of("instruction", "আবার দেখাবেন", "due_date", "2026-11-15", "crop_key", crop + "4.jpg")),
                     null, null);
+            when(k.results.status(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(Document.Status.DONE));
             when(k.timeline.document(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(view));
             when(k.timeline.explanationOf(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID))
                     .thenReturn(Mono.just("রিপোর্টটি পেয়েছি। এ সপ্তাহের মধ্যে একজন ডাক্তার দেখান।"));
+        }
+
+        /** A9: a two-page paper of Ma's being read, sent 30 s ago, seen from a Bangladeshi number. */
+        static void processing(WebUiTestKit k) {
+            reading(k, Document.Status.PROCESSING, true);
+        }
+
+        /** A9: the same paper just received, seen from a number abroad. */
+        static void receivedAbroad(WebUiTestKit k) {
+            reading(k, Document.Status.RECEIVED, false);
+        }
+
+        private static void reading(WebUiTestKit k, Document.Status status, boolean bangladesh) {
+            java.time.Instant sent = WebUiTestKit.NOW.minusSeconds(30);
+            Document d = Document.received(WebUiTestKit.MA_ID, WebUiTestKit.FAMILY, 2, sent).withId(WebUiTestKit.DOC_ID);
+            Document at = status == Document.Status.RECEIVED ? d : d.withStatus(status, null, WebUiTestKit.NOW);
+            when(k.results.status(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(status));
+            when(k.results.reading(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(new ReadingView(
+                    DocumentView.pending(at), k.ma(3).patient(), true, new ViewerLocale(bangladesh), sent, WebUiTestKit.NOW)));
+        }
+
+        static void processingStatus(WebUiTestKit k) {
+            when(k.results.status(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(Document.Status.PROCESSING));
         }
 
         static void sheetForMa(WebUiTestKit k) {

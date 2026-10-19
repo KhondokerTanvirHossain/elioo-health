@@ -17,7 +17,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Set;
 
-/** {@code /assets/{file}}: the stylesheet and the landing images from the jar. */
+/** {@code /assets/{file}}: the stylesheet, the landing images and the reading page's script from the jar. */
 @Component
 public class AssetHandler implements WebPages {
 
@@ -36,7 +36,8 @@ public class AssetHandler implements WebPages {
             "mio.png",
             "mio.webp",
             "paper-lab.svg",
-            "paper-rx.svg");
+            "paper-rx.svg",
+            "progress.js");
 
     /** Directories under {@code baymax/ui/} that are never served as themselves: the stylesheet's parts. */
     static final List<String> PRIVATE_DIRS = List.of("css/");
@@ -112,6 +113,7 @@ public class AssetHandler implements WebPages {
             return ServerResponse.notFound().build();
         }
         MediaType type = file.endsWith(".css") ? new MediaType("text", "css", java.nio.charset.StandardCharsets.UTF_8)
+                : file.endsWith(".js") ? new MediaType("text", "javascript", java.nio.charset.StandardCharsets.UTF_8)
                 : file.endsWith(".svg") ? MediaType.valueOf("image/svg+xml")
                 : file.endsWith(".webp") ? MediaType.valueOf("image/webp") : MediaType.IMAGE_PNG;
         return ServerResponse.ok().contentType(type).cacheControl(CacheControl.maxAge(Duration.ofDays(1)).cachePublic())

@@ -28,18 +28,20 @@ class HtmlHeadTest {
     }
 
     /**
-     * Head carries two fields no page renders until A9 (refresh only without script) and D4 (scripts). Set before then,
-     * page() would drop them with every test green; it refuses instead, and the PR that renders a field lifts its refusal.
+     * A9 renders the two fields R2 refused until a page used them: the refresh only without script, inside
+     * {@code <noscript>} and nowhere else (an unconditional refresh would reload over the poll), and a script file from
+     * {@code /assets/}, versioned and deferred. A script that is not a served asset is refused rather than linked to a 404.
      */
     @Test
-    void aHeadFieldThatNoPageRendersYetIsRefusedRatherThanDropped() {
-        Html.Head refreshWithoutScript = new Html.Head("t", 5, true, List.of(), false);
-        Html.Head withScript = new Html.Head("t", 0, false, List.of("progress.js"), false);
-        assertThatThrownBy(() -> Html.page(Lang.BN, refreshWithoutScript, "<p>x</p>", false, "d"))
-                .isInstanceOf(IllegalStateException.class).hasMessageContaining("refreshOnlyWithoutScript");
-        assertThatThrownBy(() -> Html.page(Lang.BN, withScript, "<p>x</p>", false, "d"))
-                .isInstanceOf(IllegalStateException.class).hasMessageContaining("scripts");
-        assertThat(Html.page(Lang.BN, Html.Head.of("t").refresh(5), "<p>x</p>", false, "d")).contains("content=\"5\"");
+    void theRefreshWithoutScriptIsInsideNoscriptAndAScriptIsAServedVersionedFile() {
+        String page = Html.page(Lang.BN, Html.Head.of("t").refreshWithoutScript(5).script("progress.js"), "<p>x</p>", false, "d");
+        assertThat(page).contains("<noscript><meta http-equiv=\"refresh\" content=\"5\"></noscript>")
+                .contains("<script src=\"/assets/progress.js?v=" + AssetHandler.version("progress.js") + "\" defer></script></head>");
+        assertThat(page.split("http-equiv=\"refresh\"", -1).length - 1).as("refresh metas").isEqualTo(1);
+        assertThat(Html.page(Lang.BN, Html.Head.of("t").refresh(5), "<p>x</p>", false, "d"))
+                .contains("content=\"5\"").doesNotContain("<noscript>").doesNotContain("<script");
+        assertThatThrownBy(() -> Html.page(Lang.BN, new Html.Head("t", 0, false, List.of("nope.js"), false), "<p>x</p>", false, "d"))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("nope.js");
     }
 
     /** Html.page(Lang, String, String, int, boolean, String, boolean) at cf61009, verbatim but for L1's head metas. */

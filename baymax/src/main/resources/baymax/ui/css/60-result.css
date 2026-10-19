@@ -1,1 +1,8 @@
 /* 60-result: reading, result, retake and detail pages (A9, A12, B2-B6). Tokens only. */
+/* A9 reading page (s09): three real steps, the current one marked by weight and outline, never by a spinner alone. */
+.pchip{display:inline-flex;align-items:center;min-height:var(--target-min);padding:0 var(--sp-3);border-radius:var(--r-pill);background:var(--c-surface-2);color:var(--c-text)}
+.steps{list-style:none;margin:var(--sp-4) 0;padding:0;display:flex;flex-direction:column;gap:var(--sp-2)}
+.steps li{min-height:var(--target-min);display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-2);padding:0 var(--sp-2)}
+.steps li.done{color:var(--c-text)}
+.steps li.next{color:var(--c-text-muted)}
+.steps li[aria-current]{font-weight:700;outline:3px solid var(--c-primary);outline-offset:2px;border-radius:var(--r-s)}

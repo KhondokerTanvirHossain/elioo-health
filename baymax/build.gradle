@@ -54,4 +54,6 @@ dependencies {
     testImplementation 'org.testcontainers:postgresql:1.19.7'
     testImplementation 'org.testcontainers:minio:1.19.7'
     testImplementation 'com.tngtech.archunit:archunit-junit5:1.3.0'
+    // progress.js (A9) runs in tests: a JS engine on the JVM, so the poll's behaviour is asserted, not its source text
+    testImplementation 'org.openjdk.nashorn:nashorn-core:15.4'
 }
