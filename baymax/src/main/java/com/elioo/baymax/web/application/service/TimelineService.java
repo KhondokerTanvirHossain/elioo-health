@@ -52,7 +52,6 @@ public class TimelineService implements TimelineUseCase {
     private final DocumentIntakeUseCase intake;
     private final DocumentStorageUseCase storage;
     private final AuditPort audit;
-    private final com.elioo.baymax.outbound.application.port.out.OutboundMessagePort messages;
     private final Clock clock;
     /** F1: the stored level the document page shows; nothing under web assesses urgency itself. */
     private final DocumentUrgencyUseCase urgency;
@@ -142,13 +141,6 @@ public class TimelineService implements TimelineUseCase {
                 .filter(d -> pageNo >= 1 && pageNo <= Math.max(1, d.pageCount()))
                 .switchIfEmpty(Mono.error(BaymaxException.notFound("image_not_found", "no such page")))
                 .flatMap(d -> storage.signedUrl(StorageKeys.page(d.familyId(), d.patientId(), d.id(), pageNo)));
-    }
-
-    @Override
-    public Mono<String> explanationOf(UUID familyId, UUID documentId) {
-        return visibleDocument(familyId, documentId)
-                .flatMap(d -> messages.latestDeliverable(d.id()))
-                .map(m -> m.body());
     }
 
     private Mono<PatientAccess> visiblePatient(UUID familyId, UUID patientId) {

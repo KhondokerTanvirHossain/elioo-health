@@ -1,9 +1,11 @@
 package com.elioo.baymax.web.adapter.in.ui;
 
 import com.elioo.baymax.common.error.BaymaxException;
+import com.elioo.baymax.common.time.PatientCalendar;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.DocumentView;
 import com.elioo.baymax.extraction.domain.RetakeReason;
+import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.outbound.domain.UrgencyReason;
 import com.elioo.baymax.outbound.domain.ValueVerdict;
@@ -28,6 +30,7 @@ import reactor.core.publisher.Mono;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
@@ -112,8 +115,8 @@ public class DocumentPages implements WebPages {
     }
 
     /**
-     * GET /app/documents/{id}: while the paper is RECEIVED or PROCESSING, the reading page (s09); once DONE, the result
-     * summary (s10); otherwise the document page as before (B5 replaces NEEDS_RETAKE and FAILED). The branch reads the
+     * GET /app/documents/{id}: while the paper is RECEIVED or PROCESSING, the reading page (s09); once finished, its own
+     * page from {@link #finishedPage} — the result (s10), the retake card (s12) or the failed page (B5). The branch reads the
      * status alone, which records nothing, so a finished paper's page never reads the reading view and records the one
      * DOCUMENT_VIEW of its own read. A paper finished between the two reads is drawn finished, never as a reading page
      * that would wait for a change that already happened; that page records two DOCUMENT_VIEW rows (the reading view's
@@ -124,10 +127,10 @@ public class DocumentPages implements WebPages {
         Lang lang = Lang.of(request);
         UUID documentId = PageChrome.uuid(request.pathVariable("id"));
         return results.status(session.familyId(), documentId).flatMap(status -> !inFlight(status)
-                ? finishedPage(session, lang, documentId, status)
+                ? finishedPage(session, lang, documentId)
                 : results.reading(session.familyId(), documentId).flatMap(r -> {
                     Document.Status now = Document.Status.valueOf(r.document().status());
-                    return inFlight(now) ? Html.html(HttpStatus.OK, progressPage(lang, r)) : finishedPage(session, lang, documentId, now);
+                    return inFlight(now) ? Html.html(HttpStatus.OK, progressPage(lang, r)) : finishedPage(session, lang, documentId);
                 }));
     }
 
@@ -177,14 +180,19 @@ public class DocumentPages implements WebPages {
         return b.toString();
     }
 
-    private Mono<ServerResponse> finishedPage(WebSession session, Lang lang, UUID documentId, Document.Status status) {
-        return status == Document.Status.DONE ? summaryPage(session, lang, documentId) : legacyPage(session, lang, documentId);
-    }
-
-    /** The result (s10) in the shell, under কাগজপত্র. */
-    private Mono<ServerResponse> summaryPage(WebSession session, Lang lang, UUID documentId) {
-        return results.result(session.familyId(), documentId)
-                .flatMap(r -> Html.html(HttpStatus.OK, new AppShell(copy).inside(lang, Tab.PAPERS, summaryBody(lang, r))));
+    /**
+     * A finished paper's page, from one read (ResultUseCase.result): DONE is the result (s10), NEEDS_RETAKE the retake
+     * card (s12), FAILED its own page. Drawn from the status the read returned, so the body always matches the view.
+     */
+    private Mono<ServerResponse> finishedPage(WebSession session, Lang lang, UUID documentId) {
+        return results.result(session.familyId(), documentId).flatMap(r -> {
+            String body = switch (Document.Status.valueOf(r.document().status())) {
+                case NEEDS_RETAKE -> retakeBody(lang, r);
+                case FAILED -> failedBody(lang, r);
+                default -> summaryBody(lang, r);
+            };
+            return Html.html(HttpStatus.OK, new AppShell(copy).inside(lang, Tab.PAPERS, body));
+        });
     }
 
     /**
@@ -427,50 +435,155 @@ public class DocumentPages implements WebPages {
         };
     }
 
-    /** NEEDS_RETAKE and FAILED, as before A12 (B5 replaces them). */
-    private Mono<ServerResponse> legacyPage(WebSession session, Lang lang, UUID documentId) {
-        return timeline.document(session.familyId(), documentId)
-                .zipWith(timeline.explanationOf(session.familyId(), documentId).map(Optional::of).defaultIfEmpty(Optional.empty()))
-                .flatMap(t -> Html.html(HttpStatus.OK, new AppShell(copy).inside(lang, Tab.PAPERS, render(lang, t.getT1(), documentId, t.getT2()))));
-    }
-
-    String render(DocumentView view, UUID documentId) {
-        return render(Lang.BN, view, documentId, Optional.empty());
+    /**
+     * s12 / RetakeCard (spec §4.12, DR-24): a warn-tint card, never amber or red (a retake is not urgency). The lead, the
+     * reason from the stored code in the reader's language (F5; never the developer prose, never the raw code), the photo
+     * that was sent, and tips that escalate with this patient's streak ({@link ResultView#retakeOrdinal}). For the
+     * patient's owner, the one upload entry for the same patient, camera first and working without script; from the
+     * third retake in a row "অন্য কাগজ পাঠান" leads and "এই কাগজটাই আবার তুলুন" goes quiet. A view-only member is told why
+     * and gets no form. Nothing extracted is shown: a retake keeps no value (HC3).
+     */
+    String retakeBody(Lang lang, ResultView r) {
+        DocumentView v = r.document();
+        UUID documentId = PageChrome.uuid(v.documentId());
+        UUID patientId = r.patient().id();
+        boolean third = r.retakeOrdinal() >= 3;
+        StringBuilder b = new StringBuilder(header(lang, r, third ? "retake.title.third" : "retake.title", attempt(lang, r.retakeOrdinal())));
+        b.append("<section id=\"retake\" class=\"retake-card\"><div class=\"retake-h\"><span class=\"retake-i\">").append(Icons.svg("camera", 24))
+                .append("</span><p class=\"lead\">").append(copy.t(lang, "retake.head")).append("</p></div>")
+                .append("<p>").append(retakeReason(lang, v.reasonCode())).append("</p>")
+                .append(sentPhotos(lang, v, documentId));
+        if (third) {
+            b.append("<p>").append(copy.t(lang, "retake.third.p")).append("</p>");
+        } else {
+            b.append("<h2>").append(copy.t(lang, "retake.tips")).append("</h2><ul class=\"retake-tips\">");
+            int tips = r.retakeOrdinal() >= 2 ? 3 : 2;   // messages_bn retake (daylight, flat), then retake.second's three
+            for (int n = 1; n <= tips; n++) {
+                b.append("<li>").append(Icons.svg("check", 18)).append("<span>").append(copy.t(lang, "retake.tip." + n)).append("</span></li>");
+            }
+            b.append("</ul>");
+        }
+        if (!r.owner()) {
+            b.append("<p class=\"meta\">").append(copy.t(lang, "retake.viewonly")).append("</p>");
+        } else if (third) {
+            b.append(anotherPaper(lang, patientId, documentId, true))
+                    .append(sendForm(lang, "retake-form", r.patient(), documentId, "retake.again.same", false));
+        } else {
+            b.append(sendForm(lang, "retake-form", r.patient(), documentId, "retake.again", true))
+                    .append(anotherPaper(lang, patientId, documentId, false));
+        }
+        if (third || !r.owner()) {
+            b.append("<p><a class=\"btn quiet\" href=\"").append(Tab.PAPERS.path).append("?patient=").append(patientId).append("\">")
+                    .append(copy.t(lang, "retake.later")).append("</a></p>");
+        }
+        b.append("<p class=\"small\">").append(copy.t(lang, "retake.free")).append("</p>")
+                .append("<p class=\"small\">").append(copy.t(lang, "retake.nothing_kept")).append("</p></section>");
+        return b.append(deleteLink(lang, documentId)).toString();
     }
 
     /**
-     * The page as the ticket specifies it: extracted items beside their crops, and for a retake nothing but why
-     * and the page. Production draws only NEEDS_RETAKE and FAILED with it since A12; a DONE view gets the same
-     * {@link #items} the summary shows, so the item tests below the summary cover the page that is served.
-     *
-     * @param explanation the released BMX-6 message for this document, shown above the extraction exactly as
-     *                    composed — it is the only interpretive text on the page and it passed the checklist
+     * FAILED: our side, said honestly ("আমাদের দিকে একটা সমস্যা"), never a retake's tips and never the stored error. The
+     * owner gets the same one upload entry for the same patient; a view-only member is told why.
      */
-    String render(Lang lang, DocumentView view, UUID documentId, Optional<String> explanation) {
-        // the view does not name its patient yet (A12's ResultView does): back to the tab, which asks when there are two
+    String failedBody(Lang lang, ResultView r) {
+        UUID documentId = PageChrome.uuid(r.document().documentId());
+        StringBuilder b = new StringBuilder(header(lang, r, "failed.title", null))
+                .append("<section id=\"failed\" class=\"retake-card\"><p>").append(copy.t(lang, "failed.p")).append("</p>");
+        b.append(r.owner() ? sendForm(lang, "failed-form", r.patient(), documentId, "failed.again", true)
+                : "<p class=\"meta\">" + copy.t(lang, "retake.viewonly") + "</p>");
+        b.append("<p class=\"small\">").append(copy.t(lang, "failed.free")).append("</p></section>");
+        return b.append(deleteLink(lang, documentId)).toString();
+    }
+
+    /**
+     * Back to this patient's papers, the patient named, the page's title, and s12's meta line: when it was sent on the
+     * patient's calendar ("আজ, " when that is today), how many pages, and {@code attempt} when there is one.
+     */
+    private String header(Lang lang, ResultView r, String titleKey, String attempt) {
+        StringBuilder b = new StringBuilder("<p>")
+                .append(new AppShell(copy).back(lang, Tab.PAPERS.path + "?patient=" + r.patient().id(), "app.back.papers")).append("</p>")
+                .append("<span class=\"pchip\">").append(copy.t(lang, "result.patient", r.patient().name(), r.patient().age())).append("</span>")
+                .append("<h1>").append(copy.t(lang, titleKey)).append("</h1>");
+        if (r.receivedAt() != null) {
+            LocalDate sent = LocalDate.ofInstant(r.receivedAt(), PatientCalendar.ZONE);
+            String day = copy.dateText(lang, sent);
+            String when = r.now() != null && sent.equals(LocalDate.ofInstant(r.now(), PatientCalendar.ZONE)) ? copy.raw(lang, "retake.meta.today", day) : day;
+            int pages = r.document().pageCount() == null ? 1 : Math.max(1, r.document().pageCount());
+            b.append("<p class=\"meta\">").append(copy.t(lang, "retake.meta", when, pages)).append(attempt == null ? "" : " · " + attempt).append("</p>");
+        }
+        return b.toString();
+    }
+
+    /** Which try this is, from the third retake in a row on (RetakeCard third state); nothing before. */
+    private String attempt(Lang lang, int ordinal) {
+        return ordinal == 3 ? copy.t(lang, "retake.meta.third") : ordinal > 3 ? copy.t(lang, "retake.meta.nth", ordinal) : null;
+    }
+
+    /**
+     * The reason's line from its stored code: the section's own line where one exists, else the reason's; a code this
+     * build does not know reads as the legacy line, so a retake always says why (V20 guarantees a code is stored).
+     */
+    private String retakeReason(Lang lang, String code) {
+        RetakeReason reason = RetakeReason.ofCode(code).orElse(RetakeReason.LEGACY);
+        String section = RetakeReason.sectionOf(code);
+        String specific = section == null ? null : copy.maybe(lang, "retake.reason." + reason.prefix() + "." + section);
+        return specific != null ? specific : copy.t(lang, "retake.reason." + reason.prefix());
+    }
+
+    /** The photos the family sent, whole, each opening large: no region, the pipeline does not know one. */
+    private String sentPhotos(Lang lang, DocumentView v, UUID documentId) {
+        StringBuilder b = new StringBuilder();
+        int pages = v.pageCount() == null ? 1 : Math.max(1, v.pageCount());
+        for (int n = 1; n <= pages; n++) {
+            String href = BASE + "/documents/" + documentId + "/page/" + n;
+            b.append("<a class=\"fullpage\" href=\"").append(href).append("\"><img class=\"page-img\" loading=\"lazy\" alt=\"\" src=\"")
+                    .append(href).append("\"><span class=\"cap\">").append(copy.t(lang, "retake.photo", n)).append("</span></a>");
+        }
+        return b.toString();
+    }
+
+    /**
+     * A new photo of this paper for the same patient: the one upload entry (POST /app/add), camera first, a visible file
+     * input and a submit, so it works without script. {@code back} brings a refusal's sheet back over this paper.
+     */
+    private String sendForm(Lang lang, String id, PatientProfile patient, UUID documentId, String submitKey, boolean primary) {
+        UUID patientId = patient.id();
+        return "<form id=\"" + id + "\" class=\"retake-send\" method=\"post\" enctype=\"multipart/form-data\" action=\"" + UploadUiHandler.SHEET + "\">"
+                + "<input type=\"hidden\" name=\"patient\" value=\"" + patientId + "\">"
+                + "<input type=\"hidden\" name=\"back\" value=\"" + BASE + "/documents/" + documentId + "\">"
+                + "<label class=\"retake-file\"><span>" + copy.t(lang, "retake.file") + "</span>"
+                + "<input type=\"file\" name=\"file\" accept=\"image/*,application/pdf\" capture=\"environment\" required></label>"
+                + "<p class=\"meta\">" + copy.t(lang, "retake.same_patient", patient.name()) + "</p>"
+                + "<button type=\"submit\" class=\"btn " + (primary ? "primary" : "quiet") + "\">" + copy.t(lang, submitKey) + "</button></form>";
+    }
+
+    /**
+     * "অন্য কাগজ পাঠান": the add sheet (the one upload entry) for this patient, which comes back to this paper. The sheet
+     * offers every source (camera, gallery, PDF) and the family may still choose whose paper it is.
+     */
+    private String anotherPaper(Lang lang, UUID patientId, UUID documentId, boolean primary) {
+        String back = URLEncoder.encode(BASE + "/documents/" + documentId, StandardCharsets.UTF_8);
+        return "<p><a class=\"btn " + (primary ? "primary" : "quiet") + "\" href=\"" + UploadUiHandler.SHEET + "?patient=" + patientId
+                + "&amp;back=" + back + "\">" + copy.t(lang, "retake.other") + "</a></p>";
+    }
+
+    String render(DocumentView view, UUID documentId) {
+        return render(Lang.BN, view, documentId);
+    }
+
+    /**
+     * The pre-A12 document page, which production no longer serves (B5: every status has its own page). Kept for the
+     * item tests, which call it with a DONE view and get the same {@link #items} the summary shows; B6's document detail
+     * replaces it. A view that is not DONE gets its page images and the delete link, and nothing else.
+     */
+    String render(Lang lang, DocumentView view, UUID documentId) {
         StringBuilder b = new StringBuilder(new AppShell(copy).back(lang, Tab.PAPERS.path, "app.back.papers"));
         b.append("<h1>").append(chrome.documentType(lang, view.documentType())).append(" ").append(chrome.status(lang, view.status())).append("</h1>");
         b.append("<div class=\"meta\">").append(copy.date(lang, view.documentDate()))
                 .append(view.facility() == null ? "" : " · " + esc(view.facility())).append("</div>");
 
-        explanation.ifPresent(text -> b.append("<div class=\"card\"><div class=\"meta\">").append(copy.t(lang, "doc.summary"))
-                .append("</div><div class=\"explain\">").append(esc(text)).append("</div></div>"));
-
         if (!"DONE".equals(view.status())) {
-            // NEEDS_RETAKE / FAILED / in flight: the page image and nothing extracted anywhere; a retake says why from its
-            // code in the reader's language (F5, interim until B5), never the developer prose and never the raw code
-            if ("NEEDS_RETAKE".equals(view.status())) {
-                b.append("<div class=\"card retake\"><p><strong>").append(copy.t(lang, "retake.head")).append("</strong></p>");
-                RetakeReason.ofCode(view.reasonCode()).ifPresent(r -> {
-                    String section = RetakeReason.sectionOf(view.reasonCode());
-                    String specific = section == null ? null : copy.maybe(lang, "retake.reason." + r.prefix() + "." + section);
-                    b.append("<p>").append(specific != null ? specific : copy.t(lang, "retake.reason." + r.prefix())).append("</p>");
-                });
-                b.append("<p>").append(copy.t(lang, "doc.retake")).append("</p></div>");
-            }
-            b.append(pageImages(view, documentId));
-            b.append(deleteLink(lang, documentId));
-            return b.toString();
+            return b.append(pageImages(view, documentId)).append(deleteLink(lang, documentId)).toString();
         }
         return b.append(items(lang, view, documentId, null, Set.of())).toString();
     }

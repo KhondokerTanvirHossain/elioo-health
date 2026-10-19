@@ -108,6 +108,9 @@ class WebOnlyJourneyAcceptanceTest {
              "confidence":{"overall":0.95,"values":0.95,"medicines":1.0,"follow_up":1.0,"clinical_context":1.0}}
             """;
 
+    /** B5: the same paper read badly — overall 0.40, below the gate — so the second extraction is a low_overall retake. */
+    static final String RETAKE_REPLY = NOW_REPLY.replace("\"confidence\":{\"overall\":0.95", "\"confidence\":{\"overall\":0.40");
+
     private static final String NUMBER = "+8801700000731";
     /** The WhatsApp-on journey's family: its own number, so the two tests share no row and run in either order. */
     private static final String WA_NUMBER = "+8801700000732";
@@ -156,7 +159,9 @@ class WebOnlyJourneyAcceptanceTest {
     }
 
     private ReactiveWebApplicationContextRunner runner() {
-        return ExtractionPipelineAcceptanceTest.runnerFor(POSTGRES, MINIO, NOW_REPLY, "Potassium", "11.0")
+        // the model's replies in turn: the first paper reads as NOW, the second as a retake (B5), every later one NOW again
+        return ExtractionPipelineAcceptanceTest.runnerFor(POSTGRES, MINIO, new ExtractionPipelineAcceptanceTest.StubReply(
+                        NOW_REPLY, List.of("Potassium", "11.0"), List.of(RETAKE_REPLY)))
                 .withConfiguration(AutoConfigurations.of(WebFluxAutoConfiguration.class))
                 .withPropertyValues("baymax.wa.enabled=false", "baymax.auth.web-mints-code=true",
                         "baymax.auth.hmac-secret=journey-secret", "baymax.auth.cookie-secure=false",
@@ -260,6 +265,32 @@ class WebOnlyJourneyAcceptanceTest {
                     assertThat(colourAt(crop, fx, fy)).as("the crop shows the words' region at %.1f,%.1f", fx, fy).isEqualTo(WORDS);
                 }
             }
+
+            // 5c. a paper read badly (B5): the retake card in Bangla, a retake for the same patient through the one entry,
+            // and the month's allowance the same before and after — a retake is never counted (DR-24)
+            String quotaBefore = quotaLine(get(web, session, "/app/add?patient=" + ma.id()));
+            String retakePath = upload(web, session, ma);
+            assertThat(waitUntilFinished(web, session, retakePath)).as("the badly read paper").isEqualTo("NEEDS_RETAKE");
+            String retakePage = get(web, session, retakePath);
+            String card = ResultFixtures.section(retakePage, "retake");
+            assertThat(card).contains(copy.t(Lang.BN, "retake.head")).contains(copy.t(Lang.BN, "retake.reason.low_overall"))
+                    .doesNotContain("not read confidently").doesNotContain("low_overall");
+            assertThat(retakePage).doesNotContain("id=\"urgency\"");
+            assertThat(quotaLine(get(web, session, "/app/add?patient=" + ma.id()))).as("the allowance after a retake").isEqualTo(quotaBefore);
+            String form = ResultFixtures.section(retakePage, "retake-form");
+            assertThat(form).contains("action=\"/app/add\"").contains("capture=\"environment\"");
+            Map<String, String> hidden = hiddenFields(form);
+            assertThat(hidden).as("the retake goes to the same patient").containsEntry("patient", ma.id().toString());
+            MultipartBodyBuilder again = new MultipartBodyBuilder();
+            hidden.forEach(again::part);
+            again.part("file", paintedPage()).filename("page-1.jpg").contentType(MediaType.IMAGE_JPEG);
+            String retakenPath = web.post().uri(form.replaceAll("(?s).*?action=\"([^\"]+)\".*", "$1")).cookie("baymax_session", session)
+                    .body(BodyInserters.fromMultipartData(again.build())).exchange()
+                    .expectStatus().isSeeOther().returnResult(Void.class).getResponseHeaders().getFirst(HttpHeaders.LOCATION);
+            assertThat(retakenPath).matches("/app/documents/[0-9a-f-]{36}").isNotEqualTo(retakePath).isNotEqualTo(documentPath);
+            assertThat(waitUntilFinished(web, session, retakenPath)).as("the retaken paper").isEqualTo("DONE");
+            assertThat(scalar("select patient_id from baymax.document where id = '" + idOf(retakenPath) + "'"))
+                    .as("the retaken paper is the same patient's").isEqualTo(ma.id().toString());
 
             // 6. পরিবার: the account, the flag saved and shown ticked, the reminders stopped and shown stopped
             String familyTab = get(web, session, "/app/family");
@@ -613,6 +644,13 @@ class WebOnlyJourneyAcceptanceTest {
 
     /** The sheet, the multipart post, the reading page, then the status poll until DONE; returns the document's path. */
     private String uploadAndWaitUntilDone(WebTestClient web, String session, PatientProfile ma) throws Exception {
+        String documentPath = upload(web, session, ma);
+        assertThat(waitUntilFinished(web, session, documentPath)).as("the paper was read").isEqualTo("DONE");
+        return documentPath;
+    }
+
+    /** The sheet for this patient, then the multipart post; returns the new document's path once its page answers. */
+    private String upload(WebTestClient web, String session, PatientProfile ma) throws Exception {
         assertThat(get(web, session, "/app/add?patient=" + ma.id()))
                 .containsPattern("name=\"patient\" value=\"" + ma.id() + "\" required checked>");
         MultipartBodyBuilder body = new MultipartBodyBuilder();
@@ -623,20 +661,41 @@ class WebOnlyJourneyAcceptanceTest {
                 .expectStatus().isSeeOther().returnResult(Void.class).getResponseHeaders().getFirst(HttpHeaders.LOCATION);
         assertThat(documentPath).matches("/app/documents/[0-9a-f-]{36}");
         String first = get(web, session, documentPath);
-        assertThat(first).containsAnyOf("id=\"progress\"", "id=\"urgency\"");   // still reading, or already read
+        // still reading, or already read: as a result, or as a retake (B5)
+        assertThat(first).containsAnyOf("id=\"progress\"", "id=\"urgency\"", "id=\"retake\"");
+        return documentPath;
+    }
 
+    /** Polls the status (30 s at most) until the paper is no longer RECEIVED or PROCESSING; returns that status. */
+    private static String waitUntilFinished(WebTestClient web, String session, String documentPath) throws Exception {
         String status = "";
-        for (int i = 0; i < 60 && !status.equals("DONE"); i++) {
+        for (int i = 0; i < 60 && (status.isEmpty() || status.equals("RECEIVED") || status.equals("PROCESSING")); i++) {
+            if (!status.isEmpty()) {
+                Thread.sleep(500);
+            }
             String json = web.get().uri(documentPath + "/status").cookie("baymax_session", session).exchange()
                     .expectStatus().isOk().expectBody(String.class).returnResult().getResponseBody();
             assertThat(json).matches("\\{\"status\":\"[A-Z_]+\"}").doesNotContain("urgency");
             status = json.replaceAll(".*\"status\":\"([A-Z_]+)\".*", "$1");
-            if (!status.equals("DONE")) {
-                Thread.sleep(500);
-            }
         }
-        assertThat(status).as("the paper was read").isEqualTo("DONE");
-        return documentPath;
+        return status;
+    }
+
+    /** The add sheet's allowance line ({@code <p class="quota">}), as served. */
+    private static String quotaLine(String sheet) {
+        Matcher m = Pattern.compile("<p class=\"quota\">[^<]*</p>").matcher(sheet);
+        assertThat(m.find()).as("the allowance line on the add sheet").isTrue();
+        return m.group();
+    }
+
+    /** A form's hidden fields, name → value, in order. */
+    private static Map<String, String> hiddenFields(String form) {
+        Map<String, String> fields = new java.util.LinkedHashMap<>();
+        Matcher m = Pattern.compile("<input type=\"hidden\" name=\"([^\"]+)\" value=\"([^\"]*)\">").matcher(form);
+        while (m.find()) {
+            fields.put(m.group(1), m.group(2));
+        }
+        return fields;
     }
 
     private static String get(WebTestClient web, String session, String uri) {

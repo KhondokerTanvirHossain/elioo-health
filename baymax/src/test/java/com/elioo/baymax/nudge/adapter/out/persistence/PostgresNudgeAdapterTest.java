@@ -35,7 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * test of this path; this one runs the real schema.
  */
 @Testcontainers
-class PostgresNudgeAdapterTest {
+public class PostgresNudgeAdapterTest {
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
@@ -43,6 +43,11 @@ class PostgresNudgeAdapterTest {
     private static final String TRIGGER = "follow_up:5e9edf6d-0a2a-4913-8675-9d07a4000001";
 
     private ReactiveWebApplicationContextRunner runner() {
+        return runnerFor(POSTGRES);
+    }
+
+    /** The real Baymax persistence context over this container, with no stubs: shared with RetakeOrdinalAndFreeTierTest. */
+    public static ReactiveWebApplicationContextRunner runnerFor(PostgreSQLContainer<?> postgres) {
         return new ReactiveWebApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(
                         R2dbcAutoConfiguration.class, R2dbcDataAutoConfiguration.class,
@@ -50,12 +55,12 @@ class PostgresNudgeAdapterTest {
                         LlmAutoConfiguration.class, BaymaxAutoConfiguration.class))
                 .withPropertyValues(
                         "baymax.enabled=true", "llm.provider=groq", "llm.groq.api-key=test-key",
-                        "spring.r2dbc.url=r2dbc:postgresql://" + POSTGRES.getHost() + ":" + POSTGRES.getFirstMappedPort() + "/" + POSTGRES.getDatabaseName(),
-                        "spring.r2dbc.username=" + POSTGRES.getUsername(),
-                        "spring.r2dbc.password=" + POSTGRES.getPassword(),
-                        "baymax.flyway.url=" + POSTGRES.getJdbcUrl() + "&sslmode=disable",
-                        "baymax.flyway.user=" + POSTGRES.getUsername(),
-                        "baymax.flyway.password=" + POSTGRES.getPassword());
+                        "spring.r2dbc.url=r2dbc:postgresql://" + postgres.getHost() + ":" + postgres.getFirstMappedPort() + "/" + postgres.getDatabaseName(),
+                        "spring.r2dbc.username=" + postgres.getUsername(),
+                        "spring.r2dbc.password=" + postgres.getPassword(),
+                        "baymax.flyway.url=" + postgres.getJdbcUrl() + "&sslmode=disable",
+                        "baymax.flyway.user=" + postgres.getUsername(),
+                        "baymax.flyway.password=" + postgres.getPassword());
     }
 
     /**

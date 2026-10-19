@@ -90,6 +90,23 @@ final class ResultFixtures {
     }
 
     /**
+     * B5: a one-page NEEDS_RETAKE paper of Ma's with its reason code, as intake views it (no prose: a view has none),
+     * the {@code ordinal}-th retake in a row; {@code owner} false is a view-only share member.
+     */
+    static ResultView retake(String code, int ordinal, boolean owner) {
+        DocumentView view = new DocumentView(DOC.toString(), "NEEDS_RETAKE", code, null, null, null, null, null, 1,
+                null, null, null, null, null);
+        return new ResultView(view, MA, owner, BD, null, List.of(), GateState.NONE, null, ordinal, 2, NOW.minusSeconds(60), NOW);
+    }
+
+    /** B5: a one-page FAILED paper of Ma's, seen by its owner. */
+    static ResultView failed() {
+        DocumentView view = new DocumentView(DOC.toString(), "FAILED", null, null, null, null, null, null, 1,
+                null, null, null, null, null);
+        return new ResultView(view, MA, true, BD, null, List.of(), GateState.NONE, null, 0, 2, NOW.minusSeconds(60), NOW);
+    }
+
+    /**
      * Each text node of the markup once the paper's own blocks are gone: its quotes ({@code <figure class="paper">}) and
      * its value rows ({@code <a class="vrow …">}), whose words are the paper's, drawn by B2's audited row code.
      */

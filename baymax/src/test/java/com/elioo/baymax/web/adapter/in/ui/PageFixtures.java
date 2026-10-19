@@ -129,6 +129,11 @@ final class PageFixtures {
         // B3: a NOW paper (s11) — every reason block, as a Bangladeshi number and as a number abroad sees it
         variant("GET /app/documents/{id}", Fixture.get("/app/documents/" + doc, true, k -> Stubs.nowLab(k, true)).named("now"));
         variant("GET /app/documents/{id}", Fixture.get("/app/documents/" + doc, true, k -> Stubs.nowLab(k, false)).named("nowabroad"));
+        // B5: the retake card (s12) — the first, the third in a row, a view-only member — and the failed page
+        variant("GET /app/documents/{id}", Fixture.get("/app/documents/" + doc, true, k -> Stubs.retake(k, 1, true)).named("retake"));
+        variant("GET /app/documents/{id}", Fixture.get("/app/documents/" + doc, true, k -> Stubs.retake(k, 3, true)).named("retake3"));
+        variant("GET /app/documents/{id}", Fixture.get("/app/documents/" + doc, true, k -> Stubs.retake(k, 2, false)).named("retakeviewonly"));
+        variant("GET /app/documents/{id}", Fixture.get("/app/documents/" + doc, true, Stubs::failed).named("failed"));
         put("POST /app/login", new Fixture("/app/login", false, Body.FORM, Map.of("whatsapp_number", "01700000000", "confirmed", "1"), Stubs::noCode));
         variant("POST /app/login", new Fixture("/app/login", false, Body.FORM, Map.of("whatsapp_number", "01700000000"), Stubs::noCode).named("confirm"));
         variant("POST /app/login", new Fixture("/app/login", false, Body.FORM, Map.of("whatsapp_number", "12"), k -> { }).named("invalid"));
@@ -289,6 +294,25 @@ final class PageFixtures {
             when(k.results.result(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(new ResultView(view,
                     k.ma(3).patient(), true, new ViewerLocale(bangladesh), Urgency.NOW, reasons, GateState.PENDING, null, 0, 2,
                     WebUiTestKit.NOW.minusSeconds(3600), WebUiTestKit.NOW)));
+        }
+
+        /** B5: a two-page NEEDS_RETAKE paper of Ma's (low_overall), the {@code ordinal}-th in a row; {@code owner} false is view-only. */
+        static void retake(WebUiTestKit k, int ordinal, boolean owner) {
+            finished(k, Document.Status.NEEDS_RETAKE, "low_overall", ordinal, owner);
+        }
+
+        /** B5: a one-page FAILED paper of Ma's, seen by its owner. */
+        static void failed(WebUiTestKit k) {
+            finished(k, Document.Status.FAILED, null, 0, true);
+        }
+
+        private static void finished(WebUiTestKit k, Document.Status status, String code, int ordinal, boolean owner) {
+            Document d = Document.received(WebUiTestKit.MA_ID, WebUiTestKit.FAMILY, code == null ? 1 : 2, WebUiTestKit.NOW.minusSeconds(600))
+                    .withId(WebUiTestKit.DOC_ID).withStatus(status, "test", code, WebUiTestKit.NOW.minusSeconds(540));
+            when(k.results.status(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(status));
+            when(k.results.result(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(new ResultView(DocumentView.pending(d),
+                    k.ma(3).patient(), owner, new ViewerLocale(true), null, List.of(), GateState.NONE, null, ordinal, 2,
+                    WebUiTestKit.NOW.minusSeconds(600), WebUiTestKit.NOW)));
         }
 
         /** A9: a two-page paper of Ma's being read, sent 30 s ago, seen from a Bangladeshi number. */

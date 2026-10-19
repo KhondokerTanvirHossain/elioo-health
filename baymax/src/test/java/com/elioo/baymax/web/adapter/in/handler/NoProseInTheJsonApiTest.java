@@ -14,7 +14,6 @@ import com.elioo.baymax.healthrecord.domain.PatientAccess;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.outbound.application.port.in.DocumentUrgencyUseCase;
 import com.elioo.baymax.outbound.application.port.in.ExplainDocumentUseCase;
-import com.elioo.baymax.outbound.application.port.out.OutboundMessagePort;
 import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.application.port.in.UploadUseCase;
@@ -107,8 +106,7 @@ class NoProseInTheJsonApiTest {
 
         DocumentIntakeService intake = new DocumentIntakeService(records, documents, mock(FreeTierUseCase.class), storage,
                 new PageRenderer(), new BaymaxProperties(), clock, mock(DocumentProcessingChain.class));
-        TimelineService timeline = new TimelineService(records, documents, intake, storage, audit,
-                mock(OutboundMessagePort.class), clock, urgency);
+        TimelineService timeline = new TimelineService(records, documents, intake, storage, audit, clock, urgency);
         DocumentHandler documentApi = new DocumentHandler(intake, timeline, mock(ExplainDocumentUseCase.class), mock(UploadUseCase.class));
         TimelineApiHandler timelineApi = new TimelineApiHandler(timeline);
 
