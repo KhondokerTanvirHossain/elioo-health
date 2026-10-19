@@ -74,6 +74,12 @@ public class DocumentPages implements WebPages {
             UrgencyReason.TEXT_EMERGENCY_PHRASE, "why-emergency-phrase",
             UrgencyReason.FOLLOW_UP_PAST_DUE, "why-follow-up",
             UrgencyReason.DIAGNOSIS_PRESENT, "why-diagnosis"));
+    /**
+     * The reasons the rule raises a paper to NOW with (UrgencyService; derived from it in ResultNowRenderTest). Their
+     * blocks come first; the THIS_WEEK reasons a NOW paper also carries follow them (spec §4.11, "shown below if present").
+     */
+    static final Set<UrgencyReason> NOW_REASONS = EnumSet.of(UrgencyReason.VALUE_CRITICAL, UrgencyReason.UNVERIFIED_VALUE_CRITICAL,
+            UrgencyReason.TEXT_EMERGENCY_PHRASE);
     /** The generic block: a legacy reason prefix, or a NOW stored with no reason — never a NOW page with nothing. */
     static final String OTHER_BLOCK = "why-other";
 

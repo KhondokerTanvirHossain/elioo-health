@@ -3,6 +3,7 @@ package com.elioo.baymax.web.adapter.in.ui;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.DocumentView;
 import com.elioo.baymax.outbound.domain.Urgency;
+import com.elioo.baymax.outbound.domain.UrgencyReason;
 import com.elioo.baymax.web.domain.GateState;
 import com.elioo.baymax.web.domain.ResultView;
 import org.junit.jupiter.api.Test;
@@ -72,53 +73,52 @@ class DocumentPagesRenderTest {
     /**
      * Safety constraint, on the page a DONE paper is served since A12 (the summary): the only interpretive text is the
      * stored urgency's fixed line (#urgency), on a NOW paper the s11 body that follows it (B3: the reason blocks and the
-     * emergency action, every word of it fixed bundle copy or a quote from the paper), and Medioo's released words,
-     * labelled as such (#says). Take those blocks away and nothing interpretive is left — no urgency, risk or advice in
-     * the header, the items or the chrome.
+     * emergency action, every word of it fixed bundle copy with its arguments filled, or the paper's own quotes and value
+     * rows), and Medioo's released words, labelled as such (#says). Take those blocks away and nothing interpretive is
+     * left — no urgency, risk or advice in the header, the items or the chrome. The NOW body carries a reason of every
+     * kind the rule raises plus a retired one, for a reader in Bangladesh and one abroad, so every block and both actions
+     * are under the check (ResultNowRenderTest repeats the body's half in English and with nothing croppable).
      */
     @ParameterizedTest
     @EnumSource(value = Urgency.class, names = {"NOW", "THIS_WEEK"})
     void nothingInterpretiveIsRenderedForAFullDocumentButTheStoredLevelAndTheLabelledWording(Urgency level) {
         DocumentView view = new DocumentView(id.toString(), "DONE", null, "lab_report", "2026-09-01", null, 0.9, "m", 1,
                 List.of(Map.of("name", "HbA1c", "value", "9.8", "unit", "%", "flag", "high", "crop_key", "k")),
-                List.of(), List.of(), Map.of("diagnosis", List.of(Map.of("text", "T2DM", "crop_key", "k2"))), null);
+                List.of(), List.of(Map.of("instruction", "আবার দেখাবেন", "due_date", "2026-08-01", "crop_key", "k3")),
+                Map.of("diagnosis", List.of(Map.of("text", "T2DM", "crop_key", "k2"))), null);
         String wording = "রিপোর্টটি পেয়েছি।";
-        String body = ui.summaryBody(Lang.BN, new ResultView(view, ResultFixtures.MA, true, ResultFixtures.BD, level,
-                List.of("diagnosis_present"), GateState.RELEASED, wording, 0, 2, ResultFixtures.NOW, ResultFixtures.NOW));
-        String banner = ResultFixtures.section(body, "urgency");
-        String says = ResultFixtures.section(body, "says");
-        assertThat(banner).contains(kit.copy.urgency(Lang.BN, level, false));
-        assertThat(says).contains(kit.copy.t(Lang.BN, "result.says.label")).contains(wording);
-        String now = ui.nowBody(Lang.BN, new ResultView(view, ResultFixtures.MA, true, ResultFixtures.BD, level,
-                List.of("diagnosis_present"), GateState.RELEASED, wording, 0, 2, ResultFixtures.NOW, ResultFixtures.NOW));
-        if (level == Urgency.NOW) {
-            // the block removed below is on the page, and every word in it is fixed copy or under the paper's own label
-            assertThat(now).isNotEmpty();
-            assertThat(body).contains(now);
-            assertThat(textOutsidePaperBlocks(now)).as("the NOW body's text").isNotEmpty()
-                    .allSatisfy(text -> assertThat(bundleTexts()).as(text).contains(text));
-        } else {
-            assertThat(now).isEmpty();
+        List<String> reasons = new java.util.ArrayList<>();
+        for (UrgencyReason r : UrgencyReason.values()) {
+            reasons.add(r.of("hba1c", null));
         }
-        String rest = Html.page(Lang.BN, "t", body.replace(banner, "").replace(now, "").replace(says, ""), 0, false, "", false).toLowerCase();
-        for (String forbidden : List.of("urgent", "জরুরি", "advice", "পরামর্শ", "high risk", "ঝুঁকি", "normal range", "should",
-                kit.copy.urgency(Lang.BN, Urgency.NOW, false), kit.copy.urgency(Lang.BN, Urgency.THIS_WEEK, false), wording)) {
-            assertThat(rest).as(forbidden).doesNotContain(forbidden);
+        reasons.add("retired_rule_2025:hba1c");
+        List<java.util.regex.Pattern> templates = ResultFixtures.bundleTemplates(kit.copy, Lang.BN);
+        for (var viewer : List.of(ResultFixtures.BD, ResultFixtures.ABROAD)) {
+            ResultView r = new ResultView(view, ResultFixtures.MA, true, viewer, level, level == Urgency.NOW ? reasons : List.of("diagnosis_present"),
+                    GateState.RELEASED, wording, 0, 2, ResultFixtures.NOW, ResultFixtures.NOW);
+            String body = ui.summaryBody(Lang.BN, r);
+            String banner = ResultFixtures.section(body, "urgency");
+            String says = ResultFixtures.section(body, "says");
+            assertThat(banner).contains(kit.copy.urgency(Lang.BN, level, false));
+            assertThat(says).contains(kit.copy.t(Lang.BN, "result.says.label")).contains(wording);
+            String now = ui.nowBody(Lang.BN, r);
+            if (level == Urgency.NOW) {
+                // the block removed below is on the page, and every word in it is fixed copy or the paper's own
+                assertThat(now).isNotEmpty();
+                assertThat(body).contains(now);
+                assertThat(now).contains(viewer.bangladesh() ? "id=\"red-flags\"" : "id=\"remote-action\"");
+                assertThat(ResultFixtures.textOutsidePaper(now)).as("the NOW body's text").isNotEmpty()
+                        .allSatisfy(text -> assertThat(templates).as(text).anySatisfy(p -> assertThat(p.matcher(text).matches()).isTrue()));
+            } else {
+                assertThat(now).isEmpty();
+            }
+            String rest = Html.page(Lang.BN, "t", body.replace(banner, "").replace(now, "").replace(says, ""), 0, false, "", false).toLowerCase();
+            for (String forbidden : List.of("urgent", "জরুরি", "advice", "পরামর্শ", "high risk", "ঝুঁকি", "normal range", "should",
+                    kit.copy.urgency(Lang.BN, Urgency.NOW, false), kit.copy.urgency(Lang.BN, Urgency.THIS_WEEK, false), wording)) {
+                assertThat(rest).as(forbidden).doesNotContain(forbidden);
+            }
+            assertThat(rest).contains("9.8");   // the value itself, as extracted, is shown
         }
-        assertThat(rest).contains("9.8");   // the value itself, as extracted, is shown
-    }
-
-    /** Each text node of the markup, after removing the paper's own blocks (their words are the paper's, labelled so). */
-    private static List<String> textOutsidePaperBlocks(String html) {
-        String noPaper = html.replaceAll("(?s)<figure class=\"paper\">.*?</figure>", "");
-        return java.util.Arrays.stream(noPaper.split("<[^>]*>")).map(String::strip).filter(t -> !t.isEmpty()).toList();
-    }
-
-    /** Every Bangla bundle string as a page shows it (escaped, no arguments). */
-    private java.util.Set<String> bundleTexts() {
-        java.util.Set<String> texts = new java.util.HashSet<>();
-        kit.copy.keys(Lang.BN).forEach(k -> texts.add(kit.copy.t(Lang.BN, k)));
-        return texts;
     }
 
     @Test
