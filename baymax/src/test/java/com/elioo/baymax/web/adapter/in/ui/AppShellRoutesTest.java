@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -195,7 +196,8 @@ class AppShellRoutesTest {
                 .cookie("baymax_patient", baba.patient().id().toString()).exchange()
                 .expectStatus().isOk().expectBody(String.class).returnResult().getResponseBody();
         assertThat(between(next, "<header class=\"appbar\"", "</header>")).contains("আব্বু").doesNotContain("আম্মা");
-        verify(kit.timeline).timeline(WebUiTestKit.FAMILY, baba.patient().id(), null);
+        // both pages read Baba's papers, the chosen one and the remembered one, and never Ma's
+        verify(kit.timeline, times(2)).timeline(WebUiTestKit.FAMILY, baba.patient().id(), null);
         verify(kit.timeline, never()).timeline(any(), eq(ma.patient().id()), any());
     }
 
@@ -264,6 +266,9 @@ class AppShellRoutesTest {
     @EnumSource(value = Tab.class, names = {"CHAT", "PAPERS"})
     void aRememberedChoiceIsTheOnlyThingThatSkipsTheChooser(Tab tab) {
         kit.familyWith(ma, baba);
+        // both stubbed, so a page that guessed renders (200) and fails on the guess, not on an unstubbed mock
+        noPapers(ma);
+        noPapers(baba);
         assertThat(kit.page(tab.path, "bn")).contains("কার কাগজ দেখবেন?");
         for (String stale : List.of(UUID.randomUUID().toString(), "not-a-uuid")) {
             String html = kit.client.get().uri(tab.path).cookie("baymax_session", "tok").cookie("baymax_lang", "bn")

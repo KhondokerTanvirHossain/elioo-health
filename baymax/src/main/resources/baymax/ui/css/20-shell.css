@@ -17,3 +17,7 @@ body.in-app{padding-bottom:calc(var(--tabbar-h) + env(safe-area-inset-bottom))}
 .pchoice{display:flex;align-items:center;gap:var(--sp-3);min-height:56px;padding:var(--sp-2) var(--sp-4);border:1px solid var(--c-outline);border-radius:var(--r-pill);background:var(--c-surface);color:var(--c-text);text-decoration:none}
 .pchoice[aria-current=true]{background:var(--c-primary-container);border:2px solid var(--c-primary)}
 .pchoice .meta{display:block}
+/* C1: the patient switcher sheet (kit §17), drawn with the add sheet's .sheet and .sheet-h (70-upload); its title is an h2
+   because the tab's own h1 stays on the page beneath */
+.sheet-h h2{margin:0;font-size:var(--fs-title-2);line-height:var(--lh-title-2)}
+.sheet .small{margin:0}

@@ -9,7 +9,8 @@ import static com.elioo.baymax.web.adapter.in.ui.Html.esc;
  * The signed-in frame (spec §3; kit §2, §3): a 56 px header with the text wordmark (never a link inside the app) and
  * whose papers are in view, the page, the disclaimer, the 64 px tab bar of three always-labelled links. No script.
  * A patient is never guessed (PatientSwitcher README): two or more and none chosen, the page body is {@link #chooser}.
- * The remembered choice and the switcher sheet are C1.
+ * With two or more and one in view, the header's name opens {@link #patientSheet} — a plain URL ({@code ?sheet=patient}),
+ * drawn by the server over the tab it was opened from (C1).
  */
 final class AppShell {
 
@@ -23,7 +24,34 @@ final class AppShell {
     }
 
     String page(Lang lang, Tab tab, FamilyOverview me, ActivePatient active, String body, Html.Head head, String bodyClass) {
-        return Html.appPage(lang, head, header(lang, tab, me, active), body, copy.t(lang, "disclaimer"), tabs(lang, tab), "", bodyClass);
+        return page(lang, tab, me, active, body, head, bodyClass, "");
+    }
+
+    /** As above with {@code sheet} drawn over the page, which is then {@code inert}; empty, there is no sheet. */
+    String page(Lang lang, Tab tab, FamilyOverview me, ActivePatient active, String body, Html.Head head, String bodyClass, String sheet) {
+        String classes = sheet.isEmpty() ? bodyClass : (bodyClass == null || bodyClass.isEmpty() ? "" : bodyClass + " ") + "has-sheet";
+        return Html.appPage(lang, head, header(lang, tab, me, active), body, copy.t(lang, "disclaimer"), tabs(lang, tab), sheet, classes);
+    }
+
+    /**
+     * The patient switcher (spec §3 sheets; kit §17; PatientSwitcher README) over {@code tab}: the same choices as the
+     * chooser, the one in view marked. Its close is a link back to the bare tab, which the remembered choice reopens on
+     * the same patient; it takes the focus ({@code autofocus}), so no script is needed to land inside the dialog.
+     */
+    String patientSheet(Lang lang, Tab tab, FamilyOverview me, ActivePatient active) {
+        return dialog(lang, copy.t(lang, "switch.title"), "<p class=\"small\">" + copy.t(lang, "switch.hint") + "</p>"
+                + choices(lang, tab, me, active), tab.path);
+    }
+
+    /**
+     * A sheet's markup (kit §17), as the add-report and value sheets draw it. {@code title} is already escaped (it comes
+     * from {@link UiCopy}); {@code closeHref} is the page beneath, without the sheet.
+     */
+    String dialog(Lang lang, String title, String content, String closeHref) {
+        return "<section class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sheet-title\">"
+                + "<div class=\"sheet-h\"><h2 id=\"sheet-title\">" + title + "</h2>"
+                + "<a class=\"icon-btn\" href=\"" + closeHref + "\" autofocus aria-label=\"" + copy.t(lang, "sheet.close") + "\">"
+                + Icons.svg("x", 24) + "</a></div>" + content + "</section>";
     }
 
     /**
@@ -62,9 +90,9 @@ final class AppShell {
         if (active.patient().isPresent()) {
             String name = active.patient().get().patient().name();
             String inner = "<span class=\"pav\" aria-hidden=\"true\">" + esc(initial(name)) + "</span><span>" + esc(name) + "</span>";
-            // with two or more, the name is the way back to the chooser (C1 turns it into the switcher sheet)
+            // with two or more, the name opens the switcher sheet over this tab (C1)
             b.append(many
-                    ? "<a class=\"switcher\" href=\"" + tab.path + "\" aria-label=\"" + copy.t(lang, "switch.label", name) + "\">"
+                    ? "<a class=\"switcher\" href=\"" + tab.path + "?sheet=patient\" aria-haspopup=\"dialog\" aria-label=\"" + copy.t(lang, "switch.label", name) + "\">"
                             + inner + Icons.svg("chevron-down", 20) + "</a>"
                     : "<span class=\"switcher\">" + inner + "</span>");
         }
