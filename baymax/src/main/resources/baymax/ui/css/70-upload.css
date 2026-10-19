@@ -12,11 +12,14 @@ body.has-sheet::after{content:"";position:fixed;inset:0;z-index:3;background:var
 .icon-btn{flex:none;display:flex;align-items:center;justify-content:center;width:48px;height:var(--target-min);border-radius:var(--r-pill);background:var(--c-surface-2);color:var(--c-text);text-decoration:none}
 .add{display:flex;flex-direction:column;gap:var(--sp-4)}
 .pick{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--sp-2);min-width:0}
-.pick legend{padding:0;margin:0 0 var(--sp-2);font-size:var(--fs-headline);line-height:var(--lh-headline);font-weight:600}
+/* the h1 already asks "whose paper?": the legend names the group for a screen reader only, as drawn */
+.pick legend{position:absolute;width:1px;height:1px;margin:0;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .chips{display:flex;flex-wrap:wrap;gap:var(--sp-2)}
 .pick .chip{display:inline-flex;align-items:center;gap:var(--sp-2);min-height:var(--target-min);margin:0;padding:0 var(--sp-4) 0 var(--sp-3);border:2px solid var(--c-outline);border-radius:var(--r-pill);background:var(--c-surface);color:var(--c-text);font-size:var(--fs-label);line-height:var(--lh-label);font-weight:700;cursor:pointer}
 .pick .chip input{width:22px;height:22px;margin:0;accent-color:var(--c-primary)}
 .pick .chip:focus-within{border-color:var(--c-primary);background:var(--c-primary-container);color:var(--c-on-primary-container)}
+/* the chosen chip is filled, as drawn; the radio stays visible, so a browser without :has still shows the choice */
+.pick .chip:has(input:checked){border-color:var(--c-primary);background:var(--c-primary-container);color:var(--c-on-primary-container)}
 .hint{margin:0;color:var(--c-text-muted);font-size:var(--fs-subhead);line-height:var(--lh-subhead)}
 .src{display:flex;flex-direction:column;gap:var(--sp-2)}
 .src-row{position:relative;display:grid;grid-template-columns:48px 1fr;align-items:center;gap:var(--sp-2) var(--sp-4);min-height:72px;margin:0;padding:var(--sp-3) var(--sp-4) var(--sp-3) var(--sp-3);border:1px solid var(--c-outline);border-radius:var(--r-m);background:var(--c-surface);color:var(--c-text);font-weight:400;cursor:pointer}
@@ -28,7 +31,8 @@ body.has-sheet::after{content:"";position:fixed;inset:0;z-index:3;background:var
 .src-row input[type=file]{grid-column:1 / -1;font-size:var(--fs-subhead);padding:var(--sp-2) var(--sp-3)}
 .tips h2{margin:0 0 var(--sp-2);font-size:var(--fs-headline);line-height:var(--lh-headline);font-weight:600}
 .tips ul{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--sp-2)}
-.tips li{padding:var(--sp-3) var(--sp-1);border-radius:var(--r-m);background:var(--c-bg);text-align:center;font-size:var(--fs-subhead);line-height:var(--lh-subhead);font-weight:600}
+.tips li{display:flex;flex-direction:column;align-items:center;gap:var(--sp-2);padding:var(--sp-3) var(--sp-1);border-radius:var(--r-m);background:var(--c-bg);text-align:center;font-size:var(--fs-subhead);line-height:var(--lh-subhead);font-weight:600}
+.tip-i{display:flex;align-items:center;justify-content:center;width:56px;height:56px;border-radius:var(--r-s);background:var(--c-surface);border:1px solid var(--c-line);color:var(--c-text)}
 .quota{margin:0;color:var(--c-text-muted);font-size:var(--fs-subhead);line-height:var(--lh-subhead)}
 /* the papers tab's way in: one primary link with the camera, as tall as a control */
 .add-link{display:inline-flex;align-items:center;gap:var(--sp-2);margin-top:0}

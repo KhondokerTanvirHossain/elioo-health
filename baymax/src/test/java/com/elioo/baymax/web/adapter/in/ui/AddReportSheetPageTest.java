@@ -45,8 +45,12 @@ class AddReportSheetPageTest {
                 .expectStatus().isOk().expectBody(String.class).returnResult().getResponseBody();
     }
 
+    /**
+     * The form is complete without a script: real file inputs, a submit, nothing disabled. That it posts somewhere that
+     * answers is A8's half ({@code POST /app/add} has no route until A8 deploys; the papers tab's inline form is gone).
+     */
     @Test
-    void withOnePatientItIsChosenAndTheFormPostsWithoutAnyScript() {
+    void withOnePatientItIsChosenAndTheFormNeedsNoScript() {
         PatientSummary ma = patient("আম্মা", 64, true);
         when(kit.uploads.uploadOptions(WebUiTestKit.FAMILY)).thenReturn(Mono.just(new UploadOptions(List.of(ma), List.of(), used(0))));
         String html = sheet();
@@ -59,8 +63,66 @@ class AddReportSheetPageTest {
                 .contains("name=\"file\" accept=\"application/pdf,image/*\"");
         assertThat(html).contains("<button type=\"submit\" class=\"btn primary nojs\">পাঠান</button>");
         assertThat(html).doesNotContain(" disabled");   // nothing the server renders waits for a script to enable it
-        assertThat(html).contains("এ মাসে বিনা খরচে আরও ৩টি কাগজ পড়াতে পারবেন। কোনো ছবি পড়তে না পারলে সেটা গোনা হবে না।");
+        assertThat(classed(Dom.parse(html), "quota")).singleElement().extracting(Dom.Element::ownText)
+                .isEqualTo("এ মাসে বিনা খরচে আরও ৩টি কাগজ পড়াতে পারবেন। কোনো ছবি পড়তে না পারলে সেটা গোনা হবে না।");
         assertThat(html).doesNotContain("<script");   // A7 ships no script; D4 adds exactly one
+    }
+
+    static List<Dom.Element> classed(Dom dom, String cls) {
+        return dom.all.stream().filter(e -> e.classes().contains(cls)).toList();
+    }
+
+    /** s07: each of the three tips is a pictogram over its words, and the three pictograms are three different icons. */
+    @Test
+    void eachTipHasItsOwnPictogram() {
+        when(kit.uploads.uploadOptions(WebUiTestKit.FAMILY)).thenReturn(Mono.just(new UploadOptions(List.of(patient("আম্মা", 64, true)), List.of(), used(0))));
+        Dom dom = Dom.parse(sheet());
+        List<Dom.Element> tips = dom.all.stream().filter(e -> e.tag().equals("li") && e.parent().parent().classes().contains("tips")).toList();
+        assertThat(tips).hasSize(3);
+        java.util.Set<String> drawings = new java.util.HashSet<>();
+        for (Dom.Element tip : tips) {
+            Dom.Element tile = tip.children().stream().filter(c -> c.classes().contains("tip-i")).findFirst().orElseThrow(() ->
+                    new AssertionError("no pictogram tile in " + tip.describe()));
+            assertThat(tile.attrs()).containsEntry("aria-hidden", "true");
+            Dom.Element svg = tile.children().stream().filter(c -> c.tag().equals("svg")).findFirst().orElseThrow();
+            drawings.add(svg.children().stream().map(c -> c.tag() + c.attrs()).toList().toString());
+            assertThat(tip.children().stream().filter(c -> c.tag().equals("span") && !c.classes().contains("tip-i"))
+                    .map(Dom.Element::ownText)).singleElement().asString().isNotBlank();
+        }
+        assertThat(drawings).hasSize(3);
+    }
+
+    /**
+     * s07 fills the chosen chip (primary container, primary border) and leaves the others plain. Read from the rules that
+     * match each chip in the served stylesheet, in both directions: the chosen one filled, an unchosen one not.
+     */
+    @Test
+    void theChosenChipIsFilledAndAnUnchosenOneIsNot() {
+        List<Css.Rule> rules = Css.rules(kit.servedText("/assets/baymax.css"));
+        PatientSummary ma = patient("আম্মা", 64, true);
+        PatientSummary baba = patient("আব্বু", 72, true);
+        when(kit.uploads.uploadOptions(WebUiTestKit.FAMILY)).thenReturn(Mono.just(new UploadOptions(List.of(ma, baba), List.of(), used(0))));
+        Dom dom = Dom.parse(kit.page("/app/add?patient=" + baba.patient().id(), "bn"));
+        List<Dom.Element> chips = classed(dom, "chip").stream().filter(c -> c.parent().classes().contains("chips")).toList();
+        assertThat(chips).hasSize(2);
+        for (Dom.Element chip : chips) {
+            boolean chosen = chip.children().get(0).attrs().containsKey("checked");
+            String background = Css.valueOf(Css.winner(rules, chip, "background").orElseThrow(), "background");
+            assertThat(background).as(chip.describe()).isEqualTo(chosen ? "var(--c-primary-container)" : "var(--c-surface)");
+        }
+        assertThat(chips.stream().filter(c -> c.children().get(0).attrs().containsKey("checked"))).hasSize(1);
+    }
+
+    /** The h1 already says "কার কাগজ?": the legend says it to a screen reader only, as drawn, not a second time on screen. */
+    @Test
+    void theLegendIsForScreenReadersOnly() {
+        List<Css.Rule> rules = Css.rules(kit.servedText("/assets/baymax.css"));
+        when(kit.uploads.uploadOptions(WebUiTestKit.FAMILY)).thenReturn(Mono.just(new UploadOptions(List.of(patient("আম্মা", 64, true)), List.of(), used(0))));
+        Dom.Element legend = Dom.parse(sheet()).all.stream().filter(e -> e.tag().equals("legend")).findFirst().orElseThrow();
+        assertThat(legend.ownText()).isEqualTo("কার কাগজ?");
+        assertThat(Css.valueOf(Css.winner(rules, legend, "clip-path").orElseThrow(() -> new AssertionError("legend is visible")), "clip-path"))
+                .isEqualTo("inset(50%)");
+        assertThat(Css.valueOf(Css.winner(rules, legend, "position").orElseThrow(), "position")).isEqualTo("absolute");
     }
 
     @Test
@@ -124,7 +186,7 @@ class AddReportSheetPageTest {
     void aPayingFamilySeesNoQuotaLineAndTheSheetFollowsTheLanguageCookie() {
         when(kit.uploads.uploadOptions(WebUiTestKit.FAMILY)).thenReturn(Mono.just(new UploadOptions(List.of(patient("Ma", 64, true)), List.of(),
                 DocumentAllowance.unlimited(YearMonth.of(2026, 10)))));
-        assertThat(sheet()).doesNotContain("বিনা খরচে");
+        assertThat(classed(Dom.parse(sheet()), "quota")).isEmpty();
         String en = kit.client.get().uri("/app/add").cookie("baymax_session", "tok").cookie("baymax_lang", "en").exchange()
                 .expectStatus().isOk().expectBody(String.class).returnResult().getResponseBody();
         assertThat(en).startsWith("<!doctype html><html lang=\"en\">").contains("Whose paper?").doesNotContain("কার কাগজ");

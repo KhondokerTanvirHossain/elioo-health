@@ -187,7 +187,13 @@ final class Css {
             case ":first-child" -> siblings.get(0) == e;
             case ":last-child" -> siblings.get(siblings.size() - 1) == e;
             case ":first-of-type" -> siblings.stream().filter(s -> s.tag().equals(e.tag())).findFirst().orElse(null) == e;
+            // the state a page is rendered in: a radio or checkbox the server marked checked
+            case ":checked" -> e.attrs().containsKey("checked");
             default -> {
+                if (pseudo.startsWith(":has(") && pseudo.endsWith(")")) {
+                    Compound inner = Compound.parse(pseudo.substring(5, pseudo.length() - 1), pseudo);
+                    yield descendants(e).stream().anyMatch(d -> compound(inner, d));
+                }
                 Matcher nth = NTH.matcher(pseudo);
                 if (nth.matches()) {
                     int n = Integer.parseInt(nth.group(1));
@@ -196,6 +202,15 @@ final class Css {
                 throw new IllegalArgumentException("pseudo-class the matcher cannot read: " + pseudo);
             }
         };
+    }
+
+    private static List<Dom.Element> descendants(Dom.Element e) {
+        List<Dom.Element> out = new ArrayList<>();
+        for (Dom.Element c : e.children()) {
+            out.add(c);
+            out.addAll(descendants(c));
+        }
+        return out;
     }
 
     /** The rule that wins any of {@code properties} on the element itself (specificity, then source order), if any. */

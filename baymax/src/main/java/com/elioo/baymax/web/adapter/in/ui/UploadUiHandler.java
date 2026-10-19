@@ -103,8 +103,7 @@ public class UploadUiHandler implements WebPages {
                 .append("</div>");
         b.append("<button type=\"submit\" class=\"btn primary nojs\">").append(copy.t(lang, "add.send")).append("</button>");
         b.append("<section class=\"tips\" aria-labelledby=\"tips-title\"><h2 id=\"tips-title\">").append(copy.t(lang, "add.tips"))
-                .append("</h2><ul><li>").append(copy.t(lang, "add.tip.flat")).append("</li><li>").append(copy.t(lang, "add.tip.light"))
-                .append("</li><li>").append(copy.t(lang, "add.tip.frame")).append("</li></ul></section>");
+                .append("</h2><ul>").append(tip(lang, "flat")).append(tip(lang, "light")).append(tip(lang, "frame")).append("</ul></section>");
         if (a.limited()) {
             b.append("<p class=\"quota\">").append(copy.t(lang, "add.quota", a.remaining())).append("</p>");
         }
@@ -124,6 +123,11 @@ public class UploadUiHandler implements WebPages {
         return "<label class=\"src-row\"><span class=\"src-i\" aria-hidden=\"true\">" + Icons.svg(icon, 24) + "</span>"
                 + "<span class=\"src-t\"><strong>" + copy.t(lang, "add." + src) + "</strong><span>" + copy.t(lang, "add." + src + ".sub")
                 + "</span></span><input type=\"file\" name=\"file\" " + attrs + " data-src=\"" + src + "\"></label>";
+    }
+
+    private String tip(Lang lang, String which) {
+        return "<li><span class=\"tip-i\" aria-hidden=\"true\">" + Icons.svg("tip-" + which, 36) + "</span><span>"
+                + copy.t(lang, "add.tip." + which) + "</span></li>";
     }
 
     String capText(Lang lang, DocumentAllowance a) {
