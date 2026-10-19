@@ -1,82 +1,23 @@
 package com.elioo.baymax.web.adapter.in.ui;
 
 import com.elioo.baymax.extraction.domain.DocumentView;
-import com.elioo.baymax.outbound.domain.Urgency;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
 
-import java.io.IOException;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** What the document page shows and, more importantly, what it never shows. */
+/**
+ * What the document page shows and, more importantly, what it never shows. The stored urgency on a DONE paper is
+ * ResultSummaryRenderTest's (A12 replaced A10's interim banner and its two tests here).
+ */
 class DocumentPagesRenderTest {
 
     private final WebUiTestKit kit = new WebUiTestKit();
     private final DocumentPages ui = kit.documents;
     private final UUID id = UUID.randomUUID();
-
-    private DocumentView doneView() {
-        return new DocumentView(id.toString(), "DONE", null, "lab_report", "2026-09-01", null, 0.9, "m", 1,
-                List.of(Map.of("name", "Potassium", "value", "11.0", "unit", "mmol/L", "crop_key", "f/p/d/crop-v1.jpg")),
-                List.of(), List.of(), null, null);
-    }
-
-    /** Every urgency line in the page language's messages bundle (all forms, derived from the file), for the absence checks. */
-    private static List<String> urgencyLines(Lang lang) throws IOException {
-        List<String> lines = BundleFiles.messages(lang).entrySet().stream().filter(e -> e.getKey().startsWith("urgency."))
-                .map(e -> Html.esc(e.getValue())).toList();
-        assertThat(lines).as("urgency lines in messages_" + lang).hasSizeGreaterThanOrEqualTo(2);
-        return lines;
-    }
-
-    private static final Pattern URGENCY_BANNER = Pattern.compile("<section([^>]*)>(.*?)</section>", Pattern.DOTALL);
-    private static final Pattern CLASS_ATTR = Pattern.compile("\\bclass=\"([^\"]*)\"");
-    private static final Pattern HEAD = Pattern.compile("<p class=\"head\">(.*?)</p>", Pattern.DOTALL);
-
-    /** The one element with id="urgency": its class (which carries the severity) and its head line. */
-    private record Banner(String cssClass, String head) {}
-
-    private static Banner urgencyBanner(String html) {
-        List<Banner> found = URGENCY_BANNER.matcher(html).results()
-                .filter(m -> m.group(1).contains("id=\"urgency\""))
-                .map(m -> {
-                    Matcher c = CLASS_ATTR.matcher(m.group(1));
-                    Matcher h = HEAD.matcher(m.group(2));
-                    return new Banner(c.find() ? c.group(1) : null, h.find() ? h.group(1) : null);
-                }).toList();
-        assertThat(found).as("exactly one id=\"urgency\" section").hasSize(1);
-        return found.get(0);
-    }
-
-    /**
-     * F1 on the page (interim, A12 replaces it): a NOW or THIS_WEEK document shows its fixed line with no explanation,
-     * and the severity is on the element itself: NOW is the red banner, THIS_WEEK the amber one, never the other way.
-     */
-    @ParameterizedTest
-    @CsvSource({"NOW,BN,banner now", "NOW,EN,banner now", "THIS_WEEK,BN,banner soon", "THIS_WEEK,EN,banner soon"})
-    void aStoredLevelIsShownWithoutAnyExplanation(Urgency level, Lang lang, String expectedClass) {
-        String html = kit.documents.render(lang, doneView().withUrgency(level.dbValue()), id, Optional.empty());
-        Banner banner = urgencyBanner(html);
-        assertThat(banner.cssClass()).isEqualTo(expectedClass);
-        assertThat(banner.head()).isEqualTo(kit.copy.urgency(lang, level, false));
-    }
-
-    /** D27, the other direction: ROUTINE and unassessed carry none of the urgency lines, in any form, anywhere. */
-    @ParameterizedTest
-    @CsvSource(value = {"<null>,BN", "<null>,EN", "routine,BN", "routine,EN"}, nullValues = "<null>")
-    void routineAndUnassessedShowNoUrgencyLine(String stored, Lang lang) throws IOException {
-        String html = kit.documents.render(lang, doneView().withUrgency(stored), id, Optional.empty());
-        assertThat(urgencyLines(lang)).allSatisfy(line -> assertThat(html).doesNotContain(line));
-        assertThat(html).doesNotContain("id=\"urgency\"").doesNotContain("class=\"banner");
-    }
 
     /** Acceptance: given unverified items, the count is shown and the items themselves never appear. */
     @Test

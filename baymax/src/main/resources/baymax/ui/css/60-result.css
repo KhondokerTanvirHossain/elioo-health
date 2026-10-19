@@ -6,3 +6,14 @@
 .steps li.done{color:var(--c-text)}
 .steps li.next{color:var(--c-text-muted)}
 .steps li[aria-current]{font-weight:700;outline:3px solid var(--c-primary);outline-offset:2px;border-radius:var(--r-s)}
+/* A12 result summary (s10): the stored urgency first, never animated and never closable (s11); red only under .banner.now */
+.banner{border-radius:var(--r-m);padding:var(--sp-4);margin:var(--sp-4) 0}
+.banner .line{margin:0}
+.banner.soon{background:var(--c-status-soon-container)}
+.banner.soon .line{font-weight:700;color:var(--c-text)}
+.banner.now{padding:0;overflow:hidden}
+.banner.now .line{background:var(--c-status-now-solid);color:var(--c-on-status-now);padding:var(--sp-4);margin:0;font-size:var(--fs-title-3);line-height:var(--lh-title-3);font-weight:700}
+.says{padding:var(--sp-4);border-radius:var(--r-l);background:var(--c-bubble-me);margin:0 0 var(--sp-4)}
+.says .label{margin:0 0 var(--sp-2);font-weight:700}
+.gate{margin:0 0 var(--sp-4)}
+.chip.review{display:inline-flex;align-items:center;padding:var(--sp-1) var(--sp-3);border-radius:var(--r-pill);background:var(--c-status-unknown-container);color:var(--c-text-muted)}
