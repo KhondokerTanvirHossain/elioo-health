@@ -9,21 +9,26 @@ import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.outbound.application.port.in.DocumentUrgencyUseCase;
 import com.elioo.baymax.outbound.application.port.out.OutboundMessagePort;
+import com.elioo.baymax.outbound.domain.MarkerThreshold;
 import com.elioo.baymax.outbound.domain.OutboundMessage;
 import com.elioo.baymax.outbound.domain.StoredUrgency;
 import com.elioo.baymax.web.application.port.in.ResultUseCase;
 import com.elioo.baymax.web.application.port.out.AuditPort;
 import com.elioo.baymax.web.domain.AuditEvent;
+import com.elioo.baymax.web.domain.EarlierReading;
 import com.elioo.baymax.web.domain.GateState;
 import com.elioo.baymax.web.domain.ReadingView;
 import com.elioo.baymax.web.domain.ResultView;
 import com.elioo.baymax.web.domain.ViewerLocale;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Clock;
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -75,6 +80,44 @@ public class ResultService implements ResultUseCase {
                         t.getT4().map(StoredUrgency::level).orElse(null), t.getT4().map(StoredUrgency::reasons).orElse(List.of()),
                         t.getT5().state(), t.getT5().wording(), t.getT6(), properties.getOutbound().getReviewTypicalHours(),
                         d.createdAt(), clock.instant())));
+    }
+
+    /** How many earlier readings the value sheet lists (s13 draws two; ten is a page, not a trend). */
+    static final int EARLIER_READINGS = 10;
+
+    /**
+     * The document through {@link #visibleDocument} (404 for another family), then the observation among THAT document's
+     * values (404 for an id from another paper), then the patient's history of the marker, kept only where the unit
+     * folds to this one's ({@link MarkerThreshold#sameUnit}: MICRO SIGN, GREEK MU and "u" are one; mg/dL and µmol/L
+     * are two). A value with no canonical name has no history: the marker is not known, so nothing is "the same".
+     */
+    @Override
+    public Flux<EarlierReading> earlierReadings(UUID familyId, UUID documentId, UUID observationId) {
+        return visibleDocument(familyId, documentId)
+                .flatMap(d -> intake.view(documentId).map(v -> observationOf(v.values(), observationId)).map(o -> Map.entry(d, o)))
+                .flatMapMany(found -> {
+                    Object canonical = found.getValue().get("canonical_name");
+                    if (canonical == null) {
+                        return Flux.empty();
+                    }
+                    String unit = found.getValue().get("unit") == null ? null : String.valueOf(found.getValue().get("unit"));
+                    return reads.readingsOf(found.getKey().patientId(), String.valueOf(canonical), documentId)
+                            .filter(row -> MarkerThreshold.sameUnit(unit, (String) row.get("unit")))
+                            .take(EARLIER_READINGS)
+                            .map(ResultService::earlierReading);
+                });
+    }
+
+    private static Map<String, Object> observationOf(List<Map<String, Object>> values, UUID observationId) {
+        return (values == null ? List.<Map<String, Object>>of() : values).stream()
+                .filter(v -> observationId.toString().equals(String.valueOf(v.get("id")))).findFirst()
+                .orElseThrow(() -> BaymaxException.notFound("observation_not_found", "no such value on document"));
+    }
+
+    private static EarlierReading earlierReading(Map<String, Object> row) {
+        return new EarlierReading((UUID) row.get("document_id"), (UUID) row.get("id"), (String) row.get("value"),
+                (String) row.get("unit"), (String) row.get("crop_key"), (LocalDate) row.get("date"),
+                Boolean.TRUE.equals(row.get("date_is_fallback")));
     }
 
     /**

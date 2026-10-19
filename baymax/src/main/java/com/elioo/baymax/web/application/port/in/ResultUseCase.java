@@ -1,8 +1,10 @@
 package com.elioo.baymax.web.application.port.in;
 
 import com.elioo.baymax.extraction.domain.Document;
+import com.elioo.baymax.web.domain.EarlierReading;
 import com.elioo.baymax.web.domain.ReadingView;
 import com.elioo.baymax.web.domain.ResultView;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.UUID;
@@ -21,4 +23,12 @@ public interface ResultUseCase {
      * newest explanation in whatever review state it is in (F3). 404 when this family cannot see it.
      */
     Mono<ResultView> result(UUID familyId, UUID documentId);
+
+    /**
+     * B6, the value sheet (s13): the earlier readings of one value on this document — the same marker and the same unit
+     * (folded, so MICRO SIGN and GREEK MU are one), the same patient, from finished papers before this one, newest first,
+     * at most {@code 10}. 404 when this family cannot see the document, and when the observation is not one of THIS
+     * document's values (an id from another paper never opens a sheet here). Records nothing.
+     */
+    Flux<EarlierReading> earlierReadings(UUID familyId, UUID documentId, UUID observationId);
 }

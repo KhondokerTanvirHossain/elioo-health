@@ -77,7 +77,7 @@ public record MarkerThreshold(
      * Units match on a folded comparison, never a conversion. "mmol/L", "mmol/l" and " mmol / L " are one
      * unit; "mg/dL" and "µmol/L" are two, and a marker stated in one never answers for the other.
      */
-    static boolean sameUnit(String a, String b) {
+    public static boolean sameUnit(String a, String b) {
         return fold(a).equals(fold(b));
     }
 
