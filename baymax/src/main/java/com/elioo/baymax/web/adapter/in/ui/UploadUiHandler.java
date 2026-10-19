@@ -3,7 +3,7 @@ package com.elioo.baymax.web.adapter.in.ui;
 import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.extraction.domain.Upload;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
-import com.elioo.baymax.web.application.port.in.TimelineUseCase;
+import com.elioo.baymax.web.application.port.in.UploadUseCase;
 import com.elioo.baymax.web.domain.WebSession;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.buffer.DataBufferUtils;
@@ -28,7 +28,7 @@ import static com.elioo.baymax.web.adapter.in.ui.PageChrome.BASE;
 @RequiredArgsConstructor
 public class UploadUiHandler implements WebPages {
 
-    private final TimelineUseCase timeline;
+    private final UploadUseCase uploads;
     private final PageChrome chrome;
 
     @Override
@@ -54,7 +54,7 @@ public class UploadUiHandler implements WebPages {
             }
             return Flux.fromIterable(files).filter(FilePart.class::isInstance).cast(FilePart.class)
                     .concatMap(UploadUiHandler::readBytes).collectList()
-                    .flatMap(uploads -> timeline.upload(session.familyId(), patientId, uploads));
+                    .flatMap(pages -> uploads.upload(session.familyId(), patientId, pages));
         }).flatMap(d -> Html.redirect(Tab.PAPERS.path + "?patient=" + patientId));
     }
 

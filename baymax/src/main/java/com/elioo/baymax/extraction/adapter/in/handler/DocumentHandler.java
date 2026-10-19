@@ -6,6 +6,7 @@ import com.elioo.baymax.extraction.domain.DocumentView;
 import com.elioo.baymax.extraction.domain.Upload;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
+import com.elioo.baymax.web.application.port.in.UploadUseCase;
 import com.elioo.baymax.web.domain.WebSession;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -38,6 +39,8 @@ public class DocumentHandler {
     private final TimelineUseCase timeline;
     /** BMX-6: "detail" on request. Session-scoped through the timeline lookup first; admin unscoped. */
     private final com.elioo.baymax.outbound.application.port.in.ExplainDocumentUseCase explainer;
+    /** Session-scoped upload: 404 for a patient the family cannot see, 403 for a shared one (A7, the one upload rule). */
+    private final UploadUseCase uploads;
 
     public Mono<ServerResponse> upload(ServerRequest request) {
         return request.multipartData().flatMap(parts -> {
@@ -55,7 +58,7 @@ public class DocumentHandler {
                     .flatMap(uploads -> {
                         WebSession session = SessionAuthFilter.session(request);
                         return session == null ? intake.accept(patientId, uploads)
-                                : timeline.upload(session.familyId(), patientId, uploads);
+                                : this.uploads.upload(session.familyId(), patientId, uploads);
                     })
                     .flatMap(document -> ServerResponse.status(HttpStatus.ACCEPTED)
                             .bodyValue(Map.of("document_id", document.id().toString(),

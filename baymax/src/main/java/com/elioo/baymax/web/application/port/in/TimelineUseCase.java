@@ -1,8 +1,6 @@
 package com.elioo.baymax.web.application.port.in;
 
-import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.DocumentView;
-import com.elioo.baymax.extraction.domain.Upload;
 import com.elioo.baymax.storage.domain.DeletionReport;
 import com.elioo.baymax.web.domain.FamilyOverview;
 import com.elioo.baymax.web.domain.TimelinePage;
@@ -25,9 +23,6 @@ public interface TimelineUseCase {
     Mono<TimelinePage> timeline(UUID familyId, UUID patientId, String cursor);
 
     Mono<DocumentView> document(UUID familyId, UUID documentId);
-
-    /** Owner only; a share member gets 403. */
-    Mono<Document> upload(UUID familyId, UUID patientId, List<Upload> uploads);
 
     /** Owner only; a share member gets 403. */
     Mono<DeletionReport> deleteDocument(UUID familyId, UUID documentId);

@@ -4,7 +4,6 @@ import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.extraction.application.port.in.DocumentIntakeUseCase;
 import com.elioo.baymax.extraction.application.port.out.DocumentRecordPort;
 import com.elioo.baymax.extraction.domain.Document;
-import com.elioo.baymax.extraction.domain.Upload;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.PatientAccess;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
@@ -81,9 +80,12 @@ class TimelineServiceTest {
         verify(documents, never()).timelineOf(any(), any(), anyInt());
     }
 
-    /** Acceptance: given a share_member session, the shared timeline is visible and delete returns 403. */
+    /**
+     * Acceptance: given a share_member session, the shared timeline is visible and delete returns 403. The upload half
+     * moved to UploadServiceTest with the upload itself (A7).
+     */
     @Test
-    void aShareMemberSeesTheTimelineButMayNotDeleteOrUpload() {
+    void aShareMemberSeesTheTimelineButMayNotDelete() {
         when(records.visiblePatient(FAMILY_A, PATIENT_B)).thenReturn(Mono.just(new PatientAccess(PATIENT, false)));
         when(documents.timelineOf(eq(PATIENT_B), any(), anyInt())).thenReturn(Flux.just(DOCUMENT));
         when(documents.sectionCounts(DOC_B)).thenReturn(Mono.just(new int[]{2, 3, 0}));
@@ -98,10 +100,7 @@ class TimelineServiceTest {
 
         StepVerifier.create(service.deleteDocument(FAMILY_A, DOC_B))
                 .expectErrorMatches(e -> ((BaymaxException) e).status().value() == 403).verify();
-        StepVerifier.create(service.upload(FAMILY_A, PATIENT_B, List.of(new Upload("a.jpg", new byte[]{1}))))
-                .expectErrorMatches(e -> ((BaymaxException) e).status().value() == 403).verify();
         verify(storage, never()).deleteDocument(any(), any(), any());
-        verify(intake, never()).accept(any(), any());
     }
 
     /**
