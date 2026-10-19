@@ -6,6 +6,7 @@ import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.extraction.application.port.out.DocumentRecordPort;
 import com.elioo.baymax.family.application.port.in.FreeTierUseCase;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
+import com.elioo.baymax.healthrecord.domain.DocumentAllowance;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -40,24 +41,45 @@ public class FreeTierService implements FreeTierUseCase {
     }
 
     @Override
-    public Mono<Void> checkCanUploadDocument(FamilyAccount family) {
+    public Mono<DocumentAllowance> documentAllowance(FamilyAccount family) {
+        YearMonth month = YearMonth.now(clock.withZone(ZoneOffset.UTC));
         if (!family.isFree()) {
-            return Mono.empty();
+            return Mono.just(DocumentAllowance.unlimited(month));
         }
         int max = properties.getFree().getMaxDocsPerMonth();
-        YearMonth month = YearMonth.now(clock.withZone(ZoneOffset.UTC));
-        // Counted from the document table (BMX-2); before it existed this came from the storage ledger.
-        return documents.countInMonth(family.id(), month)
-                .flatMap(count -> count >= max
-                        ? Mono.error(new FreeTierExceededException(FreeTierExceededException.DOCUMENTS,
-                                "free plan allows " + max + " document(s) per calendar month"))
-                        : Mono.empty());
+        // Counted from the document table (BMX-2), DONE only (DR-24, PostgresDocumentRecordAdapter.countInMonth).
+        return documents.countInMonth(family.id(), month).map(used -> new DocumentAllowance(true, max, used, month));
+    }
+
+    @Override
+    public Mono<DocumentAllowance> documentAllowance(UUID familyId) {
+        return family(familyId).flatMap(this::documentAllowance);
+    }
+
+    @Override
+    public Mono<Void> checkCanUploadDocuments(FamilyAccount family, int count) {
+        return documentAllowance(family).flatMap(a -> a.allows(count) ? Mono.<Void>empty()
+                : Mono.error(new FreeTierExceededException(FreeTierExceededException.DOCUMENTS,
+                        "free plan allows " + a.max() + " document(s) per calendar month")));
+    }
+
+    @Override
+    public Mono<Void> checkCanUploadDocuments(UUID familyId, int count) {
+        return family(familyId).flatMap(f -> checkCanUploadDocuments(f, count));
+    }
+
+    @Override
+    public Mono<Void> checkCanUploadDocument(FamilyAccount family) {
+        return checkCanUploadDocuments(family, 1);
     }
 
     @Override
     public Mono<Void> checkCanUploadDocument(UUID familyId) {
+        return family(familyId).flatMap(this::checkCanUploadDocument);
+    }
+
+    private Mono<FamilyAccount> family(UUID familyId) {
         return records.findFamily(familyId)
-                .switchIfEmpty(Mono.error(BaymaxException.notFound("family_not_found", "no family with id " + familyId)))
-                .flatMap(this::checkCanUploadDocument);
+                .switchIfEmpty(Mono.error(BaymaxException.notFound("family_not_found", "no family with id " + familyId)));
     }
 }
