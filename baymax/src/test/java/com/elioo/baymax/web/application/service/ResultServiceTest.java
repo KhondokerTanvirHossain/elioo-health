@@ -3,6 +3,7 @@ package com.elioo.baymax.web.application.service;
 import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.extraction.application.port.in.DocumentIntakeUseCase;
+import com.elioo.baymax.extraction.application.port.out.DocumentReadPort;
 import com.elioo.baymax.extraction.application.port.out.DocumentRecordPort;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.DocumentView;
@@ -60,12 +61,13 @@ class ResultServiceTest {
     final AuditPort audit = mock(AuditPort.class);
     final OutboundMessagePort messages = mock(OutboundMessagePort.class);
     final DocumentUrgencyUseCase urgencies = mock(DocumentUrgencyUseCase.class);
+    final DocumentReadPort reads = mock(DocumentReadPort.class);
     ResultService service;
 
     @BeforeEach
     void wire() {
         service = new ResultService(records, documents, intake, audit, Clock.fixed(NOW, ZoneOffset.UTC), messages, urgencies,
-                new BaymaxProperties());
+                new BaymaxProperties(), reads);
         // sent 30 s ago and moved to PROCESSING 10 s ago: its arrival (createdAt) and its last change (updatedAt) differ
         Document processing = Document.received(PATIENT, FAMILY, 2, SENT).withId(DOC).withStatus(Document.Status.PROCESSING, null, NOW.minusSeconds(10));
         when(documents.findVisible(FAMILY, DOC)).thenReturn(Mono.just(processing));
@@ -77,6 +79,7 @@ class ResultServiceTest {
         when(messages.latestDeliverable(any())).thenReturn(Mono.empty());
         when(messages.latestOfKind(any(), any())).thenReturn(Mono.empty());
         when(urgencies.currentOrAssess(any())).thenReturn(Mono.empty());
+        when(reads.retakeOrdinal(any())).thenReturn(Mono.just(0));
     }
 
     /** The poll reads the status and nothing else: no audit row every 5 s, no view, no patient. */
@@ -198,7 +201,7 @@ class ResultServiceTest {
     void theReviewHoursAreTheConfiguredOnes() {
         BaymaxProperties five = new BaymaxProperties();
         five.getOutbound().setReviewTypicalHours(5);
-        service = new ResultService(records, documents, intake, audit, Clock.fixed(NOW, ZoneOffset.UTC), messages, urgencies, five);
+        service = new ResultService(records, documents, intake, audit, Clock.fixed(NOW, ZoneOffset.UTC), messages, urgencies, five, reads);
         done();
         stored(message(OutboundMessage.GateStatus.PENDING, "x", Urgency.NOW));
         StepVerifier.create(service.result(FAMILY, DOC)).assertNext(r -> assertThat(r.reviewHours()).isEqualTo(5)).verifyComplete();
@@ -247,6 +250,35 @@ class ResultServiceTest {
         verify(urgencies, never()).currentOrAssess(any());
         verify(messages, never()).latestOfKind(any(), any());
         verify(audit, never()).record(any());
+    }
+
+    /**
+     * B5: a retake carries this patient's streak, read from the stored rows (RetakeOrdinalAndFreeTierTest holds the
+     * count on Postgres); the page escalates on it. A retake has no urgency and no message is read for it.
+     */
+    @Test
+    void aRetakeCarriesItsStreakAndNoUrgency() {
+        Document retake = Document.received(PATIENT, FAMILY, 1, NOW).withId(DOC)
+                .withStatus(Document.Status.NEEDS_RETAKE, "test", "low_overall", NOW);
+        when(documents.findVisible(FAMILY, DOC)).thenReturn(Mono.just(retake));
+        when(intake.view(DOC)).thenReturn(Mono.just(DocumentView.pending(retake)));
+        when(reads.retakeOrdinal(DOC)).thenReturn(Mono.just(3));
+        StepVerifier.create(service.result(FAMILY, DOC)).assertNext(r -> {
+            assertThat(r.retakeOrdinal()).isEqualTo(3);
+            assertThat(r.document().reasonCode()).isEqualTo("low_overall");
+            assertThat(r.urgency()).isNull();
+            assertThat(r.gate()).isEqualTo(GateState.NONE);
+        }).verifyComplete();
+        verify(urgencies, never()).currentOrAssess(any());
+    }
+
+    /** The other direction: a paper that is not a retake carries 0, and the streak is not asked for at all. */
+    @Test
+    void aReadPaperCarriesNoStreakAndNeverAsksForOne() {
+        done();
+        when(reads.retakeOrdinal(DOC)).thenReturn(Mono.just(3));
+        StepVerifier.create(service.result(FAMILY, DOC)).assertNext(r -> assertThat(r.retakeOrdinal()).isZero()).verifyComplete();
+        verify(reads, never()).retakeOrdinal(any());
     }
 
     private static OutboundMessage message(OutboundMessage.GateStatus gate, String body, Urgency level) {

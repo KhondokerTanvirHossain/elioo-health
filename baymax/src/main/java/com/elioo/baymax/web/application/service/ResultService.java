@@ -2,6 +2,7 @@ package com.elioo.baymax.web.application.service;
 
 import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.extraction.application.port.in.DocumentIntakeUseCase;
+import com.elioo.baymax.extraction.application.port.out.DocumentReadPort;
 import com.elioo.baymax.extraction.application.port.out.DocumentRecordPort;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.config.BaymaxProperties;
@@ -42,6 +43,7 @@ public class ResultService implements ResultUseCase {
     private final OutboundMessagePort messages;
     private final DocumentUrgencyUseCase urgencies;
     private final BaymaxProperties properties;
+    private final DocumentReadPort reads;
 
     @Override
     public Mono<Document.Status> status(UUID familyId, UUID documentId) {
@@ -68,10 +70,10 @@ public class ResultService implements ResultUseCase {
                         viewer(familyId),
                         audit.record(AuditEvent.family(AuditEvent.Kind.DOCUMENT_VIEW, familyId, d.patientId(), documentId, clock.instant()))
                                 .then(intake.view(documentId)),
-                        stored(d), gate(d))
+                        stored(d), gate(d), retakeOrdinal(d))
                 .map(t -> new ResultView(t.getT3(), t.getT1().patient(), t.getT1().owner(), t.getT2(),
                         t.getT4().map(StoredUrgency::level).orElse(null), t.getT4().map(StoredUrgency::reasons).orElse(List.of()),
-                        t.getT5().state(), t.getT5().wording(), 0, properties.getOutbound().getReviewTypicalHours(),
+                        t.getT5().state(), t.getT5().wording(), t.getT6(), properties.getOutbound().getReviewTypicalHours(),
                         d.createdAt(), clock.instant())));
     }
 
@@ -82,6 +84,11 @@ public class ResultService implements ResultUseCase {
     private Mono<Optional<StoredUrgency>> stored(Document d) {
         return d.status() != Document.Status.DONE ? Mono.just(Optional.empty())
                 : urgencies.currentOrAssess(d.id()).map(Optional::of).defaultIfEmpty(Optional.empty());
+    }
+
+    /** B5: this patient's retakes in a row up to this one (RetakeCard's escalation); 0 for every other status. */
+    private Mono<Integer> retakeOrdinal(Document d) {
+        return d.status() != Document.Status.NEEDS_RETAKE ? Mono.just(0) : reads.retakeOrdinal(d.id()).defaultIfEmpty(0);
     }
 
     /** What the newest explanation's review state lets the page say. Wording only when deliverable (F3). */
