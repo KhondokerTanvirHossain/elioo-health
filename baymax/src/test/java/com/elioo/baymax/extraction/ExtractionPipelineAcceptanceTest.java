@@ -120,7 +120,12 @@ public class ExtractionPipelineAcceptanceTest {
             this(reply, words, List.of());
         }
 
-        /** The reply to the {@code n}-th (0-based) call that is not an EXPLAIN: {@link #reply}, then each of {@link #later} once, then {@link #reply} again. */
+        /**
+         * The reply to the {@code n}-th (0-based) model call that is not an EXPLAIN — counted over every such call, not
+         * per paper: {@link #reply}, then each of {@link #later} once, then {@link #reply} again. Today the pipeline makes
+         * exactly one such call per paper (the extraction), so {@code n} is the paper's index; a second non-EXPLAIN call
+         * per paper would shift the queue and must change this stub with it.
+         */
         String replyTo(int n) {
             return n >= 1 && n <= later.size() ? later.get(n - 1) : reply;
         }
@@ -160,13 +165,13 @@ public class ExtractionPipelineAcceptanceTest {
             if (given == null) {
                 when(client.invoke(any())).thenReturn(Mono.just(answer(REPLY)));
             } else {
-                java.util.concurrent.atomic.AtomicInteger extractions = new java.util.concurrent.atomic.AtomicInteger();
+                java.util.concurrent.atomic.AtomicInteger nonExplainCalls = new java.util.concurrent.atomic.AtomicInteger();
                 when(client.invoke(any())).thenAnswer(i -> {
                     String prompt = ((com.elioo.healthcare.llm.model.LlmRequest) i.getArgument(0)).userPrompt();
                     if (prompt != null && prompt.startsWith("SKELETON:\n") && prompt.contains("\n\nURGENCY LINE:")) {
                         return Mono.just(answer(prompt.substring("SKELETON:\n".length(), prompt.indexOf("\n\nURGENCY LINE:"))));
                     }
-                    return Mono.just(answer(given.replyTo(extractions.getAndIncrement())));
+                    return Mono.just(answer(given.replyTo(nonExplainCalls.getAndIncrement())));
                 });
             }
             return client;

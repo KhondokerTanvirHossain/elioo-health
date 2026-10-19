@@ -36,9 +36,6 @@ public interface TimelineUseCase {
     /** Signed URL for page {@code n} of a document the family may see; the key is derived, never taken from the client. */
     Mono<URI> pageUrl(UUID familyId, UUID documentId, int pageNo);
 
-    /** The newest released or approved message for a document the family may see; empty when none or pending. */
-    Mono<String> explanationOf(UUID familyId, UUID documentId);
-
     /** BMX-8: the family ticks the patient's chronic flags; owner only; never set from extracted data. */
     Mono<PatientProfile> updateChronicFlags(UUID familyId, UUID patientId, List<String> chronicFlags);
 }

@@ -1,6 +1,7 @@
 package com.elioo.baymax.web.adapter.in.ui;
 
 import com.elioo.baymax.common.error.BaymaxException;
+import com.elioo.baymax.common.time.PatientCalendar;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.DocumentView;
 import com.elioo.baymax.extraction.domain.RetakeReason;
@@ -29,6 +30,7 @@ import reactor.core.publisher.Mono;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
@@ -446,8 +448,8 @@ public class DocumentPages implements WebPages {
         UUID documentId = PageChrome.uuid(v.documentId());
         UUID patientId = r.patient().id();
         boolean third = r.retakeOrdinal() >= 3;
-        StringBuilder b = new StringBuilder(header(lang, r, third ? "retake.title.third" : "retake.title"));
-        b.append("<section id=\"retake\" class=\"retake\"><div class=\"retake-h\"><span class=\"retake-i\">").append(Icons.svg("camera", 24))
+        StringBuilder b = new StringBuilder(header(lang, r, third ? "retake.title.third" : "retake.title", attempt(lang, r.retakeOrdinal())));
+        b.append("<section id=\"retake\" class=\"retake-card\"><div class=\"retake-h\"><span class=\"retake-i\">").append(Icons.svg("camera", 24))
                 .append("</span><p class=\"lead\">").append(copy.t(lang, "retake.head")).append("</p></div>")
                 .append("<p>").append(retakeReason(lang, v.reasonCode())).append("</p>")
                 .append(sentPhotos(lang, v, documentId));
@@ -455,7 +457,7 @@ public class DocumentPages implements WebPages {
             b.append("<p>").append(copy.t(lang, "retake.third.p")).append("</p>");
         } else {
             b.append("<h2>").append(copy.t(lang, "retake.tips")).append("</h2><ul class=\"retake-tips\">");
-            int tips = r.retakeOrdinal() >= 2 ? 3 : 1;
+            int tips = r.retakeOrdinal() >= 2 ? 3 : 2;   // messages_bn retake (daylight, flat), then retake.second's three
             for (int n = 1; n <= tips; n++) {
                 b.append("<li>").append(Icons.svg("check", 18)).append("<span>").append(copy.t(lang, "retake.tip." + n)).append("</span></li>");
             }
@@ -485,19 +487,36 @@ public class DocumentPages implements WebPages {
      */
     String failedBody(Lang lang, ResultView r) {
         UUID documentId = PageChrome.uuid(r.document().documentId());
-        StringBuilder b = new StringBuilder(header(lang, r, "failed.title"))
-                .append("<section id=\"failed\" class=\"retake\"><p>").append(copy.t(lang, "failed.p")).append("</p>");
+        StringBuilder b = new StringBuilder(header(lang, r, "failed.title", null))
+                .append("<section id=\"failed\" class=\"retake-card\"><p>").append(copy.t(lang, "failed.p")).append("</p>");
         b.append(r.owner() ? sendForm(lang, "failed-form", r.patient(), documentId, "failed.again", true)
                 : "<p class=\"meta\">" + copy.t(lang, "retake.viewonly") + "</p>");
         b.append("<p class=\"small\">").append(copy.t(lang, "failed.free")).append("</p></section>");
         return b.append(deleteLink(lang, documentId)).toString();
     }
 
-    /** Back to this patient's papers, the patient named, and the page's title. */
-    private String header(Lang lang, ResultView r, String titleKey) {
-        return "<p>" + new AppShell(copy).back(lang, Tab.PAPERS.path + "?patient=" + r.patient().id(), "app.back.papers") + "</p>"
-                + "<span class=\"pchip\">" + copy.t(lang, "result.patient", r.patient().name(), r.patient().age()) + "</span>"
-                + "<h1>" + copy.t(lang, titleKey) + "</h1>";
+    /**
+     * Back to this patient's papers, the patient named, the page's title, and s12's meta line: when it was sent on the
+     * patient's calendar ("আজ, " when that is today), how many pages, and {@code attempt} when there is one.
+     */
+    private String header(Lang lang, ResultView r, String titleKey, String attempt) {
+        StringBuilder b = new StringBuilder("<p>")
+                .append(new AppShell(copy).back(lang, Tab.PAPERS.path + "?patient=" + r.patient().id(), "app.back.papers")).append("</p>")
+                .append("<span class=\"pchip\">").append(copy.t(lang, "result.patient", r.patient().name(), r.patient().age())).append("</span>")
+                .append("<h1>").append(copy.t(lang, titleKey)).append("</h1>");
+        if (r.receivedAt() != null) {
+            LocalDate sent = LocalDate.ofInstant(r.receivedAt(), PatientCalendar.ZONE);
+            String day = copy.dateText(lang, sent);
+            String when = r.now() != null && sent.equals(LocalDate.ofInstant(r.now(), PatientCalendar.ZONE)) ? copy.raw(lang, "retake.meta.today", day) : day;
+            int pages = r.document().pageCount() == null ? 1 : Math.max(1, r.document().pageCount());
+            b.append("<p class=\"meta\">").append(copy.t(lang, "retake.meta", when, pages)).append(attempt == null ? "" : " · " + attempt).append("</p>");
+        }
+        return b.toString();
+    }
+
+    /** Which try this is, from the third retake in a row on (RetakeCard third state); nothing before. */
+    private String attempt(Lang lang, int ordinal) {
+        return ordinal == 3 ? copy.t(lang, "retake.meta.third") : ordinal > 3 ? copy.t(lang, "retake.meta.nth", ordinal) : null;
     }
 
     /**

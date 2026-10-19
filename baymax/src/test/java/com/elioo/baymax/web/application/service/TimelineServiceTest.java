@@ -61,7 +61,7 @@ class TimelineServiceTest {
 
     @BeforeEach
     void wire() {
-        service = new TimelineService(records, documents, intake, storage, audit, mock(com.elioo.baymax.outbound.application.port.out.OutboundMessagePort.class), Clock.fixed(NOW, ZoneOffset.UTC), urgency);
+        service = new TimelineService(records, documents, intake, storage, audit, Clock.fixed(NOW, ZoneOffset.UTC), urgency);
         when(audit.record(any())).thenReturn(Mono.empty());
         // stubbed for every test, so a path that asks for urgency fails on verify(never()), not on a null Mono
         when(urgency.currentOrAssess(any())).thenReturn(Mono.empty());

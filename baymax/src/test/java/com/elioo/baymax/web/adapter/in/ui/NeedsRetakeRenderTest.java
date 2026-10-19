@@ -12,6 +12,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -43,6 +44,13 @@ class NeedsRetakeRenderTest {
         assertThat(ResultFixtures.section(retake(code, 1, true), "retake")).contains(copy.t(Lang.BN, "retake.head")).contains(copy.t(Lang.BN, key));
     }
 
+    /** Deviation 5: a code this build does not know still says why — the legacy line — and never shows the code itself. */
+    @Test
+    void aCodeThisBuildDoesNotKnowReadsTheLegacyLineAndNeverTheCode() {
+        String card = ResultFixtures.section(retake("zzz_unknown", 1, true), "retake");
+        assertThat(card).contains(copy.t(Lang.BN, "retake.reason.legacy")).doesNotContain("zzz_unknown");
+    }
+
     /** A section's own line replaces the reason's general line, never joins it; an English page reads the English line. */
     @Test
     void aSectionedRetakeReadsItsSectionLineInsteadOfTheGeneralOne() {
@@ -61,7 +69,7 @@ class NeedsRetakeRenderTest {
         assertThat(html).doesNotContain("not read confidently").doesNotContain("low_overall").contains("/documents/" + ResultFixtures.DOC + "/page/1");
         assertThat(html).doesNotContain("class=\"vrow").doesNotContain("id=\"urgency\"").doesNotContain("status-soon").doesNotContain("class=\"banner");
         // a retake is not urgency: the card is the warn tint, never the NOW or THIS_WEEK classes (RetakeCard README)
-        assertThat(ResultFixtures.section(html, "retake")).startsWith("<section id=\"retake\" class=\"retake\">")
+        assertThat(ResultFixtures.section(html, "retake")).startsWith("<section id=\"retake\" class=\"retake-card\">")
                 .doesNotContain(" now").doesNotContain("soon");
     }
 
@@ -90,6 +98,9 @@ class NeedsRetakeRenderTest {
         String html = retake("no_text", 1, false);
         assertThat(html).doesNotContain("id=\"retake-form\"").doesNotContain("<form").doesNotContain("/app/add")
                 .contains(copy.t(Lang.BN, "retake.viewonly"));
+        // its way on is back to this patient's papers: the link itself, not the header's back arrow to the same place
+        assertThat(ResultFixtures.section(html, "retake")).contains("<a class=\"btn quiet\" href=\"/app/timeline?patient=" + ResultFixtures.MA.id()
+                + "\">" + copy.t(Lang.BN, "retake.later") + "</a>");
         // the reason and the photo still show: the member may see the paper, only not send for it
         assertThat(html).contains(copy.t(Lang.BN, "retake.reason.no_text")).contains("/documents/" + ResultFixtures.DOC + "/page/1");
     }
@@ -110,17 +121,52 @@ class NeedsRetakeRenderTest {
         // the primary is the one with the primary class, in each state
         assertThat(ResultFixtures.section(first, "retake-form")).contains("class=\"btn primary\"");
         assertThat(ResultFixtures.section(third, "retake-form")).doesNotContain("class=\"btn primary\"").contains("class=\"btn quiet\"");
+        // and the link to another paper carries the other class: it leads on the third, it is quiet before
+        String other = "\" href=\"/app/add?patient=" + ResultFixtures.MA.id() + "&amp;";
+        assertThat(third).contains("<a class=\"btn primary" + other).doesNotContain("<a class=\"btn quiet" + other);
+        assertThat(first).contains("<a class=\"btn quiet" + other).doesNotContain("<a class=\"btn primary" + other);
     }
 
-    /** Tips escalate (spec §4.12): the first retake gets one, the second and later all three. */
+    /**
+     * Tips escalate (spec §4.12, from messages_bn retake / retake.second / retake.third): the first retake gets two
+     * (daylight, lay it flat — as s12 draws it), the second all three, the third none — it asks for another paper.
+     */
     @Test
-    void theTipsEscalateFromTheSecondRetake() {
-        String first = retake("low_overall", 1, true);
-        String second = retake("low_overall", 2, true);
-        assertThat(first).contains(copy.t(Lang.BN, "retake.tip.1")).doesNotContain(copy.t(Lang.BN, "retake.tip.2"))
+    void theTipsEscalateFromTheSecondRetakeAndGiveWayOnTheThird() {
+        String first = ResultFixtures.section(retake("low_overall", 1, true), "retake");
+        String second = ResultFixtures.section(retake("low_overall", 2, true), "retake");
+        String third = ResultFixtures.section(retake("low_overall", 3, true), "retake");
+        assertThat(first).contains(copy.t(Lang.BN, "retake.tip.1")).contains(copy.t(Lang.BN, "retake.tip.2"))
                 .doesNotContain(copy.t(Lang.BN, "retake.tip.3"));
         assertThat(second).contains(copy.t(Lang.BN, "retake.tip.1")).contains(copy.t(Lang.BN, "retake.tip.2"))
                 .contains(copy.t(Lang.BN, "retake.tip.3"));
+        assertThat(third).contains(copy.t(Lang.BN, "retake.third.p")).doesNotContain(copy.t(Lang.BN, "retake.tips"))
+                .doesNotContain(copy.t(Lang.BN, "retake.tip.1")).doesNotContain(copy.t(Lang.BN, "retake.tip.2"))
+                .doesNotContain(copy.t(Lang.BN, "retake.tip.3"));
+    }
+
+    /**
+     * s12's header meta line: when it was sent on the patient's calendar ("আজ, " when that is today), how many pages,
+     * and from the third retake in a row which try it is. FAILED has the same line without the try.
+     */
+    @Test
+    void theHeaderSaysWhenItWasSentHowManyPagesAndWhichTry() {
+        String today = copy.t(Lang.BN, "retake.meta", copy.raw(Lang.BN, "retake.meta.today", copy.dateText(Lang.BN, LocalDate.of(2026, 10, 20))), 1);
+        assertThat(today).as("as s12 draws it, Bangla digits").isEqualTo("আজ, ২০ অক্টোবর ২০২৬ · ১টি পাতা");
+        assertThat(retake("no_text", 1, true)).contains("</h1><p class=\"meta\">" + today + "</p>");
+        assertThat(retake("no_text", 2, true)).contains("</h1><p class=\"meta\">" + today + "</p>");
+        assertThat(retake("no_text", 3, true)).contains("</h1><p class=\"meta\">" + today + " · " + copy.t(Lang.BN, "retake.meta.third") + "</p>");
+        assertThat(retake("no_text", 4, true)).contains("</h1><p class=\"meta\">" + today + " · " + copy.t(Lang.BN, "retake.meta.nth", 4) + "</p>")
+                .doesNotContain(copy.t(Lang.BN, "retake.meta.third"));
+        assertThat(kit.documents.failedBody(Lang.BN, ResultFixtures.failed())).contains("</h1><p class=\"meta\">" + today + "</p>");
+
+        // sent two days ago (in Dhaka): the date alone, no "আজ"
+        ResultView old = ResultFixtures.retake("no_text", 1, true);
+        ResultView earlier = new ResultView(old.document(), old.patient(), true, old.viewer(), null, List.of(), GateState.NONE, null, 1, 2,
+                ResultFixtures.NOW.minus(java.time.Duration.ofDays(2)), ResultFixtures.NOW);
+        assertThat(kit.documents.retakeBody(Lang.BN, earlier))
+                .contains("</h1><p class=\"meta\">" + copy.t(Lang.BN, "retake.meta", copy.dateText(Lang.BN, LocalDate.of(2026, 10, 18)), 1) + "</p>")
+                .doesNotContain("আজ,");
     }
 
     @Test
@@ -147,7 +193,6 @@ class NeedsRetakeRenderTest {
                 true, ResultFixtures.BD, null, List.of(), GateState.NONE, null, retake ? 1 : 0, 2, ResultFixtures.NOW, ResultFixtures.NOW)));
         // were the legacy read made, it would answer: the page must not ask (it knows neither the streak nor the owner)
         when(kit.timeline.document(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(view));
-        when(kit.timeline.explanationOf(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.empty());
         String html = kit.page("/app/documents/" + WebUiTestKit.DOC_ID, "bn");
         verify(kit.timeline, never()).document(any(), any());
         assertThat(html).contains("id=\"" + (retake ? "retake" : "failed") + "\"").contains("action=\"/app/add\"")

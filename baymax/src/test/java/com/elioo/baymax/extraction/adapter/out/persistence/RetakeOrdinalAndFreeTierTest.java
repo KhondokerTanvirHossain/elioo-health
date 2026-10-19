@@ -17,7 +17,6 @@ import org.springframework.context.ApplicationContext;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.time.Clock;
@@ -112,7 +111,28 @@ class RetakeOrdinalAndFreeTierTest {
         });
     }
 
-    /** Through FreeTierUseCase on the fixed clock: retakes are free, read papers count — and the month really holds them. */
+    /**
+     * The other direction of "per patient": a sibling's finished paper — read or failed — between two of Ma's retakes
+     * does not end Ma's streak. Only this patient's papers reset it.
+     */
+    @Test
+    void aSiblingsFinishedPaperDoesNotEndThisPatientsStreak() {
+        runner().run(context -> {
+            DocumentReadPort reads = context.getBean(DocumentReadPort.class);
+            Fixture f = Fixture.create(context);
+            f.doc(f.ma(), Document.Status.NEEDS_RETAKE, T);
+            f.doc(f.baba(), Document.Status.DONE, T.plusSeconds(60));
+            f.doc(f.baba(), Document.Status.FAILED, T.plusSeconds(90));
+            UUID r2 = f.doc(f.ma(), Document.Status.NEEDS_RETAKE, T.plusSeconds(120));
+
+            assertThat(reads.retakeOrdinal(r2).block()).as("a sibling's read paper does not end Ma's streak").isEqualTo(2);
+        });
+    }
+
+    /**
+     * Through FreeTierUseCase on the fixed clock: retakes are free (retake.free), a paper that failed on our side is
+     * free (failed.free), read papers count — and the month really holds them all.
+     */
     @Test
     void retakesNeverUseTheAllowanceAndReadPapersDo() {
         runner().run(context -> {
@@ -123,9 +143,11 @@ class RetakeOrdinalAndFreeTierTest {
             for (int i = 1; i <= 3; i++) {
                 f.doc(f.ma(), Document.Status.NEEDS_RETAKE, T.plusSeconds(i * 60L));
             }
+            f.doc(f.ma(), Document.Status.FAILED, T.plusSeconds(240));
             assertThat(docs.countInWindow(f.familyId(), T.minusSeconds(1), T.plusSeconds(3600)).block())
-                    .as("all four papers are in the counted month").isEqualTo(4L);
-            assertThat(docs.countInMonth(f.familyId(), YearMonth.of(2026, 10)).block()).as("only the read one counts").isEqualTo(1L);
+                    .as("all five papers are in the counted month").isEqualTo(5L);
+            assertThat(docs.countInMonth(f.familyId(), YearMonth.of(2026, 10)).block())
+                    .as("only the read one counts: not the retakes, not the failed one").isEqualTo(1L);
             StepVerifier.create(freeTier.checkCanUploadDocument(f.familyId())).verifyComplete();
 
             f.doc(f.ma(), Document.Status.DONE, T.plusSeconds(600));
@@ -141,7 +163,7 @@ class RetakeOrdinalAndFreeTierTest {
             UUID last = null;
             for (int i = 0; i < 3; i++) {
                 last = f.doc(f.ma(), Document.Status.NEEDS_RETAKE, T.plusSeconds(i * 60L));
-                context.getBean(ExplainDocumentUseCase.class).explain(last).onErrorResume(e -> Mono.empty()).block();
+                context.getBean(ExplainDocumentUseCase.class).explain(last).block();
             }
             long whatsapp = context.getBean(OutboundMessagePort.class).consecutiveRetakes(f.familyId()).block();
             assertThat(whatsapp).as("WhatsApp counted the three retake messages").isEqualTo(3L);
