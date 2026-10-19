@@ -65,6 +65,8 @@ class ExplanationServiceTest {
     private final MessageDeliveryPort delivery = mock(MessageDeliveryPort.class);
     private final BaymaxProperties properties = new BaymaxProperties();
     private final Deque<String> replies = new ArrayDeque<>();
+    /** F1: the stored urgency, with the adapter's merge semantics; ExplanationService composes at what it holds. */
+    private final InMemoryDocumentUrgency stored = new InMemoryDocumentUrgency();
     private ExplanationService service;
 
     @BeforeEach
@@ -73,7 +75,8 @@ class ExplanationServiceTest {
         service = new ExplanationService(documents, records, messages, metered,
                 new ExtractionModelConfiguration.ExtractionClients(sonnet, sonnet, sonnet, true),
                 new UrgencyService(properties, clock), new MessageSafetyCheck(properties), new OutboundMessageGate(properties),
-                reviewer, delivery, new Copy(), properties, clock);
+                reviewer, delivery, new Copy(), properties, clock,
+                new StoredUrgencyService(new UrgencyService(properties, clock), stored, documents, records, properties, clock));
         when(metered.using(any())).thenReturn(metered);
         when(metered.invoke(eq(AiCallPurpose.EXPLAIN), any(), any(LlmRequest.class))).thenAnswer(i -> Mono.just(
                 new LlmResponse(replies.isEmpty() ? "" : replies.pop(), "stop", new TokenUsage(500, 120), "claude-sonnet-5", null, "anthropic", 900L)));
@@ -546,5 +549,48 @@ class ExplanationServiceTest {
         StepVerifier.create(service.deliver(stored)).expectNextCount(1).verifyComplete();
         verify(delivery, times(1)).deliver(stored);
         verify(messages).markSent(eq(stored.id()), eq(NOW));
+    }
+    /** F1: a later, lower reading never lowers what is composed: the message is composed at the STORED level. */
+    @Test
+    void anExplanationIsComposedAtTheStoredLevelWhenAFreshAssessmentIsLower() {
+        done(NORMAL);                                                   // assess() alone says ROUTINE
+        stored.preset(DOC, Urgency.NOW, List.of("value_critical:hba1c|stopgap"));
+        replies.push("HbA1c 5.0। এখনই ডাক্তারের কাছে যান। দেরি করবেন না।");
+
+        StepVerifier.create(service.composeChecked(DOC, OutboundMessage.Kind.EXPLANATION))
+                .assertNext(m -> {
+                    assertThat(m.urgency()).isEqualTo(Urgency.NOW);
+                    assertThat(m.urgencyReasons()).containsExactly("value_critical:hba1c|stopgap");
+                })
+                .verifyComplete();
+    }
+
+    /** The other direction: a higher fresh reading raises what is stored, and the message carries it. */
+    @Test
+    void aHigherFreshAssessmentRaisesTheStoredLevelAndTheMessage() {
+        done(CRITICAL);
+        stored.preset(DOC, Urgency.ROUTINE, List.of());
+        replies.push("HbA1c 11.2। এখনই ডাক্তারের কাছে যান। দেরি করবেন না।");
+
+        StepVerifier.create(service.composeChecked(DOC, OutboundMessage.Kind.EXPLANATION))
+                .assertNext(m -> assertThat(m.urgency()).isEqualTo(Urgency.NOW))
+                .verifyComplete();
+        assertThat(stored.find(DOC).block().level()).isEqualTo(Urgency.NOW);
+    }
+
+    /** DETAIL takes the same path: a cached-or-composed detail states the stored level, never a fresh lower one. */
+    @Test
+    void aDetailIsComposedAtTheStoredLevelWhenAFreshAssessmentIsLower() {
+        done(NORMAL);
+        stored.preset(DOC, Urgency.NOW, List.of("value_critical:hba1c|stopgap"));
+        replies.push("HbA1c 5.0। এখনই ডাক্তারের কাছে যান। দেরি করবেন না।");
+
+        StepVerifier.create(service.detail(DOC))
+                .assertNext(m -> {
+                    assertThat(m.kind()).isEqualTo(OutboundMessage.Kind.DETAIL);
+                    assertThat(m.urgency()).isEqualTo(Urgency.NOW);
+                    assertThat(m.urgencyReasons()).containsExactly("value_critical:hba1c|stopgap");
+                })
+                .verifyComplete();
     }
 }

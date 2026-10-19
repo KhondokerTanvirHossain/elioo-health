@@ -28,6 +28,8 @@ class BaymaxAdminRouterTest {
             mock(com.elioo.baymax.outbound.application.port.in.ReviewGateUseCase.class);
     private final com.elioo.baymax.extraction.application.port.in.RecropUseCase recrop =
             mock(com.elioo.baymax.extraction.application.port.in.RecropUseCase.class);
+    private final com.elioo.baymax.outbound.application.port.in.DocumentUrgencyUseCase urgency =
+            mock(com.elioo.baymax.outbound.application.port.in.DocumentUrgencyUseCase.class);
 
     private WebTestClient client(String configuredToken) {
         BaymaxProperties props = new BaymaxProperties();
@@ -35,7 +37,7 @@ class BaymaxAdminRouterTest {
         when(metrics.weeklyCsv(any(), any())).thenReturn(Mono.just("# documents\n"));
         return WebTestClient.bindToRouterFunction(new BaymaxAdminRouter()
                 .baymaxAdminRoutes(new AdminMetricsHandler(metrics), mock(StorageSelfTestHandler.class),
-                        new com.elioo.baymax.extraction.adapter.in.handler.RecropHandler(recrop),
+                        new com.elioo.baymax.extraction.adapter.in.handler.RecropHandler(recrop, urgency),
                         new com.elioo.baymax.outbound.adapter.in.handler.ReviewGateHandler(review),
                         new AdminAuthFilter(props), new ErrorResponseFilter(), mock(com.elioo.baymax.nudge.application.port.in.NudgeUseCase.class))).build();
     }
@@ -96,6 +98,7 @@ class BaymaxAdminRouterTest {
     @Test
     void recropRoutesAreTokenGatedAndTheLiteralWinsOverTheId() {
         java.util.UUID id = java.util.UUID.randomUUID();
+        when(urgency.assessAndStore(any())).thenReturn(Mono.empty());
         when(recrop.recrop(id)).thenReturn(Mono.just(new com.elioo.baymax.extraction.application.port.in.RecropUseCase.RecropReport(
                 id, "recropped", 2, 3, 1, 4, 0)));
         when(recrop.recropAll()).thenReturn(reactor.core.publisher.Flux.just(
@@ -109,5 +112,45 @@ class BaymaxAdminRouterTest {
                 .expectBody().jsonPath("$.documents").isEqualTo(1).jsonPath("$.recropped").isEqualTo(1);
         client("t").post().uri("/api/v1/baymax/admin/documents/recrop")
                 .exchange().expectStatus().isUnauthorized();
+    }
+    /**
+     * F1: a re-crop rewrites which values a DONE document shows, so it is an assessment site: the stored urgency is
+     * assessed through the one writer AFTER the items are rewritten, on both the one-document and the all-documents route.
+     */
+    @Test
+    void aRecropAssessesTheStoredUrgencyAfterTheItemsAreRewritten() {
+        java.util.UUID one = java.util.UUID.randomUUID(), other = java.util.UUID.randomUUID();
+        when(urgency.assessAndStore(any())).thenReturn(Mono.empty());
+        when(recrop.recrop(one)).thenReturn(Mono.just(new com.elioo.baymax.extraction.application.port.in.RecropUseCase.RecropReport(
+                one, "recropped", 2, 3, 1, 4, 0)));
+        when(recrop.recropAll()).thenReturn(reactor.core.publisher.Flux.just(
+                new com.elioo.baymax.extraction.application.port.in.RecropUseCase.RecropReport(one, "recropped", 2, 3, 1, 4, 0),
+                new com.elioo.baymax.extraction.application.port.in.RecropUseCase.RecropReport(other, "recropped", 1, 0, 0, 0, 0)));
+
+        client("t").post().uri("/api/v1/baymax/admin/documents/" + one + "/recrop").header(AdminAuthFilter.HEADER, "t")
+                .exchange().expectStatus().isOk();
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(recrop, urgency);
+        order.verify(recrop).recrop(one);
+        order.verify(urgency).assessAndStore(one);
+
+        client("t").post().uri("/api/v1/baymax/admin/documents/recrop").header(AdminAuthFilter.HEADER, "t")
+                .exchange().expectStatus().isOk().expectBody().jsonPath("$.documents").isEqualTo(2);
+        verify(urgency, org.mockito.Mockito.times(2)).assessAndStore(one);
+        verify(urgency).assessAndStore(other);
+    }
+
+    /** An assessment that throws after a bulk re-crop is logged and the rest of the corpus is still re-cropped. */
+    @Test
+    void aThrowingAssessmentDoesNotStopABulkRecrop() {
+        java.util.UUID bad = java.util.UUID.randomUUID(), good = java.util.UUID.randomUUID();
+        when(urgency.assessAndStore(bad)).thenReturn(Mono.error(new IllegalStateException("boom")));
+        when(urgency.assessAndStore(good)).thenReturn(Mono.empty());
+        when(recrop.recropAll()).thenReturn(reactor.core.publisher.Flux.just(
+                new com.elioo.baymax.extraction.application.port.in.RecropUseCase.RecropReport(bad, "recropped", 1, 0, 0, 0, 0),
+                new com.elioo.baymax.extraction.application.port.in.RecropUseCase.RecropReport(good, "recropped", 1, 0, 0, 0, 0)));
+
+        client("t").post().uri("/api/v1/baymax/admin/documents/recrop").header(AdminAuthFilter.HEADER, "t")
+                .exchange().expectStatus().isOk().expectBody().jsonPath("$.documents").isEqualTo(2);
+        verify(urgency).assessAndStore(good);
     }
 }

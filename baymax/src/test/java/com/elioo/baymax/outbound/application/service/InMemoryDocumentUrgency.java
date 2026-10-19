@@ -18,7 +18,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * A test fake of {@link DocumentUrgencyPort} with the adapter's merge semantics (max of the levels, sorted union of the
  * reasons). The database behaviour itself, the trigger included, is DocumentUrgencyNeverLowersTest's on Postgres.
  */
-final class InMemoryDocumentUrgency implements DocumentUrgencyPort {
+public final class InMemoryDocumentUrgency implements DocumentUrgencyPort {
 
     final Map<UUID, StoredUrgency> rows = new ConcurrentHashMap<>();
     /** Every assessment handed to raise(), in order, before the merge. */
@@ -37,6 +37,11 @@ final class InMemoryDocumentUrgency implements DocumentUrgencyPort {
             return new StoredUrgency(id, level, reasons.stream().toList(), at);
         });
         return Mono.just(merged);
+    }
+
+    /** A row as if an earlier assessment had stored it; not counted in {@link #raised}. */
+    public void preset(UUID documentId, Urgency level, List<String> reasons) {
+        rows.put(documentId, new StoredUrgency(documentId, level, reasons, Instant.EPOCH));
     }
 
     @Override

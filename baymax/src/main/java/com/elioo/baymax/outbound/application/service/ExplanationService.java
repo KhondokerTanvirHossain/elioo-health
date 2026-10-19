@@ -41,8 +41,9 @@ import java.util.concurrent.atomic.AtomicReference;
  * code: numbers ⊆ extraction, no medicine/dose verbs, doctor-first on anything urgent, ≤ 600 characters.
  * One regeneration with the violations named, then fail closed: a row with no body, and a log line.
  *
- * <p>Urgency is assessed once, before composition, and asserted afterwards: the stored message carries the
- * urgency it was assessed at, or nothing is stored.
+ * <p>Urgency is assessed once, before composition, through the one writer ({@link StoredUrgencyService}), and the
+ * message is composed at the level the document then STORES (F1: max of every assessment, never lowered). It is
+ * asserted afterwards: the stored message carries the urgency it was composed at, or nothing is stored.
  *
  * <p>F4: composition, persistence and delivery are three steps. {@link #composeChecked} composes and decides the gate
  * status and touches nothing; {@link #release} stores (and parks a PENDING row with the reviewer); {@link #deliver} is
@@ -68,6 +69,7 @@ public class ExplanationService implements ExplainDocumentUseCase {
     private final Copy copy;
     private final BaymaxProperties properties;
     private final Clock clock;
+    private final StoredUrgencyService storedUrgency;
 
     /**
      * DETAIL compositions in flight, one per document. Two asks that both miss the cache (a double tap inside the
@@ -91,7 +93,9 @@ public class ExplanationService implements ExplainDocumentUseCase {
                 .flatMap(document -> switch (document.status()) {
                     // a detail request on a retake used to file ANOTHER retake row and escalate the next retake copy
                     case NEEDS_RETAKE -> kind == OutboundMessage.Kind.EXPLANATION ? retake(document) : Mono.<OutboundMessage>empty();
-                    case DONE -> facts(document).flatMap(facts -> compose(facts, kind, urgency.assess(facts)));
+                    // F1: composed at the STORED level (max of everything ever assessed), never at a fresh, lower read
+                    case DONE -> facts(document).flatMap(facts -> storedUrgency.assessAndStore(facts)
+                            .flatMap(stored -> compose(facts, kind, stored.asAssessment())));
                     default -> Mono.<OutboundMessage>empty();
                 });
     }
@@ -101,15 +105,15 @@ public class ExplanationService implements ExplainDocumentUseCase {
         return documents.find(documentId)
                 .switchIfEmpty(Mono.error(BaymaxException.notFound("document_not_found", "no document with id " + documentId)))
                 .filter(document -> document.status() == Document.Status.DONE)
-                .flatMap(document -> facts(document).flatMap(facts -> {
-                    UrgencyAssessment assessed = urgency.assess(facts);
+                .flatMap(document -> facts(document).flatMap(facts -> storedUrgency.assessAndStore(facts).flatMap(stored -> {
+                    UrgencyAssessment assessed = stored.asAssessment();
                     return messages.latestOfKind(documentId, OutboundMessage.Kind.DETAIL)
                             .filter(cached -> stillCurrent(cached, document, assessed))
                             .doOnNext(cached -> log.info("[baymax] detail cache hit documentId={} messageId={} gate={}",
                                     documentId, cached.id(), cached.gateStatus().dbValue()))
                             .switchIfEmpty(Mono.defer(() -> composeDetailOnce(documentId,
                                     () -> compose(facts, OutboundMessage.Kind.DETAIL, assessed).flatMap(this::store))));
-                }));
+                })));
     }
 
     /** One composition per document at a time; a concurrent miss joins the one in flight instead of paying for its own. */
@@ -145,14 +149,9 @@ public class ExplanationService implements ExplainDocumentUseCase {
         });
     }
 
+    /** The facts the urgency was stored from: one copy, the writer's. */
     private Mono<DocumentFacts> facts(Document document) {
-        String link = properties.getOutbound().getPublicBaseUrl() + "/app/documents/" + document.id();
-        return Mono.zip(
-                documents.observationsOf(document.id()).collectList(),
-                documents.followUpsOf(document.id()).collectList(),
-                documents.clinicalContextOf(document.id()).defaultIfEmpty(Map.of()),
-                records.findPatient(document.patientId()).map(p -> p.name()).defaultIfEmpty("")
-        ).map(t -> new DocumentFacts(document, t.getT4(), t.getT1(), t.getT2(), t.getT3(), link));
+        return storedUrgency.facts(document);
     }
 
     /**
