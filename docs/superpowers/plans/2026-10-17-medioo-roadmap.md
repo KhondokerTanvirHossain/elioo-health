@@ -73,11 +73,18 @@ the gate in production. The gate decision before real families is open (below).
   | V15 | (applied) | `crop_verify_call_purpose` |
   | **V16** | Phase 0, PR 4 (C2) | `document_recovery_attempts` (F9b) |
   | **V17** | Phase 1a, PR 12 (1a-ii) | `wa_last_inbound` (PO 2026-10-18, DR-39 amended: the free sign-in window); PR 12 merged ahead of PRs 7–10 |
-  | **V18** | Phase 0, PR 8 (C1) | `inbound_message` (F9a) — was V17 until 2026-10-18 |
-  | **V19** | Phase 0, PR 9 (B2) | `outbound_failure_kind` — was V18 until 2026-10-18 |
-  | **V20** | Phase 1b.1–1b.2 | `document_urgency_and_value_verdict` (F1 + F2) |
-  | **V21** | Phase 1b.3 | `retake_reason_code_and_timeline_date` (F5) |
-  | V22+ | Phase 2 onward | the next free number when written; the phase sections say "next free `V<n>`" |
+  | **V18** | Web portal A10 (F1a) | `document_stored_urgency` — `urgency`, `urgency_reasons`, `urgency_assessed_at`, `urgency_attempted_at`, never-lowers trigger, backfill |
+  | **V19** | Web portal B1 (F2) | `observation_value_verdict` |
+  | **V20** | Web portal B4 (F5) | `retake_reason_code_and_timeline_date` |
+  | **V21** | Web portal D3 (W4.2) | `document_upload_key` |
+  | **V22** | Phase 0, PR 8 (C1) | `inbound_message` (F9a) — was V18 until 2026-10-19 (V17 until 2026-10-18) |
+  | **V23** | Phase 0, PR 9 (B2) | `outbound_failure_kind` — was V19 until 2026-10-19 (V18 until 2026-10-18) |
+  | V24+ | Phase 2 onward | the next free number when written; the phase sections say "next free `V<n>`" |
+
+  Renumbered 2026-10-19 (PO direction 2026-10-19: the web portal first; Phase 0 PRs 7–10 rebase after the web chain).
+  F1 + F2 are split over V18 (A10) and V19 (B1), F5 is V20, and the web upload key is V21 (`docs/superpowers/plans/2026-10-19-medioo-web-portal.md`, "Migration allocation"). After the rebase PR 7 reads
+  `DocumentUrgencyUseCase.current` for its standing urgency instead of recomputing it, and PR 9 adds its FAILED
+  replies against the F5 writers.
 
   The spec's §2 and §12 still say "V16" for F1/F5; that label predates this allocation and is superseded by it.
 - **A table added in any phase goes into both delete paths** (`PostgresHealthRecordAdapter.deleteFamily/deletePatient`).
