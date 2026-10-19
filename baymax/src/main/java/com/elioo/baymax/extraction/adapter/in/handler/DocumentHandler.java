@@ -136,7 +136,8 @@ public class DocumentHandler {
         Map<String, Object> body = new java.util.LinkedHashMap<>();
         body.put("document_id", view.documentId());
         body.put("status", view.status());
-        putIfPresent(body, "reason", view.reason());
+        // F5: the retake's code, never status_reason (developer prose that no family-facing body carries)
+        putIfPresent(body, "retake_reason_code", view.reasonCode());
         putIfPresent(body, "document_type", view.documentType());
         putIfPresent(body, "document_date", view.documentDate());
         putIfPresent(body, "facility", view.facility());

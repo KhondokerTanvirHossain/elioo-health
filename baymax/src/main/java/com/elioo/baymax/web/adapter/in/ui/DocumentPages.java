@@ -3,6 +3,7 @@ package com.elioo.baymax.web.adapter.in.ui;
 import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.DocumentView;
+import com.elioo.baymax.extraction.domain.RetakeReason;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.outbound.domain.UrgencyReason;
 import com.elioo.baymax.outbound.domain.ValueVerdict;
@@ -456,12 +457,16 @@ public class DocumentPages implements WebPages {
                 .append("</div><div class=\"explain\">").append(esc(text)).append("</div></div>"));
 
         if (!"DONE".equals(view.status())) {
-            // NEEDS_RETAKE / FAILED / in flight: the reason and the page image, and nothing extracted anywhere
-            if (view.reason() != null) {
-                b.append("<div class=\"warn\">").append(esc(view.reason())).append("</div>");
-            }
+            // NEEDS_RETAKE / FAILED / in flight: the page image and nothing extracted anywhere; a retake says why from its
+            // code in the reader's language (F5, interim until B5), never the developer prose and never the raw code
             if ("NEEDS_RETAKE".equals(view.status())) {
-                b.append("<p>").append(copy.t(lang, "doc.retake")).append("</p>");
+                b.append("<div class=\"card retake\"><p><strong>").append(copy.t(lang, "retake.head")).append("</strong></p>");
+                RetakeReason.ofCode(view.reasonCode()).ifPresent(r -> {
+                    String section = RetakeReason.sectionOf(view.reasonCode());
+                    String specific = section == null ? null : copy.maybe(lang, "retake.reason." + r.prefix() + "." + section);
+                    b.append("<p>").append(specific != null ? specific : copy.t(lang, "retake.reason." + r.prefix())).append("</p>");
+                });
+                b.append("<p>").append(copy.t(lang, "doc.retake")).append("</p></div>");
             }
             b.append(pageImages(view, documentId));
             b.append(deleteLink(lang, documentId));
