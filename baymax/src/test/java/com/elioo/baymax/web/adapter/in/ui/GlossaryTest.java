@@ -42,7 +42,6 @@ class GlossaryTest {
             "ui:optout.title বন্ধ করুন",
             "ui:patients রোগী",
             "ui:patients.docs নথি",
-            "ui:patients.last নথি",
             "ui:patients.none রোগী",
             "ui:timeline.add নথি",
             "ui:timeline.docs নথি",
