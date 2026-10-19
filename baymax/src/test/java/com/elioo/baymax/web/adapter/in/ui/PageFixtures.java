@@ -4,12 +4,15 @@ import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.DocumentView;
 import com.elioo.baymax.healthrecord.domain.DocumentAllowance;
 import com.elioo.baymax.nudge.application.port.out.NudgeDataPort;
+import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.storage.domain.DeletionReport;
 import com.elioo.baymax.web.application.port.in.CodeRejectedException;
 import com.elioo.baymax.web.domain.CodeIssue;
 import com.elioo.baymax.web.domain.CodeRequest;
 import com.elioo.baymax.web.domain.IssuedSession;
+import com.elioo.baymax.web.domain.GateState;
 import com.elioo.baymax.web.domain.ReadingView;
+import com.elioo.baymax.web.domain.ResultView;
 import com.elioo.baymax.web.domain.TimelineEntry;
 import com.elioo.baymax.web.domain.TimelinePage;
 import com.elioo.baymax.web.domain.UploadOptions;
@@ -246,9 +249,11 @@ final class PageFixtures {
                     List.of(Map.of("instruction", "আবার দেখাবেন", "due_date", "2026-11-15", "crop_key", crop + "4.jpg")),
                     null, null);
             when(k.results.status(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(Document.Status.DONE));
-            when(k.timeline.document(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(view));
-            when(k.timeline.explanationOf(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID))
-                    .thenReturn(Mono.just("রিপোর্টটি পেয়েছি। এ সপ্তাহের মধ্যে একজন ডাক্তার দেখান।"));
+            // A12: a DONE paper's page is the result summary, read through ResultUseCase.result (stored THIS_WEEK, released)
+            when(k.results.result(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(new ResultView(view,
+                    k.ma(3).patient(), true, new ViewerLocale(true), Urgency.THIS_WEEK, List.of("diagnosis_present"),
+                    GateState.RELEASED, "রিপোর্টটি পেয়েছি। এ সপ্তাহের মধ্যে একজন ডাক্তার দেখান।", 0, 2,
+                    WebUiTestKit.NOW.minusSeconds(3600), WebUiTestKit.NOW)));
         }
 
         /** A9: a two-page paper of Ma's being read, sent 30 s ago, seen from a Bangladeshi number. */

@@ -105,7 +105,9 @@ class ReadingProgressRenderTest {
                 new ReadingView(DocumentView.pending(finished), MA, true, new ViewerLocale(true), NOW, NOW)));
         done.page("/app/documents/" + WebUiTestKit.DOC_ID, "bn");
         verify(done.results, never()).reading(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID);
-        verify(done.timeline, times(1)).document(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID);
+        // A12: a DONE paper's page is the result, one read that records the one view; the legacy read is not made
+        verify(done.results, times(1)).result(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID);
+        verify(done.timeline, never()).document(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID);
     }
 
     /**
@@ -123,7 +125,8 @@ class ReadingProgressRenderTest {
         assertThat(dom.all).as("the finished page's values heading")
                 .anyMatch(e -> e.tag().equals("h2") && e.ownText().equals(kit.copy.raw(Lang.BN, "doc.values")));
         assertThat(dom.all).as("no reading section, no script").noneMatch(e -> "progress".equals(e.attrs().get("id")) || e.tag().equals("script"));
-        verify(kit.timeline, times(1)).document(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID);
+        assertThat(dom.all).as("drawn as the result: the stored urgency leads").anyMatch(e -> "urgency".equals(e.attrs().get("id")));
+        verify(kit.results, times(1)).result(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID);
     }
 
     /** Three honest steps from Document.Status — no percentage, no crop-verification step (spec §4.9). */

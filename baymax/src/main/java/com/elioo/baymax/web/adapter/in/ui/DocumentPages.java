@@ -8,6 +8,7 @@ import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.application.port.in.ResultUseCase;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
 import com.elioo.baymax.web.domain.ReadingView;
+import com.elioo.baymax.web.domain.ResultView;
 import com.elioo.baymax.web.domain.WebSession;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -31,7 +32,8 @@ import static com.elioo.baymax.web.adapter.in.ui.Html.esc;
 import static com.elioo.baymax.web.adapter.in.ui.PageChrome.BASE;
 
 /**
- * One document: its extracted items beside their crops, its pages, and its deletion. Images are signed afresh on every
+ * One document: while it is read, the reading page (s09); once DONE, the result (s10) — the stored urgency first, then
+ * what the review state allows, then its extracted items beside their crops, its pages, and its deletion. Images are signed afresh on every
  * load. The literal-segment routes come before the {@code {id}}-only route, per the router convention, here and
  * nowhere else.
  */
@@ -77,22 +79,23 @@ public class DocumentPages implements WebPages {
     }
 
     /**
-     * GET /app/documents/{id}: while the paper is RECEIVED or PROCESSING, the reading page (s09); otherwise the document
-     * page as before (A12 replaces DONE, B5 NEEDS_RETAKE and FAILED). The branch reads the status alone, which records
-     * nothing, so a finished paper's page never reads the reading view and records the one DOCUMENT_VIEW of the document
-     * page. A paper finished between the two reads is drawn finished, never as a reading page that would wait for a
-     * change that already happened; that page records two DOCUMENT_VIEW rows (the reading view's and the document
-     * page's), accepted for a window of milliseconds rather than a second audit path.
+     * GET /app/documents/{id}: while the paper is RECEIVED or PROCESSING, the reading page (s09); once DONE, the result
+     * summary (s10); otherwise the document page as before (B5 replaces NEEDS_RETAKE and FAILED). The branch reads the
+     * status alone, which records nothing, so a finished paper's page never reads the reading view and records the one
+     * DOCUMENT_VIEW of its own read. A paper finished between the two reads is drawn finished, never as a reading page
+     * that would wait for a change that already happened; that page records two DOCUMENT_VIEW rows (the reading view's
+     * and the finished page's), accepted for a window of milliseconds rather than a second audit path.
      */
     public Mono<ServerResponse> documentPage(ServerRequest request) {
         WebSession session = SessionAuthFilter.session(request);
         Lang lang = Lang.of(request);
         UUID documentId = PageChrome.uuid(request.pathVariable("id"));
         return results.status(session.familyId(), documentId).flatMap(status -> !inFlight(status)
-                ? finishedPage(session, lang, documentId)
-                : results.reading(session.familyId(), documentId).flatMap(r -> inFlight(Document.Status.valueOf(r.document().status()))
-                        ? Html.html(HttpStatus.OK, progressPage(lang, r))
-                        : finishedPage(session, lang, documentId)));
+                ? finishedPage(session, lang, documentId, status)
+                : results.reading(session.familyId(), documentId).flatMap(r -> {
+                    Document.Status now = Document.Status.valueOf(r.document().status());
+                    return inFlight(now) ? Html.html(HttpStatus.OK, progressPage(lang, r)) : finishedPage(session, lang, documentId, now);
+                }));
     }
 
     static boolean inFlight(Document.Status status) {
@@ -141,7 +144,68 @@ public class DocumentPages implements WebPages {
         return b.toString();
     }
 
-    private Mono<ServerResponse> finishedPage(WebSession session, Lang lang, UUID documentId) {
+    private Mono<ServerResponse> finishedPage(WebSession session, Lang lang, UUID documentId, Document.Status status) {
+        return status == Document.Status.DONE ? summaryPage(session, lang, documentId) : legacyPage(session, lang, documentId);
+    }
+
+    /** The result (s10) in the shell, under কাগজপত্র. */
+    private Mono<ServerResponse> summaryPage(WebSession session, Lang lang, UUID documentId) {
+        return results.result(session.familyId(), documentId)
+                .flatMap(r -> Html.html(HttpStatus.OK, new AppShell(copy).inside(lang, Tab.PAPERS, summaryBody(lang, r))));
+    }
+
+    /**
+     * The result summary (s10): the patient named, the paper's type and date, then the stored urgency line as the first
+     * section of the page in every review state (F1, D5), then what the review state allows (F3), then the paper's items.
+     * A routine paper has no banner and says only that it was filed (D27); a paper whose level is unknown says neither.
+     */
+    String summaryBody(Lang lang, ResultView r) {
+        DocumentView v = r.document();
+        StringBuilder b = new StringBuilder("<p>")
+                .append(new AppShell(copy).back(lang, Tab.PAPERS.path + "?patient=" + r.patient().id(), "app.back.papers")).append("</p>")
+                .append("<span class=\"pchip\">").append(copy.t(lang, "result.patient", r.patient().name(), r.patient().age())).append("</span>")
+                .append("<h1>").append(chrome.documentType(lang, v.documentType())).append("</h1>")
+                .append("<p class=\"meta\">").append(copy.date(lang, v.documentDate()))
+                .append(v.facility() == null ? "" : " · " + esc(v.facility())).append("</p>");
+        if (r.urgency() == Urgency.ROUTINE) {
+            b.append("<p class=\"meta\">").append(copy.t(lang, "result.filed")).append("</p>");
+        }
+        b.append(banner(lang, r));       // first section in main, on first paint: no script, no animation, no close
+        b.append(gateLine(lang, r));
+        if (r.done()) {
+            b.append(legacyItems(lang, v, PageChrome.uuid(v.documentId())));   // today's items list; B2 replaces it
+        }
+        return b.toString();
+    }
+
+    /** The stored level's fixed line, from the message bundle (UiCopy.urgency); nothing for ROUTINE or an unknown level. */
+    String banner(Lang lang, ResultView r) {
+        if (r.urgency() == null || r.urgency() == Urgency.ROUTINE) {
+            return "";
+        }
+        boolean now = r.urgency() == Urgency.NOW;
+        // kit §5: the octagon on NOW's solid header, the calendar on THIS_WEEK's tint; aria-hidden, the line says it all
+        String icon = now ? Icons.svg("octagon", 28) : Icons.svg("calendar", 26);
+        return "<section class=\"banner " + (now ? "now" : "soon") + "\" id=\"urgency\" aria-label=\"" + copy.t(lang, "result.banner.label")
+                + "\"><p class=\"line\"><span class=\"icon\">" + icon + "</span><span>" + copy.urgency(lang, r.urgency(), false)
+                + "</span></p></section>";
+    }
+
+    /** F3: Medioo's released words, labelled as such; "a person is checking" only for PENDING; withheld says so. */
+    String gateLine(Lang lang, ResultView r) {
+        return switch (r.gate()) {
+            case RELEASED -> "<section class=\"says\" id=\"says\" aria-label=\"" + copy.t(lang, "result.says.label") + "\"><p class=\"label\">"
+                    + copy.t(lang, "result.says.label") + "</p><div class=\"explain\">" + esc(r.wording()) + "</div><p class=\"small\">"
+                    + copy.t(lang, "result.says.note") + "</p></section>";
+            case PENDING -> "<section class=\"gate\" id=\"gate-pending\"><span class=\"chip review\">" + copy.t(lang, "result.review.chip")
+                    + "</span><p>" + copy.t(lang, "result.gate.pending", r.reviewHours()) + "</p></section>";
+            case REJECTED, FAILED_SAFETY -> "<section class=\"gate\" id=\"gate-withheld\"><p>" + copy.t(lang, "result.gate.withheld") + "</p></section>";
+            case NONE -> "";
+        };
+    }
+
+    /** NEEDS_RETAKE and FAILED, as before A12 (B5 replaces them). */
+    private Mono<ServerResponse> legacyPage(WebSession session, Lang lang, UUID documentId) {
         return timeline.document(session.familyId(), documentId)
                 .zipWith(timeline.explanationOf(session.familyId(), documentId).map(Optional::of).defaultIfEmpty(Optional.empty()))
                 .flatMap(t -> Html.html(HttpStatus.OK, new AppShell(copy).inside(lang, Tab.PAPERS, render(lang, t.getT1(), documentId, t.getT2()))));
@@ -153,7 +217,8 @@ public class DocumentPages implements WebPages {
 
     /**
      * The page as the ticket specifies it: extracted items beside their crops, and for a retake nothing but why
-     * and the page.
+     * and the page. Production draws only NEEDS_RETAKE and FAILED with it since A12; a DONE view gets the same
+     * {@link #legacyItems} the summary shows, so the item tests below the summary cover the page that is served.
      *
      * @param explanation the released BMX-6 message for this document, shown above the extraction exactly as
      *                    composed — it is the only interpretive text on the page and it passed the checklist
@@ -164,14 +229,6 @@ public class DocumentPages implements WebPages {
         b.append("<h1>").append(chrome.documentType(lang, view.documentType())).append(" ").append(chrome.status(lang, view.status())).append("</h1>");
         b.append("<div class=\"meta\">").append(copy.date(lang, view.documentDate()))
                 .append(view.facility() == null ? "" : " · " + esc(view.facility())).append("</div>");
-
-        // F1 (interim, A12 replaces it): the stored level's fixed line, at once and whatever the explanation's state
-        if (view.urgency() != null && !"routine".equals(view.urgency())) {
-            Urgency level = Urgency.fromDbValue(view.urgency());
-            b.append("<section class=\"banner ").append(level == Urgency.NOW ? "now" : "soon")
-                    .append("\" id=\"urgency\" role=\"status\"><p class=\"head\">")
-                    .append(copy.urgency(lang, level, false)).append("</p></section>");
-        }
 
         explanation.ifPresent(text -> b.append("<div class=\"card\"><div class=\"meta\">").append(copy.t(lang, "doc.summary"))
                 .append("</div><div class=\"explain\">").append(esc(text)).append("</div></div>"));
@@ -188,7 +245,12 @@ public class DocumentPages implements WebPages {
             b.append(deleteLink(lang, documentId));
             return b.toString();
         }
+        return b.append(legacyItems(lang, view, documentId)).toString();
+    }
 
+    /** A DONE paper's items as the page has listed them since BMX-5: values, medicines, follow-ups, the doctor's lines. */
+    String legacyItems(Lang lang, DocumentView view, UUID documentId) {
+        StringBuilder b = new StringBuilder();
         if (view.unverified() != null) {
             Object total = view.unverified().get("total");
             b.append("<div class=\"warn\">").append(copy.t(lang, "doc.unverified", total)).append("</div>");

@@ -152,6 +152,49 @@ class DetailCacheAcceptanceTest {
         });
     }
 
+    /**
+     * A12's F3 read rests on this: latestOfKind is the newest EXPLANATION in ANY review state. The result page says "a
+     * person is checking" only because a lone PENDING row comes back; a deliverable filter here (the DETAIL cache would
+     * like one) would turn PENDING and REJECTED into "no explanation" with every unit test green. The schema also lets a
+     * RELEASED row carry no body, which the page must read as withheld (ResultService.Gate).
+     */
+    @Test
+    void latestOfKindReturnsTheNewestExplanationInAnyReviewStateEvenWhenNothingIsDeliverable() {
+        runner().run(context -> {
+            OutboundMessagePort messages = context.getBean(OutboundMessagePort.class);
+            HealthRecordPort records = context.getBean(HealthRecordPort.class);
+            Instant t = Instant.parse("2026-10-20T10:30:00Z");
+            FamilyAccount family = records.createFamily(new FamilyAccount(
+                    null, "+8801700000812", "Shirin", FamilyAccount.Plan.FREE, t, t)).block();
+            UUID pending = UUID.randomUUID(), rejected = UUID.randomUUID(), bodiless = UUID.randomUUID(), parked = UUID.randomUUID();
+            insertExplanation(family.id(), pending, "'অপেক্ষায়'", "pending", t);
+            insertExplanation(family.id(), rejected, "'বাতিল'", "rejected", t);
+            insertExplanation(family.id(), bodiless, "NULL", "released", t);
+            // an older released explanation and a newer one parked for review: the newer, parked one is the answer
+            insertExplanation(family.id(), parked, "'পুরনো'", "released", t);
+            insertExplanation(family.id(), parked, "'নতুন, অপেক্ষায়'", "pending", t.plusSeconds(60));
+
+            assertThat(messages.latestOfKind(pending, OutboundMessage.Kind.EXPLANATION).block())
+                    .as("a lone PENDING explanation").isNotNull()
+                    .extracting(OutboundMessage::gateStatus).isEqualTo(OutboundMessage.GateStatus.PENDING);
+            assertThat(messages.latestOfKind(rejected, OutboundMessage.Kind.EXPLANATION).block())
+                    .as("a lone REJECTED explanation").isNotNull()
+                    .extracting(OutboundMessage::gateStatus).isEqualTo(OutboundMessage.GateStatus.REJECTED);
+            OutboundMessage noBody = messages.latestOfKind(bodiless, OutboundMessage.Kind.EXPLANATION).block();
+            assertThat(noBody).as("a RELEASED explanation with no body").isNotNull();
+            assertThat(noBody.gateStatus()).isEqualTo(OutboundMessage.GateStatus.RELEASED);
+            assertThat(noBody.body()).isNull();
+            assertThat(messages.latestOfKind(parked, OutboundMessage.Kind.EXPLANATION).block())
+                    .as("the newest explanation, parked, over an older released one").isNotNull()
+                    .extracting(OutboundMessage::gateStatus).isEqualTo(OutboundMessage.GateStatus.PENDING);
+        });
+    }
+
+    private static void insertExplanation(UUID family, UUID document, String bodySql, String gate, Instant at) throws Exception {
+        execute("INSERT INTO baymax.outbound_message (family_id, document_id, kind, urgency, urgency_reasons, body, gate_status, created_at) "
+                + "VALUES ('" + family + "','" + document + "','explanation','now','[]'," + bodySql + ",'" + gate + "','" + at + "')");
+    }
+
     /** urgency_reasons carry marker names, and lab names carry commas: the stored set must equal the fresh one. */
     @Test
     void urgencyReasonsSurviveTheRoundTripEvenWhenAMarkerNameHasAComma() {
