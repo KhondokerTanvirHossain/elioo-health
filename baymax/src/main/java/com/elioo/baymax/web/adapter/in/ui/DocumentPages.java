@@ -244,11 +244,12 @@ public class DocumentPages implements WebPages {
     }
 
     /**
-     * s11 / spec §4.11, only on a stored NOW: one block per distinct stored reason in stored order, then the action for
-     * this reader's own phone (F7), what to take, and "I am not a doctor". A Bangladeshi number gets tel:999 once, under
-     * the red-flag questions and nowhere else; a number abroad is never handed tel:999 (it does not connect from abroad)
-     * and gets "call the person with them" and a WhatsApp share whose text names the patient and carries no value.
-     * Every string is a copy key. No call button for the person with them until Phase 5 stores that person.
+     * s11 / spec §4.11, only on a stored NOW: one block per distinct stored reason ({@link #drawnOrder}), then the action
+     * for this reader's own phone (F7), the red-flag questions, what to take, and "I am not a doctor". A Bangladeshi
+     * number gets tel:999 once, under the red-flag questions and nowhere else; a number abroad is never handed tel:999 (it
+     * does not connect from abroad) and gets "call the person with them" and a WhatsApp share whose text names the
+     * patient and carries no value, then the same questions with no call link. Every string is a copy key. No call
+     * button for the person with them until Phase 5 stores that person.
      */
     String nowBody(Lang lang, ResultView r) {
         if (r.urgency() != Urgency.NOW) {
@@ -256,22 +257,41 @@ public class DocumentPages implements WebPages {
         }
         DocumentView v = r.document();
         UUID documentId = PageChrome.uuid(v.documentId());
-        Set<Optional<UrgencyReason>> reasons = new LinkedHashSet<>();
-        r.urgencyReasons().forEach(reason -> reasons.add(UrgencyReason.ofReason(reason)));
-        if (reasons.isEmpty()) {
-            reasons.add(Optional.empty());
-        }
         StringBuilder b = new StringBuilder();
-        reasons.forEach(reason -> b.append(reasonBlock(lang, v, documentId, reason.orElse(null))));
+        drawnOrder(r.urgencyReasons()).forEach(reason -> b.append(reasonBlock(lang, v, documentId, reason.orElse(null))));
         boolean bangladesh = r.viewer().bangladesh();
-        b.append(bangladesh ? callAction(lang) : remoteAction(lang, r.patient().name()));
+        b.append(bangladesh ? "" : remoteAction(lang, r.patient().name())).append(redFlags(lang, bangladesh));
         return b.append("<section id=\"now-bring\" class=\"now-after\"><p>").append(copy.t(lang, bangladesh ? "now.bring" : "now.bring.remote"))
                 .append("</p><p class=\"small\">").append(copy.t(lang, "now.notdoctor")).append("</p></section>").toString();
     }
 
     /**
-     * The value kinds this page's NOW reason blocks draw: CRITICAL under a stored value_critical, OUTSIDE under a stored
-     * value_outside_range, nothing below NOW. {@link #rowsOfKind} and this set are the one rule both places read.
+     * The blocks of a NOW page, in the order drawn (spec §4.11): one per distinct stored reason, empty for a prefix the
+     * enum does not know. The NOW reasons ({@link #NOW_REASONS}) and the unknown ones (their level is not known, so they
+     * are not demoted) first, then the THIS_WEEK reasons "below if present", each group in stored order. The rule stores
+     * values in printed order and the phrase last, so the stored order alone would put a THIS_WEEK block above the reason
+     * the paper is NOW for. With no NOW reason stored (a legacy row; the rule never stores one) the generic block comes
+     * first, so a NOW page always says why it is NOW.
+     */
+    static List<Optional<UrgencyReason>> drawnOrder(List<String> stored) {
+        Set<Optional<UrgencyReason>> distinct = new LinkedHashSet<>();
+        (stored == null ? List.<String>of() : stored).forEach(reason -> distinct.add(UrgencyReason.ofReason(reason)));
+        List<Optional<UrgencyReason>> first = new ArrayList<>();
+        List<Optional<UrgencyReason>> below = new ArrayList<>();
+        for (Optional<UrgencyReason> reason : distinct) {
+            (reason.isEmpty() || NOW_REASONS.contains(reason.get()) ? first : below).add(reason);
+        }
+        if (first.isEmpty()) {
+            first.add(Optional.empty());
+        }
+        first.addAll(below);
+        return first;
+    }
+
+    /**
+     * The value kinds this page's NOW reason blocks draw: CRITICAL under a stored value_critical, nothing below NOW. An
+     * OUTSIDE row stays in "যেগুলো সীমার বাইরে" below, as s11 draws it; its block points there. {@link #rowsOfKind} and
+     * this set are the one rule both places read.
      */
     static Set<ValueVerdict.Kind> shownAbove(ResultView r) {
         if (r.urgency() != Urgency.NOW) {
@@ -286,11 +306,7 @@ public class DocumentPages implements WebPages {
 
     /** The value kind a reason's block draws its rows of, if it draws rows at all. */
     static Optional<ValueVerdict.Kind> kindShownBy(UrgencyReason reason) {
-        return switch (reason) {
-            case VALUE_CRITICAL -> Optional.of(ValueVerdict.Kind.CRITICAL);
-            case VALUE_OUTSIDE_RANGE -> Optional.of(ValueVerdict.Kind.OUTSIDE);
-            default -> Optional.empty();
-        };
+        return reason == UrgencyReason.VALUE_CRITICAL ? Optional.of(ValueVerdict.Kind.CRITICAL) : Optional.empty();
     }
 
     /** One reason's block; {@code reason} null is the generic block. The page images stand in where no stored row matches. */
@@ -300,17 +316,24 @@ public class DocumentPages implements WebPages {
         if (reason == null) {
             return b.append(lead(lang, "now.why.other")).append(fullPages(lang, v, documentId)).append("</section>").toString();
         }
-        String shown = switch (reason) {
-            case VALUE_CRITICAL -> lead(lang, "now.why.critical") + rowsOfKind(lang, v, documentId, kindShownBy(reason).orElseThrow());
-            case VALUE_OUTSIDE_RANGE -> lead(lang, "value.group.outside") + rowsOfKind(lang, v, documentId, kindShownBy(reason).orElseThrow());
-            case UNVERIFIED_VALUE_CRITICAL -> lead(lang, "now.why.unverified");     // never the number: it is not an observation
-            case UNVERIFIED_VALUE_OUTSIDE_RANGE -> lead(lang, "now.why.unverified_outside");
-            case TEXT_EMERGENCY_PHRASE -> lead(lang, "now.why.phrase");
-            case FOLLOW_UP_PAST_DUE -> lead(lang, "now.why.followup") + followUpQuotes(lang, v, documentId);
-            case DIAGNOSIS_PRESENT -> diagnosisQuotes(lang, v, documentId);
+        // the block's lead, and what proves it on the paper; with no proof the whole pages stand in (never a bare line)
+        String[] shown = switch (reason) {
+            case VALUE_CRITICAL -> new String[]{lead(lang, "now.why.critical"), rowsOfKind(lang, v, documentId, ValueVerdict.Kind.CRITICAL)};
+            case VALUE_OUTSIDE_RANGE -> hasKind(v, ValueVerdict.Kind.OUTSIDE)      // the rows stay in their group below
+                    ? new String[]{"", "<a class=\"btn quiet\" href=\"#outside\">" + copy.t(lang, "now.why.outside") + "</a>"}
+                    : new String[]{lead(lang, "value.group.outside"), ""};
+            case UNVERIFIED_VALUE_CRITICAL -> new String[]{lead(lang, "now.why.unverified"), ""};   // never the number: not an observation
+            case UNVERIFIED_VALUE_OUTSIDE_RANGE -> new String[]{lead(lang, "now.why.unverified_outside"), ""};
+            case TEXT_EMERGENCY_PHRASE -> new String[]{lead(lang, "now.why.phrase"), ""};
+            case FOLLOW_UP_PAST_DUE -> new String[]{lead(lang, "now.why.followup"), followUpQuotes(lang, v, documentId)};
+            case DIAGNOSIS_PRESENT -> new String[]{"<p class=\"lead\">" + chrome.contextSection(lang, "diagnosis") + "</p>",
+                    diagnosisQuotes(lang, v, documentId)};
         };
-        boolean proof = shown.contains("<a class=\"vrow ") || shown.contains("<figure class=\"paper\"");
-        return b.append(shown).append(proof ? "" : fullPages(lang, v, documentId)).append("</section>").toString();
+        return b.append(shown[0]).append(shown[1].isEmpty() ? fullPages(lang, v, documentId) : shown[1]).append("</section>").toString();
+    }
+
+    private static boolean hasKind(DocumentView v, ValueVerdict.Kind kind) {
+        return v.values() != null && v.values().stream().anyMatch(row -> ValueRows.kindOf(row) == kind);
     }
 
     private String lead(Lang lang, String key) {
@@ -340,7 +363,7 @@ public class DocumentPages implements WebPages {
         return b.toString();
     }
 
-    /** The diagnosis lines as written, under their section's label, beside their crops. */
+    /** The diagnosis lines as written, beside their crops; a line stored without a crop is not quoted. */
     private String diagnosisQuotes(Lang lang, DocumentView v, UUID documentId) {
         Object lines = v.clinicalContext() == null ? null : v.clinicalContext().get("diagnosis");
         StringBuilder quotes = new StringBuilder();
@@ -351,7 +374,7 @@ public class DocumentPages implements WebPages {
                 }
             }
         }
-        return "<p class=\"lead\">" + chrome.contextSection(lang, "diagnosis") + "</p>" + quotes;
+        return quotes.toString();
     }
 
     /** Every page of the paper, whole, each linking to itself so it opens large: what to show a doctor. */
@@ -367,11 +390,15 @@ public class DocumentPages implements WebPages {
         return b.toString();
     }
 
-    /** A Bangladeshi phone (F7): the red-flag questions, and the one tel:999 on the page, under them. */
-    private String callAction(Lang lang) {
+    /**
+     * The red-flag questions, their own section for every reader (s11, s11--abroad). A Bangladeshi phone (F7) gets the one
+     * tel:999 on the page, under them; a phone abroad gets "tell the person with them" and no call link at all.
+     */
+    private String redFlags(Lang lang, boolean bangladesh) {
         return "<section id=\"red-flags\" class=\"flags now\"><p class=\"lead\">" + copy.t(lang, "now.flags.q") + "</p><p>"
-                + copy.t(lang, "now.flags.go") + "</p><a class=\"btn now-outline\" href=\"tel:999\">" + copy.t(lang, "now.call999")
-                + "</a></section>";
+                + copy.t(lang, bangladesh ? "now.flags.go" : "now.remote.flags.go") + "</p>"
+                + (bangladesh ? "<a class=\"btn now-outline\" href=\"tel:999\">" + copy.t(lang, "now.call999") + "</a>" : "")
+                + "</section>";
     }
 
     /**
@@ -383,8 +410,7 @@ public class DocumentPages implements WebPages {
         return "<section id=\"remote-action\" class=\"emergency\"><p class=\"lead\">" + copy.t(lang, "now.remote.lead", name) + "</p>"
                 + "<a class=\"btn\" href=\"https://wa.me/?text=" + esc(share) + "\" rel=\"noopener\">" + copy.t(lang, "now.remote.share") + "</a>"
                 + "<p class=\"small\">" + copy.t(lang, "now.remote.share.note") + "</p>"
-                + "<p class=\"small\">" + copy.t(lang, "now.remote.999") + "</p>"
-                + "<p class=\"lead\">" + copy.t(lang, "now.flags.q") + "</p><p>" + copy.t(lang, "now.remote.flags.go") + "</p></section>";
+                + "<p class=\"small\">" + copy.t(lang, "now.remote.999") + "</p></section>";
     }
 
     /** F3: Medioo's released words, labelled as such; "a person is checking" only for PENDING; withheld says so. */

@@ -63,7 +63,7 @@
 .reason.now .lead,.emergency .lead,.flags.now .lead{font-weight:700}
 .btn.now-outline{border:2px solid var(--c-status-now);color:var(--c-status-now);background:var(--c-surface);min-height:56px;text-align:center}
 .btn.now-outline:hover{border:2px solid var(--c-status-now);color:var(--c-status-now);background:var(--c-surface)}
-.emergency .btn,.flags.now .btn{margin-top:var(--sp-2);text-align:center;white-space:normal}
+.emergency .btn,.flags.now .btn,.reason.now .btn{margin-top:var(--sp-2);text-align:center;white-space:normal}
 .fullpage{display:flex;flex-direction:column;gap:var(--sp-1);min-height:var(--target-min);text-decoration:none;color:var(--c-text)}
 .fullpage .page-img{margin:0;max-width:100%}
 .fullpage .cap,.fullpage .zoom{font-size:var(--fs-footnote);line-height:var(--lh-footnote)}
