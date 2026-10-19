@@ -90,6 +90,19 @@ class BaymaxWebUiRouterTest {
                 .expectHeader().value(HttpHeaders.SET_COOKIE, c -> assertThat(c).startsWith("baymax_lang=bn"));
     }
 
+    /**
+     * A7 regression guard: a backslash after the first slash is a second slash to a browser, so "/\\evil.example" (sent
+     * as /%5C) names another site. The old rule ("starts with / and not //") accepted it, and URI.create then threw on
+     * the backslash: the language switch answered 500. Now anything but a local page goes to the landing.
+     */
+    @Test
+    void switchingLanguageNeverFollowsABackslashOffTheSite() {
+        client.get().uri(java.net.URI.create("/lang/en?back=/%5Cevil.example")).exchange().expectStatus().isSeeOther()
+                .expectHeader().valueEquals(HttpHeaders.LOCATION, "/");
+        client.get().uri(java.net.URI.create("/lang/en?back=/%5C%5Cevil.example/x")).exchange().expectStatus().isSeeOther()
+                .expectHeader().valueEquals(HttpHeaders.LOCATION, "/");
+    }
+
     /** Acceptance: every old /baymax/* URL 301s to its new location; a saved timeline link still opens. */
     @Test
     void oldBaymaxUrlsRedirectPermanentlyToApp() {

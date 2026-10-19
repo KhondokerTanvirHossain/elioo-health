@@ -15,4 +15,17 @@ enum Tab {
         this.labelKey = labelKey;
         this.icon = icon;
     }
+
+    /**
+     * The tab a local path belongs to, for a sheet's no-JS URL drawn over the page it was opened from: the tab's own
+     * path (with a query or below it), a document under কাগজপত্র, anything else চ্যাট.
+     */
+    static Tab of(String localPath) {
+        for (Tab t : values()) {
+            if (localPath.equals(t.path) || localPath.startsWith(t.path + "?") || localPath.startsWith(t.path + "/")) {
+                return t;
+            }
+        }
+        return localPath.startsWith(PageChrome.BASE + "/documents/") || localPath.startsWith(PageChrome.BASE + "/patients/") ? PAPERS : CHAT;
+    }
 }

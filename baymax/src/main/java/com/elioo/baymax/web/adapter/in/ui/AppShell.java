@@ -36,6 +36,16 @@ final class AppShell {
                 copy.t(lang, "disclaimer"), tabs(lang, under), "", "");
     }
 
+    /**
+     * A sheet's no-JS URL (spec §3): the wordmark-only header and the tab bar of {@code under}, the tab the sheet was
+     * opened from, inert behind the sheet; nothing of anyone's papers is read for the page under it.
+     */
+    String sheet(Lang lang, Tab under, String titleKey, String sheet) {
+        return Html.appPage(lang, Html.Head.of(copy.t(lang, titleKey) + " — " + copy.t(lang, "app.title")),
+                "<header class=\"appbar\">" + Html.brand(copy.t(lang, "app.title")) + "</header>", "",
+                copy.t(lang, "disclaimer"), tabs(lang, under), sheet, "has-sheet");
+    }
+
     /** The back link at the top of a page inside a tab: {@code ‹ কাগজপত্র}, {@code ‹ পরিবার}. */
     String back(Lang lang, String href, String key) {
         return "<a class=\"back\" href=\"" + href + "\">" + copy.t(lang, key) + "</a>";

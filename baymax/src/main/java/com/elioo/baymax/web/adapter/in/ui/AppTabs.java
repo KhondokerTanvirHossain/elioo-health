@@ -135,12 +135,11 @@ public class AppTabs implements WebPages {
                         .append(copy.t(lang, "timeline.flags.cta")).append("</a></div>");
             }
             if (patient.owner()) {
-                // A7 replaces the form with the link to the add-report sheet
-                b.append("<form class=\"card\" method=\"post\" enctype=\"multipart/form-data\" action=\"")
-                        .append(BASE).append("/patients/").append(patientId).append("/upload\">")
-                        .append("<label for=\"f\">").append(copy.t(lang, "timeline.add")).append("</label>")
-                        .append("<input id=\"f\" type=\"file\" name=\"file\" accept=\"image/*,application/pdf\" required>")
-                        .append("<button type=\"submit\">").append(copy.t(lang, "timeline.upload")).append("</button></form>");
+                // the one upload entry (A7): the add-report sheet for this patient, which comes back here
+                String back = java.net.URLEncoder.encode(Tab.PAPERS.path + "?patient=" + patientId, java.nio.charset.StandardCharsets.UTF_8);
+                b.append("<p><a class=\"btn primary add-link\" href=\"").append(UploadUiHandler.SHEET).append("?patient=").append(patientId)
+                        .append("&amp;back=").append(back).append("\">").append(Icons.svg("camera", 24))
+                        .append("<span>").append(copy.t(lang, "timeline.add")).append("</span></a></p>");
             }
             b.append("<h2>").append(copy.t(lang, "timeline.docs")).append("</h2>");
             if (page.entries().isEmpty()) {

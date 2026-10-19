@@ -41,7 +41,7 @@ public class PageChrome {
     /** {@code GET /lang/{code}?back=/path}: set the cookie, go back. Only a local path is followed. */
     public Mono<ServerResponse> switchLang(ServerRequest request) {
         Lang lang = Lang.parse(request.pathVariable("code"));
-        String back = request.queryParam("back").filter(p -> p.startsWith("/") && !p.startsWith("//")).orElse("/");
+        String back = LocalPath.or(request.queryParam("back").orElse(null), "/");
         return ServerResponse.seeOther(URI.create(back))
                 .header(HttpHeaders.SET_COOKIE, lang.cookie(sessions.cookie("x").isSecure()).toString()).build();
     }
