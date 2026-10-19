@@ -71,8 +71,9 @@ public class BaymaxWebUiRouter {
                     case PAYMENT_REQUIRED -> chrome.text(request, FreeTierExceededException.DOCUMENTS.equals(be.reason())
                             ? "app.err.freetier" : "app.err.generic");
                     case SERVICE_UNAVAILABLE -> chrome.text(request, "app.err.loginoff");
-                    // never the exception's message: developer English, and it may carry a filename or a medicine
-                    default -> chrome.text(request, chrome.hasCopy("app.err." + be.reason()) ? "app.err." + be.reason() : "app.err.generic");
+                    // never the exception's message (developer English, which may carry a filename or a medicine), and
+                    // never a key built from the reason: "return" would show app.err.return, a button label, as the error
+                    default -> chrome.text(request, "app.err.generic");
                 };
                 if (text == null) {
                     return Html.redirect(BASE + "/");

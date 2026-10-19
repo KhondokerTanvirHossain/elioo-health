@@ -106,8 +106,12 @@ public class UploadUiHandler implements WebPages {
                     .append("\" required").append(checked ? " checked" : "").append(">")
                     .append(copy.t(lang, "add.patient", p.patient().name(), p.patient().age())).append("</label>");
         }
-        b.append("</div><p class=\"hint\">").append(copy.t(lang, o.preselected().isPresent() ? "add.onlyone" : "add.choose"))
-                .append("</p></fieldset>");
+        String hint = copy.t(lang, o.preselected().isPresent() ? "add.onlyone" : "add.choose");
+        b.append("</div>");
+        if (!hint.equals(alert)) {   // refused for no patient: the alert already says it, and s07 says it once
+            b.append("<p class=\"hint\">").append(hint).append("</p>");
+        }
+        b.append("</fieldset>");
         b.append("<div class=\"src\">")
                 .append(row(lang, "camera", "accept=\"image/*\" capture=\"environment\"", "camera"))
                 .append(row(lang, "gallery", "accept=\"image/*\" multiple", "papers"))
