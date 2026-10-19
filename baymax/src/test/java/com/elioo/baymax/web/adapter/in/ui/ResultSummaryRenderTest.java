@@ -168,4 +168,49 @@ class ResultSummaryRenderTest {
     void thePatientIsNamedInTheHeader() {
         assertThat(body(Lang.BN, Urgency.ROUTINE, GateState.NONE)).contains("<span class=\"pchip\">Ma · ৬৪ বছর</span>");
     }
+
+    // ---- F2 interim (B1): the stored verdict on the value line; B2's ValueRows replaces these two ----
+
+    /** Interim F2 line: a stored INSIDE the code cannot prove reads "কাগজে মিলিয়ে দেখুন", never "সীমার মধ্যে". */
+    @Test
+    void aStoredInsideCodeCannotProveReadsCheckThePaper() {
+        String row = rowOf(kit.documents.summaryBody(Lang.BN, ResultFixtures.result(ResultFixtures.lab(List.of(
+                ResultFixtures.value("K", "6.4", "mmol/L", "3.5", "5.1", "inside"))), Urgency.ROUTINE, List.of(), GateState.NONE, null, ResultFixtures.BD)), "K");
+        assertThat(row).contains(copy.t(Lang.BN, "value.chip.unknown")).doesNotContain(copy.t(Lang.BN, "value.chip.inside"));
+    }
+
+    @Test
+    void aProvenInsideReadsInside() {
+        String row = rowOf(kit.documents.summaryBody(Lang.BN, ResultFixtures.result(ResultFixtures.lab(List.of(
+                ResultFixtures.value("Creatinine", "1.0", "mg/dL", "0.7", "1.3", "inside"))), Urgency.ROUTINE, List.of(), GateState.NONE, null, ResultFixtures.BD)), "Creatinine");
+        assertThat(row).contains(copy.t(Lang.BN, "value.chip.inside"));
+    }
+
+    /** A value with no stored verdict yet is UNKNOWN on the page, never INSIDE, however inside its numbers look. */
+    @Test
+    void aValueWithNoStoredVerdictReadsCheckThePaper() {
+        String row = rowOf(kit.documents.summaryBody(Lang.BN, ResultFixtures.result(ResultFixtures.lab(List.of(
+                ResultFixtures.value("Creatinine", "1.0", "mg/dL", "0.7", "1.3", null))), Urgency.ROUTINE, List.of(), GateState.NONE, null, ResultFixtures.BD)), "Creatinine");
+        assertThat(row).contains(copy.t(Lang.BN, "value.chip.unknown")).doesNotContain(copy.t(Lang.BN, "value.chip.inside"));
+    }
+
+    /** Outside and critical keep their side, from the stored verdict (never re-judged on the page). */
+    @Test
+    void aStoredOutsideOrCriticalVerdictShowsItsSide() {
+        Map<String, Object> low = ResultFixtures.value("Hb", "5.0", "g/dL", "12.0", "16.0", "critical");
+        low.put("verdict_side", "low");
+        Map<String, Object> high = ResultFixtures.value("HbA1c", "6.5", "%", "4.0", "5.6", "outside");
+        high.put("verdict_side", "high");
+        String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(ResultFixtures.lab(List.of(low, high)),
+                Urgency.NOW, List.of("value_critical:hb|stopgap"), GateState.NONE, null, ResultFixtures.BD));
+        assertThat(rowOf(html, "Hb")).contains(copy.t(Lang.BN, "value.chip.critical.low"));
+        assertThat(rowOf(html, "HbA1c")).contains(copy.t(Lang.BN, "value.chip.outside.high"));
+    }
+
+    /** The {@code <div class="item">} that holds this value's name: assertions read one row, never the page. */
+    private static String rowOf(String html, String name) {
+        Matcher m = Pattern.compile("<div class=\"item\"><div class=\"text\">" + Pattern.quote(Html.esc(name)) + ":.*?</div>").matcher(html);
+        assertThat(m.find()).as("the row for " + name).isTrue();
+        return m.group();
+    }
 }
