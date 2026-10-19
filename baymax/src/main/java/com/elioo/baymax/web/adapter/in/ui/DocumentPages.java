@@ -3,6 +3,7 @@ package com.elioo.baymax.web.adapter.in.ui;
 import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.DocumentView;
+import com.elioo.baymax.outbound.domain.PrintedRange;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.application.port.in.ResultUseCase;
@@ -255,7 +256,8 @@ public class DocumentPages implements WebPages {
             Object total = view.unverified().get("total");
             b.append("<div class=\"warn\">").append(copy.t(lang, "doc.unverified", total)).append("</div>");
         }
-        section(b, copy.t(lang, "doc.values"), view.values(), documentId, m -> esc(m.get("name")) + ": <strong>" + esc(m.get("value")) + "</strong> " + esc(m.get("unit")));
+        section(b, copy.t(lang, "doc.values"), view.values(), documentId, m -> esc(m.get("name")) + ": <strong>" + esc(m.get("value")) + "</strong> " + esc(m.get("unit"))
+                + " <span class=\"tag\">" + copy.t(lang, chipKey(m)) + "</span>");
         section(b, copy.t(lang, "doc.medicines"), view.medicines(), documentId, m -> "<strong>" + esc(m.get("name")) + "</strong> " + esc(m.get("dose_text"))
                 + "<div class=\"meta\">" + esc(m.get("frequency_text")) + " " + esc(m.get("timing_text")) + " " + esc(m.get("duration_text")) + "</div>");
         section(b, copy.t(lang, "doc.followup"), view.followUp(), documentId, m -> esc(m.get("instruction"))
@@ -282,6 +284,21 @@ public class DocumentPages implements WebPages {
         b.append("<h2>").append(copy.t(lang, "doc.pages")).append("</h2>").append(pageImages(view, documentId));
         b.append(deleteLink(lang, documentId));
         return b.toString();
+    }
+
+    /**
+     * F2 interim (B2 replaces it): the stored verdict's chip. None or unrecognised is UNKNOWN; INSIDE only if the code
+     * proves it; outside or critical without a stored side is UNKNOWN too, never a guessed direction.
+     */
+    static String chipKey(Map<String, Object> m) {
+        String verdict = String.valueOf(m.get("verdict"));
+        Object side = m.get("verdict_side");
+        return switch (verdict) {
+            case "inside" -> PrintedRange.insideByCode(m) ? "value.chip.inside" : "value.chip.unknown";
+            case "outside", "critical" -> "high".equals(side) || "low".equals(side)
+                    ? "value.chip." + verdict + "." + side : "value.chip.unknown";
+            default -> "value.chip.unknown";
+        };
     }
 
     private void section(StringBuilder b, String title, List<Map<String, Object>> items, UUID documentId,

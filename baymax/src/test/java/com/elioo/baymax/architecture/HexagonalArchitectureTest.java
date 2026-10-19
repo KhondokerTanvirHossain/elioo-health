@@ -1,5 +1,6 @@
 package com.elioo.baymax.architecture;
 
+import com.elioo.baymax.outbound.application.service.UrgencyService;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
@@ -30,4 +31,14 @@ class HexagonalArchitectureTest {
             .that().resideInAPackage("..domain..")
             .should().dependOnClassesThat().resideInAnyPackage("..application..", "..adapter..", "..config..")
             .because("domain records are plain values");
+
+    /**
+     * Global constraint (web portal plan): every page that shows urgency reads DocumentUrgencyUseCase; nothing under
+     * web calls UrgencyService. The pure printed-range reads a page needs live on {@code PrintedRange} (domain).
+     */
+    @ArchTest
+    static final ArchRule webDoesNotDependOnTheUrgencyRule = noClasses()
+            .that().resideInAPackage("com.elioo.baymax.web..")
+            .should().dependOnClassesThat().areAssignableTo(UrgencyService.class)
+            .because("a page shows the stored urgency and stored verdicts; it never runs the rule that sets them");
 }

@@ -3,9 +3,12 @@ package com.elioo.baymax.outbound.application.service;
 import com.elioo.baymax.common.time.PatientCalendar;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.outbound.domain.MarkerThreshold;
+import com.elioo.baymax.outbound.domain.PrintedRange;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.outbound.domain.UrgencyContext;
 import com.elioo.baymax.outbound.domain.UrgencyAssessment;
+import com.elioo.baymax.outbound.domain.UrgencyReason;
+import com.elioo.baymax.outbound.domain.ValueVerdict;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -20,6 +23,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Urgency, computed in code from the persisted extraction and nothing else (BMX-6):
@@ -59,20 +63,36 @@ public class UrgencyService {
         UrgencyAssessment a = UrgencyAssessment.routine();
         String text = facts.document().extractionJson() == null ? "" : facts.document().extractionJson();
 
+        // F2: one verdict per shown value, from the branch that decides whether it raises the document. The document
+        // is raised from the rows afterwards, so a raising row and the banner share one reason string by construction.
+        List<ValueVerdict> verdicts = new ArrayList<>();
         for (Map<String, Object> v : facts.values()) {
             String name = String.valueOf(v.getOrDefault("canonical_name", v.get("name"))).toLowerCase(Locale.ROOT);
+            UUID id = v.get("id") instanceof UUID u ? u : null;
             Optional<Verdict> perMarker = perMarkerVerdict(v);
             if (perMarker.isPresent()) {
                 Verdict verdict = perMarker.get();
                 if (verdict.level() != Urgency.ROUTINE) {
-                    a = a.raise(verdict.level(), verdict.reasonFor(name));
+                    verdicts.add(new ValueVerdict(id, verdict.level() == Urgency.NOW ? ValueVerdict.Kind.CRITICAL : ValueVerdict.Kind.OUTSIDE,
+                            verdict.level(), verdict.side(), verdict.reasonFor(name)));
+                } else {
+                    verdicts.add(unraised(id, v, name, "|threshold:" + verdict.threshold().source(), text));
                 }
                 continue;                                    // a signed-off threshold replaces the stopgap
             }
             switch (criticalKind(v, text)) {
-                case CRITICAL_HIGH, CRITICAL_LOW -> a = a.raise(Urgency.NOW, "value_critical:" + name + STOPGAP);
-                case OUTSIDE -> a = a.raise(Urgency.THIS_WEEK, "value_outside_range:" + name + STOPGAP);
-                default -> { }                               // inside the range, or no printed range: nothing
+                case CRITICAL_HIGH -> verdicts.add(new ValueVerdict(id, ValueVerdict.Kind.CRITICAL, Urgency.NOW, ValueVerdict.Side.HIGH,
+                        UrgencyReason.VALUE_CRITICAL.of(name, STOPGAP)));
+                case CRITICAL_LOW -> verdicts.add(new ValueVerdict(id, ValueVerdict.Kind.CRITICAL, Urgency.NOW, ValueVerdict.Side.LOW,
+                        UrgencyReason.VALUE_CRITICAL.of(name, STOPGAP)));
+                case OUTSIDE -> verdicts.add(new ValueVerdict(id, ValueVerdict.Kind.OUTSIDE, Urgency.THIS_WEEK, printedSide(v),
+                        UrgencyReason.VALUE_OUTSIDE_RANGE.of(name, STOPGAP)));
+                case NONE -> verdicts.add(unraised(id, v, name, STOPGAP, text));
+            }
+        }
+        for (ValueVerdict r : verdicts) {
+            if (r.level() != Urgency.ROUTINE) {
+                a = a.raise(r.level(), r.reason());          // the row and the banner share one string, by construction
             }
         }
 
@@ -87,8 +107,8 @@ public class UrgencyService {
         for (Map<String, Object> v : unverifiedValues(facts)) {
             String name = String.valueOf(v.getOrDefault("canonical_name", v.get("name"))).toLowerCase(Locale.ROOT);
             switch (criticalKind(v, text)) {
-                case CRITICAL_HIGH, CRITICAL_LOW -> a = a.raise(Urgency.NOW, "unverified_value_critical:" + name);
-                case OUTSIDE -> a = a.raise(Urgency.THIS_WEEK, "unverified_value_outside_range:" + name);
+                case CRITICAL_HIGH, CRITICAL_LOW -> a = a.raise(Urgency.NOW, UrgencyReason.UNVERIFIED_VALUE_CRITICAL.of(name, null));
+                case OUTSIDE -> a = a.raise(Urgency.THIS_WEEK, UrgencyReason.UNVERIFIED_VALUE_OUTSIDE_RANGE.of(name, null));
                 default -> { }
             }
         }
@@ -99,7 +119,7 @@ public class UrgencyService {
             if (due != null && !String.valueOf(due).isBlank()) {
                 try {
                     if (LocalDate.parse(String.valueOf(due)).isBefore(today)) {
-                        a = a.raise(Urgency.THIS_WEEK, "follow_up_past_due");
+                        a = a.raise(Urgency.THIS_WEEK, UrgencyReason.FOLLOW_UP_PAST_DUE.of(null, null));
                     }
                 } catch (RuntimeException ignored) {
                     // an unparseable date is not a reason to escalate or to fail
@@ -114,13 +134,15 @@ public class UrgencyService {
         boolean prescription = "prescription".equalsIgnoreCase(facts.document().documentType());
         if (!prescription && facts.clinicalContext() != null
                 && facts.clinicalContext().get("diagnosis") instanceof List<?> dx && !dx.isEmpty()) {
-            a = a.raise(Urgency.THIS_WEEK, "diagnosis_present");
+            a = a.raise(Urgency.THIS_WEEK, UrgencyReason.DIAGNOSIS_PRESENT.of(null, null));
         }
 
         if (facts.document().extractionJson() != null && containsEmergencyPhrase(facts.document().extractionJson())) {
-            a = a.raise(Urgency.NOW, "text_emergency_phrase");
+            a = a.raise(Urgency.NOW, UrgencyReason.TEXT_EMERGENCY_PHRASE.of(null, null));
         }
-        return a;
+        // A shown value without an observation id raised the document above and has no row to hang a verdict on: it
+        // emits none (as DR-28's unverified values), so the port's refusal of an id-less verdict cannot cost the level.
+        return a.withValues(verdicts.stream().filter(v -> v.observationId() != null).toList());
     }
 
     /**
@@ -133,11 +155,39 @@ public class UrgencyService {
     static final String STOPGAP = "|stopgap";
 
     /** A per-marker verdict and the entry that produced it, so the reason can name the rule. */
-    private record Verdict(Urgency level, MarkerThreshold threshold) {
+    private record Verdict(Urgency level, MarkerThreshold threshold, double value) {
         String reasonFor(String name) {
-            String kind = level == Urgency.NOW ? "value_critical:" : "value_outside_range:";
-            return kind + name + "|threshold:" + threshold.source();
+            UrgencyReason kind = level == Urgency.NOW ? UrgencyReason.VALUE_CRITICAL : UrgencyReason.VALUE_OUTSIDE_RANGE;
+            return kind.of(name, "|threshold:" + threshold.source());
         }
+
+        ValueVerdict.Side side() {
+            return threshold.side(value);
+        }
+    }
+
+    /**
+     * F2: the verdict of a row that raises nothing. INSIDE only when the code proves it ({@link #insideByCode}); OUTSIDE
+     * (side from the printed range) when the printed range places it outside but the rule in force does not escalate
+     * (DR-17's never-escalating markers, a signed-off tier not reached); every other shape is UNKNOWN, which withholds
+     * reassurance. {@code rule} is the rule that declined to raise: {@code |stopgap} or {@code |threshold:<source>}.
+     */
+    private ValueVerdict unraised(UUID id, Map<String, Object> v, String name, String rule, String text) {
+        if (insideByCode(v)) {
+            return new ValueVerdict(id, ValueVerdict.Kind.INSIDE, Urgency.ROUTINE, null, "value_inside:" + name + rule);
+        }
+        if (criticalKind(v, text) != Kind.NONE) {
+            return new ValueVerdict(id, ValueVerdict.Kind.OUTSIDE, Urgency.ROUTINE, printedSide(v),
+                    "value_outside_no_escalation:" + name + rule);
+        }
+        return new ValueVerdict(id, ValueVerdict.Kind.UNKNOWN, Urgency.ROUTINE, null, "value_unknown:" + name + rule);
+    }
+
+    /** Which end of the printed range a value outside it sits at; only called once criticalKind placed it outside. */
+    private static ValueVerdict.Side printedSide(Map<String, Object> v) {
+        Optional<Double> value = number(v.get("value"));
+        Optional<Double> high = number(v.get("ref_high"));
+        return value.isPresent() && high.isPresent() && value.get() > high.get() ? ValueVerdict.Side.HIGH : ValueVerdict.Side.LOW;
     }
 
     /**
@@ -166,7 +216,7 @@ public class UrgencyService {
                 .filter(MarkerThreshold::isLive)
                 .filter(t -> t.matches(String.valueOf(canonical), unit))
                 .findFirst()
-                .flatMap(t -> t.assess(value.get()).map(level -> new Verdict(level, t)));
+                .flatMap(t -> t.assess(value.get()).map(level -> new Verdict(level, t, value.get())));
     }
 
     /** Whole-token match against the config phrases, both scripts; "urgently" is a token, "surgent" is not. */
@@ -233,103 +283,12 @@ public class UrgencyService {
     private static final com.fasterxml.jackson.databind.ObjectMapper MAPPER =
             new com.fasterxml.jackson.databind.ObjectMapper();
 
-    /** A comparison operator: the lab declined to give a number, so there is no reading to compare. */
-    private static final java.util.regex.Pattern BOUNDED =
-            java.util.regex.Pattern.compile("[<>\u2264\u2265]|<=|>=");
-
-    /** The number itself, with optional sign, thousands groups and a decimal point or comma. */
-    private static final java.util.regex.Pattern NUMBER =
-            java.util.regex.Pattern.compile("-?\\d+(?:[.,]\\d+)*");
-
     /**
-     * The reading a cell states, or empty when it does not state one.
-     *
-     * <p>This used to delete every character except digits, {@code .} and {@code -} and parse what was left.
-     * On batch 2 that gave the right answer every time — by luck, not by reading: {@code "80.30 L"},
-     * {@code "> 89"}, {@code "6,100"} and {@code "08"} all happened to survive it. <b>The luck runs out on a
-     * decimal comma:</b> a European {@code "1,5"} stripped to {@code "15"}, a tenfold error, silently, on a
-     * number a family is shown and a threshold is applied to.</p>
-     *
-     * <p>Empty is the safe answer and is used freely. A value with no reading escalates nothing and is shown
-     * as printed; a value read WRONGLY reaches a family as a number. So a bound ({@code "> 89"}), a range
-     * ({@code "0-2"}), two numbers in one cell ({@code "130 / 80"}) and an ambiguous comma ({@code "1,23"} —
-     * 1.23 or 123?) are all refused rather than guessed.</p>
+     * The reading a cell states, or empty when it does not state one: {@link PrintedRange#number}, which owns the rule
+     * (and its history) so the pages can read it without depending on this service.
      */
     static Optional<Double> number(Object raw) {
-        if (raw == null) {
-            return Optional.empty();
-        }
-        String text = DocumentFacts.fold(String.valueOf(raw));
-        if (text.isBlank() || BOUNDED.matcher(text).find()) {
-            return Optional.empty();
-        }
-        // A unit can carry digits ("10^3/uL"), and they are not part of the reading. The value is printed
-        // first, so the unit is cut away before the number is looked for.
-        text = text.replaceAll("\\b10\\s*\\^?\\s*\\d+\\s*/.*$", " ").trim();
-
-        java.util.regex.Matcher m = NUMBER.matcher(text);
-        if (!m.find()) {
-            return Optional.empty();
-        }
-        String first = m.group();
-        // A minus that is not the sign — "1.5-", "--2" — is a mark we do not understand, not a reading. The
-        // number pattern never captures it, so it has to be caught on the surrounding text.
-        int after = m.end();
-        if ((after < text.length() && text.charAt(after) == '-')
-                || (m.start() > 0 && text.charAt(m.start() - 1) == '-')) {
-            return Optional.empty();
-        }
-        // Two separate numbers in one cell is a range or a pair (a blood pressure), not a reading. A second
-        // match that is not simply the same digits repeated means we cannot say which number is THE value.
-        if (m.find()) {
-            return Optional.empty();
-        }
-        // Anything left over that is a digit means the cut above missed something; refuse rather than read a
-        // fragment. Letters and symbols (a flag "L", a unit, brackets) are fine and expected.
-        String remainder = text.replace(first, " ");
-        if (remainder.chars().anyMatch(Character::isDigit)) {
-            return Optional.empty();
-        }
-        return parseGrouped(first);
-    }
-
-    /**
-     * Turns one matched number into a value, deciding what a comma means.
-     *
-     * <p>{@code "1,234"} is a thousands group; {@code "1,5"} is a decimal comma; {@code "1,23"} is genuinely
-     * both — 1.23 in Europe, an impossible group of two digits elsewhere — and is refused. The rule is the
-     * group's length: exactly three digits after every comma is a separator, one or more than three is a
-     * decimal comma, and two is ambiguous.</p>
-     */
-    private static Optional<Double> parseGrouped(String token) {
-        boolean negative = token.startsWith("-");
-        String digits = negative ? token.substring(1) : token;
-        if (digits.startsWith(".") || digits.startsWith(",") || digits.endsWith("-")) {
-            return Optional.empty();
-        }
-        String[] parts = digits.split("[.,]", -1);
-        if (parts.length > 1) {
-            char separator = digits.charAt(digits.indexOf(parts[0]) + parts[0].length());
-            String tail = parts[parts.length - 1];
-            if (separator == ',' && parts.length == 2) {
-                if (tail.length() == 2) {
-                    return Optional.empty();                 // "1,23": decimal comma or bad grouping?
-                }
-                if (tail.length() != 3) {
-                    digits = parts[0] + "." + tail;           // "1,5" is one and a half
-                } else {
-                    digits = parts[0] + tail;                // "6,100" is six thousand one hundred
-                }
-            } else if (separator == ',') {
-                digits = String.join("", parts);             // "1,234,567"
-            }
-        }
-        try {
-            double value = Double.parseDouble(digits);
-            return Optional.of(negative ? -value : value);
-        } catch (NumberFormatException e) {
-            return Optional.empty();
-        }
+        return PrintedRange.number(raw);
     }
 
     /** Where a value sits against its printed range. NONE also covers "no printed range". */
@@ -361,19 +320,9 @@ public class UrgencyService {
         return x <= cfg.getCriticalLowMultiple() * low.get() || marked ? Kind.CRITICAL_LOW : Kind.OUTSIDE;
     }
 
-    /**
-     * INSIDE by code (D35, and F2's INSIDE verdict when it lands): the value and BOTH printed bounds parse as one
-     * reading each ({@link #number}) and low ≤ value ≤ high. A one-sided range ("<100"), a bound, a pair, an
-     * ambiguous comma, a qualitative result or an inverted range is not inside — it is unknown, and unknown never
-     * supports a reassurance. (An inverted range needs no clause of its own: no value satisfies low ≤ v ≤ high when
-     * low > high.)
-     */
+    /** INSIDE by code (D35, F2's INSIDE verdict): {@link PrintedRange#insideByCode}, the one copy of the rule. */
     static boolean insideByCode(Map<String, Object> v) {
-        Optional<Double> value = number(v.get("value"));
-        Optional<Double> low = number(v.get("ref_low"));
-        Optional<Double> high = number(v.get("ref_high"));
-        return value.isPresent() && low.isPresent() && high.isPresent()
-                && value.get() >= low.get() && value.get() <= high.get();
+        return PrintedRange.insideByCode(v);
     }
 
     static final int NEAR_CHARS = 60;

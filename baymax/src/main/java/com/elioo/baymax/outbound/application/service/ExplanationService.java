@@ -16,6 +16,7 @@ import com.elioo.baymax.outbound.domain.DeliveryOutcome;
 import com.elioo.baymax.outbound.domain.OutboundMessage;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.outbound.domain.UrgencyAssessment;
+import com.elioo.baymax.outbound.domain.ValueVerdict;
 import com.elioo.healthcare.llm.model.LlmRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,6 +30,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -63,7 +65,6 @@ public class ExplanationService implements ExplainDocumentUseCase {
     private final OutboundMessagePort messages;
     private final MeteredLlmClient metered;
     private final ExtractionModelConfiguration.ExtractionClients clients;
-    private final UrgencyService urgency;
     private final MessageSafetyCheck safety;
     private final OutboundMessageGate gate;
     private final ReviewerNotificationPort reviewer;
@@ -333,7 +334,11 @@ public class ExplanationService implements ExplainDocumentUseCase {
     }
 
     /**
-     * May the ROUTINE message say "everything is within the normal range"?
+     * ONE HALF of the normal-range claim, from the printed ranges only: never call it alone. The claim the ROUTINE
+     * message makes is {@link #canSayWithinNormalRange(DocumentFacts, UrgencyAssessment)}, which also needs every
+     * value's verdict INSIDE (a signed-off threshold can raise a value its printed range calls inside).
+     *
+     * <p>May the ROUTINE message say "everything is within the normal range"?
      *
      * <p>Only when the document actually carries values with printed ranges and every one of them is inside.
      * The claim is about the document, not about the patient, and a document with no printed ranges cannot
@@ -348,7 +353,7 @@ public class ExplanationService implements ExplainDocumentUseCase {
      * strings existing and a blank model flag are not evidence; LDL 250 against '<100' was claimed normal (D35).
      * The model's flag and critical mark may withdraw the claim, never grant it.
      */
-    static boolean canSayWithinNormalRange(DocumentFacts facts) {
+    static boolean printedRangesAllowTheClaim(DocumentFacts facts) {
         List<Map<String, Object>> values = facts.values();
         if (values == null || values.isEmpty()) {
             return false;
@@ -373,6 +378,28 @@ public class ExplanationService implements ExplainDocumentUseCase {
         return true;
     }
 
+    /**
+     * F2 (c): the claim as the ROUTINE message makes it, and the only form to call: the printed-range half above AND every shown value's verdict
+     * INSIDE. The verdict is the rule that set the urgency: a value inside its printed range that a signed-off
+     * threshold raises is not inside, and a stored verdict never softens. A value with no verdict withholds the claim.
+     * Joined on observation id, never on name (two rows can share one).
+     */
+    static boolean canSayWithinNormalRange(DocumentFacts facts, UrgencyAssessment assessed) {
+        if (!printedRangesAllowTheClaim(facts)) {
+            return false;
+        }
+        return facts.values().stream().allMatch(v -> verdictOf(v, assessed)
+                .map(verdict -> verdict.kind() == ValueVerdict.Kind.INSIDE).orElse(false));
+    }
+
+    /** The assessment's verdict for this shown value, by observation id; empty for a value with no id or no verdict. */
+    static Optional<ValueVerdict> verdictOf(Map<String, Object> value, UrgencyAssessment assessed) {
+        if (!(value.get("id") instanceof UUID id)) {
+            return Optional.empty();
+        }
+        return assessed.values().stream().filter(v -> id.equals(v.observationId())).findFirst();
+    }
+
     /** The fixed skeleton: template lines with the extraction's own numbers. */
     String skeleton(DocumentFacts facts, UrgencyAssessment assessed, boolean detail) {
         Document d = facts.document();
@@ -386,7 +413,7 @@ public class ExplanationService implements ExplainDocumentUseCase {
         if (detail) {
             StringBuilder b = new StringBuilder(copy.bn("detail.header", vars)).append('\n');
             for (Map<String, Object> v : facts.values()) {
-                b.append(line(v, kindOf(v, facts), v)).append('\n');
+                b.append(line(v, kindOf(v, assessed), v)).append('\n');
             }
             for (Map<String, Object> f : facts.followUps()) {
                 if (f.get("due_date") != null) {
@@ -404,7 +431,7 @@ public class ExplanationService implements ExplainDocumentUseCase {
         return switch (assessed.level()) {
             case NOW -> copy.bn("explanation.now", vars);
             case THIS_WEEK -> copy.bn("explanation.this_week", vars);
-            case ROUTINE -> copy.bn(canSayWithinNormalRange(facts)
+            case ROUTINE -> copy.bn(canSayWithinNormalRange(facts, assessed)
                     ? "explanation.routine" : "explanation.routine.filed", vars);
         };
     }
@@ -412,7 +439,7 @@ public class ExplanationService implements ExplainDocumentUseCase {
     private String standout(DocumentFacts facts, UrgencyAssessment assessed) {
         List<String> lines = new ArrayList<>();
         for (Map<String, Object> v : facts.values()) {
-            String kind = kindOf(v, facts);
+            String kind = kindOf(v, assessed);
             if (kind != null) {
                 lines.add(line(v, kind, v));
             }
@@ -423,15 +450,16 @@ public class ExplanationService implements ExplainDocumentUseCase {
         return String.join("\n", lines);
     }
 
-    /** Which standout line a value earns, under the same STOPGAP rule urgency uses; null inside the range or without one. */
-    private String kindOf(Map<String, Object> v, DocumentFacts facts) {
-        String text = facts.document().extractionJson() == null ? "" : facts.document().extractionJson();
-        return switch (urgency.criticalKind(v, text)) {
-            case CRITICAL_HIGH -> "line.value_critical_high";
-            case CRITICAL_LOW -> "line.value_critical_low";
+    /**
+     * Which standout line a value earns: from its verdict (F2), the very branch that set the urgency, read by observation
+     * id. CRITICAL by side, OUTSIDE as outside the range; INSIDE, UNKNOWN and a value with no verdict earn none.
+     */
+    private static String kindOf(Map<String, Object> v, UrgencyAssessment assessed) {
+        return verdictOf(v, assessed).map(verdict -> switch (verdict.kind()) {
+            case CRITICAL -> verdict.side() == ValueVerdict.Side.LOW ? "line.value_critical_low" : "line.value_critical_high";
             case OUTSIDE -> "line.value_outside_range";
-            case NONE -> null;
-        };
+            case INSIDE, UNKNOWN -> null;
+        }).orElse(null);
     }
 
     private String line(Map<String, Object> v, String key, Map<String, Object> vars) {

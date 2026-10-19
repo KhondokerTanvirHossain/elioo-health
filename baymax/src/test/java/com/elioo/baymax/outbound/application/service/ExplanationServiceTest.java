@@ -74,7 +74,7 @@ class ExplanationServiceTest {
         Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
         service = new ExplanationService(documents, records, messages, metered,
                 new ExtractionModelConfiguration.ExtractionClients(sonnet, sonnet, sonnet, true),
-                new UrgencyService(properties, clock), new MessageSafetyCheck(properties), new OutboundMessageGate(properties),
+                new MessageSafetyCheck(properties), new OutboundMessageGate(properties),
                 reviewer, delivery, new Copy(), properties, clock,
                 new StoredUrgencyService(new UrgencyService(properties, clock), stored, documents, records, properties, clock));
         when(metered.using(any())).thenReturn(metered);
@@ -257,7 +257,7 @@ class ExplanationServiceTest {
     /** D35 on the sent body: a one-sided range is not "inside", so the ROUTINE message is filed, not reassuring. */
     @Test
     void aRoutineReportWithAOneSidedRangeIsSentAsFiledNotAsAllNormal() {
-        Map<String, Object> ldl = new java.util.HashMap<>(Map.of("name", "LDL", "value", "250", "ref_high", "<100"));
+        Map<String, Object> ldl = new java.util.HashMap<>(Map.of("id", UUID.randomUUID(), "name", "LDL", "value", "250", "ref_high", "<100"));
         done(ldl);
         service.explain(DOC).block();
 
@@ -279,7 +279,7 @@ class ExplanationServiceTest {
      */
     @Test
     void aRoutineReportWithLdl90AgainstALessThan100RangeIsSentAsFiledNotAsAllNormal() {
-        done(new java.util.HashMap<>(Map.of("name", "LDL", "value", "90", "ref_high", "<100")));
+        done(new java.util.HashMap<>(Map.of("id", UUID.randomUUID(), "name", "LDL", "value", "90", "ref_high", "<100")));
         service.explain(DOC).block();
 
         ArgumentCaptor<OutboundMessage> sent = ArgumentCaptor.forClass(OutboundMessage.class);
@@ -297,7 +297,7 @@ class ExplanationServiceTest {
     /** The protected direction, on the sent body: a report whose every value is inside by code still reassures. */
     @Test
     void aRoutineReportWhoseEveryValueIsInsideIsSentWithTheReassuranceLine() {
-        done(new java.util.HashMap<>(Map.of("name", "HbA1c", "value", "5.2", "ref_low", "4.0", "ref_high", "5.6")));
+        done(new java.util.HashMap<>(Map.of("id", UUID.randomUUID(), "name", "HbA1c", "value", "5.2", "ref_low", "4.0", "ref_high", "5.6")));
         service.explain(DOC).block();
 
         ArgumentCaptor<OutboundMessage> sent = ArgumentCaptor.forClass(OutboundMessage.class);
@@ -592,5 +592,70 @@ class ExplanationServiceTest {
                     assertThat(m.urgencyReasons()).containsExactly("value_critical:hba1c|stopgap");
                 })
                 .verifyComplete();
+    }
+
+    // ---- F2: the standout line a value earns is its verdict, from the branch that set the urgency ----
+
+    /** The line for one value, as the template renders it: computed through Copy, never hand-typed. */
+    private static String lineFor(String key, Map<String, Object> v) {
+        Map<String, String> m = new java.util.LinkedHashMap<>();
+        m.put("value_name", String.valueOf(v.get("name")));
+        m.put("value", String.valueOf(v.get("value")));
+        m.put("unit", String.valueOf(v.get("unit")));
+        m.put("ref_low", String.valueOf(v.get("ref_low")));
+        m.put("ref_high", String.valueOf(v.get("ref_high")));
+        return new Copy().bn(key, m);
+    }
+
+    /** What the model was handed: the skeleton is the only place a value's line can come from. */
+    private String promptSent() {
+        ArgumentCaptor<LlmRequest> req = ArgumentCaptor.forClass(LlmRequest.class);
+        verify(metered, org.mockito.Mockito.atLeastOnce()).invoke(eq(AiCallPurpose.EXPLAIN), any(), req.capture());
+        return req.getAllValues().get(0).userPrompt();
+    }
+
+    /**
+     * A live threshold raises potassium 6.4 to NOW (nowHigh 6.0) where the stopgap alone (2x ref_high) would only call
+     * it outside the range. The message's line for that value must be the critical one, from the same verdict that set
+     * NOW, and never "স্বাভাবিক সীমা 3.5–5.1": that is the row reading "outside" under a NOW banner F2 exists to remove.
+     */
+    @Test
+    void aValueALiveThresholdRaisesToNowGetsTheCriticalLineNotTheOutsideOne() {
+        properties.getOutbound().getMarkerThresholds().add(new com.elioo.baymax.outbound.domain.MarkerThreshold("potassium",
+                "mmol/L", 2.5, 6.0, 3.5, 5.1, false, com.elioo.baymax.outbound.domain.MarkerThreshold.Direction.NORMAL,
+                com.elioo.baymax.outbound.domain.MarkerThreshold.Status.ACTIVE, false, "test-signed"));
+        Map<String, Object> potassium = ValueVerdictTest.obs("potassium", "6.4", "3.5", "5.1", "mmol/L");
+        done(potassium);
+        replies.push("potassium এসেছে 6.4। এখনই ডাক্তারের কাছে যান। দেরি করবেন না।");
+
+        OutboundMessage m = service.composeChecked(DOC, OutboundMessage.Kind.EXPLANATION).block();
+
+        assertThat(m.urgency()).isEqualTo(Urgency.NOW);
+        assertThat(m.urgencyReasons()).containsExactly("value_critical:potassium|threshold:test-signed");
+        assertThat(promptSent())
+                .contains(lineFor("line.value_critical_high", potassium))
+                .doesNotContain(lineFor("line.value_outside_range", potassium));
+    }
+
+    /**
+     * The other direction: the stored verdict wins over a fresh read. Stored CRITICAL for potassium (an earlier
+     * assessment), and the value now reads inside its printed range: the message is composed at the stored NOW and
+     * the line is still the critical one, because a stored verdict never softens and kindOf reads it, not the number.
+     */
+    @Test
+    void aStoredCriticalVerdictKeepsTheCriticalLineWhenAFreshReadWouldNot() {
+        Map<String, Object> potassium = ValueVerdictTest.obs("potassium", "4.0", "3.5", "5.1", "mmol/L");   // fresh: inside
+        done(potassium);
+        UUID obs = (UUID) potassium.get("id");
+        stored.rows.put(DOC, new com.elioo.baymax.outbound.domain.StoredUrgency(DOC, Urgency.NOW,
+                List.of("value_critical:potassium|stopgap"), Instant.EPOCH, List.of(new com.elioo.baymax.outbound.domain.ValueVerdict(
+                        obs, com.elioo.baymax.outbound.domain.ValueVerdict.Kind.CRITICAL, Urgency.NOW,
+                        com.elioo.baymax.outbound.domain.ValueVerdict.Side.HIGH, "value_critical:potassium|stopgap"))));
+        replies.push("potassium এসেছে 4.0। এখনই ডাক্তারের কাছে যান। দেরি করবেন না।");
+
+        OutboundMessage m = service.composeChecked(DOC, OutboundMessage.Kind.EXPLANATION).block();
+
+        assertThat(m.urgency()).isEqualTo(Urgency.NOW);
+        assertThat(promptSent()).contains(lineFor("line.value_critical_high", potassium));
     }
 }

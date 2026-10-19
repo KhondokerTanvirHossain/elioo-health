@@ -68,11 +68,47 @@ class StoredUrgencyServiceTest {
                 0.9, status, null, "m", null, 1, NOW, NOW);
         when(documents.find(d.id())).thenReturn(Mono.just(d));
         when(documents.observationsOf(d.id())).thenReturn(Flux.just(
-                Map.of("name", "Potassium", "value", "11.0", "unit", "mmol/L", "ref_low", "3.5", "ref_high", "5.1", "crop_key", "k")));
+                Map.of("id", UUID.randomUUID(), "name", "Potassium", "value", "11.0", "unit", "mmol/L", "ref_low", "3.5", "ref_high", "5.1", "crop_key", "k")));
         when(documents.followUpsOf(d.id())).thenReturn(Flux.empty());
         when(documents.clinicalContextOf(d.id())).thenReturn(Mono.empty());
         when(records.findPatient(d.patientId())).thenReturn(Mono.empty());
         return d;
+    }
+
+    /**
+     * A shown value with no observation id has no row to hang a verdict on, and must not cost the document its level:
+     * it still raises NOW (the DR-28 approach for unverified values) and emits no verdict. The port refuses a verdict
+     * without an id, so emitting one would fail the whole raise and the NOW would never be stored.
+     */
+    @Test
+    void aCriticalValueWithoutAnObservationIdStillStoresNowAndEmitsNoVerdict() {
+        Document d = document(Document.Status.DONE);
+        when(documents.observationsOf(d.id())).thenReturn(Flux.just(
+                Map.of("name", "Potassium", "value", "11.0", "unit", "mmol/L", "ref_low", "3.5", "ref_high", "5.1", "crop_key", "k")));
+
+        StepVerifier.create(service.assessAndStore(d.id())).assertNext(s -> {
+            assertThat(s.level()).isEqualTo(Urgency.NOW);
+            assertThat(s.reasons()).containsExactly("value_critical:potassium|stopgap");
+            assertThat(s.values()).isEmpty();
+        }).verifyComplete();
+    }
+
+    /** The other direction: the same value WITH its id stores NOW and its CRITICAL verdict, joined on that id. */
+    @Test
+    void aCriticalValueWithItsObservationIdStoresNowAndItsVerdict() {
+        Document d = document(Document.Status.DONE);
+        UUID obs = UUID.randomUUID();
+        when(documents.observationsOf(d.id())).thenReturn(Flux.just(
+                Map.of("id", obs, "name", "Potassium", "value", "11.0", "unit", "mmol/L", "ref_low", "3.5", "ref_high", "5.1", "crop_key", "k")));
+
+        StepVerifier.create(service.assessAndStore(d.id())).assertNext(s -> {
+            assertThat(s.level()).isEqualTo(Urgency.NOW);
+            assertThat(s.values()).singleElement().satisfies(v -> {
+                assertThat(v.observationId()).isEqualTo(obs);
+                assertThat(v.kind()).isEqualTo(com.elioo.baymax.outbound.domain.ValueVerdict.Kind.CRITICAL);
+                assertThat(v.reason()).isEqualTo("value_critical:potassium|stopgap");
+            });
+        }).verifyComplete();
     }
 
     @Test

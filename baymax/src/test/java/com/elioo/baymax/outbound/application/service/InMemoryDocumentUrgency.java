@@ -4,11 +4,13 @@ import com.elioo.baymax.outbound.application.port.out.DocumentUrgencyPort;
 import com.elioo.baymax.outbound.domain.StoredUrgency;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.outbound.domain.UrgencyAssessment;
+import com.elioo.baymax.outbound.domain.ValueVerdict;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeSet;
@@ -18,7 +20,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * A test fake of {@link DocumentUrgencyPort} with the adapter's merge semantics (max of the levels, sorted union of the
- * reasons). The database behaviour itself, the trigger included, is DocumentUrgencyNeverLowersTest's on Postgres.
+ * reasons, the higher verdict per observation). The database behaviour itself, the trigger included, is DocumentUrgencyNeverLowersTest's on Postgres.
  */
 public final class InMemoryDocumentUrgency implements DocumentUrgencyPort {
 
@@ -32,11 +34,20 @@ public final class InMemoryDocumentUrgency implements DocumentUrgencyPort {
         StoredUrgency merged = rows.compute(documentId, (id, old) -> {
             TreeSet<String> reasons = new TreeSet<>(assessed.reasons());
             Urgency level = assessed.level();
+            // F2: per observation, the higher verdict is kept (V19's trigger and the adapter's guarded UPDATE)
+            Map<UUID, ValueVerdict> verdicts = new LinkedHashMap<>();
             if (old != null) {
                 reasons.addAll(old.reasons());
                 level = Urgency.max(old.level(), level);
+                old.values().forEach(v -> verdicts.put(v.observationId(), v));
             }
-            return new StoredUrgency(id, level, reasons.stream().toList(), at);
+            for (ValueVerdict v : assessed.values()) {
+                if (v.observationId() == null) {
+                    throw new IllegalStateException("verdict without observation id");
+                }
+                verdicts.merge(v.observationId(), v, ValueVerdict::max);
+            }
+            return new StoredUrgency(id, level, reasons.stream().toList(), at, List.copyOf(verdicts.values()));
         });
         return Mono.just(merged);
     }
