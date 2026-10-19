@@ -37,6 +37,12 @@ class EverySignedInPageIsInTheShellTest {
             entry("POST /app/documents/{id}/delete", Tab.PAPERS));
     // A6: the profile routes answer a redirect to the পরিবার tab, no page of their own
 
+    /**
+     * Fixtures of a route in {@link #UNDER} that answer something other than a page on purpose, as
+     * {@code "<route key>[ #variant]"}. Every other fixture of those routes must answer a 200 page.
+     */
+    static final Set<String> NOT_A_PAGE = Set.of();
+
     @Test
     void everySignedInPageHasTheHeaderAndTheTabBarWithItsOwnTabCurrent() {
         List<RouteTable.Route> routes = RouteTable.of(new WebUiTestKit().router).stream()
@@ -52,13 +58,18 @@ class EverySignedInPageIsInTheShellTest {
                     f.stubs().accept(kit);
                     EntityExchangeResult<byte[]> r = RenderedPages.exchange(kit, route, f, lang);
                     MediaType type = r.getResponseHeaders().getContentType();
+                    String where = route.key() + (f.name().isEmpty() ? "" : " #" + f.name()) + " " + lang;
                     if (r.getStatus().value() != 200 || type == null || !type.isCompatibleWith(MediaType.TEXT_HTML)
                             || r.getResponseBody() == null) {
+                        // Per fixture, not per route: a page route whose main fixture breaks while a variant still
+                        // answers would otherwise drop that fixture out of every derived check unseen (A9's review).
+                        if (UNDER.containsKey(route.key()) && !NOT_A_PAGE.contains(where.substring(0, where.length() - lang.length() - 1))) {
+                            failures.add(where + ": a fixture of a page route answered " + r.getStatus().value() + " " + type + ", not a page");
+                        }
                         continue;
                     }
                     pages++;
                     answeredAPage.add(route.key());
-                    String where = route.key() + (f.name().isEmpty() ? "" : " #" + f.name()) + " " + lang;
                     Tab under = UNDER.get(route.key());
                     if (under == null) {
                         failures.add(where + ": a signed-in page whose tab is not declared in UNDER");

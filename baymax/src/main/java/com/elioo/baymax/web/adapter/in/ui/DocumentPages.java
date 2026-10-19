@@ -78,8 +78,10 @@ public class DocumentPages implements WebPages {
     /**
      * GET /app/documents/{id}: while the paper is RECEIVED or PROCESSING, the reading page (s09); otherwise the document
      * page as before (A12 replaces DONE, B5 NEEDS_RETAKE and FAILED). The branch reads the status alone, which records
-     * nothing, so the page records one DOCUMENT_VIEW whichever page it draws; a paper finished between the two reads is
-     * drawn finished, never as a reading page that would wait for a change that already happened.
+     * nothing, so a finished paper's page never reads the reading view and records the one DOCUMENT_VIEW of the document
+     * page. A paper finished between the two reads is drawn finished, never as a reading page that would wait for a
+     * change that already happened; that page records two DOCUMENT_VIEW rows (the reading view's and the document
+     * page's), accepted for a window of milliseconds rather than a second audit path.
      */
     public Mono<ServerResponse> documentPage(ServerRequest request) {
         WebSession session = SessionAuthFilter.session(request);
@@ -110,8 +112,15 @@ public class DocumentPages implements WebPages {
     String progressBody(Lang lang, ReadingView r) {
         boolean received = Document.Status.RECEIVED.name().equals(r.document().status());
         String id = r.document().documentId();
+        Duration untilSlow = SLOW.minus(Duration.between(r.receivedAt(), r.now()));
+        boolean slow = !untilSlow.isPositive();
         StringBuilder b = new StringBuilder("<section id=\"progress\" data-status-url=\"").append(BASE).append("/documents/")
-                .append(esc(id)).append("/status\" data-status=\"").append(esc(r.document().status())).append("\">");
+                .append(esc(id)).append("/status\" data-status=\"").append(esc(r.document().status())).append('"');
+        if (!slow) {
+            // a page left open shows the line when its time comes: progress.js reads the seconds, the copy stays here
+            b.append(" data-slow-in=\"").append((untilSlow.toMillis() + 999) / 1000).append('"');
+        }
+        b.append('>');
         b.append("<span class=\"pchip\">").append(copy.t(lang, "result.patient", r.patient().name(), r.patient().age())).append("</span>");
         b.append("<h1>").append(copy.t(lang, "progress.title")).append("</h1>");
         int pages = r.document().pageCount() == null ? 1 : Math.max(1, r.document().pageCount());
@@ -124,9 +133,7 @@ public class DocumentPages implements WebPages {
                 .append(received ? "" : " <span class=\"meta\">" + copy.t(lang, "progress.step.processing.note") + "</span>").append("</li>")
                 .append("<li class=\"next\">").append(copy.t(lang, "progress.step.done"))
                 .append(" <span class=\"meta\">").append(copy.t(lang, "progress.step.done.note")).append("</span></li></ol>");
-        if (Duration.between(r.receivedAt(), r.now()).compareTo(SLOW) >= 0) {
-            b.append("<p class=\"warn\">").append(copy.t(lang, "progress.slow")).append("</p>");
-        }
+        b.append("<p id=\"slow\" class=\"warn\"").append(slow ? "" : " hidden").append('>').append(copy.t(lang, "progress.slow")).append("</p>");
         b.append("<p>").append(copy.t(lang, "progress.leave")).append("</p>");
         b.append("<a class=\"btn quiet\" href=\"").append(Tab.PAPERS.path).append("?patient=").append(r.patient().id()).append("\">")
                 .append(copy.t(lang, "progress.timeline")).append("</a></section>");

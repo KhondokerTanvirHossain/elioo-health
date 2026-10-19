@@ -11,11 +11,8 @@ import com.elioo.baymax.healthrecord.domain.PatientAccess;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.web.application.port.out.AuditPort;
 import com.elioo.baymax.web.domain.AuditEvent;
-import com.elioo.baymax.web.domain.ViewerLocale;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.http.HttpStatus;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
@@ -41,6 +38,7 @@ class ResultServiceTest {
     static final UUID FAMILY = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4000201");
     static final UUID PATIENT = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4000202");
     static final UUID DOC = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4000203");
+    static final Instant SENT = NOW.minusSeconds(30);
     static final PatientProfile MA = new PatientProfile(PATIENT, FAMILY, "Ma", 64, PatientProfile.Sex.FEMALE, List.of(), NOW, NOW);
 
     final HealthRecordPort records = mock(HealthRecordPort.class);
@@ -52,26 +50,23 @@ class ResultServiceTest {
     @BeforeEach
     void wire() {
         service = new ResultService(records, documents, intake, audit, Clock.fixed(NOW, ZoneOffset.UTC));
-        Document received = Document.received(PATIENT, FAMILY, 2, NOW.minusSeconds(30)).withId(DOC);
-        when(documents.findVisible(FAMILY, DOC)).thenReturn(Mono.just(received));
+        // sent 30 s ago and moved to PROCESSING 10 s ago: its arrival (createdAt) and its last change (updatedAt) differ
+        Document processing = Document.received(PATIENT, FAMILY, 2, SENT).withId(DOC).withStatus(Document.Status.PROCESSING, null, NOW.minusSeconds(10));
+        when(documents.findVisible(FAMILY, DOC)).thenReturn(Mono.just(processing));
         when(records.visiblePatient(FAMILY, PATIENT)).thenReturn(Mono.just(new PatientAccess(MA, true)));
         when(records.findFamily(FAMILY)).thenReturn(Mono.just(new FamilyAccount(FAMILY, "+8801700000000", "Tanvir", FamilyAccount.Plan.FREE, NOW, NOW)));
         when(audit.record(any())).thenReturn(Mono.empty());
-        when(intake.view(DOC)).thenReturn(Mono.just(DocumentView.pending(received)));
-    }
-
-    @ParameterizedTest(name = "{0} is in Bangladesh: {1}")
-    @CsvSource({"+8801700000000,true", "+8801700000799,true", "+447700900123,false", "+971500000000,false", "+15555550123,false"})
-    void theViewersCountryComesFromTheirNumber(String e164, boolean bangladesh) {
-        assertThat(ViewerLocale.of(e164).bangladesh()).isEqualTo(bangladesh);
+        when(intake.view(DOC)).thenReturn(Mono.just(DocumentView.pending(processing)));
     }
 
     /** The poll reads the status and nothing else: no audit row every 5 s, no view, no patient. */
     @Test
     void theStatusIsTheStoredStatusAloneAndRecordsNothing() {
-        StepVerifier.create(service.status(FAMILY, DOC)).expectNext(Document.Status.RECEIVED).verifyComplete();
+        StepVerifier.create(service.status(FAMILY, DOC)).expectNext(Document.Status.PROCESSING).verifyComplete();
         verify(audit, never()).record(any());
         verify(intake, never()).view(any());
+        verify(records, never()).visiblePatient(any(), any());
+        verify(records, never()).findFamily(any());
     }
 
     @Test
@@ -79,13 +74,28 @@ class ResultServiceTest {
         StepVerifier.create(service.reading(FAMILY, DOC)).assertNext(r -> {
             assertThat(r.patient().name()).isEqualTo("Ma");
             assertThat(r.owner()).isTrue();
-            assertThat(r.document().status()).isEqualTo("RECEIVED");
-            assertThat(r.receivedAt()).isEqualTo(NOW.minusSeconds(30));
+            assertThat(r.document().status()).isEqualTo("PROCESSING");
+            // when it arrived, not when its status last changed: the page's time and the five-minute line count from here
+            assertThat(r.receivedAt()).isEqualTo(SENT);
             assertThat(r.now()).isEqualTo(NOW);
             assertThat(r.viewer().bangladesh()).isTrue();
         }).verifyComplete();
         // the reading page is the document page: it records the view, as the document page always has
         verify(audit).record(argThat(e -> e.kind() == AuditEvent.Kind.DOCUMENT_VIEW && DOC.equals(e.documentId())));
+    }
+
+    /** The other direction of owner(): a patient shared with this family is read as not theirs, from PatientAccess. */
+    @Test
+    void aSharedPatientsReadingViewIsNotTheOwners() {
+        when(records.visiblePatient(FAMILY, PATIENT)).thenReturn(Mono.just(new PatientAccess(MA, false)));
+        StepVerifier.create(service.reading(FAMILY, DOC)).assertNext(r -> assertThat(r.owner()).isFalse()).verifyComplete();
+    }
+
+    /** A reader abroad: the viewer comes from the family's own number. */
+    @Test
+    void aFamilyAbroadReadsAsAbroad() {
+        when(records.findFamily(FAMILY)).thenReturn(Mono.just(new FamilyAccount(FAMILY, "+447700900123", "Tanvir", FamilyAccount.Plan.FREE, NOW, NOW)));
+        StepVerifier.create(service.reading(FAMILY, DOC)).assertNext(r -> assertThat(r.viewer().bangladesh()).isFalse()).verifyComplete();
     }
 
     @Test

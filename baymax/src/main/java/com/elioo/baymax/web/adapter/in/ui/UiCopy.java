@@ -1,6 +1,7 @@
 package com.elioo.baymax.web.adapter.in.ui;
 
 import com.elioo.baymax.outbound.application.service.BanglaDate;
+import com.elioo.baymax.web.domain.ViewerLocale;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -11,7 +12,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
-import java.time.ZoneId;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -118,15 +118,12 @@ public class UiCopy {
         return Html.esc(lang == Lang.BN ? BanglaDate.format(isoDate, null) : isoDate);
     }
 
-    /** The patient's calendar (A10 swaps in PatientCalendar.ZONE). */
-    private static final ZoneId PATIENT_ZONE = ZoneId.of("Asia/Dhaka");
-
     /**
      * A time of day on the patient's calendar (Dhaka), HTML-escaped: on a Bangla page the part of the day and a 12-hour
      * clock in Bangla digits ("সকাল ১০:১২"), on an English page {@code HH:mm}. The parts of the day are copy keys.
      */
     public String time(Lang lang, Instant at) {
-        LocalTime t = LocalTime.ofInstant(at, PATIENT_ZONE);
+        LocalTime t = LocalTime.ofInstant(at, ViewerLocale.PATIENT_ZONE);   // one zone constant (A10 swaps in PatientCalendar.ZONE)
         if (lang != Lang.BN) {
             return Html.esc(String.format(java.util.Locale.ROOT, "%02d:%02d", t.getHour(), t.getMinute()));
         }
