@@ -46,7 +46,9 @@ import java.util.concurrent.atomic.AtomicReference;
  * asserted afterwards: the stored message carries the urgency it was composed at, or nothing is stored.
  *
  * <p>F4: composition, persistence and delivery are three steps. {@link #composeChecked} composes and decides the gate
- * status and touches nothing; {@link #release} stores (and parks a PENDING row with the reviewer); {@link #deliver} is
+ * status; the one thing it writes is the document's stored urgency, through the one writer
+ * ({@link StoredUrgencyService#assessAndStore}: it can raise the level, add reasons and stamp urgency_assessed_at, never
+ * lower), so it is not a pure preview — but it stores no message and delivers nothing; {@link #release} stores (and parks a PENDING row with the reviewer); {@link #deliver} is
  * the only path from this service to {@link MessageDeliveryPort}, behind an atomic claim on the row, so a row reaches
  * a family at most once. DETAIL is cached per document while its urgency is current and the document has not changed
  * since it was composed ({@link #stillCurrent}).

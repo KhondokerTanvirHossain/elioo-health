@@ -188,6 +188,8 @@ class StoredUrgencyServiceTest {
         assertThat(warns).containsExactly("[baymax] urgency sweep skipped documentId=" + throwing.id() + " error=IllegalStateException");
         assertThat(logged.list.stream().map(ILoggingEvent::getFormattedMessage))
                 .allSatisfy(l -> assertThat(l).doesNotContain("Ma Potassium").doesNotContain("11.0"));
+        // an attached throwable prints its message (and the value in it) in the stack trace the formatted line hides
+        assertThat(logged.list).allSatisfy(e -> assertThat(e.getThrowableProxy()).as("no throwable on " + e.getFormattedMessage()).isNull());
     }
 
     /** The sweep judges past-due on the patient's day: it asks the port for the Dhaka date, not the UTC one. */

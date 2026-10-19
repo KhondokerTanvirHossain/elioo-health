@@ -273,9 +273,10 @@ class DocumentUrgencyNeverLowersTest {
     }
 
     /**
-     * F7: the sweep's predicate and the rule judge "past due" on the same (Dhaka) day, at the instants of
+     * F7: the sweep and the rule judge "past due" on the same (Dhaka) day, at the instants of
      * PatientCalendarRulesAgreeTest. The rule's verdict is computed, not remembered: a follow-up due 2026-10-19 is in the
-     * queue exactly when UrgencyService, at that instant, says follow_up_past_due.
+     * queue, and a real {@code sweep()} under that clock stores follow_up_past_due, exactly when UrgencyService, at that
+     * instant, says follow_up_past_due. The sweep's own choice of day is what is under test, not a day computed here.
      */
     @ParameterizedTest(name = "at {0} a follow-up due 2026-10-19 is queued: {1}")
     @CsvSource({"2026-10-19T17:59:00Z,false",     // 23:59 on the 19th in Dhaka: due today, not past
@@ -294,9 +295,28 @@ class DocumentUrgencyNeverLowersTest {
                     .reasons().contains("follow_up_past_due");
 
             boolean queued = port.needingAssessment(PatientCalendar.today(clock), 500).collectList().block().contains(doc);
+            // and the sweep itself, under the same clock: it picks the day it queries by, so the stored reason is the proof
+            context.getBean(DocumentUrgencyUseCase.class).sweep().block();
+            boolean sweptPastDue = port.find(doc).block().reasons().contains("follow_up_past_due");
 
             assertThat(ruleSaysPastDue).as("the rule, at " + at).isEqualTo(pastDue);
             assertThat(queued).as("the sweep's predicate agrees with the rule").isEqualTo(ruleSaysPastDue);
+            assertThat(sweptPastDue).as("the sweep, run at " + at + ", stored what the rule says").isEqualTo(ruleSaysPastDue);
+        });
+    }
+
+    /**
+     * The hourly sweep is a registered scheduled task, not just an annotated method: without {@code @EnableScheduling}
+     * in the context (it once lived in the nudge feature's configuration) the annotation does nothing and the past-due
+     * level stops rising with no error anywhere. The cron is set to a minute that will not come during the test.
+     */
+    @Test
+    void theHourlySweepIsScheduled() {
+        runner().withPropertyValues("baymax.urgency.sweep-cron=0 0 0 29 2 *").run(context -> {
+            assertThat(context.getBeansOfType(org.springframework.scheduling.config.ScheduledTaskHolder.class).values().stream()
+                    .flatMap(holder -> holder.getScheduledTasks().stream())
+                    .map(task -> task.getTask().toString()))
+                    .as("scheduled tasks").anyMatch(task -> task.contains("UrgencySweepJob.hourly"));
         });
     }
 
