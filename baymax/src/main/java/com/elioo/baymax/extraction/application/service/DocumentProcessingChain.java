@@ -3,6 +3,7 @@ package com.elioo.baymax.extraction.application.service;
 import com.elioo.baymax.extraction.application.port.out.DocumentRecordPort;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.nudge.application.port.in.NudgeUseCase;
+import com.elioo.baymax.outbound.application.port.in.DocumentUrgencyUseCase;
 import com.elioo.baymax.outbound.application.port.in.ExplainDocumentUseCase;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,7 +14,7 @@ import java.time.Clock;
 import java.util.List;
 
 /**
- * The one processing chain (F9b): extract, then explain, then the nudge check. Fresh uploads and documents a
+ * The one processing chain (F9b): extract, then store the urgency (F1), then explain, then the nudge check. Fresh uploads and documents a
  * restart interrupted both run through here, so they cannot drift apart.
  *
  * <p>Every FAILED written outside {@link DocumentExtractionService} is written here ({@link #fail}), so whatever
@@ -29,6 +30,7 @@ public class DocumentProcessingChain {
     private final NudgeUseCase nudges;
     private final DocumentRecordPort documents;
     private final Clock clock;
+    private final DocumentUrgencyUseCase urgency;
 
     /**
      * Extract → explain → nudges. Not subscribed and not scheduled: the caller decides where it runs. Extraction
@@ -49,9 +51,27 @@ public class DocumentProcessingChain {
                 .flatMap(this::explain);
     }
 
-    /** The explain → nudges half of {@link #run}, for a document whose extraction already finished. */
+    /**
+     * The urgency → explain → nudges half of {@link #run}, for a document whose extraction already finished. Fresh
+     * uploads ({@link #run}) and recovered documents (F9b) both come through here.
+     */
     public Mono<Document> explainOnly(Document done) {
-        return explain(done).flatMap(this::nudge);
+        return storeUrgency(done).flatMap(this::explain).flatMap(this::nudge);
+    }
+
+    // F1: assessed and stored before explain, on the path both fresh uploads (run) and recovery (explainOnly) take, so a
+    // throwing explanation cannot leave a DONE document unassessed. A failure is logged by class name and never undoes
+    // the extraction (the same contract as explain and nudge).
+    private Mono<Document> storeUrgency(Document done) {
+        if (done.status() != Document.Status.DONE) {
+            return Mono.just(done);
+        }
+        return urgency.assessAndStore(done.id())
+                .onErrorResume(e -> {
+                    log.error("[baymax] urgency store failed documentId={} error={}", done.id(), e.getClass().getSimpleName());
+                    return Mono.empty();
+                })
+                .thenReturn(done);
     }
 
     // BMX-6: once the document is DONE or NEEDS_RETAKE, compose the family's message; a failure there is logged and

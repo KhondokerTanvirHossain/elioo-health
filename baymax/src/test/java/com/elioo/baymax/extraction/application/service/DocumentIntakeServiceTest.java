@@ -49,6 +49,9 @@ class DocumentIntakeServiceTest {
     private final DocumentStorageUseCase storage = mock(DocumentStorageUseCase.class);
     private final DocumentExtractionService extraction = mock(DocumentExtractionService.class);
     private final BaymaxProperties properties = new BaymaxProperties();
+    /** F1: the chain's urgency writer; these tests are about intake, so it stores nothing. */
+    private final com.elioo.baymax.outbound.application.port.in.DocumentUrgencyUseCase urgency =
+            mock(com.elioo.baymax.outbound.application.port.in.DocumentUrgencyUseCase.class);
     private final com.elioo.baymax.outbound.application.port.in.ExplainDocumentUseCase explainer =
             mock(com.elioo.baymax.outbound.application.port.in.ExplainDocumentUseCase.class);
     private final com.elioo.baymax.nudge.application.port.in.NudgeUseCase nudges =
@@ -60,8 +63,9 @@ class DocumentIntakeServiceTest {
     void setUp() {
         service = new DocumentIntakeService(records, documents, freeTier, storage, new PageRenderer(),
                 properties, Clock.fixed(NOW, ZoneOffset.UTC),
-                new DocumentProcessingChain(extraction, explainer, nudges, documents, Clock.fixed(NOW, ZoneOffset.UTC)));
+                new DocumentProcessingChain(extraction, explainer, nudges, documents, Clock.fixed(NOW, ZoneOffset.UTC), urgency));
         when(explainer.explain(any())).thenReturn(Mono.empty());
+        when(urgency.assessAndStore(any())).thenReturn(Mono.empty());
         when(nudges.onDocumentDone(any())).thenReturn(Mono.empty());
 
         when(records.findPatient(PATIENT)).thenReturn(Mono.just(new PatientProfile(
