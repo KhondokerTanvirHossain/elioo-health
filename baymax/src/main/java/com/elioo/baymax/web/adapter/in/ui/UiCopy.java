@@ -87,12 +87,7 @@ public class UiCopy {
      * Bangla digits on a Bangla page, exactly as {@link #t} writes it.
      */
     public String plain(Lang lang, String key, Object... args) {
-        String out = raw(lang, key);
-        for (int i = 0; i < args.length; i++) {
-            Object arg = lang == Lang.BN && args[i] instanceof Number n ? BanglaDate.digits(n.toString()) : args[i];
-            out = out.replace("{" + i + "}", String.valueOf(arg));
-        }
-        return out;
+        return raw(lang, key, args);
     }
 
     /**
@@ -155,13 +150,21 @@ public class UiCopy {
         return Html.esc(raw);
     }
 
-    /** The bundle text as written, unescaped, no arguments: for tests and for URL parameters only, never for HTML. */
-    String raw(Lang lang, String key) {
-        String raw = bundles.get(lang).getProperty(key);
-        if (raw == null) {
+    /**
+     * The bundle text as written, unescaped, with {@code {n}} replaced by the arguments as given (a {@link Number} in
+     * Bangla digits on a Bangla page, as {@link #t} writes it): for a URL parameter (the caller encodes it), a JSON body
+     * ({@link #plain}) or a test — never for HTML.
+     */
+    public String raw(Lang lang, String key, Object... args) {
+        String out = bundles.get(lang).getProperty(key);
+        if (out == null) {
             throw new IllegalArgumentException("no UI copy for key " + key);
         }
-        return raw;
+        for (int i = 0; i < args.length; i++) {
+            Object arg = lang == Lang.BN && args[i] instanceof Number n ? BanglaDate.digits(n.toString()) : args[i];
+            out = out.replace("{" + i + "}", String.valueOf(arg));
+        }
+        return out;
     }
 
     /** The string if the key exists, else null — for labels keyed by a value from a document. */

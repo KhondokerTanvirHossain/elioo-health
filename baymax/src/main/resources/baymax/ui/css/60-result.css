@@ -57,3 +57,16 @@
 .crop.big{width:100%}
 .med .cap{margin:0;font-weight:400;overflow-wrap:anywhere;color:var(--c-text-muted);font-size:var(--fs-callout);line-height:var(--lh-callout)}
 .med .zoom{font-size:var(--fs-footnote);line-height:var(--lh-footnote);color:var(--c-primary)}
+/* B3 result-now (s11): one soft-red block per stored reason, then the action for this reader's phone (F7). Red only on .now/.emergency */
+.reason.now,.emergency,.flags.now{display:flex;flex-direction:column;gap:var(--sp-2);margin:0 0 var(--sp-3);padding:var(--sp-4);border-radius:var(--r-m);background:var(--c-status-now-container);color:var(--c-text)}
+.reason.now p,.emergency p,.flags.now p{margin:0}
+.reason.now .lead,.emergency .lead,.flags.now .lead{font-weight:700}
+.btn.now-outline{border:2px solid var(--c-status-now);color:var(--c-status-now);background:var(--c-surface);min-height:56px;text-align:center}
+.btn.now-outline:hover{border:2px solid var(--c-status-now);color:var(--c-status-now);background:var(--c-surface)}
+.emergency .btn,.flags.now .btn{margin-top:var(--sp-2);text-align:center;white-space:normal}
+.fullpage{display:flex;flex-direction:column;gap:var(--sp-1);min-height:var(--target-min);text-decoration:none;color:var(--c-text)}
+.fullpage .page-img{margin:0;max-width:100%}
+.fullpage .cap,.fullpage .zoom{font-size:var(--fs-footnote);line-height:var(--lh-footnote)}
+.fullpage .zoom{text-decoration:underline}
+.now-after{margin:0 0 var(--sp-4)}
+.now-after p{margin:0 0 var(--sp-2)}

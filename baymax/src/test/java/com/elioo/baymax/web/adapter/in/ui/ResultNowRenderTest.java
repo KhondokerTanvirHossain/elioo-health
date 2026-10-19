@@ -49,11 +49,17 @@ class ResultNowRenderTest {
         assertThat(html).doesNotContain("id=\"why-other\"");
     }
 
-    /** A stored reason whose prefix the enum does not know (a legacy row) gets the generic block — never nothing. */
+    /**
+     * A stored reason whose prefix the enum does not know (a legacy row) gets the generic block — never nothing — alone
+     * and beside a known one (where the no-reason fallback cannot stand in for it), in the stored order.
+     */
     @Test
     void anUnknownStoredReasonGetsTheGenericBlock() {
         String block = ResultFixtures.section(now(List.of("retired_rule_2025:potassium"), ResultFixtures.BD), "why-other");
         assertThat(block).contains(copy.t(Lang.BN, "now.why.other")).contains("/page/1");
+        String mixed = now(List.of("text_emergency_phrase", "retired_rule_2025:potassium"), ResultFixtures.BD);
+        assertThat(ResultFixtures.section(mixed, "why-other")).contains(copy.t(Lang.BN, "now.why.other"));
+        assertThat(mixed.indexOf("id=\"why-emergency-phrase\"")).isNotNegative().isLessThan(mixed.indexOf("id=\"why-other\""));
     }
 
     /** A NOW stored with no reason at all (a row from before reasons were kept) is not a NOW page with nothing to show. */
@@ -73,15 +79,45 @@ class ResultNowRenderTest {
         assertThat(html.indexOf("id=\"urgency\"")).isLessThan(html.indexOf("id=\"why-emergency-phrase\""));
     }
 
-    /** The critical row itself sits in its block, from the stored verdict, beside its crop. */
+    /**
+     * The critical row itself sits in its block, from the stored verdict, beside its crop — and only there (s11): the
+     * outside group below keeps the rows no block above has shown, so no row is drawn twice and none is dropped.
+     */
     @Test
-    void aCriticalValueIsShownInItsBlockFromTheStoredVerdict() {
-        var view = ResultFixtures.lab(List.of(ResultFixtures.value("Potassium", "11.0", "mmol/L", "3.5", "5.1", "critical", "high")));
+    void aCriticalValueIsShownOnceInItsBlockAndTheOtherOutsideRowsStayInTheirGroup() {
+        var view = ResultFixtures.lab(List.of(ResultFixtures.value("Potassium", "11.0", "mmol/L", "3.5", "5.1", "critical", "high"),
+                ResultFixtures.value("Sodium", "131", "mmol/L", "135", "145", "outside", "low")));
         String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(view, Urgency.NOW,
                 List.of("value_critical:potassium|stopgap"), GateState.NONE, null, ResultFixtures.BD));
         String block = ResultFixtures.section(html, "why-value-critical");
-        assertThat(block).contains(copy.t(Lang.BN, "now.why.critical")).contains("<a class=\"vrow critical\"")
-                .contains("crop-Potassium.jpg").contains(copy.t(Lang.BN, "value.chip.critical.high"));
+        assertThat(block).contains(copy.t(Lang.BN, "now.why.critical")).contains("<a class=\"vrow critical\" id=\"v-" + id(view, "Potassium"))
+                .contains("crop-Potassium.jpg").contains(copy.t(Lang.BN, "value.chip.critical.high")).doesNotContain("Sodium");
+        assertThat(html).containsOnlyOnce("id=\"v-" + id(view, "Potassium") + "\"");
+        assertThat(ResultFixtures.section(html, "outside")).contains("id=\"v-" + id(view, "Sodium") + "\"").doesNotContain("Potassium");
+        assertThat(block).doesNotContain("/page/");   // the row is the proof: no page images stand in for it
+    }
+
+    /** The other direction: a NOW raised by another rule leaves a critical row in the outside group — never dropped. */
+    @Test
+    void aCriticalRowWithNoValueBlockAboveStaysInTheOutsideGroup() {
+        var view = ResultFixtures.lab(List.of(ResultFixtures.value("Potassium", "11.0", "mmol/L", "3.5", "5.1", "critical", "high")));
+        String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(view, Urgency.NOW,
+                List.of("text_emergency_phrase"), GateState.NONE, null, ResultFixtures.BD));
+        assertThat(html).doesNotContain("id=\"why-value-critical\"").containsOnlyOnce("id=\"v-" + id(view, "Potassium") + "\"");
+        assertThat(ResultFixtures.section(html, "outside")).contains("id=\"v-" + id(view, "Potassium") + "\"");
+    }
+
+    /** Below NOW the value blocks do not exist, so every outside row stays in its group. */
+    @Test
+    void belowNowEveryOutsideRowStaysInItsGroup() {
+        var view = ResultFixtures.lab(List.of(ResultFixtures.value("Sodium", "131", "mmol/L", "135", "145", "outside", "low")));
+        String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(view, Urgency.THIS_WEEK,
+                List.of("value_outside_range:sodium"), GateState.NONE, null, ResultFixtures.BD));
+        assertThat(ResultFixtures.section(html, "outside")).contains("id=\"v-" + id(view, "Sodium") + "\"");
+    }
+
+    private static Object id(com.elioo.baymax.extraction.domain.DocumentView view, String name) {
+        return view.values().stream().filter(v -> name.equals(v.get("name"))).findFirst().orElseThrow().get("id");
     }
 
     /** An unverified value is not an observation: its block shows the whole pages and no value row at all. */
@@ -135,6 +171,29 @@ class ResultNowRenderTest {
                     List.of("value_critical:potassium|stopgap", "unverified_value_critical:x", "retired:x"), GateState.NONE, null, viewer));
             assertThat(html).contains(copy.t(Lang.EN, "now.flags.q"));
             assertThat(html).doesNotContainPattern("[\\u0980-\\u09FF]");
+        }
+    }
+
+    /**
+     * The served page, through the router, from the fixtures every derived page test reads (PageFixtures "now" and
+     * "nowabroad"): contrast, 48 px targets, inline code and the paper label are checked on these blocks only if the
+     * fixtures really render them — a fixture that answered an error page would let those checks pass over nothing.
+     */
+    @Test
+    void theDerivedPageTestsReadEveryNowBlockAsServed() {
+        RouteTable.Route route = RouteTable.of(kit.router).stream().filter(r -> r.key().equals("GET /app/documents/{id}")).findFirst().orElseThrow();
+        for (String variant : List.of("now", "nowabroad")) {
+            PageFixtures.Fixture f = PageFixtures.allOf(route).stream().filter(x -> x.name().equals(variant)).findFirst().orElseThrow();
+            WebUiTestKit fresh = new WebUiTestKit();
+            f.stubs().accept(fresh);
+            var served = RenderedPages.exchange(fresh, route, f, "bn");
+            assertThat(served.getStatus().value()).as(variant).isEqualTo(200);
+            String html = new String(served.getResponseBody(), StandardCharsets.UTF_8);
+            for (String block : DocumentPages.REASON_BLOCKS.values()) {
+                assertThat(html).as(variant + " " + block).contains("id=\"" + block + "\"");
+            }
+            assertThat(html).as(variant).contains("id=\"" + DocumentPages.OTHER_BLOCK + "\"")
+                    .contains(variant.equals("now") ? "id=\"red-flags\"" : "id=\"remote-action\"");
         }
     }
 

@@ -71,8 +71,10 @@ class DocumentPagesRenderTest {
 
     /**
      * Safety constraint, on the page a DONE paper is served since A12 (the summary): the only interpretive text is the
-     * stored urgency's fixed line (#urgency) and Medioo's released words, labelled as such (#says). Take those two
-     * blocks away and nothing interpretive is left — no urgency, risk or advice in the header, the items or the chrome.
+     * stored urgency's fixed line (#urgency), on a NOW paper the s11 body that follows it (B3: the reason blocks and the
+     * emergency action, every word of it fixed bundle copy or a quote from the paper), and Medioo's released words,
+     * labelled as such (#says). Take those blocks away and nothing interpretive is left — no urgency, risk or advice in
+     * the header, the items or the chrome.
      */
     @ParameterizedTest
     @EnumSource(value = Urgency.class, names = {"NOW", "THIS_WEEK"})
@@ -87,12 +89,36 @@ class DocumentPagesRenderTest {
         String says = ResultFixtures.section(body, "says");
         assertThat(banner).contains(kit.copy.urgency(Lang.BN, level, false));
         assertThat(says).contains(kit.copy.t(Lang.BN, "result.says.label")).contains(wording);
-        String rest = Html.page(Lang.BN, "t", body.replace(banner, "").replace(says, ""), 0, false, "", false).toLowerCase();
+        String now = ui.nowBody(Lang.BN, new ResultView(view, ResultFixtures.MA, true, ResultFixtures.BD, level,
+                List.of("diagnosis_present"), GateState.RELEASED, wording, 0, 2, ResultFixtures.NOW, ResultFixtures.NOW));
+        if (level == Urgency.NOW) {
+            // the block removed below is on the page, and every word in it is fixed copy or under the paper's own label
+            assertThat(now).isNotEmpty();
+            assertThat(body).contains(now);
+            assertThat(textOutsidePaperBlocks(now)).as("the NOW body's text").isNotEmpty()
+                    .allSatisfy(text -> assertThat(bundleTexts()).as(text).contains(text));
+        } else {
+            assertThat(now).isEmpty();
+        }
+        String rest = Html.page(Lang.BN, "t", body.replace(banner, "").replace(now, "").replace(says, ""), 0, false, "", false).toLowerCase();
         for (String forbidden : List.of("urgent", "জরুরি", "advice", "পরামর্শ", "high risk", "ঝুঁকি", "normal range", "should",
                 kit.copy.urgency(Lang.BN, Urgency.NOW, false), kit.copy.urgency(Lang.BN, Urgency.THIS_WEEK, false), wording)) {
             assertThat(rest).as(forbidden).doesNotContain(forbidden);
         }
         assertThat(rest).contains("9.8");   // the value itself, as extracted, is shown
+    }
+
+    /** Each text node of the markup, after removing the paper's own blocks (their words are the paper's, labelled so). */
+    private static List<String> textOutsidePaperBlocks(String html) {
+        String noPaper = html.replaceAll("(?s)<figure class=\"paper\">.*?</figure>", "");
+        return java.util.Arrays.stream(noPaper.split("<[^>]*>")).map(String::strip).filter(t -> !t.isEmpty()).toList();
+    }
+
+    /** Every Bangla bundle string as a page shows it (escaped, no arguments). */
+    private java.util.Set<String> bundleTexts() {
+        java.util.Set<String> texts = new java.util.HashSet<>();
+        kit.copy.keys(Lang.BN).forEach(k -> texts.add(kit.copy.t(Lang.BN, k)));
+        return texts;
     }
 
     @Test

@@ -425,7 +425,9 @@ class ResultSummaryRenderTest {
         assertThat(vrow(html, view, "Hb")).startsWith("<a class=\"vrow critical\"")
                 .contains("<span class=\"chip critical\">" + copy.t(Lang.BN, "value.chip.critical.low") + "</span>")
                 .doesNotContain(copy.t(Lang.BN, "value.chip.unknown"));
-        assertThat(ResultFixtures.section(html, "outside")).contains("id=\"v-" + hb.getId());
+        // B3 (s11): on a NOW page a critical row is drawn once, in the block of the reason it raised, not again below
+        assertThat(ResultFixtures.section(html, "why-value-critical")).contains("id=\"v-" + hb.getId());
+        assertThat(html).containsOnlyOnce("id=\"v-" + hb.getId() + "\"");
     }
 
     /** The one {@code <a class="vrow …">} for this value, found by its stored id: assertions read one row, never the page. */
