@@ -1,13 +1,25 @@
 package com.elioo.baymax.web.adapter.in.ui;
 
+import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.DocumentView;
+import com.elioo.baymax.outbound.domain.Urgency;
+import com.elioo.baymax.web.domain.GateState;
+import com.elioo.baymax.web.domain.ResultView;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
+import reactor.core.publisher.Mono;
 
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * What the document page shows and, more importantly, what it never shows. The stored urgency on a DONE paper is
@@ -53,17 +65,30 @@ class DocumentPagesRenderTest {
         assertThat(html).contains("১+০+১");   // verbatim, Bangla numerals untouched
     }
 
-    /** Safety constraint: no explanation, urgency or advice anywhere in the UI. */
-    @Test
-    void nothingInterpretiveIsRenderedForAFullDocument() {
+    /**
+     * Safety constraint, on the page a DONE paper is served since A12 (the summary): the only interpretive text is the
+     * stored urgency's fixed line (#urgency) and Medioo's released words, labelled as such (#says). Take those two
+     * blocks away and nothing interpretive is left — no urgency, risk or advice in the header, the items or the chrome.
+     */
+    @ParameterizedTest
+    @EnumSource(value = Urgency.class, names = {"NOW", "THIS_WEEK"})
+    void nothingInterpretiveIsRenderedForAFullDocumentButTheStoredLevelAndTheLabelledWording(Urgency level) {
         DocumentView view = new DocumentView(id.toString(), "DONE", null, "lab_report", "2026-09-01", null, 0.9, "m", 1,
                 List.of(Map.of("name", "HbA1c", "value", "9.8", "unit", "%", "flag", "high", "crop_key", "k")),
                 List.of(), List.of(), Map.of("diagnosis", List.of(Map.of("text", "T2DM", "crop_key", "k2"))), null);
-        String html = Html.page(Lang.BN, "t", ui.render(view, id), 0, false, "", false).toLowerCase();
-        for (String forbidden : List.of("urgent", "জরুরি", "advice", "পরামর্শ", "high risk", "ঝুঁকি", "normal range", "should")) {
-            assertThat(html).as(forbidden).doesNotContain(forbidden);
+        String wording = "রিপোর্টটি পেয়েছি।";
+        String body = ui.summaryBody(Lang.BN, new ResultView(view, ResultFixtures.MA, true, ResultFixtures.BD, level,
+                List.of("diagnosis_present"), GateState.RELEASED, wording, 0, 2, ResultFixtures.NOW, ResultFixtures.NOW));
+        String banner = ResultFixtures.section(body, "urgency");
+        String says = ResultFixtures.section(body, "says");
+        assertThat(banner).contains(kit.copy.urgency(Lang.BN, level, false));
+        assertThat(says).contains(kit.copy.t(Lang.BN, "result.says.label")).contains(wording);
+        String rest = Html.page(Lang.BN, "t", body.replace(banner, "").replace(says, ""), 0, false, "", false).toLowerCase();
+        for (String forbidden : List.of("urgent", "জরুরি", "advice", "পরামর্শ", "high risk", "ঝুঁকি", "normal range", "should",
+                kit.copy.urgency(Lang.BN, Urgency.NOW, false), kit.copy.urgency(Lang.BN, Urgency.THIS_WEEK, false), wording)) {
+            assertThat(rest).as(forbidden).doesNotContain(forbidden);
         }
-        assertThat(html).contains("9.8");   // the value itself, as extracted, is shown
+        assertThat(rest).contains("9.8");   // the value itself, as extracted, is shown
     }
 
     @Test
@@ -93,13 +118,42 @@ class DocumentPagesRenderTest {
         assertThat(html).doesNotContain(">advice<").doesNotContain(">diagnosis<").contains("রোগ নির্ণয়");
     }
 
-    /** The released BMX-6 message is the only interpretive text on the page, shown verbatim above the extraction. */
-    @Test
-    void theReleasedMessageIsShownVerbatimAndOnlyWhenPresent() {
-        DocumentView view = new DocumentView(id.toString(), "DONE", null, "prescription", "2026-09-01", null, 0.9, "m", 1,
-                List.of(), List.of(), List.of(), null, null);
-        String with = ui.render(Lang.BN, view, id, java.util.Optional.of("রিপোর্টটি পেয়েছি।\nএ সপ্তাহের মধ্যে একজন ডাক্তার দেখান।"));
-        assertThat(with).contains("সংক্ষেপে").contains("এ সপ্তাহের মধ্যে একজন ডাক্তার দেখান");
+    /**
+     * The legacy page serves only NEEDS_RETAKE and FAILED since A12; on it the released message (a RETAKE reply, say) is
+     * the only interpretive text, shown verbatim, and only when there is one.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"NEEDS_RETAKE", "FAILED"})
+    void theReleasedMessageIsShownVerbatimAndOnlyWhenPresent(String status) {
+        DocumentView view = new DocumentView(id.toString(), status, "the document was not read confidently enough (0.75)",
+                null, null, null, null, null, 1, null, null, null, null, null);
+        String with = ui.render(Lang.BN, view, id, java.util.Optional.of("ছবিটি স্পষ্ট নয়।\nআবার ছবি তুলে পাঠান।"));
+        assertThat(with).contains("সংক্ষেপে").contains("ছবিটি স্পষ্ট নয়।\nআবার ছবি তুলে পাঠান।");
         assertThat(ui.render(Lang.BN, view, id, java.util.Optional.empty())).doesNotContain("সংক্ষেপে");
+    }
+
+    /**
+     * Through the router, the other direction of A12's split: a NEEDS_RETAKE or FAILED paper is still the legacy page —
+     * its reason and its page, read through the timeline — never the result summary, which for a paper that is not
+     * DONE would draw a header with no reason, no page and no items.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"NEEDS_RETAKE", "FAILED"})
+    void aRetakeOrFailedPaperIsServedTheLegacyPageNeverTheSummary(String status) {
+        DocumentView view = new DocumentView(WebUiTestKit.DOC_ID.toString(), status, "the document was not read confidently enough (0.75)",
+                null, null, null, null, null, 1, null, null, null, null, null);
+        when(kit.results.status(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(Document.Status.valueOf(status)));
+        when(kit.timeline.document(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(view));
+        when(kit.timeline.explanationOf(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.empty());
+        // were the summary read, it would answer: the page must not ask
+        when(kit.results.result(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(new ResultView(view, ResultFixtures.MA,
+                true, ResultFixtures.BD, null, List.of(), GateState.NONE, null, 0, 2, ResultFixtures.NOW, ResultFixtures.NOW)));
+        String html = kit.page("/app/documents/" + WebUiTestKit.DOC_ID, "bn");
+        verify(kit.results, never()).result(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID);
+        verify(kit.timeline, times(1)).document(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID);
+        assertThat(html).contains("not read confidently enough").contains("/documents/" + WebUiTestKit.DOC_ID + "/page/1");
+        if (status.equals("NEEDS_RETAKE")) {
+            assertThat(html).contains(kit.copy.t(Lang.BN, "doc.retake"));
+        }
     }
 }

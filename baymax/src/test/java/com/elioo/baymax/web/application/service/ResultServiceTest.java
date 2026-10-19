@@ -168,20 +168,40 @@ class ResultServiceTest {
         when(messages.latestDeliverable(DOC)).thenReturn(m.isDeliverable() ? Mono.just(m) : Mono.empty());
     }
 
-    /** F3 table, one row per stored gate status: the urgency is the stored NOW in every one; wording only when deliverable. */
-    @ParameterizedTest(name = "{0} shows as {1}, wording {2}")
-    @CsvSource({"RELEASED,RELEASED,true", "APPROVED,RELEASED,true", "PENDING,PENDING,false",
-            "REJECTED,REJECTED,false", "FAILED_SAFETY,FAILED_SAFETY,false"})
-    void theExplanationsGateStateDecidesTheWordingAndNeverTheUrgency(OutboundMessage.GateStatus stored, GateState shown, boolean wording) {
+    /**
+     * F3 table, one row per stored gate status: the urgency is the stored NOW in every one; the stored body travels,
+     * itself, only when deliverable. A RELEASED or APPROVED row with no body (nothing in the schema forbids it) is a
+     * safety failure that closed: withheld, never an empty "Medioo-র কথা".
+     */
+    @ParameterizedTest(name = "{0} with body [{1}] shows as {2}")
+    @CsvSource({"RELEASED,রিপোর্টটি পেয়েছি।,RELEASED", "APPROVED,রিপোর্টটি পেয়েছি।,RELEASED",
+            "PENDING,রিপোর্টটি পেয়েছি।,PENDING", "REJECTED,রিপোর্টটি পেয়েছি।,REJECTED", "FAILED_SAFETY,,FAILED_SAFETY",
+            "RELEASED,,FAILED_SAFETY", "APPROVED,,FAILED_SAFETY"})
+    void theExplanationsGateStateDecidesTheWordingAndNeverTheUrgency(OutboundMessage.GateStatus stored, String body, GateState shown) {
         done();
-        String body = stored == OutboundMessage.GateStatus.FAILED_SAFETY ? null : "রিপোর্টটি পেয়েছি।";
         stored(message(stored, body, Urgency.NOW));
         StepVerifier.create(service.result(FAMILY, DOC)).assertNext(r -> {
             assertThat(r.urgency()).isEqualTo(Urgency.NOW);
             assertThat(r.urgencyReasons()).containsExactly("value_critical:potassium|stopgap");
             assertThat(r.gate()).isEqualTo(shown);
-            assertThat(r.wording() != null).isEqualTo(wording);
+            // the stored body itself, not merely something: only RELEASED carries it, every other state carries nothing
+            if (shown == GateState.RELEASED) {
+                assertThat(r.wording()).isEqualTo(body);
+            } else {
+                assertThat(r.wording()).isNull();
+            }
         }).verifyComplete();
+    }
+
+    /** The PENDING line's hours are the configured ones (spec §4.10 "[N]"), not a constant that happens to match the default. */
+    @Test
+    void theReviewHoursAreTheConfiguredOnes() {
+        BaymaxProperties five = new BaymaxProperties();
+        five.getOutbound().setReviewTypicalHours(5);
+        service = new ResultService(records, documents, intake, audit, Clock.fixed(NOW, ZoneOffset.UTC), messages, urgencies, five);
+        done();
+        stored(message(OutboundMessage.GateStatus.PENDING, "x", Urgency.NOW));
+        StepVerifier.create(service.result(FAMILY, DOC)).assertNext(r -> assertThat(r.reviewHours()).isEqualTo(5)).verifyComplete();
     }
 
     /** A DONE document whose explanation was never stored: the urgency still leads, there is simply no wording line. */

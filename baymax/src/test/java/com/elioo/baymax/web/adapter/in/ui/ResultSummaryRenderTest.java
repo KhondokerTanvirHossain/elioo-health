@@ -1,5 +1,6 @@
 package com.elioo.baymax.web.adapter.in.ui;
 
+import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.web.domain.GateState;
 import org.junit.jupiter.api.Test;
@@ -25,8 +26,12 @@ class ResultSummaryRenderTest {
     private final WebUiTestKit kit = new WebUiTestKit();
     private final UiCopy copy = kit.copy;
 
+    /** One value on the paper, so the items list is on the page and the order checks have it to order. */
+    private static final List<Map<String, Object>> VALUES =
+            List.of(ResultFixtures.value("Potassium", "6.8", "mmol/L", "3.5", "5.1", null));
+
     private String body(Lang lang, Urgency level, GateState gate) {
-        return kit.documents.summaryBody(lang, ResultFixtures.result(ResultFixtures.lab(List.of()), level,
+        return kit.documents.summaryBody(lang, ResultFixtures.result(ResultFixtures.lab(VALUES), level,
                 level == Urgency.NOW ? List.of("value_critical:potassium|stopgap") : List.of("diagnosis_present"),
                 gate, gate == GateState.RELEASED ? "রিপোর্টটি পেয়েছি।" : null, ResultFixtures.BD));
     }
@@ -54,6 +59,22 @@ class ResultSummaryRenderTest {
         if (gate != GateState.NONE) {
             assertThat(others).as("the gate line is a section after the banner, so the order check has something to order").isPositive();
         }
+        // the items are headings and divs, not sections: they come after the banner too, and they are on the page
+        int items = html.indexOf("<h2>" + copy.raw(Lang.BN, "doc.values") + "</h2>");
+        assertThat(items).as("the values heading").isNotNegative();
+        assertThat(items).as("the items list before the banner").isGreaterThan(at);
+        assertThat(html.indexOf("6.8")).as("the value before the banner").isGreaterThan(at);
+    }
+
+    /** s10/s11 and kit §5: THIS_WEEK carries the calendar, NOW the octagon, both aria-hidden beside the verbatim line. */
+    @ParameterizedTest
+    @EnumSource(value = Urgency.class, names = {"NOW", "THIS_WEEK"})
+    void theBannerCarriesItsLevelsIconHiddenFromScreenReaders(Urgency level) {
+        String banner = ResultFixtures.section(body(Lang.BN, level, GateState.RELEASED), "urgency");
+        String mine = level == Urgency.NOW ? "octagon" : "calendar";
+        String theirs = level == Urgency.NOW ? "calendar" : "octagon";
+        assertThat(banner).contains(Icons.svg(mine, level == Urgency.NOW ? 28 : 26)).contains("aria-hidden=\"true\"");
+        assertThat(banner).doesNotContain(Icons.svg(theirs, 26)).doesNotContain(Icons.svg(theirs, 28));
     }
 
     @ParameterizedTest
@@ -64,26 +85,40 @@ class ResultSummaryRenderTest {
     }
 
     /** D27, the other direction: a routine paper carries none of the urgency lines anywhere and no status word; it is "filed". */
-    @ParameterizedTest
-    @EnumSource(GateState.class)
-    void aRoutinePaperCarriesNoUrgencyLineAndSaysOnlyThatItWasFiled(GateState gate) throws IOException {
-        String html = body(Lang.BN, Urgency.ROUTINE, gate);
-        List<Map.Entry<String, String>> lines = BundleFiles.messages(Lang.BN).entrySet().stream()
+    static Stream<Arguments> everyLanguageInEveryGateState() {
+        return Arrays.stream(Lang.values()).flatMap(l -> Arrays.stream(GateState.values()).map(g -> arguments(l, g)));
+    }
+
+    /** Every urgency.* line of this language's message bundle, derived from the file and guarded against emptiness. */
+    private static List<Map.Entry<String, String>> urgencyLines(Lang lang) throws IOException {
+        List<Map.Entry<String, String>> lines = BundleFiles.messages(lang).entrySet().stream()
                 .filter(e -> e.getKey().startsWith("urgency.")).toList();
-        assertThat(lines).as("urgency lines in messages_bn").hasSizeGreaterThanOrEqualTo(2);
-        lines.forEach(e -> assertThat(html).as(e.getKey()).doesNotContain(Html.esc(e.getValue())));
+        assertThat(lines).as("urgency lines in messages_" + lang).hasSizeGreaterThanOrEqualTo(2);
+        return lines;
+    }
+
+    @ParameterizedTest(name = "{0} in {1}")
+    @MethodSource("everyLanguageInEveryGateState")
+    void aRoutinePaperCarriesNoUrgencyLineAndSaysOnlyThatItWasFiled(Lang lang, GateState gate) throws IOException {
+        String html = body(lang, Urgency.ROUTINE, gate);
+        urgencyLines(lang).forEach(e -> assertThat(html).as(e.getKey()).doesNotContain(Html.esc(e.getValue())));
         assertThat(html).doesNotContain("id=\"urgency\"").doesNotContain("class=\"banner");
-        assertThat(html).contains(copy.t(Lang.BN, "result.filed"));
-        for (String word : List.of("স্বাভাবিক", "চিন্তার কিছু নেই", "সব ঠিক")) {
-            assertThat(html).as(word).doesNotContain(word);
+        assertThat(html).contains(copy.t(lang, "result.filed"));
+        if (lang == Lang.BN) {
+            for (String word : List.of("স্বাভাবিক", "চিন্তার কিছু নেই", "সব ঠিক")) {
+                assertThat(html).as(word).doesNotContain(word);
+            }
         }
     }
 
     /** A paper whose level is not known (DONE but never assessed) says neither an urgency nor that it was filed. */
-    @Test
-    void anUnassessedPaperClaimsNeitherAnUrgencyNorThatItWasFiled() {
-        String html = body(Lang.BN, null, GateState.NONE);
-        assertThat(html).doesNotContain("id=\"urgency\"").doesNotContain(copy.t(Lang.BN, "result.filed"));
+    @ParameterizedTest
+    @EnumSource(Lang.class)
+    void anUnassessedPaperClaimsNeitherAnUrgencyNorThatItWasFiled(Lang lang) throws IOException {
+        String html = body(lang, null, GateState.NONE);
+        urgencyLines(lang).forEach(e -> assertThat(html).as(e.getKey()).doesNotContain(Html.esc(e.getValue())));
+        assertThat(html).doesNotContain("id=\"urgency\"").doesNotContain("class=\"banner")
+                .doesNotContain(copy.t(lang, "result.filed"));
     }
 
     /** F3: pending says a person is checking (with the configured hours); the model's text is not on the page. */
@@ -92,7 +127,9 @@ class ResultSummaryRenderTest {
         String html = body(Lang.BN, Urgency.THIS_WEEK, GateState.PENDING);
         assertThat(ResultFixtures.section(html, "gate-pending")).contains(copy.t(Lang.BN, "result.gate.pending", 2))
                 .contains("২ ঘণ্টার মধ্যে").contains(copy.t(Lang.BN, "result.review.chip"));
-        assertThat(html).doesNotContain("id=\"says\"").doesNotContain("রিপোর্টটি পেয়েছি।").doesNotContain("id=\"gate-withheld\"");
+        // no model text here is the ResultView constructor's rule (ResultServiceTest): the view cannot carry it, so no
+        // assertion on this page could fail over it; what the renderer decides is which block it draws
+        assertThat(html).doesNotContain("id=\"says\"").doesNotContain("id=\"gate-withheld\"");
     }
 
     /** F3: a withheld explanation is never described as being checked — that would be a promise nobody keeps. */
@@ -112,6 +149,18 @@ class ResultSummaryRenderTest {
         String says = ResultFixtures.section(html, "says");
         assertThat(says).contains(copy.t(Lang.BN, "result.says.label")).contains("রিপোর্টটি পেয়েছি।").doesNotContain("<img");
         assertThat(html).doesNotContain("id=\"gate-pending\"").doesNotContain("id=\"gate-withheld\"");
+    }
+
+    /** Everything that came from the paper, the model or the family is escaped on the served summary. */
+    @Test
+    void everythingOnTheSummaryIsEscaped() {
+        PatientProfile named = new PatientProfile(ResultFixtures.MA.id(), ResultFixtures.MA.familyId(), "<b>Ma</b>", 64,
+                PatientProfile.Sex.FEMALE, List.of(), ResultFixtures.NOW, ResultFixtures.NOW);
+        String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(ResultFixtures.lab("<img src=x onerror=alert(1)>", VALUES),
+                named, Urgency.THIS_WEEK, List.of(), GateState.RELEASED, "<script>alert(1)</script>", ResultFixtures.BD));
+        assertThat(html).doesNotContain("<script>").doesNotContain("<img src=x").doesNotContain("<b>Ma</b>");
+        assertThat(ResultFixtures.section(html, "says")).contains("&lt;script&gt;alert(1)&lt;/script&gt;");
+        assertThat(html).contains("&lt;img src=x onerror=alert(1)&gt;").contains("&lt;b&gt;Ma&lt;/b&gt;");
     }
 
     /** The patient is named on every result, before F8 grammar exists. */

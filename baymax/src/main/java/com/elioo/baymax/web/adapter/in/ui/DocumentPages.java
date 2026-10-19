@@ -184,8 +184,11 @@ public class DocumentPages implements WebPages {
             return "";
         }
         boolean now = r.urgency() == Urgency.NOW;
+        // kit §5: the octagon on NOW's solid header, the calendar on THIS_WEEK's tint; aria-hidden, the line says it all
+        String icon = now ? Icons.svg("octagon", 28) : Icons.svg("calendar", 26);
         return "<section class=\"banner " + (now ? "now" : "soon") + "\" id=\"urgency\" aria-label=\"" + copy.t(lang, "result.banner.label")
-                + "\"><p class=\"line\">" + copy.urgency(lang, r.urgency(), false) + "</p></section>";
+                + "\"><p class=\"line\"><span class=\"icon\">" + icon + "</span><span>" + copy.urgency(lang, r.urgency(), false)
+                + "</span></p></section>";
     }
 
     /** F3: Medioo's released words, labelled as such; "a person is checking" only for PENDING; withheld says so. */

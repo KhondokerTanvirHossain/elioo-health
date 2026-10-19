@@ -45,7 +45,11 @@ final class ResultFixtures {
     }
 
     static DocumentView lab(List<Map<String, Object>> values) {
-        return new DocumentView(DOC.toString(), "DONE", null, "lab_report", "2026-10-12", "Diagnostic Centre, Mirpur", 0.92,
+        return lab("Diagnostic Centre, Mirpur", values);
+    }
+
+    static DocumentView lab(String facility, List<Map<String, Object>> values) {
+        return new DocumentView(DOC.toString(), "DONE", null, "lab_report", "2026-10-12", facility, 0.92,
                 "m", 2, values, List.of(), List.of(), Map.of(), null);
     }
 
@@ -59,7 +63,12 @@ final class ResultFixtures {
     }
 
     static ResultView result(DocumentView view, Urgency urgency, List<String> reasons, GateState gate, String wording, ViewerLocale viewer) {
-        return new ResultView(view, MA, true, viewer, "DONE".equals(view.status()) ? urgency : null, reasons, gate, wording,
+        return result(view, MA, urgency, reasons, gate, wording, viewer);
+    }
+
+    static ResultView result(DocumentView view, PatientProfile patient, Urgency urgency, List<String> reasons, GateState gate,
+                             String wording, ViewerLocale viewer) {
+        return new ResultView(view, patient, true, viewer, "DONE".equals(view.status()) ? urgency : null, reasons, gate, wording,
                 0, 2, NOW.minusSeconds(60), NOW);
     }
 

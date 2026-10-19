@@ -75,7 +75,10 @@ public class ResultService implements ResultUseCase {
                         d.createdAt(), clock.instant())));
     }
 
-    /** F1: the stored level, through the use case; never assessed here (OneUrgencyWriterTest). Nothing before DONE. */
+    /**
+     * F1: the stored level, read through the sole writer (DocumentUrgencyUseCase.currentOrAssess), which assesses an
+     * unassessed DONE document once; never computed here (OneUrgencyWriterTest). Nothing before DONE.
+     */
     private Mono<Optional<StoredUrgency>> stored(Document d) {
         return d.status() != Document.Status.DONE ? Mono.just(Optional.empty())
                 : urgencies.currentOrAssess(d.id()).map(Optional::of).defaultIfEmpty(Optional.empty());
