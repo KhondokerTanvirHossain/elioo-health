@@ -4,17 +4,25 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.extraction.ExtractionPipelineAcceptanceTest;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
+import com.elioo.baymax.outbound.application.service.BanglaDate;
+import com.elioo.baymax.outbound.application.service.Copy;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.testsupport.TryDocuments;
+import com.elioo.baymax.wa.WaFixtures;
 import com.elioo.baymax.wa.application.port.out.WaMessagingPort;
+import com.elioo.baymax.web.application.port.in.WebAuthUseCase;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mockito;
+import org.mockito.invocation.Invocation;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.web.reactive.WebFluxAutoConfiguration;
@@ -30,15 +38,32 @@ import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import reactor.core.publisher.Mono;
 
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.Statement;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * The PO's request, as a test: a family uses the whole web app with WhatsApp switched off. Sign in with a code from the
@@ -68,6 +93,8 @@ class WebOnlyJourneyAcceptanceTest {
             """;
 
     private static final String NUMBER = "+8801700000731";
+    /** The WhatsApp-on journey's family: its own number, so the two tests share no row and run in either order. */
+    private static final String WA_NUMBER = "+8801700000732";
     private static final String DELIVERY_LOGGER = "com.elioo.baymax.web.adapter.out.delivery";
 
     /** Routes a family never reaches by browsing the app, each with why it is not a step of this journey. */
@@ -99,6 +126,27 @@ class WebOnlyJourneyAcceptanceTest {
         return ExtractionPipelineAcceptanceTest.runnerFor(POSTGRES, MINIO, NOW_REPLY, "Potassium", "11.0")
                 .withConfiguration(AutoConfigurations.of(WebFluxAutoConfiguration.class))
                 .withPropertyValues("baymax.wa.enabled=false", "baymax.auth.web-mints-code=true",
+                        "baymax.auth.hmac-secret=journey-secret", "baymax.auth.cookie-secure=false",
+                        "baymax.free.max-docs-per-month=50", "baymax.nudge.enabled=false");
+    }
+
+    /**
+     * The same context with the channel on: the startup validator's shapes (fictional), the allowlist holding only the
+     * family's number, the web form NOT minting (the validator refuses that with WhatsApp on), and {@code wa} as the
+     * messaging port. {@code WaGraphClient} is still built with the channel on, so the mock is primary.
+     */
+    private ReactiveWebApplicationContextRunner whatsappRunner(WaMessagingPort wa) {
+        return ExtractionPipelineAcceptanceTest.runnerFor(POSTGRES, MINIO, NOW_REPLY, "Potassium", "11.0")
+                .withConfiguration(AutoConfigurations.of(WebFluxAutoConfiguration.class))
+                .withBean(WaMessagingPort.class, () -> wa, bd -> bd.setPrimary(true))
+                .withPropertyValues("baymax.wa.enabled=true",
+                        "baymax.wa.token=EAA" + "x".repeat(200),
+                        "baymax.wa.app-secret=88e3540dd539aabbccddeeff00112233",
+                        "baymax.wa.verify-token=78d41af3449a9bfbd560140166c6f2c2",
+                        "baymax.wa.phone-number-id=1412074765313019",
+                        "baymax.wa.waba-id=4407553579467225",
+                        "baymax.wa.allowlist=" + WA_NUMBER,
+                        "baymax.auth.web-mints-code=false",
                         "baymax.auth.hmac-secret=journey-secret", "baymax.auth.cookie-secure=false",
                         "baymax.free.max-docs-per-month=50", "baymax.nudge.enabled=false");
     }
@@ -139,7 +187,7 @@ class WebOnlyJourneyAcceptanceTest {
             assertThat(code).matches("[0-9]{6}");
             assertThat(step(web.get().uri("/app/verify").cookie("baymax_login", login), "GET /app/verify").expectStatus().isOk()
                     .expectBody(String.class).returnResult().getResponseBody()).contains("name=\"code\"");
-            String session = verify(web, login, code);
+            String session = enterCode(web, login, code);
 
             // 2. the three tabs; চ্যাট's composer says chat is coming and cannot send
             String chat = get(web, session, "/app/home", "GET /app/home");
@@ -197,12 +245,55 @@ class WebOnlyJourneyAcceptanceTest {
         });
     }
 
+    /**
+     * Today's behaviour (D32's opt-in "WhatsApp-এও জানাবেন" is Phase 4): a paper uploaded on the web is also explained on
+     * WhatsApp. With the channel on, the only messages are the sign-in code and this paper's own delivered rows — read
+     * from the port's every invocation, not from a list of the calls we expect.
+     */
+    @Test
+    void withWhatsAppOnTheOnlyMessagesAreTheCodeAndTheUploadedPapersOwnExplanation() {
+        WaMessagingPort wa = mock(WaMessagingPort.class);
+        AtomicInteger n = new AtomicInteger();
+        when(wa.sendText(anyString(), anyString()))
+                .thenAnswer(i -> Mono.just(WaFixtures.wamid(WA_NUMBER.substring(1), n.incrementAndGet())));
+        whatsappRunner(wa).run(context -> {
+            assertThat(context).hasNotFailed();
+            // the family wrote to Medioo on WhatsApp within the window (PR 12's free path), then signs in on the web
+            PatientProfile ma = familyWithMa(context, WA_NUMBER);
+            context.getBean(WebAuthUseCase.class).noteInbound(WA_NUMBER.substring(1), Instant.now()).block();
+            WebTestClient web = client(context);
+            String session = signInWithTheCodeWhatsAppGot(context, web, wa);
+            String documentPath = uploadAndWaitUntilDone(web, session, ma);
+            UUID documentId = UUID.fromString(documentPath.substring(documentPath.lastIndexOf('/') + 1));
+            List<String> delivered = awaitDeliveredBodiesOf(documentId);
+
+            // derived from the port: every call of any WaMessagingPort method, not a list of the ones we expect
+            List<Invocation> calls = List.copyOf(Mockito.mockingDetails(wa).getInvocations());
+            assertThat(calls).as("WhatsApp calls made").isNotEmpty();
+            assertThat(calls).allSatisfy(c -> assertThat(c.getMethod().getName()).as("no other WhatsApp operation").isEqualTo("sendText"));
+            assertThat(calls).allSatisfy(c -> assertThat((String) c.getArgument(0)).as("only the family's own number").isEqualTo(WA_NUMBER));
+            List<String> bodies = calls.stream().map(c -> (String) c.getArgument(1)).toList();
+            assertThat(bodies.get(0)).isEqualTo(codeMessage(context, bodies.get(0)));
+            assertThat(bodies.subList(1, bodies.size())).as("after the code, only this paper's own delivered messages")
+                    .allSatisfy(b -> assertThat(delivered).contains(b));
+            assertThat(bodies.subList(1, bodies.size())).as("each of this paper's delivered rows, sent once")
+                    .containsExactlyInAnyOrderElementsOf(delivered);
+            assertThat(scalar("select count(*) from baymax.outbound_message where document_id = '" + documentId
+                    + "' and kind = 'explanation' and urgency = 'now' and delivery_status = 'sent'"))
+                    .as("the explanation of this paper, at the stored NOW, went out").isEqualTo("1");
+        });
+    }
+
     // ---- the steps, shared by both journeys -------------------------------------------------------------------
 
     private PatientProfile familyWithMa(ApplicationContext context) {
+        return familyWithMa(context, NUMBER);
+    }
+
+    private PatientProfile familyWithMa(ApplicationContext context, String number) {
         HealthRecordPort records = context.getBean(HealthRecordPort.class);
         Instant t = Instant.now();
-        FamilyAccount family = records.createFamily(new FamilyAccount(null, NUMBER, "Rahim", FamilyAccount.Plan.FREE, t, t)).block();
+        FamilyAccount family = records.createFamily(new FamilyAccount(null, number, "Rahim", FamilyAccount.Plan.FREE, t, t)).block();
         return records.createPatient(new PatientProfile(null, family.id(), "Rokeya", 68, PatientProfile.Sex.FEMALE, List.of(), t, t)).block();
     }
 
@@ -210,10 +301,78 @@ class WebOnlyJourneyAcceptanceTest {
         return WebTestClient.bindToApplicationContext(context).configureClient().responseTimeout(Duration.ofSeconds(30)).build();
     }
 
-    private String verify(WebTestClient web, String login, String code) {
+    private String enterCode(WebTestClient web, String login, String code) {
         return cookie(step(web.post().uri("/app/verify").cookie("baymax_login", login)
                         .contentType(MediaType.APPLICATION_FORM_URLENCODED).body(BodyInserters.fromFormData("code", code)), "POST /app/verify")
                 .expectStatus().isSeeOther().expectHeader().valueEquals(HttpHeaders.LOCATION, "/app/home"), "baymax_session");
+    }
+
+    /**
+     * J1.1's sign-in with the channel on: the number page sends the code to WhatsApp (the login cookie carries the sent
+     * mark, the code page says so, and nothing went to the log fallback), and the code in that one message opens the
+     * session.
+     */
+    private String signInWithTheCodeWhatsAppGot(ApplicationContext context, WebTestClient web, WaMessagingPort wa) {
+        String login = cookie(step(web.post().uri("/app/login").contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .body(BodyInserters.fromFormData("whatsapp_number", "0" + WA_NUMBER.substring(4)).with("confirmed", "1")), "POST /app/login")
+                .expectStatus().isSeeOther().expectHeader().valueEquals(HttpHeaders.LOCATION, "/app/verify"), "baymax_login");
+        assertThat(login).as("WhatsApp accepted the code").endsWith("." + SignInPages.SENT_MARK);
+        ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+        // the first message; how many there were is the derived sweep's question, asserted on every call at the end
+        verify(wa, atLeastOnce()).sendText(eq(WA_NUMBER), body.capture());
+        Matcher six = Pattern.compile("(?<![0-9])([0-9]{6})(?![0-9])").matcher(body.getAllValues().get(0));
+        assertThat(six.find()).as("a six-digit code in the message").isTrue();
+        assertThat(codes.list).as("the code never went to the log fallback")
+                .noneMatch(e -> e.getFormattedMessage().contains("otp fallback"));
+        UiCopy copy = context.getBean(UiCopy.class);
+        assertThat(step(web.get().uri("/app/verify").cookie("baymax_login", login), "GET /app/verify").expectStatus().isOk()
+                .expectBody(String.class).returnResult().getResponseBody()).contains(copy.t(Lang.BN, "login.code.sent"));
+        return enterCode(web, login, six.group(1));
+    }
+
+    /** The sign-in message as the bundle words it (wa.login_code) for the code it carries. */
+    private static String codeMessage(ApplicationContext context, String sent) {
+        Matcher six = Pattern.compile("(?<![0-9])([0-9]{6})(?![0-9])").matcher(sent);
+        assertThat(six.find()).as("a six-digit code in the first message").isTrue();
+        BaymaxProperties properties = context.getBean(BaymaxProperties.class);
+        return context.getBean(Copy.class).bn("wa.login_code", Map.of("code", six.group(1),
+                "minutes", BanglaDate.digits(String.valueOf(properties.getAuth().getOtpTtl().toMinutes()))));
+    }
+
+    /**
+     * The bodies of this document's delivered rows, polled until the explanation's delivery is recorded (30 s at most):
+     * delivery runs after the status turns DONE, so the port's calls are read only once the row says it went out.
+     */
+    private static List<String> awaitDeliveredBodiesOf(UUID documentId) throws Exception {
+        String explained = "select count(*) from baymax.outbound_message where document_id = '" + documentId
+                + "' and kind = 'explanation' and delivery_status is not null";
+        for (int i = 0; i < 60 && "0".equals(scalar(explained)); i++) {
+            Thread.sleep(500);
+        }
+        assertThat(scalar(explained)).as("the explanation's delivery was recorded").isNotEqualTo("0");
+        List<String> bodies = new ArrayList<>();
+        try (Connection c = connect(); PreparedStatement s = c.prepareStatement(
+                "select body from baymax.outbound_message where document_id = ? and delivery_status = 'sent' order by created_at")) {
+            s.setObject(1, documentId);
+            try (ResultSet rs = s.executeQuery()) {
+                while (rs.next()) {
+                    bodies.add(rs.getString(1));
+                }
+            }
+        }
+        assertThat(bodies).as("this paper's delivered rows").isNotEmpty();
+        return bodies;
+    }
+
+    private static String scalar(String query) throws Exception {
+        try (Connection c = connect(); Statement s = c.createStatement(); ResultSet rs = s.executeQuery(query)) {
+            rs.next();
+            return rs.getString(1);
+        }
+    }
+
+    private static Connection connect() throws Exception {
+        return DriverManager.getConnection(POSTGRES.getJdbcUrl() + "&sslmode=disable", POSTGRES.getUsername(), POSTGRES.getPassword());
     }
 
     /** The sheet, the multipart post, the reading page, then the status poll until DONE; returns the document's path. */
