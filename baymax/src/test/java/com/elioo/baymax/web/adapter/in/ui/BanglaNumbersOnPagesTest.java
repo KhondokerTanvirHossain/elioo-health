@@ -17,7 +17,6 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -109,13 +108,13 @@ class BanglaNumbersOnPagesTest {
         UiCopy copy = new UiCopy();
 
         // B2: the follow-up's date is the line under its paper quote (next.followup), the value its own span
-        String bn = ui.render(Lang.BN, view, id, Optional.empty());
+        String bn = ui.render(Lang.BN, view, id);
         assertThat(metaLines(bn)).contains("১ সেপ্টেম্বর ২০২৬");
         assertThat(bn).contains("<p class=\"due\">" + copy.t(Lang.BN, "next.followup", "১৫ নভেম্বর ২০২৬") + "</p>");
         assertThat(bn).contains("<span class=\"val\">8.2</span>").contains("<span class=\"val\">130</span>")
                 .doesNotContain("৮.২").doesNotContain("১৩০");
 
-        String en = ui.render(Lang.EN, view, id, Optional.empty());
+        String en = ui.render(Lang.EN, view, id);
         assertThat(metaLines(en)).contains("2026-09-01");
         assertThat(en).contains("<p class=\"due\">" + copy.t(Lang.EN, "next.followup", "2026-11-15") + "</p>");
         assertThat(en).contains("<span class=\"val\">8.2</span>").contains("<span class=\"val\">130</span>");
@@ -127,6 +126,6 @@ class BanglaNumbersOnPagesTest {
         UUID id = UUID.randomUUID();
         DocumentView view = new DocumentView(id.toString(), "DONE", null, "prescription", "12/10/26", null, 0.9, "m", 1,
                 List.of(), List.of(), List.of(), null, null);
-        assertThat(metaLines(ui.render(Lang.BN, view, id, Optional.empty()))).contains("12/10/26");
+        assertThat(metaLines(ui.render(Lang.BN, view, id))).contains("12/10/26");
     }
 }

@@ -115,7 +115,15 @@ public class ExtractionPipelineAcceptanceTest {
      * Absent — only {@code DocumentRecoveryAcceptanceTest}, which builds its own context over {@link StubbedProviders}
      * — the stubs answer {@link #REPLY} over "HbA1c 8.2" and the model gives the same reply to every call.
      */
-    public record StubReply(String reply, List<String> words) {
+    public record StubReply(String reply, List<String> words, List<String> later) {
+        public StubReply(String reply, List<String> words) {
+            this(reply, words, List.of());
+        }
+
+        /** The reply to the {@code n}-th (0-based) call that is not an EXPLAIN: {@link #reply}, then each of {@link #later} once, then {@link #reply} again. */
+        String replyTo(int n) {
+            return n >= 1 && n <= later.size() ? later.get(n - 1) : reply;
+        }
     }
 
     /** Stubs for the two outside services, so the run needs no GCP key and no model spend. */
@@ -152,12 +160,13 @@ public class ExtractionPipelineAcceptanceTest {
             if (given == null) {
                 when(client.invoke(any())).thenReturn(Mono.just(answer(REPLY)));
             } else {
+                java.util.concurrent.atomic.AtomicInteger extractions = new java.util.concurrent.atomic.AtomicInteger();
                 when(client.invoke(any())).thenAnswer(i -> {
                     String prompt = ((com.elioo.healthcare.llm.model.LlmRequest) i.getArgument(0)).userPrompt();
                     if (prompt != null && prompt.startsWith("SKELETON:\n") && prompt.contains("\n\nURGENCY LINE:")) {
                         return Mono.just(answer(prompt.substring("SKELETON:\n".length(), prompt.indexOf("\n\nURGENCY LINE:"))));
                     }
-                    return Mono.just(answer(given.reply()));
+                    return Mono.just(answer(given.replyTo(extractions.getAndIncrement())));
                 });
             }
             return client;
@@ -184,13 +193,18 @@ public class ExtractionPipelineAcceptanceTest {
      */
     public static ReactiveWebApplicationContextRunner runnerFor(PostgreSQLContainer<?> postgres, MinIOContainer minio,
                                                                 String reply, String... words) {
+        return runnerFor(postgres, minio, new StubReply(reply, List.of(words)));
+    }
+
+    /** As above, with the model's replies queued: extraction calls take {@link StubReply#replyTo} in turn (B5's retake step). */
+    public static ReactiveWebApplicationContextRunner runnerFor(PostgreSQLContainer<?> postgres, MinIOContainer minio, StubReply stub) {
         return new ReactiveWebApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(
                         R2dbcAutoConfiguration.class, R2dbcDataAutoConfiguration.class,
                         R2dbcTransactionManagerAutoConfiguration.class, TransactionAutoConfiguration.class,
                         LlmAutoConfiguration.class, BaymaxAutoConfiguration.class))
                 .withUserConfiguration(StubbedProviders.class)
-                .withBean(StubReply.class, () -> new StubReply(reply, List.of(words)))
+                .withBean(StubReply.class, () -> stub)
                 .withPropertyValues(
                         "baymax.enabled=true", "llm.provider=groq", "llm.groq.api-key=test-key",
                         "baymax.extract.vision-model=",           // text-only: no vision client in this run

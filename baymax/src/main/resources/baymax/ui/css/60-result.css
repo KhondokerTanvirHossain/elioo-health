@@ -70,3 +70,17 @@
 .fullpage .zoom{text-decoration:underline}
 .now-after{margin:0 0 var(--sp-4)}
 .now-after p{margin:0 0 var(--sp-2)}
+/* B5 needs-retake (s12, RetakeCard): the warn tint, never amber or red — a retake is not urgency; FAILED shares the card */
+.retake{display:flex;flex-direction:column;gap:var(--sp-3);margin:var(--sp-4) 0;background:var(--c-warn-container);border:1px solid var(--c-warn-line);border-radius:var(--r-m);padding:var(--sp-4);color:var(--c-text)}
+.retake p,.retake h2{margin:0}
+.retake h2{font-size:var(--fs-headline);line-height:var(--lh-headline);font-weight:600}
+.retake-h{display:flex;align-items:flex-start;gap:var(--sp-3)}
+.retake-h .lead{font-size:var(--fs-headline);line-height:var(--lh-headline);font-weight:600}
+.retake-i{flex:none;display:flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:var(--r-pill);background:var(--c-surface);color:var(--c-text)}
+.retake-tips{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--sp-2)}
+.retake-tips li{display:flex;align-items:flex-start;gap:var(--sp-2)}
+.retake-send{display:flex;flex-direction:column;gap:var(--sp-2)}
+.retake-send .btn{margin-top:0;white-space:normal;text-align:center}
+.retake-file{display:flex;flex-direction:column;gap:var(--sp-1);min-height:var(--target-min);font-weight:600}
+.retake-file input[type=file]{font-size:var(--fs-subhead);padding:var(--sp-2) 0}
+.retake .btn{margin-top:0;white-space:normal;text-align:center}
