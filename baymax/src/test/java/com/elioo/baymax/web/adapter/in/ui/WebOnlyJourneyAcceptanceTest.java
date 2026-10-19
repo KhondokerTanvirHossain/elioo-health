@@ -266,6 +266,20 @@ class WebOnlyJourneyAcceptanceTest {
                 }
             }
 
+            // 5d. B6: the detail (s17) and the Potassium row's value sheet (s13), reached by the links the result renders
+            assertThat(result).contains("href=\"" + documentPath + "/all\"");
+            String detail = get(web, session, documentPath + "/all");
+            assertThat(ResultFixtures.section(detail, "pages")).as("the page itself, on the detail").contains(documentPath + "/page/1");
+            Matcher row = Pattern.compile("<a class=\"vrow [^\"]*\" id=\"v-([0-9a-f-]{36})\" href=\"([^\"]+)\"[^>]*>(?:(?!</a>).)*?Potassium",
+                    Pattern.DOTALL).matcher(result);
+            assertThat(row.find()).as("the Potassium row on the result page").isTrue();
+            assertThat(row.group(1)).as("the row's id is the stored observation's")
+                    .isEqualTo(scalar("select id from baymax.observation where document_id = '" + documentId + "' and name = 'Potassium'"));
+            assertThat(row.group(2)).isEqualTo(documentPath + "/values/" + row.group(1) + "?from=summary");
+            String sheet = get(web, session, row.group(2));
+            assertThat(sheet).contains("11.0").contains(copy.t(Lang.BN, "sheet.earlier.none"))
+                    .contains("href=\"" + documentPath + "#v-" + row.group(1) + "\"");
+
             // 5c. a paper read badly (B5): the retake card in Bangla, a retake for the same patient through the one entry,
             // and the month's allowance the same before and after — a retake is never counted (DR-24)
             String quotaBefore = quotaLine(get(web, session, "/app/add?patient=" + ma.id()));

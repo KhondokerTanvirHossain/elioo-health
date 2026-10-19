@@ -94,11 +94,21 @@ final class ValueRows {
         };
     }
 
-    /**
-     * One value row: a link to its crop (B6 points it at the value sheet), the name, the value as printed with its unit,
-     * the crop, the bar where the code placed the value, the printed range and the chip.
-     */
+    /** Where a value sheet was opened from, so its close goes back to the same row: the summary, or the detail. */
+    static final String FROM_SUMMARY = "summary";
+    static final String FROM_ALL = "all";
+
+    /** A row on the result summary: {@link #row(UiCopy, Lang, UUID, Map, String)} opened from {@link #FROM_SUMMARY}. */
     static String row(UiCopy copy, Lang lang, UUID documentId, Map<String, Object> v) {
+        return row(copy, lang, documentId, v, FROM_SUMMARY);
+    }
+
+    /**
+     * One value row: a link to its value sheet (B6, s13; the crop itself for a legacy row with no observation id), the
+     * name, the value as printed with its unit, the crop, the bar where the code placed the value, the printed range and
+     * the chip. {@code from} is the page the row is drawn on, so the sheet closes back to this row there.
+     */
+    static String row(UiCopy copy, Lang lang, UUID documentId, Map<String, Object> v, String from) {
         String crop = crop(v.get("crop_key"), "a value");
         ValueVerdict.Kind kind = kindOf(v);
         String cls = kind.name().toLowerCase(Locale.ROOT);
@@ -107,7 +117,8 @@ final class ValueRows {
         OptionalDouble pin = pin(kind, v, side);
         String chip = copy.t(lang, chipKey(kind, side));
         String range = range(copy, lang, v);
-        String href = PageChrome.imageHref(documentId, crop);
+        String src = PageChrome.imageHref(documentId, crop);
+        String href = v.get("id") == null ? src : sheetHref(documentId, v.get("id"), from);
         String unit = v.get("unit") == null ? "" : esc(v.get("unit"));
         StringBuilder b = new StringBuilder("<a class=\"vrow ").append(cls).append('"');
         if (v.get("id") != null) {
@@ -119,10 +130,39 @@ final class ValueRows {
                 .append("<span class=\"vhead\"><span class=\"name\">").append(esc(v.get("name"))).append("</span> ")
                 .append("<span class=\"val\">").append(esc(v.get("value"))).append("</span>")
                 .append(unit.isEmpty() ? "" : " <span class=\"unit\">" + unit + "</span>").append("</span>")
-                .append("<img class=\"crop\" loading=\"lazy\" alt=\"\" src=\"").append(href).append("\">");
+                .append("<img class=\"crop\" loading=\"lazy\" alt=\"\" src=\"").append(src).append("\">");
         pin.ifPresent(p -> b.append(bar(v, kind, p)));
         return b.append("<span class=\"vfoot\"><span class=\"range\">").append(range).append("</span> <span class=\"chip ")
                 .append(cls).append("\">").append(chip).append("</span></span></a>").toString();
+    }
+
+    /** The value sheet's URL (s13) for one observation of this document; {@code from} is only ever "all" or "summary". */
+    static String sheetHref(UUID documentId, Object observationId, String from) {
+        return PageChrome.BASE + "/documents/" + documentId + "/values/" + esc(observationId) + "?from="
+                + (FROM_ALL.equals(from) ? FROM_ALL : FROM_SUMMARY);
+    }
+
+    /**
+     * The value sheet's value (s13): the value and unit as printed, large; the bar only where {@link #pin} agrees with the
+     * stored verdict; the printed range and the chip. The same verdict reading as {@link #row}, so the sheet and the row
+     * it opened from can never tell two stories.
+     */
+    static String sheetValue(UiCopy copy, Lang lang, Map<String, Object> v) {
+        ValueVerdict.Kind kind = kindOf(v);
+        String cls = kind.name().toLowerCase(Locale.ROOT);
+        String side = kind == ValueVerdict.Kind.INSIDE || kind == ValueVerdict.Kind.UNKNOWN ? null : storedSide(v);
+        OptionalDouble pin = pin(kind, v, side);
+        String chip = copy.t(lang, chipKey(kind, side));
+        String range = range(copy, lang, v);
+        String unit = v.get("unit") == null ? "" : esc(v.get("unit"));
+        StringBuilder b = new StringBuilder("<div class=\"sheet-value ").append(cls).append("\" role=\"group\" aria-label=\"")
+                .append(esc(v.get("name"))).append(' ').append(esc(v.get("value"))).append(unit.isEmpty() ? "" : " " + unit)
+                .append(", ").append(range).append(", ").append(chip).append("\">")
+                .append("<span class=\"vhead\"><span class=\"val big\">").append(esc(v.get("value"))).append("</span>")
+                .append(unit.isEmpty() ? "" : " <span class=\"unit\">" + unit + "</span>").append("</span>");
+        pin.ifPresent(p -> b.append(bar(v, kind, p)));
+        return b.append("<span class=\"vfoot\"><span class=\"range\">").append(range).append("</span> <span class=\"chip ")
+                .append(cls).append("\">").append(chip).append("</span></span></div>").toString();
     }
 
     /** Server SVG: geometry as attributes, colour from classes (CSP style-src 'self'; DesignTokensTest forbids literals). */
@@ -162,7 +202,7 @@ final class ValueRows {
                 + after + "</figure>";
     }
 
-    private static String crop(Object key, String what) {
+    static String crop(Object key, String what) {
         if (key == null || String.valueOf(key).isBlank()) {
             throw new IllegalStateException(what + " without its crop is never shown");
         }

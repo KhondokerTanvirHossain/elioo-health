@@ -173,7 +173,7 @@ class ResultSummaryRenderTest {
 
     // ---- B2: the summary sections (s10) — grouped value rows, crop-first medicines, the doctor's lines, the next step ----
 
-    /** Spec §4.10 grouping: outside first (critical before outside), then unknown, then inside (B6 collapses them). */
+    /** Spec §4.10 grouping: outside first (critical before outside), then unknown, then inside (collapsed after the first, B6). */
     @Test
     void rowsAreGroupedByVerdictAndInsideRowsComeLast() {
         var view = ResultFixtures.lab(List.of(
@@ -192,7 +192,47 @@ class ResultSummaryRenderTest {
         assertThat(ResultFixtures.section(html, "unknown")).contains(copy.t(Lang.BN, "value.group.unknown.why"))
                 .contains("id=\"v-" + id(view, "Urine Albumin"));
         assertThat(ResultFixtures.section(html, "inside")).contains(copy.t(Lang.BN, "value.group.inside"))
-                .contains("id=\"v-" + id(view, "Haemoglobin")).contains("id=\"v-" + id(view, "WBC"));
+                .contains("id=\"v-" + id(view, "Haemoglobin")).doesNotContain("id=\"v-" + id(view, "WBC"));
+    }
+
+    /**
+     * B6, both directions: the inside rows collapse after the first behind "আরও {n}টি … সব দেখুন", which opens the detail
+     * at its values; one inside row is shown and nothing is collapsed. Outside and unknown rows never collapse.
+     */
+    @Test
+    void insideRowsCollapseAfterTheFirstBehindACountThatOpensTheDetail() {
+        var two = ResultFixtures.lab(List.of(
+                ResultFixtures.value("Haemoglobin", "12.6", "g/dL", "12.0", "15.5", "inside"),
+                ResultFixtures.value("WBC", "7.2", "10^3/µL", "4.0", "11.0", "inside"),
+                ResultFixtures.value("Urine Albumin", "Trace", null, "Nil", null, "unknown"),
+                ResultFixtures.value("Glucose", "Trace", null, "Nil", null, "unknown"),
+                ResultFixtures.value("HbA1c", "8.4", "%", "4.0", "6.0", "outside", "high"),
+                ResultFixtures.value("LDL", "190", "mg/dL", null, "130", "outside", "high")));
+        String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(two, Urgency.THIS_WEEK, List.of(), GateState.NONE, null, ResultFixtures.BD));
+        String inside = ResultFixtures.section(html, "inside");
+        assertThat(inside.split("class=\"vrow ").length - 1).as("inside rows drawn").isEqualTo(1);
+        assertThat(inside).contains("<a class=\"more\" href=\"/app/documents/" + ResultFixtures.DOC + "/all#values\">"
+                + copy.t(Lang.BN, "value.more.inside", 1) + "</a>");
+        assertThat(ResultFixtures.section(html, "outside").split("class=\"vrow ").length - 1).as("outside never collapses").isEqualTo(2);
+        assertThat(ResultFixtures.section(html, "unknown").split("class=\"vrow ").length - 1).as("unknown never collapses").isEqualTo(2);
+
+        var one = ResultFixtures.lab(List.of(ResultFixtures.value("Haemoglobin", "12.6", "g/dL", "12.0", "15.5", "inside")));
+        String single = ResultFixtures.section(kit.documents.summaryBody(Lang.BN,
+                ResultFixtures.result(one, Urgency.ROUTINE, List.of(), GateState.NONE, null, ResultFixtures.BD)), "inside");
+        assertThat(single).contains("id=\"v-" + id(one, "Haemoglobin")).doesNotContain("class=\"more\"");
+    }
+
+    /** B6: every row on the summary opens its value sheet, which closes back to this row (from=summary). */
+    @Test
+    void everyValueRowOnTheSummaryOpensItsSheet() {
+        var view = ResultFixtures.lab(List.of(ResultFixtures.value("HbA1c", "8.4", "%", "4.0", "6.0", "outside", "high"),
+                ResultFixtures.value("Urine Albumin", "Trace", null, "Nil", null, "unknown")));
+        String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(view, Urgency.THIS_WEEK, List.of(), GateState.NONE, null, ResultFixtures.BD));
+        for (String name : List.of("HbA1c", "Urine Albumin")) {
+            assertThat(html).contains("id=\"v-" + id(view, name) + "\" href=\"/app/documents/" + ResultFixtures.DOC + "/values/"
+                    + id(view, name) + "?from=summary\"");
+        }
+        assertThat(html).contains("href=\"/app/documents/" + ResultFixtures.DOC + "/all\">" + copy.t(Lang.BN, "result.all") + "</a>");
     }
 
     /** The grouping reads the row's rendered kind: a stored INSIDE the code cannot prove sits under "check the paper". */
