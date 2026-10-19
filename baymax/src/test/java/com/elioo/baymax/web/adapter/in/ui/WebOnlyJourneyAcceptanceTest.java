@@ -12,7 +12,8 @@ import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.outbound.application.service.BanglaDate;
 import com.elioo.baymax.outbound.application.service.Copy;
 import com.elioo.baymax.outbound.domain.Urgency;
-import com.elioo.baymax.testsupport.TryDocuments;
+import com.elioo.baymax.storage.application.port.out.StoragePort;
+import com.elioo.baymax.storage.domain.StorageKeys;
 import com.elioo.baymax.wa.WaFixtures;
 import com.elioo.baymax.wa.application.port.out.WaMessagingPort;
 import com.elioo.baymax.web.application.port.in.WebAuthUseCase;
@@ -30,16 +31,28 @@ import org.springframework.boot.test.context.runner.ReactiveWebApplicationContex
 import org.springframework.context.ApplicationContext;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.server.PathContainer;
 import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.server.RouterFunction;
+import org.springframework.web.util.pattern.PathPatternParser;
 import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import reactor.core.publisher.Mono;
 
+import javax.imageio.ImageIO;
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -48,6 +61,7 @@ import java.sql.Statement;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -58,20 +72,22 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
  * The PO's request, as a test: a family uses the whole web app with WhatsApp switched off. Sign in with a code from the
- * log fallback (the supported laptop path), see the tabs, add a paper, watch it read, read the stored NOW banner, use
- * পরিবার, delete the paper, sign out. Each step asserts its element. Everything is real — Postgres, MinIO, the router,
- * the filters, the services and adapters — except OCR and the model, stubbed at their ports. The route sweep at the end
- * is derived from the router: a family-facing route a later PR adds fails here until the journey walks it or this class
- * writes down why not.
+ * log fallback (the supported laptop path), see the tabs, add a paper, watch it read, read the NOW banner, look at the
+ * crop and the page, use পরিবার (a flag, the reminders switch), delete the paper, sign out. Each step asserts its
+ * element. Everything is real — Postgres, MinIO, the router, the filters, the services and adapters — except OCR and
+ * the model, stubbed at their ports. The route sweep at the end is derived twice: the routes from the router, and the
+ * route each request reached from the request itself (method and path matched against the router's patterns), so a
+ * family-facing route a later PR adds fails here until the journey walks it or this class writes down why not.
  */
 @Testcontainers
 class WebOnlyJourneyAcceptanceTest {
@@ -96,6 +112,17 @@ class WebOnlyJourneyAcceptanceTest {
     /** The WhatsApp-on journey's family: its own number, so the two tests share no row and run in either order. */
     private static final String WA_NUMBER = "+8801700000732";
     private static final String DELIVERY_LOGGER = "com.elioo.baymax.web.adapter.out.delivery";
+    /** How long the WhatsApp port must stay silent before J1.2 counts its calls: longer than any retry or follow-up. */
+    private static final Duration SETTLE = Duration.ofSeconds(3);
+
+    /**
+     * The painted page: the top-left quarter (where the stub OCR puts "Potassium 11.0", x 10–140, y 10–40) orange, the
+     * rest blue. A crop of the reading is all orange and smaller than the page; the page is both colours where painted.
+     */
+    private static final int PAGE_W = 400;
+    private static final int PAGE_H = 200;
+    private static final Color WORDS = new Color(255, 140, 0);
+    private static final Color PAPER = new Color(0, 40, 200);
 
     /** Routes a family never reaches by browsing the app, each with why it is not a step of this journey. */
     static final Map<String, String> NOT_IN_JOURNEY = Map.ofEntries(
@@ -103,17 +130,23 @@ class WebOnlyJourneyAcceptanceTest {
             Map.entry("GET /lang/{code}", "the language toggle; BaymaxWebUiRouterTest"),
             Map.entry("GET /baymax", "a permanent redirect for old links; BaymaxWebUiRouterTest"),
             Map.entry("GET /baymax/{*rest}", "a permanent redirect for old links; BaymaxWebUiRouterTest"),
-            Map.entry("GET /app", "the same page as GET /app/"),
             Map.entry("GET /app/nudges/opt-out", "reached only from a link inside a WhatsApp reminder (HMAC token)"),
             Map.entry("POST /app/nudges/opt-out", "reached only from a link inside a WhatsApp reminder (HMAC token)"),
-            Map.entry("POST /app/patients/{id}/nudges/opt-out", "stops real reminders; FamilyViewTest; tried locally"),
             Map.entry("POST /app/patients/{id}/upload", "the legacy upload for cached pages; AddReportSubmitTest"),
             Map.entry("GET /app/patients/{id}", "the pre-tab timeline URL; C1 turns it into a redirect"),
-            Map.entry("GET /app/patients/{id}/profile", "the pre-tab profile URL; redirects to /app/family (A6)"),
-            Map.entry("GET /app/documents/{id}/image", "a crop, fetched by the browser from a page"),
-            Map.entry("GET /app/documents/{id}/page/{n}", "a page image, fetched by the browser from a page"));
+            Map.entry("GET /app/patients/{id}/profile", "the pre-tab profile URL; redirects to /app/family (A6)"));
 
-    private final Set<String> visited = new TreeSet<>();
+    /**
+     * Tables that keep a deleted document's id, each with why. Everything else carrying a {@code document_id} column
+     * (asked of information_schema) must hold nothing for it after the delete.
+     */
+    static final Map<String, String> KEEP_DOCUMENT_ID = Map.of(
+            "audit_event", "the audit of the view and of the delete itself; ids only, no text (V8)",
+            "outbound_message", "the message as composed for the family; OPEN — named in A13's PR body for the PO, "
+                    + "not changed here: deleting a paper leaves its explanation's body in this table");
+
+    /** Every request the journey made, as "METHOD /raw/path", recorded by the client itself (not labelled by hand). */
+    private final List<String> requests = Collections.synchronizedList(new ArrayList<>());
     private ListAppender<ILoggingEvent> codes;
     private Level deliveryLevelBefore;
 
@@ -178,82 +211,144 @@ class WebOnlyJourneyAcceptanceTest {
             assertThat(context.getBeanNamesForType(WaMessagingPort.class)).as("WhatsApp is off: no messaging bean exists").isEmpty();
 
             // 1. sign in: the number, then the code from the log fallback, then the session
-            String login = cookie(step(web.post().uri("/app/login").contentType(MediaType.APPLICATION_FORM_URLENCODED)
-                    .body(BodyInserters.fromFormData("whatsapp_number", "01700000731").with("confirmed", "1")), "POST /app/login")
+            String login = cookie(web.post().uri("/app/login").contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                    .body(BodyInserters.fromFormData("whatsapp_number", "01700000731").with("confirmed", "1")).exchange()
                     .expectStatus().isSeeOther().expectHeader().valueEquals(HttpHeaders.LOCATION, "/app/verify"), "baymax_login");
             String code = codes.list.stream().map(ILoggingEvent::getFormattedMessage).filter(m -> m.contains("otp fallback"))
                     .map(m -> m.replaceAll(".*code=([0-9]{6}).*", "$1")).findFirst()
                     .orElseThrow(() -> new AssertionError("no code in the log fallback"));
             assertThat(code).matches("[0-9]{6}");
-            assertThat(step(web.get().uri("/app/verify").cookie("baymax_login", login), "GET /app/verify").expectStatus().isOk()
+            assertThat(web.get().uri("/app/verify").cookie("baymax_login", login).exchange().expectStatus().isOk()
                     .expectBody(String.class).returnResult().getResponseBody()).contains("name=\"code\"");
             String session = enterCode(web, login, code);
 
-            // 2. the three tabs; চ্যাট's composer says chat is coming and cannot send
-            String chat = get(web, session, "/app/home", "GET /app/home");
+            // 2. the three tabs; চ্যাট's composer says chat is coming and holds nothing that could send
+            String chat = get(web, session, "/app/home");
             assertThat(AppShellRoutesTest.between(chat, "<div class=\"composer\"", "</div>"))
-                    .contains(copy.t(Lang.BN, "chat.soon")).doesNotContain("<form");
+                    .contains(copy.t(Lang.BN, "chat.soon")).doesNotContain("<form", "<textarea", "<input", "<button");
             assertThat(AppShellRoutesTest.between(chat, "<nav class=\"tabs\"", "</nav>"))
                     .contains(">" + copy.t(Lang.BN, "tab.papers") + "<").contains(">" + copy.t(Lang.BN, "tab.family") + "<");
-            assertThat(get(web, session, "/app/timeline", "GET /app/timeline")).contains("href=\"/app/add?patient=" + ma.id());
+            assertThat(get(web, session, "/app/timeline")).contains("href=\"/app/add?patient=" + ma.id());
 
             // 3–4. add a paper: the sheet, the post, the reading page, the poll until DONE
             String documentPath = uploadAndWaitUntilDone(web, session, ma);
+            UUID documentId = idOf(documentPath);
 
-            // 5. the result: the stored NOW line first, the patient named
-            String result = get(web, session, documentPath, "GET /app/documents/{id}");
+            // 5. the result: the NOW line first, the patient named. The banner says NOW and the document's stored
+            // urgency is NOW; that the banner is read from that column and not recomputed is A12's tests' claim.
+            String result = get(web, session, documentPath);
             assertThat(ResultFixtures.section(result, "urgency")).contains(copy.urgency(Lang.BN, Urgency.NOW, false));
+            assertThat(scalar("select urgency from baymax.document where id = '" + documentId + "'"))
+                    .as("the document's stored urgency").isEqualTo("now");
             assertThat(result.indexOf("id=\"urgency\"")).as("the urgency leads the page").isLessThan(result.indexOf("Potassium"));
             assertThat(result).contains("<span class=\"pchip\">" + copy.t(Lang.BN, "result.patient", "Rokeya", 68) + "</span>");
 
-            // 6. পরিবার: the account, the flag saved and shown ticked
-            String familyTab = get(web, session, "/app/family", "GET /app/family");
+            // 5b. the pictures the result page shows, fetched by the src it renders and checked by what they show
+            List<String> crops = srcs(result, "/image\\?key=[^\"]+");
+            List<String> pages = srcs(result, "/page/[0-9]+");
+            assertThat(crops).as("the Potassium reading's crop on the result page").hasSize(1);
+            assertThat(pages).as("the page image on the result page").hasSize(1);
+            BufferedImage page = picture(web, session, pages.get(0));
+            assertThat((double) page.getWidth() / page.getHeight()).as("the page's shape").isCloseTo(2.0, within(0.02));
+            assertThat(colourAt(page, 0.125, 0.125)).as("the page where the words are").isEqualTo(WORDS);
+            assertThat(colourAt(page, 0.875, 0.875)).as("the page away from the words").isEqualTo(PAPER);
+            BufferedImage crop = picture(web, session, crops.get(0));
+            assertThat(crop.getWidth()).as("a crop, not the page").isLessThan(page.getWidth());
+            assertThat(crop.getHeight()).as("a crop, not the page").isLessThan(page.getHeight());
+            for (double fx = 0.1; fx < 1; fx += 0.2) {
+                for (double fy = 0.1; fy < 1; fy += 0.2) {
+                    assertThat(colourAt(crop, fx, fy)).as("the crop shows the words' region at %.1f,%.1f", fx, fy).isEqualTo(WORDS);
+                }
+            }
+
+            // 6. পরিবার: the account, the flag saved and shown ticked, the reminders stopped and shown stopped
+            String familyTab = get(web, session, "/app/family");
             assertThat(familyTab).contains(PhoneDisplay.full(NUMBER)).contains("action=\"/app/logout\"");
             assertThat(familyTab).doesNotContain("value=\"diabetes\" checked");
-            step(web.post().uri("/app/patients/" + ma.id() + "/profile").cookie("baymax_session", session)
-                            .contentType(MediaType.APPLICATION_FORM_URLENCODED).body(BodyInserters.fromFormData("flag", "diabetes")),
-                    "POST /app/patients/{id}/profile").expectStatus().isSeeOther()
+            web.post().uri("/app/patients/" + ma.id() + "/profile").cookie("baymax_session", session)
+                    .contentType(MediaType.APPLICATION_FORM_URLENCODED).body(BodyInserters.fromFormData("flag", "diabetes")).exchange()
+                    .expectStatus().isSeeOther()
                     .expectHeader().valueEquals(HttpHeaders.LOCATION, "/app/family?patient=" + ma.id() + "&saved=1");
-            String saved = get(web, session, "/app/family?patient=" + ma.id() + "&saved=1", "GET /app/family");
+            String saved = get(web, session, "/app/family?patient=" + ma.id() + "&saved=1");
             assertThat(saved).contains(copy.t(Lang.BN, "profile.saved")).contains("value=\"diabetes\" checked");
 
-            // 7. delete the paper: the confirmation, then gone
-            assertThat(get(web, session, documentPath + "/delete", "GET /app/documents/{id}/delete"))
+            String optOut = "action=\"/app/patients/" + ma.id() + "/nudges/opt-out\"";
+            assertThat(saved).contains(copy.t(Lang.BN, "profile.nudges.on", "Rokeya")).contains(optOut);
+            assertThat(scalar("select count(*) from baymax.patient_profile where id = '" + ma.id() + "' and nudges_opted_out_at is null"))
+                    .as("reminders on before the family stops them").isEqualTo("1");
+            web.post().uri("/app/patients/" + ma.id() + "/nudges/opt-out").cookie("baymax_session", session).exchange()
+                    .expectStatus().isSeeOther().expectHeader().valueEquals(HttpHeaders.LOCATION, "/app/family?patient=" + ma.id());
+            assertThat(scalar("select count(*) from baymax.patient_profile where id = '" + ma.id() + "' and nudges_opted_out_at is not null"))
+                    .as("the stop is stored on the patient").isEqualTo("1");
+            assertThat(get(web, session, "/app/family?patient=" + ma.id()))
+                    .contains(copy.t(Lang.BN, "profile.nudges.off", "Rokeya")).doesNotContain(optOut);
+
+            // 7. delete the paper: the confirmation, then gone — the rows, the ledger and the objects in the bucket
+            List<String> keys = column("select storage_key from baymax.stored_object where document_id = '" + documentId
+                    + "' order by kind, storage_key");
+            String prefix = StorageKeys.documentPrefix(ma.familyId(), ma.id(), documentId);
+            assertThat(keys).as("the page and the crop in the ledger before the delete").hasSize(2).allSatisfy(k -> assertThat(k).startsWith(prefix));
+            StoragePort bucket = context.getBean(StoragePort.class);
+            assertThat(bucket.listKeys(prefix).collectList().block()).as("the objects in the bucket before the delete")
+                    .containsExactlyInAnyOrderElementsOf(keys);
+            assertThat(get(web, session, documentPath + "/delete"))
                     .contains("method=\"post\"").contains("action=\"" + documentPath + "/delete\"");
-            assertThat(step(web.post().uri(documentPath + "/delete").cookie("baymax_session", session), "POST /app/documents/{id}/delete")
+            assertThat(web.post().uri(documentPath + "/delete").cookie("baymax_session", session).exchange()
                     .expectStatus().isOk().expectBody(String.class).returnResult().getResponseBody()).contains(copy.t(Lang.BN, "doc.deleted"));
             web.get().uri(documentPath).cookie("baymax_session", session).exchange().expectStatus().isNotFound();
+            assertThat(tablesStillHolding(documentId)).as("tables still holding the deleted document").isEmpty();
+            assertThat(bucket.listKeys(prefix).collectList().block()).as("the bucket after the delete").isEmpty();
 
-            // 8. sign out: the session no longer opens a tab; the landing and the number page are there
-            step(web.post().uri("/app/logout").cookie("baymax_session", session), "POST /app/logout").expectStatus().isSeeOther()
+            // 8. sign out: the session no longer opens a tab; the landing and the number page are there, at both URLs
+            web.post().uri("/app/logout").cookie("baymax_session", session).exchange().expectStatus().isSeeOther()
                     .expectHeader().valueEquals(HttpHeaders.LOCATION, "/app/");
             web.get().uri("/app/home").cookie("baymax_session", session).exchange().expectStatus().is3xxRedirection()
                     .expectHeader().valueEquals(HttpHeaders.LOCATION, "/app/");
-            assertThat(step(web.get().uri("/"), "GET /").expectStatus().isOk().expectBody(String.class).returnResult()
+            assertThat(web.get().uri("/").exchange().expectStatus().isOk().expectBody(String.class).returnResult()
                     .getResponseBody()).contains("href=\"/app\"");
-            assertThat(step(web.get().uri("/app/"), "GET /app/").expectStatus().isOk().expectBody(String.class).returnResult()
-                    .getResponseBody()).contains("name=\"whatsapp_number\"");
+            String numberPage = web.get().uri("/app/").exchange().expectStatus().isOk().expectBody(String.class).returnResult()
+                    .getResponseBody();
+            assertThat(numberPage).contains("name=\"whatsapp_number\"");
+            assertThat(web.get().uri("/app").exchange().expectStatus().isOk().expectBody(String.class).returnResult()
+                    .getResponseBody()).as("GET /app is the same page as GET /app/").isEqualTo(numberPage);
 
-            // 9. every family-facing route is visited or has a written reason (derived from the router)
+            // 9. every family-facing route is visited or has a written reason; the visited ones derived from the requests
             List<RouteTable.Route> routes = RouteTable.of(context.getBean("baymaxWebUiRoutes", RouterFunction.class));
             assertThat(routes).hasSizeGreaterThanOrEqualTo(25);
-            List<String> keys = routes.stream().map(RouteTable.Route::key).toList();
-            List<String> missed = keys.stream().filter(k -> !visited.contains(k) && !NOT_IN_JOURNEY.containsKey(k)).toList();
+            List<String> keysOfRoutes = routes.stream().map(RouteTable.Route::key).toList();
+            Set<String> visited = new TreeSet<>();
+            List<String> unrouted = new ArrayList<>();
+            List<String> made = List.copyOf(requests);
+            assertThat(made).as("requests the journey made").hasSizeGreaterThanOrEqualTo(20);
+            for (String request : made) {
+                List<String> hits = routesServing(routes, request);
+                if (hits.size() == 1) {
+                    visited.add(hits.get(0));
+                } else {
+                    unrouted.add(request + " -> " + hits);
+                }
+            }
+            assertThat(unrouted).as("requests not served by exactly one published route").isEmpty();
+            List<String> missed = keysOfRoutes.stream().filter(k -> !visited.contains(k) && !NOT_IN_JOURNEY.containsKey(k)).toList();
             assertThat(missed).as("routes neither walked by the journey nor listed with a reason").isEmpty();
-            assertThat(NOT_IN_JOURNEY.keySet()).as("a reason for a route that no longer exists").allSatisfy(k -> assertThat(keys).contains(k));
-            assertThat(visited).as("a step under a key the router does not publish").allSatisfy(k -> assertThat(keys).contains(k));
+            assertThat(NOT_IN_JOURNEY.keySet()).as("a reason for a route that no longer exists").allSatisfy(k -> assertThat(keysOfRoutes).contains(k));
+            assertThat(NOT_IN_JOURNEY.keySet()).as("a reason for a route the journey walks after all").noneMatch(visited::contains);
         });
     }
 
     /**
      * Today's behaviour (D32's opt-in "WhatsApp-এও জানাবেন" is Phase 4): a paper uploaded on the web is also explained on
      * WhatsApp. With the channel on, the only messages are the sign-in code and this paper's own delivered rows — read
-     * from the port's every invocation, not from a list of the calls we expect.
+     * from the port's every invocation once it has been quiet for {@link #SETTLE}, and read again after the context
+     * closes, so a message sent late or asynchronously is counted too. Nudges are off in this context
+     * ({@code baymax.nudge.enabled=false}): a reminder is outside this claim; the nudge engine's own tests cover its
+     * sends.
      */
     @Test
     void withWhatsAppOnTheOnlyMessagesAreTheCodeAndTheUploadedPapersOwnExplanation() {
         WaMessagingPort wa = mock(WaMessagingPort.class);
         AtomicInteger n = new AtomicInteger();
+        AtomicInteger counted = new AtomicInteger(-1);
         when(wa.sendText(anyString(), anyString()))
                 .thenAnswer(i -> Mono.just(WaFixtures.wamid(WA_NUMBER.substring(1), n.incrementAndGet())));
         whatsappRunner(wa).run(context -> {
@@ -264,12 +359,14 @@ class WebOnlyJourneyAcceptanceTest {
             WebTestClient web = client(context);
             String session = signInWithTheCodeWhatsAppGot(context, web, wa);
             String documentPath = uploadAndWaitUntilDone(web, session, ma);
-            UUID documentId = UUID.fromString(documentPath.substring(documentPath.lastIndexOf('/') + 1));
-            List<String> delivered = awaitDeliveredBodiesOf(documentId);
+            UUID documentId = idOf(documentPath);
+            awaitFinalDeliveryOfExplanation(documentId);
+            counted.set(settle(wa));
+            List<String> delivered = deliveredBodiesOf(documentId);
 
             // derived from the port: every call of any WaMessagingPort method, not a list of the ones we expect
             List<Invocation> calls = List.copyOf(Mockito.mockingDetails(wa).getInvocations());
-            assertThat(calls).as("WhatsApp calls made").isNotEmpty();
+            assertThat(calls).as("WhatsApp calls made").isNotEmpty().hasSize(counted.get());
             assertThat(calls).allSatisfy(c -> assertThat(c.getMethod().getName()).as("no other WhatsApp operation").isEqualTo("sendText"));
             assertThat(calls).allSatisfy(c -> assertThat((String) c.getArgument(0)).as("only the family's own number").isEqualTo(WA_NUMBER));
             List<String> bodies = calls.stream().map(c -> (String) c.getArgument(1)).toList();
@@ -282,6 +379,8 @@ class WebOnlyJourneyAcceptanceTest {
                     + "' and kind = 'explanation' and urgency = 'now' and delivery_status = 'sent'"))
                     .as("the explanation of this paper, at the stored NOW, went out").isEqualTo("1");
         });
+        assertThat(Mockito.mockingDetails(wa).getInvocations()).as("WhatsApp calls by the time the context closed")
+                .hasSize(counted.get());
     }
 
     // ---- the steps, shared by both journeys -------------------------------------------------------------------
@@ -297,13 +396,32 @@ class WebOnlyJourneyAcceptanceTest {
         return records.createPatient(new PatientProfile(null, family.id(), "Rokeya", 68, PatientProfile.Sex.FEMALE, List.of(), t, t)).block();
     }
 
-    private static WebTestClient client(ApplicationContext context) {
-        return WebTestClient.bindToApplicationContext(context).configureClient().responseTimeout(Duration.ofSeconds(30)).build();
+    /** The client the journey browses with; it records every request it makes, which is what the route sweep reads. */
+    private WebTestClient client(ApplicationContext context) {
+        return WebTestClient.bindToApplicationContext(context).configureClient()
+                .filter((request, next) -> {
+                    requests.add(request.method().name() + " " + request.url().getRawPath());
+                    return next.exchange(request);
+                })
+                .responseTimeout(Duration.ofSeconds(30)).build();
+    }
+
+    /** The published routes whose method and pattern serve this "METHOD /path" request. */
+    private static List<String> routesServing(List<RouteTable.Route> routes, String request) {
+        String method = request.substring(0, request.indexOf(' '));
+        PathContainer path = PathContainer.parsePath(request.substring(request.indexOf(' ') + 1));
+        return routes.stream().filter(r -> r.method().name().equals(method))
+                .filter(r -> PathPatternParser.defaultInstance.parse(r.pattern()).matches(path))
+                .map(RouteTable.Route::key).toList();
+    }
+
+    private static UUID idOf(String documentPath) {
+        return UUID.fromString(documentPath.substring(documentPath.lastIndexOf('/') + 1));
     }
 
     private String enterCode(WebTestClient web, String login, String code) {
-        return cookie(step(web.post().uri("/app/verify").cookie("baymax_login", login)
-                        .contentType(MediaType.APPLICATION_FORM_URLENCODED).body(BodyInserters.fromFormData("code", code)), "POST /app/verify")
+        return cookie(web.post().uri("/app/verify").cookie("baymax_login", login)
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED).body(BodyInserters.fromFormData("code", code)).exchange()
                 .expectStatus().isSeeOther().expectHeader().valueEquals(HttpHeaders.LOCATION, "/app/home"), "baymax_session");
     }
 
@@ -313,8 +431,8 @@ class WebOnlyJourneyAcceptanceTest {
      * session.
      */
     private String signInWithTheCodeWhatsAppGot(ApplicationContext context, WebTestClient web, WaMessagingPort wa) {
-        String login = cookie(step(web.post().uri("/app/login").contentType(MediaType.APPLICATION_FORM_URLENCODED)
-                .body(BodyInserters.fromFormData("whatsapp_number", "0" + WA_NUMBER.substring(4)).with("confirmed", "1")), "POST /app/login")
+        String login = cookie(web.post().uri("/app/login").contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .body(BodyInserters.fromFormData("whatsapp_number", "0" + WA_NUMBER.substring(4)).with("confirmed", "1")).exchange()
                 .expectStatus().isSeeOther().expectHeader().valueEquals(HttpHeaders.LOCATION, "/app/verify"), "baymax_login");
         assertThat(login).as("WhatsApp accepted the code").endsWith("." + SignInPages.SENT_MARK);
         ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
@@ -325,7 +443,7 @@ class WebOnlyJourneyAcceptanceTest {
         assertThat(codes.list).as("the code never went to the log fallback")
                 .noneMatch(e -> e.getFormattedMessage().contains("otp fallback"));
         UiCopy copy = context.getBean(UiCopy.class);
-        assertThat(step(web.get().uri("/app/verify").cookie("baymax_login", login), "GET /app/verify").expectStatus().isOk()
+        assertThat(web.get().uri("/app/verify").cookie("baymax_login", login).exchange().expectStatus().isOk()
                 .expectBody(String.class).returnResult().getResponseBody()).contains(copy.t(Lang.BN, "login.code.sent"));
         return enterCode(web, login, six.group(1));
     }
@@ -340,16 +458,40 @@ class WebOnlyJourneyAcceptanceTest {
     }
 
     /**
-     * The bodies of this document's delivered rows, polled until the explanation's delivery is recorded (30 s at most):
-     * delivery runs after the status turns DONE, so the port's calls are read only once the row says it went out.
+     * Polls (30 s at most) until the explanation's delivery has a final outcome. 'pending' is not one: the adapter
+     * claims the row as pending before it calls the port and records 'sent' or 'failed' after.
      */
-    private static List<String> awaitDeliveredBodiesOf(UUID documentId) throws Exception {
+    private static void awaitFinalDeliveryOfExplanation(UUID documentId) throws Exception {
         String explained = "select count(*) from baymax.outbound_message where document_id = '" + documentId
-                + "' and kind = 'explanation' and delivery_status is not null";
+                + "' and kind = 'explanation' and delivery_status in ('sent', 'failed')";
         for (int i = 0; i < 60 && "0".equals(scalar(explained)); i++) {
             Thread.sleep(500);
         }
         assertThat(scalar(explained)).as("the explanation's delivery was recorded").isNotEqualTo("0");
+    }
+
+    /**
+     * Waits until the port has had no new call for {@link #SETTLE} (30 s at most) and returns how many calls there were:
+     * the count is taken when the system has gone quiet, not at the first moment the row said it went out.
+     */
+    private static int settle(WaMessagingPort wa) throws InterruptedException {
+        long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+        int last = Mockito.mockingDetails(wa).getInvocations().size();
+        long quietSince = System.nanoTime();
+        while (System.nanoTime() - quietSince < SETTLE.toNanos()) {
+            assertThat(System.nanoTime()).as("the WhatsApp port never went quiet").isLessThan(deadline);
+            Thread.sleep(250);
+            int now = Mockito.mockingDetails(wa).getInvocations().size();
+            if (now != last) {
+                last = now;
+                quietSince = System.nanoTime();
+            }
+        }
+        return last;
+    }
+
+    /** The bodies of this document's rows whose delivery the provider accepted. */
+    private static List<String> deliveredBodiesOf(UUID documentId) throws Exception {
         List<String> bodies = new ArrayList<>();
         try (Connection c = connect(); PreparedStatement s = c.prepareStatement(
                 "select body from baymax.outbound_message where document_id = ? and delivery_status = 'sent' order by created_at")) {
@@ -364,6 +506,33 @@ class WebOnlyJourneyAcceptanceTest {
         return bodies;
     }
 
+    /**
+     * Asks information_schema which baymax tables carry a {@code document_id} column, adds {@code document} itself, and
+     * returns {@code table=count} for every one still holding this document (those in {@link #KEEP_DOCUMENT_ID} aside).
+     */
+    private static List<String> tablesStillHolding(UUID documentId) throws Exception {
+        List<String> tables = column("select table_name from information_schema.columns where table_schema = 'baymax' "
+                + "and column_name = 'document_id' order by table_name");
+        assertThat(tables).as("information_schema returned no document_id columns — the sweep would pass vacuously")
+                .contains("observation", "stored_object");
+        assertThat(KEEP_DOCUMENT_ID.keySet()).as("a kept table that no longer carries document_id").allSatisfy(t -> assertThat(tables).contains(t));
+        List<String> offenders = new ArrayList<>();
+        String left = scalar("select count(*) from baymax.document where id = '" + documentId + "'");
+        if (!"0".equals(left)) {
+            offenders.add("document=" + left);
+        }
+        for (String table : tables) {
+            if (KEEP_DOCUMENT_ID.containsKey(table)) {
+                continue;
+            }
+            String n = scalar("select count(*) from baymax." + table + " where document_id = '" + documentId + "'");
+            if (!"0".equals(n)) {
+                offenders.add(table + "=" + n);
+            }
+        }
+        return offenders;
+    }
+
     private static String scalar(String query) throws Exception {
         try (Connection c = connect(); Statement s = c.createStatement(); ResultSet rs = s.executeQuery(query)) {
             rs.next();
@@ -371,27 +540,94 @@ class WebOnlyJourneyAcceptanceTest {
         }
     }
 
+    private static List<String> column(String query) throws Exception {
+        List<String> values = new ArrayList<>();
+        try (Connection c = connect(); Statement s = c.createStatement(); ResultSet rs = s.executeQuery(query)) {
+            while (rs.next()) {
+                values.add(rs.getString(1));
+            }
+        }
+        return values;
+    }
+
     private static Connection connect() throws Exception {
         return DriverManager.getConnection(POSTGRES.getJdbcUrl() + "&sslmode=disable", POSTGRES.getUsername(), POSTGRES.getPassword());
     }
 
+    /** The page the family photographs: the words' quarter orange, the paper blue (see {@link #WORDS}). */
+    private static byte[] paintedPage() throws Exception {
+        BufferedImage image = new BufferedImage(PAGE_W, PAGE_H, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = image.createGraphics();
+        g.setColor(PAPER);
+        g.fillRect(0, 0, PAGE_W, PAGE_H);
+        g.setColor(WORDS);
+        g.fillRect(0, 0, PAGE_W / 2, PAGE_H / 2);
+        g.dispose();
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ImageIO.write(image, "jpg", out);
+        return out.toByteArray();
+    }
+
+    /** The {@code src} of every {@code <img>} on the page pointing at this document's pictures, matching {@code tail}. */
+    private static List<String> srcs(String html, String tail) {
+        Matcher m = Pattern.compile("<img [^>]*src=\"(/app/documents/[0-9a-f-]{36}" + tail + ")\"").matcher(html);
+        List<String> found = new ArrayList<>();
+        while (m.find()) {
+            found.add(m.group(1));
+        }
+        return found;
+    }
+
+    /**
+     * What a browser does with an {@code <img src>}: ask the app (a 302 to a freshly signed URL), follow it to the bucket,
+     * and decode what comes back. Fails unless the bytes are a JPEG that decodes.
+     */
+    private static BufferedImage picture(WebTestClient web, String session, String src) throws Exception {
+        String signed = web.get().uri(URI.create(src)).cookie("baymax_session", session).exchange()
+                .expectStatus().isFound().expectHeader().valueEquals(HttpHeaders.CACHE_CONTROL, "private, no-store")
+                .returnResult(Void.class).getResponseHeaders().getFirst(HttpHeaders.LOCATION);
+        assertThat(signed).as("the signed URL for " + src).isNotNull();
+        HttpResponse<byte[]> got = HttpClient.newHttpClient().send(HttpRequest.newBuilder(URI.create(signed)).GET().build(),
+                HttpResponse.BodyHandlers.ofByteArray());
+        assertThat(got.statusCode()).as("the bucket served " + src).isEqualTo(200);
+        byte[] bytes = got.body();
+        assertThat(bytes).as("JPEG magic bytes for " + src).startsWith((byte) 0xFF, (byte) 0xD8, (byte) 0xFF);
+        BufferedImage image = ImageIO.read(new ByteArrayInputStream(bytes));
+        assertThat(image).as("a decodable image for " + src).isNotNull();
+        return image;
+    }
+
+    /** {@link #WORDS} or {@link #PAPER} — whichever the pixel at this fraction of the picture is near (JPEG is lossy). */
+    private static Color colourAt(BufferedImage image, double fx, double fy) {
+        Color c = new Color(image.getRGB((int) (image.getWidth() * fx), (int) (image.getHeight() * fy)));
+        if (near(c, WORDS)) {
+            return WORDS;
+        }
+        return near(c, PAPER) ? PAPER : c;
+    }
+
+    private static boolean near(Color a, Color b) {
+        return Math.abs(a.getRed() - b.getRed()) < 40 && Math.abs(a.getGreen() - b.getGreen()) < 40
+                && Math.abs(a.getBlue() - b.getBlue()) < 40;
+    }
+
     /** The sheet, the multipart post, the reading page, then the status poll until DONE; returns the document's path. */
     private String uploadAndWaitUntilDone(WebTestClient web, String session, PatientProfile ma) throws Exception {
-        assertThat(get(web, session, "/app/add?patient=" + ma.id(), "GET /app/add"))
+        assertThat(get(web, session, "/app/add?patient=" + ma.id()))
                 .containsPattern("name=\"patient\" value=\"" + ma.id() + "\" required checked>");
         MultipartBodyBuilder body = new MultipartBodyBuilder();
         body.part("patient", ma.id().toString());
-        body.part("file", TryDocuments.jpeg(400, 200)).filename("page-1.jpg").contentType(MediaType.IMAGE_JPEG);
-        String documentPath = step(web.post().uri("/app/add").cookie("baymax_session", session)
-                .body(BodyInserters.fromMultipartData(body.build())), "POST /app/add")
+        body.part("file", paintedPage()).filename("page-1.jpg").contentType(MediaType.IMAGE_JPEG);
+        String documentPath = web.post().uri("/app/add").cookie("baymax_session", session)
+                .body(BodyInserters.fromMultipartData(body.build())).exchange()
                 .expectStatus().isSeeOther().returnResult(Void.class).getResponseHeaders().getFirst(HttpHeaders.LOCATION);
         assertThat(documentPath).matches("/app/documents/[0-9a-f-]{36}");
-        String first = get(web, session, documentPath, "GET /app/documents/{id}");
+        String first = get(web, session, documentPath);
         assertThat(first).containsAnyOf("id=\"progress\"", "id=\"urgency\"");   // still reading, or already read
 
         String status = "";
         for (int i = 0; i < 60 && !status.equals("DONE"); i++) {
-            String json = step(web.get().uri(documentPath + "/status").cookie("baymax_session", session), "GET /app/documents/{id}/status")
+            String json = web.get().uri(documentPath + "/status").cookie("baymax_session", session).exchange()
                     .expectStatus().isOk().expectBody(String.class).returnResult().getResponseBody();
             assertThat(json).matches("\\{\"status\":\"[A-Z_]+\"}").doesNotContain("urgency");
             status = json.replaceAll(".*\"status\":\"([A-Z_]+)\".*", "$1");
@@ -403,13 +639,8 @@ class WebOnlyJourneyAcceptanceTest {
         return documentPath;
     }
 
-    private WebTestClient.ResponseSpec step(WebTestClient.RequestHeadersSpec<?> request, String routeKey) {
-        visited.add(routeKey);
-        return request.exchange();
-    }
-
-    private String get(WebTestClient web, String session, String uri, String routeKey) {
-        return step(web.get().uri(uri).cookie("baymax_session", session), routeKey).expectStatus().isOk()
+    private static String get(WebTestClient web, String session, String uri) {
+        return web.get().uri(uri).cookie("baymax_session", session).exchange().expectStatus().isOk()
                 .expectBody(String.class).returnResult().getResponseBody();
     }
 

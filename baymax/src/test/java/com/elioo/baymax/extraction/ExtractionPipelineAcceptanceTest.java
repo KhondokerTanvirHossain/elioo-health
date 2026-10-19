@@ -108,9 +108,12 @@ public class ExtractionPipelineAcceptanceTest {
 
     /**
      * What the stubs answer: the model's extraction reply, and the words OCR reads on the page (left to right, one
-     * line). Absent, the stubs answer {@link #REPLY} over "HbA1c 8.2" and the model gives the same reply to every call.
-     * Present, an EXPLAIN call (its prompt starts with the skeleton) is answered with the skeleton itself: the
-     * model changes nothing, the template is already correct and passes its own checklist.
+     * line). Every {@link #runnerFor} context registers one — this class's own {@code runner()} included — and then an
+     * EXPLAIN call (its prompt starts with the skeleton) is answered with the skeleton itself: the model changes
+     * nothing, the template is already correct and passes its own checklist. So the explanations in this class's
+     * contexts pass the safety check; before A13 they got {@link #REPLY} and failed it (no assertion here reads them).
+     * Absent — only {@code DocumentRecoveryAcceptanceTest}, which builds its own context over {@link StubbedProviders}
+     * — the stubs answer {@link #REPLY} over "HbA1c 8.2" and the model gives the same reply to every call.
      */
     public record StubReply(String reply, List<String> words) {
     }
