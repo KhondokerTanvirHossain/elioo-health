@@ -17,6 +17,7 @@ import com.elioo.healthcare.llm.model.LlmResponse;
 import com.elioo.healthcare.llm.model.TokenUsage;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.data.r2dbc.R2dbcDataAutoConfiguration;
 import org.springframework.boot.autoconfigure.r2dbc.R2dbcAutoConfiguration;
@@ -65,7 +66,7 @@ import static org.mockito.Mockito.when;
  * authenticate on a developer laptop.</p>
  */
 @Testcontainers
-class ExtractionPipelineAcceptanceTest {
+public class ExtractionPipelineAcceptanceTest {
 
     static final String BUCKET = "baymax";
 
@@ -90,14 +91,31 @@ class ExtractionPipelineAcceptanceTest {
 
     @BeforeAll
     static void createBucket() {
+        createBucket(MINIO);
+    }
+
+    /** The bucket the runner's storage properties name, in this MinIO. */
+    public static void createBucket(MinIOContainer minio) {
         try (S3Client admin = S3Client.builder()
-                .endpointOverride(URI.create(MINIO.getS3URL())).region(Region.US_EAST_1).forcePathStyle(true)
+                .endpointOverride(URI.create(minio.getS3URL())).region(Region.US_EAST_1).forcePathStyle(true)
                 .httpClientBuilder(UrlConnectionHttpClient.builder())
                 .credentialsProvider(StaticCredentialsProvider.create(
-                        AwsBasicCredentials.create(MINIO.getUserName(), MINIO.getPassword())))
+                        AwsBasicCredentials.create(minio.getUserName(), minio.getPassword())))
                 .build()) {
             admin.createBucket(CreateBucketRequest.builder().bucket(BUCKET).build());
         }
+    }
+
+    /**
+     * What the stubs answer: the model's extraction reply, and the words OCR reads on the page (left to right, one
+     * line). Every {@link #runnerFor} context registers one — this class's own {@code runner()} included — and then an
+     * EXPLAIN call (its prompt starts with the skeleton) is answered with the skeleton itself: the model changes
+     * nothing, the template is already correct and passes its own checklist. So the explanations in this class's
+     * contexts pass the safety check; before A13 they got {@link #REPLY} and failed it (no assertion here reads them).
+     * Absent — only {@code DocumentRecoveryAcceptanceTest}, which builds its own context over {@link StubbedProviders}
+     * — the stubs answer {@link #REPLY} over "HbA1c 8.2" and the model gives the same reply to every call.
+     */
+    public record StubReply(String reply, List<String> words) {
     }
 
     /** Stubs for the two outside services, so the run needs no GCP key and no model spend. */
@@ -106,27 +124,47 @@ class ExtractionPipelineAcceptanceTest {
 
         @Bean
         @Primary
-        MeteredVisionOcr stubOcr() {
+        MeteredVisionOcr stubOcr(ObjectProvider<StubReply> stub) {
+            List<String> texts = stub.getIfAvailable(() -> new StubReply(REPLY, List.of("HbA1c", "8.2"))).words();
             MeteredVisionOcr ocr = mock(MeteredVisionOcr.class);
-            TextWord name = word("HbA1c", 10, 10, 90, 40);
-            TextWord value = word("8.2", 100, 10, 140, 40);
+            List<TextWord> words = new java.util.ArrayList<>();
+            int left = 10;
+            for (String text : texts) {   // the name 80 px wide, each later word 40, 10 apart: HbA1c 10–90, 8.2 100–140
+                int right = left + (words.isEmpty() ? 80 : 40);
+                words.add(word(text, left, 10, right, 40));
+                left = right + 10;
+            }
             when(ocr.detectDocumentText(any(), any())).thenReturn(Mono.just(new VisionOcrResponse(
-                    "HbA1c 8.2",
+                    String.join(" ", texts),
                     List.of(new TextBlock("", "en", 0.9f, null,
-                            List.of(new TextParagraph("", 0.9f, null, List.of(name, value))), 0, "TEXT")),
+                            List.of(new TextParagraph("", 0.9f, null, List.copyOf(words))), 0, "TEXT")),
                     List.of(), 0.92, null)));
             return ocr;
         }
 
         @Bean
         @Primary
-        LlmClient stubModel() {
+        LlmClient stubModel(ObjectProvider<StubReply> stub) {
+            StubReply given = stub.getIfAvailable();
             LlmClient client = mock(LlmClient.class);
             when(client.providerName()).thenReturn("groq");
             when(client.supportsImages()).thenReturn(false);
-            when(client.invoke(any())).thenReturn(Mono.just(new LlmResponse(REPLY, "stop",
-                    new TokenUsage(1200, 300), "openai/gpt-oss-120b", null, "groq", 800L)));
+            if (given == null) {
+                when(client.invoke(any())).thenReturn(Mono.just(answer(REPLY)));
+            } else {
+                when(client.invoke(any())).thenAnswer(i -> {
+                    String prompt = ((com.elioo.healthcare.llm.model.LlmRequest) i.getArgument(0)).userPrompt();
+                    if (prompt != null && prompt.startsWith("SKELETON:\n") && prompt.contains("\n\nURGENCY LINE:")) {
+                        return Mono.just(answer(prompt.substring("SKELETON:\n".length(), prompt.indexOf("\n\nURGENCY LINE:"))));
+                    }
+                    return Mono.just(answer(given.reply()));
+                });
+            }
             return client;
+        }
+
+        private static LlmResponse answer(String content) {
+            return new LlmResponse(content, "stop", new TokenUsage(1200, 300), "openai/gpt-oss-120b", null, "groq", 800L);
         }
 
         private static TextWord word(String text, int l, int t, int r, int b) {
@@ -137,29 +175,39 @@ class ExtractionPipelineAcceptanceTest {
     }
 
     private ReactiveWebApplicationContextRunner runner() {
+        return runnerFor(POSTGRES, MINIO, REPLY, "HbA1c", "8.2");
+    }
+
+    /**
+     * The real Baymax context over these containers (create the bucket first, {@link #createBucket(MinIOContainer)}),
+     * with OCR reading {@code words} and the model answering {@code reply}. Shared with the web journey test.
+     */
+    public static ReactiveWebApplicationContextRunner runnerFor(PostgreSQLContainer<?> postgres, MinIOContainer minio,
+                                                                String reply, String... words) {
         return new ReactiveWebApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(
                         R2dbcAutoConfiguration.class, R2dbcDataAutoConfiguration.class,
                         R2dbcTransactionManagerAutoConfiguration.class, TransactionAutoConfiguration.class,
                         LlmAutoConfiguration.class, BaymaxAutoConfiguration.class))
                 .withUserConfiguration(StubbedProviders.class)
+                .withBean(StubReply.class, () -> new StubReply(reply, List.of(words)))
                 .withPropertyValues(
                         "baymax.enabled=true", "llm.provider=groq", "llm.groq.api-key=test-key",
                         "baymax.extract.vision-model=",           // text-only: no vision client in this run
                         "baymax.llm.prices.groq.[openai/gpt-oss-120b].input=0.15",
                         "baymax.llm.prices.groq.[openai/gpt-oss-120b].output=0.60",
-                        "spring.r2dbc.url=r2dbc:postgresql://" + POSTGRES.getHost() + ":"
-                                + POSTGRES.getFirstMappedPort() + "/" + POSTGRES.getDatabaseName(),
-                        "spring.r2dbc.username=" + POSTGRES.getUsername(),
-                        "spring.r2dbc.password=" + POSTGRES.getPassword(),
-                        "baymax.flyway.url=" + POSTGRES.getJdbcUrl() + "&sslmode=disable",
-                        "baymax.flyway.user=" + POSTGRES.getUsername(),
-                        "baymax.flyway.password=" + POSTGRES.getPassword(),
-                        "baymax.storage.endpoint=" + MINIO.getS3URL(),
+                        "spring.r2dbc.url=r2dbc:postgresql://" + postgres.getHost() + ":"
+                                + postgres.getFirstMappedPort() + "/" + postgres.getDatabaseName(),
+                        "spring.r2dbc.username=" + postgres.getUsername(),
+                        "spring.r2dbc.password=" + postgres.getPassword(),
+                        "baymax.flyway.url=" + postgres.getJdbcUrl() + "&sslmode=disable",
+                        "baymax.flyway.user=" + postgres.getUsername(),
+                        "baymax.flyway.password=" + postgres.getPassword(),
+                        "baymax.storage.endpoint=" + minio.getS3URL(),
                         "baymax.storage.region=us-east-1",
                         "baymax.storage.bucket=" + BUCKET,
-                        "baymax.storage.access-key=" + MINIO.getUserName(),
-                        "baymax.storage.secret-key=" + MINIO.getPassword(),
+                        "baymax.storage.access-key=" + minio.getUserName(),
+                        "baymax.storage.secret-key=" + minio.getPassword(),
                         "baymax.storage.path-style=true",
                         "baymax.storage.credentials=static",
                         "baymax.storage.server-side-encryption=");
