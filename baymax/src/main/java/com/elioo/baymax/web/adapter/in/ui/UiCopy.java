@@ -8,7 +8,10 @@ import java.io.InputStreamReader;
 import java.io.Reader;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -113,6 +116,25 @@ public class UiCopy {
             return "";
         }
         return Html.esc(lang == Lang.BN ? BanglaDate.format(isoDate, null) : isoDate);
+    }
+
+    /** The patient's calendar (A10 swaps in PatientCalendar.ZONE). */
+    private static final ZoneId PATIENT_ZONE = ZoneId.of("Asia/Dhaka");
+
+    /**
+     * A time of day on the patient's calendar (Dhaka), HTML-escaped: on a Bangla page the part of the day and a 12-hour
+     * clock in Bangla digits ("সকাল ১০:১২"), on an English page {@code HH:mm}. The parts of the day are copy keys.
+     */
+    public String time(Lang lang, Instant at) {
+        LocalTime t = LocalTime.ofInstant(at, PATIENT_ZONE);
+        if (lang != Lang.BN) {
+            return Html.esc(String.format(java.util.Locale.ROOT, "%02d:%02d", t.getHour(), t.getMinute()));
+        }
+        int h = t.getHour();
+        String part = h >= 4 && h < 6 ? "time.dawn" : h >= 6 && h < 12 ? "time.morning" : h >= 12 && h < 15 ? "time.noon"
+                : h >= 15 && h < 17 ? "time.afternoon" : h >= 17 && h < 19 ? "time.evening" : "time.night";
+        int h12 = h % 12 == 0 ? 12 : h % 12;
+        return t(lang, part) + " " + Html.esc(BanglaDate.digits(String.format(java.util.Locale.ROOT, "%d:%02d", h12, t.getMinute())));
     }
 
     /** The bundle text as written, unescaped, no arguments: for tests and for URL parameters only, never for HTML. */

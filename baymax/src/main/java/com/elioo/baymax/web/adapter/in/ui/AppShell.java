@@ -31,7 +31,12 @@ final class AppShell {
      * page, and the tab bar with {@code under} current, the tab the page belongs to.
      */
     String inside(Lang lang, Tab under, String body) {
-        return Html.appPage(lang, Html.Head.of(copy.t(lang, under.labelKey) + " — " + copy.t(lang, "app.title")),
+        return inside(lang, under, Html.Head.of(copy.t(lang, under.labelKey) + " — " + copy.t(lang, "app.title")), body);
+    }
+
+    /** As {@link #inside(Lang, Tab, String)} with a head of the page's own (the reading page: its title, its refresh, its script). */
+    String inside(Lang lang, Tab under, Html.Head head, String body) {
+        return Html.appPage(lang, head,
                 "<header class=\"appbar\">" + Html.brand(copy.t(lang, "app.title")) + "</header>", body,
                 copy.t(lang, "disclaimer"), tabs(lang, under), "", "");
     }

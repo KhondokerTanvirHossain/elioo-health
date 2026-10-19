@@ -1,10 +1,12 @@
 package com.elioo.baymax.web.adapter.in.ui;
 
 import com.elioo.baymax.common.error.BaymaxException;
+import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.DocumentView;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.application.port.in.ResultUseCase;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
+import com.elioo.baymax.web.domain.ReadingView;
 import com.elioo.baymax.web.domain.WebSession;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -18,6 +20,7 @@ import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -39,6 +42,11 @@ public class DocumentPages implements WebPages {
     private final UiCopy copy;
     private final PageChrome chrome;
     private final ResultUseCase results;
+
+    /** How often the reading page asks again: the no-script refresh and progress.js's poll (5 s, spec §4.9). */
+    static final int POLL_SECONDS = 5;
+    /** From five minutes the reading page says it is taking longer than usual. */
+    static final Duration SLOW = Duration.ofMinutes(5);
 
     @Override
     public int order() {
@@ -67,10 +75,65 @@ public class DocumentPages implements WebPages {
                         .header(HttpHeaders.CACHE_CONTROL, "private, no-store").bodyValue(Map.of("status", s.name())));
     }
 
+    /**
+     * GET /app/documents/{id}: while the paper is RECEIVED or PROCESSING, the reading page (s09); otherwise the document
+     * page as before (A12 replaces DONE, B5 NEEDS_RETAKE and FAILED). The branch reads the status alone, which records
+     * nothing, so the page records one DOCUMENT_VIEW whichever page it draws; a paper finished between the two reads is
+     * drawn finished, never as a reading page that would wait for a change that already happened.
+     */
     public Mono<ServerResponse> documentPage(ServerRequest request) {
         WebSession session = SessionAuthFilter.session(request);
         Lang lang = Lang.of(request);
         UUID documentId = PageChrome.uuid(request.pathVariable("id"));
+        return results.status(session.familyId(), documentId).flatMap(status -> !inFlight(status)
+                ? finishedPage(session, lang, documentId)
+                : results.reading(session.familyId(), documentId).flatMap(r -> inFlight(Document.Status.valueOf(r.document().status()))
+                        ? Html.html(HttpStatus.OK, progressPage(lang, r))
+                        : finishedPage(session, lang, documentId)));
+    }
+
+    static boolean inFlight(Document.Status status) {
+        return status == Document.Status.RECEIVED || status == Document.Status.PROCESSING;
+    }
+
+    /** The reading page (s09) in the shell, under কাগজপত্র: reloads itself without script, polls the status with it. */
+    String progressPage(Lang lang, ReadingView r) {
+        Html.Head head = Html.Head.of(copy.t(lang, "progress.title") + " — " + copy.t(lang, "app.title"))
+                .refreshWithoutScript(POLL_SECONDS).script("progress.js");
+        return new AppShell(copy).inside(lang, Tab.PAPERS, head, progressBody(lang, r));
+    }
+
+    /**
+     * Three steps, each a real {@code document.status} (পেয়েছি · পড়ছি · তৈরি): no percentage and no step the code does
+     * not have. Nothing about the result — no urgency, no values, no reassurance — until it is DONE.
+     */
+    String progressBody(Lang lang, ReadingView r) {
+        boolean received = Document.Status.RECEIVED.name().equals(r.document().status());
+        String id = r.document().documentId();
+        StringBuilder b = new StringBuilder("<section id=\"progress\" data-status-url=\"").append(BASE).append("/documents/")
+                .append(esc(id)).append("/status\" data-status=\"").append(esc(r.document().status())).append("\">");
+        b.append("<span class=\"pchip\">").append(copy.t(lang, "result.patient", r.patient().name(), r.patient().age())).append("</span>");
+        b.append("<h1>").append(copy.t(lang, "progress.title")).append("</h1>");
+        int pages = r.document().pageCount() == null ? 1 : Math.max(1, r.document().pageCount());
+        b.append("<p class=\"meta\">").append(copy.t(lang, "progress.sent", pages)).append("</p>");
+        String when = copy.time(lang, r.receivedAt()) + (r.viewer().bangladesh() ? "" : " " + copy.t(lang, "time.dhaka"));
+        b.append("<ol id=\"steps\" class=\"steps\" aria-live=\"polite\">")
+                .append(received ? "<li aria-current=\"step\">" : "<li class=\"done\">").append(copy.t(lang, "progress.step.received"))
+                .append(received ? "" : " " + Icons.svg("check", 18)).append(" <span class=\"meta\">").append(when).append("</span></li>")
+                .append(received ? "<li class=\"next\">" : "<li aria-current=\"step\">").append(copy.t(lang, "progress.step.processing"))
+                .append(received ? "" : " <span class=\"meta\">" + copy.t(lang, "progress.step.processing.note") + "</span>").append("</li>")
+                .append("<li class=\"next\">").append(copy.t(lang, "progress.step.done"))
+                .append(" <span class=\"meta\">").append(copy.t(lang, "progress.step.done.note")).append("</span></li></ol>");
+        if (Duration.between(r.receivedAt(), r.now()).compareTo(SLOW) >= 0) {
+            b.append("<p class=\"warn\">").append(copy.t(lang, "progress.slow")).append("</p>");
+        }
+        b.append("<p>").append(copy.t(lang, "progress.leave")).append("</p>");
+        b.append("<a class=\"btn quiet\" href=\"").append(Tab.PAPERS.path).append("?patient=").append(r.patient().id()).append("\">")
+                .append(copy.t(lang, "progress.timeline")).append("</a></section>");
+        return b.toString();
+    }
+
+    private Mono<ServerResponse> finishedPage(WebSession session, Lang lang, UUID documentId) {
         return timeline.document(session.familyId(), documentId)
                 .zipWith(timeline.explanationOf(session.familyId(), documentId).map(Optional::of).defaultIfEmpty(Optional.empty()))
                 .flatMap(t -> Html.html(HttpStatus.OK, new AppShell(copy).inside(lang, Tab.PAPERS, render(lang, t.getT1(), documentId, t.getT2()))));

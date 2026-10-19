@@ -64,7 +64,8 @@ final class Html {
 
     /**
      * Everything a page's head carries (R2). A PR that needs something new in the head adds a field here (L1: theme,
-     * A9: refresh without script and progress.js, D4: upload.js) instead of another page() overload.
+     * A9: refresh without script and progress.js, D4: upload.js) instead of another page() overload. A script is the only
+     * script a page carries: a file from {@code /assets/}, never inline (CSP {@code script-src 'self'}).
      *
      * @param title          already HTML-escaped (it comes from {@link UiCopy}); escaping it again showed "&#39;" in the tab
      * @param refreshSeconds when > 0 the page reloads itself after that many seconds — the timeline while a
@@ -86,6 +87,21 @@ final class Html {
 
         Head indexed() {
             return new Head(title, refreshSeconds, refreshOnlyWithoutScript, scripts, true);
+        }
+
+        /**
+         * A9: the page reloads itself after {@code seconds} only when script is off ({@code <noscript>}); with script on,
+         * the page's own script polls instead. An unconditional refresh would reload over the poll.
+         */
+        Head refreshWithoutScript(int seconds) {
+            return new Head(title, seconds, true, scripts, index);
+        }
+
+        /** A script file from {@code /assets/} (listed in {@code AssetHandler.ASSETS}), loaded {@code defer} and versioned. */
+        Head script(String file) {
+            List<String> more = new java.util.ArrayList<>(scripts);
+            more.add(file);
+            return new Head(title, refreshSeconds, refreshOnlyWithoutScript, more, index);
         }
     }
 
@@ -117,21 +133,22 @@ final class Html {
 
     /** Everything up to and including {@code </head>}: one head for {@link #page} and {@link #appPage}. */
     private static String head(Lang lang, Head head) {
-        // Not rendered yet (A9 renders the first, D4 the second): refused, so a PR that sets one cannot be silently dropped.
-        if (head.refreshOnlyWithoutScript()) {
-            throw new IllegalStateException("Head.refreshOnlyWithoutScript is not rendered yet");
-        }
-        if (!head.scripts().isEmpty()) {
-            throw new IllegalStateException("Head.scripts is not rendered yet");
+        String refresh = head.refreshSeconds() > 0 ? "<meta http-equiv=\"refresh\" content=\"" + head.refreshSeconds() + "\">" : "";
+        StringBuilder scripts = new StringBuilder();
+        for (String file : head.scripts()) {
+            if (!AssetHandler.ASSETS.contains(file)) {
+                throw new IllegalStateException("script " + file + " is not a served asset");
+            }
+            scripts.append("<script src=\"/assets/").append(file).append("?v=").append(AssetHandler.version(file)).append("\" defer></script>");
         }
         return "<!doctype html><html lang=\"" + lang.code + "\"><head><meta charset=\"utf-8\">"
-                + (head.refreshSeconds() > 0 ? "<meta http-equiv=\"refresh\" content=\"" + head.refreshSeconds() + "\">" : "")
+                + (head.refreshOnlyWithoutScript() && !refresh.isEmpty() ? "<noscript>" + refresh + "</noscript>" : refresh)
                 + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-fit=cover\">"
                 + "<meta name=\"color-scheme\" content=\"light dark\">"
                 + "<meta name=\"theme-color\" media=\"(prefers-color-scheme: light)\" content=\"" + Tokens.LIGHT_BG + "\">"
                 + "<meta name=\"theme-color\" media=\"(prefers-color-scheme: dark)\" content=\"" + Tokens.DARK_BG + "\">"
                 + (head.index() ? "" : "<meta name=\"robots\" content=\"noindex\">")
-                + "<title>" + head.title() + "</title><link rel=\"stylesheet\" href=\"" + CSS_HREF + "\"><link rel=\"icon\" type=\"image/svg+xml\" href=\"" + ICON_HREF + "\"></head>";
+                + "<title>" + head.title() + "</title><link rel=\"stylesheet\" href=\"" + CSS_HREF + "\"><link rel=\"icon\" type=\"image/svg+xml\" href=\"" + ICON_HREF + "\">" + scripts + "</head>";
     }
 
     /** The seven-argument form the screens call today; it is the {@link Head} form, byte for byte (HtmlHeadTest). */
