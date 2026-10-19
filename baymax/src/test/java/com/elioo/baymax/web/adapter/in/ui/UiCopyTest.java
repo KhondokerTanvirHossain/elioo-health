@@ -24,6 +24,25 @@ class UiCopyTest {
 
     private final UiCopy copy = new UiCopy();
 
+    /**
+     * Regression guard: app.err.freetier was "ফ্রি সীমা শেষ। {0}", and {0} was the exception's developer message, so a
+     * Bangla family read "free plan allows 3 document(s) per calendar month". No error copy may carry a slot for a
+     * developer message.
+     */
+    @Test
+    void noErrorCopyHasASlotForADeveloperMessage() {
+        int checked = 0;
+        for (Lang lang : Lang.values()) {
+            for (String key : copy.keys(lang)) {
+                if (key.startsWith("app.err.")) {
+                    checked++;
+                    assertThat(copy.t(lang, key)).as(lang + " " + key).doesNotContain("{0}");
+                }
+            }
+        }
+        assertThat(checked).as("error keys read; none would pass vacuously").isGreaterThanOrEqualTo(10);
+    }
+
     @Test
     void bothLanguagesCarryExactlyTheSameKeys() {
         assertThat(copy.keys(Lang.EN)).containsExactlyInAnyOrderElementsOf(copy.keys(Lang.BN));
