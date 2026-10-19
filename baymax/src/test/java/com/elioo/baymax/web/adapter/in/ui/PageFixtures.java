@@ -126,6 +126,9 @@ final class PageFixtures {
         // A9: the reading page — a paper being read, and one just received for a reader abroad (Dhaka time marked)
         variant("GET /app/documents/{id}", Fixture.get("/app/documents/" + doc, true, Stubs::processing).named("reading"));
         variant("GET /app/documents/{id}", Fixture.get("/app/documents/" + doc, true, Stubs::receivedAbroad).named("received"));
+        // B3: a NOW paper (s11) — every reason block, as a Bangladeshi number and as a number abroad sees it
+        variant("GET /app/documents/{id}", Fixture.get("/app/documents/" + doc, true, k -> Stubs.nowLab(k, true)).named("now"));
+        variant("GET /app/documents/{id}", Fixture.get("/app/documents/" + doc, true, k -> Stubs.nowLab(k, false)).named("nowabroad"));
         put("POST /app/login", new Fixture("/app/login", false, Body.FORM, Map.of("whatsapp_number", "01700000000", "confirmed", "1"), Stubs::noCode));
         variant("POST /app/login", new Fixture("/app/login", false, Body.FORM, Map.of("whatsapp_number", "01700000000"), Stubs::noCode).named("confirm"));
         variant("POST /app/login", new Fixture("/app/login", false, Body.FORM, Map.of("whatsapp_number", "12"), k -> { }).named("invalid"));
@@ -257,6 +260,34 @@ final class PageFixtures {
             when(k.results.result(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(new ResultView(view,
                     k.ma(3).patient(), true, new ViewerLocale(true), Urgency.THIS_WEEK, List.of("diagnosis_present"),
                     GateState.RELEASED, "রিপোর্টটি পেয়েছি। এ সপ্তাহের মধ্যে একজন ডাক্তার দেখান।", 0, 2,
+                    WebUiTestKit.NOW.minusSeconds(3600), WebUiTestKit.NOW)));
+        }
+
+        /**
+         * B3: a two-page NOW lab report with one stored reason of every kind the rule raises and one it no longer knows,
+         * so the derived page tests (contrast, targets, inline code, the paper label) read every block s11 draws.
+         */
+        static void nowLab(WebUiTestKit k, boolean bangladesh) {
+            String crop = "f/p/" + WebUiTestKit.DOC_ID + "/crop-";
+            DocumentView view = new DocumentView(WebUiTestKit.DOC_ID.toString(), "DONE", null, "lab_report", "2026-10-12",
+                    "Shapla Diagnostics", 0.9, "m", 2,
+                    List.of(Map.of("id", UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100031"), "name", "Potassium", "value", "11.0",
+                                    "unit", "mmol/L", "ref_low", "3.5", "ref_high", "5.1", "verdict", "critical", "verdict_side", "high",
+                                    "crop_key", crop + "1.jpg"),
+                            Map.of("id", UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100032"), "name", "Sodium", "value", "131",
+                                    "unit", "mmol/L", "ref_low", "135", "ref_high", "145", "verdict", "outside", "verdict_side", "low",
+                                    "crop_key", crop + "2.jpg")),
+                    List.of(),
+                    List.of(Map.of("instruction", "আবার দেখাবেন", "due_date", "2026-10-01", "crop_key", crop + "4.jpg")),
+                    Map.of("diagnosis", List.of(Map.of("text", "CKD", "crop_key", crop + "5.jpg"))), null);
+            List<String> reasons = new java.util.ArrayList<>();
+            for (com.elioo.baymax.outbound.domain.UrgencyReason r : com.elioo.baymax.outbound.domain.UrgencyReason.values()) {
+                reasons.add(r.of("potassium", null));
+            }
+            reasons.add("retired_rule_2025:potassium");
+            when(k.results.status(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(Document.Status.DONE));
+            when(k.results.result(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(new ResultView(view,
+                    k.ma(3).patient(), true, new ViewerLocale(bangladesh), Urgency.NOW, reasons, GateState.PENDING, null, 0, 2,
                     WebUiTestKit.NOW.minusSeconds(3600), WebUiTestKit.NOW)));
         }
 

@@ -60,8 +60,14 @@ final class ResultFixtures {
     }
 
     static DocumentView lab(String facility, List<Map<String, Object>> values) {
+        return lab(facility, values, List.of(), Map.of());
+    }
+
+    /** A two-page lab report that also carries the doctor's follow-up and clinical-context lines as stored. */
+    static DocumentView lab(String facility, List<Map<String, Object>> values, List<Map<String, Object>> followUp,
+                            Map<String, Object> clinicalContext) {
         return new DocumentView(DOC.toString(), "DONE", null, "lab_report", "2026-10-12", facility, 0.92,
-                "m", 2, values, List.of(), List.of(), Map.of(), null);
+                "m", 2, values, List.of(), followUp, clinicalContext, null);
     }
 
     static DocumentView prescription(List<Map<String, Object>> medicines, Map<String, Object> clinicalContext, Map<String, Object> unverified) {
@@ -81,6 +87,41 @@ final class ResultFixtures {
                              String wording, ViewerLocale viewer) {
         return new ResultView(view, patient, true, viewer, "DONE".equals(view.status()) ? urgency : null, reasons, gate, wording,
                 0, 2, NOW.minusSeconds(60), NOW);
+    }
+
+    /**
+     * Each text node of the markup once the paper's own blocks are gone: its quotes ({@code <figure class="paper">}) and
+     * its value rows ({@code <a class="vrow …">}), whose words are the paper's, drawn by B2's audited row code.
+     */
+    static List<String> textOutsidePaper(String html) {
+        String noPaper = html.replaceAll("(?s)<figure class=\"paper\">.*?</figure>", "")
+                .replaceAll("(?s)<a class=\"vrow[^\"]*\"[^>]*>.*?</a>", "");
+        return java.util.Arrays.stream(noPaper.split("<[^>]*>")).map(String::strip).filter(t -> !t.isEmpty()).toList();
+    }
+
+    /**
+     * Every bundle string of {@code lang} as a page shows it (escaped), each {@code {n}} free to hold any argument; a
+     * template with no letter of its own outside its placeholders ("{0} · {1}") is left out, since it would match any
+     * sentence. A text node is bundle copy only when it is the whole of one of these.
+     */
+    static List<java.util.regex.Pattern> bundleTemplates(UiCopy copy, Lang lang) {
+        List<java.util.regex.Pattern> out = new java.util.ArrayList<>();
+        for (String key : copy.keys(lang)) {
+            String template = copy.t(lang, key);
+            if (!template.replaceAll("\\{\\d+}", "").matches("(?s).*\\p{L}.*")) {
+                continue;
+            }
+            StringBuilder regex = new StringBuilder();
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\{\\d+}").matcher(template);
+            int at = 0;
+            while (m.find()) {
+                regex.append(java.util.regex.Pattern.quote(template.substring(at, m.start()))).append(".+?");
+                at = m.end();
+            }
+            regex.append(java.util.regex.Pattern.quote(template.substring(at)));
+            out.add(java.util.regex.Pattern.compile(regex.toString(), java.util.regex.Pattern.DOTALL));
+        }
+        return out;
     }
 
     /** The element with this id, through its closing tag: assertions read one block, never the whole page (UUIDs). */

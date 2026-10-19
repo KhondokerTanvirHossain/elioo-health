@@ -4,6 +4,7 @@ import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.DocumentView;
 import com.elioo.baymax.outbound.domain.Urgency;
+import com.elioo.baymax.outbound.domain.UrgencyReason;
 import com.elioo.baymax.outbound.domain.ValueVerdict;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.application.port.in.ResultUseCase;
@@ -23,12 +24,18 @@ import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Mono;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumMap;
+import java.util.EnumSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static com.elioo.baymax.web.adapter.in.ui.Html.esc;
@@ -53,6 +60,28 @@ public class DocumentPages implements WebPages {
     static final int POLL_SECONDS = 5;
     /** From five minutes the reading page says it is taking longer than usual. */
     static final Duration SLOW = Duration.ofMinutes(5);
+
+    /**
+     * Reason → the block that renders it on a NOW page (spec §4.11, s11). Keyed by the rule's own enum, so a reason added
+     * to {@link UrgencyReason} without a block fails ResultNowRenderTest. Every block renders even when no stored row
+     * matches its reason (the page images stand in); a stored prefix the enum does not know gets {@link #OTHER_BLOCK}.
+     */
+    static final Map<UrgencyReason, String> REASON_BLOCKS = new EnumMap<>(Map.of(
+            UrgencyReason.VALUE_CRITICAL, "why-value-critical",
+            UrgencyReason.VALUE_OUTSIDE_RANGE, "why-value-outside",
+            UrgencyReason.UNVERIFIED_VALUE_CRITICAL, "why-unverified-critical",
+            UrgencyReason.UNVERIFIED_VALUE_OUTSIDE_RANGE, "why-unverified-outside",
+            UrgencyReason.TEXT_EMERGENCY_PHRASE, "why-emergency-phrase",
+            UrgencyReason.FOLLOW_UP_PAST_DUE, "why-follow-up",
+            UrgencyReason.DIAGNOSIS_PRESENT, "why-diagnosis"));
+    /**
+     * The reasons the rule raises a paper to NOW with (UrgencyService; derived from it in ResultNowRenderTest). Their
+     * blocks come first; the THIS_WEEK reasons a NOW paper also carries follow them (spec §4.11, "shown below if present").
+     */
+    static final Set<UrgencyReason> NOW_REASONS = EnumSet.of(UrgencyReason.VALUE_CRITICAL, UrgencyReason.UNVERIFIED_VALUE_CRITICAL,
+            UrgencyReason.TEXT_EMERGENCY_PHRASE);
+    /** The generic block: a legacy reason prefix, or a NOW stored with no reason — never a NOW page with nothing. */
+    static final String OTHER_BLOCK = "why-other";
 
     @Override
     public int order() {
@@ -177,9 +206,10 @@ public class DocumentPages implements WebPages {
             b.append("<p class=\"meta\">").append(copy.t(lang, "result.filed")).append("</p>");
         }
         b.append(banner(lang, r));       // first section in main, on first paint: no script, no animation, no close
+        b.append(nowBody(lang, r));      // s11: why, then what to do — before the gate line and the rest of the result
         b.append(gateLine(lang, r));
         if (r.done()) {
-            b.append(items(lang, v, PageChrome.uuid(v.documentId()), r.urgency()));
+            b.append(items(lang, v, PageChrome.uuid(v.documentId()), r.urgency(), shownAbove(r)));
         }
         return b.toString();
     }
@@ -211,6 +241,176 @@ public class DocumentPages implements WebPages {
         return "<section class=\"banner " + (now ? "now" : "soon") + "\" id=\"urgency\" aria-label=\"" + copy.t(lang, "result.banner.label")
                 + "\"><p class=\"line\"><span class=\"icon\">" + icon + "</span><span>" + copy.urgency(lang, r.urgency(), false)
                 + "</span></p></section>";
+    }
+
+    /**
+     * s11 / spec §4.11, only on a stored NOW: one block per distinct stored reason ({@link #drawnOrder}), then the action
+     * for this reader's own phone (F7), the red-flag questions, what to take, and "I am not a doctor". A Bangladeshi
+     * number gets tel:999 once, under the red-flag questions and nowhere else; a number abroad is never handed tel:999 (it
+     * does not connect from abroad) and gets "call the person with them" and a WhatsApp share whose text names the
+     * patient and carries no value, then the same questions with no call link. Every string is a copy key. No call
+     * button for the person with them until Phase 5 stores that person.
+     */
+    String nowBody(Lang lang, ResultView r) {
+        if (r.urgency() != Urgency.NOW) {
+            return "";
+        }
+        DocumentView v = r.document();
+        UUID documentId = PageChrome.uuid(v.documentId());
+        StringBuilder b = new StringBuilder();
+        drawnOrder(r.urgencyReasons()).forEach(reason -> b.append(reasonBlock(lang, v, documentId, reason.orElse(null))));
+        boolean bangladesh = r.viewer().bangladesh();
+        b.append(bangladesh ? "" : remoteAction(lang, r.patient().name())).append(redFlags(lang, bangladesh));
+        return b.append("<section id=\"now-bring\" class=\"now-after\"><p>").append(copy.t(lang, bangladesh ? "now.bring" : "now.bring.remote"))
+                .append("</p><p class=\"small\">").append(copy.t(lang, "now.notdoctor")).append("</p></section>").toString();
+    }
+
+    /**
+     * The blocks of a NOW page, in the order drawn (spec §4.11): one per distinct stored reason, empty for a prefix the
+     * enum does not know. The NOW reasons ({@link #NOW_REASONS}) and the unknown ones (their level is not known, so they
+     * are not demoted) first, then the THIS_WEEK reasons "below if present", each group in stored order. The rule stores
+     * values in printed order and the phrase last, so the stored order alone would put a THIS_WEEK block above the reason
+     * the paper is NOW for. With no NOW reason stored (a legacy row; the rule never stores one) the generic block comes
+     * first, so a NOW page always says why it is NOW.
+     */
+    static List<Optional<UrgencyReason>> drawnOrder(List<String> stored) {
+        Set<Optional<UrgencyReason>> distinct = new LinkedHashSet<>();
+        (stored == null ? List.<String>of() : stored).forEach(reason -> distinct.add(UrgencyReason.ofReason(reason)));
+        List<Optional<UrgencyReason>> first = new ArrayList<>();
+        List<Optional<UrgencyReason>> below = new ArrayList<>();
+        for (Optional<UrgencyReason> reason : distinct) {
+            (reason.isEmpty() || NOW_REASONS.contains(reason.get()) ? first : below).add(reason);
+        }
+        if (first.isEmpty()) {
+            first.add(Optional.empty());
+        }
+        first.addAll(below);
+        return first;
+    }
+
+    /**
+     * The value kinds this page's NOW reason blocks draw: CRITICAL under a stored value_critical, nothing below NOW. An
+     * OUTSIDE row stays in "যেগুলো সীমার বাইরে" below, as s11 draws it; its block points there. {@link #rowsOfKind} and
+     * this set are the one rule both places read.
+     */
+    static Set<ValueVerdict.Kind> shownAbove(ResultView r) {
+        if (r.urgency() != Urgency.NOW) {
+            return Set.of();
+        }
+        Set<ValueVerdict.Kind> kinds = EnumSet.noneOf(ValueVerdict.Kind.class);
+        for (String reason : r.urgencyReasons()) {
+            UrgencyReason.ofReason(reason).flatMap(DocumentPages::kindShownBy).ifPresent(kinds::add);
+        }
+        return kinds;
+    }
+
+    /** The value kind a reason's block draws its rows of, if it draws rows at all. */
+    static Optional<ValueVerdict.Kind> kindShownBy(UrgencyReason reason) {
+        return reason == UrgencyReason.VALUE_CRITICAL ? Optional.of(ValueVerdict.Kind.CRITICAL) : Optional.empty();
+    }
+
+    /** One reason's block; {@code reason} null is the generic block. The page images stand in where no stored row matches. */
+    private String reasonBlock(Lang lang, DocumentView v, UUID documentId, UrgencyReason reason) {
+        String id = reason == null ? OTHER_BLOCK : REASON_BLOCKS.get(reason);
+        StringBuilder b = new StringBuilder("<section id=\"").append(id).append("\" class=\"reason now\">");
+        if (reason == null) {
+            return b.append(lead(lang, "now.why.other")).append(fullPages(lang, v, documentId)).append("</section>").toString();
+        }
+        // the block's lead, and what proves it on the paper; with no proof the whole pages stand in (never a bare line)
+        String[] shown = switch (reason) {
+            case VALUE_CRITICAL -> new String[]{lead(lang, "now.why.critical"), rowsOfKind(lang, v, documentId, ValueVerdict.Kind.CRITICAL)};
+            case VALUE_OUTSIDE_RANGE -> hasKind(v, ValueVerdict.Kind.OUTSIDE)      // the rows stay in their group below
+                    ? new String[]{"", "<a class=\"btn quiet\" href=\"#outside\">" + copy.t(lang, "now.why.outside") + "</a>"}
+                    : new String[]{lead(lang, "value.group.outside"), ""};
+            case UNVERIFIED_VALUE_CRITICAL -> new String[]{lead(lang, "now.why.unverified"), ""};   // never the number: not an observation
+            case UNVERIFIED_VALUE_OUTSIDE_RANGE -> new String[]{lead(lang, "now.why.unverified_outside"), ""};
+            case TEXT_EMERGENCY_PHRASE -> new String[]{lead(lang, "now.why.phrase"), ""};
+            case FOLLOW_UP_PAST_DUE -> new String[]{lead(lang, "now.why.followup"), followUpQuotes(lang, v, documentId)};
+            case DIAGNOSIS_PRESENT -> new String[]{"<p class=\"lead\">" + chrome.contextSection(lang, "diagnosis") + "</p>",
+                    diagnosisQuotes(lang, v, documentId)};
+        };
+        return b.append(shown[0]).append(shown[1].isEmpty() ? fullPages(lang, v, documentId) : shown[1]).append("</section>").toString();
+    }
+
+    private static boolean hasKind(DocumentView v, ValueVerdict.Kind kind) {
+        return v.values() != null && v.values().stream().anyMatch(row -> ValueRows.kindOf(row) == kind);
+    }
+
+    private String lead(Lang lang, String key) {
+        return "<p class=\"lead\">" + copy.t(lang, key) + "</p>";
+    }
+
+    /** The rows drawn as this kind (the stored verdict, as the groups below draw them); the group below skips them. */
+    private String rowsOfKind(Lang lang, DocumentView v, UUID documentId, ValueVerdict.Kind kind) {
+        StringBuilder b = new StringBuilder();
+        (v.values() == null ? List.<Map<String, Object>>of() : v.values()).stream().filter(row -> ValueRows.kindOf(row) == kind)
+                .forEach(row -> b.append(ValueRows.row(copy, lang, documentId, row)));
+        return b.toString();
+    }
+
+    /** The stored follow-ups as written, beside their crops; a line stored without a crop is not quoted. */
+    private String followUpQuotes(Lang lang, DocumentView v, UUID documentId) {
+        StringBuilder b = new StringBuilder();
+        for (Map<String, Object> f : v.followUp() == null ? List.<Map<String, Object>>of() : v.followUp()) {
+            if (f.get("instruction") == null || f.get("crop_key") == null) {
+                continue;
+            }
+            Object due = f.get("due_date");
+            String when = due == null || String.valueOf(due).isBlank() ? ""
+                    : "<p class=\"due\">" + copy.t(lang, "next.followup", dueText(lang, String.valueOf(due))) + "</p>";
+            b.append(ValueRows.paperQuote(copy, lang, documentId, f.get("instruction"), f.get("crop_key"), when));
+        }
+        return b.toString();
+    }
+
+    /** The diagnosis lines as written, beside their crops; a line stored without a crop is not quoted. */
+    private String diagnosisQuotes(Lang lang, DocumentView v, UUID documentId) {
+        Object lines = v.clinicalContext() == null ? null : v.clinicalContext().get("diagnosis");
+        StringBuilder quotes = new StringBuilder();
+        if (lines instanceof List<?> list) {
+            for (Object line : list) {
+                if (line instanceof Map<?, ?> m && m.get("text") != null && m.get("crop_key") != null) {
+                    quotes.append(ValueRows.paperQuote(copy, lang, documentId, m.get("text"), m.get("crop_key"), ""));
+                }
+            }
+        }
+        return quotes.toString();
+    }
+
+    /** Every page of the paper, whole, each linking to itself so it opens large: what to show a doctor. */
+    private String fullPages(Lang lang, DocumentView v, UUID documentId) {
+        StringBuilder b = new StringBuilder();
+        int pages = v.pageCount() == null ? 1 : Math.max(1, v.pageCount());
+        for (int n = 1; n <= pages; n++) {
+            String href = BASE + "/documents/" + documentId + "/page/" + n;
+            b.append("<a class=\"fullpage\" href=\"").append(href).append("\"><img class=\"page-img\" loading=\"lazy\" alt=\"\" src=\"")
+                    .append(href).append("\"><span class=\"cap\">").append(copy.t(lang, "now.page", n)).append("</span><span class=\"zoom\">")
+                    .append(copy.t(lang, "crop.zoom")).append("</span></a>");
+        }
+        return b.toString();
+    }
+
+    /**
+     * The red-flag questions, their own section for every reader (s11, s11--abroad). A Bangladeshi phone (F7) gets the one
+     * tel:999 on the page, under them; a phone abroad gets "tell the person with them" and no call link at all.
+     */
+    private String redFlags(Lang lang, boolean bangladesh) {
+        return "<section id=\"red-flags\" class=\"flags now\"><p class=\"lead\">" + copy.t(lang, "now.flags.q") + "</p><p>"
+                + copy.t(lang, bangladesh ? "now.flags.go" : "now.remote.flags.go") + "</p>"
+                + (bangladesh ? "<a class=\"btn now-outline\" href=\"tel:999\">" + copy.t(lang, "now.call999") + "</a>" : "")
+                + "</section>";
+    }
+
+    /**
+     * A phone abroad (F7): never tel:999. Call the person with the patient; send someone at home a WhatsApp text that names
+     * the patient and what to take, and no value (the bundle's own text, URL-encoded with %20 for spaces).
+     */
+    private String remoteAction(Lang lang, String name) {
+        String share = URLEncoder.encode(copy.raw(lang, "now.remote.share.text", name), StandardCharsets.UTF_8).replace("+", "%20");
+        return "<section id=\"remote-action\" class=\"emergency\"><p class=\"lead\">" + copy.t(lang, "now.remote.lead", name) + "</p>"
+                + "<a class=\"btn\" href=\"https://wa.me/?text=" + esc(share) + "\" rel=\"noopener\">" + copy.t(lang, "now.remote.share") + "</a>"
+                + "<p class=\"small\">" + copy.t(lang, "now.remote.share.note") + "</p>"
+                + "<p class=\"small\">" + copy.t(lang, "now.remote.999") + "</p></section>";
     }
 
     /** F3: Medioo's released words, labelled as such; "a person is checking" only for PENDING; withheld says so. */
@@ -267,16 +467,17 @@ public class DocumentPages implements WebPages {
             b.append(deleteLink(lang, documentId));
             return b.toString();
         }
-        return b.append(items(lang, view, documentId, null)).toString();
+        return b.append(items(lang, view, documentId, null, Set.of())).toString();
     }
 
     /**
      * A DONE paper's items (s10, B2): the values grouped by their rendered verdict, the doctor's lines as written, the
      * medicines crop first, the next step, then the pages, "প্রশ্ন? চ্যাট" and the delete link. {@code urgency} is the
-     * stored level; null (the legacy page) brings no "what to take" line.
+     * stored level; null (the legacy page) brings no "what to take" line. {@code shownAbove} are the kinds a NOW reason
+     * block already drew (s11), which the outside group does not draw a second time.
      */
-    String items(Lang lang, DocumentView view, UUID documentId, Urgency urgency) {
-        return valuesSummary(lang, view, documentId) + doctorSection(lang, view, documentId)
+    String items(Lang lang, DocumentView view, UUID documentId, Urgency urgency, Set<ValueVerdict.Kind> shownAbove) {
+        return valuesSummary(lang, view, documentId, shownAbove) + doctorSection(lang, view, documentId)
                 + medicinesSection(lang, view, documentId) + nextSection(lang, view, documentId, urgency)
                 + "<h2>" + copy.t(lang, "doc.pages") + "</h2>" + pageImages(view, documentId)
                 + "<p><a class=\"btn quiet\" href=\"" + Tab.CHAT.path + "\">" + copy.t(lang, "result.ask") + "</a></p>"
@@ -286,8 +487,9 @@ public class DocumentPages implements WebPages {
     /**
      * Spec §4.10: outside first (critical before outside), then the values Medioo could not place with why, then inside
      * (every row; B6 collapses them behind a count). Grouped by {@link ValueRows#kindOf}, the kind each row is drawn as.
+     * A row of a kind in {@code shownAbove} is drawn once, in its NOW reason block, and not again here.
      */
-    String valuesSummary(Lang lang, DocumentView view, UUID documentId) {
+    String valuesSummary(Lang lang, DocumentView view, UUID documentId, Set<ValueVerdict.Kind> shownAbove) {
         List<Map<String, Object>> values = view.values() == null ? List.of() : view.values();
         int unverified = unverified(view, "values");
         if (values.isEmpty() && unverified == 0) {
@@ -301,7 +503,11 @@ public class DocumentPages implements WebPages {
         List<Map<String, Object>> unknown = new ArrayList<>();
         List<Map<String, Object>> inside = new ArrayList<>();
         for (Map<String, Object> v : values) {
-            switch (ValueRows.kindOf(v)) {
+            ValueVerdict.Kind kind = ValueRows.kindOf(v);
+            if (shownAbove.contains(kind)) {
+                continue;
+            }
+            switch (kind) {
                 case CRITICAL, OUTSIDE -> outside.add(v);
                 case UNKNOWN -> unknown.add(v);
                 case INSIDE -> inside.add(v);
