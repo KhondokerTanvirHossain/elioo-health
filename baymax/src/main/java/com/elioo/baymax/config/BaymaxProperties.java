@@ -194,6 +194,8 @@ public class BaymaxProperties {
         private String publicBaseUrl = "https://baymax.eliooo.org";
         /** off | all | urgency — which messages wait for a reviewer. */
         private String gateMode = "off";
+        /** The PENDING copy's [N] (spec §4.10): how many hours a review typically takes. Measure in week 0. */
+        private int reviewTypicalHours = 2;
         /** Urgencies gated when gateMode=urgency. */
         private List<String> gateUrgencyLevels = new ArrayList<>(List.of("now", "this_week"));
         /** Hard cap on any message body, characters. */
