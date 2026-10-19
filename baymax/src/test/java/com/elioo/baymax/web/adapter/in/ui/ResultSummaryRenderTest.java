@@ -201,18 +201,20 @@ class ResultSummaryRenderTest {
      */
     @Test
     void insideRowsCollapseAfterTheFirstBehindACountThatOpensTheDetail() {
-        var two = ResultFixtures.lab(List.of(
+        var three = ResultFixtures.lab(List.of(
                 ResultFixtures.value("Haemoglobin", "12.6", "g/dL", "12.0", "15.5", "inside"),
                 ResultFixtures.value("WBC", "7.2", "10^3/µL", "4.0", "11.0", "inside"),
+                ResultFixtures.value("Platelets", "250", "10^3/µL", "150", "450", "inside"),
                 ResultFixtures.value("Urine Albumin", "Trace", null, "Nil", null, "unknown"),
                 ResultFixtures.value("Glucose", "Trace", null, "Nil", null, "unknown"),
                 ResultFixtures.value("HbA1c", "8.4", "%", "4.0", "6.0", "outside", "high"),
                 ResultFixtures.value("LDL", "190", "mg/dL", null, "130", "outside", "high")));
-        String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(two, Urgency.THIS_WEEK, List.of(), GateState.NONE, null, ResultFixtures.BD));
+        String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(three, Urgency.THIS_WEEK, List.of(), GateState.NONE, null, ResultFixtures.BD));
         String inside = ResultFixtures.section(html, "inside");
         assertThat(inside.split("class=\"vrow ").length - 1).as("inside rows drawn").isEqualTo(1);
+        // three inside rows: the count is the two behind the link (a count of 1 would be right only for two rows)
         assertThat(inside).contains("<a class=\"more\" href=\"/app/documents/" + ResultFixtures.DOC + "/all#values\">"
-                + copy.t(Lang.BN, "value.more.inside", 1) + "</a>");
+                + copy.t(Lang.BN, "value.more.inside", 2) + "</a>");
         assertThat(ResultFixtures.section(html, "outside").split("class=\"vrow ").length - 1).as("outside never collapses").isEqualTo(2);
         assertThat(ResultFixtures.section(html, "unknown").split("class=\"vrow ").length - 1).as("unknown never collapses").isEqualTo(2);
 

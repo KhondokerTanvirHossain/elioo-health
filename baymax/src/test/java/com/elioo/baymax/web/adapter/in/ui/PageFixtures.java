@@ -263,9 +263,9 @@ final class PageFixtures {
             DocumentView view = new DocumentView(WebUiTestKit.DOC_ID.toString(), "DONE", null, "lab_report", "2026-10-12",
                     "Shapla Diagnostics", 0.9, "m", 1,
                     // B2: each value carries its observation id and its stored F2 verdict, as ObservationEntity.toView gives them
-                    List.of(Map.of("id", UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100021"), "name", "HbA1c", "value", "8.2", "unit", "%",
+                    List.of(Map.of("id", UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100021"), "name", "HbA1c", "canonical_name", "hba1c", "value", "8.2", "unit", "%",
                                     "ref_low", "4.0", "ref_high", "6.0", "verdict", "outside", "verdict_side", "high", "crop_key", crop + "1.jpg"),
-                            Map.of("id", UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100022"), "name", "Creatinine", "value", "130", "unit", "µmol/L",
+                            Map.of("id", UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100022"), "name", "Creatinine", "canonical_name", "creatinine", "value", "130", "unit", "µmol/L",
                                     "ref_low", "59", "ref_high", "104", "verdict", "inside", "crop_key", crop + "2.jpg")),
                     List.of(Map.of("name", "Metformin", "dose_text", "500 mg", "frequency_text", "1+0+1",
                             "timing_text", "after meals", "duration_text", "30 days", "crop_key", crop + "3.jpg")),

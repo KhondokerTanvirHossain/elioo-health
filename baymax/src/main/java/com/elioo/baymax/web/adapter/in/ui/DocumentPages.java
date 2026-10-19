@@ -211,8 +211,7 @@ public class DocumentPages implements WebPages {
                 .append(new AppShell(copy).back(lang, Tab.PAPERS.path + "?patient=" + r.patient().id(), "app.back.papers")).append("</p>")
                 .append("<span class=\"pchip\">").append(copy.t(lang, "result.patient", r.patient().name(), r.patient().age())).append("</span>")
                 .append("<h1>").append(chrome.documentType(lang, v.documentType())).append("</h1>")
-                .append("<p class=\"meta\">").append(copy.date(lang, v.documentDate()))
-                .append(v.facility() == null ? "" : " · " + esc(v.facility())).append("</p>");
+                .append("<p class=\"meta\">").append(metaLine(lang, r)).append("</p>");
         if (r.done()) {
             b.append(countsLine(lang, v));
         }
@@ -619,8 +618,7 @@ public class DocumentPages implements WebPages {
                 .append("\">‹ ").append(copy.t(lang, "detail.back")).append("</a></p>")
                 .append("<span class=\"pchip\">").append(copy.t(lang, "result.patient", r.patient().name(), r.patient().age())).append("</span>")
                 .append("<h1>").append(copy.t(lang, "detail.title", typeText(lang, v.documentType()))).append("</h1>")
-                .append("<p class=\"meta\">").append(copy.date(lang, v.documentDate()))
-                .append(v.facility() == null ? "" : " · " + esc(v.facility())).append("</p>")
+                .append("<p class=\"meta\">").append(metaLine(lang, r)).append("</p>")
                 .append("<p class=\"meta\">").append(values.isEmpty() ? copy.t(lang, "detail.pagecount", pages)
                         : copy.t(lang, "detail.counts", values.size(), pages)).append("</p>");
         b.append(banner(lang, r));
@@ -694,11 +692,15 @@ public class DocumentPages implements WebPages {
     private String detailDoctor(Lang lang, DocumentView v, UUID documentId) {
         String quotes = contextQuotes(lang, v, documentId);
         String followUps = followUpQuotes(lang, v, documentId);
-        if (quotes.isEmpty() && followUps.isEmpty()) {
+        int unverified = unverified(v, "follow_up");
+        if (quotes.isEmpty() && followUps.isEmpty() && unverified == 0) {
             return "";
         }
+        // DR-28, as the summary's পরের ধাপ says it: follow-up lines read but not located on the page were not stored
+        String notice = unverified == 0 ? "" : "<p class=\"warn\">" + copy.t(lang, "next.unverified", unverified) + "</p>";
         return "<section id=\"doctor\" class=\"doctor\"><h2>" + copy.t(lang, "detail.seg.doctor") + "</h2>" + quotes
-                + (followUps.isEmpty() ? "" : "<h3>" + copy.t(lang, "next.title") + "</h3>" + followUps) + "</section>";
+                + (followUps.isEmpty() && notice.isEmpty() ? "" : "<h3>" + copy.t(lang, "next.title") + "</h3>" + followUps + notice)
+                + "</section>";
     }
 
     /** s17 মূল কাগজ: every page whole, each opening the page image itself (where the browser pinch-zooms). */
@@ -731,7 +733,7 @@ public class DocumentPages implements WebPages {
         String src = PageChrome.imageHref(documentId, ValueRows.crop(v.get("crop_key"), "a value"));
         StringBuilder b = new StringBuilder("<section class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sheet-title\">")
                 .append("<div class=\"sheet-h\"><div><h1 id=\"sheet-title\">").append(esc(v.get("name"))).append("</h1><p class=\"meta\">")
-                .append(copy.t(lang, "sheet.of", r.patient().name(), doc.documentDate() == null ? "" : dueText(lang, doc.documentDate()),
+                .append(copy.t(lang, "sheet.of", r.patient().name(), paperDateText(lang, r),
                         typeText(lang, doc.documentType())))
                 .append("</p></div><a class=\"icon-btn\" href=\"").append(close).append("\" aria-label=\"").append(copy.t(lang, "sheet.close"))
                 .append("\">").append(Icons.svg("x", 24)).append("</a></div>")
@@ -745,6 +747,25 @@ public class DocumentPages implements WebPages {
     }
 
     /**
+     * The paper's date as unescaped text: its printed date, else its upload day on the patient's calendar marked
+     * "(আপলোডের তারিখ)", as the timeline marks it. Never empty, so no meta line starts or a subtitle sits on " ·  · ".
+     */
+    private String paperDateText(Lang lang, ResultView r) {
+        String printed = r.document().documentDate();
+        if (printed != null && !printed.isBlank()) {
+            return dueText(lang, printed);
+        }
+        return r.receivedAt() == null ? copy.raw(lang, "timeline.uploaddate")
+                : copy.dateText(lang, PatientCalendar.dayOf(r.receivedAt())) + " " + copy.raw(lang, "timeline.uploaddate");
+    }
+
+    /** The result's and the detail's meta line, escaped: the paper's date, then the facility only when one was read. */
+    private String metaLine(Lang lang, ResultView r) {
+        String facility = r.document().facility();
+        return esc(paperDateText(lang, r)) + (facility == null || facility.isBlank() ? "" : " · " + esc(facility));
+    }
+
+    /**
      * The document type as unescaped text, for an argument to {@link UiCopy#t} (which escapes it once): its label, the
      * default label when none was read, or the type as stored when the bundle has no label for it (as documentType does).
      */
@@ -755,8 +776,16 @@ public class DocumentPages implements WebPages {
         return copy.maybe(lang, "type." + type) != null ? copy.raw(lang, "type." + type) : type;
     }
 
-    /** আগের রিপোর্টে: one compact row per earlier reading, its date on the patient's calendar, or "first time". */
+    /**
+     * আগের রিপোর্টে: one compact row per earlier reading, its date on the patient's calendar, or "first time". A value whose
+     * name did not canonicalise has no history Medioo could look up (ResultService returns none), so the sheet claims
+     * neither earlier readings nor a first time. Each row opens its own paper's sheet from the detail ({@code from=all}),
+     * which draws every row, so that sheet's close lands on a row that is on the page.
+     */
     private String earlierReadings(Lang lang, Map<String, Object> v, List<EarlierReading> earlier) {
+        if (v.get("canonical_name") == null) {
+            return "";
+        }
         StringBuilder b = new StringBuilder("<section id=\"earlier\" class=\"earlier\">");
         if (earlier.isEmpty()) {
             return b.append("<p>").append(copy.t(lang, "sheet.earlier.none")).append("</p></section>").toString();
@@ -765,7 +794,7 @@ public class DocumentPages implements WebPages {
                 .append("</h2>");
         for (EarlierReading e : earlier) {
             String src = PageChrome.imageHref(e.documentId(), ValueRows.crop(e.cropKey(), "an earlier value"));
-            b.append("<a class=\"erow\" href=\"").append(ValueRows.sheetHref(e.documentId(), e.observationId(), ValueRows.FROM_SUMMARY)).append("\">")
+            b.append("<a class=\"erow\" href=\"").append(ValueRows.sheetHref(e.documentId(), e.observationId(), ValueRows.FROM_ALL)).append("\">")
                     .append("<span class=\"vhead\"><span class=\"edate\">").append(e.date() == null ? "" : copy.date(lang, e.date()))
                     .append(e.dateIsFallback() ? " <span class=\"meta\">" + copy.t(lang, "timeline.uploaddate") + "</span>" : "")
                     .append("</span> <span class=\"val\">").append(esc(e.value())).append("</span>")

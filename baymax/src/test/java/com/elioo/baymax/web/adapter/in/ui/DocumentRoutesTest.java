@@ -59,10 +59,19 @@ class DocumentRoutesTest {
         kit.client.get().uri("/app/documents/" + WebUiTestKit.DOC_ID + "/values/" + hba1c).exchange().expectStatus().isSeeOther();
     }
 
-    /** B6: a paper that is not read yet (or needs a retake) has no detail: its own page says what is happening. */
-    @Test
-    void theDetailOfAPaperNotYetReadGoesToItsPage() {
-        PageFixtures.Stubs.processing(kit);
+    /**
+     * B6: a paper still being read, one that needs a retake and one that failed have no detail: each goes to its own
+     * page, which says what is happening, and the result is never read for it.
+     */
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(value = Document.Status.class, names = {"PROCESSING", "NEEDS_RETAKE", "FAILED"})
+    void theDetailOfAPaperNotYetReadGoesToItsPage(Document.Status status) {
+        switch (status) {
+            case PROCESSING -> PageFixtures.Stubs.processing(kit);
+            case NEEDS_RETAKE -> PageFixtures.Stubs.retake(kit, 1, true);
+            case FAILED -> PageFixtures.Stubs.failed(kit);
+            default -> throw new AssertionError(status);
+        }
         kit.client.get().uri("/app/documents/" + WebUiTestKit.DOC_ID + "/all").cookie("baymax_session", "tok").exchange()
                 .expectStatus().isSeeOther().expectHeader().valueEquals(HttpHeaders.LOCATION, "/app/documents/" + WebUiTestKit.DOC_ID);
         org.mockito.Mockito.verify(kit.results, org.mockito.Mockito.never()).result(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID);

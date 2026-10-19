@@ -123,15 +123,92 @@ class DocumentDetailRenderTest {
         assertThat(kit.documents.detail(Lang.BN, member)).doesNotContain("/delete").doesNotContain(copy.t(Lang.BN, "detail.delete"));
     }
 
-    /** s13--unknown: no bar, the "could not match" sentence; the glossary stays hidden until D3 is signed. */
+    /**
+     * s13--unknown: no bar, the "could not match" sentence; the glossary stays hidden until D3 is signed. Over every shape a
+     * drawn UNKNOWN takes, including two whose number the bar COULD place (a stored INSIDE the code cannot prove, and a
+     * stored OUTSIDE with no side): the bar is withheld because the value is UNKNOWN, not because nothing parsed.
+     */
     @Test
     void anUnknownValueSheetSaysItCouldNotMatchAndShowsNoGlossary() {
-        Map<String, Object> v = ResultFixtures.value("Urine Albumin", "Trace", null, "Nil", null, "unknown");
-        String html = kit.documents.valueSheet(Lang.BN, ResultFixtures.result(ResultFixtures.lab(List.of(v)), Urgency.ROUTINE,
-                List.of(), GateState.NONE, null, ResultFixtures.BD), (UUID) v.get("id"), List.of(), "summary");
-        assertThat(html).contains(copy.t(Lang.BN, "sheet.unknown.why")).contains(copy.t(Lang.BN, "sheet.earlier.none"))
-                .doesNotContain("<svg class=\"bar\"").doesNotContain("এই পরীক্ষা কী মাপে").doesNotContain("সাধারণ তথ্য");
-        assertThat(html).contains("href=\"/app/documents/" + ResultFixtures.DOC + "#v-" + v.get("id") + "\"");   // close returns to the row
+        List<Map<String, Object>> unknowns = List.of(
+                ResultFixtures.value("Urine Albumin", "Trace", null, "Nil", null, "unknown"),
+                ResultFixtures.value("Creatinine", "130", "µmol/L", "59", "104", "inside"),
+                ResultFixtures.value("LDL", "190", "mg/dL", "50", "130", "outside"));
+        for (Map<String, Object> v : unknowns) {
+            assertThat(ValueRows.kindOf(v)).as(v.get("name") + " is drawn UNKNOWN").isEqualTo(com.elioo.baymax.outbound.domain.ValueVerdict.Kind.UNKNOWN);
+            String html = kit.documents.valueSheet(Lang.BN, ResultFixtures.result(ResultFixtures.lab(List.of(v)), Urgency.ROUTINE,
+                    List.of(), GateState.NONE, null, ResultFixtures.BD), (UUID) v.get("id"), List.of(), "summary");
+            assertThat(html).as(String.valueOf(v.get("name"))).contains(copy.t(Lang.BN, "sheet.unknown.why")).contains(copy.t(Lang.BN, "sheet.earlier.none"))
+                    .contains("<span class=\"chip unknown\">")
+                    .doesNotContain("<svg class=\"bar\"").doesNotContain("এই পরীক্ষা কী মাপে").doesNotContain("সাধারণ তথ্য");
+            assertThat(html).contains("href=\"/app/documents/" + ResultFixtures.DOC + "#v-" + v.get("id") + "\"");   // close returns to the row
+        }
+        assertThat(unknowns.stream().filter(v -> com.elioo.baymax.outbound.domain.PrintedRange.pinPercent(v).isPresent()))
+                .as("UNKNOWN values a bar could place: without them the no-bar check passes for the wrong reason").hasSize(2);
+    }
+
+    /**
+     * A value whose name did not canonicalise has no history Medioo could look up, so the sheet says nothing about earlier
+     * reports — never "this is the first time", which Medioo has not established. A named one with none does say it.
+     */
+    @Test
+    void aValueWithNoCanonicalNameClaimsNoHistoryEitherWay() {
+        Map<String, Object> unnamed = ResultFixtures.value("Serum Zeta", "4.2", "mg/dL", "3.0", "5.0", "inside");
+        unnamed.remove("canonical_name");
+        String html = kit.documents.valueSheet(Lang.BN, ResultFixtures.result(ResultFixtures.lab(List.of(unnamed)), Urgency.ROUTINE,
+                List.of(), GateState.NONE, null, ResultFixtures.BD), (UUID) unnamed.get("id"), List.of(), "summary");
+        assertThat(html).doesNotContain(copy.t(Lang.BN, "sheet.earlier.none")).doesNotContain("id=\"earlier\"")
+                .contains("<span class=\"val big\">4.2</span>");
+
+        Map<String, Object> named = ResultFixtures.value("Creatinine", "1.0", "mg/dL", "0.7", "1.3", "inside");
+        String first = kit.documents.valueSheet(Lang.BN, ResultFixtures.result(ResultFixtures.lab(List.of(named)), Urgency.ROUTINE,
+                List.of(), GateState.NONE, null, ResultFixtures.BD), (UUID) named.get("id"), List.of(), "summary");
+        assertThat(ResultFixtures.section(first, "earlier")).contains(copy.t(Lang.BN, "sheet.earlier.none"));
+    }
+
+    /**
+     * A paper that printed no date: the detail's meta line and the sheet's subtitle show the upload day marked as such (as
+     * the timeline does), never an empty part; a facility only when there is one. The other direction: a printed date is
+     * shown as printed and never marked as the upload day. The summary's meta line follows the same rule.
+     */
+    @Test
+    void aPaperWithNoPrintedDateShowsItsUploadDayMarkedAsSuch() {
+        Map<String, Object> v = ResultFixtures.value("TSH", "2.1", "µIU/mL", "0.4", "4.0", "inside");
+        String uploadDay = copy.dateText(Lang.BN, LocalDate.of(2026, 10, 20)) + " " + copy.raw(Lang.BN, "timeline.uploaddate");
+        ResultView noFacility = ResultFixtures.result(ResultFixtures.undated(null, List.of(v)), Urgency.ROUTINE, List.of(), GateState.NONE, null, ResultFixtures.BD);
+        ResultView withFacility = ResultFixtures.result(ResultFixtures.undated("Shapla Diagnostics", List.of(v)), Urgency.ROUTINE, List.of(),
+                GateState.NONE, null, ResultFixtures.BD);
+        ResultView printed = ResultFixtures.result(ResultFixtures.lab(List.of(v)), Urgency.ROUTINE, List.of(), GateState.NONE, null, ResultFixtures.BD);
+
+        assertThat(firstMeta(kit.documents.detail(Lang.BN, noFacility))).isEqualTo(Html.esc(uploadDay));
+        assertThat(firstMeta(kit.documents.detail(Lang.BN, withFacility))).isEqualTo(Html.esc(uploadDay) + " · Shapla Diagnostics");
+        assertThat(firstMeta(kit.documents.summaryBody(Lang.BN, withFacility))).isEqualTo(Html.esc(uploadDay) + " · Shapla Diagnostics");
+        assertThat(firstMeta(kit.documents.detail(Lang.BN, printed))).isEqualTo(copy.date(Lang.BN, "2026-10-12") + " · Diagnostic Centre, Mirpur")
+                .doesNotContain(copy.t(Lang.BN, "timeline.uploaddate"));
+
+        String sheet = kit.documents.valueSheet(Lang.BN, noFacility, (UUID) v.get("id"), List.of(), "summary");
+        assertThat(sheet).contains(copy.t(Lang.BN, "sheet.of", "Ma", uploadDay, copy.raw(Lang.BN, "type.lab_report"))).doesNotContain("·  ·");
+        assertThat(kit.documents.valueSheet(Lang.BN, printed, (UUID) v.get("id"), List.of(), "summary"))
+                .contains(copy.t(Lang.BN, "sheet.of", "Ma", copy.dateText(Lang.BN, LocalDate.of(2026, 10, 12)), copy.raw(Lang.BN, "type.lab_report")));
+    }
+
+    /** DR-28 on the detail too: follow-up lines read but not located say so under ডাক্তার লিখেছেন, even with nothing quoted. */
+    @Test
+    void theDetailSaysWhenFollowUpLinesCouldNotBeRead() {
+        ResultView unread = ResultFixtures.result(ResultFixtures.prescription(List.of(), Map.of(), Map.of("follow_up", 2)), Urgency.ROUTINE,
+                List.of(), GateState.NONE, null, ResultFixtures.BD);
+        String html = kit.documents.detail(Lang.BN, unread);
+        assertThat(ResultFixtures.section(html, "doctor")).contains(copy.t(Lang.BN, "next.unverified", 2));
+        assertThat(ResultFixtures.section(html, "seg")).contains("href=\"#doctor\"");
+        // the other direction: nothing unverified, no notice
+        assertThat(ResultFixtures.section(kit.documents.detail(Lang.BN, full()), "doctor")).as("a paper with nothing unverified")
+                .contains("Next visit: 22/10/26").doesNotContain("class=\"warn\"");
+    }
+
+    /** The text of the page's first meta line (the date and facility line), as rendered. */
+    private static String firstMeta(String html) {
+        int at = html.indexOf("<p class=\"meta\">") + "<p class=\"meta\">".length();
+        return html.substring(at, html.indexOf("</p>", at));
     }
 
     /**
@@ -174,12 +251,27 @@ class DocumentDetailRenderTest {
         assertThat(list).contains(copy.t(Lang.BN, "sheet.earlier", "µmol/L")).doesNotContain(copy.t(Lang.BN, "sheet.earlier.none"));
         List<String> rows = Pattern.compile("<a class=\"erow\".*?</a>", Pattern.DOTALL).matcher(list).results().map(MatchResult::group).toList();
         assertThat(rows).hasSize(2);
-        assertThat(rows.get(0)).contains("href=\"/app/documents/" + earlierDoc + "/values/" + earlierObs + "?from=summary\"")
+        // from=all: the detail draws every row, so the earlier paper's sheet closes onto a row that is on the page
+        assertThat(rows.get(0)).contains("href=\"/app/documents/" + earlierDoc + "/values/" + earlierObs + "?from=all\"")
                 .contains(PageChrome.imageHref(earlierDoc, "f/p/" + earlierDoc + "/crop-1.jpg"))
                 .contains(">140<").contains("μmol/L").contains(copy.date(Lang.BN, LocalDate.of(2026, 7, 12)))
                 .contains(copy.t(Lang.BN, "timeline.uploaddate"));
-        assertThat(rows.get(1)).contains(PageChrome.imageHref(printedDoc, "f/p/" + printedDoc + "/crop-1.jpg"))
+        assertThat(rows.get(1)).contains("href=\"/app/documents/" + printedDoc + "/values/" + printedObs + "?from=all\"")
+                .contains(PageChrome.imageHref(printedDoc, "f/p/" + printedDoc + "/crop-1.jpg"))
                 .contains(">131<").contains(copy.date(Lang.BN, LocalDate.of(2026, 4, 10)))
                 .doesNotContain(copy.t(Lang.BN, "timeline.uploaddate"));
+    }
+
+    /** A value printed without a unit: the earlier list is headed by the unitless line, never a unit of "null" or "". */
+    @Test
+    void earlierReadingsOfAUnitlessValueAreHeadedWithoutAUnit() {
+        Map<String, Object> v = ResultFixtures.value("Urine Albumin", "Trace", null, "Nil", null, "unknown");
+        UUID earlierDoc = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100045");
+        List<EarlierReading> earlier = List.of(new EarlierReading(earlierDoc, UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100046"),
+                "Nil", null, "f/p/" + earlierDoc + "/crop-1.jpg", LocalDate.of(2026, 7, 12), false));
+        String list = ResultFixtures.section(kit.documents.valueSheet(Lang.BN, ResultFixtures.result(ResultFixtures.lab(List.of(v)),
+                Urgency.ROUTINE, List.of(), GateState.NONE, null, ResultFixtures.BD), (UUID) v.get("id"), earlier, "summary"), "earlier");
+        assertThat(list).contains("<h2>" + copy.t(Lang.BN, "sheet.earlier.nounit") + "</h2>").doesNotContain("null")
+                .doesNotContain("<span class=\"unit\">");
     }
 }
