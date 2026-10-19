@@ -85,10 +85,13 @@ direction **fully automated first**: production stays `BAYMAX_GATE_MODE=off`.
   (`wa.detail.already_sent` + link), never the body again. The greeting copy, the DETAIL synonym list and the try
   tables agree with this. (Open PO ruling, roadmap; the pointer is the default.)
 - **Migrations:** V16 (PR 4), V17 (PR 12, `wa_last_inbound` — added by the PO decision of 2026-10-18 and merged ahead
-  of PRs 7–10, see PR 12), V18 (PR 8), V19 (PR 9). Each of those PRs checks, right before merging, that
+  of PRs 7–10, see PR 12), V22 (PR 8), V23 (PR 9). Each of those PRs checks, right before merging, that
   `git ls-tree --name-only origin/main baymax/src/main/resources/db/baymax/migration | sort -V | tail -1` prints its
-  predecessor (V15 for PR 4, V16 for PR 12, V17 for PR 8, V18 for PR 9). If not, stop: the allocation table in the
-  roadmap is wrong, fix it there first. (Renumbered 2026-10-18: PR 8 was V17 and PR 9 was V18 before PR 12 took V17.)
+  predecessor (V15 for PR 4, V16 for PR 12, V21 for PR 8, V22 for PR 9). If not, stop: the allocation table in the
+  roadmap is wrong, fix it there first. (Renumbered 2026-10-18: PR 8 was V17 and PR 9 was V18 before PR 12 took V17. Renumbered again 2026-10-19 — PO
+  direction 2026-10-19: the web portal first; Phase 0 PRs 7–10 rebase after the web chain, which takes V18–V21
+  (`2026-10-19-medioo-web-portal.md`); PR 8 moves V18 → V22 and PR 9 V19 → V23. The file names and preflights in the
+  PR 8 and PR 9 sections below still say V18/V19 and are rewritten at that rebase.)
 - **Staging and commits:** explicit paths only, never `git add -A`/`git add .`; conventional commits ending with
   `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`; PR bodies end with
   `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
@@ -130,8 +133,8 @@ direction **fully automated first**: production stays `BAYMAX_GATE_MODE=off`.
 | 5 | **A2** — F4 compose / release / deliver | `fix/baymax-detail-compose-release` | PR 4 | — | 5.1–5.8 | M–L |
 | 6 | **B1a** — every message gets one reply | `feat/baymax-wa-every-message-answered` | PR 5 | — | 6.1–6.5 | M |
 | 7 | **B1b** — standing urgency, free tier before the ack, failures after the ack | `feat/baymax-wa-greeting-urgency` | PR 6 | — | 7.1–7.4 | M |
-| 8 | **C1** — F9a inbound idempotency | `fix/baymax-wa-inbound-idempotency` | PR 7 | V18 | 8.1–8.6 | M–L |
-| 9 | **B2** — every document ends with a reply | `fix/baymax-every-document-ends-with-a-reply` | PR 8 | V19 | 9.1–9.4 | M |
+| 8 | **C1** — F9a inbound idempotency | `fix/baymax-wa-inbound-idempotency` | PR 7 | V22 (was V18; renumbered 2026-10-19) | 8.1–8.6 | M–L |
+| 9 | **B2** — every document ends with a reply | `fix/baymax-every-document-ends-with-a-reply` | PR 8 | V23 (was V19; renumbered 2026-10-19) | 9.1–9.4 | M |
 | 10 | **C3** — Graph v25.0, one allowlist rule, read receipts | `feat/baymax-wa-graph-v25-read-receipts` | PR 9 | — | 10.1–10.3 | S–M |
 | 11 | **1a-i** — every way of writing a number; Bangla-digit codes | `fix/baymax-number-and-bangla-code` | PR 10 | — | 11.1–11.2 | S |
 | 12 | **1a-ii** — sign-in by WhatsApp code, free (D2, DR-39 amended 2026-10-18) | `feat/baymax-whatsapp-sign-in` | PR 11 (+ Task 10.1 as its first commit), **after the env step**; merges ahead of PRs 7–10 | V17 | 12.0–12.8 | M |

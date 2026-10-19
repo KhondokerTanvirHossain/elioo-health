@@ -87,12 +87,15 @@ class TryDocumentsThroughTheWebTest {
         Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
         FreeTierService freeTier = new FreeTierService(records, documents, props, clock);
         ExplainDocumentUseCase explainer = mock(ExplainDocumentUseCase.class);
+        com.elioo.baymax.outbound.application.port.in.DocumentUrgencyUseCase urgency =
+                mock(com.elioo.baymax.outbound.application.port.in.DocumentUrgencyUseCase.class);
+        when(urgency.assessAndStore(any())).thenReturn(Mono.empty());
         NudgeUseCase nudges = mock(NudgeUseCase.class);
         when(explainer.explain(any())).thenReturn(Mono.empty());
         when(nudges.onDocumentDone(any())).thenReturn(Mono.empty());
         when(extraction.process(any(), any())).thenReturn(Mono.empty());
         DocumentIntakeService intake = new DocumentIntakeService(records, documents, freeTier, storage, new PageRenderer(), props, clock,
-                new DocumentProcessingChain(extraction, explainer, nudges, documents, clock));
+                new DocumentProcessingChain(extraction, explainer, nudges, documents, clock, urgency));
         AuditPort audit = mock(AuditPort.class);
         when(audit.record(any())).thenReturn(Mono.empty());
         FamilyAccount account = new FamilyAccount(family, "+8801700000000", "Tanvir", FamilyAccount.Plan.FREE, NOW, NOW);

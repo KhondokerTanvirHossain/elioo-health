@@ -74,6 +74,9 @@ button.quiet:hover,.btn.quiet:hover{background:var(--c-line);color:var(--c-text)
 /* NOW urgency: the only red surface in the app (spec §8; DesignTokensTest holds red to .now/.critical/.emergency) */
 .banner.now{border-radius:var(--r-m);overflow:hidden;background:var(--c-status-now-container)}
 .banner.now .head{background:var(--c-status-now-solid);color:var(--c-on-status-now);padding:var(--sp-4);font-size:var(--fs-title-3);line-height:var(--lh-title-3);font-weight:700}
+/* THIS_WEEK urgency: amber, never red (interim for the document page; A12's result summary restyles both) */
+.banner.soon{border-radius:var(--r-m);overflow:hidden;background:var(--c-status-soon-container)}
+.banner.soon .head{color:var(--c-text);padding:var(--sp-4);margin:0;font-weight:700}
 @media (max-width:479px){.who{display:none}}
 
 /* footer disclaimer: every page */

@@ -1,11 +1,10 @@
 package com.elioo.baymax.web.adapter.in.ui;
 
+import com.elioo.baymax.common.time.PatientCalendar;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.web.domain.FamilyOverview;
 import com.elioo.baymax.web.domain.PatientSummary;
 
-import java.time.LocalDate;
-import java.time.ZoneId;
 import java.util.List;
 
 import static com.elioo.baymax.web.adapter.in.ui.Html.esc;
@@ -18,9 +17,6 @@ import static com.elioo.baymax.web.adapter.in.ui.PageChrome.BASE;
  * member sees the same facts with no save and no reminder switch (spec §3, D30), and the use cases refuse them anyway.
  */
 final class FamilyView {
-
-    /** The patient's calendar for the consent date. A10 replaces this with {@code PatientCalendar.ZONE}. */
-    static final ZoneId PATIENT_ZONE = ZoneId.of("Asia/Dhaka");
 
     private final UiCopy copy;
     private final PageChrome chrome;
@@ -66,7 +62,7 @@ final class FamilyView {
 
         if (profile.proxyConsentAt() != null) {
             b.append("<h2>").append(copy.t(lang, "family.consent.title")).append("</h2><p class=\"small\">")
-                    .append(copy.t(lang, "family.consent.at", copy.dateText(lang, LocalDate.ofInstant(profile.proxyConsentAt(), PATIENT_ZONE))))
+                    .append(copy.t(lang, "family.consent.at", copy.dateText(lang, PatientCalendar.dayOf(profile.proxyConsentAt()))))
                     .append("</p>");
         }
 

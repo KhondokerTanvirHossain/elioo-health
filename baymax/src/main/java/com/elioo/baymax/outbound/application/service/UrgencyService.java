@@ -1,5 +1,6 @@
 package com.elioo.baymax.outbound.application.service;
 
+import com.elioo.baymax.common.time.PatientCalendar;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.outbound.domain.MarkerThreshold;
 import com.elioo.baymax.outbound.domain.Urgency;
@@ -10,7 +11,6 @@ import org.springframework.stereotype.Service;
 
 import java.time.Clock;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
 import java.util.List;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.util.ArrayList;
@@ -93,7 +93,7 @@ public class UrgencyService {
             }
         }
 
-        LocalDate today = LocalDate.now(clock.withZone(ZoneOffset.UTC));
+        LocalDate today = PatientCalendar.today(clock);   // the patient's day (F7), not UTC's
         for (Map<String, Object> f : facts.followUps()) {
             Object due = f.get("due_date");
             if (due != null && !String.valueOf(due).isBlank()) {
