@@ -65,7 +65,6 @@ public class ExplanationService implements ExplainDocumentUseCase {
     private final OutboundMessagePort messages;
     private final MeteredLlmClient metered;
     private final ExtractionModelConfiguration.ExtractionClients clients;
-    private final UrgencyService urgency;
     private final MessageSafetyCheck safety;
     private final OutboundMessageGate gate;
     private final ReviewerNotificationPort reviewer;
@@ -335,7 +334,11 @@ public class ExplanationService implements ExplainDocumentUseCase {
     }
 
     /**
-     * May the ROUTINE message say "everything is within the normal range"?
+     * ONE HALF of the normal-range claim, from the printed ranges only: never call it alone. The claim the ROUTINE
+     * message makes is {@link #canSayWithinNormalRange(DocumentFacts, UrgencyAssessment)}, which also needs every
+     * value's verdict INSIDE (a signed-off threshold can raise a value its printed range calls inside).
+     *
+     * <p>May the ROUTINE message say "everything is within the normal range"?
      *
      * <p>Only when the document actually carries values with printed ranges and every one of them is inside.
      * The claim is about the document, not about the patient, and a document with no printed ranges cannot
@@ -350,7 +353,7 @@ public class ExplanationService implements ExplainDocumentUseCase {
      * strings existing and a blank model flag are not evidence; LDL 250 against '<100' was claimed normal (D35).
      * The model's flag and critical mark may withdraw the claim, never grant it.
      */
-    static boolean canSayWithinNormalRange(DocumentFacts facts) {
+    static boolean printedRangesAllowTheClaim(DocumentFacts facts) {
         List<Map<String, Object>> values = facts.values();
         if (values == null || values.isEmpty()) {
             return false;
@@ -376,13 +379,13 @@ public class ExplanationService implements ExplainDocumentUseCase {
     }
 
     /**
-     * F2 (c): the claim as the ROUTINE message makes it — the document rule above AND every shown value's verdict
+     * F2 (c): the claim as the ROUTINE message makes it, and the only form to call: the printed-range half above AND every shown value's verdict
      * INSIDE. The verdict is the rule that set the urgency: a value inside its printed range that a signed-off
      * threshold raises is not inside, and a stored verdict never softens. A value with no verdict withholds the claim.
      * Joined on observation id, never on name (two rows can share one).
      */
     static boolean canSayWithinNormalRange(DocumentFacts facts, UrgencyAssessment assessed) {
-        if (!canSayWithinNormalRange(facts)) {
+        if (!printedRangesAllowTheClaim(facts)) {
             return false;
         }
         return facts.values().stream().allMatch(v -> verdictOf(v, assessed)

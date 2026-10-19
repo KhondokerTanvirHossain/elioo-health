@@ -109,7 +109,7 @@ class DetailDeliveryGuardsTest {
         MessageDeliveryPort whatsapp = new WhatsAppMessageDelivery(graph, records, props);
         explainer = new ExplanationService(documents, records, messages, metered,
                 new ExtractionModelConfiguration.ExtractionClients(sonnet, sonnet, sonnet, true),
-                new UrgencyService(props, clock), new MessageSafetyCheck(props), new OutboundMessageGate(props),
+                new MessageSafetyCheck(props), new OutboundMessageGate(props),
                 reviewer, whatsapp, new Copy(), props, clock,
                 new StoredUrgencyService(new UrgencyService(props, clock),
                         new com.elioo.baymax.outbound.application.service.InMemoryDocumentUrgency(), documents, records, props, clock));

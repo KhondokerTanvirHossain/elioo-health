@@ -207,6 +207,46 @@ class ResultSummaryRenderTest {
         assertThat(rowOf(html, "HbA1c")).contains(copy.t(Lang.BN, "value.chip.outside.high"));
     }
 
+    /** A stored outside or critical with no side names no direction: the page says UNKNOWN, never a guessed "▲". */
+    @Test
+    void aStoredOutsideOrCriticalWithNoSideReadsCheckThePaper() {
+        Map<String, Object> outside = ResultFixtures.value("HbA1c", "6.5", "%", "4.0", "5.6", "outside");
+        Map<String, Object> critical = ResultFixtures.value("Hb", "5.0", "g/dL", "12.0", "16.0", "critical");
+        String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(ResultFixtures.lab(List.of(outside, critical)),
+                Urgency.NOW, List.of("value_critical:hb|stopgap"), GateState.NONE, null, ResultFixtures.BD));
+        for (String name : List.of("HbA1c", "Hb")) {
+            assertThat(rowOf(html, name)).as(name).contains(copy.t(Lang.BN, "value.chip.unknown"))
+                    .doesNotContain(copy.t(Lang.BN, "value.chip.outside.high"))
+                    .doesNotContain(copy.t(Lang.BN, "value.chip.critical.high"));
+        }
+    }
+
+    /**
+     * The page reads what the producer writes, not a hand-built map: an ObservationEntity with stored verdict columns,
+     * through the real toView(), onto the page. A key renamed on either side turns every row into "check the paper"
+     * and every critical row silent, which no hand-built fixture can see.
+     */
+    @Test
+    void aStoredVerdictReachesThePageThroughTheRealObservationView() {
+        com.elioo.baymax.extraction.adapter.out.persistence.ObservationEntity hb = new com.elioo.baymax.extraction.adapter.out.persistence.ObservationEntity();
+        hb.setId(java.util.UUID.randomUUID());
+        hb.setName("Hb");
+        hb.setCanonicalName("hb");
+        hb.setValue("5.0");
+        hb.setUnit("g/dL");
+        hb.setRefLow("12.0");
+        hb.setRefHigh("16.0");
+        hb.setCropKey("f/p/d/crop-Hb.jpg");
+        hb.setVerdict("critical");
+        hb.setVerdictLevel("now");
+        hb.setVerdictSide("low");
+        hb.setVerdictReason("value_critical:hb|stopgap");
+        String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(ResultFixtures.lab(List.of(hb.toView())),
+                Urgency.NOW, List.of("value_critical:hb|stopgap"), GateState.NONE, null, ResultFixtures.BD));
+        assertThat(rowOf(html, "Hb")).contains(copy.t(Lang.BN, "value.chip.critical.low"))
+                .doesNotContain(copy.t(Lang.BN, "value.chip.unknown"));
+    }
+
     /** The {@code <div class="item">} that holds this value's name: assertions read one row, never the page. */
     private static String rowOf(String html, String name) {
         Matcher m = Pattern.compile("<div class=\"item\"><div class=\"text\">" + Pattern.quote(Html.esc(name)) + ":.*?</div>").matcher(html);

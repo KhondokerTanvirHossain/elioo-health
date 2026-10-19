@@ -119,6 +119,63 @@ class BaymaxDocumentRouterTest {
                 .jsonPath("$.clinical_context.diagnosis[0].text").isEqualTo("Type 2 Diabetes Mellitus");
     }
 
+    private static com.elioo.baymax.extraction.adapter.out.persistence.ObservationEntity observation(UUID id, String verdict) {
+        com.elioo.baymax.extraction.adapter.out.persistence.ObservationEntity o = new com.elioo.baymax.extraction.adapter.out.persistence.ObservationEntity();
+        o.setId(id);
+        o.setName("Hb");
+        o.setValue("5.0");
+        o.setUnit("g/dL");
+        o.setRefLow("12.0");
+        o.setRefHigh("16.0");
+        o.setCropKey("k");
+        if (verdict != null) {
+            o.setVerdict(verdict);
+            o.setVerdictLevel("now");
+            o.setVerdictSide("low");
+            o.setVerdictReason("value_critical:hb|stopgap");
+        }
+        return o;
+    }
+
+    /**
+     * API change (F2, B1): each value in the document JSON carries its observation id and its stored verdict, under
+     * the names the real producer (ObservationEntity.toView) writes. B2 and B6 read these field names.
+     */
+    @Test
+    void eachValueCarriesItsObservationIdAndStoredVerdict() {
+        UUID document = UUID.randomUUID(), obs = UUID.randomUUID();
+        when(intake.view(document)).thenReturn(Mono.just(new DocumentView(document.toString(), "DONE", null, "lab_report",
+                null, null, 0.95, "m", 1, List.of(observation(obs, "critical").toView()), List.of(), List.of(), null, null)));
+
+        client.get().uri(PATH + "/" + document).header(AdminAuthFilter.HEADER, TOKEN)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.values[0].id").isEqualTo(obs.toString())
+                .jsonPath("$.values[0].verdict").isEqualTo("critical")
+                .jsonPath("$.values[0].verdict_level").isEqualTo("now")
+                .jsonPath("$.values[0].verdict_side").isEqualTo("low")
+                .jsonPath("$.values[0].verdict_reason").isEqualTo("value_critical:hb|stopgap");
+    }
+
+    /** The other direction: a value not yet assessed carries its id and no verdict fields at all (the page reads UNKNOWN). */
+    @Test
+    void aValueNotYetAssessedCarriesItsIdAndNoVerdict() {
+        UUID document = UUID.randomUUID(), obs = UUID.randomUUID();
+        when(intake.view(document)).thenReturn(Mono.just(new DocumentView(document.toString(), "DONE", null, "lab_report",
+                null, null, 0.95, "m", 1, List.of(observation(obs, null).toView()), List.of(), List.of(), null, null)));
+
+        client.get().uri(PATH + "/" + document).header(AdminAuthFilter.HEADER, TOKEN)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.values[0].id").isEqualTo(obs.toString())
+                .jsonPath("$.values[0].verdict").doesNotExist()
+                .jsonPath("$.values[0].verdict_level").doesNotExist()
+                .jsonPath("$.values[0].verdict_side").doesNotExist()
+                .jsonPath("$.values[0].verdict_reason").doesNotExist();
+    }
+
     @Test
     void aCleanDocumentSaysNothingAboutUnverifiedItems() {
         UUID document = UUID.randomUUID();

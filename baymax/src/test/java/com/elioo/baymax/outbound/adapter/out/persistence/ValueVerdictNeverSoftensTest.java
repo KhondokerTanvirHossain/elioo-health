@@ -115,6 +115,47 @@ class ValueVerdictNeverSoftensTest {
         });
     }
 
+    /**
+     * Same kind, lower level: the stopgap stored OUTSIDE at THIS_WEEK, then a never-escalating DR-17 threshold is signed
+     * off and the next assessment says OUTSIDE at ROUTINE. The row keeps THIS_WEEK and the reason it raised with.
+     */
+    @Test
+    void theSameKindAtALowerLevelKeepsTheStoredLevel() {
+        runner().run(context -> {
+            Fixture f = documentWithObservations(context, "LDL|250|mg/dL");
+            DocumentUrgencyPort port = context.getBean(DocumentUrgencyPort.class);
+            port.raise(f.doc(), assessment(verdict(f.obs(0), Kind.OUTSIDE, Urgency.THIS_WEEK, "value_outside_range:ldl|stopgap")), T).block();
+
+            StoredUrgency after = port.raise(f.doc(), assessment(
+                    verdict(f.obs(0), Kind.OUTSIDE, Urgency.ROUTINE, "value_outside_no_escalation:ldl|threshold:DR-17")), T.plusSeconds(5)).block();
+
+            assertThat(after.values()).singleElement().satisfies(v -> {
+                assertThat(v.kind()).isEqualTo(Kind.OUTSIDE);
+                assertThat(v.level()).isEqualTo(Urgency.THIS_WEEK);
+                assertThat(v.reason()).isEqualTo("value_outside_range:ldl|stopgap");
+            });
+            assertThat(after.level()).isEqualTo(Urgency.THIS_WEEK);
+        });
+    }
+
+    /** The other direction: the same kind at a HIGHER level is written (the guard's {@code verdict = :kind AND level >} branch). */
+    @Test
+    void theSameKindAtAHigherLevelRaisesTheRow() {
+        runner().run(context -> {
+            Fixture f = documentWithObservations(context, "LDL|250|mg/dL");
+            DocumentUrgencyPort port = context.getBean(DocumentUrgencyPort.class);
+            port.raise(f.doc(), assessment(verdict(f.obs(0), Kind.OUTSIDE, Urgency.ROUTINE, "value_outside_no_escalation:ldl|threshold:DR-17")), T).block();
+
+            StoredUrgency after = port.raise(f.doc(), assessment(
+                    verdict(f.obs(0), Kind.OUTSIDE, Urgency.THIS_WEEK, "value_outside_range:ldl|stopgap")), T.plusSeconds(5)).block();
+
+            assertThat(after.values()).singleElement().satisfies(v -> {
+                assertThat(v.level()).isEqualTo(Urgency.THIS_WEEK);
+                assertThat(v.reason()).isEqualTo("value_outside_range:ldl|stopgap");
+            });
+        });
+    }
+
     /** The pairing lesson (CLAUDE.md): two rows with the same name are two rows. Joined on observation id, never name. */
     @Test
     void twoObservationsWithTheSameNameKeepTheirOwnVerdicts() {
@@ -131,7 +172,7 @@ class ValueVerdictNeverSoftensTest {
     @Test
     void theDatabaseRefusesASoftenedOrMalformedVerdict() {
         runner().run(context -> {
-            Fixture f = documentWithObservations(context, "Potassium|6.4|mmol/L", "Hb|13|g/dL");
+            Fixture f = documentWithObservations(context, "Potassium|6.4|mmol/L", "Hb|13|g/dL", "LDL|250|mg/dL");
             sql("UPDATE baymax.observation SET verdict='critical', verdict_level='now', verdict_side='high', "
                     + "verdict_reason='value_critical:potassium|stopgap' WHERE id = '" + f.obs(0) + "'");
             assertThatThrownBy(() -> sql("UPDATE baymax.observation SET verdict='inside', verdict_level='routine', "
@@ -145,6 +186,15 @@ class ValueVerdictNeverSoftensTest {
             assertThatThrownBy(() -> sql("UPDATE baymax.observation SET verdict='inside', verdict_level='routine', "
                     + "verdict_reason='value_inside:hb' WHERE id = '" + f.obs(1) + "'"))
                     .hasMessageContaining("observation_verdict_reason_names_its_rule");
+            // same kind, lower level: the trigger's third clause, not the kind order, refuses it
+            sql("UPDATE baymax.observation SET verdict='outside', verdict_level='routine', verdict_side='high', "
+                    + "verdict_reason='value_outside_no_escalation:ldl|threshold:DR-17' WHERE id = '" + f.obs(2) + "'");
+            sql("UPDATE baymax.observation SET verdict='outside', verdict_level='this_week', verdict_side='high', "
+                    + "verdict_reason='value_outside_range:ldl|stopgap' WHERE id = '" + f.obs(2) + "'");   // same kind, higher: allowed
+            assertThatThrownBy(() -> sql("UPDATE baymax.observation SET verdict='outside', verdict_level='routine', verdict_side='high', "
+                    + "verdict_reason='value_outside_no_escalation:ldl|threshold:DR-17' WHERE id = '" + f.obs(2) + "'"))
+                    .hasMessageContaining("observation verdict may not soften (outside -> outside)");
+            assertThat(scalar("SELECT verdict_level FROM baymax.observation WHERE id = '" + f.obs(2) + "'")).isEqualTo("this_week");
             // the direction that must pass: raising a row directly
             sql("UPDATE baymax.observation SET verdict='critical', verdict_level='now', verdict_side='low', "
                     + "verdict_reason='value_critical:hb|stopgap' WHERE id = '" + f.obs(1) + "'");
@@ -157,23 +207,32 @@ class ValueVerdictNeverSoftensTest {
     @Test
     void everyVerdictConstraintRefusesItsBadWriteAndAllowsItsGoodOne() {
         runner().run(context -> {
-            Fixture f = documentWithObservations(context, "Hb|13|g/dL", "K|6.4|mmol/L", "Na|140|mmol/L");
+            Fixture f = documentWithObservations(context, "Hb|13|g/dL", "K|6.4|mmol/L", "Na|140|mmol/L", "TSH|1,23|mIU/L");
             assertThatThrownBy(() -> sql("UPDATE baymax.observation SET verdict='inside' WHERE id = '" + f.obs(0) + "'"))
                     .hasMessageContaining("observation_verdict_complete");
             assertThatThrownBy(() -> sql("UPDATE baymax.observation SET verdict='inside', verdict_level='now', verdict_reason='value_inside:hb|stopgap' WHERE id = '" + f.obs(0) + "'"))
                     .hasMessageContaining("observation_inside_is_routine");
             assertThatThrownBy(() -> sql("UPDATE baymax.observation SET verdict='critical', verdict_level='this_week', verdict_side='high', verdict_reason='value_critical:k|stopgap' WHERE id = '" + f.obs(1) + "'"))
                     .hasMessageContaining("observation_critical_is_now");
-            assertThatThrownBy(() -> sql("UPDATE baymax.observation SET verdict='outside', verdict_level='urgent', verdict_reason='value_outside_range:na|stopgap' WHERE id = '" + f.obs(2) + "'"))
+            assertThatThrownBy(() -> sql("UPDATE baymax.observation SET verdict='outside', verdict_level='urgent', verdict_side='high', verdict_reason='value_outside_range:na|stopgap' WHERE id = '" + f.obs(2) + "'"))
                     .hasMessageContaining("observation_verdict_level_check");
             assertThatThrownBy(() -> sql("UPDATE baymax.observation SET verdict='outside', verdict_level='this_week', verdict_side='up', verdict_reason='value_outside_range:na|stopgap' WHERE id = '" + f.obs(2) + "'"))
                     .hasMessageContaining("observation_verdict_side_check");
+            // outside and critical name their side; inside and unknown have none (the page never guesses a direction)
+            assertThatThrownBy(() -> sql("UPDATE baymax.observation SET verdict='outside', verdict_level='this_week', verdict_reason='value_outside_range:na|stopgap' WHERE id = '" + f.obs(2) + "'"))
+                    .hasMessageContaining("observation_verdict_side_matches_kind");
+            assertThatThrownBy(() -> sql("UPDATE baymax.observation SET verdict='critical', verdict_level='now', verdict_reason='value_critical:k|stopgap' WHERE id = '" + f.obs(1) + "'"))
+                    .hasMessageContaining("observation_verdict_side_matches_kind");
+            assertThatThrownBy(() -> sql("UPDATE baymax.observation SET verdict='inside', verdict_level='routine', verdict_side='high', verdict_reason='value_inside:hb|stopgap' WHERE id = '" + f.obs(0) + "'"))
+                    .hasMessageContaining("observation_verdict_side_matches_kind");
             // the good writes
+            sql("UPDATE baymax.observation SET verdict='outside', verdict_level='this_week', verdict_side='low', verdict_reason='value_outside_range:na|stopgap' WHERE id = '" + f.obs(2) + "'");
+            assertThat(scalar("SELECT verdict || ' ' || verdict_side FROM baymax.observation WHERE id = '" + f.obs(2) + "'")).isEqualTo("outside low");
             sql("UPDATE baymax.observation SET verdict='inside', verdict_level='routine', verdict_reason='value_inside:hb|stopgap' WHERE id = '" + f.obs(0) + "'");
             sql("UPDATE baymax.observation SET verdict='critical', verdict_level='now', verdict_side='high', verdict_reason='value_critical:k|stopgap' WHERE id = '" + f.obs(1) + "'");
-            sql("UPDATE baymax.observation SET verdict='unknown', verdict_level='routine', verdict_reason='value_unknown:na|threshold:DR-17' WHERE id = '" + f.obs(2) + "'");
+            sql("UPDATE baymax.observation SET verdict='unknown', verdict_level='routine', verdict_reason='value_unknown:tsh|threshold:DR-17' WHERE id = '" + f.obs(3) + "'");
             assertThat(scalar("SELECT string_agg(verdict, ',' ORDER BY name) FROM baymax.observation WHERE document_id = '" + f.doc() + "'"))
-                    .isEqualTo("inside,critical,unknown");
+                    .isEqualTo("inside,critical,outside,unknown");
         });
     }
 
@@ -190,6 +249,25 @@ class ValueVerdictNeverSoftensTest {
                     .isInstanceOf(IllegalStateException.class).hasMessageContaining("verdict without observation id");
             assertThat(scalar("SELECT urgency FROM baymax.document WHERE id = '" + f.doc() + "'")).isEqualTo("routine");
             assertThat(scalar("SELECT urgency_reasons::text FROM baymax.document WHERE id = '" + f.doc() + "'")).isEqualTo("[]");
+        });
+    }
+
+    /**
+     * One transaction, on a failure the DATABASE raises after the document UPDATE ran: a verdict reason that names no
+     * rule violates observation_verdict_reason_names_its_rule, and the document's NOW goes with it. The null-id case
+     * above is refused by the adapter itself; this one proves the rollback whoever refuses.
+     */
+    @Test
+    void aVerdictTheDatabaseRefusesRollsBackTheDocumentsUrgency() {
+        runner().run(context -> {
+            Fixture f = documentWithObservations(context, "K|6.4|mmol/L");
+            DocumentUrgencyPort port = context.getBean(DocumentUrgencyPort.class);
+            port.raise(f.doc(), assessment(verdict(f.obs(0), Kind.INSIDE, Urgency.ROUTINE, "value_inside:k|stopgap")), T).block();
+            UrgencyAssessment refused = assessment(verdict(f.obs(0), Kind.CRITICAL, Urgency.NOW, "value_critical:k"));
+            assertThatThrownBy(() -> port.raise(f.doc(), refused, T.plusSeconds(5)).block())
+                    .hasMessageContaining("observation_verdict_reason_names_its_rule");
+            assertThat(scalar("SELECT urgency FROM baymax.document WHERE id = '" + f.doc() + "'")).isEqualTo("routine");
+            assertThat(scalar("SELECT verdict FROM baymax.observation WHERE id = '" + f.obs(0) + "'")).isEqualTo("inside");
         });
     }
 

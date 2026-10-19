@@ -70,12 +70,7 @@ public record DocumentFacts(Document document, String patientName, List<Map<Stri
 
     /** Digits of any script to ASCII, so ৮.২ and 8.2 are one number. */
     public static String fold(String text) {
-        StringBuilder sb = new StringBuilder(text.length());
-        for (int i = 0; i < text.length(); i++) {
-            char c = text.charAt(i);
-            sb.append(Character.isDigit(c) ? (char) ('0' + Character.digit(c, 10)) : c);
-        }
-        return sb.toString();
+        return com.elioo.baymax.outbound.domain.PrintedRange.foldDigits(text);
     }
 
     /** Digit runs in a body, with the timeline link removed first: its UUID is not a number the family reads. */

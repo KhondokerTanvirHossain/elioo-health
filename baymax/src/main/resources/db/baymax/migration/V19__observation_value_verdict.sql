@@ -17,7 +17,10 @@ ALTER TABLE ${flyway:defaultSchema}.observation
     ADD CONSTRAINT observation_verdict_reason_names_its_rule
         CHECK (verdict_reason IS NULL OR verdict_reason ~ '\|(stopgap|threshold:.+)$'),
     ADD CONSTRAINT observation_inside_is_routine CHECK (verdict IS DISTINCT FROM 'inside' OR verdict_level = 'routine'),
-    ADD CONSTRAINT observation_critical_is_now CHECK (verdict IS DISTINCT FROM 'critical' OR verdict_level = 'now');
+    ADD CONSTRAINT observation_critical_is_now CHECK (verdict IS DISTINCT FROM 'critical' OR verdict_level = 'now'),
+    -- outside and critical say which end; inside and unknown have no end. A page never guesses a direction.
+    ADD CONSTRAINT observation_verdict_side_matches_kind
+        CHECK ((verdict IN ('outside', 'critical')) = (verdict_side IS NOT NULL));
 
 CREATE FUNCTION ${flyway:defaultSchema}.verdict_rank(v varchar) RETURNS int LANGUAGE sql IMMUTABLE
     AS $$ SELECT array_position(ARRAY['inside', 'unknown', 'outside', 'critical']::varchar[], v) $$;

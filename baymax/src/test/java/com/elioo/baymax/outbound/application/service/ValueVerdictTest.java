@@ -135,11 +135,16 @@ class ValueVerdictTest {
     void anUnverifiedValueRaisesButEmitsNoRow() {
         Map<String, Object> unverified = obs("potassium", "6.1", "3.5", "5.1", "mmol/L");
         unverified.remove("id");
-        var facts = UrgencyServiceTest.factsWithUnverified(List.of(), List.of(unverified));   // UnverifiedValuesTest's fixture shape
+        Map<String, Object> shown = obs("creatinine", "1.0", "0.7", "1.3", "mg/dL");
+        var facts = UrgencyServiceTest.factsWithUnverified(List.of(shown), List.of(unverified));   // UnverifiedValuesTest's fixture shape
         UrgencyAssessment a = service.assess(facts);
         assertThat(a.level()).isEqualTo(Urgency.THIS_WEEK);
         assertThat(a.reasons()).containsExactly("unverified_value_outside_range:potassium");
-        assertThat(a.values()).isEmpty();
+        // exactly the shown value's row: the unverified one raised the document and left no row
+        assertThat(a.values()).singleElement().satisfies(v -> {
+            assertThat(v.observationId()).isEqualTo(shown.get("id"));
+            assertThat(v.kind()).isEqualTo(ValueVerdict.Kind.INSIDE);
+        });
     }
 
     /** F2 (c): "within the normal range" holds exactly when every verdict is INSIDE — over every WithinNormalRangeClaimTest fixture. */
@@ -169,7 +174,7 @@ class ValueVerdictTest {
         DocumentFacts facts = UrgencyServiceTest.facts(List.of(potassium), List.of(), Map.of(), "{}");
         UrgencyAssessment a = service.assess(facts);
         assertThat(verdictOf(a, potassium).kind()).isEqualTo(ValueVerdict.Kind.OUTSIDE);
-        assertThat(ExplanationService.canSayWithinNormalRange(facts)).as("the printed range alone would claim it").isTrue();
+        assertThat(ExplanationService.printedRangesAllowTheClaim(facts)).as("the printed range alone would claim it").isTrue();
         assertThat(ExplanationService.canSayWithinNormalRange(facts, a)).isFalse();
     }
 
