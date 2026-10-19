@@ -3,10 +3,13 @@ package com.elioo.baymax.web.adapter.in.ui;
 import com.elioo.baymax.outbound.application.service.UrgencyService;
 import com.elioo.baymax.outbound.domain.ValueVerdict;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.OptionalDouble;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import static com.elioo.baymax.web.adapter.in.ui.Html.esc;
 
@@ -72,10 +75,7 @@ final class ValueRows {
      * the crop, the bar where the code placed the value, the printed range and the chip.
      */
     static String row(UiCopy copy, Lang lang, UUID documentId, Map<String, Object> v) {
-        Object crop = v.get("crop_key");
-        if (crop == null || String.valueOf(crop).isBlank()) {
-            throw new IllegalStateException("a value without its crop is never shown");
-        }
+        String crop = crop(v.get("crop_key"), "a value");
         ValueVerdict.Kind kind = kindOf(v);
         String cls = kind.name().toLowerCase(Locale.ROOT);
         OptionalDouble pin = pin(kind, v);
@@ -83,7 +83,7 @@ final class ValueRows {
         String chip = copy.t(lang, chipKey(kind, kind == ValueVerdict.Kind.INSIDE || kind == ValueVerdict.Kind.UNKNOWN
                 ? null : v.get("verdict_side"), pin));
         String range = range(copy, lang, v);
-        String href = PageChrome.imageHref(documentId, String.valueOf(crop));
+        String href = PageChrome.imageHref(documentId, crop);
         String unit = v.get("unit") == null ? "" : esc(v.get("unit"));
         StringBuilder b = new StringBuilder("<a class=\"vrow ").append(cls).append('"');
         if (v.get("id") != null) {
@@ -92,12 +92,12 @@ final class ValueRows {
         b.append(" href=\"").append(href).append("\" aria-label=\"")
                 .append(esc(v.get("name"))).append(' ').append(esc(v.get("value"))).append(unit.isEmpty() ? "" : " " + unit)
                 .append(", ").append(range).append(", ").append(chip).append("\">")
-                .append("<span class=\"top\"><span class=\"name\">").append(esc(v.get("name"))).append("</span> ")
+                .append("<span class=\"vhead\"><span class=\"name\">").append(esc(v.get("name"))).append("</span> ")
                 .append("<span class=\"val\">").append(esc(v.get("value"))).append("</span>")
                 .append(unit.isEmpty() ? "" : " <span class=\"unit\">" + unit + "</span>").append("</span>")
                 .append("<img class=\"crop\" loading=\"lazy\" alt=\"\" src=\"").append(href).append("\">");
         pin.ifPresent(p -> b.append(bar(v, kind, p)));
-        return b.append("<span class=\"foot\"><span class=\"range\">").append(range).append("</span> <span class=\"chip ")
+        return b.append("<span class=\"vfoot\"><span class=\"range\">").append(range).append("</span> <span class=\"chip ")
                 .append(cls).append("\">").append(chip).append("</span></span></a>").toString();
     }
 
@@ -109,6 +109,40 @@ final class ValueRows {
                 + "<circle class=\"pin " + kind.name().toLowerCase(Locale.ROOT) + "\" cx=\"" + String.format(Locale.ROOT, "%.1f", pin)
                 + "\" cy=\"5\" r=\"4\"/></svg>"
                 + "<span class=\"ends\" aria-hidden=\"true\"><span>" + esc(v.get("ref_low")) + "</span><span>" + esc(v.get("ref_high")) + "</span></span>";
+    }
+
+    /** The fields a medicine line is captioned with, in the order the prescription writes them. */
+    private static final List<String> MEDICINE_FIELDS = List.of("name", "dose_text", "frequency_text", "timing_text", "duration_text");
+
+    /**
+     * MedicineRow (spec §9, principle 7): the crop first and large — what a pharmacy is shown — then the line as written,
+     * quiet, joining only the fields that were written. No colour, no chip, no status: Medioo says nothing about a medicine.
+     */
+    static String medicine(UiCopy copy, Lang lang, UUID documentId, Map<String, Object> m) {
+        String href = PageChrome.imageHref(documentId, crop(m.get("crop_key"), "a medicine"));
+        String caption = MEDICINE_FIELDS.stream().map(m::get).filter(Objects::nonNull).map(f -> String.valueOf(f).strip())
+                .filter(f -> !f.isEmpty()).map(Html::esc).collect(Collectors.joining(" · "));
+        return "<a class=\"med\" href=\"" + href + "\"><img class=\"crop big\" loading=\"lazy\" alt=\"\" src=\"" + href + "\">"
+                + "<span class=\"cap\">" + caption + "</span><span class=\"zoom\">" + copy.t(lang, "crop.zoom") + "</span></a>";
+    }
+
+    /**
+     * কাগজে লেখা (principle 6): a line from the paper, verbatim, under the paper label and beside its crop. Medioo's own
+     * words never use this block, and this block never carries Medioo's words (PaperIsNeverMediooTest). {@code after} is
+     * markup the caller already escaped (a follow-up's date).
+     */
+    static String paperQuote(UiCopy copy, Lang lang, UUID documentId, Object text, Object cropKey, String after) {
+        String href = PageChrome.imageHref(documentId, crop(cropKey, "a line from the paper"));
+        return "<figure class=\"paper\"><figcaption class=\"label\">" + copy.t(lang, "paper.label") + "</figcaption>"
+                + "<img class=\"crop\" loading=\"lazy\" alt=\"\" src=\"" + href + "\"><blockquote>" + esc(text) + "</blockquote>"
+                + after + "</figure>";
+    }
+
+    private static String crop(Object key, String what) {
+        if (key == null || String.valueOf(key).isBlank()) {
+            throw new IllegalStateException(what + " without its crop is never shown");
+        }
+        return String.valueOf(key);
     }
 
     /** The range as printed: both bounds, one, or none. Strings throughout, so the paper's digits are kept. */

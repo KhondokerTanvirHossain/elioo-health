@@ -31,14 +31,18 @@ class DocumentPagesRenderTest {
     private final DocumentPages ui = kit.documents;
     private final UUID id = UUID.randomUUID();
 
-    /** Acceptance: given unverified items, the count is shown and the items themselves never appear. */
+    /**
+     * Acceptance: given unverified items, each section says so where its items would be (B2: the values line, the
+     * medicines count) and the items themselves never appear.
+     */
     @Test
     void unverifiedCountIsShownAndNothingElseAboutThem() {
         DocumentView view = new DocumentView(id.toString(), "DONE", null, "prescription", "2026-09-01", null, 0.9, "m", 1,
                 List.of(Map.of("name", "BP", "value", "130", "unit", "mmHg", "crop_key", "f/p/d/crop-v1.jpg")),
                 List.of(), List.of(), null, Map.of("values", 1, "medicines", 2, "follow_up", 0, "total", 3));
         String html = ui.render(view, id);
-        assertThat(html).contains("৩ টি অংশ মূল ছবিতে খুঁজে পাওয়া যায়নি");   // a count on a Bangla page is in Bangla digits (rule 13)
+        assertThat(html).contains(kit.copy.t(Lang.BN, "value.unverified"));
+        assertThat(ResultFixtures.section(html, "medicines")).contains("২টি লাইন পড়া যায়নি");   // a count on a Bangla page is in Bangla digits (rule 13)
         assertThat(html).contains("130").contains("mmHg");
         assertThat(html).doesNotContain("unverified_values").doesNotContain("medicines\":");
     }

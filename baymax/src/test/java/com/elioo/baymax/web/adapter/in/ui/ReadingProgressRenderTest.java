@@ -122,8 +122,8 @@ class ReadingProgressRenderTest {
         when(kit.results.reading(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(
                 new ReadingView(DocumentView.pending(done), MA, true, new ViewerLocale(true), NOW, NOW)));
         Dom dom = Dom.parse(kit.page("/app/documents/" + WebUiTestKit.DOC_ID, "bn"));
-        assertThat(dom.all).as("the finished page's values heading")
-                .anyMatch(e -> e.tag().equals("h2") && e.ownText().equals(kit.copy.raw(Lang.BN, "doc.values")));
+        assertThat(dom.all).as("the finished page's value rows (B2)")
+                .anyMatch(e -> e.tag().equals("a") && e.classes().contains("vrow"));
         assertThat(dom.all).as("no reading section, no script").noneMatch(e -> "progress".equals(e.attrs().get("id")) || e.tag().equals("script"));
         assertThat(dom.all).as("drawn as the result: the stored urgency leads").anyMatch(e -> "urgency".equals(e.attrs().get("id")));
         verify(kit.results, times(1)).result(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID);

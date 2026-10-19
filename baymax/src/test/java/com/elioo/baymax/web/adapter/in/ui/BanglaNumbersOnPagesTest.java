@@ -105,16 +105,20 @@ class BanglaNumbersOnPagesTest {
         DocumentView view = new DocumentView(id.toString(), "DONE", null, "lab_report", "2026-09-01", null, 0.9, "m", 1,
                 List.of(Map.of("name", "HbA1c", "value", "8.2", "unit", "%", "crop_key", "f/p/d/crop-v1.jpg"),
                         Map.of("name", "Creatinine", "value", "130", "unit", "µmol/L", "crop_key", "f/p/d/crop-v2.jpg")),
-                List.of(), List.of(Map.of("instruction", "আবার দেখাবেন", "due_date", "2026-11-15")), null, null);
+                List.of(), List.of(Map.of("instruction", "আবার দেখাবেন", "due_date", "2026-11-15", "crop_key", "f/p/d/crop-f1.jpg")), null, null);
+        UiCopy copy = new UiCopy();
 
+        // B2: the follow-up's date is the line under its paper quote (next.followup), the value its own span
         String bn = ui.render(Lang.BN, view, id, Optional.empty());
-        assertThat(metaLines(bn)).contains("১ সেপ্টেম্বর ২০২৬", "১৫ নভেম্বর ২০২৬");
-        assertThat(bn).contains("<strong>8.2</strong>").contains("<strong>130</strong>")
+        assertThat(metaLines(bn)).contains("১ সেপ্টেম্বর ২০২৬");
+        assertThat(bn).contains("<p class=\"due\">" + copy.t(Lang.BN, "next.followup", "১৫ নভেম্বর ২০২৬") + "</p>");
+        assertThat(bn).contains("<span class=\"val\">8.2</span>").contains("<span class=\"val\">130</span>")
                 .doesNotContain("৮.২").doesNotContain("১৩০");
 
         String en = ui.render(Lang.EN, view, id, Optional.empty());
-        assertThat(metaLines(en)).contains("2026-09-01", "2026-11-15");
-        assertThat(en).contains("<strong>8.2</strong>").contains("<strong>130</strong>");
+        assertThat(metaLines(en)).contains("2026-09-01");
+        assertThat(en).contains("<p class=\"due\">" + copy.t(Lang.EN, "next.followup", "2026-11-15") + "</p>");
+        assertThat(en).contains("<span class=\"val\">8.2</span>").contains("<span class=\"val\">130</span>");
     }
 
     /** A date the extractor did not normalise is shown as written, never invented. */
