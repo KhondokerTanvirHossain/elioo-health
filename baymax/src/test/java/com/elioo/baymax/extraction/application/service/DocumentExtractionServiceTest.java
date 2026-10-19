@@ -203,6 +203,7 @@ class DocumentExtractionServiceTest {
                     assertThat(document.documentType()).isEqualTo("lab_report");
                     assertThat(document.confidenceOverall()).isEqualTo(0.93);
                     assertThat(document.modelFinal()).isEqualTo("groq/openai/gpt-oss-120b");
+                    assertThat(document.statusReasonCode()).isNull();
                 })
                 .verifyComplete();
 
@@ -225,6 +226,7 @@ class DocumentExtractionServiceTest {
                 .assertNext(document -> {
                     assertThat(document.status()).isEqualTo(Document.Status.NEEDS_RETAKE);
                     assertThat(document.statusReason()).contains("not read confidently");
+                    assertThat(document.statusReasonCode()).isEqualTo("low_overall");
                 })
                 .verifyComplete();
 
@@ -237,7 +239,10 @@ class DocumentExtractionServiceTest {
         replyWith(GOOD_REPLY.replace("\"values\":0.93", "\"values\":0.4"));
 
         StepVerifier.create(service.process(received(1), List.of(pageJpeg())))
-                .assertNext(d -> assertThat(d.status()).isEqualTo(Document.Status.NEEDS_RETAKE))
+                .assertNext(d -> {
+                    assertThat(d.status()).isEqualTo(Document.Status.NEEDS_RETAKE);
+                    assertThat(d.statusReasonCode()).as("the code names the section the gate judged").isEqualTo("low_section:values");
+                })
                 .verifyComplete();
         verify(records, never()).saveExtraction(any(), any());
     }
@@ -272,6 +277,7 @@ class DocumentExtractionServiceTest {
                     assertThat(d.status()).as("a prescription has no lab values; an empty values[] is the page, "
                             + "not a failed read").isEqualTo(Document.Status.DONE);
                     assertThat(d.statusReason()).isNull();
+                    assertThat(d.statusReasonCode()).as("a code is never set off a retake").isNull();
                 })
                 .verifyComplete();
     }
@@ -293,6 +299,7 @@ class DocumentExtractionServiceTest {
                     assertThat(d.status()).as("a lab report with nothing read is a failed read, whatever "
                             + "confidence the model reports").isEqualTo(Document.Status.NEEDS_RETAKE);
                     assertThat(d.statusReason()).contains("values");
+                    assertThat(d.statusReasonCode()).isEqualTo("expected_section_empty:values");
                 })
                 .verifyComplete();
         verify(records, never()).saveExtraction(any(), any());
@@ -317,6 +324,7 @@ class DocumentExtractionServiceTest {
                 .assertNext(d -> {
                     assertThat(d.status()).isEqualTo(Document.Status.NEEDS_RETAKE);
                     assertThat(d.statusReason()).contains("not read confidently");
+                    assertThat(d.statusReasonCode()).isEqualTo("low_overall");
                 })
                 .verifyComplete();
     }
@@ -348,6 +356,7 @@ class DocumentExtractionServiceTest {
                     // rule that ran
                     assertThat(d.statusReason()).as("no follow-up written is the page, not a failed read; the rule "
                             + "that ran").isNull();
+                    assertThat(d.statusReasonCode()).isNull();
                     assertThat(d.status()).isEqualTo(Document.Status.DONE);
                 })
                 .verifyComplete();
@@ -373,6 +382,7 @@ class DocumentExtractionServiceTest {
                     assertThat(d.status()).isEqualTo(Document.Status.NEEDS_RETAKE);
                     assertThat(d.statusReason()).as("the emptiness rule ran, on the section a prescription must carry")
                             .isEqualTo("nothing was read from the medicines of this prescription");
+                    assertThat(d.statusReasonCode()).isEqualTo("expected_section_empty:medicines");
                 })
                 .verifyComplete();
         verify(records, never()).saveExtraction(any(), any());
@@ -399,9 +409,39 @@ class DocumentExtractionServiceTest {
                     assertThat(d.status()).isEqualTo(Document.Status.NEEDS_RETAKE);
                     assertThat(d.statusReason()).as("the confidence rule ran, on the section that was read")
                             .isEqualTo("part of the document was not read confidently enough (0.50)");
+                    assertThat(d.statusReasonCode()).as("the section the confidence rule judged").isEqualTo("low_section:follow_up");
                 })
                 .verifyComplete();
         verify(records, never()).saveExtraction(any(), any());
+    }
+
+    /**
+     * Two gating sections read at the same low confidence: the retake names the first in SECTION_ORDER, every time.
+     * This pins the new behaviour and is not a replayed guard: the old loop walked a {@code Map.of}, whose iteration
+     * order is randomized per JVM, so it named either section and no run of the old code fails reliably.
+     */
+    @Test
+    void ofTwoSectionsAtTheSameLowConfidenceTheFirstJudgedIsNamed() throws Exception {
+        replyWith("""
+                {"document_type":"prescription","document_date":"2026-09-19","facility":"Shapla Diagnostics",
+                 "values":[],
+                 "medicines":[{"name":"HbA1c","dose_text":"30 mg","frequency_text":"1+0+0",
+                               "timing_text":"before meal","source_span":{"page":1,"start":0,"end":5}}],
+                 "follow_up":[{"instruction":"৭ দিন পর আসবেন","due_date":"2026-09-26",
+                               "source_span":{"page":1,"start":6,"end":9}}],
+                 "clinical_context":{"chief_complaint":[],"history":[],"examination":[],
+                                     "diagnosis":[],"investigations_advised":[],"advice":[],"referral":null},
+                 "confidence":{"overall":0.9,"values":0.0,"medicines":0.5,"follow_up":0.5,
+                               "clinical_context":0.85}}
+                """);
+
+        StepVerifier.create(service.process(received(1), List.of(pageJpeg())))
+                .assertNext(d -> {
+                    assertThat(d.status()).isEqualTo(Document.Status.NEEDS_RETAKE);
+                    assertThat(d.statusReasonCode()).as("medicines precedes follow_up in SECTION_ORDER")
+                            .isEqualTo("low_section:medicines");
+                })
+                .verifyComplete();
     }
 
     // --- the replay harness decides like this gate ---------------------------------------------------
@@ -468,24 +508,25 @@ class DocumentExtractionServiceTest {
             new GateCase("lab report read weakly overall", "lab_report", 0.7,
                     0.9, 1, 0.0, 0, 0.0, 0, 0.9, "NEEDS_RETAKE overall"));
 
-    /** The gate's verdict as the harness would print it: the status and the rule that produced it. */
+    /**
+     * The gate's verdict as the harness would print it: the status and the rule that produced it, read from the stored
+     * reason CODE (F5), the field a page maps to copy — so every rule's case also pins the code that rule writes.
+     */
     private static String gateOutcome(Document d) {
-        String reason = d.statusReason();
-        if (reason == null) {
-            return d.status() + " -";
+        String code = d.statusReasonCode();
+        if (code == null) {
+            return d.status() + (d.status() == Document.Status.NEEDS_RETAKE ? " NO CODE" : " -");
         }
-        if (reason.startsWith("the document was not read confidently enough")) {
+        if (code.equals("low_overall")) {
             return d.status() + " overall";
         }
-        java.util.regex.Matcher missing = java.util.regex.Pattern.compile("^nothing was read from the (\\w+) of ")
-                .matcher(reason);
-        if (missing.find()) {
-            return d.status() + " missing " + missing.group(1);
+        if (code.startsWith("expected_section_empty:")) {
+            return d.status() + " missing " + code.substring(code.indexOf(':') + 1);
         }
-        if (reason.startsWith("part of the document was not read confidently enough")) {
+        if (code.startsWith("low_section:")) {
             return d.status() + " section";
         }
-        return d.status() + " UNMAPPED: " + reason;
+        return d.status() + " UNMAPPED: " + code;
     }
 
     /** Runs the harness's own {@code current_gate} on every case, without a database: the function, not its text. */
@@ -620,6 +661,7 @@ class DocumentExtractionServiceTest {
                     assertThat(d.status()).as("a clear page read correctly is not the family's problem to fix")
                             .isEqualTo(Document.Status.DONE);
                     assertThat(d.statusReason()).isNull();
+                    assertThat(d.statusReasonCode()).isNull();
                 })
                 .verifyComplete();
 
@@ -658,7 +700,10 @@ class DocumentExtractionServiceTest {
         replyWith(GOOD_REPLY.replace("\"values\":0.93", "\"values\":0.40"));
 
         StepVerifier.create(service.process(received(1), List.of(pageJpeg())))
-                .assertNext(d -> assertThat(d.status()).isEqualTo(Document.Status.NEEDS_RETAKE))
+                .assertNext(d -> {
+                    assertThat(d.status()).isEqualTo(Document.Status.NEEDS_RETAKE);
+                    assertThat(d.statusReasonCode()).isEqualTo("low_section:values");
+                })
                 .verifyComplete();
         verify(records, never()).saveExtraction(any(), any());
     }
@@ -716,6 +761,7 @@ class DocumentExtractionServiceTest {
                 .assertNext(document -> {
                     assertThat(document.status()).isEqualTo(Document.Status.FAILED);
                     assertThat(document.statusReason()).isNotBlank();
+                    assertThat(document.statusReasonCode()).as("FAILED is not a retake: no code").isNull();
                 })
                 .verifyComplete();
         verify(records, atLeastOnce()).update(any());
@@ -810,6 +856,7 @@ class DocumentExtractionServiceTest {
                 .assertNext(document -> {
                     assertThat(document.status()).isEqualTo(Document.Status.NEEDS_RETAKE);
                     assertThat(document.statusReason()).contains("no readable text");
+                    assertThat(document.statusReasonCode()).isEqualTo("no_text");
                 })
                 .verifyComplete();
 
@@ -825,6 +872,7 @@ class DocumentExtractionServiceTest {
                 .assertNext(document -> {
                     assertThat(document.status()).isEqualTo(Document.Status.FAILED);
                     assertThat(document.statusReason()).contains("503");
+                    assertThat(document.statusReasonCode()).isNull();
                 })
                 .verifyComplete();
 
@@ -903,6 +951,7 @@ class DocumentExtractionServiceTest {
         assertThat(saved.getValue().modelFinal()).isEqualTo("anthropic/claude-sonnet-5");   // written back unchanged
         assertThat(saved.getValue().confidenceOverall()).isEqualTo(0.93);
         assertThat(saved.getValue().status()).isEqualTo(Document.Status.DONE);
+        assertThat(saved.getValue().statusReasonCode()).isNull();
     }
 
     @Test

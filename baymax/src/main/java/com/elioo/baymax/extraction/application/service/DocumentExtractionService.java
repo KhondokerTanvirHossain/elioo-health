@@ -10,6 +10,7 @@ import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.ExtractionResult;
 import com.elioo.baymax.extraction.domain.PageOcr;
+import com.elioo.baymax.extraction.domain.RetakeReason;
 import com.elioo.baymax.extraction.domain.VerifiedItems;
 import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
 import com.elioo.healthcare.gcp.vision.model.VisionOcrRequest;
@@ -71,6 +72,19 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
     private final ObjectMapper mapper;
     private final Clock clock;
 
+    /*
+     * The four retake reasons as developer-facing prose (status_reason). Constants, so V20's backfill test feeds the
+     * SQL the code's own text and the two cannot drift. A page never shows them: it shows the code's copy (F5).
+     */
+    /** No page carried any OCR geometry. */
+    public static final String REASON_NO_TEXT = "no readable text found on the page";
+    /** The prefix; the overall confidence follows as {@code " (%.2f)"}. */
+    public static final String REASON_LOW_OVERALL = "the document was not read confidently enough";
+    /** {@code formatted(section, documentType)}. */
+    public static final String REASON_SECTION_EMPTY = "nothing was read from the %s of this %s";
+    /** The prefix; the section's confidence follows as {@code " (%.2f)"}. */
+    public static final String REASON_LOW_SECTION = "part of the document was not read confidently enough";
+
     /** Runs the whole pipeline for an already-stored document. Never signals an error: it records one. */
     public Mono<Document> process(Document document, List<byte[]> pages) {
         return records.update(document.withStatus(Document.Status.PROCESSING, null, clock.instant()))
@@ -80,7 +94,7 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
                     // message and trace at DEBUG only
                     log.error("[baymax] extraction failed documentId={} error={}", document.id(), error.getClass().getSimpleName());
                     log.debug("[baymax] extraction failure detail documentId={}", document.id(), error);
-                    return finish(document, Document.Status.FAILED, shortReason(error), null, null, null);
+                    return finish(document, Document.Status.FAILED, shortReason(error), null, null, null, null);
                 })
                 .flatMap(done -> records.refreshCost(done.id()).thenReturn(done));
     }
@@ -90,7 +104,7 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
                 .flatMap(ocrPages -> {
                     if (ocrPages.stream().noneMatch(PageOcr::hasGeometry)) {
                         return finish(document, Document.Status.NEEDS_RETAKE,
-                                "no readable text found on the page", null, null, null);
+                                REASON_NO_TEXT, RetakeReason.NO_TEXT.code(null), null, null, null);
                     }
                     return extractWithEscalation(document, ocrPages)
                             .flatMap(attempt -> gateAndPersist(document, ocrPages, attempt));
@@ -246,7 +260,7 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
 
         if (overall < thresholds.getMinConfidenceOverall()) {
             return finish(document, Document.Status.NEEDS_RETAKE,
-                    "the document was not read confidently enough (%.2f)".formatted(overall),
+                    REASON_LOW_OVERALL + " (%.2f)".formatted(overall), RetakeReason.LOW_OVERALL.code(null),
                     attempt, result, null);
         }
         // A section the document type expects, read as empty, is a failed read whatever confidence it claims:
@@ -255,14 +269,14 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
         String missing = missingExpectedSection(result, thresholds);
         if (missing != null) {
             return finish(document, Document.Status.NEEDS_RETAKE,
-                    "nothing was read from the %s of this %s".formatted(missing, typeOf(result)),
-                    attempt, result, null);
+                    REASON_SECTION_EMPTY.formatted(missing, typeOf(result)),
+                    RetakeReason.EXPECTED_SECTION_EMPTY.code(missing), attempt, result, null);
         }
-        double gatedSection = lowestPresentSection(result, thresholds);
-        if (gatedSection < thresholds.getMinConfidenceSection()) {
+        SectionScore gatedSection = lowestPresentSection(result, thresholds);
+        if (gatedSection.confidence() < thresholds.getMinConfidenceSection()) {
             return finish(document, Document.Status.NEEDS_RETAKE,
-                    "part of the document was not read confidently enough (%.2f)".formatted(gatedSection),
-                    attempt, result, null);
+                    REASON_LOW_SECTION + " (%.2f)".formatted(gatedSection.confidence()),
+                    RetakeReason.LOW_SECTION.code(gatedSection.section()), attempt, result, null);
         }
         // DR-28: the gate above judged what was EXTRACTED; this judges what will actually be SHOWN. A value
         // with no locatable crop is never persisted (crop_key is NOT NULL, "no number without its source"),
@@ -284,7 +298,7 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
                                         + "kept as DONE, values unverified (DR-31)",
                                 document.id(), gatingSectionOf(result, thresholds));
                     }
-                    return finish(document, Document.Status.DONE, null, attempt, result, items);
+                    return finish(document, Document.Status.DONE, null, null, attempt, result, items);
                 });
     }
 
@@ -327,28 +341,44 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
         return null;
     }
 
+    /** A gating section and its confidence; {@code section} is null when no section gated (confidence 1). */
+    private record SectionScore(String section, double confidence) {
+    }
+
     /**
-     * The lowest confidence among the gating sections that actually have content.
+     * The order sections are judged in, so that of two at the same lowest confidence the first is named. Public so
+     * DocumentReasonCodeConstraintTest can derive every code the gate can produce from it.
+     */
+    public static final List<String> SECTION_ORDER = List.of("values", "medicines", "follow_up");
+
+    /**
+     * The lowest confidence among the gating sections that actually have content, and which section it was (F5: the
+     * retake's code names it).
      * A section with nothing in it is excluded — confidence in an empty section is a number about nothing, and
      * including it rejected clear prescriptions because values[] scored 0.0 (eleventh flattering failure: a
      * gate firing for a reason unrelated to what it exists for).
      */
-    private static double lowestPresentSection(ExtractionResult result,
-                                               BaymaxProperties.Extract thresholds) {
+    private static SectionScore lowestPresentSection(ExtractionResult result,
+                                                     BaymaxProperties.Extract thresholds) {
         ExtractionResult.Confidence c = result.confidence();
         if (c == null) {
-            return 1d;
+            return new SectionScore(null, 1d);
         }
         // DR-27: only the sections that matter for this document type gate a retake. clinical_context is
         // deliberately absent from every gating list — lab1 read 21 values at 0.92 and was retaken because a
         // clinical section a lab report barely has scored 0.60.
         List<String> gating = thresholds.getGatingSections().getOrDefault(typeOf(result), List.of());
-        double lowest = 1d;
-        for (var entry : java.util.Map.of("values", c.values(), "medicines", c.medicines(),
-                "follow_up", c.followUp()).entrySet()) {
-            if (gating.contains(entry.getKey()) && entry.getValue() != null
-                    && itemCount(result, entry.getKey()) > 0) {
-                lowest = Math.min(lowest, entry.getValue());
+        Map<String, Double> scores = new java.util.HashMap<>();
+        scores.put("values", c.values());
+        scores.put("medicines", c.medicines());
+        scores.put("follow_up", c.followUp());
+        SectionScore lowest = new SectionScore(null, 1d);
+        for (String section : SECTION_ORDER) {
+            Double score = scores.get(section);
+            // strictly lower: of two sections at the same confidence the first in SECTION_ORDER is named
+            if (gating.contains(section) && score != null && itemCount(result, section) > 0
+                    && score < lowest.confidence()) {
+                lowest = new SectionScore(section, score);
             }
         }
         return lowest;
@@ -527,7 +557,12 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
 
     // --- finishing -------------------------------------------------------------------------------
 
-    private Mono<Document> finish(Document document, Document.Status status, String reason,
+    /**
+     * @param reason developer-facing prose for {@code status_reason}; never rendered
+     * @param code   the {@link RetakeReason} code, on NEEDS_RETAKE only (V20 refuses it anywhere else, and a retake
+     *               without one)
+     */
+    private Mono<Document> finish(Document document, Document.Status status, String reason, String code,
                                   Attempt attempt, ExtractionResult result, VerifiedItems items) {
         Instant now = clock.instant();
         Document updated = new Document(
@@ -541,7 +576,7 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
                 attempt == null ? null : attempt.provider() + "/" + attempt.model(),
                 document.costUsd(), document.pageCount(), document.createdAt(), now,
                 items == null ? VerifiedItems.Unverified.none() : items.unverified(),
-                items == null ? null : contextJson(items));
+                items == null ? null : contextJson(items), code);
 
         if (items != null && items.unverified().any()) {
             log.info("[baymax] {} item(s) had no resolvable crop documentId={} values={} medicines={} followUp={}",
@@ -550,8 +585,8 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
         }
         if (items == null) {
             return records.update(updated)
-                    .doOnSuccess(d -> log.info("[baymax] document {} documentId={} reason={}",
-                            status, d.id(), reason));
+                    .doOnSuccess(d -> log.info("[baymax] document {} documentId={} code={} reason={}",
+                            status, d.id(), code, reason));
         }
         return records.saveExtraction(updated, items);
     }
@@ -637,7 +672,7 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
                             .flatMap(pages -> storage.deleteCrops(document.familyId(), document.patientId(), document.id())
                                     .then(records.deleteItems(document.id()))
                                     .then(verify(document, pages, result))
-                                    .flatMap(items -> finish(document, Document.Status.DONE, null, storedAttempt(document), result, items)
+                                    .flatMap(items -> finish(document, Document.Status.DONE, null, null, storedAttempt(document), result, items)
                                             .thenReturn(items)))
                             .map(items -> new RecropReport(documentId, "recropped", items.observations().size(),
                                     items.medications().size(), items.followUps().size(), items.clinicalContext().size(),

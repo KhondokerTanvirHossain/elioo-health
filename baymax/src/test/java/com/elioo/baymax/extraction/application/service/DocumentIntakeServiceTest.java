@@ -161,16 +161,17 @@ class DocumentIntakeServiceTest {
         verify(documents, never()).observationsOf(any());
     }
 
+    /** F5: a retake's view carries its reason CODE, the thing a page maps to copy; the developer prose stays behind. */
     @Test
-    void aRetakeShowsItsReason() {
+    void aRetakeShowsItsReasonCodeNeverItsProse() {
         UUID id = UUID.randomUUID();
         when(documents.find(id)).thenReturn(Mono.just(new Document(id, PATIENT, FAMILY, null, null, null,
-                null, null, Document.Status.NEEDS_RETAKE, "too blurry", null, null, 1, NOW, NOW)));
+                null, null, Document.Status.NEEDS_RETAKE, "too blurry", null, null, 1, NOW, NOW, null, null, "low_overall")));
 
         StepVerifier.create(service.view(id))
                 .assertNext(view -> {
                     assertThat(view.status()).isEqualTo("NEEDS_RETAKE");
-                    assertThat(view.reason()).isEqualTo("too blurry");
+                    assertThat(view.reasonCode()).isEqualTo("low_overall");
                 })
                 .verifyComplete();
     }

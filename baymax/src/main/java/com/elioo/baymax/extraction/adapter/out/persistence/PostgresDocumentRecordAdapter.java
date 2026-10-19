@@ -76,7 +76,8 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
                         UPDATE %s.document SET
                             document_type = :type, doc_date = :docDate, facility = :facility,
                             extraction_json = CAST(:extraction AS jsonb), confidence_overall = :confidence,
-                            status = :status, status_reason = :reason, model_final = :model,
+                            status = :status, status_reason = :reason, status_reason_code = :reasonCode,
+                            model_final = :model,
                             cost_usd = :cost, page_count = :pages, updated_at = :updatedAt,
                             unverified_values = :unverifiedValues,
                             unverified_medicines = :unverifiedMedicines,
@@ -99,6 +100,7 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
         spec = bindOrNull(spec, "extraction", d.extractionJson(), String.class);
         spec = bindOrNull(spec, "confidence", d.confidenceOverall(), Double.class);
         spec = bindOrNull(spec, "reason", d.statusReason(), String.class);
+        spec = bindOrNull(spec, "reasonCode", d.statusReasonCode(), String.class);
         spec = bindOrNull(spec, "model", d.modelFinal(), String.class);
         spec = bindOrNull(spec, "cost", d.costUsd(), BigDecimal.class);
         spec = bindOrNull(spec, "clinicalContext", d.clinicalContextJson(), String.class);
