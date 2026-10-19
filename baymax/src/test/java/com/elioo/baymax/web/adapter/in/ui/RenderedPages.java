@@ -58,6 +58,18 @@ final class RenderedPages {
         return pages;
     }
 
+    /** The Bangla half of {@link #all()}: what a first visit gets, for checks that read Bangla copy. */
+    static Map<String, String> allBangla() {
+        Map<String, String> bn = new LinkedHashMap<>();
+        all().forEach((key, html) -> {
+            if (key.endsWith(" bn")) {
+                bn.put(key, html);
+            }
+        });
+        assertThat(bn).as("Bangla pages").isNotEmpty();
+        return bn;
+    }
+
     /** One call of a route with a fixture, in a language. */
     static EntityExchangeResult<byte[]> exchange(WebUiTestKit kit, RouteTable.Route route, PageFixtures.Fixture f, String lang) {
         return exchange(kit.client, route, f, lang);

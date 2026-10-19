@@ -20,3 +20,40 @@
 .says .label{margin:0 0 var(--sp-2);font-weight:700}
 .gate{margin:0 0 var(--sp-4)}
 .chip.review{display:inline-flex;align-items:center;padding:var(--sp-1) var(--sp-3);border-radius:var(--r-pill);background:var(--c-status-unknown-container);color:var(--c-text-muted)}
+/* B2 ValueRow (s10, spec §9): the look comes from the stored verdict; every colour is paired with its word (and ▲/▼) */
+.vgroup{margin:var(--sp-4) 0;display:flex;flex-direction:column;gap:var(--sp-2)}
+.vgroup .why{margin:0;color:var(--c-text-muted);font-size:var(--fs-footnote);line-height:var(--lh-footnote)}
+.vrow{display:grid;gap:var(--sp-2);min-height:var(--target-min);padding:var(--sp-3);border-radius:var(--r-m);text-decoration:none;color:var(--c-text)}
+.vrow.inside,.vrow.unknown{background:var(--c-surface);border:1px solid var(--c-line)}
+.vrow.outside{background:var(--c-status-soon-container)}
+.vrow.critical{background:var(--c-status-now-container)}
+.vrow .vhead,.vrow .vfoot{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:var(--sp-2)}
+.vrow .name{font-weight:700;margin-right:auto}
+.vrow .chip{display:inline-flex;align-items:center;padding:var(--sp-1) var(--sp-3);border-radius:var(--r-pill);font-size:var(--fs-label-small);line-height:var(--lh-label-small);font-weight:700}
+.chip.inside{background:var(--c-status-inside-container);color:var(--c-status-inside)}
+.chip.unknown{background:var(--c-status-unknown-container);color:var(--c-status-unknown);border:1px dashed var(--c-outline)}
+.chip.outside{background:var(--c-surface);color:var(--c-status-soon)}
+.chip.critical{background:var(--c-status-now-solid);color:var(--c-on-status-now)}
+.bar{width:100%;height:auto;display:block}
+.bar .track{fill:var(--c-surface-3)}
+.bar .band{fill:var(--c-surface);stroke:var(--c-outline);stroke-width:.5}
+.pin.inside{fill:var(--c-status-inside)}
+.pin.outside{fill:var(--c-status-soon)}
+.pin.critical{fill:var(--c-status-now)}
+.ends{display:flex;justify-content:space-between;color:var(--c-text-muted)}
+.vrow .crop,.med .crop,.paper .crop{max-width:100%;border:1px solid var(--c-surface-3);border-radius:var(--r-xs)}
+.val,.unit,.range,.ends{font-family:var(--font-latin)}
+.val{font-size:var(--fs-value);line-height:var(--lh-value);font-weight:700}
+.unit{font-size:var(--fs-unit);line-height:var(--lh-unit)}
+.range,.ends{font-size:var(--fs-range);line-height:var(--lh-range)}
+/* B2 the summary sections (s10/s17): the paper block (C4 reuses it), medicines crop first, the counts line */
+.counts{margin:var(--sp-1) 0;color:var(--c-text-muted)}
+.paper{margin:0 0 var(--sp-3);padding:var(--sp-3);background:var(--c-paper);border:1px solid var(--c-paper-line);border-radius:var(--r-xs);font-family:var(--font-mono)}
+.paper .label{display:flex;align-items:center;gap:6px;font-family:var(--font-sans);font-size:var(--fs-label-small);line-height:var(--lh-label-small);font-weight:600;color:var(--c-text-muted)}
+.paper blockquote{margin:var(--sp-2) 0 0;color:var(--c-text);overflow-wrap:anywhere}
+.paper .due{margin:var(--sp-2) 0 0;font-family:var(--font-sans);color:var(--c-text-muted)}
+.doctor h3{margin:var(--sp-3) 0 var(--sp-2);font-size:var(--fs-label);line-height:var(--lh-label);color:var(--c-text-muted)}
+.med{display:flex;flex-direction:column;gap:var(--sp-2);min-height:var(--target-min);margin:0 0 var(--sp-3);text-decoration:none;color:var(--c-text)}
+.crop.big{width:100%}
+.med .cap{margin:0;font-weight:400;overflow-wrap:anywhere;color:var(--c-text-muted);font-size:var(--fs-callout);line-height:var(--lh-callout)}
+.med .zoom{font-size:var(--fs-footnote);line-height:var(--lh-footnote);color:var(--c-primary)}

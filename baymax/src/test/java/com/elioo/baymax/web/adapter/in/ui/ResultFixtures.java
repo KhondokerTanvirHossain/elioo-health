@@ -30,6 +30,17 @@ final class ResultFixtures {
     private ResultFixtures() {
     }
 
+    /**
+     * A stored OUTSIDE or CRITICAL with its side, as V19 requires (observation_verdict_side_matches_kind): the shape the
+     * producer writes. The six-argument form carries no side: right for INSIDE, UNKNOWN and NULL, and for OUTSIDE or
+     * CRITICAL only to test a row the database cannot hold.
+     */
+    static Map<String, Object> value(String name, String value, String unit, String low, String high, String verdict, String side) {
+        Map<String, Object> m = value(name, value, unit, low, high, verdict);
+        m.put("verdict_side", side);
+        return m;
+    }
+
     static Map<String, Object> value(String name, String value, String unit, String low, String high, String verdict) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", UUID.nameUUIDFromBytes((name + value).getBytes(StandardCharsets.UTF_8)));

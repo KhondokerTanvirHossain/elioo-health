@@ -1,5 +1,6 @@
 package com.elioo.baymax.web.adapter.in.ui;
 
+import com.elioo.baymax.extraction.domain.DocumentView;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.web.domain.GateState;
@@ -11,6 +12,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -59,10 +61,10 @@ class ResultSummaryRenderTest {
         if (gate != GateState.NONE) {
             assertThat(others).as("the gate line is a section after the banner, so the order check has something to order").isPositive();
         }
-        // the items are headings and divs, not sections: they come after the banner too, and they are on the page
-        int items = html.indexOf("<h2>" + copy.raw(Lang.BN, "doc.values") + "</h2>");
-        assertThat(items).as("the values heading").isNotNegative();
-        assertThat(items).as("the items list before the banner").isGreaterThan(at);
+        // the value groups are sections too (B2), so the loop above already ordered them; the row itself is on the page
+        int items = html.indexOf("<a class=\"vrow ");
+        assertThat(items).as("the value row").isNotNegative();
+        assertThat(items).as("the value row before the banner").isGreaterThan(at);
         assertThat(html.indexOf("6.8")).as("the value before the banner").isGreaterThan(at);
     }
 
@@ -169,62 +171,239 @@ class ResultSummaryRenderTest {
         assertThat(body(Lang.BN, Urgency.ROUTINE, GateState.NONE)).contains("<span class=\"pchip\">Ma · ৬৪ বছর</span>");
     }
 
-    // ---- F2 interim (B1): the stored verdict on the value line; B2's ValueRows replaces these two ----
+    // ---- B2: the summary sections (s10) — grouped value rows, crop-first medicines, the doctor's lines, the next step ----
 
-    /** Interim F2 line: a stored INSIDE the code cannot prove reads "কাগজে মিলিয়ে দেখুন", never "সীমার মধ্যে". */
+    /** Spec §4.10 grouping: outside first (critical before outside), then unknown, then inside (B6 collapses them). */
     @Test
-    void aStoredInsideCodeCannotProveReadsCheckThePaper() {
-        String row = rowOf(kit.documents.summaryBody(Lang.BN, ResultFixtures.result(ResultFixtures.lab(List.of(
-                ResultFixtures.value("K", "6.4", "mmol/L", "3.5", "5.1", "inside"))), Urgency.ROUTINE, List.of(), GateState.NONE, null, ResultFixtures.BD)), "K");
-        assertThat(row).contains(copy.t(Lang.BN, "value.chip.unknown")).doesNotContain(copy.t(Lang.BN, "value.chip.inside"));
+    void rowsAreGroupedByVerdictAndInsideRowsComeLast() {
+        var view = ResultFixtures.lab(List.of(
+                ResultFixtures.value("Haemoglobin", "12.6", "g/dL", "12.0", "15.5", "inside"),
+                ResultFixtures.value("WBC", "7.2", "10^3/µL", "4.0", "11.0", "inside"),
+                ResultFixtures.value("Urine Albumin", "Trace", null, "Nil", null, "unknown"),
+                ResultFixtures.value("HbA1c", "8.4", "%", "4.0", "6.0", "outside", "high"),
+                ResultFixtures.value("Potassium", "11.0", "mmol/L", "3.5", "5.1", "critical", "high")));
+        String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(view, Urgency.NOW, List.of(), GateState.NONE, null, ResultFixtures.BD));
+        assertThat(html.indexOf("id=\"v-" + id(view, "Potassium"))).isNotNegative()
+                .isLessThan(html.indexOf("id=\"v-" + id(view, "HbA1c")));
+        assertThat(html.indexOf("id=\"v-" + id(view, "HbA1c"))).isLessThan(html.indexOf("id=\"v-" + id(view, "Urine Albumin")));
+        assertThat(html.indexOf("id=\"v-" + id(view, "Urine Albumin"))).isLessThan(html.indexOf("id=\"v-" + id(view, "Haemoglobin")));
+        assertThat(ResultFixtures.section(html, "outside")).contains(copy.t(Lang.BN, "value.group.outside"))
+                .contains("id=\"v-" + id(view, "Potassium")).contains("id=\"v-" + id(view, "HbA1c")).doesNotContain("vrow inside");
+        assertThat(ResultFixtures.section(html, "unknown")).contains(copy.t(Lang.BN, "value.group.unknown.why"))
+                .contains("id=\"v-" + id(view, "Urine Albumin"));
+        assertThat(ResultFixtures.section(html, "inside")).contains(copy.t(Lang.BN, "value.group.inside"))
+                .contains("id=\"v-" + id(view, "Haemoglobin")).contains("id=\"v-" + id(view, "WBC"));
+    }
+
+    /** The grouping reads the row's rendered kind: a stored INSIDE the code cannot prove sits under "check the paper". */
+    @Test
+    void aDemotedInsideIsGroupedWithTheUnknownsNeverTheInsides() {
+        var view = ResultFixtures.lab(List.of(ResultFixtures.value("K", "6.4", "mmol/L", "3.5", "5.1", "inside")));
+        String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(view, Urgency.ROUTINE, List.of(), GateState.NONE, null, ResultFixtures.BD));
+        assertThat(ResultFixtures.section(html, "unknown")).contains("id=\"v-" + id(view, "K"));
+        assertThat(html).doesNotContain("id=\"inside\"");
+    }
+
+    /**
+     * MedicineRow: crop first and large, caption verbatim and quiet, no colour, no status; the pharmacy notice once for
+     * the section (two medicines, so "once" can fail), drawn as the warn notice (s17).
+     */
+    @Test
+    void aMedicineIsItsCropFirstWithTheLineAsWrittenAndNoStatus() {
+        var view = ResultFixtures.prescription(List.of(
+                Map.of("name", "Tab. Demoprol", "dose_text", "5 mg", "frequency_text", "1+0+1", "timing_text", "খাবারের পরে",
+                        "duration_text", "৩০ দিন", "crop_key", "f/p/d/crop-m1.jpg"),
+                Map.of("name", "Cap. Fictomeg", "dose_text", "20 mg", "frequency_text", "1+0+0", "crop_key", "f/p/d/crop-m2.jpg")),
+                Map.of(), null);
+        String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(view, Urgency.ROUTINE, List.of(), GateState.NONE, null, ResultFixtures.BD));
+        String med = ResultFixtures.section(html, "medicines");
+        assertThat(med).containsOnlyOnce(copy.t(Lang.BN, "med.pharmacy"))
+                .contains("<p class=\"warn\">" + copy.t(Lang.BN, "med.pharmacy") + "</p>");
+        // each medicine link, opened to its close: the image is its first child, the caption after it
+        Matcher row = Pattern.compile("<a class=\"med\" href=\"([^\"]+)\">(.*?)</a>", Pattern.DOTALL).matcher(med);
+        int rows = 0;
+        while (row.find()) {
+            rows++;
+            String inner = row.group(2);
+            assertThat(inner).as("medicine " + rows + " opens with its crop").startsWith("<img class=\"crop big\"")
+                    .contains("src=\"" + row.group(1) + "\"");
+            assertThat(inner.indexOf("<img class=\"crop big\"")).as("medicine " + rows + ": crop before caption")
+                    .isLessThan(inner.indexOf("<span class=\"cap\">"));
+        }
+        assertThat(rows).as("medicine rows").isEqualTo(2);
+        assertThat(med).contains("<span class=\"cap\">Tab. Demoprol · 5 mg · 1+0+1 · খাবারের পরে · ৩০ দিন</span>")
+                .contains("<span class=\"cap\">Cap. Fictomeg · 20 mg · 1+0+0</span>").doesNotContain("class=\"chip");
+    }
+
+    /** A blank field leaves no gap and no stray separator: the caption joins only what was written. */
+    @Test
+    void aMedicineCaptionJoinsOnlyTheFieldsTheyWrote() {
+        var view = ResultFixtures.prescription(List.of(Map.of("name", "Tab. Demoprol", "dose_text", " ",
+                "frequency_text", "1+0+1", "crop_key", "f/p/d/crop-m1.jpg")), Map.of(), null);
+        String med = ResultFixtures.section(kit.documents.summaryBody(Lang.BN, ResultFixtures.result(view, Urgency.ROUTINE, List.of(),
+                GateState.NONE, null, ResultFixtures.BD)), "medicines");
+        assertThat(med).contains("<span class=\"cap\">Tab. Demoprol · 1+0+1</span>");
+    }
+
+    /** DR-26 / principle 6: the doctor's words are verbatim under "কাগজে লেখা", each with its crop; never Medioo's label. */
+    @Test
+    void theDoctorsLinesAreQuotedFromThePaperBesideTheirCrops() {
+        var ctx = new LinkedHashMap<String, Object>();
+        ctx.put("diagnosis", List.of(Map.of("text", "Kindly correlate clinically.", "crop_key", "f/p/d/crop-c1.jpg")));
+        // a referral written as lines with crops, so the referral skip itself is what keeps it off the page
+        ctx.put("referral", List.of(Map.of("text", "Dr X, Fictional Hospital", "crop_key", "f/p/d/crop-r1.jpg")));
+        var view = ResultFixtures.prescription(List.of(), ctx, null);
+        String doctor = ResultFixtures.section(kit.documents.summaryBody(Lang.BN, ResultFixtures.result(view, Urgency.THIS_WEEK, List.of(),
+                GateState.RELEASED, "w", ResultFixtures.BD)), "doctor");
+        assertThat(doctor).contains(copy.t(Lang.BN, "doctor.title")).contains("<figcaption class=\"label\">" + copy.t(Lang.BN, "paper.label"))
+                .contains("<blockquote>Kindly correlate clinically.</blockquote>").contains("crop-c1.jpg")
+                .doesNotContain(copy.t(Lang.BN, "result.says.label")).doesNotContain("Dr X").doesNotContain("crop-r1.jpg");   // referral stays hidden (contextSection skips it)
+    }
+
+    /**
+     * Each line from the paper sits beside ITS crop, not a neighbour's (DR-12): two diagnosis lines and two follow-ups, each
+     * quote's img src is the image href of that line's own crop_key.
+     */
+    @Test
+    void everyPaperQuoteCarriesItsOwnLinesCrop() {
+        var ctx = new LinkedHashMap<String, Object>();
+        ctx.put("diagnosis", List.of(Map.of("text", "Fictional dx one", "crop_key", "f/p/d/crop-c1.jpg"),
+                Map.of("text", "Fictional dx two", "crop_key", "f/p/d/crop-c2.jpg")));
+        var view = new DocumentView(ResultFixtures.DOC.toString(), "DONE", null, "prescription", "2026-10-12", "Demo Chamber", 0.9,
+                "m", 1, List.of(), List.of(), List.of(
+                Map.of("instruction", "Fictional follow-up one", "crop_key", "f/p/d/crop-f1.jpg"),
+                Map.of("instruction", "Fictional follow-up two", "crop_key", "f/p/d/crop-f2.jpg")), ctx, null);
+        String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(view, Urgency.ROUTINE, List.of(), GateState.NONE, null, ResultFixtures.BD));
+        Map<String, String> expected = Map.of("Fictional dx one", "f/p/d/crop-c1.jpg", "Fictional dx two", "f/p/d/crop-c2.jpg",
+                "Fictional follow-up one", "f/p/d/crop-f1.jpg", "Fictional follow-up two", "f/p/d/crop-f2.jpg");
+        Matcher quote = Pattern.compile("<figure class=\"paper\">.*?<img class=\"crop\"[^>]* src=\"([^\"]+)\"><blockquote>([^<]*)</blockquote>",
+                Pattern.DOTALL).matcher(html);
+        Map<String, String> found = new LinkedHashMap<>();
+        while (quote.find()) {
+            found.put(quote.group(2), quote.group(1));
+        }
+        assertThat(found).as("paper quotes, text to img src").hasSize(4);
+        expected.forEach((text, crop) -> assertThat(found.get(text)).as(text).isEqualTo(PageChrome.imageHref(ResultFixtures.DOC, crop)));
+    }
+
+    /** No fact without its proof: a doctor's line stored without a crop is not quoted (and no empty section is drawn). */
+    @Test
+    void aDoctorsLineWithoutItsCropIsNotQuoted() {
+        var view = ResultFixtures.prescription(List.of(), Map.of("advice", List.of(Map.of("text", "Walk daily"))), null);
+        String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(view, Urgency.ROUTINE, List.of(), GateState.NONE, null, ResultFixtures.BD));
+        assertThat(html).doesNotContain("Walk daily").doesNotContain("id=\"doctor\"");
     }
 
     @Test
-    void aProvenInsideReadsInside() {
-        String row = rowOf(kit.documents.summaryBody(Lang.BN, ResultFixtures.result(ResultFixtures.lab(List.of(
-                ResultFixtures.value("Creatinine", "1.0", "mg/dL", "0.7", "1.3", "inside"))), Urgency.ROUTINE, List.of(), GateState.NONE, null, ResultFixtures.BD)), "Creatinine");
-        assertThat(row).contains(copy.t(Lang.BN, "value.chip.inside"));
+    void anUnverifiedCountSendsTheFamilyToThePaperAndShowsNoneOfThoseItems() {
+        var view = ResultFixtures.prescription(List.of(), Map.of(), Map.of("values", 0, "medicines", 1, "follow_up", 0, "total", 1));
+        String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(view, Urgency.ROUTINE, List.of(), GateState.NONE, null, ResultFixtures.BD));
+        assertThat(ResultFixtures.section(html, "medicines")).contains(copy.t(Lang.BN, "med.unverified", 1)).contains("১টি লাইন")
+                .doesNotContain(copy.t(Lang.BN, "med.pharmacy"));
+        assertThat(html).doesNotContain(copy.t(Lang.BN, "value.unverified"));
     }
 
-    /** A value with no stored verdict yet is UNKNOWN on the page, never INSIDE, however inside its numbers look. */
     @Test
-    void aValueWithNoStoredVerdictReadsCheckThePaper() {
-        String row = rowOf(kit.documents.summaryBody(Lang.BN, ResultFixtures.result(ResultFixtures.lab(List.of(
-                ResultFixtures.value("Creatinine", "1.0", "mg/dL", "0.7", "1.3", null))), Urgency.ROUTINE, List.of(), GateState.NONE, null, ResultFixtures.BD)), "Creatinine");
-        assertThat(row).contains(copy.t(Lang.BN, "value.chip.unknown")).doesNotContain(copy.t(Lang.BN, "value.chip.inside"));
+    void anUnverifiedValueSendsTheFamilyToThePaper() {
+        var view = ResultFixtures.lab(List.of(ResultFixtures.value("Creatinine", "1.0", "mg/dL", "0.7", "1.3", "inside")));
+        view = new DocumentView(view.documentId(), view.status(), null, view.documentType(), view.documentDate(), view.facility(),
+                view.confidence(), view.model(), view.pageCount(), view.values(), List.of(), List.of(), Map.of(),
+                Map.of("values", 2, "medicines", 0, "follow_up", 0, "total", 2));
+        String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(view, Urgency.ROUTINE, List.of(), GateState.NONE, null, ResultFixtures.BD));
+        assertThat(html).contains(copy.t(Lang.BN, "value.unverified")).doesNotContain("id=\"medicines\"");
     }
 
-    /** Outside and critical keep their side, from the stored verdict (never re-judged on the page). */
+    /** A follow-up that could not be checked sends the family to the paper in the result's voice, under পরের ধাপ. */
     @Test
-    void aStoredOutsideOrCriticalVerdictShowsItsSide() {
-        Map<String, Object> low = ResultFixtures.value("Hb", "5.0", "g/dL", "12.0", "16.0", "critical");
-        low.put("verdict_side", "low");
-        Map<String, Object> high = ResultFixtures.value("HbA1c", "6.5", "%", "4.0", "5.6", "outside");
-        high.put("verdict_side", "high");
-        String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(ResultFixtures.lab(List.of(low, high)),
-                Urgency.NOW, List.of("value_critical:hb|stopgap"), GateState.NONE, null, ResultFixtures.BD));
-        assertThat(rowOf(html, "Hb")).contains(copy.t(Lang.BN, "value.chip.critical.low"));
-        assertThat(rowOf(html, "HbA1c")).contains(copy.t(Lang.BN, "value.chip.outside.high"));
+    void anUnverifiedFollowUpSendsTheFamilyToThePaperUnderTheNextStep() {
+        var view = ResultFixtures.prescription(List.of(), Map.of(), Map.of("values", 0, "medicines", 0, "follow_up", 1, "total", 1));
+        String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(view, Urgency.ROUTINE, List.of(), GateState.NONE, null, ResultFixtures.BD));
+        assertThat(ResultFixtures.section(html, "next")).contains("<p class=\"warn\">" + copy.t(Lang.BN, "next.unverified", 1) + "</p>")
+                .contains("১টি লাইন");
     }
 
-    /** A stored outside or critical with no side names no direction: the page says UNKNOWN, never a guessed "▲". */
+    /** পরের ধাপ: what to bring only when there is a reason to see the doctor; each follow-up quoted beside its crop. */
+    @ParameterizedTest
+    @EnumSource(value = Urgency.class, names = {"NOW", "THIS_WEEK", "ROUTINE"})
+    void theNextStepBringsThePaperOnlyWhenThereIsAReasonAndQuotesEachFollowUp(Urgency level) {
+        var view = new DocumentView(ResultFixtures.DOC.toString(), "DONE", null, "prescription", "2026-10-12", "Demo Chamber", 0.9,
+                "m", 1, List.of(), List.of(), List.of(Map.of("instruction", "Come back after 1 month", "due_date", "2026-11-15",
+                "crop_key", "f/p/d/crop-f1.jpg")), Map.of(), null);
+        String next = ResultFixtures.section(kit.documents.summaryBody(Lang.BN, ResultFixtures.result(view, level, List.of(),
+                GateState.NONE, null, ResultFixtures.BD)), "next");
+        assertThat(next).contains(copy.t(Lang.BN, "next.title")).contains("<blockquote>Come back after 1 month</blockquote>")
+                .contains("crop-f1.jpg").contains(copy.t(Lang.BN, "next.followup", copy.dateText(Lang.BN, java.time.LocalDate.parse("2026-11-15"))));
+        if (level == Urgency.ROUTINE) {
+            assertThat(next).doesNotContain(copy.t(Lang.BN, "next.bring"));
+        } else {
+            assertThat(next).contains(copy.t(Lang.BN, "next.bring"));
+        }
+    }
+
+    /** "প্রশ্ন? চ্যাট" is a quiet link to the chat tab, on every DONE result. */
+    @Test
+    void theAskLinkGoesToTheChatTab() {
+        assertThat(body(Lang.BN, Urgency.ROUTINE, GateState.NONE)).contains("<a class=\"btn quiet\" href=\"" + Tab.CHAT.path + "\">"
+                + copy.t(Lang.BN, "result.ask") + "</a>");
+    }
+
+    private static Object id(DocumentView view, String name) {
+        return view.values().stream().filter(v -> name.equals(v.get("name"))).findFirst().orElseThrow().get("id");
+    }
+
+    /** Nothing outside says nothing about the range: no "০টি সীমার বাইরে", and never a reassurance (principle 10). */
+    @Test
+    void theCountsLineNamesOutsideOnlyWhenSomethingIs() {
+        String none = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(ResultFixtures.lab(List.of(
+                ResultFixtures.value("Creatinine", "1.0", "mg/dL", "0.7", "1.3", "inside"))), Urgency.ROUTINE, List.of(), GateState.NONE, null, ResultFixtures.BD));
+        assertThat(counts(none)).isEqualTo(copy.t(Lang.BN, "result.counts.none", 1));
+        assertThat(none).doesNotContain("সীমার বাইরে");
+        String two = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(ResultFixtures.lab(List.of(
+                ResultFixtures.value("HbA1c", "8.4", "%", "4.0", "6.0", "outside", "high"),
+                ResultFixtures.value("Potassium", "11.0", "mmol/L", "3.5", "5.1", "critical", "high"))), Urgency.NOW, List.of(), GateState.NONE, null, ResultFixtures.BD));
+        assertThat(counts(two)).isEqualTo(copy.t(Lang.BN, "result.counts", 2, 2)).isEqualTo("২টি মান · ২টি সীমার বাইরে");
+    }
+
+    /**
+     * The direction that matters: a value Medioo could not place, and a stored INSIDE it could not prove, are not
+     * "outside" — counted as such the line would alarm over values nobody judged. They are not "inside" either, and the
+     * line claims neither: it names only how many values there are.
+     */
+    @Test
+    void anUnknownOrDemotedValueIsNeverCountedAsOutside() {
+        String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(ResultFixtures.lab(List.of(
+                ResultFixtures.value("Urine Albumin", "Trace", null, "Nil", null, "unknown"),
+                ResultFixtures.value("K", "6.4", "mmol/L", "3.5", "5.1", "inside"))), Urgency.ROUTINE, List.of(), GateState.NONE, null, ResultFixtures.BD));
+        assertThat(counts(html)).isEqualTo(copy.t(Lang.BN, "result.counts.none", 2));
+    }
+
+    /**
+     * B1's rule on B2's rows: a stored OUTSIDE or CRITICAL with no side (a row V19 cannot hold) names no direction. It is
+     * UNKNOWN — grouped under "check the paper", no bar, never counted as outside — and never a "▲" read off the pin.
+     * Both rows have a two-sided range the pin could place, so a page that guessed the side from the pin fails here.
+     */
     @Test
     void aStoredOutsideOrCriticalWithNoSideReadsCheckThePaper() {
         Map<String, Object> outside = ResultFixtures.value("HbA1c", "6.5", "%", "4.0", "5.6", "outside");
         Map<String, Object> critical = ResultFixtures.value("Hb", "5.0", "g/dL", "12.0", "16.0", "critical");
-        String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(ResultFixtures.lab(List.of(outside, critical)),
+        var view = ResultFixtures.lab(List.of(outside, critical));
+        String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(view,
                 Urgency.NOW, List.of("value_critical:hb|stopgap"), GateState.NONE, null, ResultFixtures.BD));
         for (String name : List.of("HbA1c", "Hb")) {
-            assertThat(rowOf(html, name)).as(name).contains(copy.t(Lang.BN, "value.chip.unknown"))
-                    .doesNotContain(copy.t(Lang.BN, "value.chip.outside.high"))
-                    .doesNotContain(copy.t(Lang.BN, "value.chip.critical.high"));
+            assertThat(vrow(html, view, name)).as(name).startsWith("<a class=\"vrow unknown\"")
+                    .contains("<span class=\"chip unknown\">" + copy.t(Lang.BN, "value.chip.unknown") + "</span>")
+                    .doesNotContain("<svg").doesNotContain("▲").doesNotContain("▼");
+            assertThat(ResultFixtures.section(html, "unknown")).as(name).contains("id=\"v-" + id(view, name));
         }
+        assertThat(html).doesNotContain("id=\"outside\"");
+        assertThat(counts(html)).isEqualTo(copy.t(Lang.BN, "result.counts.none", 2));
     }
 
     /**
      * The page reads what the producer writes, not a hand-built map: an ObservationEntity with stored verdict columns,
      * through the real toView(), onto the page. A key renamed on either side turns every row into "check the paper"
-     * and every critical row silent, which no hand-built fixture can see.
+     * and every critical row silent, which no hand-built fixture can see. The range is one-sided, so the side on the
+     * chip can only have come from the stored verdict_side.
      */
     @Test
     void aStoredVerdictReachesThePageThroughTheRealObservationView() {
@@ -235,22 +414,41 @@ class ResultSummaryRenderTest {
         hb.setValue("5.0");
         hb.setUnit("g/dL");
         hb.setRefLow("12.0");
-        hb.setRefHigh("16.0");
         hb.setCropKey("f/p/d/crop-Hb.jpg");
         hb.setVerdict("critical");
         hb.setVerdictLevel("now");
         hb.setVerdictSide("low");
         hb.setVerdictReason("value_critical:hb|stopgap");
-        String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(ResultFixtures.lab(List.of(hb.toView())),
+        var view = ResultFixtures.lab(List.of(hb.toView()));
+        String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(view,
                 Urgency.NOW, List.of("value_critical:hb|stopgap"), GateState.NONE, null, ResultFixtures.BD));
-        assertThat(rowOf(html, "Hb")).contains(copy.t(Lang.BN, "value.chip.critical.low"))
+        assertThat(vrow(html, view, "Hb")).startsWith("<a class=\"vrow critical\"")
+                .contains("<span class=\"chip critical\">" + copy.t(Lang.BN, "value.chip.critical.low") + "</span>")
                 .doesNotContain(copy.t(Lang.BN, "value.chip.unknown"));
+        assertThat(ResultFixtures.section(html, "outside")).contains("id=\"v-" + hb.getId());
     }
 
-    /** The {@code <div class="item">} that holds this value's name: assertions read one row, never the page. */
-    private static String rowOf(String html, String name) {
-        Matcher m = Pattern.compile("<div class=\"item\"><div class=\"text\">" + Pattern.quote(Html.esc(name)) + ":.*?</div>").matcher(html);
+    /** The one {@code <a class="vrow …">} for this value, found by its stored id: assertions read one row, never the page. */
+    private static String vrow(String html, DocumentView view, String name) {
+        Matcher m = Pattern.compile("<a class=\"vrow [a-z]+\" id=\"v-" + Pattern.quote(String.valueOf(id(view, name))) + "\".*?</a>").matcher(html);
         assertThat(m.find()).as("the row for " + name).isTrue();
         return m.group();
+    }
+
+    /** The counts line's own text: the one {@code <p class="counts">} element, never a search of the whole page. */
+    private static String counts(String html) {
+        Matcher m = Pattern.compile("<p class=\"counts\">([^<]*)</p>").matcher(html);
+        assertThat(m.find()).as("the counts line").isTrue();
+        String text = m.group(1);
+        assertThat(m.find()).as("one counts line").isFalse();
+        return text;
+    }
+
+    /** A paper with no values (a prescription) has no counts line at all: "০টি মান" says nothing a family needs. */
+    @Test
+    void aPaperWithNoValuesHasNoCountsLine() {
+        String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(ResultFixtures.prescription(List.of(), Map.of(), null),
+                Urgency.ROUTINE, List.of(), GateState.NONE, null, ResultFixtures.BD));
+        assertThat(html).doesNotContain(copy.t(Lang.BN, "result.counts.none", 0)).doesNotContain("class=\"counts\"");
     }
 }

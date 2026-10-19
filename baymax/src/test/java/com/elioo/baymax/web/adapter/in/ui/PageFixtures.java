@@ -242,12 +242,16 @@ final class PageFixtures {
             String crop = "f/p/" + WebUiTestKit.DOC_ID + "/crop-";
             DocumentView view = new DocumentView(WebUiTestKit.DOC_ID.toString(), "DONE", null, "lab_report", "2026-10-12",
                     "Shapla Diagnostics", 0.9, "m", 1,
-                    List.of(Map.of("name", "HbA1c", "value", "8.2", "unit", "%", "crop_key", crop + "1.jpg"),
-                            Map.of("name", "Creatinine", "value", "130", "unit", "µmol/L", "crop_key", crop + "2.jpg")),
+                    // B2: each value carries its observation id and its stored F2 verdict, as ObservationEntity.toView gives them
+                    List.of(Map.of("id", UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100021"), "name", "HbA1c", "value", "8.2", "unit", "%",
+                                    "ref_low", "4.0", "ref_high", "6.0", "verdict", "outside", "verdict_side", "high", "crop_key", crop + "1.jpg"),
+                            Map.of("id", UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100022"), "name", "Creatinine", "value", "130", "unit", "µmol/L",
+                                    "ref_low", "59", "ref_high", "104", "verdict", "inside", "crop_key", crop + "2.jpg")),
                     List.of(Map.of("name", "Metformin", "dose_text", "500 mg", "frequency_text", "1+0+1",
                             "timing_text", "after meals", "duration_text", "30 days", "crop_key", crop + "3.jpg")),
                     List.of(Map.of("instruction", "আবার দেখাবেন", "due_date", "2026-11-15", "crop_key", crop + "4.jpg")),
-                    null, null);
+                    // B2: a doctor's line with its crop, so the derived PaperIsNeverMediooTest sees a paper block
+                    Map.of("diagnosis", List.of(Map.of("text", "Type 2 diabetes", "crop_key", crop + "5.jpg"))), null);
             when(k.results.status(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(Document.Status.DONE));
             // A12: a DONE paper's page is the result summary, read through ResultUseCase.result (stored THIS_WEEK, released)
             when(k.results.result(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(new ResultView(view,

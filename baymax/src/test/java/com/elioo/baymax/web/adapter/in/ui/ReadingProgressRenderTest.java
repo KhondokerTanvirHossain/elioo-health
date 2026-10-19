@@ -122,8 +122,8 @@ class ReadingProgressRenderTest {
         when(kit.results.reading(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(
                 new ReadingView(DocumentView.pending(done), MA, true, new ViewerLocale(true), NOW, NOW)));
         Dom dom = Dom.parse(kit.page("/app/documents/" + WebUiTestKit.DOC_ID, "bn"));
-        assertThat(dom.all).as("the finished page's values heading")
-                .anyMatch(e -> e.tag().equals("h2") && e.ownText().equals(kit.copy.raw(Lang.BN, "doc.values")));
+        assertThat(dom.all).as("the finished page's value rows (B2)")
+                .anyMatch(e -> e.tag().equals("a") && e.classes().contains("vrow"));
         assertThat(dom.all).as("no reading section, no script").noneMatch(e -> "progress".equals(e.attrs().get("id")) || e.tag().equals("script"));
         assertThat(dom.all).as("drawn as the result: the stored urgency leads").anyMatch(e -> "urgency".equals(e.attrs().get("id")));
         verify(kit.results, times(1)).result(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID);
@@ -222,6 +222,6 @@ class ReadingProgressRenderTest {
         assertThat(text.codePoints().noneMatch(c -> c >= 0x0980 && c <= 0x09FF)).as("no Bangla copy in the script").isTrue();
         PageFixtures.Stubs.doneLab(kit);
         String done = kit.page("/app/documents/" + WebUiTestKit.DOC_ID, "bn");
-        assertThat(done).contains(kit.copy.t(Lang.BN, "doc.values")).doesNotContain("<script").doesNotContain("http-equiv=\"refresh\"");
+        assertThat(done).contains("<a class=\"vrow ").doesNotContain("<script").doesNotContain("http-equiv=\"refresh\"");
     }
 }

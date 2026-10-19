@@ -3,8 +3,8 @@ package com.elioo.baymax.web.adapter.in.ui;
 import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.DocumentView;
-import com.elioo.baymax.outbound.domain.PrintedRange;
 import com.elioo.baymax.outbound.domain.Urgency;
+import com.elioo.baymax.outbound.domain.ValueVerdict;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.application.port.in.ResultUseCase;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
@@ -24,6 +24,8 @@ import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -168,15 +170,34 @@ public class DocumentPages implements WebPages {
                 .append("<h1>").append(chrome.documentType(lang, v.documentType())).append("</h1>")
                 .append("<p class=\"meta\">").append(copy.date(lang, v.documentDate()))
                 .append(v.facility() == null ? "" : " · " + esc(v.facility())).append("</p>");
+        if (r.done()) {
+            b.append(countsLine(lang, v));
+        }
         if (r.urgency() == Urgency.ROUTINE) {
             b.append("<p class=\"meta\">").append(copy.t(lang, "result.filed")).append("</p>");
         }
         b.append(banner(lang, r));       // first section in main, on first paint: no script, no animation, no close
         b.append(gateLine(lang, r));
         if (r.done()) {
-            b.append(legacyItems(lang, v, PageChrome.uuid(v.documentId())));   // today's items list; B2 replaces it
+            b.append(items(lang, v, PageChrome.uuid(v.documentId()), r.urgency()));
         }
         return b.toString();
+    }
+
+    /**
+     * The header's counts line (s10): how many values, and how many are outside the printed range — named only when
+     * something is (principle 10: "০টি সীমার বাইরে" would read as a reassurance). Counted by the rendered kind, so a
+     * row and the count can never disagree. Nothing on a paper with no values.
+     */
+    String countsLine(Lang lang, DocumentView v) {
+        List<Map<String, Object>> values = v.values() == null ? List.of() : v.values();
+        if (values.isEmpty()) {
+            return "";
+        }
+        long outside = values.stream().map(ValueRows::kindOf)
+                .filter(k -> k == ValueVerdict.Kind.OUTSIDE || k == ValueVerdict.Kind.CRITICAL).count();
+        return "<p class=\"counts\">" + (outside == 0 ? copy.t(lang, "result.counts.none", values.size())
+                : copy.t(lang, "result.counts", values.size(), outside)) + "</p>";
     }
 
     /** The stored level's fixed line, from the message bundle (UiCopy.urgency); nothing for ROUTINE or an unknown level. */
@@ -219,7 +240,7 @@ public class DocumentPages implements WebPages {
     /**
      * The page as the ticket specifies it: extracted items beside their crops, and for a retake nothing but why
      * and the page. Production draws only NEEDS_RETAKE and FAILED with it since A12; a DONE view gets the same
-     * {@link #legacyItems} the summary shows, so the item tests below the summary cover the page that is served.
+     * {@link #items} the summary shows, so the item tests below the summary cover the page that is served.
      *
      * @param explanation the released BMX-6 message for this document, shown above the extraction exactly as
      *                    composed — it is the only interpretive text on the page and it passed the checklist
@@ -246,75 +267,149 @@ public class DocumentPages implements WebPages {
             b.append(deleteLink(lang, documentId));
             return b.toString();
         }
-        return b.append(legacyItems(lang, view, documentId)).toString();
-    }
-
-    /** A DONE paper's items as the page has listed them since BMX-5: values, medicines, follow-ups, the doctor's lines. */
-    String legacyItems(Lang lang, DocumentView view, UUID documentId) {
-        StringBuilder b = new StringBuilder();
-        if (view.unverified() != null) {
-            Object total = view.unverified().get("total");
-            b.append("<div class=\"warn\">").append(copy.t(lang, "doc.unverified", total)).append("</div>");
-        }
-        section(b, copy.t(lang, "doc.values"), view.values(), documentId, m -> esc(m.get("name")) + ": <strong>" + esc(m.get("value")) + "</strong> " + esc(m.get("unit"))
-                + " <span class=\"tag\">" + copy.t(lang, chipKey(m)) + "</span>");
-        section(b, copy.t(lang, "doc.medicines"), view.medicines(), documentId, m -> "<strong>" + esc(m.get("name")) + "</strong> " + esc(m.get("dose_text"))
-                + "<div class=\"meta\">" + esc(m.get("frequency_text")) + " " + esc(m.get("timing_text")) + " " + esc(m.get("duration_text")) + "</div>");
-        section(b, copy.t(lang, "doc.followup"), view.followUp(), documentId, m -> esc(m.get("instruction"))
-                + (m.get("due_date") == null ? "" : "<div class=\"meta\">" + copy.date(lang, String.valueOf(m.get("due_date"))) + "</div>"));
-        if (view.clinicalContext() != null && !view.clinicalContext().isEmpty()) {
-            b.append("<h2>").append(copy.t(lang, "doc.context")).append("</h2>");
-            for (Map.Entry<String, Object> sec : view.clinicalContext().entrySet()) {
-                String label = chrome.contextSection(lang, sec.getKey());
-                if (label != null && sec.getValue() instanceof List<?> items && !items.isEmpty()) {
-                    b.append("<div class=\"card\"><div class=\"meta\">").append(label).append("</div>");
-                    for (Object item : items) {
-                        if (item instanceof Map<?, ?> m) {
-                            b.append("<div class=\"item\"><div class=\"text\">").append(esc(m.get("text"))).append("</div>");
-                            if (m.get("crop_key") != null) {
-                                b.append("<img class=\"crop\" loading=\"lazy\" alt=\"\" src=\"").append(PageChrome.imageHref(documentId, String.valueOf(m.get("crop_key")))).append("\">");
-                            }
-                            b.append("</div>");
-                        }
-                    }
-                    b.append("</div>");
-                }
-            }
-        }
-        b.append("<h2>").append(copy.t(lang, "doc.pages")).append("</h2>").append(pageImages(view, documentId));
-        b.append(deleteLink(lang, documentId));
-        return b.toString();
+        return b.append(items(lang, view, documentId, null)).toString();
     }
 
     /**
-     * F2 interim (B2 replaces it): the stored verdict's chip. None or unrecognised is UNKNOWN; INSIDE only if the code
-     * proves it; outside or critical without a stored side is UNKNOWN too, never a guessed direction.
+     * A DONE paper's items (s10, B2): the values grouped by their rendered verdict, the doctor's lines as written, the
+     * medicines crop first, the next step, then the pages, "প্রশ্ন? চ্যাট" and the delete link. {@code urgency} is the
+     * stored level; null (the legacy page) brings no "what to take" line.
      */
-    static String chipKey(Map<String, Object> m) {
-        String verdict = String.valueOf(m.get("verdict"));
-        Object side = m.get("verdict_side");
-        return switch (verdict) {
-            case "inside" -> PrintedRange.insideByCode(m) ? "value.chip.inside" : "value.chip.unknown";
-            case "outside", "critical" -> "high".equals(side) || "low".equals(side)
-                    ? "value.chip." + verdict + "." + side : "value.chip.unknown";
-            default -> "value.chip.unknown";
-        };
+    String items(Lang lang, DocumentView view, UUID documentId, Urgency urgency) {
+        return valuesSummary(lang, view, documentId) + doctorSection(lang, view, documentId)
+                + medicinesSection(lang, view, documentId) + nextSection(lang, view, documentId, urgency)
+                + "<h2>" + copy.t(lang, "doc.pages") + "</h2>" + pageImages(view, documentId)
+                + "<p><a class=\"btn quiet\" href=\"" + Tab.CHAT.path + "\">" + copy.t(lang, "result.ask") + "</a></p>"
+                + deleteLink(lang, documentId);
     }
 
-    private void section(StringBuilder b, String title, List<Map<String, Object>> items, UUID documentId,
-                         java.util.function.Function<Map<String, Object>, String> line) {
-        if (items == null || items.isEmpty()) {
+    /**
+     * Spec §4.10: outside first (critical before outside), then the values Medioo could not place with why, then inside
+     * (every row; B6 collapses them behind a count). Grouped by {@link ValueRows#kindOf}, the kind each row is drawn as.
+     */
+    String valuesSummary(Lang lang, DocumentView view, UUID documentId) {
+        List<Map<String, Object>> values = view.values() == null ? List.of() : view.values();
+        int unverified = unverified(view, "values");
+        if (values.isEmpty() && unverified == 0) {
+            return "";
+        }
+        StringBuilder b = new StringBuilder();
+        if (unverified > 0) {
+            b.append("<p class=\"warn\">").append(copy.t(lang, "value.unverified")).append("</p>");
+        }
+        List<Map<String, Object>> outside = new ArrayList<>();
+        List<Map<String, Object>> unknown = new ArrayList<>();
+        List<Map<String, Object>> inside = new ArrayList<>();
+        for (Map<String, Object> v : values) {
+            switch (ValueRows.kindOf(v)) {
+                case CRITICAL, OUTSIDE -> outside.add(v);
+                case UNKNOWN -> unknown.add(v);
+                case INSIDE -> inside.add(v);
+            }
+        }
+        outside.sort(Comparator.comparing(v -> ValueRows.kindOf(v) == ValueVerdict.Kind.CRITICAL ? 0 : 1));   // stable
+        group(b, lang, documentId, "outside", "value.group.outside", null, outside);
+        group(b, lang, documentId, "unknown", "value.group.unknown", "value.group.unknown.why", unknown);
+        group(b, lang, documentId, "inside", "value.group.inside", null, inside);
+        return b.toString();
+    }
+
+    private void group(StringBuilder b, Lang lang, UUID documentId, String id, String title, String why, List<Map<String, Object>> rows) {
+        if (rows.isEmpty()) {
             return;
         }
-        b.append("<h2>").append(title).append("</h2><div class=\"card\">");
-        for (Map<String, Object> m : items) {
-            b.append("<div class=\"item\"><div class=\"text\">").append(line.apply(m)).append("</div>");
-            if (m.get("crop_key") != null) {
-                b.append("<img class=\"crop\" loading=\"lazy\" alt=\"\" src=\"").append(PageChrome.imageHref(documentId, String.valueOf(m.get("crop_key")))).append("\">");
-            }
-            b.append("</div>");
+        b.append("<section id=\"").append(id).append("\" class=\"vgroup\"><h2>").append(copy.t(lang, title)).append("</h2>");
+        if (why != null) {
+            b.append("<p class=\"why\">").append(copy.t(lang, why)).append("</p>");
         }
-        b.append("</div>");
+        rows.forEach(v -> b.append(ValueRows.row(copy, lang, documentId, v)));
+        b.append("</section>");
+    }
+
+    /**
+     * ডাক্তার লিখেছেন (DR-26, principle 6): every clinical-context section but the referral, each line quoted verbatim
+     * under "কাগজে লেখা" beside its crop. A line stored without a crop is not quoted: no fact without its proof.
+     */
+    String doctorSection(Lang lang, DocumentView view, UUID documentId) {
+        if (view.clinicalContext() == null || view.clinicalContext().isEmpty()) {
+            return "";
+        }
+        StringBuilder inner = new StringBuilder();
+        for (Map.Entry<String, Object> sec : view.clinicalContext().entrySet()) {
+            String label = chrome.contextSection(lang, sec.getKey());
+            if (label == null || !(sec.getValue() instanceof List<?> lines)) {
+                continue;
+            }
+            StringBuilder quotes = new StringBuilder();
+            for (Object line : lines) {
+                if (line instanceof Map<?, ?> m && m.get("text") != null && m.get("crop_key") != null) {
+                    quotes.append(ValueRows.paperQuote(copy, lang, documentId, m.get("text"), m.get("crop_key"), ""));
+                }
+            }
+            if (!quotes.isEmpty()) {
+                inner.append("<h3>").append(label).append("</h3>").append(quotes);
+            }
+        }
+        return inner.isEmpty() ? "" : "<section id=\"doctor\" class=\"doctor\"><h2>" + copy.t(lang, "doctor.title") + "</h2>" + inner + "</section>";
+    }
+
+    /** MedicineRow (s17): the pharmacy notice once, then each line crop first and verbatim; no colour, no status. */
+    String medicinesSection(Lang lang, DocumentView view, UUID documentId) {
+        List<Map<String, Object>> medicines = view.medicines() == null ? List.of() : view.medicines();
+        int unverified = unverified(view, "medicines");
+        if (medicines.isEmpty() && unverified == 0) {
+            return "";
+        }
+        StringBuilder b = new StringBuilder("<section id=\"medicines\"><h2>").append(copy.t(lang, "med.title")).append("</h2>");
+        if (!medicines.isEmpty()) {
+            b.append("<p class=\"warn\">").append(copy.t(lang, "med.pharmacy")).append("</p>");   // s17's warn notice
+        }
+        if (unverified > 0) {
+            b.append("<p class=\"warn\">").append(copy.t(lang, "med.unverified", unverified)).append("</p>");
+        }
+        medicines.forEach(m -> b.append(ValueRows.medicine(copy, lang, documentId, m)));
+        return b.append("</section>").toString();
+    }
+
+    /**
+     * পরের ধাপ: what to take to the doctor, only when the stored level gives a reason to see one (THIS_WEEK, NOW); then
+     * each stored follow-up quoted from the paper beside its crop, its date on the patient's calendar.
+     */
+    String nextSection(Lang lang, DocumentView view, UUID documentId, Urgency urgency) {
+        boolean bring = urgency == Urgency.NOW || urgency == Urgency.THIS_WEEK;
+        List<Map<String, Object>> followUps = view.followUp() == null ? List.of() : view.followUp();
+        int unverified = unverified(view, "follow_up");
+        if (!bring && followUps.isEmpty() && unverified == 0) {
+            return "";
+        }
+        StringBuilder b = new StringBuilder("<section id=\"next\"><h2>").append(copy.t(lang, "next.title")).append("</h2>");
+        if (bring) {
+            b.append("<p>").append(copy.t(lang, "next.bring")).append("</p>");
+        }
+        for (Map<String, Object> f : followUps) {
+            Object due = f.get("due_date");
+            String when = due == null || String.valueOf(due).isBlank() ? ""
+                    : "<p class=\"due\">" + copy.t(lang, "next.followup", dueText(lang, String.valueOf(due))) + "</p>";
+            b.append(ValueRows.paperQuote(copy, lang, documentId, f.get("instruction"), f.get("crop_key"), when));
+        }
+        if (unverified > 0) {
+            b.append("<p class=\"warn\">").append(copy.t(lang, "next.unverified", unverified)).append("</p>");
+        }
+        return b.append("</section>").toString();
+    }
+
+    /** A stored due date as the page shows dates, unescaped (t escapes its arguments once); not ISO → as written. */
+    private String dueText(Lang lang, String due) {
+        try {
+            return copy.dateText(lang, java.time.LocalDate.parse(due));
+        } catch (java.time.format.DateTimeParseException e) {
+            return due;
+        }
+    }
+
+    /** DR-28: how many items of this kind were read but could not be located on the page, so were not stored. */
+    private static int unverified(DocumentView view, String kind) {
+        return view.unverified() != null && view.unverified().get(kind) instanceof Number n ? n.intValue() : 0;
     }
 
     private String pageImages(DocumentView view, UUID documentId) {
