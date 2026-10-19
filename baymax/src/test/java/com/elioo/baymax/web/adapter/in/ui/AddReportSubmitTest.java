@@ -1,5 +1,6 @@
 package com.elioo.baymax.web.adapter.in.ui;
 
+import com.elioo.baymax.common.error.FreeTierExceededException;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.Upload;
@@ -117,6 +118,10 @@ class AddReportSubmitTest {
     }
 
     private WebTestClient.ResponseSpec browserPost(UUID patient, byte[]... files) throws IOException {
+        return browserPost(MediaType.TEXT_HTML, patient, files);
+    }
+
+    private WebTestClient.ResponseSpec browserPost(MediaType accept, UUID patient, byte[]... files) throws IOException {
         ByteArrayOutputStream body = new ByteArrayOutputStream();
         body.write(("--" + BOUNDARY + "\r\nContent-Disposition: form-data; name=\"patient\"\r\n\r\n" + patient + "\r\n")
                 .getBytes(StandardCharsets.UTF_8));
@@ -124,7 +129,7 @@ class AddReportSubmitTest {
             body.write(f);
         }
         body.write(("--" + BOUNDARY + "--\r\n").getBytes(StandardCharsets.UTF_8));
-        return client.post().uri("/app/add").cookie("baymax_session", "tok").accept(MediaType.TEXT_HTML)
+        return client.post().uri("/app/add").cookie("baymax_session", "tok").accept(accept)
                 .contentType(MediaType.parseMediaType("multipart/form-data; boundary=" + BOUNDARY))
                 .bodyValue(body.toByteArray()).exchange();
     }
@@ -138,12 +143,14 @@ class AddReportSubmitTest {
         body.part("file", jpeg()).filename("p1.jpg");
         String html = post(body).expectStatus().isBadRequest().expectBody(String.class).returnResult().getResponseBody();
         assertThat(html).contains("<p id=\"add-alert\" class=\"warn\" role=\"alert\">কার কাগজ বেছে নিন — Medioo নিজে আন্দাজ করবে না</p>");
+        // s07--choose-patient draws the sentence once: the alert says it, so the fieldset's hint does not repeat it
+        assertThat(html.split("কার কাগজ বেছে নিন", -1)).as("times the sentence is on the page, plus one").hasSize(2);
         verify(uploads, never()).upload(any(), any(), any());
     }
 
-    /** The script asks for JSON and gets the same refusal as data, unescaped, in the page's language. */
+    /** The script asks for JSON and gets the same refusal as data, unescaped, in the page's language (the form's half: aBrowsersFormPost…). */
     @Test
-    void theScriptGetsTheRefusalAsJsonAndTheFormGetsThePage() throws IOException {
+    void theScriptGetsTheRefusalAsJson() throws IOException {
         when(uploads.uploadOptions(family)).thenReturn(Mono.just(new UploadOptions(
                 List.of(AddReportSheetPageTest.patient("আম্মা", 64, true), AddReportSheetPageTest.patient("আব্বু", 72, true)),
                 List.of(), AddReportSheetPageTest.used(0))));
@@ -204,5 +211,110 @@ class AddReportSubmitTest {
                 .contains("value=\"" + ma.patient().id() + "\" required>")
                 .contains("href=\"/app/timeline?patient=" + abbu.patient().id() + "\" aria-label=")
                 .contains("এই ধরনের ফাইল এখনো খুলতে পারি না").doesNotContain("t6-letter").doesNotContain("could not read");
+    }
+
+    /**
+     * A parser fact the unused-input guard above rests on, pinned so a Spring upgrade cannot quietly change what that
+     * guard covers. Spring 6.2's DefaultPartHttpMessageReader cuts parts at each part's LAST body token; a zero-byte
+     * part has no body token, so when another part follows, that part's headers replace it and it never arrives. Only
+     * a zero-byte part that is the final part reaches a handler. So (unused, p1, unused) arrives as [p1.jpg, ""] — the
+     * guard's filter is exercised by the trailing part — and a CHOSEN empty file is dropped by the parser, not by us,
+     * whenever another part follows it (an empty file is not a page, so nothing is lost to the family).
+     * If this test fails, the parser changed: re-read the guard above against the new part list.
+     */
+    @Test
+    void theParserHandsOnOnlyAnEmptyPartThatComesLast() throws IOException {
+        WebTestClient probe = WebTestClient.bindToRouterFunction(org.springframework.web.reactive.function.server.RouterFunctions.route()
+                .POST("/probe", r -> r.multipartData().flatMap(m -> org.springframework.web.reactive.function.server.ServerResponse.ok()
+                        .bodyValue(String.join("|", m.getOrDefault("file", List.of()).stream()
+                                .map(p -> p instanceof org.springframework.http.codec.multipart.FilePart f ? "[" + f.filename() + "]" : "field")
+                                .toList()))))
+                .build()).build();
+        java.util.function.Function<byte[][], String> parts = files -> {
+            ByteArrayOutputStream body = new ByteArrayOutputStream();
+            for (byte[] f : files) {
+                body.writeBytes(f);
+            }
+            body.writeBytes(("--" + BOUNDARY + "--\r\n").getBytes(StandardCharsets.UTF_8));
+            return probe.post().uri("/probe").contentType(MediaType.parseMediaType("multipart/form-data; boundary=" + BOUNDARY))
+                    .bodyValue(body.toByteArray()).exchange().expectBody(String.class).returnResult().getResponseBody();
+        };
+        assertThat(parts.apply(new byte[][]{unusedInput(), filePart("p1.jpg", jpeg()), unusedInput()})).isEqualTo("[p1.jpg]|[]");
+        assertThat(parts.apply(new byte[][]{filePart("a.jpg", new byte[0]), filePart("p1.jpg", jpeg())})).isEqualTo("[p1.jpg]");
+        assertThat(parts.apply(new byte[][]{filePart("p1.jpg", jpeg()), filePart("a.jpg", new byte[0])})).isEqualTo("[p1.jpg]|[a.jpg]");
+    }
+
+    /** The script's success: the document's address as data, exactly — D4 navigates to it. */
+    @Test
+    void theScriptGetsTheDocumentsAddressAsJson() throws IOException {
+        UUID ma = UUID.randomUUID();
+        Document doc = Document.received(ma, family, 1, NOW).withId(UUID.randomUUID());
+        when(uploads.upload(eq(family), eq(ma), any())).thenReturn(Mono.just(doc));
+        MultipartBodyBuilder body = new MultipartBodyBuilder();
+        body.part("patient", ma.toString());
+        body.part("file", jpeg()).filename("p1.jpg");
+        post(body, MediaType.APPLICATION_JSON).expectStatus().isOk()
+                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_JSON)
+                .expectBody().jsonPath("$.next").isEqualTo("/app/documents/" + doc.id());
+    }
+
+    /** At the cap the script reads the cap's own text — the count and the reset date, unescaped — never the developer message. */
+    @Test
+    void theScriptGetsTheCapAsJsonWithTheResetDate() throws IOException {
+        var ma = AddReportSheetPageTest.patient("আম্মা", 64, true);
+        when(uploads.uploadOptions(family)).thenReturn(Mono.just(new UploadOptions(List.of(ma), List.of(), AddReportSheetPageTest.used(3))));
+        when(uploads.upload(eq(family), eq(ma.patient().id()), any())).thenReturn(Mono.error(new FreeTierExceededException(
+                FreeTierExceededException.DOCUMENTS, "free plan allows 3 document(s) per calendar month")));
+        MultipartBodyBuilder body = new MultipartBodyBuilder();
+        body.part("patient", ma.patient().id().toString());
+        body.part("file", jpeg()).filename("p1.jpg");
+        post(body, MediaType.APPLICATION_JSON).expectStatus().isEqualTo(HttpStatus.PAYMENT_REQUIRED)
+                .expectBody().jsonPath("$.reason").isEqualTo(FreeTierExceededException.DOCUMENTS)
+                .jsonPath("$.text").isEqualTo("এ মাসের ৩টি বিনা খরচের কাগজ পড়া হয়ে গেছে। ১ নভেম্বর ২০২৬ থেকে আবার পাঠাতে পারবেন। যেগুলো পড়তে পারিনি সেগুলো গোনা হয়নি।");
+    }
+
+    /**
+     * The request cap read from Content-Length, before a byte of the body is read. The one file is also over the
+     * per-file cap, so only this rule can answer request_too_large: without it, reading the file says file_too_large.
+     * The copy is shared, so the path is asserted by reason.
+     */
+    @Test
+    void aRequestDeclaredOverTheLimitIsRefusedBeforeItsBodyIsRead() throws IOException {
+        BaymaxProperties small = new BaymaxProperties();
+        small.getUpload().setMaxFileBytes(1024);
+        small.getUpload().setMaxRequestBytes(2048);
+        rebuild(small);
+        when(uploads.uploadOptions(family)).thenReturn(Mono.just(new UploadOptions(
+                List.of(AddReportSheetPageTest.patient("আম্মা", 64, true)), List.of(), AddReportSheetPageTest.used(0))));
+        browserPost(MediaType.APPLICATION_JSON, UUID.randomUUID(), filePart("big.jpg", new byte[4096]))
+                .expectStatus().isEqualTo(HttpStatus.PAYLOAD_TOO_LARGE)
+                .expectBody().jsonPath("$.reason").isEqualTo("request_too_large");
+        verify(uploads, never()).upload(any(), any(), any());
+    }
+
+    /**
+     * The request cap summed over what was read, for a body that declares no length (chunked): two files each under
+     * the per-file cap, together over the request cap. The request is shown to carry no Content-Length, so the
+     * pre-check above could not have answered.
+     */
+    @Test
+    void filesEachUnderTheLimitButTogetherOverItAreRefusedWithoutReachingIntake() throws IOException {
+        BaymaxProperties small = new BaymaxProperties();
+        small.getUpload().setMaxFileBytes(4096);
+        small.getUpload().setMaxRequestBytes(6000);
+        rebuild(small);
+        when(uploads.uploadOptions(family)).thenReturn(Mono.just(new UploadOptions(
+                List.of(AddReportSheetPageTest.patient("আম্মা", 64, true)), List.of(), AddReportSheetPageTest.used(0))));
+        // intake would accept: without the summed cap the request goes through, and the status says so
+        Document doc = Document.received(UUID.randomUUID(), family, 2, NOW).withId(UUID.randomUUID());
+        when(uploads.upload(any(), any(), any())).thenReturn(Mono.just(doc));
+        MultipartBodyBuilder body = new MultipartBodyBuilder();
+        body.part("patient", UUID.randomUUID().toString());
+        body.part("file", new byte[4000]).filename("p1.jpg");
+        body.part("file", new byte[4000]).filename("p2.jpg");
+        var result = post(body, MediaType.APPLICATION_JSON).expectStatus().isEqualTo(HttpStatus.PAYLOAD_TOO_LARGE)
+                .expectBody().jsonPath("$.reason").isEqualTo("request_too_large").returnResult();
+        assertThat(result.getRequestHeaders().getContentLength()).as("the request declared no length").isEqualTo(-1L);
+        verify(uploads, never()).upload(any(), any(), any());
     }
 }

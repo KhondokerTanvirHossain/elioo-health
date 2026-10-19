@@ -21,6 +21,7 @@ import com.elioo.baymax.outbound.application.port.in.ExplainDocumentUseCase;
 import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
 import com.elioo.baymax.storage.domain.ObjectKind;
 import com.elioo.baymax.storage.domain.StoredObject;
+import com.elioo.baymax.testsupport.LoggedText;
 import com.elioo.baymax.testsupport.TryDocuments;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
 import com.elioo.baymax.web.application.port.out.AuditPort;
@@ -136,8 +137,7 @@ class TryDocumentsThroughTheWebTest {
         ArgumentCaptor<byte[]> page = ArgumentCaptor.forClass(byte[].class);
         verify(storage).storePage(eq(family), eq(ma.id()), any(), eq(1), page.capture());
         assertThat(page.getValue()).isEqualTo(t1);   // a JPEG is passed through, never re-compressed (PageRenderer)
-        List<String> info = logged.list.stream().filter(e -> e.getLevel().isGreaterOrEqual(Level.INFO))
-                .map(ILoggingEvent::getFormattedMessage).toList();
+        List<String> info = LoggedText.atInfoOrAbove(logged.list);   // message and attached throwable chain
         assertThat(info).as("the upload's own INFO line was captured").anyMatch(m -> m.startsWith("[baymax] web upload documentId="));
         assertThat(info).noneMatch(m -> m.contains("Rokeya"));
     }
@@ -158,6 +158,11 @@ class TryDocumentsThroughTheWebTest {
         String html = send("t6-letter.docx", docx()).expectStatus().isBadRequest().expectBody(String.class).returnResult().getResponseBody();
         assertThat(html).contains("এই ধরনের ফাইল এখনো খুলতে পারি না। কাগজের ছবি বা PDF পাঠান।")
                 .doesNotContain("could not read").doesNotContain("letter").doesNotContain("JPEG, PNG or PDF");
+        // the refusal's own message names the file ("could not read t6-letter.docx; …"): the likeliest leak is here
+        List<String> info = LoggedText.atInfoOrAbove(logged.list);
+        assertThat(info).as("the refusal's own INFO line was captured")
+                .anyMatch(m -> m.startsWith("[baymax] web upload refused reason=unsupported_image status=400"));
+        assertThat(info).noneMatch(m -> m.contains("t6-letter") || m.contains("could not read"));
         verify(documents, never()).create(any());
         verify(storage, never()).storePage(any(), any(), any(), anyInt(), any());
     }
@@ -184,21 +189,52 @@ class TryDocumentsThroughTheWebTest {
         verify(documents, never()).create(any());
     }
 
-    /** Every refusal intake or the handler can throw has its own copy: derived from the sources, not a list from memory. */
+    /**
+     * Every refusal intake or the handler can throw has its own copy: derived from the sources, not a list from memory.
+     * The files are found, not named: the whole extraction/application tree (intake, the renderer, anything added
+     * there later) and every web file that calls or implements UploadUseCase.
+     */
     @Test
     void everyReasonAnUploadCanBeRefusedForHasItsOwnCopy() throws IOException {
         Pattern thrown = Pattern.compile("(?:badRequest|forbidden|conflict|tooLarge)\\(\\s*\"([a-z_]+)\"|PAYLOAD_TOO_LARGE,\\s*\"([a-z_]+)\"");
+        Path main = Path.of("src/main/java/com/elioo/baymax");
+        List<Path> sources = new java.util.ArrayList<>(javaFiles(main.resolve("extraction/application")));
+        for (Path p : javaFiles(main.resolve("web"))) {
+            if (Files.readString(p).contains("UploadUseCase")) {
+                sources.add(p);
+            }
+        }
+        assertThat(sources).extracting(p -> p.getFileName().toString())
+                .as("the upload path's files were found").contains("PageRenderer.java", "DocumentIntakeService.java", "UploadUiHandler.java", "UploadService.java");
         Set<String> reasons = new TreeSet<>();
-        for (String f : List.of("src/main/java/com/elioo/baymax/extraction/application/service/PageRenderer.java",
-                "src/main/java/com/elioo/baymax/extraction/application/service/DocumentIntakeService.java",
-                "src/main/java/com/elioo/baymax/web/adapter/in/ui/UploadUiHandler.java", "src/main/java/com/elioo/baymax/web/application/service/UploadService.java")) {
-            Matcher m = thrown.matcher(Files.readString(Path.of(f)));
+        for (Path f : sources) {
+            Matcher m = thrown.matcher(Files.readString(f));
             while (m.find()) {
                 reasons.add(m.group(1) != null ? m.group(1) : m.group(2));
             }
         }
-        // shared_patient_read_only is thrown by UploadService, read above; file_too_large and request_too_large by the handler's tooLarge
+        // shared_patient_read_only is thrown by UploadService; file_too_large and request_too_large by the handler's tooLarge
         assertThat(reasons).as("the sweep found the refusals; an empty set would pass vacuously").hasSizeGreaterThanOrEqualTo(10);
         assertThat(reasons).allSatisfy(r -> assertThat(UploadUiHandler.REFUSALS).as(r).containsKey(r));
+    }
+
+    /**
+     * The other half: every key REFUSALS maps to is real copy in both languages, read the way the sheet reads it. A typo
+     * in a value would make UiCopy.t throw, and the family's refusal would become a 500.
+     */
+    @Test
+    void everyRefusalNamesCopyThatExistsInBothLanguages() {
+        UiCopy copy = new UiCopy();
+        assertThat(UploadUiHandler.REFUSALS).as("refusals read; none would pass vacuously").hasSizeGreaterThanOrEqualTo(10);
+        for (Lang lang : Lang.values()) {
+            UploadUiHandler.REFUSALS.forEach((reason, key) -> assertThat(copy.maybe(lang, key)).as(lang + " " + reason + " → " + key).isNotBlank());
+            UploadUiHandler.REFUSALS.forEach((reason, key) -> assertThat(copy.t(lang, key, 10)).as(lang + " " + reason).doesNotContain("{"));
+        }
+    }
+
+    private static List<Path> javaFiles(Path root) throws IOException {
+        try (java.util.stream.Stream<Path> walk = Files.walk(root)) {
+            return walk.filter(p -> p.toString().endsWith(".java")).toList();
+        }
     }
 }

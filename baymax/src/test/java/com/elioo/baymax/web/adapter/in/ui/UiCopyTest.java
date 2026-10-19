@@ -36,7 +36,8 @@ class UiCopyTest {
             for (String key : copy.keys(lang)) {
                 if (key.startsWith("app.err.")) {
                     checked++;
-                    assertThat(copy.t(lang, key)).as(lang + " " + key).doesNotContain("{0}");
+                    // any slot, not only {0}: a {1} would take a developer message just as well
+                    assertThat(copy.t(lang, key)).as(lang + " " + key).doesNotContainPattern("\\{\\d+\\}");
                 }
             }
         }

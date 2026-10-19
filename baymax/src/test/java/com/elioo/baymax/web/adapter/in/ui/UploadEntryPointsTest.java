@@ -20,6 +20,8 @@ class UploadEntryPointsTest {
     private static final Pattern MULTIPART = Pattern.compile("<form[^>]*enctype=\"multipart/form-data\"[^>]*>");
     private static final Pattern ACTION = Pattern.compile("action=\"([^\"]+)\"");
     private static final Pattern LINK = Pattern.compile("<a\\b([^>]*)>(.*?)</a>", Pattern.DOTALL);
+    /** /app/add itself, with or without a query or fragment: never "/app/addX". */
+    private static final Pattern ADD = Pattern.compile("/app/add(?:[?#].*)?");
     private static final String CAMERA = Icons.svg("camera", 24).replaceAll(".*?(<path d=\"[^\"]+\"/>).*", "$1");
 
     @Test
@@ -40,7 +42,7 @@ class UploadEntryPointsTest {
                 if (l.group(2).contains(CAMERA)) {
                     cameras++;
                     Matcher href = Pattern.compile("href=\"([^\"]+)\"").matcher(l.group(1));
-                    if (!href.find() || !href.group(1).startsWith("/app/add")) {
+                    if (!href.find() || !ADD.matcher(href.group(1)).matches()) {
                         wrong.add(page.getKey() + " camera link → " + (href.find(0) ? href.group(1) : "(none)"));
                     }
                 }
@@ -50,5 +52,13 @@ class UploadEntryPointsTest {
         assertThat(forms).as("multipart forms found; zero would pass vacuously").isPositive();
         assertThat(cameras).as("camera links found; zero would pass vacuously").isPositive();
         assertThat(wrong).isEmpty();
+    }
+
+    @Test
+    void theEntryMatchIsExact() {
+        assertThat(ADD.matcher("/app/add").matches()).isTrue();
+        assertThat(ADD.matcher("/app/add?patient=x&amp;back=/app/papers").matches()).isTrue();
+        assertThat(ADD.matcher("/app/addX").matches()).isFalse();
+        assertThat(ADD.matcher("/app/additional").matches()).isFalse();
     }
 }
