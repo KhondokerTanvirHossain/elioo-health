@@ -180,8 +180,8 @@ class ResultSummaryRenderTest {
                 ResultFixtures.value("Haemoglobin", "12.6", "g/dL", "12.0", "15.5", "inside"),
                 ResultFixtures.value("WBC", "7.2", "10^3/µL", "4.0", "11.0", "inside"),
                 ResultFixtures.value("Urine Albumin", "Trace", null, "Nil", null, "unknown"),
-                ResultFixtures.value("HbA1c", "8.4", "%", "4.0", "6.0", "outside"),
-                ResultFixtures.value("Potassium", "11.0", "mmol/L", "3.5", "5.1", "critical")));
+                ResultFixtures.value("HbA1c", "8.4", "%", "4.0", "6.0", "outside", "high"),
+                ResultFixtures.value("Potassium", "11.0", "mmol/L", "3.5", "5.1", "critical", "high")));
         String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(view, Urgency.NOW, List.of(), GateState.NONE, null, ResultFixtures.BD));
         assertThat(html.indexOf("id=\"v-" + id(view, "Potassium"))).isNotNegative()
                 .isLessThan(html.indexOf("id=\"v-" + id(view, "HbA1c")));
@@ -359,8 +359,8 @@ class ResultSummaryRenderTest {
         assertThat(counts(none)).isEqualTo(copy.t(Lang.BN, "result.counts.none", 1));
         assertThat(none).doesNotContain("সীমার বাইরে");
         String two = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(ResultFixtures.lab(List.of(
-                ResultFixtures.value("HbA1c", "8.4", "%", "4.0", "6.0", "outside"),
-                ResultFixtures.value("Potassium", "11.0", "mmol/L", "3.5", "5.1", "critical"))), Urgency.NOW, List.of(), GateState.NONE, null, ResultFixtures.BD));
+                ResultFixtures.value("HbA1c", "8.4", "%", "4.0", "6.0", "outside", "high"),
+                ResultFixtures.value("Potassium", "11.0", "mmol/L", "3.5", "5.1", "critical", "high"))), Urgency.NOW, List.of(), GateState.NONE, null, ResultFixtures.BD));
         assertThat(counts(two)).isEqualTo(copy.t(Lang.BN, "result.counts", 2, 2)).isEqualTo("২টি মান · ২টি সীমার বাইরে");
     }
 
@@ -375,6 +375,64 @@ class ResultSummaryRenderTest {
                 ResultFixtures.value("Urine Albumin", "Trace", null, "Nil", null, "unknown"),
                 ResultFixtures.value("K", "6.4", "mmol/L", "3.5", "5.1", "inside"))), Urgency.ROUTINE, List.of(), GateState.NONE, null, ResultFixtures.BD));
         assertThat(counts(html)).isEqualTo(copy.t(Lang.BN, "result.counts.none", 2));
+    }
+
+    /**
+     * B1's rule on B2's rows: a stored OUTSIDE or CRITICAL with no side (a row V19 cannot hold) names no direction. It is
+     * UNKNOWN — grouped under "check the paper", no bar, never counted as outside — and never a "▲" read off the pin.
+     * Both rows have a two-sided range the pin could place, so a page that guessed the side from the pin fails here.
+     */
+    @Test
+    void aStoredOutsideOrCriticalWithNoSideReadsCheckThePaper() {
+        Map<String, Object> outside = ResultFixtures.value("HbA1c", "6.5", "%", "4.0", "5.6", "outside");
+        Map<String, Object> critical = ResultFixtures.value("Hb", "5.0", "g/dL", "12.0", "16.0", "critical");
+        var view = ResultFixtures.lab(List.of(outside, critical));
+        String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(view,
+                Urgency.NOW, List.of("value_critical:hb|stopgap"), GateState.NONE, null, ResultFixtures.BD));
+        for (String name : List.of("HbA1c", "Hb")) {
+            assertThat(vrow(html, view, name)).as(name).startsWith("<a class=\"vrow unknown\"")
+                    .contains("<span class=\"chip unknown\">" + copy.t(Lang.BN, "value.chip.unknown") + "</span>")
+                    .doesNotContain("<svg").doesNotContain("▲").doesNotContain("▼");
+            assertThat(ResultFixtures.section(html, "unknown")).as(name).contains("id=\"v-" + id(view, name));
+        }
+        assertThat(html).doesNotContain("id=\"outside\"");
+        assertThat(counts(html)).isEqualTo(copy.t(Lang.BN, "result.counts.none", 2));
+    }
+
+    /**
+     * The page reads what the producer writes, not a hand-built map: an ObservationEntity with stored verdict columns,
+     * through the real toView(), onto the page. A key renamed on either side turns every row into "check the paper"
+     * and every critical row silent, which no hand-built fixture can see. The range is one-sided, so the side on the
+     * chip can only have come from the stored verdict_side.
+     */
+    @Test
+    void aStoredVerdictReachesThePageThroughTheRealObservationView() {
+        com.elioo.baymax.extraction.adapter.out.persistence.ObservationEntity hb = new com.elioo.baymax.extraction.adapter.out.persistence.ObservationEntity();
+        hb.setId(java.util.UUID.randomUUID());
+        hb.setName("Hb");
+        hb.setCanonicalName("hb");
+        hb.setValue("5.0");
+        hb.setUnit("g/dL");
+        hb.setRefLow("12.0");
+        hb.setCropKey("f/p/d/crop-Hb.jpg");
+        hb.setVerdict("critical");
+        hb.setVerdictLevel("now");
+        hb.setVerdictSide("low");
+        hb.setVerdictReason("value_critical:hb|stopgap");
+        var view = ResultFixtures.lab(List.of(hb.toView()));
+        String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(view,
+                Urgency.NOW, List.of("value_critical:hb|stopgap"), GateState.NONE, null, ResultFixtures.BD));
+        assertThat(vrow(html, view, "Hb")).startsWith("<a class=\"vrow critical\"")
+                .contains("<span class=\"chip critical\">" + copy.t(Lang.BN, "value.chip.critical.low") + "</span>")
+                .doesNotContain(copy.t(Lang.BN, "value.chip.unknown"));
+        assertThat(ResultFixtures.section(html, "outside")).contains("id=\"v-" + hb.getId());
+    }
+
+    /** The one {@code <a class="vrow …">} for this value, found by its stored id: assertions read one row, never the page. */
+    private static String vrow(String html, DocumentView view, String name) {
+        Matcher m = Pattern.compile("<a class=\"vrow [a-z]+\" id=\"v-" + Pattern.quote(String.valueOf(id(view, name))) + "\".*?</a>").matcher(html);
+        assertThat(m.find()).as("the row for " + name).isTrue();
+        return m.group();
     }
 
     /** The counts line's own text: the one {@code <p class="counts">} element, never a search of the whole page. */

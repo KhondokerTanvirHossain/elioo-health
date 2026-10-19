@@ -5,9 +5,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.OptionalDouble;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -19,23 +21,33 @@ class ValueRowRenderTest {
 
     /** Assert the class AND the chip per kind, not that "a colour exists". */
     @ParameterizedTest(name = "{0}")
-    @CsvSource({"INSIDE,5.1,value.chip.inside", "UNKNOWN,Trace,value.chip.unknown",
-            "OUTSIDE,8.4,value.chip.outside.high", "CRITICAL,13.0,value.chip.critical.high"})
-    void aRowsClassAndChipComeFromItsStoredVerdict(ValueVerdict.Kind kind, String value, String chipKey) {
+    @CsvSource(nullValues = "null", value = {"INSIDE,5.1,null,value.chip.inside", "UNKNOWN,Trace,null,value.chip.unknown",
+            "OUTSIDE,8.4,high,value.chip.outside.high", "CRITICAL,13.0,high,value.chip.critical.high",
+            "OUTSIDE,3.1,low,value.chip.outside.low", "CRITICAL,1.0,low,value.chip.critical.low"})
+    void aRowsClassAndChipComeFromItsStoredVerdict(ValueVerdict.Kind kind, String value, String side, String chipKey) {
         String cls = kind.name().toLowerCase(Locale.ROOT);
-        String row = ValueRows.row(copy, Lang.BN, ResultFixtures.DOC, ResultFixtures.value("HbA1c", value, "%", "4.0", "6.0", cls));
+        String row = ValueRows.row(copy, Lang.BN, ResultFixtures.DOC, ResultFixtures.value("HbA1c", value, "%", "4.0", "6.0", cls, side));
         assertThat(row).startsWith("<a class=\"vrow " + cls + "\"");
         assertThat(row).contains("<span class=\"chip " + cls + "\">" + copy.t(Lang.BN, chipKey) + "</span>");
     }
 
-    /** Derived over the enum: a kind added later has a chip in both languages or this fails. */
+    /**
+     * Derived over the enums: a kind or a side added later has a chip in both languages or this fails. OUTSIDE and
+     * CRITICAL are rendered only with a side (kindOf makes a sideless one UNKNOWN), so they are checked with each side.
+     */
     @Test
     void everyVerdictKindHasARendering() {
         assertThat(ValueVerdict.Kind.values()).isNotEmpty().allSatisfy(k -> {
-            String key = ValueRows.chipKey(k, null, OptionalDouble.empty());
-            assertThat(key).isNotBlank();
-            for (Lang lang : Lang.values()) {
-                assertThat(copy.t(lang, key)).as(lang + " " + key).isNotBlank();
+            boolean sided = k == ValueVerdict.Kind.OUTSIDE || k == ValueVerdict.Kind.CRITICAL;
+            List<String> sides = sided ? Arrays.stream(ValueVerdict.Side.values()).map(ValueVerdict.Side::dbValue).toList()
+                    : Collections.singletonList(null);
+            assertThat(sides).isNotEmpty();
+            for (String side : sides) {
+                String key = ValueRows.chipKey(k, side);
+                assertThat(key).isNotBlank();
+                for (Lang lang : Lang.values()) {
+                    assertThat(copy.t(lang, key)).as(lang + " " + key).isNotBlank();
+                }
             }
         });
     }
@@ -101,12 +113,26 @@ class ValueRowRenderTest {
         assertThat(row).startsWith("<a class=\"vrow critical\"").contains(copy.t(Lang.BN, "value.chip.critical.low")).doesNotContain("<svg");
     }
 
-    /** No stored side and no bar to read one from: the chip names the kind and claims no direction. */
-    @Test
-    void anOutsideRowWithNoSideAndNoBarClaimsNoDirection() {
-        String row = ValueRows.row(copy, Lang.BN, ResultFixtures.DOC, ResultFixtures.value("ESR", "> 50", "mm/hr", "0", "20", "outside"));
-        assertThat(row).contains("<span class=\"chip outside\">" + copy.t(Lang.BN, "value.chip.outside") + "</span>")
+    /**
+     * B1's rule (V19 observation_verdict_side_matches_kind): a stored OUTSIDE or CRITICAL with no side is a row the
+     * database cannot hold, and the page never guesses its direction. It renders UNKNOWN. The dangerous cases are the
+     * ones with a two-sided range, where a pin exists that could have supplied a side; the "> 50" case has none.
+     */
+    @ParameterizedTest(name = "{0} {1} in {2}–{3}")
+    @CsvSource({"outside,8.4,4.0,6.0", "outside,3.1,4.0,6.0", "critical,13.0,4.0,6.0", "critical,1.0,4.0,6.0",
+            "outside,> 50,0,20"})
+    void anOutsideOrCriticalWithNoStoredSideIsUnknownNeverAGuessedDirection(String verdict, String value, String low, String high) {
+        String row = ValueRows.row(copy, Lang.BN, ResultFixtures.DOC, ResultFixtures.value("ESR", value, "mm/hr", low, high, verdict));
+        assertThat(row).startsWith("<a class=\"vrow unknown\"")
+                .contains("<span class=\"chip unknown\">" + copy.t(Lang.BN, "value.chip.unknown") + "</span>")
                 .doesNotContain("▲").doesNotContain("▼").doesNotContain("<svg");
+    }
+
+    /** The same rule against a side the page does not know (a typo, a later migration): no direction, so UNKNOWN. */
+    @Test
+    void anUnrecognisedStoredSideIsUnknown() {
+        String row = ValueRows.row(copy, Lang.BN, ResultFixtures.DOC, ResultFixtures.value("HbA1c", "8.4", "%", "4.0", "6.0", "outside", "up"));
+        assertThat(row).startsWith("<a class=\"vrow unknown\"").doesNotContain("<svg").doesNotContain("▲");
     }
 
     /** A pin that would contradict the verdict (an OUTSIDE inside the printed band) is not drawn: the bar tells no other story. */
@@ -145,7 +171,7 @@ class ValueRowRenderTest {
     /** Values keep the printed digits; the range text is the paper's text; the crop is the stored crop_key (DR-12). */
     @Test
     void theRowShowsThePaperAsPrintedBesideItsStoredCrop() {
-        Map<String, Object> v = ResultFixtures.value("Creatinine", "1.8", "mg/dL", "0.7", "1.3", "outside");
+        Map<String, Object> v = ResultFixtures.value("Creatinine", "1.8", "mg/dL", "0.7", "1.3", "outside", "high");
         String row = ValueRows.row(copy, Lang.BN, ResultFixtures.DOC, v);
         assertThat(row).contains("<span class=\"val\">1.8</span>").contains("<span class=\"range\">রিপোর্টে লেখা সীমা 0.7–1.3</span>")
                 .contains("src=\"" + PageChrome.imageHref(ResultFixtures.DOC, (String) v.get("crop_key")) + "\"");
@@ -155,7 +181,7 @@ class ValueRowRenderTest {
     /** No number without its proof: a value map with no crop fails the page loudly rather than show a bare number. */
     @Test
     void aValueWithoutItsCropIsNeverShown() {
-        Map<String, Object> v = ResultFixtures.value("Creatinine", "1.8", "mg/dL", "0.7", "1.3", "outside");
+        Map<String, Object> v = ResultFixtures.value("Creatinine", "1.8", "mg/dL", "0.7", "1.3", "outside", "high");
         v.remove("crop_key");
         assertThatThrownBy(() -> ValueRows.row(copy, Lang.BN, ResultFixtures.DOC, v))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("without its crop");

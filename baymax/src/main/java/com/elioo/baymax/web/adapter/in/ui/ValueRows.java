@@ -1,6 +1,6 @@
 package com.elioo.baymax.web.adapter.in.ui;
 
-import com.elioo.baymax.outbound.application.service.UrgencyService;
+import com.elioo.baymax.outbound.domain.PrintedRange;
 import com.elioo.baymax.outbound.domain.ValueVerdict;
 
 import java.util.List;
@@ -15,9 +15,9 @@ import static com.elioo.baymax.web.adapter.in.ui.Html.esc;
 
 /**
  * ValueRow (spec §9, F2): one shown value, drawn from its stored verdict and nothing else. Its class, its chip word and
- * its range bar come from the verdict; the bar's pin is placed by {@link UrgencyService#pinPercent}, the verdict's own
- * parser, and only where it agrees with the verdict. Every row sits beside its stored crop (DR-12): a value with no
- * crop is never drawn.
+ * its range bar come from the verdict; the bar's pin is placed by {@link PrintedRange#pinPercent}, the verdict's own
+ * parser, and only where it agrees with the verdict. Nothing here calls UrgencyService (HexagonalArchitectureTest).
+ * Every row sits beside its stored crop (DR-12): a value with no crop is never drawn.
  */
 final class ValueRows {
 
@@ -26,7 +26,9 @@ final class ValueRows {
 
     /**
      * F2 on the page: the stored verdict; NULL or anything unrecognised is UNKNOWN, and a stored INSIDE is shown INSIDE
-     * only when the code proves it on the row as rendered (insideByCode). The direction that withholds reassurance wins.
+     * only when the code proves it on the row as rendered (insideByCode). A stored OUTSIDE or CRITICAL without a stored
+     * side (a row V19's observation_verdict_side_matches_kind forbids) is UNKNOWN too: the page never guesses a direction,
+     * not even from the pin. The direction that withholds reassurance wins.
      */
     static ValueVerdict.Kind kindOf(Map<String, Object> v) {
         Object raw = v.get("verdict");
@@ -39,19 +41,29 @@ final class ValueRows {
         } catch (IllegalArgumentException e) {
             return ValueVerdict.Kind.UNKNOWN;
         }
-        return kind == ValueVerdict.Kind.INSIDE && !UrgencyService.insideByCode(v) ? ValueVerdict.Kind.UNKNOWN : kind;
+        if (kind == ValueVerdict.Kind.INSIDE && !PrintedRange.insideByCode(v)) {
+            return ValueVerdict.Kind.UNKNOWN;
+        }
+        boolean sided = kind == ValueVerdict.Kind.OUTSIDE || kind == ValueVerdict.Kind.CRITICAL;
+        return sided && storedSide(v) == null ? ValueVerdict.Kind.UNKNOWN : kind;
+    }
+
+    /** The stored verdict_side when it is one the page knows ("high" or "low"), else null. */
+    static String storedSide(Map<String, Object> v) {
+        Object side = v.get("verdict_side");
+        return "high".equals(side) || "low".equals(side) ? (String) side : null;
     }
 
     /**
      * The pin only when it agrees with the verdict: INSIDE in the band, OUTSIDE/CRITICAL outside it and on the stored side
-     * when one is stored ({@code storedSide}), UNKNOWN never. A bar that would tell a different story from the chip is
+     * ({@code storedSide}), UNKNOWN never. A bar that would tell a different story from the chip is
      * not drawn; the chip keeps the stored verdict either way.
      */
-    static OptionalDouble pin(ValueVerdict.Kind kind, Map<String, Object> v, Object storedSide) {
+    static OptionalDouble pin(ValueVerdict.Kind kind, Map<String, Object> v, String storedSide) {
         if (kind == ValueVerdict.Kind.UNKNOWN) {
             return OptionalDouble.empty();
         }
-        OptionalDouble p = UrgencyService.pinPercent(v);
+        OptionalDouble p = PrintedRange.pinPercent(v);
         if (p.isEmpty()) {
             return p;
         }
@@ -65,17 +77,20 @@ final class ValueRows {
     }
 
     /**
-     * The chip's key. OUTSIDE and CRITICAL carry a side: the stored verdict's ({@code verdict_side}) when there is one —
-     * the page never re-judges a stored verdict — else the side the agreeing pin shows, else no side at all.
+     * The chip's key. OUTSIDE and CRITICAL carry the stored verdict's side ({@code verdict_side}) and only that: the page
+     * never re-judges a stored verdict, and never reads a side off the pin. {@link #kindOf} has already made a sideless
+     * OUTSIDE or CRITICAL UNKNOWN, so reaching here without a side is a bug, not a row to guess at.
      */
-    static String chipKey(ValueVerdict.Kind kind, Object storedSide, OptionalDouble pin) {
-        String side = "high".equals(storedSide) ? ".high" : "low".equals(storedSide) ? ".low"
-                : pin.isEmpty() ? "" : pin.getAsDouble() > 75 ? ".high" : pin.getAsDouble() < 25 ? ".low" : "";
+    static String chipKey(ValueVerdict.Kind kind, String storedSide) {
         return switch (kind) {
             case INSIDE -> "value.chip.inside";
             case UNKNOWN -> "value.chip.unknown";
-            case OUTSIDE -> "value.chip.outside" + side;
-            case CRITICAL -> "value.chip.critical" + side;
+            case OUTSIDE, CRITICAL -> {
+                if (storedSide == null) {
+                    throw new IllegalStateException(kind + " without its stored side is never given a direction");
+                }
+                yield "value.chip." + kind.name().toLowerCase(Locale.ROOT) + "." + storedSide;
+            }
         };
     }
 
@@ -88,9 +103,9 @@ final class ValueRows {
         ValueVerdict.Kind kind = kindOf(v);
         String cls = kind.name().toLowerCase(Locale.ROOT);
         // the stored side belongs to the stored verdict: a demoted INSIDE or an UNKNOWN has none
-        Object side = kind == ValueVerdict.Kind.INSIDE || kind == ValueVerdict.Kind.UNKNOWN ? null : v.get("verdict_side");
+        String side = kind == ValueVerdict.Kind.INSIDE || kind == ValueVerdict.Kind.UNKNOWN ? null : storedSide(v);
         OptionalDouble pin = pin(kind, v, side);
-        String chip = copy.t(lang, chipKey(kind, side, pin));
+        String chip = copy.t(lang, chipKey(kind, side));
         String range = range(copy, lang, v);
         String href = PageChrome.imageHref(documentId, crop);
         String unit = v.get("unit") == null ? "" : esc(v.get("unit"));

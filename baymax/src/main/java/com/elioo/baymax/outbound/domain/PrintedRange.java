@@ -128,6 +128,22 @@ public final class PrintedRange {
                 && value.get() >= low.get() && value.get() <= high.get();
     }
 
+    /**
+     * Where a value's pin sits on the range bar, in percent: the printed range is the middle half (25–75), clamped to
+     * 2–98. Empty unless the value and both bounds parse with {@link #number}, the parser {@link #insideByCode} uses, and
+     * low &lt; high. A bar drawn by any other parser could show a reading the verdict refused to read.
+     */
+    public static java.util.OptionalDouble pinPercent(Map<String, Object> v) {
+        Optional<Double> value = number(v.get("value"));
+        Optional<Double> low = number(v.get("ref_low"));
+        Optional<Double> high = number(v.get("ref_high"));
+        if (value.isEmpty() || low.isEmpty() || high.isEmpty() || !(high.get() > low.get())) {
+            return java.util.OptionalDouble.empty();
+        }
+        double p = 25 + (value.get() - low.get()) / (high.get() - low.get()) * 50;
+        return java.util.OptionalDouble.of(Math.max(2, Math.min(98, p)));
+    }
+
     /** Digits of any script to ASCII, so ৮.২ and 8.2 are one number. */
     public static String foldDigits(String text) {
         StringBuilder sb = new StringBuilder(text.length());

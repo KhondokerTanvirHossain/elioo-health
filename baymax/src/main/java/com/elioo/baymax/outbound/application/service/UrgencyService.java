@@ -325,22 +325,6 @@ public class UrgencyService {
         return PrintedRange.insideByCode(v);
     }
 
-    /**
-     * Where a value's pin sits on the range bar, in percent: the printed range is the middle half (25–75), clamped to
-     * 2–98. Empty unless the value and both bounds parse with {@link #number}, the parser the verdict uses, and
-     * low &lt; high. A bar drawn by any other parser could show a reading the verdict refused to read.
-     */
-    public static java.util.OptionalDouble pinPercent(Map<String, Object> v) {
-        Optional<Double> value = number(v.get("value"));
-        Optional<Double> low = number(v.get("ref_low"));
-        Optional<Double> high = number(v.get("ref_high"));
-        if (value.isEmpty() || low.isEmpty() || high.isEmpty() || !(high.get() > low.get())) {
-            return java.util.OptionalDouble.empty();
-        }
-        double p = 25 + (value.get() - low.get()) / (high.get() - low.get()) * 50;
-        return java.util.OptionalDouble.of(Math.max(2, Math.min(98, p)));
-    }
-
     static final int NEAR_CHARS = 60;
 
     /** The page's own marking: a critical marker word within NEAR_CHARS of an occurrence of the value's text. */
