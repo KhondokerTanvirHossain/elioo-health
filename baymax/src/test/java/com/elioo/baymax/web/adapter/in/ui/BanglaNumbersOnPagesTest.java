@@ -74,18 +74,19 @@ class BanglaNumbersOnPagesTest {
         return lines;
     }
 
+    /** A6: the পরিবার card is s21's "age · N papers", and the consent date is the patient's day in Bangla. */
     @Test
-    void theHomeCardShowsAgeCountAndLastDateInBanglaDigits() {
+    void theFamilyCardShowsAgeAndCountAndTheConsentDateInBanglaDigits() {
         List<String> meta = metaLines(page("/app/family", "bn"));
-        assertThat(meta).contains("৬০ বছর", "নথি: ১০ · শেষ নথি: ১৮ অক্টোবর ২০২৬");
-        assertThat(meta).as("no meta line on the Bangla home page carries an ASCII digit")
+        assertThat(meta).contains("৬০ বছর · ১০টি কাগজ", "আপনি নিশ্চিত করেছেন ১৮ অক্টোবর ২০২৬");
+        assertThat(meta).as("no meta line on the Bangla family tab carries an ASCII digit")
                 .isNotEmpty().noneMatch(line -> ASCII_DIGIT.matcher(line).find());
     }
 
     @Test
-    void theEnglishHomeCardIsUnchanged() {
+    void theEnglishFamilyCardKeepsAsciiDigits() {
         List<String> meta = metaLines(page("/app/family", "en"));
-        assertThat(meta).contains("60 years", "Documents: 10 · Last document: 2026-10-18");
+        assertThat(meta).contains("60 years · 10 papers", "You confirmed on 2026-10-18");
     }
 
     @Test

@@ -32,10 +32,8 @@ class EverySignedInPageIsInTheShellTest {
             entry("GET /app/patients/{id}", Tab.PAPERS),
             entry("GET /app/documents/{id}", Tab.PAPERS),
             entry("GET /app/documents/{id}/delete", Tab.PAPERS),
-            entry("POST /app/documents/{id}/delete", Tab.PAPERS),
-            entry("GET /app/patients/{id}/profile", Tab.FAMILY),
-            entry("POST /app/patients/{id}/profile", Tab.FAMILY),
-            entry("POST /app/patients/{id}/nudges/opt-out", Tab.FAMILY));
+            entry("POST /app/documents/{id}/delete", Tab.PAPERS));
+    // A6: the profile routes answer a redirect to the পরিবার tab, no page of their own
 
     @Test
     void everySignedInPageHasTheHeaderAndTheTabBarWithItsOwnTabCurrent() {

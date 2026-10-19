@@ -1,6 +1,7 @@
 package com.elioo.baymax.web.adapter.in.ui;
 
 import com.elioo.baymax.common.error.BaymaxException;
+import com.elioo.baymax.nudge.application.port.out.NudgeDataPort;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
 import com.elioo.baymax.web.domain.FamilyOverview;
@@ -35,6 +36,7 @@ public class AppTabs implements WebPages {
     private final TimelineUseCase timeline;
     private final UiCopy copy;
     private final PageChrome chrome;
+    private final NudgeDataPort nudgeData;
 
     @Override
     public int order() {
@@ -123,13 +125,13 @@ public class AppTabs implements WebPages {
         return timeline.timeline(familyId, patientId, cursor).map(page -> {
             StringBuilder b = new StringBuilder();
             b.append("<h1>").append(esc(patient.patient().name())).append("</h1>");
-            b.append("<p class=\"small\"><a href=\"").append(BASE).append("/patients/").append(patientId).append("/profile\">").append(copy.t(lang, "profile.link")).append("</a></p>");
+            b.append("<p class=\"small\"><a href=\"").append(Tab.FAMILY.path).append("?patient=").append(patientId).append("\">").append(copy.t(lang, "profile.link")).append("</a></p>");
             // BMX-8 (PO option 1): a patient with no chronic flags is asked once, here, where the family already is —
             // nothing infers them, and the silence rule can never fire until someone answers
             if (patient.patient().chronicFlags() == null || patient.patient().chronicFlags().isEmpty()) {
                 b.append("<div class=\"card ask\"><strong>").append(copy.t(lang, "timeline.flags.ask")).append("</strong>")
                         .append("<p class=\"small\">").append(copy.t(lang, "timeline.flags.why")).append("</p>")
-                        .append("<a class=\"btn quiet\" href=\"").append(BASE).append("/patients/").append(patientId).append("/profile\">")
+                        .append("<a class=\"btn quiet\" href=\"").append(Tab.FAMILY.path).append("?patient=").append(patientId).append("\">")
                         .append(copy.t(lang, "timeline.flags.cta")).append("</a></div>");
             }
             if (patient.owner()) {
@@ -172,23 +174,12 @@ public class AppTabs implements WebPages {
         });
     }
 
-    /** A6 replaces this with s21. Until then: the patient cards, the language and the logout. */
+    /** s21 basics ({@link FamilyView}): the cards, the patient in view, the consent, the reminders, the account. */
     Mono<Body> familyBody(ServerRequest request, Lang lang, FamilyOverview me, ActivePatient active) {
-        StringBuilder b = new StringBuilder("<h1>").append(copy.t(lang, "tab.family")).append("</h1>");
-        if (me.patients().isEmpty()) {
-            b.append("<div class=\"card\">").append(copy.t(lang, "patients.none")).append("</div>");
-        }
-        for (PatientSummary p : me.patients()) {
-            b.append("<a class=\"card\" href=\"").append(BASE).append("/patients/").append(p.patient().id()).append("/profile\">")
-                    .append("<strong>").append(esc(p.patient().name())).append("</strong> ")
-                    .append("<span class=\"meta\">").append(copy.t(lang, "patients.years", p.patient().age())).append("</span>")
-                    .append(p.owner() ? "" : " <span class=\"tag\">" + copy.t(lang, "patients.shared") + "</span>")
-                    .append("<div class=\"meta\">").append(copy.t(lang, "patients.docs", p.documents()))
-                    .append(p.lastDocumentAt() == null ? "" : " · " + copy.t(lang, "patients.last", copy.dateText(lang, java.time.LocalDate.ofInstant(p.lastDocumentAt(), java.time.ZoneOffset.UTC))))
-                    .append("</div></a>");
-        }
-        b.append("<div class=\"acct\">").append(chrome.langToggle(lang, Tab.FAMILY.path))
-                .append(chrome.logout(lang, me.family().ownerName())).append("</div>");
-        return Mono.just(Body.of(b.toString(), head(lang, Tab.FAMILY)));
+        boolean saved = request.queryParam("saved").filter("1"::equals).isPresent();
+        Mono<Boolean> optedOut = active.patient()
+                .map(p -> nudgeData.patient(p.patient().id()).map(NudgeDataPort.PatientRef::optedOut).defaultIfEmpty(false))
+                .orElse(Mono.just(false));
+        return optedOut.map(off -> Body.of(new FamilyView(copy, chrome).render(lang, me, active, off, saved), head(lang, Tab.FAMILY)));
     }
 }

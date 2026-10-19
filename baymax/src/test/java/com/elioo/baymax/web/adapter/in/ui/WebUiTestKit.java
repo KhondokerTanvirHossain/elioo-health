@@ -20,6 +20,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -58,6 +59,8 @@ final class WebUiTestKit {
             when(auth.authenticate("tok")).thenReturn(Mono.just(new WebSession(
                     UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100009"), FAMILY, NOW, NOW, NOW.plusSeconds(600))));
         }
+        // a patient with no nudge row reads as "reminders on"; a test that needs a row stubs that patient
+        when(nudgeData.patient(any())).thenReturn(Mono.empty());
         this.sessions = new SessionAuthFilter(auth, properties);
         this.router = buildRouter();
         this.client = WebTestClient.bindToRouterFunction(router).build();
@@ -68,8 +71,8 @@ final class WebUiTestKit {
         PageChrome chrome = new PageChrome(copy, sessions);
         documents = new DocumentPages(timeline, copy, chrome);
         List<WebPages> pages = List.of(new LandingPages(copy, chrome), new SignInPages(auth, sessions, copy, chrome, properties),
-                new OptOutPages(optOut, copy, chrome), new AppTabs(timeline, copy, chrome), documents,
-                new ProfilePages(timeline, optOut, nudgeData, copy, chrome), new UploadUiHandler(timeline, chrome),
+                new OptOutPages(optOut, copy, chrome), new AppTabs(timeline, copy, chrome, nudgeData), documents,
+                new ProfilePages(timeline, optOut), new UploadUiHandler(timeline, chrome),
                 new AssetHandler());
         return new BaymaxWebUiRouter().baymaxWebUiRoutes(pages, sessions, chrome);
     }
@@ -79,8 +82,13 @@ final class WebUiTestKit {
                 List.of(), NOW, NOW), true, documents, documents == 0 ? null : NOW);
     }
 
+    /** The id {@link #patient} gives a patient of this name: one derivation, read by the fixtures too. */
+    static UUID patientId(String name) {
+        return UUID.nameUUIDFromBytes(("patient:" + name).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
     PatientSummary patient(String name, boolean owner, long documents) {
-        UUID id = UUID.nameUUIDFromBytes(("patient:" + name).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        UUID id = patientId(name);
         return new PatientSummary(new PatientProfile(id, FAMILY, name, 64, PatientProfile.Sex.FEMALE, List.of(), NOW, NOW),
                 owner, documents, documents == 0 ? null : NOW);
     }

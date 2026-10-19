@@ -90,7 +90,7 @@ final class PageFixtures {
         variant("GET /app/nudges/opt-out", Fixture.get("/app/nudges/opt-out?t=not-a-token", false, k -> { }).named("nopatient"));
         put("GET /app/home", Fixture.get("/app/home", true, Stubs::familyOfMa));
         put("GET /app/timeline", Fixture.get("/app/timeline", true, Stubs::maTimeline));
-        put("GET /app/family", Fixture.get("/app/family", true, Stubs::familyOfMa));
+        put("GET /app/family", Fixture.get("/app/family", true, Stubs::maProfile));
         // A5: what a family of two sees — the chooser (none chosen), a chosen patient with the switcher, both cards
         variant("GET /app/home", Fixture.get("/app/home", true, Stubs::familyOfTwo).named("chooser"));
         variant("GET /app/home", Fixture.get("/app/home?patient=" + ma, true, Stubs::familyOfTwo).named("chosen"));
@@ -98,7 +98,12 @@ final class PageFixtures {
         variant("GET /app/timeline", Fixture.get("/app/timeline", true, Stubs::maTimelineOfTwo).named("chooser"));
         variant("GET /app/timeline", Fixture.get("/app/timeline?patient=" + ma, true, Stubs::maTimelineOfTwo).named("chosen"));
         variant("GET /app/family", Fixture.get("/app/family", true, Stubs::familyOfTwo).named("two"));
+        // A6: the patient in view as the owner sees them (and after a save), and a shared patient (no save, no switch)
+        variant("GET /app/family", Fixture.get("/app/family?patient=" + ma, true, Stubs::familyOfTwo).named("chosen"));
+        variant("GET /app/family", Fixture.get("/app/family?patient=" + ma + "&saved=1", true, Stubs::maProfile).named("saved"));
+        variant("GET /app/family", Fixture.get("/app/family?patient=" + Stubs.ABBU, true, Stubs::familyOfTwo).named("shared"));
         put("GET /app/patients/{id}", Fixture.get("/app/patients/" + ma, true, Stubs::maTimeline));
+        // A6: a 302 to the পরিবার tab now; the derived page tests skip non-HTML answers
         put("GET /app/patients/{id}/profile", Fixture.get("/app/patients/" + ma + "/profile", true, Stubs::maProfile));
         put("GET /app/documents/{id}/delete", Fixture.get("/app/documents/" + doc + "/delete", true, Stubs::doneLab));
         put("GET /app/documents/{id}/image", Fixture.get("/app/documents/" + doc + "/image?key=f/p/" + doc + "/crop-1.jpg", true, Stubs::signedUrls));
@@ -165,6 +170,8 @@ final class PageFixtures {
 
         static final UUID DONE_DOC = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100004");
         static final UUID PROCESSING_DOC = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100005");
+        /** আব্বু's id, from the kit's own derivation: the shared patient of {@link #familyOfTwo}. */
+        static final UUID ABBU = WebUiTestKit.patientId("আব্বু");
 
         private Stubs() {
         }

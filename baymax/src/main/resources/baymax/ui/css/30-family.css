@@ -1,1 +1,7 @@
 /* 30-family: the family tab (A6, E1, E2). Tokens only. */
+/* s21 basics (A6): the facts lists (the patient, the account), the saved line. The flags reuse label.check (10-base). */
+.facts{display:grid;grid-template-columns:auto 1fr;gap:var(--sp-2) var(--sp-4);align-items:center;margin:0 0 var(--sp-3)}
+.facts dt{color:var(--c-text-muted)}
+.facts dd{margin:0}
+.facts .lang{margin:0}
+.saved{padding:var(--sp-3) var(--sp-4);border-radius:var(--r-m);background:var(--c-primary-container);color:var(--c-on-primary-container)}
