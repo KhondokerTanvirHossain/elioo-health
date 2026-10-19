@@ -61,13 +61,16 @@ public class DocumentEntity {
     /** JSONB; the verified clinical lines, read together and never queried field by field. */
     @Column("clinical_context")
     private String clinicalContext;
+    /** F5 (V20): the retake reason code, on NEEDS_RETAKE only. {@code timeline_date} is generated and never mapped. */
+    @Column("status_reason_code")
+    private String statusReasonCode;
 
     static DocumentEntity from(Document d) {
         return new DocumentEntity(d.id(), d.patientId(), d.familyId(), d.documentType(), d.docDate(),
                 d.facility(), d.extractionJson(), d.confidenceOverall(), d.status().name(), d.statusReason(),
                 d.modelFinal(), d.costUsd(), d.pageCount(), d.createdAt(), d.updatedAt(),
                 d.unverified().values(), d.unverified().medicines(), d.unverified().followUp(),
-                d.unverified().clinicalContext(), d.clinicalContextJson());
+                d.unverified().clinicalContext(), d.clinicalContextJson(), d.statusReasonCode());
     }
 
     Document toRecord() {
@@ -76,6 +79,6 @@ public class DocumentEntity {
                 pageCount, createdAt, updatedAt,
                 new VerifiedItems.Unverified(unverifiedValues, unverifiedMedicines, unverifiedFollowUp,
                         unverifiedClinicalContext),
-                clinicalContext);
+                clinicalContext, statusReasonCode);
     }
 }

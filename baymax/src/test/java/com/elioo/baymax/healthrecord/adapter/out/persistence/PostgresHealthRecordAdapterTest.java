@@ -231,8 +231,10 @@ class PostgresHealthRecordAdapterTest {
     }
 
     private static void seedDocumentWithStatus(UUID family, UUID patient, UUID doc, String createdAt, String status) throws Exception {
-        sql("insert into baymax.document (id, patient_id, family_id, status, page_count, created_at, updated_at) values ('"
-                + doc + "','" + patient + "','" + family + "','" + status + "',1,'" + createdAt + "','" + createdAt + "')");
+        // V20: a retake carries its reason code, as every retake path writes one
+        String code = "NEEDS_RETAKE".equals(status) ? "'low_overall'" : "NULL";
+        sql("insert into baymax.document (id, patient_id, family_id, status, status_reason_code, page_count, created_at, updated_at) values ('"
+                + doc + "','" + patient + "','" + family + "','" + status + "'," + code + ",1,'" + createdAt + "','" + createdAt + "')");
     }
 
     private static void seedDocument(UUID family, UUID patient, UUID doc, String createdAt) throws Exception {

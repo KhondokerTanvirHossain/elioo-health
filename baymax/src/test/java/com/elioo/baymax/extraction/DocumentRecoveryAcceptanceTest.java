@@ -297,7 +297,9 @@ class DocumentRecoveryAcceptanceTest {
     private static Document finished(DocumentRecordPort records, UUID patient, UUID family, Document.Status status,
                                      Instant at) {
         Document created = records.create(Document.received(patient, family, 1, at)).block();
-        return records.update(created.withStatus(status, null, at)).block();
+        // V20: a retake carries its reason code, as every retake path writes one
+        String code = status == Document.Status.NEEDS_RETAKE ? "low_overall" : null;
+        return records.update(created.withStatus(status, null, code, at)).block();
     }
 
     private static void message(UUID family, UUID patient, Document document, String kind) throws Exception {
