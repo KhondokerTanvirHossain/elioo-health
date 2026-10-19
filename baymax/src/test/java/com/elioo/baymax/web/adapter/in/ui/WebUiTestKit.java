@@ -39,7 +39,7 @@ final class WebUiTestKit {
     final TimelineUseCase timeline = mock(TimelineUseCase.class);
     final NudgeOptOutUseCase optOut = mock(NudgeOptOutUseCase.class);
     final NudgeDataPort nudgeData = mock(NudgeDataPort.class);
-    final UploadUseCase uploads = mock(UploadUseCase.class);
+    final UploadUseCase uploads;
     final BaymaxProperties properties;
     final UiCopy copy = new UiCopy();
     final SessionAuthFilter sessions;
@@ -52,9 +52,19 @@ final class WebUiTestKit {
         this(mock(WebAuthUseCase.class), new BaymaxProperties(), true);
     }
 
+    /** A real upload service over the real intake (TryDocumentsThroughTheWebTest) instead of the mock. */
+    WebUiTestKit(UploadUseCase uploads) {
+        this(mock(WebAuthUseCase.class), new BaymaxProperties(), true, uploads);
+    }
+
     /** A real auth service (SignInIsFreeAcceptanceTest) and its properties; {@code stubSession=false} leaves auth alone. */
     WebUiTestKit(WebAuthUseCase auth, BaymaxProperties properties, boolean stubSession) {
+        this(auth, properties, stubSession, mock(UploadUseCase.class));
+    }
+
+    private WebUiTestKit(WebAuthUseCase auth, BaymaxProperties properties, boolean stubSession, UploadUseCase uploads) {
         this.auth = auth;
+        this.uploads = uploads;
         this.properties = properties;
         if (stubSession) {
             when(auth.authenticate(anyString())).thenReturn(Mono.empty());
@@ -74,7 +84,7 @@ final class WebUiTestKit {
         documents = new DocumentPages(timeline, copy, chrome);
         List<WebPages> pages = List.of(new LandingPages(copy, chrome), new SignInPages(auth, sessions, copy, chrome, properties),
                 new OptOutPages(optOut, copy, chrome), new AppTabs(timeline, copy, chrome, nudgeData), documents,
-                new ProfilePages(timeline, optOut), new UploadUiHandler(uploads, chrome, copy),
+                new ProfilePages(timeline, optOut), new UploadUiHandler(uploads, copy, properties),
                 new AssetHandler());
         return new BaymaxWebUiRouter().baymaxWebUiRoutes(pages, sessions, chrome);
     }

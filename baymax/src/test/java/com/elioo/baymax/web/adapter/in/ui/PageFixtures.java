@@ -126,6 +126,11 @@ final class PageFixtures {
         put("POST /app/nudges/opt-out", new Fixture("/app/nudges/opt-out", false, Body.FORM, Map.of("p", ma, "t", "valid", "scope", "patient"), Stubs::validOptOutLink));
         variant("POST /app/nudges/opt-out", new Fixture("/app/nudges/opt-out", false, Body.FORM, Map.of("p", ma, "t", "valid", "scope", "family"), Stubs::validOptOutLink).named("family"));
         variant("POST /app/nudges/opt-out", new Fixture("/app/nudges/opt-out", false, Body.FORM, Map.of("p", ma, "t", "not-a-token", "scope", "patient"), Stubs::validOptOutLink).named("badtoken"));
+        // A8: the sheet's submit — accepted (303 to the paper), no patient chosen, and a refusal for the chosen patient
+        put("POST /app/add", new Fixture("/app/add", true, Body.MULTIPART, Map.of("patient", ma), Stubs::acceptsUpload));
+        variant("POST /app/add", new Fixture("/app/add", true, Body.MULTIPART, Map.of(), Stubs::sheetForTwo).named("nopatient"));
+        variant("POST /app/add", new Fixture("/app/add", true, Body.MULTIPART, Map.of("patient", ma, "back", "/app/timeline?patient=" + ma),
+                Stubs::refusesUpload).named("refused"));
         put("POST /app/patients/{id}/upload", new Fixture("/app/patients/" + ma + "/upload", true, Body.MULTIPART, Map.of(), Stubs::acceptsUpload));
         put("POST /app/patients/{id}/profile", new Fixture("/app/patients/" + ma + "/profile", true, Body.FORM, Map.of("flag", "diabetes"), Stubs::maProfile));
         put("POST /app/patients/{id}/nudges/opt-out", new Fixture("/app/patients/" + ma + "/nudges/opt-out", true, Body.FORM, Map.of("scope", "patient"), Stubs::maProfile));
@@ -292,6 +297,12 @@ final class PageFixtures {
         static void acceptsUpload(WebUiTestKit k) {
             when(k.uploads.upload(eq(WebUiTestKit.FAMILY), eq(WebUiTestKit.MA_ID), anyList())).thenReturn(Mono.just(
                     Document.received(WebUiTestKit.MA_ID, WebUiTestKit.FAMILY, 1, WebUiTestKit.NOW).withId(WebUiTestKit.DOC_ID)));
+        }
+
+        static void refusesUpload(WebUiTestKit k) {
+            sheetForMa(k);
+            when(k.uploads.upload(eq(WebUiTestKit.FAMILY), eq(WebUiTestKit.MA_ID), anyList())).thenReturn(Mono.error(
+                    com.elioo.baymax.common.error.BaymaxException.badRequest("unsupported_image", "could not read page-1.jpg; send a JPEG, PNG or PDF")));
         }
 
         static void deletes(WebUiTestKit k) {

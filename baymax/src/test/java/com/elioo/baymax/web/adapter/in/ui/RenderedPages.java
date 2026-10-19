@@ -82,6 +82,7 @@ final class RenderedPages {
                             .collect(Collectors.toMap(e -> e.getKey(), e -> List.of(e.getValue()))))));
             case MULTIPART -> {
                 MultipartBodyBuilder body = new MultipartBodyBuilder();
+                f.form().forEach(body::part);   // the form's own fields (the chosen patient, the way back) go first
                 body.part("file", new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF}).filename("page-1.jpg");
                 yield spec.body(BodyInserters.fromMultipartData(body.build()));
             }
