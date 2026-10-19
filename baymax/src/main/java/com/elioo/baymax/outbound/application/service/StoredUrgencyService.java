@@ -1,5 +1,6 @@
 package com.elioo.baymax.outbound.application.service;
 
+import com.elioo.baymax.common.time.PatientCalendar;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.extraction.application.port.out.DocumentRecordPort;
 import com.elioo.baymax.extraction.domain.Document;
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.time.Clock;
+import java.time.LocalDate;
 import java.util.Map;
 import java.util.UUID;
 
@@ -58,6 +60,25 @@ public class StoredUrgencyService implements DocumentUrgencyUseCase {
     @Override
     public Mono<StoredUrgency> currentOrAssess(UUID documentId) {
         return stored.find(documentId).switchIfEmpty(Mono.defer(() -> assessAndStore(documentId)));
+    }
+
+    /** One sweep's bound; a larger backlog drains over the following hours, oldest-unattempted first. */
+    static final int SWEEP_LIMIT = 500;
+
+    @Override
+    public Mono<Long> sweep() {
+        LocalDate today = PatientCalendar.today(clock);   // the day UrgencyService judges follow_up_past_due by
+        return stored.needingAssessment(today, SWEEP_LIMIT)
+                // stamped first: a document that throws goes behind every one not yet attempted, so it cannot starve them
+                // deferred: assembling assessAndStore(id) eagerly would already call the ports before the stamp
+                .concatMap(id -> stored.markAttempt(id, clock.instant())
+                        .then(Mono.defer(() -> assessAndStore(id)))
+                        .onErrorResume(e -> {
+                            // the message can carry a value or a name: the class only
+                            log.warn("[baymax] urgency sweep skipped documentId={} error={}", id, e.getClass().getSimpleName());
+                            return Mono.empty();
+                        }))
+                .count();
     }
 
     /** A DONE document's persisted facts: the only copy; ExplanationService composes from these too. */

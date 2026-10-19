@@ -9,9 +9,11 @@ import io.r2dbc.spi.Row;
 import lombok.RequiredArgsConstructor;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
@@ -45,6 +47,26 @@ public class PostgresDocumentUrgencyAdapter implements DocumentUrgencyPort {
             FROM %1$s.document WHERE id = :id AND urgency IS NOT NULL
             """.formatted(S);
 
+    /**
+     * The sweep's queue. The past-due half is UrgencyService's rule (any follow-up of the document, due before the
+     * patient's today) minus the documents already carrying its reason, so an assessment always removes what it picked.
+     * {@code @>} is containment, not the {@code ?} operator the class comment warns about.
+     */
+    private static final String NEEDING_ASSESSMENT = """
+            SELECT d.id FROM %1$s.document d
+            WHERE d.status = 'DONE'
+              AND (d.urgency IS NULL
+                   OR (NOT d.urgency_reasons @> '["follow_up_past_due"]'::jsonb
+                       AND EXISTS (SELECT 1 FROM %1$s.follow_up f WHERE f.document_id = d.id AND f.due_date < :today)))
+            ORDER BY d.urgency_attempted_at NULLS FIRST, d.created_at, d.id
+            LIMIT :limit
+            """.formatted(S);
+
+    /** The attempt stamp only: not the level (the trigger ignores this column) and not updated_at (the DETAIL cache key). */
+    private static final String MARK_ATTEMPT = """
+            UPDATE %1$s.document SET urgency_attempted_at = :at WHERE id = :id
+            """.formatted(S);
+
     private final DatabaseClient db;
 
     @Override
@@ -61,6 +83,23 @@ public class PostgresDocumentUrgencyAdapter implements DocumentUrgencyPort {
     @Override
     public Mono<StoredUrgency> find(UUID documentId) {
         return db.sql(FIND).bind("id", documentId).map((row, meta) -> stored(row)).one();
+    }
+
+    @Override
+    public Flux<UUID> needingAssessment(LocalDate today, int limit) {
+        return db.sql(NEEDING_ASSESSMENT)
+                .bind("today", today)
+                .bind("limit", limit)
+                .map((row, meta) -> row.get("id", UUID.class))
+                .all();
+    }
+
+    @Override
+    public Mono<Void> markAttempt(UUID documentId, Instant at) {
+        return db.sql(MARK_ATTEMPT)
+                .bind("id", documentId)
+                .bind("at", OffsetDateTime.ofInstant(at, ZoneOffset.UTC))
+                .then();
     }
 
     private static StoredUrgency stored(Row row) {

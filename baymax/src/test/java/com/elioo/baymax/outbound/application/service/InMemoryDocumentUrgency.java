@@ -4,9 +4,11 @@ import com.elioo.baymax.outbound.application.port.out.DocumentUrgencyPort;
 import com.elioo.baymax.outbound.domain.StoredUrgency;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.outbound.domain.UrgencyAssessment;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeSet;
@@ -47,5 +49,20 @@ public final class InMemoryDocumentUrgency implements DocumentUrgencyPort {
     @Override
     public Mono<StoredUrgency> find(UUID documentId) {
         return Mono.justOrEmpty(rows.get(documentId));
+    }
+
+    /** The sweep's queue, as a test sets it; the predicate itself is the adapter's, on Postgres. */
+    final List<UUID> queue = new CopyOnWriteArrayList<>();
+    /** What happened, in order: "attempt:<id>" here, and whatever the test appends around it (e.g. "assess:<id>"). */
+    final List<String> events = new CopyOnWriteArrayList<>();
+
+    @Override
+    public Flux<UUID> needingAssessment(LocalDate today, int limit) {
+        return Flux.fromIterable(queue).take(limit);
+    }
+
+    @Override
+    public Mono<Void> markAttempt(UUID documentId, Instant at) {
+        return Mono.fromRunnable(() -> events.add("attempt:" + documentId));
     }
 }

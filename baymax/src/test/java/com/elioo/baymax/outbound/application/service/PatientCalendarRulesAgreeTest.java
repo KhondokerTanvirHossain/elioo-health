@@ -14,8 +14,10 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * F7: the patient's calendar is Dhaka's. Every rule that asks "is this date before today" asks PatientCalendar. A11 adds
- * the sweep's predicate and C4 the attention stack's window to this class, at the same instants.
+ * F7: the patient's calendar is Dhaka's. Every rule that asks "is this date before today" asks PatientCalendar. The
+ * sweep's SQL predicate is held to this rule at the same three instants on Postgres, where its container already runs:
+ * {@code DocumentUrgencyNeverLowersTest.theSweepsPredicateAndTheRuleAgreeOnTheDhakaDay}. C4 adds the attention stack's
+ * window here.
  */
 class PatientCalendarRulesAgreeTest {
 

@@ -19,4 +19,11 @@ public interface DocumentUrgencyUseCase {
      * left NULL) — one assessment through the writer now. A second read finds it stored and assesses nothing.
      */
     Mono<StoredUrgency> currentOrAssess(UUID documentId);
+
+    /**
+     * One pass over {@link com.elioo.baymax.outbound.application.port.out.DocumentUrgencyPort#needingAssessment}: each
+     * document is stamped as attempted, then assessed through the writer; one that throws is logged by class name and
+     * skipped. Emits how many were assessed.
+     */
+    Mono<Long> sweep();
 }

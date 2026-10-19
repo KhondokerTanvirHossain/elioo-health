@@ -6,12 +6,18 @@ import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
+import com.elioo.baymax.common.time.PatientCalendar;
+import com.elioo.baymax.outbound.application.port.in.DocumentUrgencyUseCase;
 import com.elioo.baymax.outbound.application.port.out.DocumentUrgencyPort;
+import com.elioo.baymax.outbound.application.service.DocumentFacts;
+import com.elioo.baymax.outbound.application.service.UrgencyService;
 import com.elioo.baymax.outbound.domain.StoredUrgency;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.outbound.domain.UrgencyAssessment;
 import com.elioo.healthcare.llm.config.LlmAutoConfiguration;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.data.r2dbc.R2dbcDataAutoConfiguration;
 import org.springframework.boot.autoconfigure.r2dbc.R2dbcAutoConfiguration;
@@ -29,8 +35,12 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -195,15 +205,120 @@ class DocumentUrgencyNeverLowersTest {
         });
     }
 
+    /** The sweep's predicate is the rule's (UrgencyService, PatientCalendar): a follow-up due BEFORE today; today is not past. */
+    @Test
+    void theSweepPicksUnassessedAndPastDueAndNeitherDueTodayNorAlreadyRaised() {
+        runner().run(context -> {
+            DocumentUrgencyPort port = context.getBean(DocumentUrgencyPort.class);
+            UUID unassessed = doneDocument(context);
+            UUID pastDue = doneDocument(context);
+            UUID dueToday = doneDocument(context);
+            UUID dueTomorrow = doneDocument(context);
+            UUID alreadyRaised = doneDocument(context);
+            for (UUID d : List.of(pastDue, dueToday, dueTomorrow, alreadyRaised)) {
+                port.raise(d, UrgencyAssessment.routine(), T).block();
+            }
+            followUp(pastDue, "2026-10-19");
+            followUp(dueToday, "2026-10-20");
+            followUp(dueTomorrow, "2026-10-21");
+            followUp(alreadyRaised, "2026-10-19");
+            port.raise(alreadyRaised, new UrgencyAssessment(Urgency.THIS_WEEK, List.of("follow_up_past_due")), T).block();
+            List<UUID> mine = List.of(unassessed, pastDue, dueToday, dueTomorrow, alreadyRaised);
+
+            // the container is shared by this class's tests: judge only this test's documents
+            assertThat(port.needingAssessment(LocalDate.parse("2026-10-20"), 500).filter(mine::contains).collectList().block())
+                    .containsExactlyInAnyOrder(unassessed, pastDue);
+        });
+    }
+
+    /**
+     * A document picked and attempted goes behind every document not yet attempted: a throwing one cannot starve the
+     * rest. Created long before every other test's documents, so the two lead the shared queue.
+     */
+    @Test
+    void anAttemptedDocumentGoesToTheBackOfTheQueue() {
+        runner().run(context -> {
+            DocumentUrgencyPort port = context.getBean(DocumentUrgencyPort.class);
+            UUID older = doneDocument(context, Instant.parse("2001-01-01T00:00:00Z"));
+            UUID newer = doneDocument(context, Instant.parse("2001-01-02T00:00:00Z"));
+            assertThat(port.needingAssessment(LocalDate.parse("2026-10-20"), 1).collectList().block()).containsExactly(older);
+            port.markAttempt(older, T).block();
+            assertThat(port.needingAssessment(LocalDate.parse("2026-10-20"), 1).collectList().block()).containsExactly(newer);
+            assertThat(port.needingAssessment(LocalDate.parse("2026-10-20"), 500).filter(List.of(older, newer)::contains)
+                    .collectList().block()).as("still queued, behind").containsExactly(newer, older);
+            // stamping an attempt is not a change to the document: the DETAIL cache keys on updated_at
+            assertThat(scalar("SELECT updated_at = created_at FROM baymax.document WHERE id = '" + older + "'")).isEqualTo("t");
+        });
+    }
+
+    /** After one sweep there is nothing left to assess: the predicate and the rule agree, so the queue converges. */
+    @Test
+    void aSweepConverges() {
+        runner().withBean(Clock.class, () -> Clock.fixed(Instant.parse("2026-10-20T08:00:00Z"), ZoneOffset.UTC)).run(context -> {
+            UUID unassessed = doneDocument(context);
+            UUID pastDue = doneDocument(context);
+            DocumentUrgencyPort port = context.getBean(DocumentUrgencyPort.class);
+            port.raise(pastDue, UrgencyAssessment.routine(), T).block();
+            followUp(pastDue, "2026-10-19");
+
+            Long assessed = context.getBean(DocumentUrgencyUseCase.class).sweep().block();
+
+            assertThat(assessed).isGreaterThanOrEqualTo(2L);
+            assertThat(port.needingAssessment(LocalDate.parse("2026-10-20"), 500).collectList().block())
+                    .doesNotContain(unassessed, pastDue);
+            assertThat(port.find(unassessed).block().level()).isEqualTo(Urgency.ROUTINE);
+            assertThat(port.find(pastDue).block().reasons()).contains("follow_up_past_due");
+            assertThat(port.find(pastDue).block().level()).isEqualTo(Urgency.THIS_WEEK);
+        });
+    }
+
+    /**
+     * F7: the sweep's predicate and the rule judge "past due" on the same (Dhaka) day, at the instants of
+     * PatientCalendarRulesAgreeTest. The rule's verdict is computed, not remembered: a follow-up due 2026-10-19 is in the
+     * queue exactly when UrgencyService, at that instant, says follow_up_past_due.
+     */
+    @ParameterizedTest(name = "at {0} a follow-up due 2026-10-19 is queued: {1}")
+    @CsvSource({"2026-10-19T17:59:00Z,false",     // 23:59 on the 19th in Dhaka: due today, not past
+                "2026-10-19T18:00:00Z,true",      // 00:00 on the 20th in Dhaka
+                "2026-10-19T23:30:00Z,true"})     // 05:30 on the 20th in Dhaka — still the 19th in UTC
+    void theSweepsPredicateAndTheRuleAgreeOnTheDhakaDay(String at, boolean pastDue) {
+        Clock clock = Clock.fixed(Instant.parse(at), ZoneOffset.UTC);
+        runner().withBean(Clock.class, () -> clock).run(context -> {
+            UUID doc = doneDocument(context);
+            DocumentUrgencyPort port = context.getBean(DocumentUrgencyPort.class);
+            port.raise(doc, UrgencyAssessment.routine(), T).block();
+            followUp(doc, "2026-10-19");
+            Document d = context.getBean(DocumentRecordPort.class).find(doc).block();
+            boolean ruleSaysPastDue = context.getBean(UrgencyService.class)
+                    .assess(new DocumentFacts(d, "", List.of(), List.of(Map.of("instruction", "x", "due_date", "2026-10-19")), Map.of(), ""))
+                    .reasons().contains("follow_up_past_due");
+
+            boolean queued = port.needingAssessment(PatientCalendar.today(clock), 500).collectList().block().contains(doc);
+
+            assertThat(ruleSaysPastDue).as("the rule, at " + at).isEqualTo(pastDue);
+            assertThat(queued).as("the sweep's predicate agrees with the rule").isEqualTo(ruleSaysPastDue);
+        });
+    }
+
     private UUID doneDocument(ApplicationContext context) {
+        return doneDocument(context, T);
+    }
+
+    private UUID doneDocument(ApplicationContext context, Instant created) {
         HealthRecordPort records = context.getBean(HealthRecordPort.class);
         FamilyAccount family = records.createFamily(new FamilyAccount(null,
                 "+88017000007" + String.format("%02d", FAMILIES.incrementAndGet()), "Tanvir", FamilyAccount.Plan.FREE, T, T)).block();
         PatientProfile patient = records.createPatient(
                 new PatientProfile(null, family.id(), "Ma", 68, PatientProfile.Sex.FEMALE, List.of(), T, T)).block();
         DocumentRecordPort documents = context.getBean(DocumentRecordPort.class);
-        Document received = documents.create(Document.received(patient.id(), family.id(), 1, T)).block();
-        return documents.update(received.withStatus(Document.Status.DONE, null, T)).block().id();
+        Document received = documents.create(Document.received(patient.id(), family.id(), 1, created)).block();
+        return documents.update(received.withStatus(Document.Status.DONE, null, created)).block().id();
+    }
+
+    /** A follow-up on the document, for its patient, due on {@code dueDate}. */
+    private static void followUp(UUID doc, String dueDate) throws Exception {
+        sql("INSERT INTO baymax.follow_up (patient_id, document_id, instruction, due_date, crop_key) "
+                + "SELECT patient_id, id, 'আবার আসবেন', DATE '" + dueDate + "', 'k' FROM baymax.document WHERE id = '" + doc + "'");
     }
 
     /** The UPDATE block of V18 itself, read from the classpath: the test runs the shipped SQL, not a copy of it. */
@@ -227,6 +342,8 @@ class DocumentUrgencyNeverLowersTest {
                         LlmAutoConfiguration.class, BaymaxAutoConfiguration.class))
                 .withPropertyValues(
                         "baymax.enabled=true", "llm.provider=groq", "llm.groq.api-key=test-key",
+                        // the hourly sweep must not run inside a test that sets up its queue by hand
+                        "baymax.urgency.sweep-cron=-",
                         "spring.r2dbc.url=r2dbc:postgresql://" + POSTGRES.getHost() + ":" + POSTGRES.getFirstMappedPort() + "/" + POSTGRES.getDatabaseName(),
                         "spring.r2dbc.username=" + POSTGRES.getUsername(),
                         "spring.r2dbc.password=" + POSTGRES.getPassword(),

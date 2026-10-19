@@ -2,9 +2,11 @@ package com.elioo.baymax.outbound.application.port.out;
 
 import com.elioo.baymax.outbound.domain.StoredUrgency;
 import com.elioo.baymax.outbound.domain.UrgencyAssessment;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 /**
@@ -22,4 +24,15 @@ public interface DocumentUrgencyPort {
 
     /** What is stored; empty when the document was never assessed. */
     Mono<StoredUrgency> find(UUID documentId);
+
+    /**
+     * The sweep's queue: DONE documents never assessed (V18's backfill left them NULL), and DONE documents with a
+     * follow-up due BEFORE {@code today} (the patient's day) whose stored reasons do not yet carry
+     * {@code follow_up_past_due} — the same predicate as UrgencyService's rule, so one sweep empties it. Documents
+     * never attempted come first, then by age: an attempted document goes behind every one not yet attempted.
+     */
+    Flux<UUID> needingAssessment(LocalDate today, int limit);
+
+    /** Stamps {@code urgency_attempted_at}; never the level, never updated_at. */
+    Mono<Void> markAttempt(UUID documentId, Instant at);
 }

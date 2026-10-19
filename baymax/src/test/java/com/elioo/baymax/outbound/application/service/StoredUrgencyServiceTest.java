@@ -154,4 +154,66 @@ class StoredUrgencyServiceTest {
         assertThat(logged.list.stream().map(ILoggingEvent::getFormattedMessage))
                 .anyMatch(l -> l.contains("documentId=" + d.id()) && l.contains("assessed=routine") && l.contains("stored=now"));
     }
+    /**
+     * The sweep: each queued document is stamped as attempted BEFORE it is assessed (so one that throws goes behind the
+     * rest next hour), a throw skips that document only, and the WARN carries the id and the class name, never the
+     * message (it can hold a value or a name).
+     */
+    @Test
+    void theSweepStampsEachAttemptFirstAndSkipsOneThatThrows() {
+        Document first = document(Document.Status.DONE);
+        Document throwing = document(Document.Status.DONE);
+        Document third = document(Document.Status.DONE);
+        for (Document d : List.of(first, third)) {
+            when(documents.find(d.id())).thenAnswer(i -> {
+                stored.events.add("assess:" + d.id());
+                return Mono.just(d);
+            });
+        }
+        when(documents.find(throwing.id())).thenAnswer(i -> {
+            stored.events.add("assess:" + throwing.id());
+            return Mono.error(new IllegalStateException("Ma Potassium 11.0"));
+        });
+        stored.queue.addAll(List.of(first.id(), throwing.id(), third.id()));
+
+        StepVerifier.create(service.sweep()).expectNext(2L).verifyComplete();
+
+        assertThat(stored.events).containsExactly(
+                "attempt:" + first.id(), "assess:" + first.id(),
+                "attempt:" + throwing.id(), "assess:" + throwing.id(),
+                "attempt:" + third.id(), "assess:" + third.id());
+        assertThat(stored.rows).containsOnlyKeys(first.id(), third.id());
+        List<String> warns = logged.list.stream().filter(e -> e.getLevel() == Level.WARN)
+                .map(ILoggingEvent::getFormattedMessage).toList();
+        assertThat(warns).containsExactly("[baymax] urgency sweep skipped documentId=" + throwing.id() + " error=IllegalStateException");
+        assertThat(logged.list.stream().map(ILoggingEvent::getFormattedMessage))
+                .allSatisfy(l -> assertThat(l).doesNotContain("Ma Potassium").doesNotContain("11.0"));
+    }
+
+    /** The sweep judges past-due on the patient's day: it asks the port for the Dhaka date, not the UTC one. */
+    @Test
+    void theSweepAsksForThePatientsDay() {
+        InMemoryDocumentUrgency spyQueue = new InMemoryDocumentUrgency();
+        java.util.concurrent.atomic.AtomicReference<java.time.LocalDate> asked = new java.util.concurrent.atomic.AtomicReference<>();
+        Clock lateEvening = Clock.fixed(Instant.parse("2026-10-19T18:30:00Z"), ZoneOffset.UTC);   // 00:30 on the 20th in Dhaka
+        com.elioo.baymax.outbound.application.port.out.DocumentUrgencyPort port =
+                new com.elioo.baymax.outbound.application.port.out.DocumentUrgencyPort() {
+                    public Mono<StoredUrgency> raise(UUID id, com.elioo.baymax.outbound.domain.UrgencyAssessment a, Instant at) {
+                        return spyQueue.raise(id, a, at);
+                    }
+                    public Mono<StoredUrgency> find(UUID id) {
+                        return spyQueue.find(id);
+                    }
+                    public Flux<UUID> needingAssessment(java.time.LocalDate today, int limit) {
+                        asked.set(today);
+                        return Flux.empty();
+                    }
+                    public Mono<Void> markAttempt(UUID id, Instant at) {
+                        return Mono.empty();
+                    }
+                };
+        new StoredUrgencyService(new UrgencyService(properties, lateEvening), port, documents, records, properties, lateEvening)
+                .sweep().block();
+        assertThat(asked.get()).isEqualTo(java.time.LocalDate.parse("2026-10-20"));
+    }
 }
