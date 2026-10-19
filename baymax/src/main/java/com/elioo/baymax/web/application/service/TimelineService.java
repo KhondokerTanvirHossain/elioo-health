@@ -7,6 +7,7 @@ import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.DocumentView;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.PatientAccess;
+import com.elioo.baymax.outbound.application.port.in.DocumentUrgencyUseCase;
 import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
 import com.elioo.baymax.storage.domain.DeletionReport;
 import com.elioo.baymax.storage.domain.StorageKeys;
@@ -30,6 +31,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -52,6 +54,8 @@ public class TimelineService implements TimelineUseCase {
     private final AuditPort audit;
     private final com.elioo.baymax.outbound.application.port.out.OutboundMessagePort messages;
     private final Clock clock;
+    /** F1: the stored level the document page shows; nothing under web assesses urgency itself. */
+    private final DocumentUrgencyUseCase urgency;
 
     @Override
     public Mono<FamilyOverview> me(UUID familyId) {
@@ -97,9 +101,13 @@ public class TimelineService implements TimelineUseCase {
 
     @Override
     public Mono<DocumentView> document(UUID familyId, UUID documentId) {
+        // the stored level is read (or, for an unassessed DONE document, assessed once) only after visibility is
+        // decided: a document the family cannot see is never assessed on its behalf
         return visibleDocument(familyId, documentId)
                 .flatMap(d -> audit.record(AuditEvent.family(AuditEvent.Kind.DOCUMENT_VIEW, familyId, d.patientId(), documentId, clock.instant()))
-                        .then(intake.view(documentId)));
+                        .then(intake.view(documentId)))
+                .flatMap(view -> urgency.currentOrAssess(documentId).map(Optional::of).defaultIfEmpty(Optional.empty())
+                        .map(stored -> view.withUrgency(stored.map(s -> s.level().dbValue()).orElse(null))));
     }
 
     @Override

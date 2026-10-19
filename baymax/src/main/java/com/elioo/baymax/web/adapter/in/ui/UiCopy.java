@@ -2,6 +2,7 @@ package com.elioo.baymax.web.adapter.in.ui;
 
 import com.elioo.baymax.common.time.PatientCalendar;
 import com.elioo.baymax.outbound.application.service.BanglaDate;
+import com.elioo.baymax.outbound.domain.Urgency;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -32,6 +33,8 @@ public class UiCopy {
     static final List<String> PARTS = List.of("ui", "ui-shell", "ui-family", "ui-papers", "ui-chat", "ui-result", "ui-upload");
 
     private final Map<Lang, Properties> bundles = new EnumMap<>(Lang.class);
+    /** The WhatsApp message bundles, read-only: the source of the urgency lines, so both channels word a level alike. */
+    private final Map<Lang, Properties> messages = new EnumMap<>(Lang.class);
 
     public UiCopy() {
         for (Lang lang : Lang.values()) {
@@ -45,6 +48,7 @@ public class UiCopy {
                 }
             }
             bundles.put(lang, all);
+            messages.put(lang, load("/baymax/messages_" + lang.code + ".properties"));
         }
     }
 
@@ -132,6 +136,23 @@ public class UiCopy {
                 : h >= 15 && h < 17 ? "time.afternoon" : h >= 17 && h < 19 ? "time.evening" : "time.night";
         int h12 = h % 12 == 0 ? 12 : h % 12;
         return t(lang, part) + " " + Html.esc(BanglaDate.digits(String.format(java.util.Locale.ROOT, "%d:%02d", h12, t.getMinute())));
+    }
+
+    /**
+     * The fixed urgency line for a stored level, from messages_{bn,en}.properties: the same bytes WhatsApp sends, so the
+     * two channels never word a level differently (principle 3). HTML-escaped. {@code shortForm} reads the chip form
+     * (urgency.*.short, C2). ROUTINE has no line, no chip and no banner (D27): asking for one throws.
+     */
+    public String urgency(Lang lang, Urgency level, boolean shortForm) {
+        if (level == null || level == Urgency.ROUTINE) {
+            throw new IllegalArgumentException("ROUTINE has no urgency line (D27)");
+        }
+        String key = "urgency." + level.dbValue() + (shortForm ? ".short" : "");
+        String raw = messages.get(lang).getProperty(key);
+        if (raw == null) {
+            throw new IllegalArgumentException("no urgency copy for key " + key);
+        }
+        return Html.esc(raw);
     }
 
     /** The bundle text as written, unescaped, no arguments: for tests and for URL parameters only, never for HTML. */

@@ -1,10 +1,17 @@
 package com.elioo.baymax.web.adapter.in.ui;
 
 import com.elioo.baymax.extraction.domain.DocumentView;
+import com.elioo.baymax.outbound.domain.Urgency;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -12,8 +19,43 @@ import static org.assertj.core.api.Assertions.assertThat;
 /** What the document page shows and, more importantly, what it never shows. */
 class DocumentPagesRenderTest {
 
-    private final DocumentPages ui = new WebUiTestKit().documents;
+    private final WebUiTestKit kit = new WebUiTestKit();
+    private final DocumentPages ui = kit.documents;
     private final UUID id = UUID.randomUUID();
+
+    private DocumentView doneView() {
+        return new DocumentView(id.toString(), "DONE", null, "lab_report", "2026-09-01", null, 0.9, "m", 1,
+                List.of(Map.of("name", "Potassium", "value", "11.0", "unit", "mmol/L", "crop_key", "f/p/d/crop-v1.jpg")),
+                List.of(), List.of(), null, null);
+    }
+
+    /** Every urgency line in messages_bn (all forms, derived from the file), for the absence checks. */
+    private static List<String> urgencyLines() throws IOException {
+        List<String> lines = BundleFiles.messages(Lang.BN).entrySet().stream().filter(e -> e.getKey().startsWith("urgency."))
+                .map(e -> Html.esc(e.getValue())).toList();
+        assertThat(lines).as("urgency lines in messages_bn").hasSizeGreaterThanOrEqualTo(2);
+        return lines;
+    }
+
+    /** F1 on the page (interim, A12 replaces it): a NOW or THIS_WEEK document shows its fixed line with no explanation. */
+    @ParameterizedTest
+    @EnumSource(value = Urgency.class, names = {"NOW", "THIS_WEEK"})
+    void aStoredLevelIsShownWithoutAnyExplanation(Urgency level) {
+        String html = kit.documents.render(Lang.BN, doneView().withUrgency(level.dbValue()), id, Optional.empty());
+        assertThat(html).contains(kit.copy.urgency(Lang.BN, level, false));
+        String en = kit.documents.render(Lang.EN, doneView().withUrgency(level.dbValue()), id, Optional.empty());
+        assertThat(en).contains(kit.copy.urgency(Lang.EN, level, false));
+    }
+
+    /** D27, the other direction: ROUTINE and unassessed carry none of the urgency lines, in any form, anywhere. */
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = "routine")
+    void routineAndUnassessedShowNoUrgencyLine(String stored) throws IOException {
+        String html = kit.documents.render(Lang.BN, doneView().withUrgency(stored), id, Optional.empty());
+        assertThat(urgencyLines()).allSatisfy(line -> assertThat(html).doesNotContain(line));
+        assertThat(html).doesNotContain("id=\"urgency\"");
+    }
 
     /** Acceptance: given unverified items, the count is shown and the items themselves never appear. */
     @Test

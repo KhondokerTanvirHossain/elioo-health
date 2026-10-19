@@ -7,6 +7,10 @@ import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.PatientAccess;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
+import com.elioo.baymax.extraction.domain.DocumentView;
+import com.elioo.baymax.outbound.application.port.in.DocumentUrgencyUseCase;
+import com.elioo.baymax.outbound.domain.StoredUrgency;
+import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
 import com.elioo.baymax.storage.domain.DeletionReport;
 import com.elioo.baymax.web.application.port.out.AuditPort;
@@ -48,6 +52,7 @@ class TimelineServiceTest {
     private final DocumentIntakeUseCase intake = mock(DocumentIntakeUseCase.class);
     private final DocumentStorageUseCase storage = mock(DocumentStorageUseCase.class);
     private final AuditPort audit = mock(AuditPort.class);
+    private final DocumentUrgencyUseCase urgency = mock(DocumentUrgencyUseCase.class);
     private TimelineService service;
 
     private static final PatientProfile PATIENT = new PatientProfile(PATIENT_B, FAMILY_B, "Ma", 60,
@@ -56,8 +61,10 @@ class TimelineServiceTest {
 
     @BeforeEach
     void wire() {
-        service = new TimelineService(records, documents, intake, storage, audit, mock(com.elioo.baymax.outbound.application.port.out.OutboundMessagePort.class), Clock.fixed(NOW, ZoneOffset.UTC));
+        service = new TimelineService(records, documents, intake, storage, audit, mock(com.elioo.baymax.outbound.application.port.out.OutboundMessagePort.class), Clock.fixed(NOW, ZoneOffset.UTC), urgency);
         when(audit.record(any())).thenReturn(Mono.empty());
+        // stubbed for every test, so a path that asks for urgency fails on verify(never()), not on a null Mono
+        when(urgency.currentOrAssess(any())).thenReturn(Mono.empty());
     }
 
     /** Acceptance: given family A's session and family B's document id, then 404. */
@@ -70,6 +77,30 @@ class TimelineServiceTest {
                 .expectErrorMatches(e -> ((BaymaxException) e).status().value() == 404).verify();
         verify(intake, never()).view(any());
         verify(storage, never()).deleteDocument(any(), any(), any());
+        verify(urgency, never()).currentOrAssess(any());   // a document the family cannot see is never assessed for it
+    }
+
+    /** F1: the document a family may see carries its stored level, read (or, once, assessed) through the writer. */
+    @Test
+    void aVisibleDocumentCarriesItsStoredUrgency() {
+        when(documents.findVisible(FAMILY_B, DOC_B)).thenReturn(Mono.just(DOCUMENT));
+        when(intake.view(DOC_B)).thenReturn(Mono.just(DocumentView.pending(DOCUMENT)));
+        when(urgency.currentOrAssess(DOC_B)).thenReturn(Mono.just(
+                new StoredUrgency(DOC_B, Urgency.THIS_WEEK, List.of("diagnosis_present"), NOW)));
+
+        StepVerifier.create(service.document(FAMILY_B, DOC_B)).assertNext(v -> assertThat(v.urgency()).isEqualTo("this_week"))
+                .verifyComplete();
+    }
+
+    /** The other direction: nothing stored and nothing to assess reads as no level, never a ROUTINE it was not given. */
+    @Test
+    void aDocumentWithNoStoredUrgencyCarriesNone() {
+        when(documents.findVisible(FAMILY_B, DOC_B)).thenReturn(Mono.just(DOCUMENT));
+        when(intake.view(DOC_B)).thenReturn(Mono.just(DocumentView.pending(DOCUMENT)));
+        when(urgency.currentOrAssess(DOC_B)).thenReturn(Mono.empty());
+
+        StepVerifier.create(service.document(FAMILY_B, DOC_B)).assertNext(v -> assertThat(v.urgency()).isNull())
+                .verifyComplete();
     }
 
     @Test

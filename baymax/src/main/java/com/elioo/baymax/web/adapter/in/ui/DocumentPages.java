@@ -3,6 +3,7 @@ package com.elioo.baymax.web.adapter.in.ui;
 import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.DocumentView;
+import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.application.port.in.ResultUseCase;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
@@ -163,6 +164,14 @@ public class DocumentPages implements WebPages {
         b.append("<h1>").append(chrome.documentType(lang, view.documentType())).append(" ").append(chrome.status(lang, view.status())).append("</h1>");
         b.append("<div class=\"meta\">").append(copy.date(lang, view.documentDate()))
                 .append(view.facility() == null ? "" : " · " + esc(view.facility())).append("</div>");
+
+        // F1 (interim, A12 replaces it): the stored level's fixed line, at once and whatever the explanation's state
+        if (view.urgency() != null && !"routine".equals(view.urgency())) {
+            Urgency level = Urgency.fromDbValue(view.urgency());
+            b.append("<section class=\"banner ").append(level == Urgency.NOW ? "now" : "soon")
+                    .append("\" id=\"urgency\" role=\"status\"><p class=\"head\">")
+                    .append(copy.urgency(lang, level, false)).append("</p></section>");
+        }
 
         explanation.ifPresent(text -> b.append("<div class=\"card\"><div class=\"meta\">").append(copy.t(lang, "doc.summary"))
                 .append("</div><div class=\"explain\">").append(esc(text)).append("</div></div>"));
