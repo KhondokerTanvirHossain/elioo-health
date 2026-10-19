@@ -165,7 +165,10 @@ class WebOnlyJourneyAcceptanceTest {
                 .withConfiguration(AutoConfigurations.of(WebFluxAutoConfiguration.class))
                 .withPropertyValues("baymax.wa.enabled=false", "baymax.auth.web-mints-code=true",
                         "baymax.auth.hmac-secret=journey-secret", "baymax.auth.cookie-secure=false",
-                        "baymax.free.max-docs-per-month=50", "baymax.nudge.enabled=false");
+                        "baymax.free.max-docs-per-month=50", "baymax.nudge.enabled=false",
+                        // markers.properties' potassium row (production imports the file; a context runner does not), so
+                        // the sheet's history is looked up as in production: a value with no canonical name has none
+                        "baymax.markers[0].canonical=potassium", "baymax.markers[0].aliases=potassium");
     }
 
     /**
@@ -266,6 +269,21 @@ class WebOnlyJourneyAcceptanceTest {
                 }
             }
 
+            // 5d. B6: the detail (s17) and the Potassium row's value sheet (s13), reached by the links the result renders
+            assertThat(result).contains("href=\"" + documentPath + "/all\"");
+            String detail = get(web, session, documentPath + "/all");
+            assertThat(ResultFixtures.section(detail, "pages")).as("the page itself, on the detail").contains(documentPath + "/page/1");
+            Matcher row = Pattern.compile("<a class=\"vrow [^\"]*\" id=\"v-([0-9a-f-]{36})\" href=\"([^\"]+)\"[^>]*>(?:(?!</a>).)*?Potassium",
+                    Pattern.DOTALL).matcher(result);
+            assertThat(row.find()).as("the Potassium row on the result page").isTrue();
+            assertThat(row.group(1)).as("the row's id is the stored observation's")
+                    .isEqualTo(scalar("select id from baymax.observation where document_id = '" + documentId + "' and name = 'Potassium'"));
+            assertThat(row.group(2)).isEqualTo(documentPath + "/values/" + row.group(1) + "?from=summary");
+            String sheet = get(web, session, row.group(2));
+            // the value's own field, not "11.0" anywhere (the sheet's aria-label also carries it)
+            assertThat(sheet).contains("<span class=\"val big\">11.0</span>").contains(copy.t(Lang.BN, "sheet.earlier.none"))
+                    .contains("href=\"" + documentPath + "#v-" + row.group(1) + "\"");
+
             // 5c. a paper read badly (B5): the retake card in Bangla, a retake for the same patient through the one entry,
             // and the month's allowance the same before and after — a retake is never counted (DR-24)
             String quotaBefore = quotaLine(get(web, session, "/app/add?patient=" + ma.id()));
@@ -291,6 +309,19 @@ class WebOnlyJourneyAcceptanceTest {
             assertThat(waitUntilFinished(web, session, retakenPath)).as("the retaken paper").isEqualTo("DONE");
             assertThat(scalar("select patient_id from baymax.document where id = '" + idOf(retakenPath) + "'"))
                     .as("the retaken paper is the same patient's").isEqualTo(ma.id().toString());
+
+            // 5e. B6, on real rows: the retaken paper's Potassium sheet lists the first paper's reading (same marker, same
+            // unit, an earlier DONE paper; the retake that was never read is not one) beside THAT paper's own crop, and
+            // opens THAT paper's sheet from the detail
+            String retakenObs = scalar("select id from baymax.observation where document_id = '" + idOf(retakenPath) + "' and name = 'Potassium'");
+            String history = ResultFixtures.section(get(web, session, retakenPath + "/values/" + retakenObs + "?from=summary"), "earlier");
+            List<String> earlierRows = Pattern.compile("<a class=\"erow\".*?</a>", Pattern.DOTALL).matcher(history).results()
+                    .map(java.util.regex.MatchResult::group).toList();
+            assertThat(earlierRows).as("one earlier reading: the first paper's").hasSize(1);
+            assertThat(earlierRows.get(0)).contains("href=\"" + documentPath + "/values/" + row.group(1) + "?from=all\"")
+                    .contains("src=\"" + PageChrome.imageHref(documentId,
+                            scalar("select crop_key from baymax.observation where id = '" + row.group(1) + "'")) + "\"")
+                    .contains("<span class=\"val\">11.0</span>");
 
             // 6. পরিবার: the account, the flag saved and shown ticked, the reminders stopped and shown stopped
             String familyTab = get(web, session, "/app/family");

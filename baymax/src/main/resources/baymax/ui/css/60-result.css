@@ -85,3 +85,22 @@
 .retake-file{display:flex;flex-direction:column;gap:var(--sp-1);min-height:var(--target-min);font-weight:600}
 .retake-file input[type=file]{font-size:var(--fs-subhead);padding:var(--sp-2) 0}
 .retake-card .btn{margin-top:0;white-space:normal;text-align:center}
+/* B6 document detail (s17) and the value sheet (s13): no-script segment anchors, whole pages, the sheet's large value */
+.seg{display:flex;flex-wrap:wrap;gap:var(--sp-2)}
+.seg a{display:inline-flex;align-items:center;min-height:var(--target-min);padding:0 var(--sp-4);border:1px solid var(--c-outline);border-radius:var(--r-pill);color:var(--c-text);text-decoration:none}
+.pagefig .page-img{width:100%;margin:0;border:1px solid var(--c-surface-3);border-radius:var(--r-xs)}
+.pagefig{margin:0 0 var(--sp-4)}
+.pagefig figcaption{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--sp-2)}
+.pagefig figcaption .btn{margin-top:0}
+.vgroup .more{display:inline-flex;align-items:center;min-height:var(--target-min);color:var(--c-primary);font-weight:600}
+.sheet-crop{display:flex;flex-direction:column;gap:var(--sp-1);min-height:var(--target-min);text-decoration:none;color:var(--c-primary)}
+.sheet-value{display:grid;gap:var(--sp-2)}
+.sheet-value .vhead,.sheet-value .vfoot{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:var(--sp-2)}
+.sheet-value .chip{display:inline-flex;align-items:center;padding:var(--sp-1) var(--sp-3);border-radius:var(--r-pill);font-size:var(--fs-label-small);line-height:var(--lh-label-small);font-weight:700}
+.val.big{font-size:var(--fs-value-large);line-height:var(--lh-value-large)}
+.sheet .why{margin:0;color:var(--c-text-muted)}
+.earlier{display:flex;flex-direction:column;gap:var(--sp-2)}
+.earlier h2,.earlier p{margin:0}
+.erow{display:grid;gap:var(--sp-2);min-height:var(--target-min);padding:var(--sp-3);border-radius:var(--r-m);background:var(--c-surface);border:1px solid var(--c-line);text-decoration:none;color:var(--c-text)}
+.erow .vhead{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:var(--sp-2)}
+.erow .crop{max-width:100%;border:1px solid var(--c-surface-3);border-radius:var(--r-xs)}

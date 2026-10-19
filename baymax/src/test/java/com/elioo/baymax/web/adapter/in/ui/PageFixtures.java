@@ -134,6 +134,13 @@ final class PageFixtures {
         variant("GET /app/documents/{id}", Fixture.get("/app/documents/" + doc, true, k -> Stubs.retake(k, 3, true)).named("retake3"));
         variant("GET /app/documents/{id}", Fixture.get("/app/documents/" + doc, true, k -> Stubs.retake(k, 2, false)).named("retakeviewonly"));
         variant("GET /app/documents/{id}", Fixture.get("/app/documents/" + doc, true, Stubs::failed).named("failed"));
+        // B6: the document detail (s17) — a read paper, and a NOW one (critical rows, every reason) — and the value sheet
+        // (s13): a value with an earlier reading, one Medioo could not place (no earlier one), and one opened from the detail
+        put("GET /app/documents/{id}/all", Fixture.get("/app/documents/" + doc + "/all", true, Stubs::doneLab));
+        variant("GET /app/documents/{id}/all", Fixture.get("/app/documents/" + doc + "/all", true, k -> Stubs.nowLab(k, true)).named("now"));
+        put("GET /app/documents/{id}/values/{obs}", Fixture.get("/app/documents/" + doc + "/values/" + Stubs.HBA1C + "?from=summary", true, Stubs::valueSheet));
+        variant("GET /app/documents/{id}/values/{obs}", Fixture.get("/app/documents/" + doc + "/values/" + Stubs.CREATININE, true, Stubs::valueSheet).named("unknown"));
+        variant("GET /app/documents/{id}/values/{obs}", Fixture.get("/app/documents/" + doc + "/values/" + Stubs.HBA1C + "?from=all", true, Stubs::valueSheet).named("fromall"));
         put("POST /app/login", new Fixture("/app/login", false, Body.FORM, Map.of("whatsapp_number", "01700000000", "confirmed", "1"), Stubs::noCode));
         variant("POST /app/login", new Fixture("/app/login", false, Body.FORM, Map.of("whatsapp_number", "01700000000"), Stubs::noCode).named("confirm"));
         variant("POST /app/login", new Fixture("/app/login", false, Body.FORM, Map.of("whatsapp_number", "12"), k -> { }).named("invalid"));
@@ -202,6 +209,11 @@ final class PageFixtures {
         static final UUID PROCESSING_DOC = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100005");
         /** আব্বু's id, from the kit's own derivation: the shared patient of {@link #familyOfTwo}. */
         static final UUID ABBU = WebUiTestKit.patientId("আব্বু");
+        /** {@link #doneLab}'s two observations: HbA1c (stored OUTSIDE, high) and Creatinine (a stored INSIDE drawn UNKNOWN). */
+        static final UUID HBA1C = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100021");
+        static final UUID CREATININE = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100022");
+        /** The earlier paper {@link #valueSheet} lists HbA1c from. */
+        static final UUID EARLIER_DOC = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100023");
 
         private Stubs() {
         }
@@ -251,9 +263,9 @@ final class PageFixtures {
             DocumentView view = new DocumentView(WebUiTestKit.DOC_ID.toString(), "DONE", null, "lab_report", "2026-10-12",
                     "Shapla Diagnostics", 0.9, "m", 1,
                     // B2: each value carries its observation id and its stored F2 verdict, as ObservationEntity.toView gives them
-                    List.of(Map.of("id", UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100021"), "name", "HbA1c", "value", "8.2", "unit", "%",
+                    List.of(Map.of("id", UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100021"), "name", "HbA1c", "canonical_name", "hba1c", "value", "8.2", "unit", "%",
                                     "ref_low", "4.0", "ref_high", "6.0", "verdict", "outside", "verdict_side", "high", "crop_key", crop + "1.jpg"),
-                            Map.of("id", UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100022"), "name", "Creatinine", "value", "130", "unit", "µmol/L",
+                            Map.of("id", UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100022"), "name", "Creatinine", "canonical_name", "creatinine", "value", "130", "unit", "µmol/L",
                                     "ref_low", "59", "ref_high", "104", "verdict", "inside", "crop_key", crop + "2.jpg")),
                     List.of(Map.of("name", "Metformin", "dose_text", "500 mg", "frequency_text", "1+0+1",
                             "timing_text", "after meals", "duration_text", "30 days", "crop_key", crop + "3.jpg")),
@@ -266,6 +278,15 @@ final class PageFixtures {
                     k.ma(3).patient(), true, new ViewerLocale(true), Urgency.THIS_WEEK, List.of("diagnosis_present"),
                     GateState.RELEASED, "রিপোর্টটি পেয়েছি। এ সপ্তাহের মধ্যে একজন ডাক্তার দেখান।", 0, 2,
                     WebUiTestKit.NOW.minusSeconds(3600), WebUiTestKit.NOW)));
+        }
+
+        /** B6: {@link #doneLab}, with one earlier HbA1c (upload-day date) and no earlier Creatinine. */
+        static void valueSheet(WebUiTestKit k) {
+            doneLab(k);
+            when(k.results.earlierReadings(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID, HBA1C)).thenReturn(reactor.core.publisher.Flux.just(
+                    new com.elioo.baymax.web.domain.EarlierReading(EARLIER_DOC, UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100024"),
+                            "7.9", "%", "f/p/" + EARLIER_DOC + "/crop-1.jpg", LocalDate.parse("2026-07-12"), true)));
+            when(k.results.earlierReadings(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID, CREATININE)).thenReturn(reactor.core.publisher.Flux.empty());
         }
 
         /**

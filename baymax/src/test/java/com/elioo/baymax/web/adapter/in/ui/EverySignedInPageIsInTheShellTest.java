@@ -33,6 +33,9 @@ class EverySignedInPageIsInTheShellTest {
             entry("GET /app/add", Tab.CHAT),
             entry("GET /app/patients/{id}", Tab.PAPERS),
             entry("GET /app/documents/{id}", Tab.PAPERS),
+            // B6: the document detail (s17), and the value sheet's no-JS URL drawn over কাগজপত্র (s13)
+            entry("GET /app/documents/{id}/all", Tab.PAPERS),
+            entry("GET /app/documents/{id}/values/{obs}", Tab.PAPERS),
             entry("GET /app/documents/{id}/delete", Tab.PAPERS),
             entry("POST /app/documents/{id}/delete", Tab.PAPERS));
     // A6: the profile routes answer a redirect to the পরিবার tab, no page of their own

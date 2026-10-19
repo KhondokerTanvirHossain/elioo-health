@@ -70,6 +70,19 @@ final class ResultFixtures {
                 "m", 2, values, List.of(), followUp, clinicalContext, null);
     }
 
+    /** B6: a two-page DONE paper carrying every kind of fact: values, medicines, follow-ups and the doctor's lines. */
+    static DocumentView paper(List<Map<String, Object>> values, List<Map<String, Object>> medicines, List<Map<String, Object>> followUp,
+                              Map<String, Object> clinicalContext) {
+        return new DocumentView(DOC.toString(), "DONE", null, "lab_report", "2026-10-12", "Shapla Diagnostics", 0.9,
+                "m", 2, values, medicines, followUp, clinicalContext, null);
+    }
+
+    /** B6: a one-page DONE lab report that printed no date (t9-style), with or without a facility. */
+    static DocumentView undated(String facility, List<Map<String, Object>> values) {
+        return new DocumentView(DOC.toString(), "DONE", null, "lab_report", null, facility, 0.9,
+                "m", 1, values, List.of(), List.of(), Map.of(), null);
+    }
+
     static DocumentView prescription(List<Map<String, Object>> medicines, Map<String, Object> clinicalContext, Map<String, Object> unverified) {
         return new DocumentView(DOC.toString(), "DONE", null, "prescription", "2026-10-12", "Demo Chamber", 0.9,
                 "m", 1, List.of(), medicines, List.of(), clinicalContext, unverified);

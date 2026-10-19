@@ -12,6 +12,7 @@ import com.elioo.baymax.outbound.domain.ValueVerdict;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.application.port.in.ResultUseCase;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
+import com.elioo.baymax.web.domain.EarlierReading;
 import com.elioo.baymax.web.domain.ReadingView;
 import com.elioo.baymax.web.domain.ResultView;
 import com.elioo.baymax.web.domain.WebSession;
@@ -27,6 +28,7 @@ import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Mono;
 
+import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -47,7 +49,8 @@ import static com.elioo.baymax.web.adapter.in.ui.PageChrome.BASE;
 
 /**
  * One document: while it is read, the reading page (s09); once DONE, the result (s10) — the stored urgency first, then
- * what the review state allows, then its extracted items beside their crops, its pages, and its deletion. Images are signed afresh on every
+ * what the review state allows, then its extracted items beside their crops, its pages, and its deletion; everything on
+ * the paper at {@code /all} (s17), and one value's sheet at {@code /values/{obs}} (s13). Images are signed afresh on every
  * load. The literal-segment routes come before the {@code {id}}-only route, per the router convention, here and
  * nowhere else.
  */
@@ -101,6 +104,8 @@ public class DocumentPages implements WebPages {
                 .GET(BASE + "/documents/{id}/image", this::image)
                 .GET(BASE + "/documents/{id}/page/{n}", this::pageImage)
                 .GET(BASE + "/documents/{id}/status", this::documentStatus)
+                .GET(BASE + "/documents/{id}/all", this::detailPage)
+                .GET(BASE + "/documents/{id}/values/{obs}", this::valueSheetPage)
                 .GET(BASE + "/documents/{id}", this::documentPage)
                 .filter(requireSession)
                 .build();
@@ -206,8 +211,7 @@ public class DocumentPages implements WebPages {
                 .append(new AppShell(copy).back(lang, Tab.PAPERS.path + "?patient=" + r.patient().id(), "app.back.papers")).append("</p>")
                 .append("<span class=\"pchip\">").append(copy.t(lang, "result.patient", r.patient().name(), r.patient().age())).append("</span>")
                 .append("<h1>").append(chrome.documentType(lang, v.documentType())).append("</h1>")
-                .append("<p class=\"meta\">").append(copy.date(lang, v.documentDate()))
-                .append(v.facility() == null ? "" : " · " + esc(v.facility())).append("</p>");
+                .append("<p class=\"meta\">").append(metaLine(lang, r)).append("</p>");
         if (r.done()) {
             b.append(countsLine(lang, v));
         }
@@ -567,14 +571,247 @@ public class DocumentPages implements WebPages {
                 + "&amp;back=" + back + "\">" + copy.t(lang, "retake.other") + "</a></p>";
     }
 
+    // ---- B6: everything on the paper (s17) and one value's sheet (s13) ---------------------------------------------
+
+    /**
+     * GET /app/documents/{id}/all: the detail of a read paper. A paper not yet DONE has no detail (nothing was read to
+     * show), so it goes to its own page, which says what is happening; the status read records nothing.
+     */
+    public Mono<ServerResponse> detailPage(ServerRequest request) {
+        WebSession session = SessionAuthFilter.session(request);
+        Lang lang = Lang.of(request);
+        UUID documentId = PageChrome.uuid(request.pathVariable("id"));
+        Mono<ServerResponse> toPage = ServerResponse.seeOther(URI.create(BASE + "/documents/" + documentId)).build();
+        return results.status(session.familyId(), documentId).flatMap(status -> status != Document.Status.DONE ? toPage
+                : results.result(session.familyId(), documentId).flatMap(r -> !r.done() ? toPage
+                        : Html.html(HttpStatus.OK, new AppShell(copy).inside(lang, Tab.PAPERS, detail(lang, r)))));
+    }
+
+    /**
+     * GET /app/documents/{id}/values/{obs}?from=summary|all: one value's sheet as a plain URL, over the কাগজপত্র tab. The
+     * observation is resolved through {@code earlierReadings} first, which is 404 for another family and for an id that is
+     * not one of THIS paper's values — before the result is read, so a probe records no view.
+     */
+    public Mono<ServerResponse> valueSheetPage(ServerRequest request) {
+        WebSession session = SessionAuthFilter.session(request);
+        Lang lang = Lang.of(request);
+        UUID documentId = PageChrome.uuid(request.pathVariable("id"));
+        UUID observationId = PageChrome.uuid(request.pathVariable("obs"));
+        String from = request.queryParam("from").filter(ValueRows.FROM_ALL::equals).orElse(ValueRows.FROM_SUMMARY);
+        return results.earlierReadings(session.familyId(), documentId, observationId).collectList()
+                .flatMap(earlier -> results.result(session.familyId(), documentId).flatMap(r -> Html.html(HttpStatus.OK,
+                        new AppShell(copy).sheet(lang, Tab.PAPERS, "detail.seg.values", valueSheet(lang, r, observationId, earlier, from)))));
+    }
+
+    /**
+     * s17: the back link to the result, the patient, the title, the meta lines, the stored banner (the summary's own
+     * method, F1), anchors to the sections that exist (no script), then every value grouped by its drawn verdict (every
+     * inside row, none collapsed), every medicine crop first, every line the doctor wrote — the context sections but the
+     * referral, and the follow-ups — quoted beside its crop, and every page whole. Delete only for the owner (§4.16).
+     */
+    String detail(Lang lang, ResultView r) {
+        DocumentView v = r.document();
+        UUID documentId = PageChrome.uuid(v.documentId());
+        List<Map<String, Object>> values = v.values() == null ? List.of() : v.values();
+        int pages = v.pageCount() == null ? 1 : Math.max(1, v.pageCount());
+        StringBuilder b = new StringBuilder("<p><a class=\"back\" href=\"").append(BASE).append("/documents/").append(documentId)
+                .append("\">‹ ").append(copy.t(lang, "detail.back")).append("</a></p>")
+                .append("<span class=\"pchip\">").append(copy.t(lang, "result.patient", r.patient().name(), r.patient().age())).append("</span>")
+                .append("<h1>").append(copy.t(lang, "detail.title", typeText(lang, v.documentType()))).append("</h1>")
+                .append("<p class=\"meta\">").append(metaLine(lang, r)).append("</p>")
+                .append("<p class=\"meta\">").append(values.isEmpty() ? copy.t(lang, "detail.pagecount", pages)
+                        : copy.t(lang, "detail.counts", values.size(), pages)).append("</p>");
+        b.append(banner(lang, r));
+        String valuesBlock = detailValues(lang, v, documentId, values);
+        String medicines = medicinesSection(lang, v, documentId);
+        String doctor = detailDoctor(lang, v, documentId);
+        Map<String, String> segments = new java.util.LinkedHashMap<>();
+        if (!valuesBlock.isEmpty()) {
+            segments.put("values", "detail.seg.values");
+        }
+        if (!medicines.isEmpty()) {
+            segments.put("medicines", "detail.seg.medicines");
+        }
+        if (!doctor.isEmpty()) {
+            segments.put("doctor", "detail.seg.doctor");
+        }
+        segments.put("pages", "detail.seg.pages");
+        b.append("<nav id=\"seg\" class=\"seg\" aria-label=\"").append(copy.t(lang, "detail.seg.label")).append("\">");
+        segments.forEach((id, key) -> b.append("<a href=\"#").append(id).append("\">").append(copy.t(lang, key)).append("</a>"));
+        b.append("</nav>").append(valuesBlock).append(medicines).append(doctor).append(detailPages(lang, v, documentId, pages));
+        if (r.owner()) {
+            b.append("<p><a class=\"btn quiet\" href=\"").append(BASE).append("/documents/").append(documentId).append("/delete\">")
+                    .append(copy.t(lang, "detail.delete")).append("</a></p><p class=\"small\">").append(copy.t(lang, "detail.delete.note")).append("</p>");
+        }
+        return b.toString();
+    }
+
+    /** s17 মান: the count note, then outside (critical first), unknown with why, inside — every row, each opening its sheet. */
+    private String detailValues(Lang lang, DocumentView v, UUID documentId, List<Map<String, Object>> values) {
+        int unverified = unverified(v, "values");
+        if (values.isEmpty() && unverified == 0) {
+            return "";
+        }
+        StringBuilder b = new StringBuilder("<section id=\"values\"><h2>").append(copy.t(lang, "detail.seg.values")).append("</h2>");
+        if (!values.isEmpty()) {
+            b.append("<p class=\"meta\">").append(copy.t(lang, "detail.values.note", values.size())).append("</p>");
+        }
+        if (unverified > 0) {
+            b.append("<p class=\"warn\">").append(copy.t(lang, "value.unverified")).append("</p>");
+        }
+        List<Map<String, Object>> outside = new ArrayList<>();
+        List<Map<String, Object>> unknown = new ArrayList<>();
+        List<Map<String, Object>> inside = new ArrayList<>();
+        for (Map<String, Object> row : values) {
+            switch (ValueRows.kindOf(row)) {
+                case CRITICAL, OUTSIDE -> outside.add(row);
+                case UNKNOWN -> unknown.add(row);
+                case INSIDE -> inside.add(row);
+            }
+        }
+        outside.sort(Comparator.comparing(row -> ValueRows.kindOf(row) == ValueVerdict.Kind.CRITICAL ? 0 : 1));   // stable
+        detailGroup(b, lang, documentId, "value.group.outside", null, outside);
+        detailGroup(b, lang, documentId, "value.group.unknown", "value.group.unknown.why", unknown);
+        detailGroup(b, lang, documentId, "value.group.inside", null, inside);
+        return b.append("</section>").toString();
+    }
+
+    private void detailGroup(StringBuilder b, Lang lang, UUID documentId, String title, String why, List<Map<String, Object>> rows) {
+        if (rows.isEmpty()) {
+            return;
+        }
+        b.append("<div class=\"vgroup\"><h3>").append(copy.t(lang, "detail.group.count", copy.raw(lang, title), rows.size())).append("</h3>");
+        if (why != null) {
+            b.append("<p class=\"why\">").append(copy.t(lang, why)).append("</p>");
+        }
+        rows.forEach(row -> b.append(ValueRows.row(copy, lang, documentId, row, ValueRows.FROM_ALL)));
+        b.append("</div>");
+    }
+
+    /** s17 ডাক্তার লিখেছেন: the context sections (not the referral) and the follow-ups, each line as written beside its crop. */
+    private String detailDoctor(Lang lang, DocumentView v, UUID documentId) {
+        String quotes = contextQuotes(lang, v, documentId);
+        String followUps = followUpQuotes(lang, v, documentId);
+        int unverified = unverified(v, "follow_up");
+        if (quotes.isEmpty() && followUps.isEmpty() && unverified == 0) {
+            return "";
+        }
+        // DR-28, as the summary's পরের ধাপ says it: follow-up lines read but not located on the page were not stored
+        String notice = unverified == 0 ? "" : "<p class=\"warn\">" + copy.t(lang, "next.unverified", unverified) + "</p>";
+        return "<section id=\"doctor\" class=\"doctor\"><h2>" + copy.t(lang, "detail.seg.doctor") + "</h2>" + quotes
+                + (followUps.isEmpty() && notice.isEmpty() ? "" : "<h3>" + copy.t(lang, "next.title") + "</h3>" + followUps + notice)
+                + "</section>";
+    }
+
+    /** s17 মূল কাগজ: every page whole, each opening the page image itself (where the browser pinch-zooms). */
+    private String detailPages(Lang lang, DocumentView v, UUID documentId, int pages) {
+        StringBuilder b = new StringBuilder("<section id=\"pages\"><h2>").append(copy.t(lang, "detail.seg.pages")).append("</h2><p class=\"meta\">")
+                .append(copy.t(lang, "prescription".equals(v.documentType()) ? "detail.pages.rx" : "detail.pages.note")).append("</p>");
+        for (int n = 1; n <= pages; n++) {
+            String href = BASE + "/documents/" + documentId + "/page/" + n;
+            b.append("<figure id=\"page-").append(n).append("\" class=\"pagefig\"><img class=\"page-img\" loading=\"lazy\" alt=\"\" src=\"")
+                    .append(href).append("\"><figcaption><span>").append(copy.t(lang, "detail.page", n)).append("</span>")
+                    .append("<a class=\"btn quiet\" href=\"").append(href).append("\">").append(copy.t(lang, "crop.zoom")).append("</a></figcaption></figure>");
+        }
+        return b.append("</section>").toString();
+    }
+
+    /**
+     * s13, the value sheet: a page styled as a sheet whose close goes back to the same row ({@code from}: the summary or
+     * the detail). The crop large with its zoom, the value as printed, the range, the chip, and the bar only through
+     * {@link ValueRows#pin} ({@link ValueRows#sheetValue}); the "could not match" sentence for an UNKNOWN; then the earlier
+     * readings in the same unit, each beside its own crop on its own paper. No glossary until D3 is signed.
+     */
+    String valueSheet(Lang lang, ResultView r, UUID observationId, List<EarlierReading> earlier, String from) {
+        DocumentView doc = r.document();
+        UUID documentId = PageChrome.uuid(doc.documentId());
+        Map<String, Object> v = (doc.values() == null ? List.<Map<String, Object>>of() : doc.values()).stream()
+                .filter(row -> observationId.toString().equals(String.valueOf(row.get("id")))).findFirst()
+                .orElseThrow(() -> BaymaxException.notFound("observation_not_found", "no such value on document"));
+        String close = (ValueRows.FROM_ALL.equals(from) ? BASE + "/documents/" + documentId + "/all" : BASE + "/documents/" + documentId)
+                + "#v-" + observationId;
+        String src = PageChrome.imageHref(documentId, ValueRows.crop(v.get("crop_key"), "a value"));
+        StringBuilder b = new StringBuilder("<section class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sheet-title\">")
+                .append("<div class=\"sheet-h\"><div><h1 id=\"sheet-title\">").append(esc(v.get("name"))).append("</h1><p class=\"meta\">")
+                .append(copy.t(lang, "sheet.of", r.patient().name(), paperDateText(lang, r),
+                        typeText(lang, doc.documentType())))
+                .append("</p></div><a class=\"icon-btn\" href=\"").append(close).append("\" aria-label=\"").append(copy.t(lang, "sheet.close"))
+                .append("\">").append(Icons.svg("x", 24)).append("</a></div>")
+                .append("<a class=\"sheet-crop\" href=\"").append(src).append("\"><img class=\"crop big\" alt=\"\" src=\"").append(src)
+                .append("\"><span class=\"zoom\">").append(copy.t(lang, "crop.zoom")).append("</span></a>")
+                .append(ValueRows.sheetValue(copy, lang, v));
+        if (ValueRows.kindOf(v) == ValueVerdict.Kind.UNKNOWN) {
+            b.append("<p class=\"why\">").append(copy.t(lang, "sheet.unknown.why")).append("</p>");
+        }
+        return b.append(earlierReadings(lang, v, earlier)).append("</section>").toString();
+    }
+
+    /**
+     * The paper's date as unescaped text: its printed date, else its upload day on the patient's calendar marked
+     * "(আপলোডের তারিখ)", as the timeline marks it. Never empty, so no meta line starts or a subtitle sits on " ·  · ".
+     */
+    private String paperDateText(Lang lang, ResultView r) {
+        String printed = r.document().documentDate();
+        if (printed != null && !printed.isBlank()) {
+            return dueText(lang, printed);
+        }
+        return r.receivedAt() == null ? copy.raw(lang, "timeline.uploaddate")
+                : copy.dateText(lang, PatientCalendar.dayOf(r.receivedAt())) + " " + copy.raw(lang, "timeline.uploaddate");
+    }
+
+    /** The result's and the detail's meta line, escaped: the paper's date, then the facility only when one was read. */
+    private String metaLine(Lang lang, ResultView r) {
+        String facility = r.document().facility();
+        return esc(paperDateText(lang, r)) + (facility == null || facility.isBlank() ? "" : " · " + esc(facility));
+    }
+
+    /**
+     * The document type as unescaped text, for an argument to {@link UiCopy#t} (which escapes it once): its label, the
+     * default label when none was read, or the type as stored when the bundle has no label for it (as documentType does).
+     */
+    private String typeText(Lang lang, String type) {
+        if (type == null) {
+            return copy.raw(lang, "type.default");
+        }
+        return copy.maybe(lang, "type." + type) != null ? copy.raw(lang, "type." + type) : type;
+    }
+
+    /**
+     * আগের রিপোর্টে: one compact row per earlier reading, its date on the patient's calendar, or "first time". A value whose
+     * name did not canonicalise has no history Medioo could look up (ResultService returns none), so the sheet claims
+     * neither earlier readings nor a first time. Each row opens its own paper's sheet from the detail ({@code from=all}),
+     * which draws every row, so that sheet's close lands on a row that is on the page.
+     */
+    private String earlierReadings(Lang lang, Map<String, Object> v, List<EarlierReading> earlier) {
+        if (v.get("canonical_name") == null) {
+            return "";
+        }
+        StringBuilder b = new StringBuilder("<section id=\"earlier\" class=\"earlier\">");
+        if (earlier.isEmpty()) {
+            return b.append("<p>").append(copy.t(lang, "sheet.earlier.none")).append("</p></section>").toString();
+        }
+        b.append("<h2>").append(v.get("unit") == null ? copy.t(lang, "sheet.earlier.nounit") : copy.t(lang, "sheet.earlier", String.valueOf(v.get("unit"))))
+                .append("</h2>");
+        for (EarlierReading e : earlier) {
+            String src = PageChrome.imageHref(e.documentId(), ValueRows.crop(e.cropKey(), "an earlier value"));
+            b.append("<a class=\"erow\" href=\"").append(ValueRows.sheetHref(e.documentId(), e.observationId(), ValueRows.FROM_ALL)).append("\">")
+                    .append("<span class=\"vhead\"><span class=\"edate\">").append(e.date() == null ? "" : copy.date(lang, e.date()))
+                    .append(e.dateIsFallback() ? " <span class=\"meta\">" + copy.t(lang, "timeline.uploaddate") + "</span>" : "")
+                    .append("</span> <span class=\"val\">").append(esc(e.value())).append("</span>")
+                    .append(e.unit() == null ? "" : " <span class=\"unit\">" + esc(e.unit()) + "</span>").append("</span>")
+                    .append("<img class=\"crop\" loading=\"lazy\" alt=\"\" src=\"").append(src).append("\"></a>");
+        }
+        return b.append("</section>").toString();
+    }
+
     String render(DocumentView view, UUID documentId) {
         return render(Lang.BN, view, documentId);
     }
 
     /**
      * The pre-A12 document page, which production no longer serves (B5: every status has its own page). Kept for the
-     * item tests, which call it with a DONE view and get the same {@link #items} the summary shows; B6's document detail
-     * replaces it. A view that is not DONE gets its page images and the delete link, and nothing else.
+     * item tests, which call it with a DONE view and get the same {@link #items} the summary shows; the page that shows
+     * everything on a paper is B6's {@link #detail}. A view that is not DONE gets its page images and the delete link.
      */
     String render(Lang lang, DocumentView view, UUID documentId) {
         StringBuilder b = new StringBuilder(new AppShell(copy).back(lang, Tab.PAPERS.path, "app.back.papers"));
@@ -598,14 +835,16 @@ public class DocumentPages implements WebPages {
         return valuesSummary(lang, view, documentId, shownAbove) + doctorSection(lang, view, documentId)
                 + medicinesSection(lang, view, documentId) + nextSection(lang, view, documentId, urgency)
                 + "<h2>" + copy.t(lang, "doc.pages") + "</h2>" + pageImages(view, documentId)
+                + "<p><a class=\"btn quiet\" href=\"" + BASE + "/documents/" + documentId + "/all\">" + copy.t(lang, "result.all") + "</a></p>"
                 + "<p><a class=\"btn quiet\" href=\"" + Tab.CHAT.path + "\">" + copy.t(lang, "result.ask") + "</a></p>"
                 + deleteLink(lang, documentId);
     }
 
     /**
      * Spec §4.10: outside first (critical before outside), then the values Medioo could not place with why, then inside
-     * (every row; B6 collapses them behind a count). Grouped by {@link ValueRows#kindOf}, the kind each row is drawn as.
-     * A row of a kind in {@code shownAbove} is drawn once, in its NOW reason block, and not again here.
+     * — the first row, and the rest behind "আরও {n}টি … সব দেখুন", which opens the detail at its values (B6, s10). Only
+     * inside rows collapse: a value that needs a look is never one tap away. Grouped by {@link ValueRows#kindOf}, the kind
+     * each row is drawn as. A row of a kind in {@code shownAbove} is drawn once, in its NOW reason block, and not again here.
      */
     String valuesSummary(Lang lang, DocumentView view, UUID documentId, Set<ValueVerdict.Kind> shownAbove) {
         List<Map<String, Object>> values = view.values() == null ? List.of() : view.values();
@@ -632,13 +871,16 @@ public class DocumentPages implements WebPages {
             }
         }
         outside.sort(Comparator.comparing(v -> ValueRows.kindOf(v) == ValueVerdict.Kind.CRITICAL ? 0 : 1));   // stable
-        group(b, lang, documentId, "outside", "value.group.outside", null, outside);
-        group(b, lang, documentId, "unknown", "value.group.unknown", "value.group.unknown.why", unknown);
-        group(b, lang, documentId, "inside", "value.group.inside", null, inside);
+        group(b, lang, documentId, "outside", "value.group.outside", null, outside, "");
+        group(b, lang, documentId, "unknown", "value.group.unknown", "value.group.unknown.why", unknown, "");
+        String more = inside.size() <= 1 ? "" : "<a class=\"more\" href=\"" + BASE + "/documents/" + documentId + "/all#values\">"
+                + copy.t(lang, "value.more.inside", inside.size() - 1) + "</a>";
+        group(b, lang, documentId, "inside", "value.group.inside", null, inside.isEmpty() ? inside : inside.subList(0, 1), more);
         return b.toString();
     }
 
-    private void group(StringBuilder b, Lang lang, UUID documentId, String id, String title, String why, List<Map<String, Object>> rows) {
+    private void group(StringBuilder b, Lang lang, UUID documentId, String id, String title, String why, List<Map<String, Object>> rows,
+                       String after) {
         if (rows.isEmpty()) {
             return;
         }
@@ -646,8 +888,8 @@ public class DocumentPages implements WebPages {
         if (why != null) {
             b.append("<p class=\"why\">").append(copy.t(lang, why)).append("</p>");
         }
-        rows.forEach(v -> b.append(ValueRows.row(copy, lang, documentId, v)));
-        b.append("</section>");
+        rows.forEach(v -> b.append(ValueRows.row(copy, lang, documentId, v, ValueRows.FROM_SUMMARY)));
+        b.append(after).append("</section>");
     }
 
     /**
@@ -655,6 +897,12 @@ public class DocumentPages implements WebPages {
      * under "কাগজে লেখা" beside its crop. A line stored without a crop is not quoted: no fact without its proof.
      */
     String doctorSection(Lang lang, DocumentView view, UUID documentId) {
+        String inner = contextQuotes(lang, view, documentId);
+        return inner.isEmpty() ? "" : "<section id=\"doctor\" class=\"doctor\"><h2>" + copy.t(lang, "doctor.title") + "</h2>" + inner + "</section>";
+    }
+
+    /** Every clinical-context section but the referral, each under its label, each line quoted beside its crop. */
+    private String contextQuotes(Lang lang, DocumentView view, UUID documentId) {
         if (view.clinicalContext() == null || view.clinicalContext().isEmpty()) {
             return "";
         }
@@ -674,7 +922,7 @@ public class DocumentPages implements WebPages {
                 inner.append("<h3>").append(label).append("</h3>").append(quotes);
             }
         }
-        return inner.isEmpty() ? "" : "<section id=\"doctor\" class=\"doctor\"><h2>" + copy.t(lang, "doctor.title") + "</h2>" + inner + "</section>";
+        return inner.toString();
     }
 
     /** MedicineRow (s17): the pharmacy notice once, then each line crop first and verbatim; no colour, no status. */
