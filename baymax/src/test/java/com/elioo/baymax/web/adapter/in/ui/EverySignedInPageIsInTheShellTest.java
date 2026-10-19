@@ -31,14 +31,14 @@ class EverySignedInPageIsInTheShellTest {
             entry("GET /app/family", Tab.FAMILY),
             // A7: the add-report sheet's no-JS URL, drawn over the tab its back link names (চ্যাট when none)
             entry("GET /app/add", Tab.CHAT),
-            entry("GET /app/patients/{id}", Tab.PAPERS),
             entry("GET /app/documents/{id}", Tab.PAPERS),
             // B6: the document detail (s17), and the value sheet's no-JS URL drawn over কাগজপত্র (s13)
             entry("GET /app/documents/{id}/all", Tab.PAPERS),
             entry("GET /app/documents/{id}/values/{obs}", Tab.PAPERS),
             entry("GET /app/documents/{id}/delete", Tab.PAPERS),
             entry("POST /app/documents/{id}/delete", Tab.PAPERS));
-    // A6: the profile routes answer a redirect to the পরিবার tab, no page of their own
+    // A6: the profile routes answer a redirect to the পরিবার tab, no page of their own; C1: so does the old
+    // GET /app/patients/{id}, a 302 to কাগজপত্র with the patient chosen (AppShellRoutesTest)
 
     /**
      * Fixtures of a route in {@link #UNDER} that answer something other than a page on purpose, as

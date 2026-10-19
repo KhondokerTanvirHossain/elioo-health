@@ -155,27 +155,121 @@ class AppShellRoutesTest {
         verify(kit.timeline, never()).timeline(any(), any(), any());
     }
 
-    /** The old /app/patients/{id} link: the কাগজপত্র tab of that patient, checked against the family as ?patient= is. */
+    /** WhatsApp messages and bookmarks carry the old URL; it opens কাগজপত্র with the patient chosen (profile: L5). */
     @Test
-    void theLegacyPatientLinkShowsThatPatientsPapersAndNamesHer() {
+    void theOldPatientUrlOpensThePapersTab() {
+        UUID id = ma.patient().id();
+        kit.client.get().uri("/app/patients/" + id).cookie("baymax_session", "tok").exchange().expectStatus().isFound()
+                .expectHeader().valueEquals(HttpHeaders.LOCATION, "/app/timeline?patient=" + id);
+        kit.client.get().uri("/app/patients/not-a-uuid").cookie("baymax_session", "tok").exchange().expectStatus().isNotFound();
+        kit.client.get().uri("/baymax/patients/" + id).exchange().expectStatus().isEqualTo(301);   // the 301 chain still starts
+    }
+
+    /**
+     * The dangerous direction of the old link: it redirects without reading anything, and the tab it lands on checks the
+     * patient against this family as any {@code ?patient=} is — an unseen patient is a 404 there, and no one's papers are read.
+     */
+    @Test
+    void theOldPatientUrlForAPatientThisFamilyCannotSeeEndsIn404() {
         kit.familyWith(ma, baba);
         noPapers(ma);
         noPapers(baba);
-        String html = kit.page("/app/patients/" + baba.patient().id(), "bn");
-        assertThat(between(html, "<header class=\"appbar\"", "</header>")).contains("আব্বু").doesNotContain("আম্মা");
-        assertThat(between(html, "<nav class=\"tabs\"", "</nav>")).contains("<a href=\"" + Tab.PAPERS.path + "\" aria-current=\"page\">");
+        String unseen = UUID.randomUUID().toString();
+        String location = kit.client.get().uri("/app/patients/" + unseen).cookie("baymax_session", "tok").exchange()
+                .expectStatus().isFound().returnResult(Void.class).getResponseHeaders().getFirst(HttpHeaders.LOCATION);
+        assertThat(location).isEqualTo("/app/timeline?patient=" + unseen);
+        kit.client.get().uri(location).cookie("baymax_session", "tok").exchange().expectStatus().isNotFound();
+        verify(kit.timeline, never()).timeline(any(), any(), any());
+    }
+
+    @Test
+    void choosingSetsAThirtyMinuteCookieThatTheNextPageHonours() {
+        kit.familyWith(ma, baba);
+        noPapers(baba);
+        kit.client.get().uri("/app/timeline?patient=" + baba.patient().id()).cookie("baymax_session", "tok").exchange()
+                .expectStatus().isOk()
+                .expectHeader().value(HttpHeaders.SET_COOKIE, c -> assertThat(c)
+                        .startsWith("baymax_patient=" + baba.patient().id()).contains("Path=/app").contains("Max-Age=1800")
+                        .contains("HttpOnly").contains("SameSite=Lax"));
+        String next = kit.client.get().uri("/app/timeline").cookie("baymax_session", "tok")
+                .cookie("baymax_patient", baba.patient().id().toString()).exchange()
+                .expectStatus().isOk().expectBody(String.class).returnResult().getResponseBody();
+        assertThat(between(next, "<header class=\"appbar\"", "</header>")).contains("আব্বু").doesNotContain("আম্মা");
         verify(kit.timeline).timeline(WebUiTestKit.FAMILY, baba.patient().id(), null);
         verify(kit.timeline, never()).timeline(any(), eq(ma.patient().id()), any());
     }
 
-    /** The dangerous direction: an unseen or malformed id on the old link is 404, and no one's papers are read. */
-    @Test
-    void theLegacyPatientLinkWithAPatientThisFamilyCannotSeeIs404() {
+    /** Sliding, on every tab: a page with a patient in view re-sets the cookie; the chooser (no one in view) sets none. */
+    @ParameterizedTest
+    @EnumSource(Tab.class)
+    void everyTabWithAPatientInViewSlidesTheCookieAndTheChooserSetsNone(Tab tab) {
         kit.familyWith(ma, baba);
         noPapers(ma);
         noPapers(baba);
-        for (String asked : List.of(UUID.randomUUID().toString(), "not-a-uuid")) {
-            kit.client.get().uri("/app/patients/" + asked).cookie("baymax_session", "tok").exchange().expectStatus().isNotFound();
+        String remembered = kit.client.get().uri(tab.path).cookie("baymax_session", "tok")
+                .cookie("baymax_patient", ma.patient().id().toString()).exchange().expectStatus().isOk()
+                .returnResult(String.class).getResponseHeaders().getFirst(HttpHeaders.SET_COOKIE);
+        assertThat(remembered).startsWith("baymax_patient=" + ma.patient().id() + ";").contains("Max-Age=1800");
+        if (tab != Tab.FAMILY) {
+            assertThat(kit.client.get().uri(tab.path).cookie("baymax_session", "tok").exchange().expectStatus().isOk()
+                    .returnResult(String.class).getResponseHeaders().get(HttpHeaders.SET_COOKIE))
+                    .as("a cookie set while nobody is in view").isNull();
+        }
+    }
+
+    /** A remembered patient this family can no longer see is forgotten (not a 404); asking for one by URL is a 404. */
+    @Test
+    void aStaleCookieIsIgnoredButAnUnseenPatientInTheUrlIs404() {
+        kit.familyWith(ma);
+        noPapers(ma);
+        String html = kit.client.get().uri("/app/timeline").cookie("baymax_session", "tok")
+                .cookie("baymax_patient", UUID.randomUUID().toString()).exchange()
+                .expectStatus().isOk().expectBody(String.class).returnResult().getResponseBody();
+        assertThat(between(html, "<header class=\"appbar\"", "</header>")).contains("আম্মা");
+        kit.client.get().uri("/app/timeline?patient=" + UUID.randomUUID()).cookie("baymax_session", "tok").exchange()
+                .expectStatus().isNotFound();
+    }
+
+    /** Spec §3 sheets: the switcher is a URL; the page beneath is inert; the close link returns to the bare tab. */
+    @Test
+    void thePatientSheetIsAPlainUrlThatInertsThePageBeneathAndClosesBackToTheTab() {
+        kit.familyWith(ma, baba);
+        noPapers(ma);
+        String open = kit.page("/app/timeline?patient=" + ma.patient().id() + "&sheet=patient", "bn");
+        assertThat(open).contains("<div class=\"shell\" inert>");
+        String dialog = between(open, "role=\"dialog\"", "</section>");
+        assertThat(dialog).contains("href=\"/app/timeline\" autofocus")
+                .contains("href=\"/app/timeline?patient=" + baba.patient().id() + "\"")
+                .contains("aria-current=\"true\"");   // Ma is the chosen one
+        String closed = kit.page("/app/timeline?patient=" + ma.patient().id(), "bn");
+        assertThat(closed).contains("<div class=\"shell\">").doesNotContain("role=\"dialog\"");
+        // the header's switcher is the sheet's URL on the tab it is on
+        assertThat(between(closed, "<header class=\"appbar\"", "</header>")).contains("href=\"/app/timeline?sheet=patient\"");
+    }
+
+    /** The other direction of the sheet: with one patient there is nothing to switch to, so no sheet and no inert page. */
+    @Test
+    void withOnePatientThereIsNoSheetToOpen() {
+        kit.familyWith(ma);
+        noPapers(ma);
+        String html = kit.page("/app/timeline?sheet=patient", "bn");
+        assertThat(html).contains("<div class=\"shell\">").doesNotContain("role=\"dialog\"").doesNotContain(" inert");
+    }
+
+    /**
+     * Never preselect, now with a cookie in play: two patients, no ?patient, and no cookie — or one naming a patient this
+     * family cannot see, or not an id at all — still read nobody's papers on any tab.
+     */
+    @ParameterizedTest
+    @EnumSource(value = Tab.class, names = {"CHAT", "PAPERS"})
+    void aRememberedChoiceIsTheOnlyThingThatSkipsTheChooser(Tab tab) {
+        kit.familyWith(ma, baba);
+        assertThat(kit.page(tab.path, "bn")).contains("কার কাগজ দেখবেন?");
+        for (String stale : List.of(UUID.randomUUID().toString(), "not-a-uuid")) {
+            String html = kit.client.get().uri(tab.path).cookie("baymax_session", "tok").cookie("baymax_lang", "bn")
+                    .cookie("baymax_patient", stale).exchange().expectStatus().isOk()
+                    .expectBody(String.class).returnResult().getResponseBody();
+            assertThat(html).as("cookie " + stale).contains("কার কাগজ দেখবেন?");
         }
         verify(kit.timeline, never()).timeline(any(), any(), any());
     }

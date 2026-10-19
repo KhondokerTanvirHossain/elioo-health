@@ -105,6 +105,9 @@ final class PageFixtures {
         variant("GET /app/timeline", Fixture.get("/app/timeline", true, Stubs::maTimelineOfTwo).named("chooser"));
         variant("GET /app/timeline", Fixture.get("/app/timeline?patient=" + ma, true, Stubs::maTimelineOfTwo).named("chosen"));
         variant("GET /app/family", Fixture.get("/app/family", true, Stubs::familyOfTwo).named("two"));
+        // C1: the patient switcher sheet over the tab it was opened from, with no script
+        variant("GET /app/timeline", Fixture.get("/app/timeline?patient=" + ma + "&sheet=patient", true, Stubs::maTimelineOfTwo).named("switcher"));
+        variant("GET /app/home", Fixture.get("/app/home?patient=" + ma + "&sheet=patient", true, Stubs::familyOfTwo).named("switcher"));
         // A6: the patient in view as the owner sees them (and after a save), and a shared patient (no save, no switch)
         variant("GET /app/family", Fixture.get("/app/family?patient=" + ma, true, Stubs::familyOfTwo).named("chosen"));
         variant("GET /app/family", Fixture.get("/app/family?patient=" + ma + "&saved=1", true, Stubs::maProfile).named("saved"));
@@ -114,6 +117,7 @@ final class PageFixtures {
         variant("GET /app/add", Fixture.get("/app/add?back=/app/home", true, Stubs::sheetForTwo).named("two"));
         variant("GET /app/add", Fixture.get("/app/add", true, Stubs::sheetAtTheCap).named("cap"));
         variant("GET /app/add", Fixture.get("/app/add", true, Stubs::sheetViewOnly).named("viewonly"));
+        // C1: a 302 to কাগজপত্র with the patient chosen; the derived page tests skip non-HTML answers
         put("GET /app/patients/{id}", Fixture.get("/app/patients/" + ma, true, Stubs::maTimeline));
         // A6: a 302 to the পরিবার tab now; the derived page tests skip non-HTML answers
         put("GET /app/patients/{id}/profile", Fixture.get("/app/patients/" + ma + "/profile", true, Stubs::maProfile));

@@ -136,7 +136,7 @@ class WebOnlyJourneyAcceptanceTest {
             Map.entry("GET /app/nudges/opt-out", "reached only from a link inside a WhatsApp reminder (HMAC token)"),
             Map.entry("POST /app/nudges/opt-out", "reached only from a link inside a WhatsApp reminder (HMAC token)"),
             Map.entry("POST /app/patients/{id}/upload", "the legacy upload for cached pages; AddReportSubmitTest"),
-            Map.entry("GET /app/patients/{id}", "the pre-tab timeline URL; C1 turns it into a redirect"),
+            Map.entry("GET /app/patients/{id}", "a 302 for old links; AppShellRoutesTest"),
             Map.entry("GET /app/patients/{id}/profile", "the pre-tab profile URL; redirects to /app/family (A6)"));
 
     /**
