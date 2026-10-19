@@ -42,8 +42,12 @@ final class ValueRows {
         return kind == ValueVerdict.Kind.INSIDE && !UrgencyService.insideByCode(v) ? ValueVerdict.Kind.UNKNOWN : kind;
     }
 
-    /** The pin only when it agrees with the verdict: INSIDE in the band, OUTSIDE/CRITICAL outside it, UNKNOWN never. */
-    static OptionalDouble pin(ValueVerdict.Kind kind, Map<String, Object> v) {
+    /**
+     * The pin only when it agrees with the verdict: INSIDE in the band, OUTSIDE/CRITICAL outside it and on the stored side
+     * when one is stored ({@code storedSide}), UNKNOWN never. A bar that would tell a different story from the chip is
+     * not drawn; the chip keeps the stored verdict either way.
+     */
+    static OptionalDouble pin(ValueVerdict.Kind kind, Map<String, Object> v, Object storedSide) {
         if (kind == ValueVerdict.Kind.UNKNOWN) {
             return OptionalDouble.empty();
         }
@@ -51,8 +55,13 @@ final class ValueRows {
         if (p.isEmpty()) {
             return p;
         }
-        boolean inBand = p.getAsDouble() >= 25 && p.getAsDouble() <= 75;
-        return inBand == (kind == ValueVerdict.Kind.INSIDE) ? p : OptionalDouble.empty();
+        double at = p.getAsDouble();
+        boolean inBand = at >= 25 && at <= 75;
+        if (inBand != (kind == ValueVerdict.Kind.INSIDE)) {
+            return OptionalDouble.empty();
+        }
+        boolean otherSide = ("high".equals(storedSide) && at < 25) || ("low".equals(storedSide) && at > 75);
+        return otherSide ? OptionalDouble.empty() : p;
     }
 
     /**
@@ -78,10 +87,10 @@ final class ValueRows {
         String crop = crop(v.get("crop_key"), "a value");
         ValueVerdict.Kind kind = kindOf(v);
         String cls = kind.name().toLowerCase(Locale.ROOT);
-        OptionalDouble pin = pin(kind, v);
         // the stored side belongs to the stored verdict: a demoted INSIDE or an UNKNOWN has none
-        String chip = copy.t(lang, chipKey(kind, kind == ValueVerdict.Kind.INSIDE || kind == ValueVerdict.Kind.UNKNOWN
-                ? null : v.get("verdict_side"), pin));
+        Object side = kind == ValueVerdict.Kind.INSIDE || kind == ValueVerdict.Kind.UNKNOWN ? null : v.get("verdict_side");
+        OptionalDouble pin = pin(kind, v, side);
+        String chip = copy.t(lang, chipKey(kind, side, pin));
         String range = range(copy, lang, v);
         String href = PageChrome.imageHref(documentId, crop);
         String unit = v.get("unit") == null ? "" : esc(v.get("unit"));

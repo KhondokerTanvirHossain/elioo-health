@@ -362,7 +362,7 @@ public class DocumentPages implements WebPages {
         }
         StringBuilder b = new StringBuilder("<section id=\"medicines\"><h2>").append(copy.t(lang, "med.title")).append("</h2>");
         if (!medicines.isEmpty()) {
-            b.append("<p class=\"notice\">").append(copy.t(lang, "med.pharmacy")).append("</p>");
+            b.append("<p class=\"warn\">").append(copy.t(lang, "med.pharmacy")).append("</p>");   // s17's warn notice
         }
         if (unverified > 0) {
             b.append("<p class=\"warn\">").append(copy.t(lang, "med.unverified", unverified)).append("</p>");
@@ -393,7 +393,7 @@ public class DocumentPages implements WebPages {
             b.append(ValueRows.paperQuote(copy, lang, documentId, f.get("instruction"), f.get("crop_key"), when));
         }
         if (unverified > 0) {
-            b.append("<p class=\"warn\">").append(copy.t(lang, "doc.unverified", unverified)).append("</p>");
+            b.append("<p class=\"warn\">").append(copy.t(lang, "next.unverified", unverified)).append("</p>");
         }
         return b.append("</section>").toString();
     }

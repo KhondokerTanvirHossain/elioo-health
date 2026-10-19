@@ -50,6 +50,19 @@ class ValueRowRenderTest {
                 .contains(copy.t(Lang.BN, "value.chip.unknown"));
     }
 
+    /**
+     * The same shapes with a stored INSIDE: the demotion must not depend on the value parsing. A stored "inside" the code
+     * cannot place (a comparator, a pair, a comma decimal, a word, a one-sided or missing range) renders UNKNOWN.
+     */
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', nullValues = "null", value = {"> 89|60|120", "130 / 80|90|140", "1,23|0.5|1.5",
+            "Positive|null|null", "250|null|<100", "250|null|null"})
+    void aStoredInsideOnAShapeTheCodeCannotPlaceRendersUnknown(String value, String low, String high) {
+        String row = ValueRows.row(copy, Lang.BN, ResultFixtures.DOC, ResultFixtures.value("LDL", value, "mg/dL", low, high, "inside"));
+        assertThat(row).startsWith("<a class=\"vrow unknown\"").doesNotContain("chip inside").doesNotContain("<svg")
+                .contains("<span class=\"chip unknown\">" + copy.t(Lang.BN, "value.chip.unknown") + "</span>");
+    }
+
     /** A row stored before F2 (verdict NULL) is UNKNOWN — the safe direction — never INSIDE. */
     @Test
     void aRowWithNoStoredVerdictIsUnknown() {
@@ -105,12 +118,36 @@ class ValueRowRenderTest {
         assertThat(row).startsWith("<a class=\"vrow outside\"").contains(copy.t(Lang.BN, "value.chip.outside.high")).doesNotContain("<svg");
     }
 
+    /**
+     * The bar never tells a different story from the chip: a stored side the pin disagrees with (the verdict says above,
+     * the paper's numbers put the pin below) draws no bar, and the chip keeps the stored side — the page never re-judges.
+     */
+    @Test
+    void aBarOnTheOtherSideFromTheStoredVerdictIsNotDrawn() {
+        Map<String, Object> v = ResultFixtures.value("Hb", "9.0", "g/dL", "12.0", "15.5", "outside");
+        v.put("verdict_side", "high");
+        String row = ValueRows.row(copy, Lang.BN, ResultFixtures.DOC, v);
+        assertThat(row).startsWith("<a class=\"vrow outside\"")
+                .contains("<span class=\"chip outside\">" + copy.t(Lang.BN, "value.chip.outside.high") + "</span>")
+                .doesNotContain("<svg");
+    }
+
+    /** The other direction: a stored side the pin agrees with draws the bar, the pin beyond the band on that side. */
+    @Test
+    void aBarOnTheStoredVerdictsSideIsDrawn() {
+        Map<String, Object> v = ResultFixtures.value("Hb", "9.0", "g/dL", "12.0", "15.5", "outside");
+        v.put("verdict_side", "low");
+        String row = ValueRows.row(copy, Lang.BN, ResultFixtures.DOC, v);
+        assertThat(row).contains("<span class=\"chip outside\">" + copy.t(Lang.BN, "value.chip.outside.low") + "</span>")
+                .contains("<svg class=\"bar\"").contains("<circle class=\"pin outside\" cx=\"2.0\"");
+    }
+
     /** Values keep the printed digits; the range text is the paper's text; the crop is the stored crop_key (DR-12). */
     @Test
     void theRowShowsThePaperAsPrintedBesideItsStoredCrop() {
         Map<String, Object> v = ResultFixtures.value("Creatinine", "1.8", "mg/dL", "0.7", "1.3", "outside");
         String row = ValueRows.row(copy, Lang.BN, ResultFixtures.DOC, v);
-        assertThat(row).contains(">1.8<").contains("রিপোর্টে লেখা সীমা 0.7–1.3")
+        assertThat(row).contains("<span class=\"val\">1.8</span>").contains("<span class=\"range\">রিপোর্টে লেখা সীমা 0.7–1.3</span>")
                 .contains("src=\"" + PageChrome.imageHref(ResultFixtures.DOC, (String) v.get("crop_key")) + "\"");
         assertThat(row).doesNotContain("১.৮");
     }

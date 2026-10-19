@@ -50,10 +50,10 @@
 .counts{margin:var(--sp-1) 0;color:var(--c-text-muted)}
 .paper{margin:0 0 var(--sp-3);padding:var(--sp-3);background:var(--c-paper);border:1px solid var(--c-paper-line);border-radius:var(--r-xs);font-family:var(--font-mono)}
 .paper .label{display:flex;align-items:center;gap:6px;font-family:var(--font-sans);font-size:var(--fs-label-small);line-height:var(--lh-label-small);font-weight:600;color:var(--c-text-muted)}
-.paper blockquote{margin:var(--sp-2) 0 0;color:var(--c-text)}
+.paper blockquote{margin:var(--sp-2) 0 0;color:var(--c-text);overflow-wrap:anywhere}
 .paper .due{margin:var(--sp-2) 0 0;font-family:var(--font-sans);color:var(--c-text-muted)}
 .doctor h3{margin:var(--sp-3) 0 var(--sp-2);font-size:var(--fs-label);line-height:var(--lh-label);color:var(--c-text-muted)}
 .med{display:flex;flex-direction:column;gap:var(--sp-2);min-height:var(--target-min);margin:0 0 var(--sp-3);text-decoration:none;color:var(--c-text)}
 .crop.big{width:100%}
-.med .cap{margin:0;font-weight:400;color:var(--c-text-muted);font-size:var(--fs-callout);line-height:var(--lh-callout)}
+.med .cap{margin:0;font-weight:400;overflow-wrap:anywhere;color:var(--c-text-muted);font-size:var(--fs-callout);line-height:var(--lh-callout)}
 .med .zoom{font-size:var(--fs-footnote);line-height:var(--lh-footnote);color:var(--c-primary)}

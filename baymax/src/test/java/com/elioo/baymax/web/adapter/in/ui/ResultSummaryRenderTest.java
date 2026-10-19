@@ -204,17 +204,35 @@ class ResultSummaryRenderTest {
         assertThat(html).doesNotContain("id=\"inside\"");
     }
 
-    /** MedicineRow: crop first and large, caption verbatim and quiet, no colour, no status, the pharmacy notice once. */
+    /**
+     * MedicineRow: crop first and large, caption verbatim and quiet, no colour, no status; the pharmacy notice once for
+     * the section (two medicines, so "once" can fail), drawn as the warn notice (s17).
+     */
     @Test
     void aMedicineIsItsCropFirstWithTheLineAsWrittenAndNoStatus() {
-        var view = ResultFixtures.prescription(List.of(Map.of("name", "Tab. Demoprol", "dose_text", "5 mg",
-                "frequency_text", "1+0+1", "timing_text", "খাবারের পরে", "duration_text", "৩০ দিন", "crop_key", "f/p/d/crop-m1.jpg")), Map.of(), null);
+        var view = ResultFixtures.prescription(List.of(
+                Map.of("name", "Tab. Demoprol", "dose_text", "5 mg", "frequency_text", "1+0+1", "timing_text", "খাবারের পরে",
+                        "duration_text", "৩০ দিন", "crop_key", "f/p/d/crop-m1.jpg"),
+                Map.of("name", "Cap. Fictomeg", "dose_text", "20 mg", "frequency_text", "1+0+0", "crop_key", "f/p/d/crop-m2.jpg")),
+                Map.of(), null);
         String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(view, Urgency.ROUTINE, List.of(), GateState.NONE, null, ResultFixtures.BD));
         String med = ResultFixtures.section(html, "medicines");
-        assertThat(med).containsOnlyOnce(copy.t(Lang.BN, "med.pharmacy"));
-        assertThat(med.indexOf("crop-m1.jpg")).isNotNegative().isLessThan(med.indexOf("Tab. Demoprol"));
-        assertThat(med).contains("Tab. Demoprol · 5 mg · 1+0+1 · খাবারের পরে · ৩০ দিন").doesNotContain("class=\"chip")
-                .contains("<img class=\"crop big\"");
+        assertThat(med).containsOnlyOnce(copy.t(Lang.BN, "med.pharmacy"))
+                .contains("<p class=\"warn\">" + copy.t(Lang.BN, "med.pharmacy") + "</p>");
+        // each medicine link, opened to its close: the image is its first child, the caption after it
+        Matcher row = Pattern.compile("<a class=\"med\" href=\"([^\"]+)\">(.*?)</a>", Pattern.DOTALL).matcher(med);
+        int rows = 0;
+        while (row.find()) {
+            rows++;
+            String inner = row.group(2);
+            assertThat(inner).as("medicine " + rows + " opens with its crop").startsWith("<img class=\"crop big\"")
+                    .contains("src=\"" + row.group(1) + "\"");
+            assertThat(inner.indexOf("<img class=\"crop big\"")).as("medicine " + rows + ": crop before caption")
+                    .isLessThan(inner.indexOf("<span class=\"cap\">"));
+        }
+        assertThat(rows).as("medicine rows").isEqualTo(2);
+        assertThat(med).contains("<span class=\"cap\">Tab. Demoprol · 5 mg · 1+0+1 · খাবারের পরে · ৩০ দিন</span>")
+                .contains("<span class=\"cap\">Cap. Fictomeg · 20 mg · 1+0+0</span>").doesNotContain("class=\"chip");
     }
 
     /** A blank field leaves no gap and no stray separator: the caption joins only what was written. */
@@ -232,13 +250,40 @@ class ResultSummaryRenderTest {
     void theDoctorsLinesAreQuotedFromThePaperBesideTheirCrops() {
         var ctx = new LinkedHashMap<String, Object>();
         ctx.put("diagnosis", List.of(Map.of("text", "Kindly correlate clinically.", "crop_key", "f/p/d/crop-c1.jpg")));
-        ctx.put("referral", "Dr X");
+        // a referral written as lines with crops, so the referral skip itself is what keeps it off the page
+        ctx.put("referral", List.of(Map.of("text", "Dr X, Fictional Hospital", "crop_key", "f/p/d/crop-r1.jpg")));
         var view = ResultFixtures.prescription(List.of(), ctx, null);
         String doctor = ResultFixtures.section(kit.documents.summaryBody(Lang.BN, ResultFixtures.result(view, Urgency.THIS_WEEK, List.of(),
                 GateState.RELEASED, "w", ResultFixtures.BD)), "doctor");
         assertThat(doctor).contains(copy.t(Lang.BN, "doctor.title")).contains("<figcaption class=\"label\">" + copy.t(Lang.BN, "paper.label"))
                 .contains("<blockquote>Kindly correlate clinically.</blockquote>").contains("crop-c1.jpg")
-                .doesNotContain(copy.t(Lang.BN, "result.says.label")).doesNotContain("Dr X");   // referral stays hidden (contextSection skips it)
+                .doesNotContain(copy.t(Lang.BN, "result.says.label")).doesNotContain("Dr X").doesNotContain("crop-r1.jpg");   // referral stays hidden (contextSection skips it)
+    }
+
+    /**
+     * Each line from the paper sits beside ITS crop, not a neighbour's (DR-12): two diagnosis lines and two follow-ups, each
+     * quote's img src is the image href of that line's own crop_key.
+     */
+    @Test
+    void everyPaperQuoteCarriesItsOwnLinesCrop() {
+        var ctx = new LinkedHashMap<String, Object>();
+        ctx.put("diagnosis", List.of(Map.of("text", "Fictional dx one", "crop_key", "f/p/d/crop-c1.jpg"),
+                Map.of("text", "Fictional dx two", "crop_key", "f/p/d/crop-c2.jpg")));
+        var view = new DocumentView(ResultFixtures.DOC.toString(), "DONE", null, "prescription", "2026-10-12", "Demo Chamber", 0.9,
+                "m", 1, List.of(), List.of(), List.of(
+                Map.of("instruction", "Fictional follow-up one", "crop_key", "f/p/d/crop-f1.jpg"),
+                Map.of("instruction", "Fictional follow-up two", "crop_key", "f/p/d/crop-f2.jpg")), ctx, null);
+        String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(view, Urgency.ROUTINE, List.of(), GateState.NONE, null, ResultFixtures.BD));
+        Map<String, String> expected = Map.of("Fictional dx one", "f/p/d/crop-c1.jpg", "Fictional dx two", "f/p/d/crop-c2.jpg",
+                "Fictional follow-up one", "f/p/d/crop-f1.jpg", "Fictional follow-up two", "f/p/d/crop-f2.jpg");
+        Matcher quote = Pattern.compile("<figure class=\"paper\">.*?<img class=\"crop\"[^>]* src=\"([^\"]+)\"><blockquote>([^<]*)</blockquote>",
+                Pattern.DOTALL).matcher(html);
+        Map<String, String> found = new LinkedHashMap<>();
+        while (quote.find()) {
+            found.put(quote.group(2), quote.group(1));
+        }
+        assertThat(found).as("paper quotes, text to img src").hasSize(4);
+        expected.forEach((text, crop) -> assertThat(found.get(text)).as(text).isEqualTo(PageChrome.imageHref(ResultFixtures.DOC, crop)));
     }
 
     /** No fact without its proof: a doctor's line stored without a crop is not quoted (and no empty section is drawn). */
@@ -266,6 +311,15 @@ class ResultSummaryRenderTest {
                 Map.of("values", 2, "medicines", 0, "follow_up", 0, "total", 2));
         String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(view, Urgency.ROUTINE, List.of(), GateState.NONE, null, ResultFixtures.BD));
         assertThat(html).contains(copy.t(Lang.BN, "value.unverified")).doesNotContain("id=\"medicines\"");
+    }
+
+    /** A follow-up that could not be checked sends the family to the paper in the result's voice, under পরের ধাপ. */
+    @Test
+    void anUnverifiedFollowUpSendsTheFamilyToThePaperUnderTheNextStep() {
+        var view = ResultFixtures.prescription(List.of(), Map.of(), Map.of("values", 0, "medicines", 0, "follow_up", 1, "total", 1));
+        String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(view, Urgency.ROUTINE, List.of(), GateState.NONE, null, ResultFixtures.BD));
+        assertThat(ResultFixtures.section(html, "next")).contains("<p class=\"warn\">" + copy.t(Lang.BN, "next.unverified", 1) + "</p>")
+                .contains("১টি লাইন");
     }
 
     /** পরের ধাপ: what to bring only when there is a reason to see the doctor; each follow-up quoted beside its crop. */
@@ -302,11 +356,34 @@ class ResultSummaryRenderTest {
     void theCountsLineNamesOutsideOnlyWhenSomethingIs() {
         String none = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(ResultFixtures.lab(List.of(
                 ResultFixtures.value("Creatinine", "1.0", "mg/dL", "0.7", "1.3", "inside"))), Urgency.ROUTINE, List.of(), GateState.NONE, null, ResultFixtures.BD));
-        assertThat(none).contains(copy.t(Lang.BN, "result.counts.none", 1)).doesNotContain("সীমার বাইরে");
+        assertThat(counts(none)).isEqualTo(copy.t(Lang.BN, "result.counts.none", 1));
+        assertThat(none).doesNotContain("সীমার বাইরে");
         String two = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(ResultFixtures.lab(List.of(
                 ResultFixtures.value("HbA1c", "8.4", "%", "4.0", "6.0", "outside"),
                 ResultFixtures.value("Potassium", "11.0", "mmol/L", "3.5", "5.1", "critical"))), Urgency.NOW, List.of(), GateState.NONE, null, ResultFixtures.BD));
-        assertThat(two).contains("২টি মান · ২টি সীমার বাইরে");
+        assertThat(counts(two)).isEqualTo(copy.t(Lang.BN, "result.counts", 2, 2)).isEqualTo("২টি মান · ২টি সীমার বাইরে");
+    }
+
+    /**
+     * The direction that matters: a value Medioo could not place, and a stored INSIDE it could not prove, are not
+     * "outside" — counted as such the line would alarm over values nobody judged. They are not "inside" either, and the
+     * line claims neither: it names only how many values there are.
+     */
+    @Test
+    void anUnknownOrDemotedValueIsNeverCountedAsOutside() {
+        String html = kit.documents.summaryBody(Lang.BN, ResultFixtures.result(ResultFixtures.lab(List.of(
+                ResultFixtures.value("Urine Albumin", "Trace", null, "Nil", null, "unknown"),
+                ResultFixtures.value("K", "6.4", "mmol/L", "3.5", "5.1", "inside"))), Urgency.ROUTINE, List.of(), GateState.NONE, null, ResultFixtures.BD));
+        assertThat(counts(html)).isEqualTo(copy.t(Lang.BN, "result.counts.none", 2));
+    }
+
+    /** The counts line's own text: the one {@code <p class="counts">} element, never a search of the whole page. */
+    private static String counts(String html) {
+        Matcher m = Pattern.compile("<p class=\"counts\">([^<]*)</p>").matcher(html);
+        assertThat(m.find()).as("the counts line").isTrue();
+        String text = m.group(1);
+        assertThat(m.find()).as("one counts line").isFalse();
+        return text;
     }
 
     /** A paper with no values (a prescription) has no counts line at all: "০টি মান" says nothing a family needs. */

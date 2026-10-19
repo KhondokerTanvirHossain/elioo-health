@@ -222,6 +222,6 @@ class ReadingProgressRenderTest {
         assertThat(text.codePoints().noneMatch(c -> c >= 0x0980 && c <= 0x09FF)).as("no Bangla copy in the script").isTrue();
         PageFixtures.Stubs.doneLab(kit);
         String done = kit.page("/app/documents/" + WebUiTestKit.DOC_ID, "bn");
-        assertThat(done).contains(kit.copy.t(Lang.BN, "doc.values")).doesNotContain("<script").doesNotContain("http-equiv=\"refresh\"");
+        assertThat(done).contains("<a class=\"vrow ").doesNotContain("<script").doesNotContain("http-equiv=\"refresh\"");
     }
 }
