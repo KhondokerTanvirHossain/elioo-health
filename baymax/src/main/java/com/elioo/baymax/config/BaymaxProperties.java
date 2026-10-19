@@ -28,6 +28,7 @@ public class BaymaxProperties {
     private Admin admin = new Admin();
     private Storage storage = new Storage();
     private Free free = new Free();
+    private Upload upload = new Upload();
     private Extract extract = new Extract();
     private Auth auth = new Auth();
     private Wa wa = new Wa();
@@ -279,6 +280,20 @@ public class BaymaxProperties {
         private int maxPatients = 1;
         /** Documents a free family may upload per calendar month (UTC). */
         private int maxDocsPerMonth = 3;
+    }
+
+    /** Web upload (Phase 4, area 4): the add-report sheet's caps and the browser's downscale (D5, spec 4.7). */
+    @Data
+    public static class Upload {
+        /** Per file; matches the JSON API's DocumentHandler.MAX_UPLOAD_BYTES (25 MB). */
+        private long maxFileBytes = 25L * 1024 * 1024;
+        /** One press of "send", every page together: bounds what a request may hold in memory. */
+        private long maxRequestBytes = 60L * 1024 * 1024;
+        /** Long edge the browser downscales to before upload; 0 = off until measured (D5, spec 4.7). */
+        private int downscaleMaxEdge = 0;
+        private double downscaleQuality = 0.92;
+        /** A JPEG within the edge and under this many bytes is sent byte for byte, never re-compressed. */
+        private long passThroughBytes = 1_500_000;
     }
 
     @Data

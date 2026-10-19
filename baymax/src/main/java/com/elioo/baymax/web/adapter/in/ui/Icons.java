@@ -16,7 +16,11 @@ final class Icons {
             Map.entry("chevron-right", "<path d=\"M9 6l6 6-6 6\"/>"),
             Map.entry("check", "<path d=\"M5 12.5l4.5 4.5L19 7.5\"/>"),
             Map.entry("page", "<path d=\"M7 3.5h7l4.5 4.5v12.5H7z\"/><path d=\"M14 3.5V8h4.5\"/>"),
-            Map.entry("x", "<path d=\"M6 6l12 12M18 6L6 18\"/>"));
+            Map.entry("x", "<path d=\"M6 6l12 12M18 6L6 18\"/>"),
+            // s07's three photo tips: the page lying flat, light, the whole page in the frame
+            Map.entry("tip-flat", "<path d=\"M6 6h12v11H6z\"/><path d=\"M8.5 9h7M8.5 11.5h7M8.5 14h4\"/><path d=\"M3 20h18\"/>"),
+            Map.entry("tip-light", "<circle cx=\"12\" cy=\"12\" r=\"4\"/><path d=\"M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4\"/>"),
+            Map.entry("tip-frame", "<path d=\"M3.5 8V3.5H8M16 3.5h4.5V8M20.5 16v4.5H16M8 20.5H3.5V16\"/><path d=\"M8 7h8v10H8z\"/>"));
 
     private Icons() {
     }

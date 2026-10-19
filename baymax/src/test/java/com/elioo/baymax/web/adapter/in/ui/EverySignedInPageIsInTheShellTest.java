@@ -29,6 +29,8 @@ class EverySignedInPageIsInTheShellTest {
             entry("GET /app/home", Tab.CHAT),
             entry("GET /app/timeline", Tab.PAPERS),
             entry("GET /app/family", Tab.FAMILY),
+            // A7: the add-report sheet's no-JS URL, drawn over the tab its back link names (চ্যাট when none)
+            entry("GET /app/add", Tab.CHAT),
             entry("GET /app/patients/{id}", Tab.PAPERS),
             entry("GET /app/documents/{id}", Tab.PAPERS),
             entry("GET /app/documents/{id}/delete", Tab.PAPERS),

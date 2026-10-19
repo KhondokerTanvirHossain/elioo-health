@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -37,13 +38,14 @@ class BaymaxDocumentRouterTest {
     private final DocumentIntakeUseCase intake = mock(DocumentIntakeUseCase.class);
     private final com.elioo.baymax.web.application.port.in.TimelineUseCase timeline = mock(com.elioo.baymax.web.application.port.in.TimelineUseCase.class);
     private final com.elioo.baymax.web.application.port.in.WebAuthUseCase auth = mock(com.elioo.baymax.web.application.port.in.WebAuthUseCase.class);
+    private final com.elioo.baymax.web.application.port.in.UploadUseCase uploads = mock(com.elioo.baymax.web.application.port.in.UploadUseCase.class);
     private final WebTestClient client;
 
     BaymaxDocumentRouterTest() {
         BaymaxProperties props = new BaymaxProperties();
         props.getAdmin().setToken(TOKEN);
         client = WebTestClient.bindToRouterFunction(new BaymaxDocumentRouter()
-                        .baymaxDocumentRoutes(new DocumentHandler(intake, timeline, mock(com.elioo.baymax.outbound.application.port.in.ExplainDocumentUseCase.class)), new SessionOrAdminAuthFilter(new AdminAuthFilter(props), new SessionAuthFilter(auth, props)),
+                        .baymaxDocumentRoutes(new DocumentHandler(intake, timeline, mock(com.elioo.baymax.outbound.application.port.in.ExplainDocumentUseCase.class), uploads), new SessionOrAdminAuthFilter(new AdminAuthFilter(props), new SessionAuthFilter(auth, props)),
                                 new ErrorResponseFilter()))
                 .build();
     }
@@ -159,6 +161,52 @@ class BaymaxDocumentRouterTest {
                 .expectStatus().isNotFound()
                 .expectBody().jsonPath("$.reason").isEqualTo("document_not_found");
         verify(intake, never()).view(any());
+    }
+
+    private UUID signedIn() {
+        UUID family = UUID.randomUUID();
+        Instant now = Instant.now();
+        when(auth.authenticate("tok")).thenReturn(Mono.just(
+                new com.elioo.baymax.web.domain.WebSession(UUID.randomUUID(), family, now, now, now.plusSeconds(60))));
+        return family;
+    }
+
+    /**
+     * A7: a family's upload through the JSON API goes through the one upload rule (UploadUseCase: owner only, audited),
+     * never straight into intake, which checks no access at all. Intake would accept it here, so a handler that skipped
+     * the rule would answer 202 and this would see it.
+     */
+    @Test
+    void aSessionUploadGoesThroughTheUploadRuleWithTheSessionsFamilyNeverStraightToIntake() {
+        UUID family = signedIn();
+        UUID patient = UUID.randomUUID();
+        Document received = Document.received(patient, UUID.randomUUID(), 1, Instant.now()).withId(UUID.randomUUID());
+        when(intake.accept(any(), any())).thenReturn(Mono.just(received));
+        when(uploads.upload(eq(family), eq(patient), any())).thenReturn(Mono.just(received));
+
+        client.post().uri(PATH).cookie("baymax_session", "tok").body(upload(patient))
+                .exchange()
+                .expectStatus().isEqualTo(202)
+                .expectBody().jsonPath("$.document_id").isEqualTo(received.id().toString());
+        verify(uploads).upload(eq(family), eq(patient), any());
+        verify(intake, never()).accept(any(), any());
+    }
+
+    /** The other direction: a shared patient's file refuses the upload, and the family's browser hears why. */
+    @Test
+    void aSessionUploadForASharedPatientIs403AndIntakeNeverSeesIt() {
+        UUID family = signedIn();
+        UUID patient = UUID.randomUUID();
+        when(intake.accept(any(), any())).thenReturn(Mono.just(
+                Document.received(patient, UUID.randomUUID(), 1, Instant.now()).withId(UUID.randomUUID())));
+        when(uploads.upload(eq(family), eq(patient), any())).thenReturn(Mono.error(BaymaxException.forbidden(
+                "shared_patient_read_only", "a shared patient's records can be seen but not added to")));
+
+        client.post().uri(PATH).cookie("baymax_session", "tok").body(upload(patient))
+                .exchange()
+                .expectStatus().isForbidden()
+                .expectBody().jsonPath("$.reason").isEqualTo("shared_patient_read_only");
+        verify(intake, never()).accept(any(), any());
     }
 
     @Test

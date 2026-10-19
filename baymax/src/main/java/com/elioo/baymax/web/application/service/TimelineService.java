@@ -5,7 +5,6 @@ import com.elioo.baymax.extraction.application.port.in.DocumentIntakeUseCase;
 import com.elioo.baymax.extraction.application.port.out.DocumentRecordPort;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.DocumentView;
-import com.elioo.baymax.extraction.domain.Upload;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.PatientAccess;
 import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
@@ -101,17 +100,6 @@ public class TimelineService implements TimelineUseCase {
         return visibleDocument(familyId, documentId)
                 .flatMap(d -> audit.record(AuditEvent.family(AuditEvent.Kind.DOCUMENT_VIEW, familyId, d.patientId(), documentId, clock.instant()))
                         .then(intake.view(documentId)));
-    }
-
-    @Override
-    public Mono<Document> upload(UUID familyId, UUID patientId, List<Upload> uploads) {
-        return visiblePatient(familyId, patientId)
-                .flatMap(access -> access.owner()
-                        ? intake.accept(patientId, uploads)
-                        : Mono.error(BaymaxException.forbidden("shared_patient_read_only",
-                                "a shared patient's records can be seen but not added to")))
-                .flatMap(d -> audit.record(AuditEvent.family(AuditEvent.Kind.DOCUMENT_UPLOAD, familyId, patientId, d.id(), clock.instant()))
-                        .thenReturn(d));
     }
 
     @Override

@@ -90,6 +90,34 @@ class BaymaxWebUiRouterTest {
                 .expectHeader().value(HttpHeaders.SET_COOKIE, c -> assertThat(c).startsWith("baymax_lang=bn"));
     }
 
+    /**
+     * A7 regression guard: a backslash after the first slash is a second slash to a browser, so "/\\evil.example" (sent
+     * as /%5C) names another site. The old rule ("starts with / and not //") accepted it, and URI.create then threw on
+     * the backslash: the language switch answered 500. Now anything but a local page goes to the landing.
+     */
+    @Test
+    void switchingLanguageNeverFollowsABackslashOffTheSite() {
+        client.get().uri(java.net.URI.create("/lang/en?back=/%5Cevil.example")).exchange().expectStatus().isSeeOther()
+                .expectHeader().valueEquals(HttpHeaders.LOCATION, "/");
+        client.get().uri(java.net.URI.create("/lang/en?back=/%5C%5Cevil.example/x")).exchange().expectStatus().isSeeOther()
+                .expectHeader().valueEquals(HttpHeaders.LOCATION, "/");
+    }
+
+    /**
+     * The decoded half of the same rule, through the real switch: a malformed escape ("%ZZ", which decoding throws on)
+     * made the switch answer 500, and a "%2e%2e" segment is "..", which the browser resolves to a page outside /app.
+     * Both go to the landing; a well-formed local page is still followed.
+     */
+    @Test
+    void switchingLanguageTurnsAMalformedEscapeOrADotSegmentIntoTheLandingNotA500() {
+        client.get().uri(java.net.URI.create("/lang/en?back=/app/x%25ZZ")).exchange().expectStatus().isSeeOther()
+                .expectHeader().valueEquals(HttpHeaders.LOCATION, "/");
+        client.get().uri(java.net.URI.create("/lang/en?back=/app/%252e%252e/api/v1/baymax/me")).exchange().expectStatus().isSeeOther()
+                .expectHeader().valueEquals(HttpHeaders.LOCATION, "/");
+        client.get().uri(java.net.URI.create("/lang/en?back=/app/home")).exchange().expectStatus().isSeeOther()
+                .expectHeader().valueEquals(HttpHeaders.LOCATION, "/app/home");
+    }
+
     /** Acceptance: every old /baymax/* URL 301s to its new location; a saved timeline link still opens. */
     @Test
     void oldBaymaxUrlsRedirectPermanentlyToApp() {

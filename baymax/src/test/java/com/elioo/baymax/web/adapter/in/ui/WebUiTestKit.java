@@ -7,6 +7,7 @@ import com.elioo.baymax.nudge.application.port.in.NudgeOptOutUseCase;
 import com.elioo.baymax.nudge.application.port.out.NudgeDataPort;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
+import com.elioo.baymax.web.application.port.in.UploadUseCase;
 import com.elioo.baymax.web.application.port.in.WebAuthUseCase;
 import com.elioo.baymax.web.domain.FamilyOverview;
 import com.elioo.baymax.web.domain.PatientSummary;
@@ -38,6 +39,7 @@ final class WebUiTestKit {
     final TimelineUseCase timeline = mock(TimelineUseCase.class);
     final NudgeOptOutUseCase optOut = mock(NudgeOptOutUseCase.class);
     final NudgeDataPort nudgeData = mock(NudgeDataPort.class);
+    final UploadUseCase uploads = mock(UploadUseCase.class);
     final BaymaxProperties properties;
     final UiCopy copy = new UiCopy();
     final SessionAuthFilter sessions;
@@ -72,7 +74,7 @@ final class WebUiTestKit {
         documents = new DocumentPages(timeline, copy, chrome);
         List<WebPages> pages = List.of(new LandingPages(copy, chrome), new SignInPages(auth, sessions, copy, chrome, properties),
                 new OptOutPages(optOut, copy, chrome), new AppTabs(timeline, copy, chrome, nudgeData), documents,
-                new ProfilePages(timeline, optOut), new UploadUiHandler(timeline, chrome),
+                new ProfilePages(timeline, optOut), new UploadUiHandler(uploads, chrome, copy),
                 new AssetHandler());
         return new BaymaxWebUiRouter().baymaxWebUiRoutes(pages, sessions, chrome);
     }

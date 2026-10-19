@@ -2,6 +2,7 @@ package com.elioo.baymax.web.adapter.in.ui;
 
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.DocumentView;
+import com.elioo.baymax.healthrecord.domain.DocumentAllowance;
 import com.elioo.baymax.nudge.application.port.out.NudgeDataPort;
 import com.elioo.baymax.storage.domain.DeletionReport;
 import com.elioo.baymax.web.application.port.in.CodeRejectedException;
@@ -10,6 +11,7 @@ import com.elioo.baymax.web.domain.CodeRequest;
 import com.elioo.baymax.web.domain.IssuedSession;
 import com.elioo.baymax.web.domain.TimelineEntry;
 import com.elioo.baymax.web.domain.TimelinePage;
+import com.elioo.baymax.web.domain.UploadOptions;
 import com.elioo.baymax.web.domain.VerifyFailure;
 import com.elioo.baymax.web.domain.WebSession;
 import org.springframework.http.HttpMethod;
@@ -102,6 +104,11 @@ final class PageFixtures {
         variant("GET /app/family", Fixture.get("/app/family?patient=" + ma, true, Stubs::familyOfTwo).named("chosen"));
         variant("GET /app/family", Fixture.get("/app/family?patient=" + ma + "&saved=1", true, Stubs::maProfile).named("saved"));
         variant("GET /app/family", Fixture.get("/app/family?patient=" + Stubs.ABBU, true, Stubs::familyOfTwo).named("shared"));
+        // A7: the add-report sheet — one patient (chosen), two (none chosen), the cap reached, a view-only member
+        put("GET /app/add", Fixture.get("/app/add", true, Stubs::sheetForMa));
+        variant("GET /app/add", Fixture.get("/app/add?back=/app/home", true, Stubs::sheetForTwo).named("two"));
+        variant("GET /app/add", Fixture.get("/app/add", true, Stubs::sheetAtTheCap).named("cap"));
+        variant("GET /app/add", Fixture.get("/app/add", true, Stubs::sheetViewOnly).named("viewonly"));
         put("GET /app/patients/{id}", Fixture.get("/app/patients/" + ma, true, Stubs::maTimeline));
         // A6: a 302 to the পরিবার tab now; the derived page tests skip non-HTML answers
         put("GET /app/patients/{id}/profile", Fixture.get("/app/patients/" + ma + "/profile", true, Stubs::maProfile));
@@ -231,6 +238,28 @@ final class PageFixtures {
                     .thenReturn(Mono.just("রিপোর্টটি পেয়েছি। এ সপ্তাহের মধ্যে একজন ডাক্তার দেখান।"));
         }
 
+        static void sheetForMa(WebUiTestKit k) {
+            when(k.uploads.uploadOptions(WebUiTestKit.FAMILY)).thenReturn(Mono.just(new UploadOptions(List.of(k.ma(3)), List.of(), allowance(1))));
+        }
+
+        static void sheetForTwo(WebUiTestKit k) {
+            when(k.uploads.uploadOptions(WebUiTestKit.FAMILY)).thenReturn(Mono.just(new UploadOptions(
+                    List.of(k.ma(3), k.patient("আব্বু", true, 1)), List.of(), allowance(0))));
+        }
+
+        static void sheetAtTheCap(WebUiTestKit k) {
+            when(k.uploads.uploadOptions(WebUiTestKit.FAMILY)).thenReturn(Mono.just(new UploadOptions(List.of(k.ma(3)), List.of(), allowance(3))));
+        }
+
+        static void sheetViewOnly(WebUiTestKit k) {
+            when(k.uploads.uploadOptions(WebUiTestKit.FAMILY)).thenReturn(Mono.just(new UploadOptions(
+                    List.of(), List.of(k.patient("আব্বু", false, 1)), allowance(0))));
+        }
+
+        private static DocumentAllowance allowance(long used) {
+            return new DocumentAllowance(true, 3, used, java.time.YearMonth.of(2026, 10));
+        }
+
         static void signedUrls(WebUiTestKit k) {
             when(k.timeline.imageUrl(eq(WebUiTestKit.FAMILY), eq(WebUiTestKit.DOC_ID), anyString()))
                     .thenReturn(Mono.just(URI.create("https://storage.example/signed")));
@@ -261,7 +290,7 @@ final class PageFixtures {
         }
 
         static void acceptsUpload(WebUiTestKit k) {
-            when(k.timeline.upload(eq(WebUiTestKit.FAMILY), eq(WebUiTestKit.MA_ID), anyList())).thenReturn(Mono.just(
+            when(k.uploads.upload(eq(WebUiTestKit.FAMILY), eq(WebUiTestKit.MA_ID), anyList())).thenReturn(Mono.just(
                     Document.received(WebUiTestKit.MA_ID, WebUiTestKit.FAMILY, 1, WebUiTestKit.NOW).withId(WebUiTestKit.DOC_ID)));
         }
 
