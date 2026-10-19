@@ -1,5 +1,6 @@
 package com.elioo.baymax.outbound.application.service;
 
+import com.elioo.baymax.common.time.PatientCalendar;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.extraction.application.port.out.DocumentRecordPort;
 import com.elioo.baymax.extraction.domain.Document;
@@ -14,13 +15,14 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.time.Clock;
+import java.time.LocalDate;
 import java.util.Map;
 import java.util.UUID;
 
 /**
  * F1: the writer of a document's stored urgency. It assesses a DONE document from its persisted facts with
  * {@link UrgencyService} and stores max(stored, assessed) through {@link DocumentUrgencyPort#raise}; the database's
- * trigger rejects any lowering whoever writes. A11 makes this the only caller of both (ArchUnit).
+ * trigger rejects any lowering whoever writes. This is the only caller of both ({@code OneUrgencyWriterTest}).
  */
 @Slf4j
 @Service
@@ -34,7 +36,7 @@ public class StoredUrgencyService implements DocumentUrgencyUseCase {
     private final BaymaxProperties properties;
     private final Clock clock;
 
-    /** The writer. A11 makes this the only caller of UrgencyService.assess and of DocumentUrgencyPort.raise. */
+    /** The writer: the only caller of UrgencyService.assess and of DocumentUrgencyPort.raise (OneUrgencyWriterTest). */
     Mono<StoredUrgency> assessAndStore(DocumentFacts facts) {
         UrgencyAssessment assessed = urgency.assess(facts);
         return stored.raise(facts.document().id(), assessed, clock.instant())
@@ -60,7 +62,26 @@ public class StoredUrgencyService implements DocumentUrgencyUseCase {
         return stored.find(documentId).switchIfEmpty(Mono.defer(() -> assessAndStore(documentId)));
     }
 
-    /** ExplanationService.facts, copied verbatim; A11 points ExplanationService here and deletes its copy. */
+    /** One sweep's bound; a larger backlog drains over the following hours, oldest-unattempted first. */
+    static final int SWEEP_LIMIT = 500;
+
+    @Override
+    public Mono<Long> sweep() {
+        LocalDate today = PatientCalendar.today(clock);   // the day UrgencyService judges follow_up_past_due by
+        return stored.needingAssessment(today, SWEEP_LIMIT)
+                // stamped first: a document that throws goes behind every one not yet attempted, so it cannot starve them
+                // deferred: assembling assessAndStore(id) eagerly would already call the ports before the stamp
+                .concatMap(id -> stored.markAttempt(id, clock.instant())
+                        .then(Mono.defer(() -> assessAndStore(id)))
+                        .onErrorResume(e -> {
+                            // the message can carry a value or a name: the class only
+                            log.warn("[baymax] urgency sweep skipped documentId={} error={}", id, e.getClass().getSimpleName());
+                            return Mono.empty();
+                        }))
+                .count();
+    }
+
+    /** A DONE document's persisted facts: the only copy; ExplanationService composes from these too. */
     Mono<DocumentFacts> facts(Document document) {
         String link = properties.getOutbound().getPublicBaseUrl() + "/app/documents/" + document.id();
         return Mono.zip(

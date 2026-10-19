@@ -4,9 +4,11 @@ import com.elioo.baymax.outbound.application.port.out.DocumentUrgencyPort;
 import com.elioo.baymax.outbound.domain.StoredUrgency;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.outbound.domain.UrgencyAssessment;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeSet;
@@ -18,7 +20,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * A test fake of {@link DocumentUrgencyPort} with the adapter's merge semantics (max of the levels, sorted union of the
  * reasons). The database behaviour itself, the trigger included, is DocumentUrgencyNeverLowersTest's on Postgres.
  */
-final class InMemoryDocumentUrgency implements DocumentUrgencyPort {
+public final class InMemoryDocumentUrgency implements DocumentUrgencyPort {
 
     final Map<UUID, StoredUrgency> rows = new ConcurrentHashMap<>();
     /** Every assessment handed to raise(), in order, before the merge. */
@@ -39,8 +41,28 @@ final class InMemoryDocumentUrgency implements DocumentUrgencyPort {
         return Mono.just(merged);
     }
 
+    /** A row as if an earlier assessment had stored it; not counted in {@link #raised}. */
+    public void preset(UUID documentId, Urgency level, List<String> reasons) {
+        rows.put(documentId, new StoredUrgency(documentId, level, reasons, Instant.EPOCH));
+    }
+
     @Override
     public Mono<StoredUrgency> find(UUID documentId) {
         return Mono.justOrEmpty(rows.get(documentId));
+    }
+
+    /** The sweep's queue, as a test sets it; the predicate itself is the adapter's, on Postgres. */
+    final List<UUID> queue = new CopyOnWriteArrayList<>();
+    /** What happened, in order: "attempt:<id>" here, and whatever the test appends around it (e.g. "assess:<id>"). */
+    final List<String> events = new CopyOnWriteArrayList<>();
+
+    @Override
+    public Flux<UUID> needingAssessment(LocalDate today, int limit) {
+        return Flux.fromIterable(queue).take(limit);
+    }
+
+    @Override
+    public Mono<Void> markAttempt(UUID documentId, Instant at) {
+        return Mono.fromRunnable(() -> events.add("attempt:" + documentId));
     }
 }

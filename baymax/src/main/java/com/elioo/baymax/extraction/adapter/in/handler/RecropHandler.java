@@ -2,7 +2,9 @@ package com.elioo.baymax.extraction.adapter.in.handler;
 
 import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.extraction.application.port.in.RecropUseCase;
+import com.elioo.baymax.outbound.application.port.in.DocumentUrgencyUseCase;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
@@ -14,11 +16,13 @@ import java.util.Map;
 import java.util.UUID;
 
 /** {@code POST /admin/documents/{id}/recrop} and {@code POST /admin/documents/recrop} (all DONE documents). */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class RecropHandler {
 
     private final RecropUseCase recrop;
+    private final DocumentUrgencyUseCase urgency;
 
     public Mono<ServerResponse> one(ServerRequest request) {
         UUID id;
@@ -27,11 +31,13 @@ public class RecropHandler {
         } catch (IllegalArgumentException e) {
             return Mono.error(BaymaxException.badRequest("invalid_request", "document id must be a UUID"));
         }
-        return recrop.recrop(id).flatMap(r -> ServerResponse.ok().bodyValue(body(r)));
+        // F1: a re-crop changes which values a DONE document shows, so it is an assessment site
+        return recrop.recrop(id).flatMap(r -> urgency.assessAndStore(id).thenReturn(r))
+                .flatMap(r -> ServerResponse.ok().bodyValue(body(r)));
     }
 
     public Mono<ServerResponse> all(ServerRequest request) {
-        return recrop.recropAll().map(RecropHandler::body).collectList()
+        return recrop.recropAll().concatMap(this::assessed).map(RecropHandler::body).collectList()
                 .flatMap(reports -> {
                     Map<String, Object> summary = new LinkedHashMap<>();
                     summary.put("documents", reports.size());
@@ -68,6 +74,17 @@ public class RecropHandler {
             m.put("model_confidence", r.confidence());
             return ServerResponse.ok().bodyValue(m);
         });
+    }
+
+    /** One document's assessment after its re-crop; a throw is logged by class name and never stops the rest. */
+    private Mono<RecropUseCase.RecropReport> assessed(RecropUseCase.RecropReport r) {
+        return urgency.assessAndStore(r.documentId())
+                .onErrorResume(e -> {
+                    log.error("[baymax] urgency store after recrop failed documentId={} error={}", r.documentId(),
+                            e.getClass().getSimpleName());
+                    return Mono.empty();
+                })
+                .thenReturn(r);
     }
 
     private static Map<String, Object> body(RecropUseCase.RecropReport r) {

@@ -18,6 +18,7 @@ import com.elioo.baymax.outbound.application.service.ExplanationService;
 import com.elioo.baymax.outbound.application.service.MessageSafetyCheck;
 import com.elioo.baymax.outbound.application.service.OutboundMessageGate;
 import com.elioo.baymax.outbound.application.service.ReviewGateService;
+import com.elioo.baymax.outbound.application.service.StoredUrgencyService;
 import com.elioo.baymax.outbound.application.service.UrgencyLines;
 import com.elioo.baymax.outbound.application.service.UrgencyService;
 import com.elioo.baymax.outbound.domain.OutboundMessage;
@@ -109,7 +110,9 @@ class DetailDeliveryGuardsTest {
         explainer = new ExplanationService(documents, records, messages, metered,
                 new ExtractionModelConfiguration.ExtractionClients(sonnet, sonnet, sonnet, true),
                 new UrgencyService(props, clock), new MessageSafetyCheck(props), new OutboundMessageGate(props),
-                reviewer, whatsapp, new Copy(), props, clock);
+                reviewer, whatsapp, new Copy(), props, clock,
+                new StoredUrgencyService(new UrgencyService(props, clock),
+                        new com.elioo.baymax.outbound.application.service.InMemoryDocumentUrgency(), documents, records, props, clock));
         reviewGate = new ReviewGateService(messages, whatsapp, clock);
         wa = new WaIntakeService(records, documents, explainer, mock(DocumentIntakeUseCase.class), graph, new Copy(), props,
                 mock(com.elioo.baymax.web.application.port.in.WebAuthUseCase.class));
