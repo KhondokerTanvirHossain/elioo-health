@@ -30,7 +30,9 @@ class NoUrgencyColumnInEntitiesTest {
         classes.stream().filter(c -> c.isAnnotatedWith(Table.class)).forEach(c -> {
             entities.add(c.getSimpleName());
             for (JavaField f : c.getFields()) {
-                String column = f.tryGetAnnotationOfType(Column.class).map(Column::value).orElse(f.getName());
+                // a bare @Column has an empty value and maps to the field name, as Spring Data does
+                String column = f.tryGetAnnotationOfType(Column.class).map(Column::value).filter(v -> !v.isBlank())
+                        .orElse(f.getName());
                 if (column.matches("(?i)(urgency|verdict)[a-z_]*") && !f.isAnnotatedWith(ReadOnlyProperty.class)) {
                     writable.add(c.getSimpleName() + "." + f.getName());
                 }

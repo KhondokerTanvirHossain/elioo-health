@@ -4,15 +4,15 @@ import com.elioo.baymax.extraction.domain.DocumentView;
 import com.elioo.baymax.outbound.domain.Urgency;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.EnumSource;
-import org.junit.jupiter.params.provider.NullSource;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -29,32 +29,53 @@ class DocumentPagesRenderTest {
                 List.of(), List.of(), null, null);
     }
 
-    /** Every urgency line in messages_bn (all forms, derived from the file), for the absence checks. */
-    private static List<String> urgencyLines() throws IOException {
-        List<String> lines = BundleFiles.messages(Lang.BN).entrySet().stream().filter(e -> e.getKey().startsWith("urgency."))
+    /** Every urgency line in the page language's messages bundle (all forms, derived from the file), for the absence checks. */
+    private static List<String> urgencyLines(Lang lang) throws IOException {
+        List<String> lines = BundleFiles.messages(lang).entrySet().stream().filter(e -> e.getKey().startsWith("urgency."))
                 .map(e -> Html.esc(e.getValue())).toList();
-        assertThat(lines).as("urgency lines in messages_bn").hasSizeGreaterThanOrEqualTo(2);
+        assertThat(lines).as("urgency lines in messages_" + lang).hasSizeGreaterThanOrEqualTo(2);
         return lines;
     }
 
-    /** F1 on the page (interim, A12 replaces it): a NOW or THIS_WEEK document shows its fixed line with no explanation. */
+    private static final Pattern URGENCY_BANNER = Pattern.compile("<section([^>]*)>(.*?)</section>", Pattern.DOTALL);
+    private static final Pattern CLASS_ATTR = Pattern.compile("\\bclass=\"([^\"]*)\"");
+    private static final Pattern HEAD = Pattern.compile("<p class=\"head\">(.*?)</p>", Pattern.DOTALL);
+
+    /** The one element with id="urgency": its class (which carries the severity) and its head line. */
+    private record Banner(String cssClass, String head) {}
+
+    private static Banner urgencyBanner(String html) {
+        List<Banner> found = URGENCY_BANNER.matcher(html).results()
+                .filter(m -> m.group(1).contains("id=\"urgency\""))
+                .map(m -> {
+                    Matcher c = CLASS_ATTR.matcher(m.group(1));
+                    Matcher h = HEAD.matcher(m.group(2));
+                    return new Banner(c.find() ? c.group(1) : null, h.find() ? h.group(1) : null);
+                }).toList();
+        assertThat(found).as("exactly one id=\"urgency\" section").hasSize(1);
+        return found.get(0);
+    }
+
+    /**
+     * F1 on the page (interim, A12 replaces it): a NOW or THIS_WEEK document shows its fixed line with no explanation,
+     * and the severity is on the element itself: NOW is the red banner, THIS_WEEK the amber one, never the other way.
+     */
     @ParameterizedTest
-    @EnumSource(value = Urgency.class, names = {"NOW", "THIS_WEEK"})
-    void aStoredLevelIsShownWithoutAnyExplanation(Urgency level) {
-        String html = kit.documents.render(Lang.BN, doneView().withUrgency(level.dbValue()), id, Optional.empty());
-        assertThat(html).contains(kit.copy.urgency(Lang.BN, level, false));
-        String en = kit.documents.render(Lang.EN, doneView().withUrgency(level.dbValue()), id, Optional.empty());
-        assertThat(en).contains(kit.copy.urgency(Lang.EN, level, false));
+    @CsvSource({"NOW,BN,banner now", "NOW,EN,banner now", "THIS_WEEK,BN,banner soon", "THIS_WEEK,EN,banner soon"})
+    void aStoredLevelIsShownWithoutAnyExplanation(Urgency level, Lang lang, String expectedClass) {
+        String html = kit.documents.render(lang, doneView().withUrgency(level.dbValue()), id, Optional.empty());
+        Banner banner = urgencyBanner(html);
+        assertThat(banner.cssClass()).isEqualTo(expectedClass);
+        assertThat(banner.head()).isEqualTo(kit.copy.urgency(lang, level, false));
     }
 
     /** D27, the other direction: ROUTINE and unassessed carry none of the urgency lines, in any form, anywhere. */
     @ParameterizedTest
-    @NullSource
-    @ValueSource(strings = "routine")
-    void routineAndUnassessedShowNoUrgencyLine(String stored) throws IOException {
-        String html = kit.documents.render(Lang.BN, doneView().withUrgency(stored), id, Optional.empty());
-        assertThat(urgencyLines()).allSatisfy(line -> assertThat(html).doesNotContain(line));
-        assertThat(html).doesNotContain("id=\"urgency\"");
+    @CsvSource(value = {"<null>,BN", "<null>,EN", "routine,BN", "routine,EN"}, nullValues = "<null>")
+    void routineAndUnassessedShowNoUrgencyLine(String stored, Lang lang) throws IOException {
+        String html = kit.documents.render(lang, doneView().withUrgency(stored), id, Optional.empty());
+        assertThat(urgencyLines(lang)).allSatisfy(line -> assertThat(html).doesNotContain(line));
+        assertThat(html).doesNotContain("id=\"urgency\"").doesNotContain("class=\"banner");
     }
 
     /** Acceptance: given unverified items, the count is shown and the items themselves never appear. */

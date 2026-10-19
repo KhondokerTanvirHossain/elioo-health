@@ -117,29 +117,39 @@ class DocumentUrgencyNeverLowersTest {
     /**
      * The backfill. Until now urgency lived only on outbound rows. A document with a ROUTINE explanation and a NOW
      * detail comes out NOW, with reasons from both encodings of outbound_message.urgency_reasons (JSON array since
-     * PR 5, comma-joined before). A DONE document with no message stays NULL, for the sweep to assess.
+     * PR 5, comma-joined before, split and trimmed). Only explanation and detail rows feed it: a retake or nudge row on
+     * a document is not what the family was told about that paper. A DONE document with no message stays NULL, for
+     * the sweep to assess.
      */
     @Test
     void theBackfillTakesTheHighestLevelAFamilyWasToldAndLeavesAnUnmessagedDocumentNull() {
         runner().run(context -> {
             UUID told = doneDocument(context);
             UUID untold = doneDocument(context);
+            UUID otherKinds = doneDocument(context);
             String family = scalar("SELECT family_id FROM baymax.document WHERE id = '" + told + "'");
+            String otherFamily = scalar("SELECT family_id FROM baymax.document WHERE id = '" + otherKinds + "'");
             sql("UPDATE baymax.document SET urgency = NULL, urgency_reasons = NULL, urgency_assessed_at = NULL "
-                    + "WHERE id IN ('" + told + "','" + untold + "')");   // both start unassessed (NULL -> NULL is not a lowering)
+                    + "WHERE id IN ('" + told + "','" + untold + "','" + otherKinds + "')");   // all start unassessed (NULL -> NULL is not a lowering)
             sql("INSERT INTO baymax.outbound_message (family_id, document_id, kind, urgency, urgency_reasons, gate_status, created_at) VALUES "
-                    + "('" + family + "','" + told + "','explanation','routine','diagnosis_present','released','2026-10-01T08:00:00Z'),"
-                    + "('" + family + "','" + told + "','detail','now','[\"value_critical:cholesterol, total|stopgap\"]','released','2026-10-02T08:00:00Z')");
+                    + "('" + family + "','" + told + "','explanation','routine','diagnosis_present, follow_up_past_due','released','2026-10-01T08:00:00Z'),"
+                    + "('" + family + "','" + told + "','detail','now','[\"value_critical:cholesterol, total|stopgap\"]','released','2026-10-02T08:00:00Z'),"
+                    + "('" + otherFamily + "','" + otherKinds + "','explanation','routine','','released','2026-10-01T08:00:00Z'),"
+                    + "('" + otherFamily + "','" + otherKinds + "','retake','now','[\"text_emergency_phrase\"]','released','2026-10-03T08:00:00Z'),"
+                    + "('" + otherFamily + "','" + otherKinds + "','nudge','this_week','follow_up_past_due','released','2026-10-04T08:00:00Z')");
 
             sql(backfillStatementFromV18());
 
             assertThat(scalar("SELECT urgency FROM baymax.document WHERE id = '" + told + "'")).isEqualTo("now");
             assertThat(scalar("SELECT urgency_reasons::text FROM baymax.document WHERE id = '" + told + "'"))
-                    .isEqualTo("[\"diagnosis_present\", \"value_critical:cholesterol, total|stopgap\"]");
+                    .isEqualTo("[\"diagnosis_present\", \"follow_up_past_due\", \"value_critical:cholesterol, total|stopgap\"]");
             assertThat(scalar("SELECT urgency_assessed_at = '2026-10-02T08:00:00Z' FROM baymax.document WHERE id = '" + told + "'"))
                     .isEqualTo("t");
             assertThat(scalar("SELECT coalesce(urgency, '<null>') FROM baymax.document WHERE id = '" + untold + "'"))
                     .isEqualTo("<null>");
+            // the exclusion direction: the retake's NOW and the nudge's THIS_WEEK do not reach the document
+            assertThat(scalar("SELECT urgency || ' ' || urgency_reasons::text FROM baymax.document WHERE id = '" + otherKinds + "'"))
+                    .isEqualTo("routine []");
         });
     }
 

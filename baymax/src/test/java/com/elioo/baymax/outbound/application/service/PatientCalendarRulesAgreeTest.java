@@ -26,6 +26,13 @@ class PatientCalendarRulesAgreeTest {
     void theFollowUpRuleJudgesPastDueOnTheDhakaDay(String at, boolean pastDue) {
         UrgencyService rule = new UrgencyService(new BaymaxProperties(), Clock.fixed(Instant.parse(at), ZoneOffset.UTC));
         var facts = UrgencyServiceTest.facts(List.of(), List.of(Map.of("instruction", "আবার আসবেন", "due_date", "2026-10-19")), Map.of(), "{}");
-        assertThat(rule.assess(facts).level()).isEqualTo(pastDue ? Urgency.THIS_WEEK : Urgency.ROUTINE);
+        var assessed = rule.assess(facts);
+        assertThat(assessed.level()).isEqualTo(pastDue ? Urgency.THIS_WEEK : Urgency.ROUTINE);
+        // the path, not just the verdict: THIS_WEEK from the follow-up rule, and from no other
+        if (pastDue) {
+            assertThat(assessed.reasons()).containsExactly("follow_up_past_due");
+        } else {
+            assertThat(assessed.reasons()).isEmpty();
+        }
     }
 }

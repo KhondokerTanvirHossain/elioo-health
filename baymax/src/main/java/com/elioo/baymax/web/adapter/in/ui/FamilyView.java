@@ -18,8 +18,6 @@ import static com.elioo.baymax.web.adapter.in.ui.PageChrome.BASE;
  */
 final class FamilyView {
 
-    /** The patient's calendar for the consent date. A10 replaces this with {@code PatientCalendar.ZONE}. */
-
     private final UiCopy copy;
     private final PageChrome chrome;
 

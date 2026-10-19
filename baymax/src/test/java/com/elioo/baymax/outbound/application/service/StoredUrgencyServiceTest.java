@@ -133,16 +133,25 @@ class StoredUrgencyServiceTest {
         assertThat(lines).allSatisfy(l -> assertThat(l).doesNotContainIgnoringCase("potassium").doesNotContain("11.0"));
     }
 
-    /** A lower later assessment never lowers what is stored: the writer keeps the higher level and every reason. */
+    /**
+     * What the service owns when a later assessment is lower (the merge itself is the port's, on Postgres in
+     * DocumentUrgencyNeverLowersTest): it hands the port the fresh assessment as assessed, neither dropped nor
+     * pre-merged, and returns what the port stored, never its own lower reading.
+     */
     @Test
-    void aLaterLowerAssessmentKeepsTheStoredLevel() {
+    void aLowerAssessmentIsHandedToThePortAsAssessedAndTheStoredLevelIsReturned() {
         Document d = document(Document.Status.DONE);
         service.assessAndStore(d.id()).block();
         when(documents.observationsOf(d.id())).thenReturn(Flux.empty());
 
         StoredUrgency after = service.assessAndStore(d.id()).block();
 
-        assertThat(after.level()).isEqualTo(Urgency.NOW);
+        assertThat(stored.raised).hasSize(2);
+        assertThat(stored.raised.get(1).level()).as("the second assessment reaches the port as assessed").isEqualTo(Urgency.ROUTINE);
+        assertThat(stored.raised.get(1).reasons()).isEmpty();
+        assertThat(after.level()).as("the service returns the stored level, not its own").isEqualTo(Urgency.NOW);
         assertThat(after.reasons()).containsExactly("value_critical:potassium|stopgap");
+        assertThat(logged.list.stream().map(ILoggingEvent::getFormattedMessage))
+                .anyMatch(l -> l.contains("documentId=" + d.id()) && l.contains("assessed=routine") && l.contains("stored=now"));
     }
 }
