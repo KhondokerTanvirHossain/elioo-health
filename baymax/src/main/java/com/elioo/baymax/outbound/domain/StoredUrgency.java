@@ -22,6 +22,11 @@ public record StoredUrgency(UUID documentId, Urgency level, List<String> reasons
         this(documentId, level, reasons, assessedAt, List.of());
     }
 
+    /** The same stored level with the document's stored verdicts. */
+    public StoredUrgency withValues(List<ValueVerdict> verdicts) {
+        return new StoredUrgency(documentId, level, reasons, assessedAt, verdicts);
+    }
+
     /** The stored level as the composition pipeline consumes it: compose at what is stored, never at a fresh lower read. */
     public UrgencyAssessment asAssessment() {
         return new UrgencyAssessment(level, reasons, values);

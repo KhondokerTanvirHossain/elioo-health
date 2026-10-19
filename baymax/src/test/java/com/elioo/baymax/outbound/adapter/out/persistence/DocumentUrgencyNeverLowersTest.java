@@ -251,21 +251,34 @@ class DocumentUrgencyNeverLowersTest {
         });
     }
 
-    /** After one sweep there is nothing left to assess: the predicate and the rule agree, so the queue converges. */
+    /**
+     * After one sweep there is nothing left to assess: the predicate and the rule agree, so the queue converges. F2: a
+     * document already assessed but with observations that carry no verdict (V19's backfill, every re-crop) is queued,
+     * and one sweep gives every one of them a verdict — a verdict-less observation would be picked every hour.
+     */
     @Test
     void aSweepConverges() {
         runner().withBean(Clock.class, () -> Clock.fixed(Instant.parse("2026-10-20T08:00:00Z"), ZoneOffset.UTC)).run(context -> {
             UUID unassessed = doneDocument(context);
             UUID pastDue = doneDocument(context);
+            UUID withValues = doneDocument(context);
             DocumentUrgencyPort port = context.getBean(DocumentUrgencyPort.class);
             port.raise(pastDue, UrgencyAssessment.routine(), T).block();
+            port.raise(withValues, UrgencyAssessment.routine(), T).block();
             followUp(pastDue, "2026-10-19");
+            observation(withValues, "Creatinine", "1.0", "0.7", "1.3");
+            observation(withValues, "LDL", "250", null, "<100");
+            assertThat(port.needingAssessment(LocalDate.parse("2026-10-20"), 500).collectList().block())
+                    .as("assessed, but its observations have no verdict").contains(withValues);
 
             Long assessed = context.getBean(DocumentUrgencyUseCase.class).sweep().block();
 
-            assertThat(assessed).isGreaterThanOrEqualTo(2L);
+            assertThat(assessed).isGreaterThanOrEqualTo(3L);
             assertThat(port.needingAssessment(LocalDate.parse("2026-10-20"), 500).collectList().block())
-                    .doesNotContain(unassessed, pastDue);
+                    .doesNotContain(unassessed, pastDue, withValues);
+            assertThat(scalar("SELECT string_agg(name || '=' || coalesce(verdict, '<null>'), ',' ORDER BY name) "
+                    + "FROM baymax.observation WHERE document_id = '" + withValues + "'"))
+                    .isEqualTo("Creatinine=inside,LDL=unknown");
             assertThat(port.find(unassessed).block().level()).isEqualTo(Urgency.ROUTINE);
             assertThat(port.find(pastDue).block().reasons()).contains("follow_up_past_due");
             assertThat(port.find(pastDue).block().level()).isEqualTo(Urgency.THIS_WEEK);
@@ -320,11 +333,12 @@ class DocumentUrgencyNeverLowersTest {
         });
     }
 
-    private UUID doneDocument(ApplicationContext context) {
+    /** A DONE document for a new family and patient; package-visible for ValueVerdictNeverSoftensTest. */
+    static UUID doneDocument(ApplicationContext context) {
         return doneDocument(context, T);
     }
 
-    private UUID doneDocument(ApplicationContext context, Instant created) {
+    static UUID doneDocument(ApplicationContext context, Instant created) {
         HealthRecordPort records = context.getBean(HealthRecordPort.class);
         FamilyAccount family = records.createFamily(new FamilyAccount(null,
                 "+88017000007" + String.format("%02d", FAMILIES.incrementAndGet()), "Tanvir", FamilyAccount.Plan.FREE, T, T)).block();
@@ -339,6 +353,14 @@ class DocumentUrgencyNeverLowersTest {
     private static void followUp(UUID doc, String dueDate) throws Exception {
         sql("INSERT INTO baymax.follow_up (patient_id, document_id, instruction, due_date, crop_key) "
                 + "SELECT patient_id, id, 'আবার আসবেন', DATE '" + dueDate + "', 'k' FROM baymax.document WHERE id = '" + doc + "'");
+    }
+
+    /** A shown value on the document, for its patient, with its crop. */
+    private static void observation(UUID doc, String name, String value, String low, String high) throws Exception {
+        sql("INSERT INTO baymax.observation (patient_id, document_id, name, canonical_name, value, ref_low, ref_high, crop_key, observed_at) "
+                + "SELECT patient_id, id, '" + name + "', '" + name.toLowerCase(java.util.Locale.ROOT) + "', '" + value + "', "
+                + (low == null ? "NULL" : "'" + low + "'") + ", " + (high == null ? "NULL" : "'" + high + "'")
+                + ", 'k/crop.jpg', now() FROM baymax.document WHERE id = '" + doc + "'");
     }
 
     /** The UPDATE block of V18 itself, read from the classpath: the test runs the shipped SQL, not a copy of it. */
