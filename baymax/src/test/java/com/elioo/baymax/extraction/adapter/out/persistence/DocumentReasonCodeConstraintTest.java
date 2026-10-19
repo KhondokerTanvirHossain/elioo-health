@@ -1,9 +1,11 @@
 package com.elioo.baymax.extraction.adapter.out.persistence;
 
 import com.elioo.baymax.config.BaymaxAutoConfiguration;
+import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.extraction.application.port.out.DocumentRecordPort;
 import com.elioo.baymax.extraction.application.service.DocumentExtractionService;
 import com.elioo.baymax.extraction.domain.Document;
+import com.elioo.baymax.extraction.domain.RetakeReason;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
@@ -26,13 +28,17 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -80,21 +86,29 @@ class DocumentReasonCodeConstraintTest {
             expected.put(DocumentExtractionService.REASON_SECTION_EMPTY.formatted("follow_up", "prescription"), "expected_section_empty:follow_up");
             expected.put(DocumentExtractionService.REASON_LOW_SECTION + " (0.55)", "low_section:unknown");
             expected.put("an old reason from 2025", "legacy");
+            // The fifth retake prose production ever wrote: DR-28's post-crop retake (5ac6092), removed by DR-31
+            // (e4494c1). A row from that window matches none of the four forms and is marked legacy.
+            expected.put("nothing from the %s of this %s could be shown with its source".formatted("values", "lab_report"), "legacy");
             // the table as it was before V20's constraints: drop both, write pre-V20 rows, run V20's own blocks again
             sql("ALTER TABLE baymax.document DROP CONSTRAINT document_reason_code_only_on_retake, DROP CONSTRAINT document_retake_has_reason_code");
             Map<String, UUID> rows = new LinkedHashMap<>();
-            for (String prose : expected.keySet()) {
-                UUID doc = receivedDocument(context);
-                sql("UPDATE baymax.document SET status='NEEDS_RETAKE', status_reason='" + prose.replace("'", "''")
-                        + "', status_reason_code=NULL WHERE id='" + doc + "'");
-                rows.put(prose, doc);
-            }
-            // a FAILED document keeps its prose and gets no code: the backfill touches retakes only
-            UUID failed = receivedDocument(context);
-            sql("UPDATE baymax.document SET status='FAILED', status_reason='groq HTTP 503' WHERE id='" + failed + "'");
+            UUID failed;
+            try {
+                for (String prose : expected.keySet()) {
+                    UUID doc = receivedDocument(context);
+                    sql("UPDATE baymax.document SET status='NEEDS_RETAKE', status_reason='" + prose.replace("'", "''")
+                            + "', status_reason_code=NULL WHERE id='" + doc + "'");
+                    rows.put(prose, doc);
+                }
+                // a FAILED document keeps its prose and gets no code: the backfill touches retakes only
+                failed = receivedDocument(context);
+                sql("UPDATE baymax.document SET status='FAILED', status_reason='groq HTTP 503' WHERE id='" + failed + "'");
 
-            sql(block("backfill"));
-            sql(block("constraint"));   // ADD CONSTRAINT validates every row: a NULL code left by the backfill fails here
+                sql(block("backfill"));
+                sql(block("constraint"));   // ADD CONSTRAINT validates every row: a NULL code left by the backfill fails here
+            } finally {
+                restoreConstraints();   // the container is shared: a failure here must not leave later tests unguarded
+            }
 
             for (Map.Entry<String, String> e : expected.entrySet()) {
                 assertThat(scalar("SELECT status_reason_code FROM baymax.document WHERE id='" + rows.get(e.getKey()) + "'"))
@@ -104,6 +118,40 @@ class DocumentReasonCodeConstraintTest {
             // both constraints are back and VALID, not NOT VALID
             assertThat(scalar("SELECT count(*) FROM pg_constraint WHERE conrelid = 'baymax.document'::regclass AND convalidated "
                     + "AND conname IN ('document_reason_code_only_on_retake', 'document_retake_has_reason_code')")).isEqualTo("2");
+        });
+    }
+
+    /**
+     * Derived, not listed: every code the code base can produce — each {@link RetakeReason}, and for a sectioned one
+     * each section the gate can name (the judged sections, and every section the expected-sections and gating tables
+     * configure) — written through the real port onto a retake, and stored as written. V20's CHECK and the enum are
+     * two lists; a reason or a section added to one and not the other fails here, not on production's first retake.
+     */
+    @Test
+    void everyCodeTheGateCanProduceIsAcceptedThroughThePort() {
+        runner().run(context -> {
+            BaymaxProperties.Extract extract = context.getBean(BaymaxProperties.class).getExtract();
+            Set<String> sections = new TreeSet<>(DocumentExtractionService.SECTION_ORDER);
+            extract.getExpectedSections().values().forEach(sections::addAll);
+            extract.getGatingSections().values().forEach(sections::addAll);
+            assertThat(sections).as("the gate names sections").isNotEmpty();
+            List<String> codes = new ArrayList<>();
+            for (RetakeReason reason : RetakeReason.values()) {
+                if (reason.hasSection()) {
+                    sections.forEach(section -> codes.add(reason.code(section)));
+                } else {
+                    codes.add(reason.code(null));
+                }
+            }
+            assertThat(codes).as("there are codes to write").hasSizeGreaterThan(RetakeReason.values().length);
+            DocumentRecordPort documents = context.getBean(DocumentRecordPort.class);
+            for (String code : codes) {
+                Document d = documents.find(receivedDocument(context)).block();
+                assertThatCode(() -> documents.update(d.withStatus(Document.Status.NEEDS_RETAKE, "a retake", code, T)).block())
+                        .as("the database accepts the gate's code %s", code).doesNotThrowAnyException();
+                assertThat(scalar("SELECT status_reason_code FROM baymax.document WHERE id='" + d.id() + "'"))
+                        .as(code).isEqualTo(code);
+            }
         });
     }
 
@@ -194,6 +242,22 @@ class DocumentReasonCodeConstraintTest {
                         "baymax.flyway.url=" + POSTGRES.getJdbcUrl() + "&sslmode=disable",
                         "baymax.flyway.user=" + POSTGRES.getUsername(),
                         "baymax.flyway.password=" + POSTGRES.getPassword());
+    }
+
+    /** Puts back whichever of V20's two row rules is missing (Postgres has no ADD CONSTRAINT IF NOT EXISTS). */
+    private static void restoreConstraints() throws Exception {
+        if (scalar("SELECT count(*) FROM pg_constraint WHERE conrelid = 'baymax.document'::regclass "
+                + "AND conname = 'document_reason_code_only_on_retake'").equals("0")) {
+            sql("UPDATE baymax.document SET status_reason_code = NULL WHERE status <> 'NEEDS_RETAKE'");
+            sql("ALTER TABLE baymax.document ADD CONSTRAINT document_reason_code_only_on_retake "
+                    + "CHECK (status_reason_code IS NULL OR status = 'NEEDS_RETAKE')");
+        }
+        if (scalar("SELECT count(*) FROM pg_constraint WHERE conrelid = 'baymax.document'::regclass "
+                + "AND conname = 'document_retake_has_reason_code'").equals("0")) {
+            sql("UPDATE baymax.document SET status_reason_code = 'legacy' WHERE status = 'NEEDS_RETAKE' AND status_reason_code IS NULL");
+            sql("ALTER TABLE baymax.document ADD CONSTRAINT document_retake_has_reason_code "
+                    + "CHECK (status <> 'NEEDS_RETAKE' OR status_reason_code IS NOT NULL)");
+        }
     }
 
     private static void sql(String statement) throws Exception {

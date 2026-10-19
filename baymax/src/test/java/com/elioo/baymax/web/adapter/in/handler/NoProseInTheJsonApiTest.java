@@ -23,8 +23,9 @@ import com.elioo.baymax.web.application.service.TimelineService;
 import com.elioo.baymax.web.domain.WebSession;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.web.reactive.function.server.RouterFunction;
 import org.springframework.web.reactive.function.server.RouterFunctions;
@@ -41,6 +42,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -51,11 +53,12 @@ import static org.mockito.Mockito.when;
 import static org.springframework.web.reactive.function.server.RequestPredicates.GET;
 
 /**
- * F5: the family's JSON never carries {@code status_reason}. A NEEDS_RETAKE document whose stored prose is the code's
- * own low-overall text goes through the real intake view, the real timeline service and the real handlers; the
- * response is parsed and EVERY string value and EVERY field name in the tree is walked — a field check, never a
- * substring of the document. The document JSON names the reason by its code, {@code retake_reason_code}; the timeline
- * entry gains that field with its read model (C2), and until then carries no reason of any kind.
+ * F5: the family's JSON never carries {@code status_reason}. Each stored document — one per prose a retake path
+ * writes, each with its code, and a FAILED row carrying a provider error — goes through the real intake view, the real
+ * timeline service and the real handlers; the response is parsed and EVERY string value and EVERY field name in the
+ * tree is walked — a field check, never a substring of the document. The document JSON names the reason by its code,
+ * {@code retake_reason_code}; the timeline entry gains that field with its read model (C2, which extends
+ * {@link #theTimelineJsonCarriesNoProseAndNoReasonField} to assert it), and until then carries no reason of any kind.
  */
 class NoProseInTheJsonApiTest {
 
@@ -63,7 +66,6 @@ class NoProseInTheJsonApiTest {
     private static final UUID FAMILY = UUID.randomUUID();
     private static final UUID PATIENT = UUID.randomUUID();
     private static final UUID DOC = UUID.randomUUID();
-    private static final String PROSE = DocumentExtractionService.REASON_LOW_OVERALL + " (0.40)";
     /** The fixed lead of every prose a retake path writes; none may appear in any string of any response. */
     private static final List<String> EVERY_PROSE = List.of(DocumentExtractionService.REASON_NO_TEXT,
             DocumentExtractionService.REASON_LOW_OVERALL,
@@ -73,10 +75,20 @@ class NoProseInTheJsonApiTest {
     private final ObjectMapper json = new ObjectMapper();
     private WebTestClient client;
 
-    @BeforeEach
-    void wire() {
-        Document retake = new Document(DOC, PATIENT, FAMILY, null, null, null, null, 0.4, Document.Status.NEEDS_RETAKE,
-                PROSE, null, null, 1, T, T, null, null, "low_overall");
+    /** status | stored prose | stored code: every prose a retake path writes, and FAILED's developer error. */
+    static Stream<Arguments> storedDocuments() {
+        return Stream.of(
+                Arguments.of("NEEDS_RETAKE", DocumentExtractionService.REASON_NO_TEXT, "no_text"),
+                Arguments.of("NEEDS_RETAKE", DocumentExtractionService.REASON_LOW_OVERALL + " (0.40)", "low_overall"),
+                Arguments.of("NEEDS_RETAKE", DocumentExtractionService.REASON_SECTION_EMPTY.formatted("medicines", "prescription"),
+                        "expected_section_empty:medicines"),
+                Arguments.of("NEEDS_RETAKE", DocumentExtractionService.REASON_LOW_SECTION + " (0.55)", "low_section:values"),
+                Arguments.of("FAILED", "groq HTTP 503", null));
+    }
+
+    private void wire(String status, String prose, String code) {
+        Document retake = new Document(DOC, PATIENT, FAMILY, null, null, null, null, 0.4, Document.Status.valueOf(status),
+                prose, null, null, 1, T, T, null, null, code);
         DocumentRecordPort documents = mock(DocumentRecordPort.class);
         when(documents.find(DOC)).thenReturn(Mono.just(retake));
         when(documents.findVisible(FAMILY, DOC)).thenReturn(Mono.just(retake));
@@ -113,23 +125,29 @@ class NoProseInTheJsonApiTest {
         client = WebTestClient.bindToRouterFunction(routes).build();
     }
 
-    @Test
-    void theDocumentJsonNamesTheRetakeByItsCodeAndCarriesNoProse() throws Exception {
+    @ParameterizedTest
+    @MethodSource("storedDocuments")
+    void theDocumentJsonNamesTheRetakeByItsCodeAndCarriesNoProse(String status, String prose, String code) throws Exception {
+        wire(status, prose, code);
         for (String uri : List.of("/documents/" + DOC, "/documents/" + DOC + "?as=family")) {
             JsonNode body = get(uri);
-            assertNoProseAndNoReasonField(uri, body);
-            assertThat(body.path("retake_reason_code").asText(null)).as(uri + " $.retake_reason_code").isEqualTo("low_overall");
-            assertThat(body.path("status").asText()).as(uri + " $.status").isEqualTo("NEEDS_RETAKE");
+            assertNoProseAndNoReasonField(uri, body, prose);
+            JsonNode reasonCode = body.path("retake_reason_code");
+            assertThat(reasonCode.isNull() || reasonCode.isMissingNode() ? null : reasonCode.asText())
+                    .as(uri + " $.retake_reason_code").isEqualTo(code);
+            assertThat(body.path("status").asText()).as(uri + " $.status").isEqualTo(status);
         }
     }
 
-    @Test
-    void theTimelineJsonCarriesNoProseAndNoReasonField() throws Exception {
+    @ParameterizedTest
+    @MethodSource("storedDocuments")
+    void theTimelineJsonCarriesNoProseAndNoReasonField(String status, String prose, String code) throws Exception {
+        wire(status, prose, code);
         String uri = "/patients/" + PATIENT + "/timeline";
         JsonNode body = get(uri);
         assertThat(body.path("documents")).as("the entry is there to be checked").hasSize(1);
-        assertThat(body.path("documents").get(0).path("status").asText()).isEqualTo("NEEDS_RETAKE");
-        assertNoProseAndNoReasonField(uri, body);
+        assertThat(body.path("documents").get(0).path("status").asText()).isEqualTo(status);
+        assertNoProseAndNoReasonField(uri, body, prose);
     }
 
     private JsonNode get(String uri) throws Exception {
@@ -138,13 +156,14 @@ class NoProseInTheJsonApiTest {
     }
 
     /** Every string value and every field name, by JSON path, asserting the walk found something first. */
-    private static void assertNoProseAndNoReasonField(String uri, JsonNode body) {
+    private static void assertNoProseAndNoReasonField(String uri, JsonNode body, String storedProse) {
         List<Map.Entry<String, String>> strings = new ArrayList<>();
         List<String> fields = new ArrayList<>();
         walk("$", body, strings, fields);
         assertThat(strings).as(uri + ": the walk reached string values").isNotEmpty();
         assertThat(fields).as(uri + ": the walk reached field names").isNotEmpty();
         for (Map.Entry<String, String> s : strings) {
+            assertThat(s.getValue()).as(uri + " " + s.getKey() + ": the stored prose").doesNotContain(storedProse);
             for (String prose : EVERY_PROSE) {
                 assertThat(s.getValue()).as(uri + " " + s.getKey()).doesNotContain(prose);
             }

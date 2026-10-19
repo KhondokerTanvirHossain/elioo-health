@@ -51,8 +51,7 @@ class DocumentPagesRenderTest {
     /** F5: a retake shows the Bangla line for its code and the page image; the developer prose never reaches the page. */
     @Test
     void aRetakeRendersItsReasonCodeInBanglaAndThePageImageOnly() {
-        DocumentView view = new DocumentView(id.toString(), "NEEDS_RETAKE", "low_overall",
-                null, null, null, null, null, 1, null, null, null, null, null);
+        DocumentView view = DocumentView.pending(stored(id, "NEEDS_RETAKE", LOW_OVERALL_PROSE, "low_overall"));
         String html = kit.documents.render(Lang.BN, view, id, java.util.Optional.empty());
         assertThat(html).contains("এই ছবিটা থেকে ঠিকমতো পড়তে পারিনি — আন্দাজে কিছু বলব না।")
                 .contains("পুরো ছবিটা ঝাপসা").contains("/documents/" + id + "/page/1");
@@ -68,20 +67,34 @@ class DocumentPagesRenderTest {
         DocumentView followUp = new DocumentView(id.toString(), "NEEDS_RETAKE", "low_section:follow_up",
                 null, null, null, null, null, 1, null, null, null, null, null);
         assertThat(kit.documents.render(Lang.BN, values, id, java.util.Optional.empty()))
-                .contains("মানগুলোর অংশটা পড়া যায়নি").doesNotContain("expected_section_empty");
+                .contains("মানগুলোর অংশটা পড়া যায়নি").doesNotContain("expected_section_empty")
+                .as("the section's line replaces the reason's general line, never joins it")
+                .doesNotContain(kit.copy.t(Lang.BN, "retake.reason.expected_section_empty"));
         assertThat(kit.documents.render(Lang.BN, followUp, id, java.util.Optional.empty()))
                 .contains(kit.copy.t(Lang.BN, "retake.reason.low_section")).doesNotContain("low_section");
         assertThat(kit.documents.render(Lang.EN, values, id, java.util.Optional.empty()))
                 .contains(kit.copy.t(Lang.EN, "retake.reason.expected_section_empty.values")).doesNotContain("expected_section_empty");
     }
 
-    /** FAILED is not a retake: no reason line of any kind, and no retake head. */
+    /**
+     * FAILED is not a retake: no retake head, and the developer prose a FAILED row stores (here a provider error) never
+     * reaches the page — the view is built from the stored row, as intake builds it.
+     */
     @Test
     void aFailedPageShowsNoReasonLine() {
-        DocumentView view = new DocumentView(id.toString(), "FAILED", null,
-                null, null, null, null, null, 1, null, null, null, null, null);
+        DocumentView view = DocumentView.pending(stored(id, "FAILED", "groq HTTP 503", null));
         String html = kit.documents.render(Lang.BN, view, id, java.util.Optional.empty());
-        assertThat(html).doesNotContain(kit.copy.t(Lang.BN, "retake.head")).doesNotContain("class=\"warn\"");
+        assertThat(html).doesNotContain(kit.copy.t(Lang.BN, "retake.head")).doesNotContain("groq HTTP 503");
+    }
+
+    private static final String LOW_OVERALL_PROSE =
+            com.elioo.baymax.extraction.application.service.DocumentExtractionService.REASON_LOW_OVERALL + " (0.40)";
+
+    /** A stored document as the database holds it: the developer prose in status_reason, and the code beside it. */
+    private static Document stored(UUID docId, String status, String prose, String code) {
+        java.time.Instant t = java.time.Instant.parse("2026-10-19T08:00:00Z");
+        return new Document(docId, UUID.randomUUID(), UUID.randomUUID(), null, null, null, null, 0.4,
+                Document.Status.valueOf(status), prose, null, null, 1, t, t, null, null, code);
     }
 
     /** Acceptance: images are served through an endpoint that signs on load, never as a signed URL in the page. */
@@ -197,8 +210,9 @@ class DocumentPagesRenderTest {
     @ParameterizedTest
     @ValueSource(strings = {"NEEDS_RETAKE", "FAILED"})
     void aRetakeOrFailedPaperIsServedTheLegacyPageNeverTheSummary(String status) {
-        DocumentView view = new DocumentView(WebUiTestKit.DOC_ID.toString(), status, status.equals("NEEDS_RETAKE") ? "low_overall" : null,
-                null, null, null, null, null, 1, null, null, null, null, null);
+        boolean retake = status.equals("NEEDS_RETAKE");
+        DocumentView view = DocumentView.pending(stored(WebUiTestKit.DOC_ID, status,
+                retake ? LOW_OVERALL_PROSE : "groq HTTP 503", retake ? "low_overall" : null));
         when(kit.results.status(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(Document.Status.valueOf(status)));
         when(kit.timeline.document(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(view));
         when(kit.timeline.explanationOf(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.empty());
@@ -209,7 +223,7 @@ class DocumentPagesRenderTest {
         verify(kit.results, never()).result(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID);
         verify(kit.timeline, times(1)).document(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID);
         assertThat(html).contains("/documents/" + WebUiTestKit.DOC_ID + "/page/1");
-        assertThat(html).doesNotContain("not read confidently").doesNotContain("low_overall");
+        assertThat(html).doesNotContain("not read confidently").doesNotContain("groq HTTP 503").doesNotContain("low_overall");
         if (status.equals("NEEDS_RETAKE")) {
             assertThat(html).contains(kit.copy.t(Lang.BN, "doc.retake")).contains(kit.copy.t(Lang.BN, "retake.reason.low_overall"));
         } else {

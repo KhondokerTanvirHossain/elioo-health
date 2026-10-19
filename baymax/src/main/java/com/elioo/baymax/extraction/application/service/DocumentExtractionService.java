@@ -345,8 +345,11 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
     private record SectionScore(String section, double confidence) {
     }
 
-    /** The order sections are judged in, so that of two at the same lowest confidence the first is named. */
-    private static final List<String> SECTION_ORDER = List.of("values", "medicines", "follow_up");
+    /**
+     * The order sections are judged in, so that of two at the same lowest confidence the first is named. Public so
+     * DocumentReasonCodeConstraintTest can derive every code the gate can produce from it.
+     */
+    public static final List<String> SECTION_ORDER = List.of("values", "medicines", "follow_up");
 
     /**
      * The lowest confidence among the gating sections that actually have content, and which section it was (F5: the

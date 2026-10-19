@@ -30,6 +30,11 @@ public enum RetakeReason {
         return prefix;
     }
 
+    /** Whether the stored code names a section ({@code <prefix>:<section>}). */
+    public boolean hasSection() {
+        return hasSection;
+    }
+
     /** The stored code: the prefix, and for a sectioned reason {@code :<section>}. */
     public String code(String section) {
         if (hasSection != (section != null)) {

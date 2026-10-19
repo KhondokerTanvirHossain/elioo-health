@@ -415,6 +415,35 @@ class DocumentExtractionServiceTest {
         verify(records, never()).saveExtraction(any(), any());
     }
 
+    /**
+     * Two gating sections read at the same low confidence: the retake names the first in SECTION_ORDER, every time.
+     * This pins the new behaviour and is not a replayed guard: the old loop walked a {@code Map.of}, whose iteration
+     * order is randomized per JVM, so it named either section and no run of the old code fails reliably.
+     */
+    @Test
+    void ofTwoSectionsAtTheSameLowConfidenceTheFirstJudgedIsNamed() throws Exception {
+        replyWith("""
+                {"document_type":"prescription","document_date":"2026-09-19","facility":"Shapla Diagnostics",
+                 "values":[],
+                 "medicines":[{"name":"HbA1c","dose_text":"30 mg","frequency_text":"1+0+0",
+                               "timing_text":"before meal","source_span":{"page":1,"start":0,"end":5}}],
+                 "follow_up":[{"instruction":"৭ দিন পর আসবেন","due_date":"2026-09-26",
+                               "source_span":{"page":1,"start":6,"end":9}}],
+                 "clinical_context":{"chief_complaint":[],"history":[],"examination":[],
+                                     "diagnosis":[],"investigations_advised":[],"advice":[],"referral":null},
+                 "confidence":{"overall":0.9,"values":0.0,"medicines":0.5,"follow_up":0.5,
+                               "clinical_context":0.85}}
+                """);
+
+        StepVerifier.create(service.process(received(1), List.of(pageJpeg())))
+                .assertNext(d -> {
+                    assertThat(d.status()).isEqualTo(Document.Status.NEEDS_RETAKE);
+                    assertThat(d.statusReasonCode()).as("medicines precedes follow_up in SECTION_ORDER")
+                            .isEqualTo("low_section:medicines");
+                })
+                .verifyComplete();
+    }
+
     // --- the replay harness decides like this gate ---------------------------------------------------
 
     /**
