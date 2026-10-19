@@ -1,6 +1,7 @@
 package com.elioo.baymax.web.adapter.in.ui;
 
 import com.elioo.baymax.common.error.BaymaxException;
+import com.elioo.baymax.common.error.FreeTierExceededException;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
@@ -66,16 +67,21 @@ public class BaymaxWebUiRouter {
                     case NOT_FOUND -> chrome.text(request, "app.err.notfound");
                     case FORBIDDEN -> chrome.text(request, "app.err.forbidden");
                     case UNAUTHORIZED -> null;
-                    case PAYMENT_REQUIRED -> chrome.text(request, "app.err.freetier", be.getMessage());
+                    // the documents cap; any other cap (patients: admin only) is not the family's to read about here
+                    case PAYMENT_REQUIRED -> chrome.text(request, FreeTierExceededException.DOCUMENTS.equals(be.reason())
+                            ? "app.err.freetier" : "app.err.generic");
                     case SERVICE_UNAVAILABLE -> chrome.text(request, "app.err.loginoff");
-                    default -> Html.esc(be.getMessage());
+                    // never the exception's message: developer English, and it may carry a filename or a medicine
+                    default -> chrome.text(request, chrome.hasCopy("app.err." + be.reason()) ? "app.err." + be.reason() : "app.err.generic");
                 };
                 if (text == null) {
                     return Html.redirect(BASE + "/");
                 }
                 return chrome.errorPage(request, be.status(), text);
             }
-            log.error("[baymax] unhandled error on {} {}: {}", request.method(), request.path(), e.getMessage(), e);
+            // the class, never the message: an exception message can carry medicine text (MedicineTranscription.elided)
+            log.error("[baymax] unhandled error on {} {} error={}", request.method(), request.path(), e.getClass().getSimpleName());
+            log.debug("[baymax] unhandled error detail", e);
             return chrome.errorPage(request, HttpStatus.INTERNAL_SERVER_ERROR, chrome.text(request, "app.err.generic"));
         });
     }

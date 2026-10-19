@@ -180,15 +180,15 @@ class AppShellRoutesTest {
         verify(kit.timeline, never()).timeline(any(), any(), any());
     }
 
-    /** The legacy upload form lands on the কাগজপত্র tab of the patient it uploaded for. */
+    /** The legacy upload form (a page cached before A7) lands where the sheet's does: on the paper it sent (A8). */
     @Test
-    void anUploadLandsOnThatPatientsPapersTab() {
+    void aLegacyUploadLandsOnTheDocumentItSent() {
         String key = "POST /app/patients/{id}/upload";
         PageFixtures.Fixture f = PageFixtures.ALL.get(key);
         f.stubs().accept(kit);
         var r = RenderedPages.exchange(kit, new RouteTable.Route(PageFixtures.method(key), "/app/patients/{id}/upload"), f, "bn");
         assertThat(r.getStatus().value()).isEqualTo(303);
-        assertThat(r.getResponseHeaders().getFirst(HttpHeaders.LOCATION)).isEqualTo(Tab.PAPERS.path + "?patient=" + WebUiTestKit.MA_ID);
+        assertThat(r.getResponseHeaders().getFirst(HttpHeaders.LOCATION)).isEqualTo("/app/documents/" + WebUiTestKit.DOC_ID);
     }
 
     /** No patient yet: the tab says which tab it is, not পরিবার (C4 and A6 draw the add-parent screens). */

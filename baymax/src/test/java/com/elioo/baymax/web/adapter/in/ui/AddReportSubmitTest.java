@@ -8,7 +8,6 @@ import com.elioo.baymax.web.application.port.in.WebAuthUseCase;
 import com.elioo.baymax.web.domain.UploadOptions;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -21,6 +20,7 @@ import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -78,6 +78,10 @@ class AddReportSubmitTest {
      * The no-JS sheet has three file inputs; the two the family did not use arrive as empty parts with filename="".
      * Those are not pages. A file the family DID choose that is empty is still passed on, so intake refuses it by name
      * (PageRendererTest.anEmptyFileIsRejected) — it is never silently dropped.
+     *
+     * <p>The body is written as a browser writes it ({@code filename=""}, {@code application/octet-stream}): Spring's
+     * MultipartBodyBuilder leaves an empty filename out, so the server reads a form field, and a test built with it
+     * passes with or without the filter.</p>
      */
     @Test
     void unusedInputsAreNotPagesButAChosenEmptyFileIsStillPassedOn() throws IOException {
@@ -86,22 +90,43 @@ class AddReportSubmitTest {
         @SuppressWarnings("unchecked") ArgumentCaptor<List<Upload>> sent = ArgumentCaptor.forClass(List.class);
         when(uploads.upload(eq(family), eq(ma), sent.capture())).thenReturn(Mono.just(doc));
 
-        MultipartBodyBuilder unused = new MultipartBodyBuilder();
-        unused.part("patient", ma.toString());
-        unused.part("file", new ByteArrayResource(new byte[0]) { @Override public String getFilename() { return ""; } });
-        unused.part("file", jpeg()).filename("p1.jpg");
-        unused.part("file", new ByteArrayResource(new byte[0]) { @Override public String getFilename() { return ""; } });
-        post(unused).expectStatus().isSeeOther();
+        browserPost(ma, unusedInput(), filePart("p1.jpg", jpeg()), unusedInput()).expectStatus().isSeeOther();
         assertThat(sent.getValue()).extracting(Upload::filename).containsExactly("p1.jpg");
 
-        MultipartBodyBuilder chosenEmpty = new MultipartBodyBuilder();
-        chosenEmpty.part("patient", ma.toString());
-        chosenEmpty.part("file", new byte[0]).filename("a.jpg");
-        post(chosenEmpty).expectStatus().isSeeOther();
+        browserPost(ma, filePart("a.jpg", new byte[0])).expectStatus().isSeeOther();
         assertThat(sent.getValue()).singleElement().satisfies(u -> {
             assertThat(u.filename()).isEqualTo("a.jpg");
             assertThat(u.bytes()).isEmpty();
         });
+    }
+
+    private static final String BOUNDARY = "----mediooTestBoundary7MA4YWxkTrZu0gW";
+
+    private static byte[] unusedInput() {
+        return ("--" + BOUNDARY + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"\"\r\n"
+                + "Content-Type: application/octet-stream\r\n\r\n\r\n").getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static byte[] filePart(String name, byte[] bytes) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        out.write(("--" + BOUNDARY + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"" + name + "\"\r\n"
+                + "Content-Type: image/jpeg\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+        out.write(bytes);
+        out.write("\r\n".getBytes(StandardCharsets.UTF_8));
+        return out.toByteArray();
+    }
+
+    private WebTestClient.ResponseSpec browserPost(UUID patient, byte[]... files) throws IOException {
+        ByteArrayOutputStream body = new ByteArrayOutputStream();
+        body.write(("--" + BOUNDARY + "\r\nContent-Disposition: form-data; name=\"patient\"\r\n\r\n" + patient + "\r\n")
+                .getBytes(StandardCharsets.UTF_8));
+        for (byte[] f : files) {
+            body.write(f);
+        }
+        body.write(("--" + BOUNDARY + "--\r\n").getBytes(StandardCharsets.UTF_8));
+        return client.post().uri("/app/add").cookie("baymax_session", "tok").accept(MediaType.TEXT_HTML)
+                .contentType(MediaType.parseMediaType("multipart/form-data; boundary=" + BOUNDARY))
+                .bodyValue(body.toByteArray()).exchange();
     }
 
     @Test

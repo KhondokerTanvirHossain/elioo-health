@@ -76,6 +76,19 @@ public class UiCopy {
     }
 
     /**
+     * As {@link #t}, but not HTML-escaped: for a JSON body only, never for HTML. A {@link Number} argument is written in
+     * Bangla digits on a Bangla page, exactly as {@link #t} writes it.
+     */
+    public String plain(Lang lang, String key, Object... args) {
+        String out = raw(lang, key);
+        for (int i = 0; i < args.length; i++) {
+            Object arg = lang == Lang.BN && args[i] instanceof Number n ? BanglaDate.digits(n.toString()) : args[i];
+            out = out.replace("{" + i + "}", String.valueOf(arg));
+        }
+        return out;
+    }
+
+    /**
      * A date as a page shows it, HTML-escaped: on a Bangla page "১৮ অক্টোবর ২০২৬" (day, full month name, year;
      * the web shows the year always, it has no "today" to omit it against), on an English page ISO as before.
      */

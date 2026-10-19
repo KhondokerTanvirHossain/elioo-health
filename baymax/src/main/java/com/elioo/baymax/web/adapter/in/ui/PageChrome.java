@@ -66,6 +66,11 @@ public class PageChrome {
                 0, false, copy.t(lang, "disclaimer"), false));
     }
 
+    /** Whether the copy has this key (both languages carry the same keys, UiCopyTest). */
+    boolean hasCopy(String key) {
+        return copy.maybe(Lang.BN, key) != null;
+    }
+
     String text(ServerRequest request, String key, Object... args) {
         return copy.t(Lang.of(request), key, args);
     }
