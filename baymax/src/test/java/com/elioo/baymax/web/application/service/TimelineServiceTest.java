@@ -104,6 +104,31 @@ class TimelineServiceTest {
         verify(intake, never()).accept(any(), any());
     }
 
+    /**
+     * The server half of "the owner saves, a share member only sees" (spec §3, D30): the পরিবার tab hides the save from
+     * a share member, and this is what refuses the post if it is sent anyway. 403, nothing written.
+     */
+    @Test
+    void aShareMemberMayNotChangeTheChronicFlags() {
+        when(records.visiblePatient(FAMILY_A, PATIENT_B)).thenReturn(Mono.just(new PatientAccess(PATIENT, false)));
+        // the write would succeed if reached: the refusal must come from the owner check, not a failing mock
+        when(records.updateChronicFlags(any(), any())).thenReturn(Mono.just(PATIENT));
+        StepVerifier.create(service.updateChronicFlags(FAMILY_A, PATIENT_B, List.of("diabetes")))
+                .expectErrorMatches(e -> e instanceof BaymaxException b && b.status().value() == 403 && "not_owner".equals(b.reason()))
+                .verify();
+        verify(records, never()).updateChronicFlags(any(), any());
+    }
+
+    /** The other direction: the owner's flags are written, normalised. */
+    @Test
+    void theOwnerChangesTheChronicFlags() {
+        when(records.visiblePatient(FAMILY_B, PATIENT_B)).thenReturn(Mono.just(new PatientAccess(PATIENT, true)));
+        when(records.updateChronicFlags(eq(PATIENT_B), any())).thenReturn(Mono.just(PATIENT));
+        StepVerifier.create(service.updateChronicFlags(FAMILY_B, PATIENT_B, List.of("diabetes", " Asthma ")))
+                .expectNext(PATIENT).verifyComplete();
+        verify(records).updateChronicFlags(PATIENT_B, List.of("diabetes", "asthma"));
+    }
+
     @Test
     void theOwnerDeletesObjectsThenRows() {
         when(documents.findVisible(FAMILY_B, DOC_B)).thenReturn(Mono.just(DOCUMENT));

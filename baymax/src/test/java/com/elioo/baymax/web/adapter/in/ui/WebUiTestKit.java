@@ -82,8 +82,13 @@ final class WebUiTestKit {
                 List.of(), NOW, NOW), true, documents, documents == 0 ? null : NOW);
     }
 
+    /** The id {@link #patient} gives a patient of this name: one derivation, read by the fixtures too. */
+    static UUID patientId(String name) {
+        return UUID.nameUUIDFromBytes(("patient:" + name).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
     PatientSummary patient(String name, boolean owner, long documents) {
-        UUID id = UUID.nameUUIDFromBytes(("patient:" + name).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        UUID id = patientId(name);
         return new PatientSummary(new PatientProfile(id, FAMILY, name, 64, PatientProfile.Sex.FEMALE, List.of(), NOW, NOW),
                 owner, documents, documents == 0 ? null : NOW);
     }

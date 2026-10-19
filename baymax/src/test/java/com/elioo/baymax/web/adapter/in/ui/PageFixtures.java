@@ -170,8 +170,8 @@ final class PageFixtures {
 
         static final UUID DONE_DOC = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100004");
         static final UUID PROCESSING_DOC = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100005");
-        /** আব্বু's id as {@link WebUiTestKit#patient} derives it: the shared patient of {@link #familyOfTwo}. */
-        static final UUID ABBU = UUID.nameUUIDFromBytes("patient:আব্বু".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        /** আব্বু's id, from the kit's own derivation: the shared patient of {@link #familyOfTwo}. */
+        static final UUID ABBU = WebUiTestKit.patientId("আব্বু");
 
         private Stubs() {
         }
