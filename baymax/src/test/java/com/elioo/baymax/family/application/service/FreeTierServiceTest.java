@@ -32,7 +32,8 @@ class FreeTierServiceTest {
 
     private final HealthRecordPort records = mock(HealthRecordPort.class);
     private final DocumentRecordPort documents = mock(DocumentRecordPort.class);
-    private final FreeTierService service = new FreeTierService(records, documents, new BaymaxProperties(), CLOCK);
+    private final BaymaxProperties properties = new BaymaxProperties();
+    private final FreeTierService service = new FreeTierService(records, documents, properties, CLOCK);
 
     private static FamilyAccount family(FamilyAccount.Plan plan) {
         return new FamilyAccount(UUID.randomUUID(), "+8801700000000", "Owner", plan, CLOCK.instant(), CLOCK.instant());
@@ -102,8 +103,9 @@ class FreeTierServiceTest {
     @Test
     void theAllowanceTheSheetShowsAgreesWithTheRefusalAtEveryCount() {
         FamilyAccount family = family(FamilyAccount.Plan.FREE);
-        int max = new BaymaxProperties().getFree().getMaxDocsPerMonth();
-        int checked = 0;
+        int max = properties.getFree().getMaxDocsPerMonth();   // the cap the service itself refuses by
+        int allowedSeen = 0;
+        int refusedSeen = 0;
         for (long used = 0; used <= max + 1; used++) {
             when(documents.countInMonth(eq(family.id()), eq(YearMonth.of(2026, 9)))).thenReturn(Mono.just(used));
             DocumentAllowance allowance = service.documentAllowance(family).block();
@@ -111,9 +113,15 @@ class FreeTierServiceTest {
                     .onErrorResume(FreeTierExceededException.class, e -> Mono.just(true)).block();
             assertThat(allowance.allows(1)).as("used=%d", used).isEqualTo(!refused);
             assertThat(allowance.remaining()).as("used=%d", used).isEqualTo(Math.max(0, max - used));
-            checked++;
+            if (refused) {
+                refusedSeen++;
+            } else {
+                allowedSeen++;
+            }
         }
-        assertThat(checked).isEqualTo(max + 2);   // the sweep ran; an empty loop agrees with anything
+        // both sides were compared: a sweep that only ever saw refusals (a cap of 0) agrees with anything on the other side
+        assertThat(allowedSeen).as("counts the sheet offers an upload at").isPositive();
+        assertThat(refusedSeen).as("counts intake refuses at").isPositive();
     }
 
     /** "আলাদা আলাদা" with three pages is three documents: refused when two remain, allowed when three do. */
@@ -125,6 +133,25 @@ class FreeTierServiceTest {
                 .expectErrorMatches(e -> e instanceof FreeTierExceededException f && f.reason().equals("free_tier_documents"))
                 .verify();
         StepVerifier.create(service.checkCanUploadDocuments(family, 2)).verifyComplete();
+    }
+
+    /**
+     * The month is the UTC calendar month even when the clock's zone is Dhaka. At 20:00 UTC on 30 September it is already
+     * 1 October in Dhaka: a service that counted the Dhaka month would count October (an empty month) and give the
+     * family a fresh allowance six hours early.
+     */
+    @Test
+    void theMonthCountedIsTheUtcMonthEvenWhenItIsAlreadyTheNextMonthInDhaka() {
+        Clock dhaka = Clock.fixed(Instant.parse("2026-09-30T20:00:00Z"), java.time.ZoneId.of("Asia/Dhaka"));
+        FreeTierService atTheBoundary = new FreeTierService(records, documents, properties, dhaka);
+        FamilyAccount family = family(FamilyAccount.Plan.FREE);
+        when(documents.countInMonth(eq(family.id()), any())).thenReturn(Mono.just(1L));
+
+        DocumentAllowance allowance = atTheBoundary.documentAllowance(family).block();
+
+        assertThat(allowance.month()).isEqualTo(YearMonth.of(2026, 9));
+        assertThat(allowance.resetsOn()).isEqualTo(LocalDate.of(2026, 10, 1));
+        verify(documents).countInMonth(family.id(), YearMonth.of(2026, 9));
     }
 
     @Test
