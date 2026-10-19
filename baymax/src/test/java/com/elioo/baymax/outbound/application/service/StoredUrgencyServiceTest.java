@@ -68,7 +68,7 @@ class StoredUrgencyServiceTest {
                 0.9, status, null, "m", null, 1, NOW, NOW);
         when(documents.find(d.id())).thenReturn(Mono.just(d));
         when(documents.observationsOf(d.id())).thenReturn(Flux.just(
-                Map.of("name", "Potassium", "value", "11.0", "unit", "mmol/L", "ref_low", "3.5", "ref_high", "5.1", "crop_key", "k")));
+                Map.of("id", UUID.randomUUID(), "name", "Potassium", "value", "11.0", "unit", "mmol/L", "ref_low", "3.5", "ref_high", "5.1", "crop_key", "k")));
         when(documents.followUpsOf(d.id())).thenReturn(Flux.empty());
         when(documents.clinicalContextOf(d.id())).thenReturn(Mono.empty());
         when(records.findPatient(d.patientId())).thenReturn(Mono.empty());

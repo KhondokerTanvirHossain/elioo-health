@@ -143,6 +143,7 @@ class DetailDeliveryGuardsTest {
 
     private void observations(String name, String value, String low, String high) {
         Map<String, Object> v = new HashMap<>();
+        v.put("id", UUID.randomUUID());                   // every persisted observation has one; F2 joins on it
         v.put("name", name);
         v.put("value", value);
         v.put("ref_low", low);

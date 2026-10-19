@@ -101,6 +101,17 @@ public record MarkerThreshold(
     }
 
     /**
+     * F2: which end a reading this entry escalates sits at. HIGH when a high bound that matters under {@link #direction}
+     * is reached ({@code nowHigh} or {@code weekHigh}), LOW otherwise — for HDL ({@link Direction#HIGH_IS_GOOD}) and
+     * eGFR ({@link Direction#LOW_IS_BAD}) only the low end escalates, so it is always LOW.
+     */
+    public ValueVerdict.Side side(double value) {
+        boolean highMatters = direction == Direction.NORMAL;
+        boolean highReached = (nowHigh != null && value >= nowHigh) || (weekHigh != null && value >= weekHigh);
+        return highMatters && highReached ? ValueVerdict.Side.HIGH : ValueVerdict.Side.LOW;
+    }
+
+    /**
      * Where a reading sits under THIS entry, honouring direction. Empty when the entry says nothing about
      * this reading — the caller then falls back to the stopgap.
      */

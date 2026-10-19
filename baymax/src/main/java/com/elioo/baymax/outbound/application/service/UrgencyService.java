@@ -6,6 +6,8 @@ import com.elioo.baymax.outbound.domain.MarkerThreshold;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.outbound.domain.UrgencyContext;
 import com.elioo.baymax.outbound.domain.UrgencyAssessment;
+import com.elioo.baymax.outbound.domain.UrgencyReason;
+import com.elioo.baymax.outbound.domain.ValueVerdict;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -20,6 +22,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Urgency, computed in code from the persisted extraction and nothing else (BMX-6):
@@ -59,20 +62,36 @@ public class UrgencyService {
         UrgencyAssessment a = UrgencyAssessment.routine();
         String text = facts.document().extractionJson() == null ? "" : facts.document().extractionJson();
 
+        // F2: one verdict per shown value, from the branch that decides whether it raises the document. The document
+        // is raised from the rows afterwards, so a raising row and the banner share one reason string by construction.
+        List<ValueVerdict> verdicts = new ArrayList<>();
         for (Map<String, Object> v : facts.values()) {
             String name = String.valueOf(v.getOrDefault("canonical_name", v.get("name"))).toLowerCase(Locale.ROOT);
+            UUID id = v.get("id") instanceof UUID u ? u : null;
             Optional<Verdict> perMarker = perMarkerVerdict(v);
             if (perMarker.isPresent()) {
                 Verdict verdict = perMarker.get();
                 if (verdict.level() != Urgency.ROUTINE) {
-                    a = a.raise(verdict.level(), verdict.reasonFor(name));
+                    verdicts.add(new ValueVerdict(id, verdict.level() == Urgency.NOW ? ValueVerdict.Kind.CRITICAL : ValueVerdict.Kind.OUTSIDE,
+                            verdict.level(), verdict.side(), verdict.reasonFor(name)));
+                } else {
+                    verdicts.add(unraised(id, v, name, "|threshold:" + verdict.threshold().source(), text));
                 }
                 continue;                                    // a signed-off threshold replaces the stopgap
             }
             switch (criticalKind(v, text)) {
-                case CRITICAL_HIGH, CRITICAL_LOW -> a = a.raise(Urgency.NOW, "value_critical:" + name + STOPGAP);
-                case OUTSIDE -> a = a.raise(Urgency.THIS_WEEK, "value_outside_range:" + name + STOPGAP);
-                default -> { }                               // inside the range, or no printed range: nothing
+                case CRITICAL_HIGH -> verdicts.add(new ValueVerdict(id, ValueVerdict.Kind.CRITICAL, Urgency.NOW, ValueVerdict.Side.HIGH,
+                        UrgencyReason.VALUE_CRITICAL.of(name, STOPGAP)));
+                case CRITICAL_LOW -> verdicts.add(new ValueVerdict(id, ValueVerdict.Kind.CRITICAL, Urgency.NOW, ValueVerdict.Side.LOW,
+                        UrgencyReason.VALUE_CRITICAL.of(name, STOPGAP)));
+                case OUTSIDE -> verdicts.add(new ValueVerdict(id, ValueVerdict.Kind.OUTSIDE, Urgency.THIS_WEEK, printedSide(v),
+                        UrgencyReason.VALUE_OUTSIDE_RANGE.of(name, STOPGAP)));
+                case NONE -> verdicts.add(unraised(id, v, name, STOPGAP, text));
+            }
+        }
+        for (ValueVerdict r : verdicts) {
+            if (r.level() != Urgency.ROUTINE) {
+                a = a.raise(r.level(), r.reason());          // the row and the banner share one string, by construction
             }
         }
 
@@ -87,8 +106,8 @@ public class UrgencyService {
         for (Map<String, Object> v : unverifiedValues(facts)) {
             String name = String.valueOf(v.getOrDefault("canonical_name", v.get("name"))).toLowerCase(Locale.ROOT);
             switch (criticalKind(v, text)) {
-                case CRITICAL_HIGH, CRITICAL_LOW -> a = a.raise(Urgency.NOW, "unverified_value_critical:" + name);
-                case OUTSIDE -> a = a.raise(Urgency.THIS_WEEK, "unverified_value_outside_range:" + name);
+                case CRITICAL_HIGH, CRITICAL_LOW -> a = a.raise(Urgency.NOW, UrgencyReason.UNVERIFIED_VALUE_CRITICAL.of(name, null));
+                case OUTSIDE -> a = a.raise(Urgency.THIS_WEEK, UrgencyReason.UNVERIFIED_VALUE_OUTSIDE_RANGE.of(name, null));
                 default -> { }
             }
         }
@@ -99,7 +118,7 @@ public class UrgencyService {
             if (due != null && !String.valueOf(due).isBlank()) {
                 try {
                     if (LocalDate.parse(String.valueOf(due)).isBefore(today)) {
-                        a = a.raise(Urgency.THIS_WEEK, "follow_up_past_due");
+                        a = a.raise(Urgency.THIS_WEEK, UrgencyReason.FOLLOW_UP_PAST_DUE.of(null, null));
                     }
                 } catch (RuntimeException ignored) {
                     // an unparseable date is not a reason to escalate or to fail
@@ -114,13 +133,13 @@ public class UrgencyService {
         boolean prescription = "prescription".equalsIgnoreCase(facts.document().documentType());
         if (!prescription && facts.clinicalContext() != null
                 && facts.clinicalContext().get("diagnosis") instanceof List<?> dx && !dx.isEmpty()) {
-            a = a.raise(Urgency.THIS_WEEK, "diagnosis_present");
+            a = a.raise(Urgency.THIS_WEEK, UrgencyReason.DIAGNOSIS_PRESENT.of(null, null));
         }
 
         if (facts.document().extractionJson() != null && containsEmergencyPhrase(facts.document().extractionJson())) {
-            a = a.raise(Urgency.NOW, "text_emergency_phrase");
+            a = a.raise(Urgency.NOW, UrgencyReason.TEXT_EMERGENCY_PHRASE.of(null, null));
         }
-        return a;
+        return a.withValues(verdicts);
     }
 
     /**
@@ -130,14 +149,42 @@ public class UrgencyService {
      * should not be indistinguishable from one a clinician set. It is also how the dry-run table tells the
      * doctor which rule produced each row.</p>
      */
-    static final String STOPGAP = "|stopgap";
+    public static final String STOPGAP = "|stopgap";
 
     /** A per-marker verdict and the entry that produced it, so the reason can name the rule. */
-    private record Verdict(Urgency level, MarkerThreshold threshold) {
+    private record Verdict(Urgency level, MarkerThreshold threshold, double value) {
         String reasonFor(String name) {
-            String kind = level == Urgency.NOW ? "value_critical:" : "value_outside_range:";
-            return kind + name + "|threshold:" + threshold.source();
+            UrgencyReason kind = level == Urgency.NOW ? UrgencyReason.VALUE_CRITICAL : UrgencyReason.VALUE_OUTSIDE_RANGE;
+            return kind.of(name, "|threshold:" + threshold.source());
         }
+
+        ValueVerdict.Side side() {
+            return threshold.side(value);
+        }
+    }
+
+    /**
+     * F2: the verdict of a row that raises nothing. INSIDE only when the code proves it ({@link #insideByCode}); OUTSIDE
+     * (side from the printed range) when the printed range places it outside but the rule in force does not escalate
+     * (DR-17's never-escalating markers, a signed-off tier not reached); every other shape is UNKNOWN, which withholds
+     * reassurance. {@code rule} is the rule that declined to raise: {@code |stopgap} or {@code |threshold:<source>}.
+     */
+    private ValueVerdict unraised(UUID id, Map<String, Object> v, String name, String rule, String text) {
+        if (insideByCode(v)) {
+            return new ValueVerdict(id, ValueVerdict.Kind.INSIDE, Urgency.ROUTINE, null, "value_inside:" + name + rule);
+        }
+        if (criticalKind(v, text) != Kind.NONE) {
+            return new ValueVerdict(id, ValueVerdict.Kind.OUTSIDE, Urgency.ROUTINE, printedSide(v),
+                    "value_outside_no_escalation:" + name + rule);
+        }
+        return new ValueVerdict(id, ValueVerdict.Kind.UNKNOWN, Urgency.ROUTINE, null, "value_unknown:" + name + rule);
+    }
+
+    /** Which end of the printed range a value outside it sits at; only called once criticalKind placed it outside. */
+    private static ValueVerdict.Side printedSide(Map<String, Object> v) {
+        Optional<Double> value = number(v.get("value"));
+        Optional<Double> high = number(v.get("ref_high"));
+        return value.isPresent() && high.isPresent() && value.get() > high.get() ? ValueVerdict.Side.HIGH : ValueVerdict.Side.LOW;
     }
 
     /**
@@ -166,7 +213,7 @@ public class UrgencyService {
                 .filter(MarkerThreshold::isLive)
                 .filter(t -> t.matches(String.valueOf(canonical), unit))
                 .findFirst()
-                .flatMap(t -> t.assess(value.get()).map(level -> new Verdict(level, t)));
+                .flatMap(t -> t.assess(value.get()).map(level -> new Verdict(level, t, value.get())));
     }
 
     /** Whole-token match against the config phrases, both scripts; "urgently" is a token, "surgent" is not. */
@@ -255,7 +302,7 @@ public class UrgencyService {
      * ({@code "0-2"}), two numbers in one cell ({@code "130 / 80"}) and an ambiguous comma ({@code "1,23"} —
      * 1.23 or 123?) are all refused rather than guessed.</p>
      */
-    static Optional<Double> number(Object raw) {
+    public static Optional<Double> number(Object raw) {
         if (raw == null) {
             return Optional.empty();
         }
@@ -368,7 +415,7 @@ public class UrgencyService {
      * supports a reassurance. (An inverted range needs no clause of its own: no value satisfies low ≤ v ≤ high when
      * low > high.)
      */
-    static boolean insideByCode(Map<String, Object> v) {
+    public static boolean insideByCode(Map<String, Object> v) {
         Optional<Double> value = number(v.get("value"));
         Optional<Double> low = number(v.get("ref_low"));
         Optional<Double> high = number(v.get("ref_high"));

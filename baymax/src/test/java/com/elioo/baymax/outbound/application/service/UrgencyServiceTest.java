@@ -23,6 +23,7 @@ class UrgencyServiceTest {
 
     static Map<String, Object> value(String name, String v, String low, String high) {
         Map<String, Object> m = new HashMap<>();
+        m.put("id", UUID.randomUUID());                   // every persisted observation has one; F2 joins on it
         m.put("name", name); m.put("value", v);
         if (low != null) { m.put("ref_low", low); m.put("ref_high", high); }
         return m;
@@ -36,6 +37,24 @@ class UrgencyServiceTest {
         Document d = new Document(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), type, null, null, json, 0.9,
                 Document.Status.DONE, null, "m", null, 1, NOW, NOW);
         return new DocumentFacts(d, "Ma", values, followUps, ctx, "https://x/app/documents/1");
+    }
+
+    /**
+     * Facts the way UnverifiedValuesTest builds them: {@code shown} are the persisted values, {@code unverified} were read
+     * but never persisted (no crop), so they live only in the stored extraction and in the document's unverified count.
+     */
+    static DocumentFacts factsWithUnverified(List<Map<String, Object>> shown, List<Map<String, Object>> unverified) {
+        String json;
+        try {
+            json = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(Map.of("document_type", "lab_report",
+                    "values", java.util.stream.Stream.concat(shown.stream(), unverified.stream()).toList()));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new IllegalStateException(e);
+        }
+        Document d = new Document(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "lab_report", null, null, json, 0.9,
+                Document.Status.DONE, null, "m", null, 1, NOW, NOW,
+                new com.elioo.baymax.extraction.domain.VerifiedItems.Unverified(unverified.size(), 0, 0, 0), null);
+        return new DocumentFacts(d, "Ma", shown, List.of(), Map.of(), "https://x/app/documents/1");
     }
 
     /** Acceptance (PO ruling 2026-09-18, STOPGAP): ≥ 2.0 × ref_high → NOW. Range 4.0–5.6: 11.2 is exactly 2 × 5.6. */
@@ -126,8 +145,9 @@ class UrgencyServiceTest {
     /** The assessment type only raises: no combination of raise() calls can end lower than any input. */
     @Test
     void urgencyIsNeverLowered() {
-        var a = com.elioo.baymax.outbound.domain.UrgencyAssessment.routine().raise(Urgency.NOW, "a").raise(Urgency.THIS_WEEK, "b").raise(Urgency.ROUTINE, "c");
+        var a = com.elioo.baymax.outbound.domain.UrgencyAssessment.routine().raise(Urgency.NOW, "text_emergency_phrase")
+                .raise(Urgency.THIS_WEEK, "diagnosis_present").raise(Urgency.ROUTINE, "follow_up_past_due");
         assertThat(a.level()).isEqualTo(Urgency.NOW);
-        assertThat(a.reasons()).containsExactly("a", "b", "c");
+        assertThat(a.reasons()).containsExactly("text_emergency_phrase", "diagnosis_present", "follow_up_past_due");
     }
 }

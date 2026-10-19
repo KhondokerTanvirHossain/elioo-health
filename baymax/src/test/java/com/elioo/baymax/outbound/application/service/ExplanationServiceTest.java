@@ -257,7 +257,7 @@ class ExplanationServiceTest {
     /** D35 on the sent body: a one-sided range is not "inside", so the ROUTINE message is filed, not reassuring. */
     @Test
     void aRoutineReportWithAOneSidedRangeIsSentAsFiledNotAsAllNormal() {
-        Map<String, Object> ldl = new java.util.HashMap<>(Map.of("name", "LDL", "value", "250", "ref_high", "<100"));
+        Map<String, Object> ldl = new java.util.HashMap<>(Map.of("id", UUID.randomUUID(), "name", "LDL", "value", "250", "ref_high", "<100"));
         done(ldl);
         service.explain(DOC).block();
 
@@ -279,7 +279,7 @@ class ExplanationServiceTest {
      */
     @Test
     void aRoutineReportWithLdl90AgainstALessThan100RangeIsSentAsFiledNotAsAllNormal() {
-        done(new java.util.HashMap<>(Map.of("name", "LDL", "value", "90", "ref_high", "<100")));
+        done(new java.util.HashMap<>(Map.of("id", UUID.randomUUID(), "name", "LDL", "value", "90", "ref_high", "<100")));
         service.explain(DOC).block();
 
         ArgumentCaptor<OutboundMessage> sent = ArgumentCaptor.forClass(OutboundMessage.class);
@@ -297,7 +297,7 @@ class ExplanationServiceTest {
     /** The protected direction, on the sent body: a report whose every value is inside by code still reassures. */
     @Test
     void aRoutineReportWhoseEveryValueIsInsideIsSentWithTheReassuranceLine() {
-        done(new java.util.HashMap<>(Map.of("name", "HbA1c", "value", "5.2", "ref_low", "4.0", "ref_high", "5.6")));
+        done(new java.util.HashMap<>(Map.of("id", UUID.randomUUID(), "name", "HbA1c", "value", "5.2", "ref_low", "4.0", "ref_high", "5.6")));
         service.explain(DOC).block();
 
         ArgumentCaptor<OutboundMessage> sent = ArgumentCaptor.forClass(OutboundMessage.class);
