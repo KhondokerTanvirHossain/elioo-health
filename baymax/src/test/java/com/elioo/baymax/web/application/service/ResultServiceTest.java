@@ -10,9 +10,15 @@ import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientAccess;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.web.application.port.out.AuditPort;
+import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.web.domain.AuditEvent;
+import com.elioo.baymax.web.domain.GateState;
+import com.elioo.baymax.web.domain.ResultView;
+import com.elioo.baymax.web.domain.ViewerLocale;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.http.HttpStatus;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
@@ -24,6 +30,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
@@ -31,7 +38,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** The document page's read side. A9: the status and the reading view. A12 adds the result. */
+/** The document page's read side. A9: the status and the reading view. A12: the result. */
 class ResultServiceTest {
 
     static final Instant NOW = Instant.parse("2026-10-20T04:00:00Z");
@@ -106,5 +113,27 @@ class ResultServiceTest {
         StepVerifier.create(service.reading(FAMILY, DOC))
                 .expectErrorSatisfies(e -> assertThat(((BaymaxException) e).status()).isEqualTo(HttpStatus.NOT_FOUND)).verify();
         verify(audit, never()).record(any());
+    }
+
+    /** F3 as a constructor rule: wording exists only for RELEASED, so no renderer can show a parked or rejected body. */
+    @ParameterizedTest
+    @EnumSource(value = GateState.class, names = {"NONE", "PENDING", "REJECTED", "FAILED_SAFETY"})
+    void modelWordingCannotTravelWithAnyGateStateButReleased(GateState gate) {
+        assertThatThrownBy(() -> new ResultView(DocumentView.pending(Document.received(PATIENT, FAMILY, 1, NOW).withId(DOC)
+                .withStatus(Document.Status.DONE, null, NOW)), MA, true, new ViewerLocale(true), Urgency.NOW, List.of(), gate,
+                "body", 0, 2, NOW, NOW))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("F3: model wording only when released");
+    }
+
+    /** The other direction: released wording travels, and a document still being read carries no urgency. */
+    @Test
+    void releasedWordingTravelsAndUrgencyWaitsForDone() {
+        DocumentView done = DocumentView.pending(Document.received(PATIENT, FAMILY, 1, NOW).withId(DOC).withStatus(Document.Status.DONE, null, NOW));
+        assertThat(new ResultView(done, MA, true, new ViewerLocale(true), Urgency.NOW, null, GateState.RELEASED, "body", 0, 2, NOW, NOW)
+                .wording()).isEqualTo("body");
+        DocumentView reading = DocumentView.pending(Document.received(PATIENT, FAMILY, 1, NOW).withId(DOC));
+        assertThatThrownBy(() -> new ResultView(reading, MA, true, new ViewerLocale(true), Urgency.NOW, List.of(), GateState.NONE,
+                null, 0, 2, NOW, NOW)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("from DONE onwards");
     }
 }
