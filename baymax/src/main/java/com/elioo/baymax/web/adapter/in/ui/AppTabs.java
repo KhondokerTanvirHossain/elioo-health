@@ -4,10 +4,13 @@ import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.nudge.application.port.out.NudgeDataPort;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
+import com.elioo.baymax.web.application.port.in.AttentionUseCase;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
+import com.elioo.baymax.web.domain.AttentionItem;
 import com.elioo.baymax.web.domain.FamilyOverview;
 import com.elioo.baymax.web.domain.PatientSummary;
 import com.elioo.baymax.web.domain.TimelineFilter;
+import com.elioo.baymax.web.domain.TimelinePage;
 import com.elioo.baymax.web.domain.WebSession;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -21,6 +24,7 @@ import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Mono;
 
+import java.util.List;
 import java.util.UUID;
 
 import static com.elioo.baymax.web.adapter.in.ui.Html.esc;
@@ -43,6 +47,8 @@ public class AppTabs implements WebPages {
     private final PageChrome chrome;
     private final NudgeDataPort nudgeData;
     private final BaymaxProperties properties;
+    /** C4: the চ্যাট attention stack (s06) and the কাগজপত্র strip, after visibility; never called for the chooser. */
+    private final AttentionUseCase attention;
 
     @Override
     public int order() {
@@ -122,16 +128,20 @@ public class AppTabs implements WebPages {
         return Html.Head.of(copy.t(lang, tab.labelKey) + " — " + copy.t(lang, "app.title"));
     }
 
-    /** C4 replaces this with the attention stack (s06). Until then: the greeting, the papers, the honest composer. */
+    /**
+     * The চ্যাট tab (s06, spec §4.6, {@link ChatView}): the greeting, what needs attention for the patient in view in
+     * code-urgency order ({@link AttentionUseCase}, stored levels only), and the composer that says chat is coming.
+     * Reloads itself without script while a paper is being read, so the card moves on by itself.
+     */
     Mono<Body> chatBody(ServerRequest request, Lang lang, FamilyOverview me, ActivePatient active) {
         PatientSummary p = active.patient().orElseThrow();
-        String owner = me.family().ownerName();
-        String hello = owner == null || owner.isBlank() ? copy.t(lang, "chat.hello.plain") : copy.t(lang, "chat.hello", owner);
-        return Mono.just(new Body("<p class=\"bubble\">" + hello + "</p>"
-                + "<p><a class=\"btn quiet\" href=\"" + Tab.PAPERS.path + "?patient=" + p.patient().id() + "\">"
-                + copy.t(lang, "chat.papers", p.patient().name()) + "</a></p>"
-                + "<div class=\"composer\"><p class=\"soon\">" + copy.t(lang, "chat.soon") + "</p></div>",
-                head(lang, Tab.CHAT), "has-composer"));
+        UUID familyId = SessionAuthFilter.session(request).familyId();
+        return attention.attention(familyId, p.patient().id()).map(stack -> {
+            String html = new ChatView(copy).page(lang, me.family().ownerName(), p.patient().name(), p.patient().id(), stack,
+                    p.documents(), p.owner());
+            boolean reading = stack.stream().anyMatch(AttentionItem.Reading.class::isInstance);
+            return new Body(html, head(lang, Tab.CHAT).refresh(reading ? 10 : 0), "has-composer");
+        });
     }
 
     /**
@@ -150,7 +160,8 @@ public class AppTabs implements WebPages {
         UUID familyId = SessionAuthFilter.session(request).familyId();
         String list = Tab.PAPERS.path + "?patient=" + patientId;
         String name = patient.patient().name();
-        return timeline.timeline(familyId, patientId, cursor, filter).map(page -> {
+        return Mono.zip(timeline.timeline(familyId, patientId, cursor, filter), attention.attention(familyId, patientId)).map(read -> {
+            TimelinePage page = read.getT1();
             boolean nothingAtAll = page.entries().isEmpty() && filter == TimelineFilter.ALL && cursor == null;
             StringBuilder b = new StringBuilder("<div class=\"phead\"><div><h1>").append(copy.t(lang, "timeline.docs")).append("</h1>")
                     .append("<p class=\"psub\">").append(copy.t(lang, "timeline.sub", name)).append("</p></div>");
@@ -163,6 +174,7 @@ public class AppTabs implements WebPages {
             if (nothingAtAll) {
                 b.append(empty(lang, patient));
             } else {
+                b.append(strip(lang, read.getT2()));
                 b.append("<nav class=\"filters\" aria-label=\"").append(copy.t(lang, "timeline.filter.label")).append("\">");
                 for (TimelineFilter f : TimelineFilter.values()) {
                     // kit §26b: the chosen chip is marked and carries the check icon — colour is never the only cue
@@ -194,6 +206,25 @@ public class AppTabs implements WebPages {
             boolean inFlight = page.entries().stream().anyMatch(e -> "RECEIVED".equals(e.status()) || "PROCESSING".equals(e.status()));
             return Body.of(b.toString(), head(lang, Tab.PAPERS).refresh(inFlight ? 5 : 0));
         });
+    }
+
+    /**
+     * "এখন যা দেখার" above the filters (AttentionCard README): the same NOW and THIS_WEEK papers the চ্যাট stack leads
+     * with, each a compact link to its paper with the stored chip. Nothing at all when nothing is urgent — no heading.
+     */
+    private String strip(Lang lang, List<AttentionItem> stack) {
+        List<AttentionItem.Urgent> urgent = stack.stream().filter(AttentionItem.Urgent.class::isInstance).map(AttentionItem.Urgent.class::cast).toList();
+        if (urgent.isEmpty()) {
+            return "";
+        }
+        StringBuilder b = new StringBuilder("<section class=\"attn-strip\"><h2>").append(copy.t(lang, "attn.strip")).append("</h2><ul>");
+        for (AttentionItem.Urgent u : urgent) {
+            b.append("<li><a href=\"").append(BASE).append("/documents/").append(u.documentId()).append("\"><span>")
+                    .append(TimelineView.typeLabel(copy, lang, u.documentType())).append(" · ").append(copy.date(lang, u.date()))
+                    .append(u.dateIsFallback() ? " " + copy.t(lang, "timeline.uploaddate") : "").append("</span>")
+                    .append(UrgencyChip.of(copy, lang, u.level())).append("</a></li>");
+        }
+        return b.append("</ul></section>").toString();
     }
 
     /** s16 empty: whose papers, why send one, and — for the owner only — the camera to the sheet for this patient. */

@@ -6,6 +6,7 @@ import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.nudge.application.port.in.NudgeOptOutUseCase;
 import com.elioo.baymax.nudge.application.port.out.NudgeDataPort;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
+import com.elioo.baymax.web.application.port.in.AttentionUseCase;
 import com.elioo.baymax.web.application.port.in.ResultUseCase;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
 import com.elioo.baymax.web.application.port.in.UploadUseCase;
@@ -43,6 +44,8 @@ final class WebUiTestKit {
     /** The document page's read side (A9): the status poll and the reading view. */
     final ResultUseCase results = mock(ResultUseCase.class);
     final UploadUseCase uploads;
+    /** C4: the চ্যাট attention stack and the কাগজপত্র strip; nothing needs attention unless a test says so. */
+    final AttentionUseCase attention = mock(AttentionUseCase.class);
     final BaymaxProperties properties;
     final UiCopy copy = new UiCopy();
     final SessionAuthFilter sessions;
@@ -76,6 +79,7 @@ final class WebUiTestKit {
         }
         // a patient with no nudge row reads as "reminders on"; a test that needs a row stubs that patient
         when(nudgeData.patient(any())).thenReturn(Mono.empty());
+        when(attention.attention(any(), any())).thenReturn(Mono.just(List.of()));
         this.sessions = new SessionAuthFilter(auth, properties);
         this.router = buildRouter();
         this.client = WebTestClient.bindToRouterFunction(router).build();
@@ -86,7 +90,7 @@ final class WebUiTestKit {
         PageChrome chrome = new PageChrome(copy, sessions);
         documents = new DocumentPages(timeline, copy, chrome, results);
         List<WebPages> pages = List.of(new LandingPages(copy, chrome), new SignInPages(auth, sessions, copy, chrome, properties),
-                new OptOutPages(optOut, copy, chrome), new AppTabs(timeline, copy, chrome, nudgeData, properties), documents,
+                new OptOutPages(optOut, copy, chrome), new AppTabs(timeline, copy, chrome, nudgeData, properties, attention), documents,
                 new ProfilePages(timeline, optOut), new UploadUiHandler(uploads, copy, properties),
                 new AssetHandler());
         return new BaymaxWebUiRouter().baymaxWebUiRoutes(pages, sessions, chrome);

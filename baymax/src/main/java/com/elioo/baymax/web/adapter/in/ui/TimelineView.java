@@ -58,7 +58,7 @@ final class TimelineView {
     }
 
     private void done(StringBuilder b, Lang lang, TimelineEntry e, String who) {
-        b.append("<span class=\"ttitle\">").append(type(lang, e.documentType())).append(" · ").append(who).append("</span>")
+        b.append("<span class=\"ttitle\">").append(typeLabel(copy, lang, e.documentType())).append(" · ").append(who).append("</span>")
                 .append("<span class=\"meta\">").append(dateLine(lang, e)).append("</span>");
         String summary = TimelineSummary.line(copy, lang, e);
         if (!summary.isEmpty()) {
@@ -93,7 +93,8 @@ final class TimelineView {
                 + (e.facility() == null || e.facility().isBlank() ? "" : " · " + esc(e.facility()));
     }
 
-    private String type(Lang lang, String type) {
+    /** The paper's type as the bundle names it, else "কাগজ"; shared with the চ্যাট cards and the strip (C4). */
+    static String typeLabel(UiCopy copy, Lang lang, String type) {
         String label = type == null ? null : copy.maybe(lang, "type." + type);
         return label != null ? label : copy.t(lang, "timeline.paper");
     }

@@ -91,10 +91,10 @@ class AppShellRoutesTest {
         noPapers(ma);
         noPapers(baba);
         String html = kit.page(tab.path, "bn");
-        // PAPERS would read the guessed patient's timeline; CHAT reads nobody's papers even when it guesses, so on
-        // CHAT these two can never fail — the chooser below and the header test after this one are its guards
+        // PAPERS would read the guessed patient's timeline and strip; CHAT the guessed patient's attention stack (C4)
         verify(kit.timeline, never()).timeline(any(), any(), any(), any());
         verify(kit.timeline, never()).document(any(), any());
+        verify(kit.attention, never()).attention(any(), any());
         Dom dom = Dom.parse(html);
         assertThat(dom.unclosed).isEmpty();
         assertThat(dom.all.stream().filter(e -> e.tag().equals("h1")).map(Dom.Element::ownText)).containsExactly("কার কাগজ দেখবেন?");
@@ -158,6 +158,7 @@ class AppShellRoutesTest {
                     .expectStatus().isNotFound();
         }
         verify(kit.timeline, never()).timeline(any(), any(), any(), any());
+        verify(kit.attention, never()).attention(any(), any());
     }
 
     /** WhatsApp messages and bookmarks carry the old URL; it opens কাগজপত্র with the patient chosen (profile: L5). */
@@ -399,6 +400,7 @@ class AppShellRoutesTest {
         assertNoSheet(dom);
         assertThat(dom.all.stream().filter(e -> e.tag().equals("h1")).map(Dom.Element::ownText)).containsExactly("কার কাগজ দেখবেন?");
         verify(kit.timeline, never()).timeline(any(), any(), any(), any());
+        verify(kit.attention, never()).attention(any(), any());
     }
 
     /**
@@ -441,6 +443,7 @@ class AppShellRoutesTest {
             assertThat(html).as("cookie " + stale).contains("কার কাগজ দেখবেন?");
         }
         verify(kit.timeline, never()).timeline(any(), any(), any(), any());
+        verify(kit.attention, never()).attention(any(), any());
     }
 
     /** The legacy upload form (a page cached before A7) lands where the sheet's does: on the paper it sent (A8). */
@@ -463,6 +466,7 @@ class AppShellRoutesTest {
         assertThat(dom.all.stream().filter(e -> e.tag().equals("h1")).map(Dom.Element::ownText))
                 .containsExactly(kit.copy.t(Lang.BN, tab.labelKey));
         verify(kit.timeline, never()).timeline(any(), any(), any(), any());
+        verify(kit.attention, never()).attention(any(), any());
     }
 
     /** The চ্যাট placeholder: the composer says chat is coming and can send nothing (C4 keeps this test). */
@@ -583,5 +587,128 @@ class AppShellRoutesTest {
         assertThat(AppShell.initial("রুমানা")).isEqualTo("রু");
         assertThat(AppShell.initial("স্বপ্না")).isEqualTo("স্ব");
         assertThat(AppShell.initial("Ma")).isEqualTo("M");
+    }
+
+    // ---- C4: the চ্যাট attention stack (s06) and the কাগজপত্র strip -------------------------------------------------
+
+    private static com.elioo.baymax.web.domain.AttentionItem.Urgent urgentPaper(com.elioo.baymax.outbound.domain.Urgency level, String doc) {
+        return new com.elioo.baymax.web.domain.AttentionItem.Urgent(UUID.fromString(doc), level, "lab_report",
+                java.time.LocalDate.parse("2026-10-12"), false, WebUiTestKit.NOW);
+    }
+
+    private void attentionOfMa(com.elioo.baymax.web.domain.AttentionItem... items) {
+        when(kit.attention.attention(WebUiTestKit.FAMILY, ma.patient().id())).thenReturn(Mono.just(List.of(items)));
+    }
+
+    private static final String NOW_DOC = "5e9edf6d-0a2a-4913-8675-9d07a4100041";
+    private static final String WEEK_DOC = "5e9edf6d-0a2a-4913-8675-9d07a4100042";
+
+    /** The stack is this family's view of the patient in view: asked for with the session's family and that patient. */
+    @Test
+    void theChatTabShowsThePatientsAttentionStackEachCardLinkingItsPaper() {
+        PatientSummary withPapers = kit.patient("আম্মা", true, 2);
+        kit.familyWith(withPapers);
+        attentionOfMa(urgentPaper(com.elioo.baymax.outbound.domain.Urgency.NOW, NOW_DOC),
+                urgentPaper(com.elioo.baymax.outbound.domain.Urgency.THIS_WEEK, WEEK_DOC));
+        Dom dom = Dom.parse(kit.page(Tab.CHAT.path, "bn"));
+        assertThat(dom.unclosed).isEmpty();
+        verify(kit.attention).attention(WebUiTestKit.FAMILY, ma.patient().id());
+        Dom.Element now = only(dom, "section", "now");
+        assertThat(now.classes()).containsExactly("attn", "now");
+        assertThat(subtree(now).stream().filter(e -> e.tag().equals("a")).map(e -> e.attrs().get("href")))
+                .containsExactly("/app/documents/" + NOW_DOC);
+        Dom.Element soon = only(dom, "section", "soon");
+        assertThat(subtree(soon).stream().filter(e -> e.tag().equals("a")).map(e -> e.attrs().get("href")))
+                .containsExactly("/app/documents/" + WEEK_DOC);
+        assertThat(dom.all.stream().filter(e -> e.tag().equals("h2")).map(Dom.Element::ownText))
+                .contains(kit.copy.t(Lang.BN, "attn.heading", "আম্মা"));
+        assertThat(dom.all.indexOf(now)).as("NOW above THIS_WEEK").isLessThan(dom.all.indexOf(soon));
+    }
+
+    /** A paper still being read reloads the চ্যাট tab without script; with nothing being read, it does not reload. */
+    @Test
+    void theChatTabReloadsItselfOnlyWhileAPaperIsBeingRead() {
+        kit.familyWith(kit.patient("আম্মা", true, 1));
+        attentionOfMa(new com.elioo.baymax.web.domain.AttentionItem.Reading(UUID.fromString(NOW_DOC), WebUiTestKit.NOW));
+        assertThat(kit.page(Tab.CHAT.path, "bn")).contains("<meta http-equiv=\"refresh\" content=\"10\">");
+        attentionOfMa(urgentPaper(com.elioo.baymax.outbound.domain.Urgency.NOW, NOW_DOC));
+        assertThat(kit.page(Tab.CHAT.path, "bn")).doesNotContain("http-equiv=\"refresh\"");
+    }
+
+    /** A patient with no papers: the intro and the one camera, no stack read into anything and no camera twice. */
+    @Test
+    void theChatTabForAPatientWithNoPapersIsTheIntroAndOneCamera() {
+        kit.familyWith(ma);
+        Dom dom = Dom.parse(kit.page(Tab.CHAT.path, "bn"));
+        assertThat(text(only(dom, "section", "empty"))).contains(kit.copy.t(Lang.BN, "timeline.empty.title", "আম্মা"));
+        assertThat(dom.all.stream().filter(e -> e.tag().equals("a") && e.attrs().getOrDefault("href", "").startsWith(UploadUiHandler.SHEET)))
+                .hasSize(1);
+    }
+
+    /**
+     * The "এখন যা দেখার" strip on কাগজপত্র, both directions: the urgent papers only (never the retake, the follow-up or
+     * the paper being read), each a link to its paper with the stored chip, above the filters; a patient with nothing
+     * urgent has no strip and no heading.
+     */
+    @Test
+    void thePapersStripShowsTheUrgentPapersOnlyAndARoutineOnlyPatientHasNone() {
+        kit.familyWith(kit.patient("আম্মা", true, 2));
+        String list = Tab.PAPERS.path + "?patient=" + ma.patient().id();
+        when(kit.timeline.timeline(eq(WebUiTestKit.FAMILY), eq(ma.patient().id()), any(), any())).thenReturn(Mono.just(new TimelinePage(List.of(
+                new com.elioo.baymax.web.domain.TimelineEntry(UUID.fromString(WEEK_DOC), java.time.LocalDate.parse("2026-10-12"), false, "lab_report",
+                        null, "DONE", 3, 0, 0, 0, "k", WebUiTestKit.NOW, com.elioo.baymax.outbound.domain.Urgency.ROUTINE, 0, "released", null)), null)));
+        UUID rx = UUID.randomUUID();
+        attentionOfMa(urgentPaper(com.elioo.baymax.outbound.domain.Urgency.NOW, NOW_DOC),
+                urgentPaper(com.elioo.baymax.outbound.domain.Urgency.THIS_WEEK, WEEK_DOC),
+                new com.elioo.baymax.web.domain.AttentionItem.Retake(UUID.randomUUID(), WebUiTestKit.NOW),
+                new com.elioo.baymax.web.domain.AttentionItem.FollowUp(rx, "Next visit", java.time.LocalDate.parse("2026-10-20"), "f/p/x/crop.jpg"),
+                new com.elioo.baymax.web.domain.AttentionItem.Reading(UUID.randomUUID(), WebUiTestKit.NOW));
+        String html = kit.page(list, "bn");
+        Dom dom = Dom.parse(html);
+        assertThat(dom.unclosed).isEmpty();
+        Dom.Element strip = only(dom, "section", "attn-strip");
+        assertThat(subtree(strip).stream().filter(e -> e.tag().equals("h2")).map(Dom.Element::ownText))
+                .containsExactly(kit.copy.t(Lang.BN, "attn.strip"));
+        assertThat(subtree(strip).stream().filter(e -> e.tag().equals("a")).map(e -> e.attrs().get("href")))
+                .containsExactly("/app/documents/" + NOW_DOC, "/app/documents/" + WEEK_DOC);
+        assertThat(subtree(strip).stream().filter(e -> e.classes().equals(java.util.Set.of("chip", "now"))).map(Dom.Element::ownText))
+                .containsExactly(kit.copy.urgency(Lang.BN, com.elioo.baymax.outbound.domain.Urgency.NOW, true));
+        assertThat(subtree(strip).stream().filter(e -> e.classes().equals(java.util.Set.of("chip", "soon"))).map(Dom.Element::ownText))
+                .containsExactly(kit.copy.urgency(Lang.BN, com.elioo.baymax.outbound.domain.Urgency.THIS_WEEK, true));
+        assertThat(html.indexOf("attn-strip")).as("the strip above the filters").isLessThan(html.indexOf("<nav class=\"filters\""));
+        assertThat(text(strip)).doesNotContain("Next visit");
+
+        // the other direction: only the routine paper and cards that are not urgent — no strip, no heading
+        attentionOfMa(new com.elioo.baymax.web.domain.AttentionItem.Retake(UUID.randomUUID(), WebUiTestKit.NOW),
+                new com.elioo.baymax.web.domain.AttentionItem.Reading(UUID.randomUUID(), WebUiTestKit.NOW));
+        String quiet = kit.page(list, "bn");
+        assertThat(quiet).contains("class=\"titem\"").doesNotContain("attn-strip").doesNotContain(kit.copy.t(Lang.BN, "attn.strip"));
+    }
+
+    /**
+     * The C4 fixtures exist so that every derived page check reads every card, the empty চ্যাট and the strip. They are
+     * only worth that if they really draw them, in both languages: each "stack" page has one card of every kind, each
+     * "strip" page the strip, each "empty" চ্যাট page the empty panel.
+     */
+    @Test
+    void theAttentionFixturesReallyDrawEveryCardTheEmptyChatAndTheStrip() {
+        Map<String, String> pages = RenderedPages.all();
+        List<String> stacks = pages.keySet().stream().filter(k -> k.startsWith("GET /app/home ") && k.contains(" #stack ")).toList();
+        List<String> strips = pages.keySet().stream().filter(k -> k.startsWith("GET /app/timeline") && k.contains(" #strip ")).toList();
+        List<String> empties = pages.keySet().stream().filter(k -> k.startsWith("GET /app/home ") && k.contains(" #empty ")).toList();
+        assertThat(stacks).as("stack pages rendered").hasSize(2);
+        assertThat(strips).as("strip pages rendered").hasSize(2);
+        assertThat(empties).as("empty chat pages rendered").hasSize(2);
+        for (String key : stacks) {
+            Dom dom = Dom.parse(pages.get(key));
+            assertThat(dom.unclosed).as(key + " unclosed").isEmpty();
+            for (String kind : List.of("now", "soon", "retake", "follow", "reading")) {
+                assertThat(dom.all.stream().filter(e -> e.tag().equals("section") && e.classes().equals(java.util.Set.of("attn", kind))))
+                        .as(key + " card " + kind).hasSize(1);
+            }
+        }
+        strips.forEach(key -> assertThat(Dom.parse(pages.get(key)).all.stream().filter(e -> e.classes().contains("attn-strip"))).as(key).hasSize(1));
+        empties.forEach(key -> assertThat(Dom.parse(pages.get(key)).all.stream().filter(e -> e.tag().equals("section") && e.classes().contains("empty")))
+                .as(key).hasSize(1));
     }
 }

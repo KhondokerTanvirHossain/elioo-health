@@ -14,10 +14,13 @@ final class UrgencyChip {
     }
 
     static String html(UiCopy copy, Lang lang, TimelineEntry e) {
-        return e.chip().map(level -> {
-            boolean now = level == Urgency.NOW;
-            return "<span class=\"chip " + (now ? "now" : "soon") + "\">" + Icons.svg(now ? "octagon" : "calendar", 18)
-                    + copy.urgency(lang, level, true) + "</span>";
-        }).orElse("");
+        return e.chip().map(level -> of(copy, lang, level)).orElse("");
+    }
+
+    /** The chip of a level that has one (NOW, THIS_WEEK): the চ্যাট strip's urgent cards (C4) carry only those. */
+    static String of(UiCopy copy, Lang lang, Urgency level) {
+        boolean now = level == Urgency.NOW;
+        return "<span class=\"chip " + (now ? "now" : "soon") + "\">" + Icons.svg(now ? "octagon" : "calendar", 18)
+                + copy.urgency(lang, level, true) + "</span>";
     }
 }
