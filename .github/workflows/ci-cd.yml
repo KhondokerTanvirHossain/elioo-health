@@ -81,11 +81,45 @@ jobs:
           GROQ_API_KEY: ci-placeholder
       # D4: the add sheet's script (baymax/ui/upload.js) — its pure rules, including exactly what one press sends.
       # The DOM wiring and the ES5 parse are covered inside the Gradle build (UploadScriptTest); this runs the rest.
+      # Node 22 for every node step: the medioo-web image runs node:22-alpine, so CI tests the runtime it ships.
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: medioo-web/package.json
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: medioo-web/pnpm-lock.yaml
       - name: Upload script tests
         run: node --test baymax/src/test/js/*.test.mjs
+      # medioo-web (DR-40, plan W1a): built and tested here, not deployed — the deploy job does not build its image yet (W1b).
+      - name: medioo-web install
+        working-directory: medioo-web
+        run: pnpm install --frozen-lockfile
+      - name: medioo-web lint, typecheck, unit tests, build
+        working-directory: medioo-web
+        run: |
+          pnpm run lint
+          pnpm run typecheck
+          pnpm exec vitest run
+          pnpm run build
+      - name: medioo-web browser tests (CSP, axe, no-JS reading, budget probe)
+        working-directory: medioo-web
+        run: |
+          pnpm exec playwright install --with-deps chromium
+          pnpm exec playwright test -c e2e/playwright.config.ts
+      - name: medioo-web budget numbers
+        if: always()
+        working-directory: medioo-web
+        run: |
+          node -e 'const d = require("./test-results/budget.json"); console.log(JSON.stringify({ totals: d.totals, all: d.all }, null, 2))' \
+            || echo "no budget.json (the browser tests did not reach the probe)"
+      - name: Upload medioo-web Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: medioo-web-playwright-report
+          path: medioo-web/playwright-report
       - name: Upload test reports
         if: failure()
         uses: actions/upload-artifact@v4

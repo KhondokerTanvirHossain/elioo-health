@@ -1,0 +1,9 @@
+{
+  "_source": "Copied verbatim from baymax/src/main/resources/baymax/ui-shell_bn.properties (tab.*, tabs.label) and ui_bn.properties (landing.h1, landing.sub) for the W1a budget probe only. Kept outside src/ so src/ holds no Bangla literal; W2b replaces this with the generated copy.",
+  "tabs.label": "প্রধান",
+  "tab.chat": "চ্যাট",
+  "tab.papers": "কাগজপত্র",
+  "tab.family": "পরিবার",
+  "landing.h1": "পরিবারের সব রিপোর্ট মনে রাখে। সময় হলে নিজেই জানায়।",
+  "landing.sub": "প্রেসক্রিপশন বা রিপোর্টের ছবি তুলে পাঠান। Medioo সহজ বাংলায় বুঝিয়ে দেবে, গুছিয়ে রাখবে। আর ফলো-আপের সময় হলে, ওষুধ বদলালে, বা কোনো মান খারাপের দিকে গেলে আপনাকে নিজে থেকেই জানাবে।"
+}

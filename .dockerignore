@@ -33,6 +33,9 @@ docs/
 .gitlab-ci.yml
 .github/
 
+# The Next.js frontend has its own image (medioo-web/Dockerfile); the Java build context stays what it was
+medioo-web/
+
 # Test reports
 **/test-results/
 **/jacoco/
