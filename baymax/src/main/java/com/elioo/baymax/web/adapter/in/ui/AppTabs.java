@@ -164,7 +164,7 @@ public class AppTabs implements WebPages {
             TimelinePage page = read.getT1();
             boolean nothingAtAll = page.entries().isEmpty() && filter == TimelineFilter.ALL && cursor == null;
             StringBuilder b = new StringBuilder("<div class=\"phead\"><div><h1>").append(copy.t(lang, "timeline.docs")).append("</h1>")
-                    .append("<p class=\"psub\">").append(copy.t(lang, "timeline.sub", name)).append("</p></div>");
+                    .append("<p class=\"psub\">").append(copy.t(lang, "timeline.sub", copy.poss(lang, name))).append("</p></div>");
             if (patient.owner() && !nothingAtAll) {
                 // the one upload entry (A7): the add-report sheet for this patient, which comes back here
                 b.append("<a class=\"btn tonal\" href=\"").append(addHref(patientId)).append("\">").append(Icons.svg("camera", 24))
@@ -230,7 +230,7 @@ public class AppTabs implements WebPages {
     /** s16 empty: whose papers, why send one, and — for the owner only — the camera to the sheet for this patient. */
     private String empty(Lang lang, PatientSummary patient) {
         StringBuilder b = new StringBuilder("<section class=\"empty\"><span class=\"disc\" aria-hidden=\"true\">")
-                .append(Icons.svg("papers", 32)).append("</span><h2>").append(copy.t(lang, "timeline.empty.title", patient.patient().name()))
+                .append(Icons.svg("papers", 32)).append("</span><h2>").append(copy.t(lang, "timeline.empty.title", copy.poss(lang, patient.patient().name())))
                 .append("</h2><p>").append(copy.t(lang, "timeline.empty.body")).append("</p>");
         if (patient.owner()) {
             b.append("<a class=\"btn\" href=\"").append(addHref(patient.patient().id())).append("\">").append(Icons.svg("camera", 24))

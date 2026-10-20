@@ -80,7 +80,7 @@ class NeedsRetakeRenderTest {
         assertThat(form).contains("method=\"post\"").contains("enctype=\"multipart/form-data\"").contains("action=\"/app/add\"")
                 .contains("<input type=\"hidden\" name=\"patient\" value=\"" + ResultFixtures.MA.id() + "\">")
                 .contains("capture=\"environment\"").contains("name=\"file\"").contains(copy.t(Lang.BN, "retake.again"))
-                .contains(copy.t(Lang.BN, "retake.same_patient", ResultFixtures.MA.name()));
+                .contains("Ma-র নামেই যাবে");   // s12, F8: a Latin name keeps the hyphen
         assertThat(retake("no_text", 1, true)).contains(copy.t(Lang.BN, "retake.free")).contains(copy.t(Lang.BN, "retake.nothing_kept"));
     }
 

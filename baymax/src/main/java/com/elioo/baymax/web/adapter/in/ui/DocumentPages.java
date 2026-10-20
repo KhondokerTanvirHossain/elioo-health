@@ -562,7 +562,7 @@ public class DocumentPages implements WebPages {
                 + "<input type=\"hidden\" name=\"back\" value=\"" + BASE + "/documents/" + documentId + "\">"
                 + "<label class=\"retake-file\"><span>" + copy.t(lang, "retake.file") + "</span>"
                 + "<input type=\"file\" name=\"file\" accept=\"image/*,application/pdf\" capture=\"environment\" required></label>"
-                + "<p class=\"meta\">" + copy.t(lang, "retake.same_patient", patient.name()) + "</p>"
+                + "<p class=\"meta\">" + copy.t(lang, "retake.same_patient", copy.poss(lang, patient.name())) + "</p>"
                 + "<button type=\"submit\" class=\"btn " + (primary ? "primary" : "quiet") + "\">" + copy.t(lang, submitKey) + "</button></form>";
     }
 

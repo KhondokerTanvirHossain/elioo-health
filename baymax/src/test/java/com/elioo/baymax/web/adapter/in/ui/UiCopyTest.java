@@ -111,7 +111,7 @@ class UiCopyTest {
 
     @Test
     void placeholdersAreReplacedAndArgumentsEscaped() {
-        assertThat(copy.t(Lang.BN, "patients.docs", "<b>")).isEqualTo("নথি: &lt;b&gt;");
+        assertThat(copy.t(Lang.BN, "patients.docs", "<b>")).isEqualTo("&lt;b&gt;টি কাগজ");
         assertThat(copy.t(Lang.EN, "sheet.of", 1, 2, "<i>")).isEqualTo("1 · 2 · &lt;i&gt;");
     }
 
@@ -137,6 +137,29 @@ class UiCopyTest {
         }
     }
 
+    /**
+     * Spec §2 F8 on both pages: the Bangla possessive and objective come from NameGrammar, the English possessive takes an
+     * apostrophe and the English objective is the name itself. Neither escapes: {@link UiCopy#t} escapes its arguments
+     * exactly once.
+     */
+    @Test
+    void possAndObjFollowThePagesLanguageAndAreEscapedOnceByT() {
+        assertThat(copy.poss(Lang.BN, "আম্মা")).isEqualTo("আম্মার");
+        assertThat(copy.poss(Lang.BN, "রহিম")).isEqualTo("রহিমের");
+        assertThat(copy.poss(Lang.EN, " Ma ")).isEqualTo("Ma's");
+        assertThat(copy.poss(Lang.EN, "James")).isEqualTo("James'");
+        // pinned, not endorsed: a Bangla-script name on an English page takes the English apostrophe ("আম্মা's"); whether
+        // it should take NameGrammar's form instead is the copy owner's call (D2 PR body)
+        assertThat(copy.poss(Lang.EN, "আম্মা")).isEqualTo("আম্মা's");
+        assertThat(copy.poss(Lang.EN, null)).isEmpty();
+        assertThat(copy.poss(Lang.BN, "  ")).isEmpty();
+        assertThat(copy.obj(Lang.BN, "আম্মা")).isEqualTo("আম্মাকে");
+        assertThat(copy.obj(Lang.EN, " Ma ")).isEqualTo("Ma");
+        assertThat(copy.obj(Lang.EN, null)).isEmpty();
+        assertThat(copy.t(Lang.BN, "family.info.title", copy.poss(Lang.BN, "<b>"))).isEqualTo("&lt;b&gt;-এর তথ্য");
+        assertThat(copy.t(Lang.EN, "family.info.title", copy.poss(Lang.EN, "<b>"))).isEqualTo("&lt;b&gt;&#39;s details");
+    }
+
     @Test
     void theDisclaimerSaysNotMedicalAdviceInBothLanguages() {
         assertThat(copy.t(Lang.EN, "disclaimer")).contains("not medical advice").contains("doctor");
@@ -147,8 +170,8 @@ class UiCopyTest {
     @Test
     void aNumberArgumentIsBanglaOnABanglaPageAndTextIsNeverConverted() {
         assertThat(copy.t(Lang.BN, "patients.years", 60)).isEqualTo("৬০ বছর");
-        assertThat(copy.t(Lang.BN, "patients.docs", 10L)).isEqualTo("নথি: ১০");
-        assertThat(copy.t(Lang.BN, "patients.docs", "8.2")).isEqualTo("নথি: 8.2");
+        assertThat(copy.t(Lang.BN, "patients.docs", 10L)).isEqualTo("১০টি কাগজ");
+        assertThat(copy.t(Lang.BN, "patients.docs", "8.2")).isEqualTo("8.2টি কাগজ");
         assertThat(copy.t(Lang.EN, "patients.years", 60)).isEqualTo("60 years");
         assertThat(copy.date(Lang.BN, java.time.LocalDate.parse("2026-01-05"))).isEqualTo("৫ জানুয়ারি ২০২৬");
         assertThat(copy.date(Lang.EN, java.time.LocalDate.parse("2026-01-05"))).isEqualTo("2026-01-05");
