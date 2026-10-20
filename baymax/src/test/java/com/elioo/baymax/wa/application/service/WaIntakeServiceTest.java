@@ -11,19 +11,22 @@ import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.outbound.application.service.Copy;
 import com.elioo.baymax.outbound.domain.OutboundMessage;
 import com.elioo.baymax.outbound.domain.Urgency;
+import com.elioo.baymax.wa.WaFixtures;
 import com.elioo.baymax.wa.application.port.out.WaMessagingPort;
 import com.elioo.baymax.wa.domain.WaInbound;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
-import com.elioo.baymax.wa.WaFixtures;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.test.StepVerifier;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -32,9 +35,9 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.Mockito.inOrder;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -839,5 +842,74 @@ class WaIntakeServiceTest {
         assertThat(service.onInbound(new WaInbound(WaFixtures.wamid(FROM, 69), FROM, WaInbound.Type.TEXT, "hi", "", "")).block())
                 .isEqualTo(WaIntakeService.Outcome.REPLIED);
         assertThat(sentBodies()).hasSize(1);
+    }
+
+    /**
+     * The claim is "a courtesy never costs the answer", and the way a courtesy costs it is not an error but a call that
+     * never returns: onErrorResume cannot see a stall, and the receipt runs in front of the 24 h window record and the
+     * reply. Mono.never() is that stall; virtual time lets the bound pass without the test waiting for it.
+     */
+    @Test
+    void aReadReceiptThatHangsStillGetsTheReply() {
+        props.getWa().setReadReceipts("typing");
+        familyWith(patient("মা"));
+        when(graph.markRead(anyString(), anyBoolean())).thenReturn(Mono.never());
+        StepVerifier.withVirtualTime(() -> service.onInbound(
+                        new WaInbound(WaFixtures.wamid(FROM, 70), FROM, WaInbound.Type.TEXT, "hi", "", "")))
+                .thenAwait(Duration.ofSeconds(5))
+                .expectNext(WaIntakeService.Outcome.REPLIED)
+                .expectComplete()
+                .verify(Duration.ofSeconds(5));
+        assertThat(sentBodies()).hasSize(1);
+        verify(auth).noteInbound(eq(E164), any());
+    }
+
+    /** The photo is the case the class exists for: a hung receipt must not hold back the ack or the intake. */
+    @Test
+    void aReadReceiptThatHangsStillAcknowledgesAndFilesThePhoto() {
+        props.getWa().setReadReceipts("typing");
+        PatientProfile ma = patient("মা");
+        familyWith(ma);
+        when(intake.accept(eq(ma.id()), any())).thenReturn(Mono.just(mock(Document.class)));
+        when(graph.markRead(anyString(), anyBoolean())).thenReturn(Mono.never());
+        StepVerifier.withVirtualTime(() -> service.onInbound(
+                        new WaInbound(WaFixtures.wamid(FROM, 71), FROM, WaInbound.Type.IMAGE, "", "MEDIA-1", "image/jpeg")))
+                .thenAwait(Duration.ofSeconds(5))
+                .expectNext(WaIntakeService.Outcome.ACCEPTED)
+                .expectComplete()
+                .verify(Duration.ofSeconds(5));
+        assertThat(sentBodies()).containsExactly(bn("wa.received"));
+        verify(intake).accept(eq(ma.id()), any());
+    }
+
+    /**
+     * Both directions of takesTime, through onInbound with mode=typing: what the dots are for (a photo, a PDF, the detail
+     * word typed or tapped) and what is answered at once (a DOCX refused by template, a reaction, a greeting tapped).
+     */
+    @ParameterizedTest(name = "{0} {1} \"{2}\" -> typing={3}")
+    @CsvSource(delimiter = '|', value = {
+            "IMAGE       | image/jpeg                                                              |           | true",
+            "DOCUMENT    | application/pdf                                                         |           | true",
+            "DOCUMENT    | application/vnd.openxmlformats-officedocument.wordprocessingml.document |           | false",
+            "BUTTON      |                                                                         | বিস্তারিত | true",
+            "INTERACTIVE |                                                                         | বিস্তারিত | true",
+            "BUTTON      |                                                                         | hello     | false",
+            "REACTION    |                                                                         | 👍        | false",
+    })
+    void typingFollowsWhetherTheAnswerTakesTime(WaInbound.Type type, String mime, String text, boolean typing) {
+        props.getWa().setReadReceipts("typing");
+        PatientProfile ma = patient("মা");
+        familyWith(ma);
+        latestDone();
+        when(explainer.detail(DOC)).thenReturn(Mono.just(
+                detailRow(OutboundMessage.GateStatus.RELEASED, Urgency.ROUTINE, "বিস্তারিত: সব স্বাভাবিক", Instant.EPOCH)));
+        when(intake.accept(eq(ma.id()), any())).thenReturn(Mono.just(mock(Document.class)));
+        String id = WaFixtures.wamid(FROM, 72);
+        WaInbound in = new WaInbound(id, FROM, type, text == null ? "" : text, mime == null ? "" : "MEDIA-9",
+                mime == null ? "" : mime);
+        assertThat(WaIntakeService.takesTime(in)).isEqualTo(typing);
+        service.onInbound(in).block();
+        verify(graph).markRead(id, typing);
+        assertThat(sentBodies()).as("every one of them is answered").isNotEmpty();
     }
 }

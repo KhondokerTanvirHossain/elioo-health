@@ -130,8 +130,15 @@ public class WaGraphClient implements com.elioo.baymax.wa.application.port.out.W
     }
 
     /**
-     * Blue ticks, and with typing the dots. A courtesy: any failure is logged by status (never the wamid, which is base64
-     * of the family's number, and never Meta's error text) and completes empty, so it can never cost the answer.
+     * How long a read receipt may take. It runs in front of the reply (WaIntakeService.onInbound), and this client's
+     * WebClient has no response timeout, so without a bound a Graph call that stalls would hold back the reply.
+     */
+    public static final java.time.Duration READ_RECEIPT_TIMEOUT = java.time.Duration.ofSeconds(2);
+
+    /**
+     * Blue ticks, and with typing the dots. A courtesy: any failure, including no answer within
+     * {@link #READ_RECEIPT_TIMEOUT}, is logged by status (never the wamid, which is base64 of the family's number, and
+     * never Meta's error text) and completes empty, so it can never hold back or cost the answer.
      */
     @Override
     public Mono<Void> markRead(String providerMessageId, boolean typing) {
@@ -141,6 +148,7 @@ public class WaGraphClient implements com.elioo.baymax.wa.application.port.out.W
                 .retrieve().toBodilessEntity()
                 .doOnNext(r -> log.info("[baymax] wa read receipt sent ref={} typing={}", Redact.id(providerMessageId), typing))
                 .then()
+                .timeout(READ_RECEIPT_TIMEOUT)
                 .onErrorResume(e -> {
                     log.warn("[baymax] wa read receipt failed ref={} typing={} status={}", Redact.id(providerMessageId), typing,
                             e instanceof org.springframework.web.reactive.function.client.WebClientResponseException w

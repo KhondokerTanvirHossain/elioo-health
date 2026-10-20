@@ -553,7 +553,7 @@ criteria (§12).
 ## 6. The WhatsApp journey (same brain, channel adaptations)
 
 Channel rules: plain text today (`WaGraphClient.java:92-105`). Add reply buttons (≤3, ≤20 chars), lists, mark-read +
-typing (confirm they exist on the pinned `v21.0`, `application.properties:121`, or bump the version), and
+typing (confirmed on `v25.0`, the version shipped by plan PR 10, `baymax.wa.graph-version`; v21.0 expires 2027-01-21), and
 interactive/button replies, which are dropped today (`WaWebhookHandler.java:112-113`)
 (https://developers.facebook.com/docs/whatsapp/cloud-api/messages/interactive-reply-buttons-messages). Bubble cap 600
 chars (`application.properties:142`), asserted on the **final** text after every insertion (CLAUDE.md). Pacing ≤1

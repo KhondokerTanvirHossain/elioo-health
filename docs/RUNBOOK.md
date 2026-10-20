@@ -160,33 +160,65 @@ number id and WABA id are set and well-formed (it names the variable, never the 
 | `BAYMAX_WA_ALLOWLIST` | comma-separated E.164 numbers | **Tanvir's number only while the gate is off.** Enforced in code on every send; a non-E.164 entry refuses to start. **Blank means no restriction**: every family number would be messaged |
 | `BAYMAX_WA_PUBLIC_NUMBER` | **set**: the display number of `BAYMAX_WA_PHONE_NUMBER_ID`, digits only, country code first (`8801…`), no plus, spaces, quotes or comment | the sign-in page's "WhatsApp খুলে কোড আনুন" link (`wa.me/<n>?text=কোড`, DR-39). Blank = no button (WARN at startup); malformed = startup refused, which takes MedScribe down too, so check it with `cat -A` before the deploy |
 | `BAYMAX_WA_SERVICE_WINDOW` | blank (defaults `PT23H`) | a web sign-in code is sent to WhatsApp automatically only if the number's own last message is at most this old (WhatsApp's free window is 24 h). Startup refuses zero or more than 24 h |
-| `BAYMAX_WA_GRAPH_VERSION` | **blank** (= the shipped default, `v25.0`) | set `v21.0` **only to roll back** after a Graph error on v25.0, then remove the line again. A value not shaped like `v25.0` refuses to start (it takes MedScribe down too: check with `cat -A`); a version within 90 days of its expiry, past it, or not in the expiry table logs a WARN containing `graph version` and still starts. See "Graph API version" below |
-| `BAYMAX_WA_READ_RECEIPTS` | blank (= `off`) | `off` / `read` (blue ticks on every message Medioo answers) / `typing` (blue ticks, plus typing dots while a photo, a PDF or the বিস্তারিত answer is prepared). Never for a number the allowlist refuses. Anything else refuses to start. Log line: `wa read receipt sent ref=<digest> typing=<bool>`; a failure is `wa read receipt failed … status=<code>` and never costs the reply |
+| `BAYMAX_WA_GRAPH_VERSION` | **blank** (= the shipped default, `v25.0`) | set `v21.0` **only to roll back** after a Graph error on v25.0, then remove the line again. Surrounding spaces and a CR are dropped; a value not shaped like `v25.0` inside them (`21.0`, `v21.0 # rollback`) refuses to start (it takes MedScribe down too: check with `cat -A`); a version within 90 days of its expiry, past it, or not in the expiry table logs a WARN containing `graph version` and still starts. See "Graph API version" below |
+| `BAYMAX_WA_READ_RECEIPTS` | blank (= `off`) | `off` / `read` (blue ticks on every message Medioo answers) / `typing` (blue ticks, plus typing dots while a photo, a PDF or the বিস্তারিত answer is prepared). Never for a number the allowlist refuses. Case and surrounding spaces are forgiven (`Typing` is `typing`); anything else refuses to start. Log line: `wa read receipt sent ref=<digest> typing=<bool>`; a failure, or no answer from Graph within 2 s, is `wa read receipt failed … status=<code or TimeoutException>` and never holds back or costs the reply. **What to expect on the phone:** the dots are visible only for বিস্তারিত (the answer is prepared before the reply). A photo or PDF gets its acknowledgement at once, and WhatsApp clears the dots at our next message, so a photo shows the ticks and at most a brief flicker of dots |
 | `BAYMAX_GATE_MODE` | blank (= `off`) | `off` / `all` / `urgency` (DR-13). Nobody changes it to try something on the phone; a gate change is a PO decision |
 
 ## Graph API version (plan PR 10)
 
-Every Graph call (sends, media downloads, read receipts) uses `baymax.wa.graph-version`, shipped as `v25.0`
-(expires 2028-07-29). The previous pin, `v21.0`, expires **2027-01-21**. Expiry dates come from
+Every Graph call (sends, media lookups and downloads, read receipts) uses `baymax.wa.graph-version`, shipped as
+`v25.0` (expires 2028-07-29). The previous pin, `v21.0`, expires **2027-01-21**. Expiry dates come from
 https://developers.facebook.com/docs/graph-api/changelog/versions and live in `WaConfigValidator.GRAPH_EXPIRY`
-(fetched 2026-10-21); the build fails when the shipped version has fewer than 180 days left, and startup warns at 90.
+(fetched 2026-10-21). Startup warns (a WARN containing `graph version`, never a refusal) from 90 days before the
+version in use expires.
 
-Two steps only the PO can do, once per version change:
+**The build is a calendar alarm too.** `WaConfigValidatorTest.theShippedGraphVersionIsFarFromItsExpiry` needs at
+least 180 days left on the shipped version (UTC), so for v25.0 the build goes red from **2028-02-01**, with no code
+change, on every PR (`main` requires "Build and test", admins included). Remedy, before that date: re-fetch the
+changelog, add the next version's row to `WaConfigValidator.GRAPH_EXPIRY`, bump `DEFAULT_GRAPH_VERSION` and
+`baymax.wa.graph-version` in `application.properties`, and do the PO steps below again. A hotfix that cannot wait for
+the migration: `env -u GITHUB_TOKEN gh variable set GRAPH_EXPIRY_GUARD_SKIP --body true` (CI passes it to the build,
+which then skips only that test), merge, and `env -u GITHUB_TOKEN gh variable delete GRAPH_EXPIRY_GUARD_SKIP` right
+after. Reminder for the PO: put 2028-01-15 in the calendar.
 
-1. **Meta app dashboard → WhatsApp → Configuration → Webhook: set the webhook version to `v25.0`.** The outbound
-   version is ours (this property); the version of the callbacks Meta sends us is set in the dashboard, and a
-   callback version left on v21.0 stops when v21.0 does.
-2. **After the deploy, confirm one real inbound WhatsApp message arrives:** send "Hi" from an allowlisted phone, then
-   ```bash
-   docker logs medscribe-ai --since 5m 2>&1 | grep -E 'wa text route=|wa reply key=|wa outbound sent ref='
-   ```
-   shows the route, the reply key and `ref=<digest>`, and no number, wamid or message text
-   (`docker logs medscribe-ai --since 5m 2>&1 | grep -cE 'wamid\.|8801[0-9]{9}'` is 0).
-   `docker logs medscribe-ai --since 15m 2>&1 | grep 'graph version'` prints nothing (no expiry warning).
+### Switching version: in this order, one change at a time
 
-Rollback, if a send or download fails with a Graph error after the switch: back up the env, add
-`BAYMAX_WA_GRAPH_VERSION=v21.0` on its own line, redeploy the same tag, and record it in the build report. Remove the
-line once the cause is fixed; it must be gone before 2027-01-21.
+The outbound version is ours (this property). The version of the callbacks Meta sends us is set only in the Meta app
+dashboard, and a callback version left on v21.0 stops when v21.0 does. The two are switched **separately**, so a
+failure can be told apart and undone on its own.
+
+```bash
+L() { docker logs medscribe-ai --since 15m 2>&1 | sed 's/\x1b\[[0-9;]*m//g'; }
+```
+
+**(a) Deploy, dashboard webhook still on v21.0. Confirm outbound on v25.0.**
+
+1. The version in use is v25.0, positively: `L | grep -c 'wa config ok: .*graphVersion=v25.0 '` is **1**. (0 means
+   the validator never ran, WhatsApp is off, or a stray `BAYMAX_WA_GRAPH_VERSION` line overrides it; check with
+   `grep -c '^BAYMAX_WA_GRAPH_VERSION=' ~/medscribe.env`.) Then `L | grep 'graph version'` prints nothing.
+2. Send "Hi" from an allowlisted phone. `L | grep -E 'wa text route=|wa reply key=|wa outbound sent ref='` shows the
+   route, the reply key and `ref=<digest>`, and the greeting arrives on the phone.
+3. Send `t1-routine-lab.jpg` (the plan's test set) from the same phone. This is the only step that calls
+   `GET /v25.0/{media-id}` and the media download, the calls most likely to differ between versions.
+   `L | grep -E 'wa media resolved id=|wa media downloaded id=|wa intake accepted'` shows **all three** lines,
+   `L | grep -c 'wa intake failed'` is 0, and the ack "ছবিটা পেয়েছি…" and then the explanation arrive on the phone.
+4. Leak check, a number matched as a whole field so a media id or the phone-number id containing `8801…` cannot
+   raise a false alarm: `L | grep -cE 'wamid\.|(^|[^0-9])\+?8801[0-9]{9}([^0-9]|$)'` is 0.
+
+**Outbound rollback**, if step 2 or 3 fails: no greeting, `wa media resolved` missing, a `wa intake failed` line,
+or a Graph 4xx/5xx in the log. Back up the env, add `BAYMAX_WA_GRAPH_VERSION=v21.0` on its own line, redeploy the
+same tag, rerun (a) expecting `graphVersion=v21.0`, and record it in the build report. Remove the line once the cause
+is fixed; it must be gone before 2027-01-21.
+
+**(b) Only after (a) passes: Meta app dashboard → WhatsApp → Configuration → Webhook → set the webhook version to
+`v25.0`.** No deploy. Then send "Hi" once more and confirm `L | grep -c 'wa inbound ref='` went up by one (the
+webhook handler's arrival line), `L | grep 'wa text route='` shows the new message, the reply arrives, and the leak
+check in (a) step 4 is still 0. Send the photo again too if time allows.
+
+**Inbound rollback**, if within a minute of the message no `wa inbound ref=` line appears (callbacks not arriving), or it appears with no `wa text route=` line after it (arriving but not parsed), or no reply comes: set the dashboard webhook
+version back to `v21.0`. No redeploy, and independent of `BAYMAX_WA_GRAPH_VERSION`, which moves outbound calls only and
+cannot undo this. The webhook answers 200 either way, so the family hears nothing: this check is the only signal.
+Record it in the build report.
 
 ## Sign-in codes: break-glass (DR-39)
 

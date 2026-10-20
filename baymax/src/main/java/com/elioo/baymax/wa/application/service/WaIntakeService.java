@@ -65,6 +65,13 @@ public class WaIntakeService {
         IGNORED
     }
 
+    /**
+     * The outer bound on a read receipt, for any port: it runs in front of the 24 h window record and the reply, and a
+     * call that stalls is not an error onErrorResume can see. Longer than WaGraphClient's own bound, so that one fires
+     * (and logs its status) first.
+     */
+    static final java.time.Duration READ_RECEIPT_BOUND = java.time.Duration.ofSeconds(3);
+
     /** What the intake can read: a PDF or a JPEG/PNG photo sent as a file (PageRenderer decides by magic bytes). */
     private static final Set<String> READABLE_FILES = Set.of("application/pdf", "image/jpeg", "image/png");
 
@@ -82,7 +89,8 @@ public class WaIntakeService {
         // DR-39 (2026-10-18): every message the family sends opens WhatsApp's free 24 h window, in which a web sign-in
         // code may be sent automatically. Recorded first, at Meta's send time (a retried callback arrives late); a
         // failure here is logged and never costs the family a reply.
-        // The read receipt goes first so the ticks (and, for a slow answer, the dots) appear before the work starts.
+        // The read receipt goes first so the ticks (and, for a slow answer, the dots) appear before the work starts. It is
+        // bounded (READ_RECEIPT_BOUND): a stalled courtesy call must not hold back the window record or the reply.
         return readReceipt(in, number)
                 .then(Mono.defer(() -> auth.noteInbound(number, in.timestamp())
                         .onErrorResume(e -> {
@@ -96,7 +104,7 @@ public class WaIntakeService {
      * Blue ticks, and the typing dots while a slow answer is prepared (BAYMAX_WA_READ_RECEIPTS: off | read | typing).
      * Only for a message that gets a reply (onInbound returned already for the rest) and only to a number the allowlist
      * permits: a read receipt is a message to that number like any other. A courtesy, never part of the answer, so a
-     * failure here is swallowed.
+     * failure here is swallowed, and one that does not answer within {@link #READ_RECEIPT_BOUND} is abandoned.
      */
     private Mono<Void> readReceipt(WaInbound in, String number) {
         String mode = properties.getWa().getReadReceipts();
@@ -106,6 +114,7 @@ public class WaIntakeService {
         }
         boolean typing = "typing".equals(mode) && takesTime(in);
         return Mono.defer(() -> graph.markRead(in.providerMessageId(), typing))
+                .timeout(READ_RECEIPT_BOUND)
                 .onErrorResume(e -> {
                     log.warn("[baymax] wa read receipt skipped error={}", e.getClass().getSimpleName());
                     return Mono.empty();

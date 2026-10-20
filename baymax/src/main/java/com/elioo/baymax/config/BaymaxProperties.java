@@ -263,17 +263,22 @@ public class BaymaxProperties {
         public static final String DEFAULT_READ_RECEIPTS = "off";
 
         /**
-         * Blank is the shipped default. A blank line in the env file reaches Spring as an empty string, which
-         * {@code ${X:default}} keeps; without this the base URL would be {@code https://graph.facebook.com/}.
-         * Anything non-blank is kept as given, so a paste accident still reaches the validator.
+         * Surrounding whitespace is dropped first: docker --env-file keeps a trailing space or a CR, the PO edits this
+         * line by hand during a Graph incident (the rollback), and a refused start takes MedScribe down too. Then blank
+         * is the shipped default: a blank line in the env file reaches Spring as an empty string, which
+         * {@code ${X:default}} keeps; without this the base URL would be {@code https://graph.facebook.com/}. What is
+         * left is kept as given, so a value malformed inside ({@code 21.0}, {@code v21.0 # rollback}) still reaches the
+         * validator and is refused.
          */
         public void setGraphVersion(String graphVersion) {
-            this.graphVersion = graphVersion == null || graphVersion.isBlank() ? DEFAULT_GRAPH_VERSION : graphVersion;
+            String v = graphVersion == null ? "" : graphVersion.strip();
+            this.graphVersion = v.isEmpty() ? DEFAULT_GRAPH_VERSION : v;
         }
 
-        /** Blank is {@code off}, for the same reason as {@link #setGraphVersion}. */
+        /** Stripped and lower-cased ({@code Typing} is {@code typing}); blank is {@code off}, as in {@link #setGraphVersion}. */
         public void setReadReceipts(String readReceipts) {
-            this.readReceipts = readReceipts == null || readReceipts.isBlank() ? DEFAULT_READ_RECEIPTS : readReceipts;
+            String m = readReceipts == null ? "" : readReceipts.strip().toLowerCase(java.util.Locale.ROOT);
+            this.readReceipts = m.isEmpty() ? DEFAULT_READ_RECEIPTS : m;
         }
     }
 

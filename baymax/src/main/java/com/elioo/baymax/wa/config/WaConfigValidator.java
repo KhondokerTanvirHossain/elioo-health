@@ -81,6 +81,11 @@ public class WaConfigValidator {
 
     @PostConstruct
     void validate() {
+        validate(LocalDate.now(ZoneOffset.UTC));
+    }
+
+    /** {@code today} is the UTC date the expiry warning is computed against; a seam so tests can stand on any date. */
+    void validate(LocalDate today) {
         BaymaxProperties.Wa wa = properties.getWa();
         List<String> problems = new ArrayList<>();
 
@@ -148,7 +153,7 @@ public class WaConfigValidator {
         if (publicNumber.isEmpty()) {
             log.warn("[baymax] BAYMAX_WA_PUBLIC_NUMBER is blank: the sign-in page will show no WhatsApp button");
         }
-        for (String warning : graphVersionWarnings(version, LocalDate.now(ZoneOffset.UTC))) {
+        for (String warning : graphVersionWarnings(version, today)) {
             log.warn("[baymax] {}", warning);
         }
         log.info("[baymax] wa config ok: phoneNumberId={} wabaId={} allowlist={} entries serviceWindow={} graphVersion={} "

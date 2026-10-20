@@ -1,12 +1,21 @@
 package com.elioo.baymax.wa.config;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.elioo.baymax.config.BaymaxProperties;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
@@ -40,6 +49,31 @@ class WaConfigValidatorTest {
 
     private static void validate(BaymaxProperties p) {
         new WaConfigValidator(p).validate();
+    }
+
+    private ListAppender<ILoggingEvent> logged;
+    private Logger validatorLogger;
+
+    @BeforeEach
+    void captureLogs() {
+        validatorLogger = (Logger) LoggerFactory.getLogger(WaConfigValidator.class);
+        logged = new ListAppender<>();
+        logged.start();
+        validatorLogger.addAppender(logged);
+    }
+
+    @AfterEach
+    void releaseLogs() {
+        validatorLogger.detachAppender(logged);
+    }
+
+    /** The WARN lines startup actually emitted, i.e. what the post-deploy grep for "graph version" reads. */
+    private List<String> graphVersionWarnsLogged() {
+        return logged.list.stream()
+                .filter(e -> e.getLevel() == Level.WARN)
+                .map(ILoggingEvent::getFormattedMessage)
+                .filter(m -> m.contains("graph version"))
+                .toList();
     }
 
     @Test
@@ -231,31 +265,119 @@ class WaConfigValidatorTest {
                 .singleElement().asString().contains("not in the expiry table");
     }
 
-    /** An expired or unknown version is warned, never refused: refusing to start would take MedScribe down too. */
+    /**
+     * An expired version is warned, never refused: refusing to start would take MedScribe down too. Asserted on what
+     * validate() logged, not on graphVersionWarnings: the post-deploy grep reads the log, and a validate() that never
+     * looped over the warnings would leave the static helper's tests green.
+     */
     @Test
-    void anExpiredVersionStillStarts() {
+    void anExpiredVersionStillStartsAndIsWarnedInTheLog() {
+        BaymaxProperties p = valid();
+        p.getWa().setGraphVersion("v21.0");
+        assertThatCode(() -> new WaConfigValidator(p).validate(LocalDate.parse("2027-02-01"))).doesNotThrowAnyException();
+        assertThat(graphVersionWarnsLogged()).singleElement().asString().contains("v21.0").contains("expired");
+    }
+
+    /** The other direction: the shipped version, far from expiry, logs no line the post-deploy grep would match. */
+    @Test
+    void theShippedVersionFarFromExpiryLogsNoGraphVersionLine() {
+        BaymaxProperties p = valid();
+        new WaConfigValidator(p).validate(LocalDate.parse("2026-10-21"));
+        assertThat(p.getWa().getGraphVersion()).isEqualTo("v25.0");
+        assertThat(logged.list).as("no level at all carries the phrase").map(ILoggingEvent::getFormattedMessage)
+                .noneMatch(m -> m.contains("graph version"));
+        // and the positive line the post-deploy check counts is there, naming the version in use
+        assertThat(logged.list).map(ILoggingEvent::getFormattedMessage)
+                .anyMatch(m -> m.matches(".*wa config ok: .*graphVersion=v25\\.0 .*"));
+    }
+
+    @Test
+    void aVersionNotInTheTableStillStartsAndIsWarned() {
         BaymaxProperties p = valid();
         p.getWa().setGraphVersion("v19.0");
-        assertThatCode(() -> validate(p)).doesNotThrowAnyException();
+        assertThatCode(() -> new WaConfigValidator(p).validate(LocalDate.parse("2026-10-21"))).doesNotThrowAnyException();
+        assertThat(graphVersionWarnsLogged()).singleElement().asString().contains("not in the expiry table");
+    }
+
+    /**
+     * The PO edits these two lines by hand, once during a Graph incident (the rollback). docker --env-file keeps a
+     * trailing space or a CR, and a refused start takes Medioo and MedScribe down on the shared box: surrounding
+     * whitespace and case are normalised, while a value that is malformed inside is still refused.
+     */
+    @Test
+    void surroundingWhitespaceAndCaseAreForgivenButAMalformedValueIsNot() {
+        for (String v : List.of("v21.0 ", "v21.0\r", " v21.0", "\tv21.0\r\n")) {
+            BaymaxProperties p = valid();
+            p.getWa().setGraphVersion(v);
+            assertThat(p.getWa().getGraphVersion()).as("[%s]", v.replace("\r", "CR")).isEqualTo("v21.0");
+            assertThatCode(() -> validate(p)).doesNotThrowAnyException();
+        }
+        for (String m : List.of("Typing", "TYPING ", "typing\r")) {
+            BaymaxProperties p = valid();
+            p.getWa().setReadReceipts(m);
+            assertThat(p.getWa().getReadReceipts()).as("[%s]", m.replace("\r", "CR")).isEqualTo("typing");
+            assertThatCode(() -> validate(p)).doesNotThrowAnyException();
+        }
+        BaymaxProperties commented = valid();
+        commented.getWa().setGraphVersion("v21.0 # rollback");
+        assertThatThrownBy(() -> validate(commented)).hasMessageContaining("BAYMAX_WA_GRAPH_VERSION");
+        BaymaxProperties bare = valid();
+        bare.getWa().setGraphVersion(" 21.0 ");
+        assertThatThrownBy(() -> validate(bare)).hasMessageContaining("BAYMAX_WA_GRAPH_VERSION");
+        BaymaxProperties unknownMode = valid();
+        unknownMode.getWa().setReadReceipts(" yes ");
+        assertThatThrownBy(() -> validate(unknownMode)).hasMessageContaining("BAYMAX_WA_READ_RECEIPTS");
     }
 
     /**
      * Regression guard for the stale pin: v21.0 was a literal in application.properties and the default in
      * BaymaxProperties, with nothing to say it expires 2027-01-21. Derived from the shipped files, not a hand-copied
      * version string: the default that ships (application.properties, resolved with the environment variable absent)
-     * must be the code default, must be in the expiry table, and must have at least 180 days left today — red half a
-     * year before Meta switches the version off, not on the day.
+     * must be the code default and must be in the expiry table. This half fails only on a code change.
      */
     @Test
-    void theShippedGraphVersionIsInTheTableAndFarFromItsExpiry() throws Exception {
+    void theShippedGraphVersionIsTheCodeDefaultAndInTheTable() throws Exception {
         String shipped = shippedGraphVersion(Map.of());
         assertThat(shipped).isEqualTo(new BaymaxProperties().getWa().getGraphVersion());
         assertThat(WaConfigValidator.GRAPH_EXPIRY).as("the shipped version must be in the expiry table").containsKey(shipped);
-        long daysLeft = ChronoUnit.DAYS.between(LocalDate.now(), WaConfigValidator.GRAPH_EXPIRY.get(shipped));
+    }
+
+    /** Fewer days left than this and the build is red. */
+    private static final int EXPIRY_GATE_DAYS = 180;
+
+    /** The first UTC day on which {@link #theShippedGraphVersionIsFarFromItsExpiry} fails for a given expiry. */
+    private static LocalDate gateFiresOn(LocalDate expiry) {
+        return expiry.minusDays(EXPIRY_GATE_DAYS - 1);
+    }
+
+    /**
+     * A merge gate on a date, not on a code change (PR #96 asks the PO to acknowledge it): from {@link #gateFiresOn} the
+     * build is red until the shipped version moves, half a year before Meta switches it off. Remedy: add the next
+     * version's row to GRAPH_EXPIRY and bump DEFAULT_GRAPH_VERSION and application.properties (RUNBOOK "Graph API
+     * version"). A hotfix that cannot wait for that migration sets the repository variable GRAPH_EXPIRY_GUARD_SKIP=true,
+     * which CI passes to the build, and deletes it again afterwards.
+     */
+    @Test
+    void theShippedGraphVersionIsFarFromItsExpiry() throws Exception {
+        Assumptions.assumeFalse("true".equalsIgnoreCase(System.getenv("GRAPH_EXPIRY_GUARD_SKIP")),
+                "GRAPH_EXPIRY_GUARD_SKIP=true: the Graph expiry date gate is skipped for this build");
+        String shipped = shippedGraphVersion(Map.of());
+        LocalDate expiry = WaConfigValidator.GRAPH_EXPIRY.get(shipped);
+        long daysLeft = ChronoUnit.DAYS.between(LocalDate.now(ZoneOffset.UTC), expiry);   // the validator's clock
         assertThat(daysLeft)
-                .as("Graph " + shipped + " expires " + WaConfigValidator.GRAPH_EXPIRY.get(shipped) + ", " + daysLeft
-                        + " days from today; bump baymax.wa.graph-version")
-                .isGreaterThanOrEqualTo(180);
+                .as("Graph " + shipped + " expires " + expiry + ", " + daysLeft + " days from today; this gate fires from "
+                        + gateFiresOn(expiry) + ". Add the next version's row to WaConfigValidator.GRAPH_EXPIRY and bump "
+                        + "DEFAULT_GRAPH_VERSION and baymax.wa.graph-version (RUNBOOK 'Graph API version'); a hotfix that "
+                        + "cannot wait sets the repository variable GRAPH_EXPIRY_GUARD_SKIP=true")
+                .isGreaterThanOrEqualTo(EXPIRY_GATE_DAYS);
+    }
+
+    /** The date the RUNBOOK names is the date the gate computes, so the two cannot drift apart. */
+    @Test
+    void theRunbookNamesTheDayTheExpiryGateFires() throws Exception {
+        LocalDate fires = gateFiresOn(WaConfigValidator.GRAPH_EXPIRY.get(BaymaxProperties.Wa.DEFAULT_GRAPH_VERSION));
+        assertThat(Files.readString(Path.of("../docs/RUNBOOK.md"), StandardCharsets.UTF_8))
+                .contains("the build goes red from **" + fires + "**");
     }
 
     /** The rollback needs no code change: BAYMAX_WA_GRAPH_VERSION wins over the shipped default, and blank does not. */
