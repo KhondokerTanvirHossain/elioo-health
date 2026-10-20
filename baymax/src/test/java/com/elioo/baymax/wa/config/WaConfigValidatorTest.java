@@ -3,7 +3,13 @@ package com.elioo.baymax.wa.config;
 import com.elioo.baymax.config.BaymaxProperties;
 import org.junit.jupiter.api.Test;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -172,5 +178,114 @@ class WaConfigValidatorTest {
         assertThatCode(() -> validate(p)).doesNotThrowAnyException();
         p.getWa().setServiceWindow(java.time.Duration.ofHours(23));
         assertThatCode(() -> validate(p)).doesNotThrowAnyException();
+    }
+
+    // ---- Graph API version and read receipts (plan PR 10, Task 10.2) ---------------------------------------------
+
+    @Test
+    void aMalformedGraphVersionIsRefusedAndNamed() {
+        BaymaxProperties p = valid();
+        p.getWa().setGraphVersion("21.0");
+        assertThatThrownBy(() -> validate(p)).hasMessageContaining("BAYMAX_WA_GRAPH_VERSION");
+        p.getWa().setGraphVersion("v21.0 # rollback");
+        assertThatThrownBy(() -> validate(p)).hasMessageContaining("BAYMAX_WA_GRAPH_VERSION");
+    }
+
+    @Test
+    void anUnknownReadReceiptModeIsRefused() {
+        BaymaxProperties p = valid();
+        p.getWa().setReadReceipts("yes");
+        assertThatThrownBy(() -> validate(p)).hasMessageContaining("BAYMAX_WA_READ_RECEIPTS");
+        for (String mode : List.of("off", "read", "typing")) {
+            p.getWa().setReadReceipts(mode);
+            assertThatCode(() -> validate(p)).as(mode).doesNotThrowAnyException();
+        }
+    }
+
+    /**
+     * The RUNBOOK says "blank = the shipped default". A blank line in ~/medscribe.env reaches Spring as an empty string,
+     * not as an absent variable, and {@code ${X:default}} keeps the empty string: without this, a blank
+     * BAYMAX_WA_GRAPH_VERSION would build https://graph.facebook.com//… for every send.
+     */
+    @Test
+    void aBlankVersionOrModeMeansTheShippedDefault() {
+        BaymaxProperties p = valid();
+        p.getWa().setGraphVersion("");
+        p.getWa().setReadReceipts("  ");
+        assertThat(p.getWa().getGraphVersion()).isEqualTo(new BaymaxProperties().getWa().getGraphVersion());
+        assertThat(p.getWa().getReadReceipts()).isEqualTo("off");
+        assertThatCode(() -> validate(p)).doesNotThrowAnyException();
+    }
+
+    /** Derived from the version in use, not a second property that can disagree with it. */
+    @Test
+    void theExpiryWarningFollowsTheConfiguredVersion() {
+        assertThat(WaConfigValidator.graphVersionWarnings("v21.0", LocalDate.parse("2026-10-17")))
+                .as("96 days before expiry: outside the 90-day window").isEmpty();
+        assertThat(WaConfigValidator.graphVersionWarnings("v21.0", LocalDate.parse("2026-11-01")))
+                .singleElement().asString().contains("expires 2027-01-21");   // 81 days: warned
+        assertThat(WaConfigValidator.graphVersionWarnings("v25.0", LocalDate.parse("2026-10-17"))).isEmpty();
+        assertThat(WaConfigValidator.graphVersionWarnings("v21.0", LocalDate.parse("2027-02-01")))
+                .singleElement().asString().contains("expired");
+        assertThat(WaConfigValidator.graphVersionWarnings("v99.0", LocalDate.parse("2026-10-17")))
+                .singleElement().asString().contains("not in the expiry table");
+    }
+
+    /** An expired or unknown version is warned, never refused: refusing to start would take MedScribe down too. */
+    @Test
+    void anExpiredVersionStillStarts() {
+        BaymaxProperties p = valid();
+        p.getWa().setGraphVersion("v19.0");
+        assertThatCode(() -> validate(p)).doesNotThrowAnyException();
+    }
+
+    /**
+     * Regression guard for the stale pin: v21.0 was a literal in application.properties and the default in
+     * BaymaxProperties, with nothing to say it expires 2027-01-21. Derived from the shipped files, not a hand-copied
+     * version string: the default that ships (application.properties, resolved with the environment variable absent)
+     * must be the code default, must be in the expiry table, and must have at least 180 days left today — red half a
+     * year before Meta switches the version off, not on the day.
+     */
+    @Test
+    void theShippedGraphVersionIsInTheTableAndFarFromItsExpiry() throws Exception {
+        String shipped = shippedGraphVersion(Map.of());
+        assertThat(shipped).isEqualTo(new BaymaxProperties().getWa().getGraphVersion());
+        assertThat(WaConfigValidator.GRAPH_EXPIRY).as("the shipped version must be in the expiry table").containsKey(shipped);
+        long daysLeft = ChronoUnit.DAYS.between(LocalDate.now(), WaConfigValidator.GRAPH_EXPIRY.get(shipped));
+        assertThat(daysLeft)
+                .as("Graph " + shipped + " expires " + WaConfigValidator.GRAPH_EXPIRY.get(shipped) + ", " + daysLeft
+                        + " days from today; bump baymax.wa.graph-version")
+                .isGreaterThanOrEqualTo(180);
+    }
+
+    /** The rollback needs no code change: BAYMAX_WA_GRAPH_VERSION wins over the shipped default, and blank does not. */
+    @Test
+    void theGraphVersionIsOverriddenByItsEnvironmentVariable() throws Exception {
+        // v22.0: neither the old literal nor the new default, so a line that ignores the environment cannot pass
+        assertThat(shippedGraphVersion(Map.of("BAYMAX_WA_GRAPH_VERSION", "v22.0"))).isEqualTo("v22.0");
+        assertThat(shippedGraphVersion(Map.of("BAYMAX_WA_GRAPH_VERSION", "")))
+                .isEqualTo(new BaymaxProperties().getWa().getGraphVersion());
+    }
+
+    /**
+     * baymax.wa.graph-version as the deployed app resolves it: the real application.properties under a real
+     * system-environment source (the only one that applies Spring's relaxed env-var names), bound to BaymaxProperties.
+     */
+    private static String shippedGraphVersion(Map<String, Object> env) throws Exception {
+        java.util.Properties file = new java.util.Properties();
+        try (var in = Files.newBufferedReader(Path.of("../medscribe-ai/src/main/resources/application.properties"),
+                StandardCharsets.UTF_8)) {
+            file.load(in);
+        }
+        assertThat(file.getProperty("baymax.wa.graph-version")).as("the line exists").isNotNull();
+        var environment = new org.springframework.core.env.StandardEnvironment();
+        var sources = environment.getPropertySources();
+        sources.remove(org.springframework.core.env.StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME);
+        sources.remove(org.springframework.core.env.StandardEnvironment.SYSTEM_PROPERTIES_PROPERTY_SOURCE_NAME);
+        sources.addFirst(new org.springframework.core.env.SystemEnvironmentPropertySource(
+                org.springframework.core.env.StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME, env));
+        sources.addLast(new org.springframework.core.env.PropertiesPropertySource("application.properties", file));
+        return org.springframework.boot.context.properties.bind.Binder.get(environment)
+                .bind("baymax.wa", BaymaxProperties.Wa.class).get().getGraphVersion();
     }
 }

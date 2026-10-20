@@ -226,8 +226,18 @@ public class BaymaxProperties {
          * a production number.
          */
         private List<String> allowlist = new java.util.ArrayList<>();
-        /** Pinned in config, not the environment: this is a code-compatibility concern, not a deployment secret. */
-        private String graphVersion = "v21.0";
+        /**
+         * The Graph API version every call is made against. Shipped in code and in application.properties; the
+         * environment ({@code BAYMAX_WA_GRAPH_VERSION}) overrides it only to roll back without a code change. Its
+         * expiry is warned at startup ({@code WaConfigValidator.GRAPH_EXPIRY}).
+         */
+        private String graphVersion = DEFAULT_GRAPH_VERSION;
+        /**
+         * Read ticks for messages we answer: {@code off} (default), {@code read} (blue ticks), or {@code typing}
+         * (blue ticks, plus the typing indicator for a message whose answer takes time). Anything else refuses to
+         * start.
+         */
+        private String readReceipts = DEFAULT_READ_RECEIPTS;
         /**
          * The display number of {@link #phoneNumberId}, digits only (8801…), for the sign-in page's wa.me link
          * (D37: on /app only, never on the landing page). Blank = the page instructs but shows no link.
@@ -247,6 +257,23 @@ public class BaymaxProperties {
          */
         public boolean permits(String e164) {
             return e164 != null && (allowlist.isEmpty() || allowlist.stream().anyMatch(a -> a.trim().equals(e164)));
+        }
+
+        public static final String DEFAULT_GRAPH_VERSION = "v25.0";
+        public static final String DEFAULT_READ_RECEIPTS = "off";
+
+        /**
+         * Blank is the shipped default. A blank line in the env file reaches Spring as an empty string, which
+         * {@code ${X:default}} keeps; without this the base URL would be {@code https://graph.facebook.com/}.
+         * Anything non-blank is kept as given, so a paste accident still reaches the validator.
+         */
+        public void setGraphVersion(String graphVersion) {
+            this.graphVersion = graphVersion == null || graphVersion.isBlank() ? DEFAULT_GRAPH_VERSION : graphVersion;
+        }
+
+        /** Blank is {@code off}, for the same reason as {@link #setGraphVersion}. */
+        public void setReadReceipts(String readReceipts) {
+            this.readReceipts = readReceipts == null || readReceipts.isBlank() ? DEFAULT_READ_RECEIPTS : readReceipts;
         }
     }
 
