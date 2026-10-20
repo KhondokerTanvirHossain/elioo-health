@@ -89,21 +89,37 @@ final class RouteWalk {
             return c;
         }
 
-        @Override public void method(Set<HttpMethod> m) { methods.addAll(m); }
-        @Override public void path(String pattern) { path = pattern; }
-        @Override public void pathExtension(String extension) { }
-        @Override public void header(String name, String value) { }
-        @Override public void queryParam(String name, String value) { }
+        @Override public void method(Set<HttpMethod> m) {
+            if (!methods.isEmpty()) {
+                throw cannotRead("two method predicates on one route");
+            }
+            methods.addAll(m);
+        }
+        @Override public void path(String pattern) {
+            if (path != null) {
+                throw cannotRead("two path predicates on one route (" + path + ", " + pattern + ")");
+            }
+            path = pattern;
+        }
+        // Routes that differ only by one of these would collapse into one line of the table, and an or-branch or a
+        // negated path would be recorded as the route's own pattern: none is read, so each one fails the walk.
+        @Override public void pathExtension(String extension) { throw cannotRead("pathExtension(" + extension + ")"); }
+        @Override public void header(String name, String value) { throw cannotRead("header " + name); }
+        @Override public void queryParam(String name, String value) { throw cannotRead("queryParam " + name); }
         @Override public void startAnd() { }
         @Override public void and() { }
         @Override public void endAnd() { }
-        @Override public void startOr() { }
-        @Override public void or() { }
-        @Override public void endOr() { }
-        @Override public void startNegate() { }
-        @Override public void endNegate() { }
+        @Override public void startOr() { throw cannotRead("an or-predicate"); }
+        @Override public void or() { throw cannotRead("an or-predicate"); }
+        @Override public void endOr() { throw cannotRead("an or-predicate"); }
+        @Override public void startNegate() { throw cannotRead("a negated predicate"); }
+        @Override public void endNegate() { throw cannotRead("a negated predicate"); }
         @Override public void unknown(RequestPredicate predicate) {
-            throw new IllegalStateException("a predicate the walk cannot read: " + predicate);
+            throw cannotRead(String.valueOf(predicate));
+        }
+
+        private static IllegalStateException cannotRead(String what) {
+            return new IllegalStateException("a predicate the walk cannot read: " + what);
         }
     }
 }

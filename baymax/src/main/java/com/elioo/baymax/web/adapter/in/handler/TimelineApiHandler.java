@@ -1,6 +1,7 @@
 package com.elioo.baymax.web.adapter.in.handler;
 
 import com.elioo.baymax.common.error.BaymaxException;
+import com.elioo.baymax.web.adapter.in.PatientJson;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
 import com.elioo.baymax.web.domain.TimelineEntry;
@@ -33,17 +34,7 @@ public class TimelineApiHandler {
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("family", Map.of("id", me.family().id().toString(), "owner_name", me.family().ownerName(),
                     "plan", me.family().plan().dbValue()));
-            body.put("patients", me.patients().stream().map(p -> {
-                Map<String, Object> m = new LinkedHashMap<>();
-                m.put("id", p.patient().id().toString());
-                m.put("name", p.patient().name());
-                m.put("age", p.patient().age());
-                m.put("sex", p.patient().sex().dbValue());
-                m.put("owner", p.owner());
-                m.put("documents", p.documents());
-                m.put("last_document_at", p.lastDocumentAt() == null ? null : p.lastDocumentAt().toString());
-                return m;
-            }).toList());
+            body.put("patients", me.patients().stream().map(PatientJson::fields).toList());
             return ServerResponse.ok().bodyValue(body);
         });
     }

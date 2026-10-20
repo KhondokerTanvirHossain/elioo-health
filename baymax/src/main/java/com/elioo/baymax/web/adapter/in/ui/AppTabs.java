@@ -1,6 +1,7 @@
 package com.elioo.baymax.web.adapter.in.ui;
 
 import com.elioo.baymax.common.error.BaymaxException;
+import com.elioo.baymax.web.adapter.in.ActivePatient;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.nudge.application.port.out.NudgeDataPort;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;

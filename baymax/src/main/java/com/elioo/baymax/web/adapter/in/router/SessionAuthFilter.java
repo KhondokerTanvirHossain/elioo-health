@@ -68,8 +68,10 @@ public class SessionAuthFilter implements HandlerFilterFunction<ServerResponse, 
      * The session cookie is scoped to the app, not the origin (PO, BMX-6b follow-up): the MedScribe demo UI —
      * 4,800 lines of PoC JavaScript — now shares the origin, and a script injected there must not ride a
      * family's session. The browser therefore never sends this cookie to {@code /medscribeai/**}, nor to the
-     * JSON API under {@code /api/v1/baymax/**}; the server-rendered app is the only session client today
-     * (see docs/BAYMAX.md). A cookie issued before this change with Path=/ keeps working until it expires.
+     * JSON API under {@code /api/v1/baymax/**}. Two clients use it: the server-rendered app under {@code /app/**},
+     * and the browser JSON namespace {@code /app/api/**} that the Next.js frontend calls ({@code AppApiRouter},
+     * which lives under {@code /app} precisely so this path is never widened; see docs/MEDIOO.md). A cookie issued
+     * before this change with Path=/ keeps working until it expires.
      */
     public static final String COOKIE_PATH = "/app";
 

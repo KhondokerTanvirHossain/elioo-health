@@ -15,7 +15,9 @@ import org.springframework.web.reactive.function.server.ServerResponse;
  *
  * <p>It is its own router with its own filter, {@link AppApiGuard}, and is ordered ahead of every other router bean, so
  * no request under {@code /app/api} ever reaches the HTML router's {@code requireSession} (a 303 to sign-in) or its HTML
- * error pages. The last route catches any other {@code /app/api} path, so an unknown route answers
+ * error pages — today because no HTML route matches {@code /app/api/**}, and after any later HTML catch-all because of
+ * this order ({@code AppApiRouteContractTest.anHtmlCatchAllUnderAppNeverCapturesAnApiRoute} registers one and fails if
+ * the order goes). The last route catches any other {@code /app/api} path, so an unknown route answers
  * {@code {"reason":"NOT_FOUND"}} (after the session) instead of falling through to a page or Spring's error JSON:
  * a newer frontend on an older Java gets a reason it understands (A2: additive only).
  */

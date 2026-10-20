@@ -1,6 +1,7 @@
-package com.elioo.baymax.web.adapter.in.ui;
+package com.elioo.baymax.web.adapter.in;
 
 import com.elioo.baymax.common.error.BaymaxException;
+import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.domain.FamilyOverview;
 import com.elioo.baymax.web.domain.PatientSummary;
 import org.springframework.http.HttpCookie;
@@ -17,6 +18,11 @@ import java.util.UUID;
  * else the only patient. Two or more and no choice: empty, and the tab asks — Medioo never guesses (PatientSwitcher
  * README). The visible set is {@code timeline.me()}, i.e. {@code records.visiblePatients} in SQL; the cookie is never
  * trusted: it only names a patient to look for in that set, and one that is not there is forgotten, never a fallback.
+ *
+ * <p>Shared by both inbound adapters that have a patient in view: the HTML pages ({@code adapter.in.ui}) and the JSON
+ * namespace {@code /app/api} ({@code adapter.in.api}). It lives beside {@link SessionAuthFilter}, not in {@code ui}, so
+ * the API does not depend on the HTML pages the rebuild plan's W-del PRs delete; its cookie is scoped to the session
+ * cookie's path for the same reason.
  */
 public record ActivePatient(Optional<PatientSummary> patient) {
 
@@ -24,7 +30,8 @@ public record ActivePatient(Optional<PatientSummary> patient) {
     /** Thirty minutes of silence forgets the choice (PatientSwitcher README: "expires after 30 minutes of silence"). */
     static final Duration TTL = Duration.ofMinutes(30);
 
-    static ActivePatient resolve(ServerRequest request, FamilyOverview me) {
+    /** The HTML pages' rule: {@code ?patient=} if present (a 404 if it is not visible), else {@link #remembered}. */
+    public static ActivePatient resolve(ServerRequest request, FamilyOverview me) {
         Optional<String> asked = request.queryParam("patient");
         if (asked.isPresent()) {
             return chosen(me, asked.get());
@@ -51,13 +58,16 @@ public record ActivePatient(Optional<PatientSummary> patient) {
         return new ActivePatient(me.patients().size() == 1 ? Optional.of(me.patients().get(0)) : Optional.empty());
     }
 
-    /** Sliding: re-set on every page that has a patient in view, so thirty minutes of silence forgets it. */
+    /**
+     * The cookie that remembers the choice. The HTML pages re-set it on every page with a patient in view (sliding, so
+     * thirty minutes of silence forgets it); {@code /app/api} sets it only on {@code PUT /app/api/active-patient}.
+     */
     public Optional<ResponseCookie> cookie(boolean secure) {
         return patient.map(p -> ResponseCookie.from(COOKIE, p.patient().id().toString()).httpOnly(true).secure(secure)
-                .sameSite("Lax").path(PageChrome.BASE).maxAge(TTL).build());
+                .sameSite("Lax").path(SessionAuthFilter.COOKIE_PATH).maxAge(TTL).build());
     }
 
-    boolean is(PatientSummary p) {
+    public boolean is(PatientSummary p) {
         return patient.map(a -> a.patient().id().equals(p.patient().id())).orElse(false);
     }
 

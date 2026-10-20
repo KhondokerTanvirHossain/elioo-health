@@ -26,6 +26,8 @@ import static com.elioo.baymax.web.adapter.in.ui.PageChrome.BASE;
  * permanent redirect from every old {@code /baymax/**} URL to its {@code /app/**} twin so a saved timeline
  * link still opens. Two filters instead of the JSON ones: no session sends the browser to the login page
  * rather than a 401 body, and errors become small pages in the request's language rather than JSON.
+ * {@code /app/api/**} is the exception under {@code /app}: it is {@code AppApiRouter}'s, ordered ahead of this
+ * router, with its own guard, and it never answers 303 or an HTML page.
  *
  * <p>The router routes nothing itself: each screen's {@link WebPages} publishes its own routes, composed here in
  * {@link WebPages#order()}, and applies {@code requireSession} to its signed-in routes.

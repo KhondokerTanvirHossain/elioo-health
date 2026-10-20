@@ -8,14 +8,17 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.InvalidMediaTypeException;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.server.HandlerFilterFunction;
 import org.springframework.web.reactive.function.server.HandlerFunction;
+import org.springframework.web.reactive.function.server.RouterFunctions;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.util.pattern.PathPattern;
 import reactor.core.publisher.Mono;
 
 import java.util.Optional;
@@ -31,9 +34,12 @@ import java.util.Set;
  *       {@code Origin}, whenever one is sent, equal to {@code baymax.web.public-origin} (403 {@code FORBIDDEN_ORIGIN});
  *       and a JSON or multipart body (415 {@code UNSUPPORTED_MEDIA_TYPE}). A cross-site form can set neither the
  *       header nor the JSON type without a CORS preflight, and there is no CORS configuration to answer one;</li>
- *   <li>errors as {@code {"reason":"<NAME>"}} ({@link ApiReason#of}), never a developer message;</li>
+ *   <li>errors as {@code {"reason":"<NAME>"}} ({@link ApiReason#of}), never a developer message; a status with no name
+ *       yet is bodiless, and every 5xx leaves one ERROR line with the exception's class (never its message);</li>
  *   <li>{@code Cache-Control: no-store} on every answer (family data, and a 401 that must not be replayed from a cache);</li>
- *   <li>one INFO line per request: method, path, status, duration. Paths carry ids only; never a body, a name, a number.</li>
+ *   <li>one INFO line per request: method, the matched route PATTERN ({@code /app/api/**} for the catch-all), status,
+ *       duration. Never the path the client sent: on the catch-all that is whatever was typed, before any session
+ *       check, and a name or number in it would be logged percent-encoded. Never a body, a query, a name, a number.</li>
  * </ol>
  */
 @Slf4j
@@ -54,8 +60,17 @@ public class AppApiGuard implements HandlerFilterFunction<ServerResponse, Server
         return sessions.resolve(request).map(Optional::of).defaultIfEmpty(Optional.empty())
                 .flatMap(session -> session.isEmpty() ? ApiReason.UNAUTHENTICATED.respond() : admitted(request, next, session.get()))
                 .onErrorResume(e -> error(request, e))
-                .doOnNext(response -> log.info("[baymax-api] {} {} {} {}ms", request.method(), request.path(),
+                .doOnNext(response -> log.info("[baymax-api] {} {} {} {}ms", request.method(), route(request),
                         response.statusCode().value(), (System.nanoTime() - started) / 1_000_000));
+    }
+
+    /**
+     * The pattern the router matched ({@code /app/api/me}, {@code /app/api/**}), which Spring records on the request
+     * before this filter runs. Ids, when a route has them, stay in the pattern's variables and out of the log line.
+     */
+    static String route(ServerRequest request) {
+        Object pattern = request.attributes().get(RouterFunctions.MATCHING_PATTERN_ATTRIBUTE);
+        return pattern instanceof PathPattern p ? p.getPatternString() : AppApiRouter.BASE + "/**";
     }
 
     private Mono<ServerResponse> admitted(ServerRequest request, HandlerFunction<ServerResponse> next, WebSession session) {
@@ -109,14 +124,18 @@ public class AppApiGuard implements HandlerFilterFunction<ServerResponse, Server
         if (reason.isPresent()) {
             return reason.get().respond();
         }
-        if (e instanceof BaymaxException be) {
-            return ServerResponse.status(be.status()).build();
-        }
-        if (e instanceof ResponseStatusException rse) {
-            return ServerResponse.status(rse.getStatusCode()).build();
+        HttpStatusCode status = e instanceof BaymaxException be ? be.status()
+                : e instanceof ResponseStatusException rse ? rse.getStatusCode() : null;
+        if (status != null) {
+            if (status.is5xxServerError()) {
+                // a 5xx raised on purpose (storage down, login off) is still an incident: its class is where one starts
+                log.error("[baymax-api] {} on {} {} error={}", status.value(), request.method(), route(request), e.getClass().getSimpleName());
+                log.debug("[baymax-api] server error detail", e);
+            }
+            return ServerResponse.status(status).build();
         }
         // the class, never the message: an exception message can carry patient text
-        log.error("[baymax-api] unhandled error on {} {} error={}", request.method(), request.path(), e.getClass().getSimpleName());
+        log.error("[baymax-api] unhandled error on {} {} error={}", request.method(), route(request), e.getClass().getSimpleName());
         log.debug("[baymax-api] unhandled error detail", e);
         return ServerResponse.status(500).build();
     }

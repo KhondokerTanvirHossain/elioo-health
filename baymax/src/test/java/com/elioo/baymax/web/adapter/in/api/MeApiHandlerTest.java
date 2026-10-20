@@ -7,8 +7,8 @@ import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.context.properties.bind.Binder;
-import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
+import com.elioo.baymax.web.application.port.in.TimelineUseCase;
+import com.elioo.baymax.web.domain.PatientSummary;
 import org.springframework.context.ApplicationContext;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseCookie;
@@ -54,16 +54,45 @@ class MeApiHandlerTest {
     void theNameFormsAreNameGrammarsAndOnlyThePatientWithAStoredNowPaperIsUrgent() {
         AppApiContext.runner(POSTGRES).run(context -> {
             FamilyAccount family = AppApiContext.family(context, number(), "Tanvir");
-            PatientProfile rahim = AppApiContext.patient(context, family.id(), "রহিম");
-            PatientProfile amma = AppApiContext.patient(context, family.id(), "আম্মা");
+            PatientProfile rahim = AppApiContext.patient(context, family.id(), "রহিম", 41, PatientProfile.Sex.MALE);
+            PatientProfile amma = AppApiContext.patient(context, family.id(), "আম্মা", 64, PatientProfile.Sex.FEMALE);
+            // a sibling's patient shared with this family's number: visible, not owned, nothing on file
+            FamilyAccount sibling = AppApiContext.family(context, number(), "Karim");
+            PatientProfile nana = AppApiContext.patient(context, sibling.id(), "নানা", 83, PatientProfile.Sex.OTHER);
+            AppApiContext.share(context, nana, family.whatsappNumber());
             // the dangerous direction: THIS_WEEK is a stored urgent level too, and must not light the red mark
-            AppApiContext.paper(context, POSTGRES, rahim, "this_week");
+            UUID rahimsPaper = AppApiContext.paper(context, POSTGRES, rahim, "this_week");
+            AppApiContext.storedPage(POSTGRES, rahim, rahimsPaper);
             AppApiContext.paper(context, POSTGRES, amma, "now");
             String token = AppApiContext.session(context, family.id());
 
             JsonNode me = me(client(context), token);
             Map<String, JsonNode> byId = patients(me);
-            assertThat(byId).containsOnlyKeys(rahim.id().toString(), amma.id().toString());
+            assertThat(byId).containsOnlyKeys(rahim.id().toString(), amma.id().toString(), nana.id().toString());
+
+            // every summary field, against TimelineUseCase.me for that patient id: a swap between rows or a constant fails
+            Map<UUID, PatientSummary> expected = new HashMap<>();
+            context.getBean(TimelineUseCase.class).me(family.id()).block().patients().forEach(p -> expected.put(p.patient().id(), p));
+            for (PatientProfile p : List.of(rahim, amma, nana)) {
+                JsonNode row = byId.get(p.id().toString());
+                PatientSummary want = expected.get(p.id());
+                assertThat(row.get("age").asInt()).as("age of " + p.name()).isEqualTo(want.patient().age());
+                assertThat(row.get("sex").asText()).as("sex of " + p.name()).isEqualTo(want.patient().sex().dbValue());
+                assertThat(row.get("owner").asBoolean()).as("owner of " + p.name()).isEqualTo(want.owner());
+                assertThat(row.get("documents").asLong()).as("documents of " + p.name()).isEqualTo(want.documents());
+                assertThat(row.get("last_document_at").isNull() ? null : row.get("last_document_at").asText())
+                        .as("last_document_at of " + p.name())
+                        .isEqualTo(want.lastDocumentAt() == null ? null : want.lastDocumentAt().toString());
+            }
+            // and the fixture differs where it must, so the comparisons above could tell two patients apart
+            assertThat(expected.get(rahim.id()).documents()).isEqualTo(1);
+            assertThat(expected.get(amma.id()).documents()).isZero();
+            assertThat(expected.get(nana.id()).owner()).isFalse();
+            assertThat(expected.get(rahim.id()).owner()).isTrue();
+            assertThat(expected.get(nana.id()).lastDocumentAt()).isNull();
+            assertThat(expected.get(amma.id()).lastDocumentAt()).isNotNull();
+            assertThat(List.of(rahim.age(), amma.age(), nana.age())).doesNotHaveDuplicates();
+
             for (PatientProfile p : List.of(rahim, amma)) {
                 JsonNode row = byId.get(p.id().toString());
                 assertThat(row.get("name").asText()).isEqualTo(p.name());
@@ -76,12 +105,69 @@ class MeApiHandlerTest {
             assertThat(byId.get(amma.id().toString()).get("urgent").asBoolean()).as("Amma has a stored NOW paper").isTrue();
             assertThat(byId.get(rahim.id().toString()).get("urgent").isBoolean()).isTrue();
             assertThat(byId.get(rahim.id().toString()).get("urgent").asBoolean()).as("Rahim's paper is THIS_WEEK only").isFalse();
-            // the count is TimelineUseCase.me's (papers with stored images); this fixture stores no image, so only the type is asserted
-            assertThat(byId.get(amma.id().toString()).get("documents").isIntegralNumber()).isTrue();
             assertThat(me.get("family").get("id").asText()).isEqualTo(family.id().toString());
             assertThat(me.get("family").get("owner_name").asText()).isEqualTo("Tanvir");
             assertThat(keys(me)).as("field names anywhere in the /me tree").doesNotContainAnyElementsOf(NEVER);
+            // the dangerous direction is the value, not the key: no field of any name carries the family's number
+            assertThat(carryingTheNumber(me, family.whatsappNumber())).as("values in the /me tree carrying the number").isEmpty();
+            assertThat(carryingTheNumber(json.readTree("{\"contact\":\"" + phoneDisplay(family.whatsappNumber()) + "\"}"),
+                    family.whatsappNumber())).as("the value check can fail").isNotEmpty();
         });
+    }
+
+    /** A read is a read: GET /me never writes the active-patient cookie (only PUT does, plan B1), even with one patient in view. */
+    @Test
+    void readingMeSetsNoActivePatientCookie() {
+        AppApiContext.runner(POSTGRES).run(context -> {
+            FamilyAccount family = AppApiContext.family(context, number(), "Tanvir");
+            PatientProfile only = AppApiContext.patient(context, family.id(), "আম্মা");
+            String token = AppApiContext.session(context, family.id());
+            WebTestClient client = client(context);
+            for (boolean remembered : List.of(false, true)) {
+                var spec = client.get().uri("/app/api/me").cookie("baymax_session", token);
+                if (remembered) {
+                    spec = spec.cookie("baymax_patient", only.id().toString());
+                }
+                var result = spec.exchange().expectStatus().isOk().expectBody(String.class).returnResult();
+                assertThat(json.readTree(result.getResponseBody()).get("active_patient_id").asText())
+                        .as("the only patient is in view").isEqualTo(only.id().toString());
+                assertThat(result.getResponseCookies().getFirst("baymax_patient")).as("Set-Cookie on GET /me").isNull();
+            }
+        });
+    }
+
+    /** Every textual value (and its digits alone) that carries the number in any rendering a page or a log would use. */
+    private static List<String> carryingTheNumber(JsonNode tree, String e164) throws Exception {
+        String digits = e164.substring(1);
+        String local = "0" + e164.substring(4);
+        List<String> forms = List.of(e164, digits, local, phoneDisplay(e164));
+        List<String> hits = new ArrayList<>();
+        values(tree, (path, value) -> {
+            String valueDigits = value.replaceAll("[^0-9]", "");
+            if (forms.stream().anyMatch(value::contains) || valueDigits.contains(local.substring(1))) {
+                hits.add(path);
+            }
+        }, "$");
+        return hits;
+    }
+
+    /** {@code PhoneDisplay.full}, the rendering the sign-in page shows back, read from the class itself. */
+    private static String phoneDisplay(String e164) throws Exception {
+        var full = Class.forName("com.elioo.baymax.web.adapter.in.ui.PhoneDisplay").getDeclaredMethod("full", String.class);
+        full.setAccessible(true);
+        return (String) full.invoke(null, e164);
+    }
+
+    private static void values(JsonNode node, java.util.function.BiConsumer<String, String> visit, String path) {
+        if (node.isObject()) {
+            node.fields().forEachRemaining(e -> values(e.getValue(), visit, path + "." + e.getKey()));
+        } else if (node.isArray()) {
+            for (int i = 0; i < node.size(); i++) {
+                values(node.get(i), visit, path + "[" + i + "]");
+            }
+        } else if (node.isValueNode() && !node.isNull()) {
+            visit.accept(path, node.asText());
+        }
     }
 
     @Test
@@ -147,9 +233,10 @@ class MeApiHandlerTest {
         AppApiContext.runner(POSTGRES).run(context -> {
             FamilyAccount listed = AppApiContext.family(context, number(), "Tanvir");
             FamilyAccount notListed = AppApiContext.family(context, number(), "Karim");
-            // bound from BAYMAX_WEB_PREVIEW_FAMILIES in production (see previewFamiliesBindFrom...); set on the live bean
-            // here because the family id exists only after the context has started
-            context.getBean(BaymaxProperties.class).getWeb().getPreviewFamilyIds().add(listed.id());
+            // bound from BAYMAX_WEB_PREVIEW_FAMILIES in production (AppApiSettingsTest, and medscribe-ai's
+            // AppApiPropertiesWiringTest for the env line); set on the live bean here because the family id exists only
+            // after the context has started
+            context.getBean(BaymaxProperties.class).getWeb().getPreviewFamilyIds().add(listed.id().toString());
             WebTestClient client = client(context);
 
             assertThat(me(client, AppApiContext.session(context, listed.id())).get("preview").asBoolean()).isTrue();
@@ -161,20 +248,6 @@ class MeApiHandlerTest {
             assertThat(forged.get("preview").isBoolean()).isTrue();
             assertThat(forged.get("preview").asBoolean()).as("a family not on the allowlist, with a forged cookie").isFalse();
         });
-    }
-
-    /** The environment line {@code BAYMAX_WEB_PREVIEW_FAMILIES=} (blank) is an empty list, and two ids bind as two. */
-    @Test
-    void previewFamiliesBindFromACommaSeparatedValueAndBlankIsEmpty() {
-        UUID a = UUID.randomUUID();
-        UUID b = UUID.randomUUID();
-        assertThat(bind("").getWeb().getPreviewFamilyIds()).isEmpty();
-        assertThat(bind(a + "," + b).getWeb().getPreviewFamilyIds()).containsExactly(a, b);
-    }
-
-    private static BaymaxProperties bind(String value) {
-        return new Binder(new MapConfigurationPropertySource(Map.of("baymax.web.preview-family-ids", value)))
-                .bindOrCreate("baymax", BaymaxProperties.class);
     }
 
     private static WebTestClient client(ApplicationContext context) {

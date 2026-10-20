@@ -26,6 +26,13 @@ import static com.elioo.baymax.web.adapter.in.ui.PageChrome.BASE;
 /**
  * Number → code → session (spec §4.2, §4.3), and sign-out. The phone number is never in a URL: between the number
  * page and the code page it travels as its HMAC in a short-lived HttpOnly cookie.
+ *
+ * <p>{@code /app/?next=<path>} keeps the place of a session that ended while a page was open (rebuild plan Review Focus
+ * 4: {@code /app/api} answers 401 {@code UNAUTHENTICATED} and the client sends the family here). The path is held in its
+ * own short-lived HttpOnly cookie across the number and code steps — the family may leave for WhatsApp in between —
+ * and opened after the right code. It is checked with {@link LocalPath} when it is held AND when it is used (the cookie
+ * is the client's to write), and {@code /app/api/**} is refused too: a JSON route is not a page to land on. Anything
+ * refused is {@code /app/home}, the default.
  */
 @Component
 @RequiredArgsConstructor
@@ -41,6 +48,9 @@ public class SignInPages implements WebPages {
      * longer life exposes; the code itself still expires on its own TTL.
      */
     static final Duration LOGIN_COOKIE_TTL = Duration.ofMinutes(30);
+    /** The page to open after sign-in ({@code ?next=}), held for the same 30 minutes as the login cookie. */
+    static final String NEXT_COOKIE = "baymax_next";
+    static final String HOME = BASE + "/home";
 
     private final WebAuthUseCase auth;
     private final SessionAuthFilter sessions;
@@ -67,8 +77,37 @@ public class SignInPages implements WebPages {
 
     public Mono<ServerResponse> loginPage(ServerRequest request) {
         Lang lang = Lang.of(request);
-        return sessions.resolve(request).flatMap(s -> Html.redirect(BASE + "/home"))
-                .switchIfEmpty(Mono.defer(() -> numberPage(lang, "", null)));
+        Optional<String> next = request.queryParam("next").flatMap(SignInPages::nextPage);
+        return sessions.resolve(request).flatMap(s -> Html.redirect(next.orElse(HOME)))
+                .switchIfEmpty(Mono.defer(() -> {
+                    next.ifPresent(n -> request.exchange().getResponse().addCookie(nextCookie(n, LOGIN_COOKIE_TTL)));
+                    return numberPage(lang, "", null);
+                }));
+    }
+
+    /**
+     * A page under {@code /app} to open after sign-in: {@link LocalPath}'s rule (no other host, no backslash, no dot
+     * segment, raw or decoded), minus {@code /} and the JSON namespace {@code /app/api}, raw or decoded. Empty for
+     * anything else, which opens {@link #HOME}.
+     */
+    static Optional<String> nextPage(String raw) {
+        String safe = LocalPath.or(raw, null);
+        if (safe == null || !safe.startsWith(BASE)) {
+            return Optional.empty();
+        }
+        String decoded = java.net.URLDecoder.decode(safe, java.nio.charset.StandardCharsets.UTF_8);
+        for (String p : new String[]{safe, decoded}) {
+            String path = p.contains("?") ? p.substring(0, p.indexOf('?')) : p;
+            if (path.equals(BASE + "/api") || path.startsWith(BASE + "/api/")) {
+                return Optional.empty();
+            }
+        }
+        return Optional.of(safe);
+    }
+
+    private ResponseCookie nextCookie(String value, Duration maxAge) {
+        return ResponseCookie.from(NEXT_COOKIE, value).httpOnly(true).secure(sessions.cookie("x").isSecure())
+                .sameSite("Lax").path(BASE).maxAge(maxAge).build();
     }
 
     /**
@@ -192,9 +231,11 @@ public class SignInPages implements WebPages {
         return request.formData()
                 .map(form -> Optional.ofNullable(form.getFirst("code")).orElse("").trim())
                 .flatMap(code -> auth.verify(hash.get(), code))
-                .flatMap(issued -> ServerResponse.seeOther(URI.create(BASE + "/home"))
+                .flatMap(issued -> ServerResponse.seeOther(URI.create(Optional.ofNullable(request.cookies().getFirst(NEXT_COOKIE))
+                                .map(HttpCookie::getValue).flatMap(SignInPages::nextPage).orElse(HOME)))
                         .header(HttpHeaders.SET_COOKIE, sessions.cookie(issued.token()).toString())
                         .header(HttpHeaders.SET_COOKIE, loginCookie("", Duration.ZERO).toString())
+                        .header(HttpHeaders.SET_COOKIE, nextCookie("", Duration.ZERO).toString())
                         .build())
                 .onErrorResume(com.elioo.baymax.web.application.port.in.CodeRejectedException.class,
                         e -> verifyPage(request, refusal(lang, e.failure())))

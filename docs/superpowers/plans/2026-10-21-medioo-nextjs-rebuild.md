@@ -241,7 +241,7 @@ Each line is one PR. The **Waves** order work; within a wave, lanes run in paral
 - **W11b** Voice: hold Alt, hold the mic, GCP bn-BD speech-to-text (after DR-43). Proof: no transcript in any log, in either runtime.
 - **W12** The sound bank (synthesized, PO's pick, default off until the first tap unlocks WebAudio), Mio states, the sheet spring. Proof: with reduced motion there are no animations and the computed `animation-name` is `none`.
 - **W13** Landing page and opt-out page port (decision 6). Proof: an opt-out link from a real nudge fixture works end to end.
-- **W-del-n** One PR per flipped route: delete its Java pages and tests, with ledger successors resolving, and keep image signing, `LocalPath` and `Lang`. The last one removes the HTML test harness and updates `MEDIOO.md` and the RUNBOOK.
+- **W-del-n** One PR per flipped route: delete its Java pages and tests, with ledger successors resolving, and keep image signing, `LocalPath` and `Lang`, and the classes `/app/api` shares from `web.adapter.in` (`ActivePatient`, `PatientJson`; moved out of `ui` in B1 for this reason). The last one removes the HTML test harness and updates `MEDIOO.md` and the RUNBOOK.
 - **D3** Stop past follow-ups raising prescriptions to THIS_WEEK (after decision 4 and a clinical ruling). Proof: both directions first; an urgency replay script, read-only, with its own two-direction guard, run as an explicit Supabase step reported in the build report.
 - **D5** Duplicate paper warning (after decision 5). Proof: both directions (the same bytes warn; a re-photographed different paper with the same date does not).
 

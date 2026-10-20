@@ -256,4 +256,75 @@ class SignInPagesTest {
                         .anySatisfy(c -> assertThat(c).startsWith("baymax_session=tok"))
                         .anySatisfy(c -> assertThat(c).startsWith("baymax_login=;").contains("Max-Age=0")));
     }
+
+    // ---- next= (Review Focus 4, the Java half): a session that ended while a page was open keeps the place ----------
+
+    static final String DOC_PATH = "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003";
+
+    private void signInWith(String code) {
+        java.time.Instant now = java.time.Instant.now();
+        when(auth.verify("c".repeat(64), code)).thenReturn(Mono.just(new com.elioo.baymax.web.domain.IssuedSession("tok",
+                new com.elioo.baymax.web.domain.WebSession(java.util.UUID.randomUUID(), java.util.UUID.randomUUID(), now, now, now.plusSeconds(60)))));
+    }
+
+    private WebTestClient.ResponseSpec verifyWithNext(String next, String code) {
+        var req = client.post().uri("/app/verify").cookie("baymax_login", LOGIN);
+        if (next != null) {
+            req = req.cookie(SignInPages.NEXT_COOKIE, next);
+        }
+        return req.contentType(MediaType.APPLICATION_FORM_URLENCODED).body(BodyInserters.fromFormData("code", code)).exchange();
+    }
+
+    /** Direction 1: a local page is held through the number and the code, and opened once the code is right. */
+    @Test
+    void aLocalNextIsHeldThroughSignInAndOpenedAfterTheCode() {
+        var held = client.get().uri(b -> b.path("/app/").queryParam("next", DOC_PATH + "/all").build()).exchange()
+                .expectStatus().isOk().returnResult(String.class).getResponseCookies().getFirst(SignInPages.NEXT_COOKIE);
+        assertThat(held).as("the place is held for the code step").isNotNull();
+        assertThat(held.getValue()).isEqualTo(DOC_PATH + "/all");
+        assertThat(held.getPath()).isEqualTo("/app");
+        assertThat(held.isHttpOnly()).isTrue();
+
+        signInWith("483920");
+        verifyWithNext(held.getValue(), "483920")
+                .expectStatus().isSeeOther().expectHeader().valueEquals(HttpHeaders.LOCATION, DOC_PATH + "/all")
+                .expectHeader().values(HttpHeaders.SET_COOKIE, cs -> assertThat(cs)
+                        .anySatisfy(c -> assertThat(c).startsWith("baymax_session=tok"))
+                        .anySatisfy(c -> assertThat(c).startsWith(SignInPages.NEXT_COOKIE + "=;").contains("Max-Age=0")));
+    }
+
+    /** Direction 2: anything that is not a page under /app is never held, and a forged cookie opens the default. */
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"//evil.example", "https://evil.example", "/\\evil.example",
+            "/%5Cevil.example", "/app/../evil", "/app/%2e%2e/evil", "/app/api/me", "/app/%61pi/me", "javascript:alert(1)"})
+    void aNextThatIsNotALocalPageIsRefusedAndTheDefaultOpens(String next) {
+        var held = client.get().uri(b -> b.path("/app/").queryParam("next", "{n}").build(next)).exchange()
+                .expectStatus().isOk().returnResult(String.class).getResponseCookies().getFirst(SignInPages.NEXT_COOKIE);
+        assertThat(held).as("held for " + next).isNull();
+
+        // the cookie is the client's to write, so the same value forged into it opens the default too (a backslash is
+        // not a cookie character; its percent-encoded spelling is in the list)
+        if (next.indexOf('\\') < 0) {
+            signInWith("483920");
+            verifyWithNext(next, "483920").expectStatus().isSeeOther().expectHeader().valueEquals(HttpHeaders.LOCATION, "/app/home");
+        }
+    }
+
+    /** Already signed in (the session came back in another tab): straight to the held place, or home for a foreign one. */
+    @Test
+    void aSignedInVisitorGoesStraightToALocalNextAndHomeForAnyOther() {
+        client.get().uri(b -> b.path("/app/").queryParam("next", DOC_PATH).build()).cookie("baymax_session", "tok").exchange()
+                .expectStatus().isSeeOther().expectHeader().valueEquals(HttpHeaders.LOCATION, DOC_PATH);
+        client.get().uri(b -> b.path("/app/").queryParam("next", "{n}").build("//evil.example")).cookie("baymax_session", "tok").exchange()
+                .expectStatus().isSeeOther().expectHeader().valueEquals(HttpHeaders.LOCATION, "/app/home");
+    }
+
+    /** Without next= nothing changes: the code opens /app/home, and the number page holds nothing. */
+    @Test
+    void withoutNextTheDefaultIsUnchanged() {
+        assertThat(client.get().uri("/app/").exchange().expectStatus().isOk().returnResult(String.class)
+                .getResponseCookies().getFirst(SignInPages.NEXT_COOKIE)).isNull();
+        signInWith("483920");
+        verifyWithNext(null, "483920").expectStatus().isSeeOther().expectHeader().valueEquals(HttpHeaders.LOCATION, "/app/home");
+    }
 }

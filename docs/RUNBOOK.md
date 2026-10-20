@@ -132,6 +132,8 @@ absent on any server where Baymax should not run.
 | `BAYMAX_STORAGE_CREDENTIALS` | `instance-role` | **critical**, see below |
 | `BAYMAX_STORAGE_PATH_STYLE` | `false` | AWS S3 uses virtual-hosted addressing; `true` is for MinIO and Supabase |
 | `BAYMAX_STORAGE_SSE` | `AES256` | server-side encryption header on every PUT. Blank for MinIO/Supabase, which encrypt at rest themselves and may reject the header |
+| `BAYMAX_WEB_PUBLIC_ORIGIN` | **absent** — no line at all (the default is `https://medioo.eliooo.org`), or exactly `https://medioo.eliooo.org`. **Never a blank line** | the one `Origin` a browser mutation under `/app/api` may come from (B1 CSRF rule). `${VAR:default}` falls back only when the variable is *unset*: a present-but-empty `BAYMAX_WEB_PUBLIC_ORIGIN=` resolves to "", and then every browser PUT/POST/DELETE answers 403 `FORBIDDEN_ORIGIN` (browsers always send `Origin` on those). Startup says so with one WARN (`baymax.web.public-origin is blank`); grep for it after a deploy. Set it only if the public host changes |
+| `BAYMAX_WEB_PREVIEW_FAMILIES` | absent, or bare comma-separated family UUIDs: no quotes, no spaces, no comment. Check with `cat -A` before the redeploy | the families that see the Next.js screens before a route flips (`/app/api/me` → `preview`). Absent or blank = nobody previews. An entry that is not a family id (a typo, a truncated id) is skipped — that family simply does not preview — and startup logs one WARN with the count of skipped entries; it never refuses to start. Quotes `docker --env-file` keeps are stripped, but do not rely on it |
 
 **Must be blank** in production:
 
@@ -268,6 +270,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://medioo.eliooo.org/medscribeai/a
 curl -s -o /dev/null -w '%{http_code}\n' https://medioo.eliooo.org/                                          # 200, Medioo landing
 curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' https://baymax.eliooo.org/app/home                  # 301 → https://medioo.eliooo.org/app/home (old public name, path preserved)
 curl -s -o /dev/null -w '%{http_code}\n' https://medioo.eliooo.org/app/                                      # 200, login page
+curl -s -D - https://medioo.eliooo.org/app/api/me                                                            # 401 {"reason":"UNAUTHENTICATED"}, Cache-Control: no-store, no Location (never a 303)
 curl -s -o /dev/null -w '%{http_code}\n' https://medioo.eliooo.org/baymax/home                               # 301 → /app/home
 curl -s -o /dev/null -w '%{http_code}\n' https://medioo.eliooo.org/medscribeai/                              # 200, MedScribe PoC UI
 curl -s -o /dev/null -w '%{http_code}\n' https://medioo.eliooo.org/api/v1/baymax/admin/storage/selftest  # 401 without the token

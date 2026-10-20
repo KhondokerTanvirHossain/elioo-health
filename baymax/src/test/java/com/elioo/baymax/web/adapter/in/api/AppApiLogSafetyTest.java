@@ -11,10 +11,13 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.reactive.server.WebTestClient;
+import org.springframework.web.util.UriUtils;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -27,7 +30,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Plan B1 step 9: no {@code /app/api} request puts the family's number or a patient's name into a log line at INFO or
- * above — not in the message, not in an attached exception's chain, not in an MDC value; each field checked on its own.
+ * above — not in the message, not in an attached exception's chain, not in an MDC value; each field checked on its own,
+ * raw and percent-encoded. The requests put the name and the number in the query and in a catch-all path segment too,
+ * so the access line must log the matched route pattern, never the path the client sent. This is the Baymax module's
+ * own logging; the deployable's request logger ({@code IWebFilter}, medscribe-ai) is swept by the same recipe in
+ * medscribe-ai's {@code AppApiDeployableTest}.
  * Every route is exercised, read from the context's routers: a route added later with no request below fails here
  * instead of going unchecked. The capture starts after the context is up, so the events are the requests' own, and at
  * least one {@code [baymax-api]} line must be among them — a sweep over nothing would pass for the wrong reason.
@@ -40,7 +47,13 @@ class AppApiLogSafetyTest {
 
     private static final String NUMBER = "+8801700000123";
     private static final String NAME = "রোকেয়া পরীক্ষা";
-    private static final List<String> NEEDLES = List.of("8801700000123", "01700000123", NAME);
+    /**
+     * Each needle raw and as it appears in a logged URI: a path or query is logged percent-encoded, so the raw Bangla
+     * and the raw {@code +880…} alone would miss a name in a path ({@code %E0%A6%B0…}) or a number ({@code %2B880…}).
+     */
+    private static final List<String> NEEDLES = List.of("8801700000123", "01700000123", "%2B8801700000123", NAME,
+            URLEncoder.encode(NAME, StandardCharsets.UTF_8), UriUtils.encodePathSegment(NAME, StandardCharsets.UTF_8),
+            UriUtils.encodeQueryParam(NAME, StandardCharsets.UTF_8));
 
     @Test
     void noApiRouteLogsTheOwnersNumberOrThePatientsNameAtInfoOrAbove() {
@@ -56,6 +69,8 @@ class AppApiLogSafetyTest {
             Map<String, BiConsumer<WebTestClient, String>> exercise = new LinkedHashMap<>();
             exercise.put("GET /app/api/me", (c, t) -> {
                 c.get().uri("/app/api/me").cookie("baymax_session", t).exchange().expectStatus().isOk();
+                c.get().uri(b -> b.path("/app/api/me").queryParam("probe", NAME).queryParam("n", NUMBER).build())
+                        .cookie("baymax_session", t).exchange().expectStatus().isOk();
                 c.get().uri("/app/api/me").cookie("baymax_session", t).cookie("baymax_patient", rokeya.id().toString())
                         .exchange().expectStatus().isOk();
                 c.get().uri("/app/api/me").exchange().expectStatus().isUnauthorized();
@@ -80,6 +95,13 @@ class AppApiLogSafetyTest {
                 c.get().uri("/app/api/nothing-here").cookie("baymax_session", t).exchange().expectStatus().isNotFound();
                 c.post().uri("/app/api/nothing-here").cookie("baymax_session", t).header("X-Medioo", "1")
                         .contentType(MediaType.TEXT_PLAIN).bodyValue(NAME).exchange().expectStatus().isEqualTo(415);
+                // the catch-all is reached before any route decides anything: whatever the client put in the path or
+                // the query must not reach the access line, with a session and without one
+                c.get().uri(b -> b.path("/app/api/x").queryParam("q", NAME).queryParam("n", NUMBER).build())
+                        .cookie("baymax_session", t).exchange().expectStatus().isNotFound();
+                c.get().uri(b -> b.path("/app/api/{name}").build(NAME)).cookie("baymax_session", t)
+                        .exchange().expectStatus().isNotFound();
+                c.get().uri(b -> b.path("/app/api/{n}/{name}").build(NUMBER, NAME)).exchange().expectStatus().isUnauthorized();
             });
 
             List<String> apiRoutes = AppApiRouteContractTest.routes(context).stream()

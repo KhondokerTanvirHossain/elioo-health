@@ -4,8 +4,9 @@ import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.common.text.NameGrammar;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.outbound.domain.Urgency;
+import com.elioo.baymax.web.adapter.in.ActivePatient;
+import com.elioo.baymax.web.adapter.in.PatientJson;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
-import com.elioo.baymax.web.adapter.in.ui.ActivePatient;
 import com.elioo.baymax.web.application.port.in.AttentionUseCase;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
 import com.elioo.baymax.web.domain.FamilyOverview;
@@ -52,13 +53,11 @@ public class MeApiHandler {
                 .concatMap(p -> attention.urgent(session.familyId(), p.patient().id())
                         .map(cards -> cards.stream().anyMatch(c -> c.level() == Urgency.NOW)))
                 .collectList()
-                .flatMap(urgent -> {
-                    ActivePatient active = ActivePatient.remembered(request, me);
-                    ServerResponse.BodyBuilder ok = ServerResponse.ok().contentType(MediaType.APPLICATION_JSON);
-                    // sliding, as on every HTML page with a patient in view: thirty minutes of silence forgets it
-                    active.cookie(properties.getAuth().isCookieSecure()).ifPresent(ok::cookie);
-                    return ok.bodyValue(body(me, urgent, active, session.familyId()));
-                }));
+                // a read writes nothing: the active-patient cookie is set by PUT /app/api/active-patient only (plan B1).
+                // A Next server component cannot pass a Set-Cookie on, so a sliding re-set here would expire the
+                // choice on a different clock depending on who made the call.
+                .flatMap(urgent -> ServerResponse.ok().contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(body(me, urgent, ActivePatient.remembered(request, me), session.familyId()))));
     }
 
     public Mono<ServerResponse> setActivePatient(ServerRequest request) {
@@ -88,22 +87,16 @@ public class MeApiHandler {
         body.put("family", family);
         body.put("patients", patients);
         body.put("active_patient_id", active.patient().map(p -> p.patient().id().toString()).orElse(null));
-        body.put("preview", properties.getWeb().getPreviewFamilyIds().contains(familyId));
+        body.put("preview", properties.getWeb().previewFamilies().contains(familyId));
         return body;
     }
 
+    /** {@link PatientJson}'s fields (shared with {@code /api/v1/baymax/me}), then the name forms and the red mark. */
     private static Map<String, Object> patient(PatientSummary p, boolean urgent) {
-        Map<String, Object> m = new LinkedHashMap<>();
+        Map<String, Object> m = PatientJson.fields(p);
         String name = p.patient().name();
-        m.put("id", p.patient().id().toString());
-        m.put("name", name);
         m.put("name_possessive", NameGrammar.possessive(name));
         m.put("name_objective", NameGrammar.objective(name));
-        m.put("age", p.patient().age());
-        m.put("sex", p.patient().sex() == null ? null : p.patient().sex().dbValue());
-        m.put("owner", p.owner());
-        m.put("documents", p.documents());
-        m.put("last_document_at", p.lastDocumentAt() == null ? null : p.lastDocumentAt().toString());
         m.put("urgent", urgent);
         return m;
     }

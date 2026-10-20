@@ -5,6 +5,7 @@ import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
+import com.elioo.baymax.healthrecord.domain.ShareMember;
 import com.elioo.baymax.nudge.adapter.out.persistence.PostgresNudgeAdapterTest;
 import com.elioo.baymax.web.application.port.out.SessionStorePort;
 import com.elioo.baymax.web.application.service.PhoneHasher;
@@ -47,9 +48,33 @@ final class AppApiContext {
     }
 
     static PatientProfile patient(ApplicationContext context, UUID family, String name) {
+        return patient(context, family, name, 64, PatientProfile.Sex.FEMALE);
+    }
+
+    static PatientProfile patient(ApplicationContext context, UUID family, String name, int age, PatientProfile.Sex sex) {
         Instant now = Instant.now();
         return context.getBean(HealthRecordPort.class)
-                .createPatient(new PatientProfile(null, family, name, 64, PatientProfile.Sex.FEMALE, List.of(), now, now)).block();
+                .createPatient(new PatientProfile(null, family, name, age, sex, List.of(), now, now)).block();
+    }
+
+    /** Shares another family's patient with this number (the sibling's view): visible, but not owned. */
+    static void share(ApplicationContext context, PatientProfile patient, String number) {
+        context.getBean(HealthRecordPort.class)
+                .addShareMember(new ShareMember(null, patient.id(), number, Instant.now(), null)).block();
+    }
+
+    /** One stored page image for a paper, which is what the {@code documents} count of {@code /me} counts. */
+    static void storedPage(PostgreSQLContainer<?> postgres, PatientProfile patient, UUID document) throws Exception {
+        sql(postgres, "INSERT INTO baymax.stored_object (family_id, patient_id, document_id, kind, page_no, storage_key, content_type,"
+                + " size_bytes, created_at) VALUES ('" + patient.familyId() + "','" + patient.id() + "','" + document + "','page',1,'"
+                + patient.familyId() + "/" + patient.id() + "/" + document + "/page-1.jpg','image/jpeg',100,now())");
+    }
+
+    private static void sql(PostgreSQLContainer<?> postgres, String statement) throws Exception {
+        try (Connection c = DriverManager.getConnection(postgres.getJdbcUrl() + "&sslmode=disable", postgres.getUsername(), postgres.getPassword());
+             Statement s = c.createStatement()) {
+            s.execute(statement);
+        }
     }
 
     /** A live session for the family; the returned token is the cookie value. */
