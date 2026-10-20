@@ -43,7 +43,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class TimelineService implements TimelineUseCase {
 
-    static final int PAGE_SIZE = 20;
+    public static final int PAGE_SIZE = 20;
     /** "No cursor": Instant.MAX does not fit a timestamptz, so the first page starts from a far-future bound. */
     static final Instant NO_CURSOR = Instant.parse("9999-12-31T00:00:00Z");
 
