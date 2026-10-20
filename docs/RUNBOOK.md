@@ -17,9 +17,39 @@ and this file should be fixed.
 | Object storage | AWS S3 `elioo-baymax-prod` (ap-south-1, private, SSE-S3) via the EC2 instance role (DR-5) |
 | Deploy | push to `main` → GitHub Actions → GHCR → SSH → `deploy.sh`. Manually: `IMAGE_TAG=<git sha> bash ~/deploy.sh` |
 
-`deploy.sh` pulls the tag, removes the old container, starts the new one with `--env-file` and the GCP
+`deploy.sh` first prunes old local tags of its own image (see [Disk](#disk) below), logs the free space on
+`/`, then pulls the tag, removes the old container, starts the new one with `--env-file` and the GCP
 credentials mounted read-only, then polls `/actuator/health` for 90 seconds. It exits non-zero and prints
-the last 50 log lines if the container never becomes healthy, so a failed deploy is loud.
+the last 50 log lines if the container never becomes healthy, so a failed deploy is loud. After the deploy job,
+CI's smoke test checks both `http://<EC2 host>:8086/actuator/health` and
+`https://medioo.eliooo.org/actuator/health`; both must pass, because a healthy container behind a broken Caddy
+or certificate is still an outage.
+
+## Disk
+
+The root volume is 20 GB and shared with n8n and bddrug. Each `medscribe-ai` image is about 460 MB (456 MB on
+2026-10-21; tags share layers where they can), and one lands on every merge to `main`. Check it with:
+
+```bash
+df -h /
+docker images ghcr.io/khondokertanvirhossain/elioo-health/medscribe-ai --format '{{.Tag}} {{.CreatedAt}} {{.ID}}'
+```
+
+**The pruning rule** (`prune_repo` in `deploy.sh`, tested by `scripts/test_deploy_prune.sh`): before every
+pull, remove local tags of exactly `ghcr.io/khondokertanvirhossain/elioo-health/medscribe-ai`, keep the newest 3
+by creation time, and never remove the image of a running container, whatever its age. Removal is by
+`repo:tag`, never by image id, and never touches another repository: n8n's and bddrug's images belong to
+their own deploys. A removal the daemon refuses is logged and skipped, so pruning cannot fail a deploy. Older
+tags stay in GHCR, so a rollback to one of them is still `IMAGE_TAG=<sha> bash ~/deploy.sh`, which pulls it
+again.
+
+Why it runs before the pull and not after: the old `docker image prune -f` after a healthy start removed only
+*dangling* images, and a tagged image is never dangling, so it never removed one of ours. Tags piled up until
+**2026-10-21, when the box had 233 MB free** with 40 `medscribe-ai` tags on it; the next pull would have run out
+of disk part-way through a deploy. That day, on the PO's instruction, 37 old tags were removed by hand, keeping
+the running sha and the newest 2: free space went from **233 MB to 5.2 GB**. Nothing outside `medscribe-ai` was
+touched. Most of the image tags left on the box are bddrug's (three repositories, 18 tags each, on
+2026-10-21); those are bddrug's to prune, not this deploy's.
 
 ## Editing the server environment
 

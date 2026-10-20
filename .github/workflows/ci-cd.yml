@@ -37,7 +37,10 @@ jobs:
         run: scripts/check-test-fixtures.sh
       # The deploy job's tip check (below), tested both ways against a throwaway repository: seconds, no network.
       - name: Deploy tip check tests
-        run: scripts/test_deploy_is_tip.sh
+        run: |
+          scripts/test_deploy_is_tip.sh
+          # deploy.sh's prune_repo against a fake docker: only our repository, never a running image, before the pull
+          bash scripts/test_deploy_prune.sh
       - uses: gradle/actions/setup-gradle@v4
       # Testcontainers pulls its images at test time, and a registry problem then fails the BUILD rather than
       # the pull: four acceptance tests — every one that needs MinIO — died with ContainerFetchException ->
@@ -154,11 +157,17 @@ jobs:
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             IMAGE_TAG="$IMAGE_TAG" bash /home/ec2-user/deploy.sh
             docker logout ghcr.io
+      # Both must pass: the container on its host port, and the public https name through Caddy, which is the
+      # path every user takes (a healthy :8086 behind a broken proxy or certificate is still an outage).
       - name: Smoke test from runner
         if: steps.tip.outputs.current == 'true'
         run: |
-          for i in $(seq 1 10); do
-            if curl -fsS "http://${{ secrets.EC2_HOST }}:8086/actuator/health"; then echo; exit 0; fi
-            sleep 5
-          done
-          echo "Health check failed"; exit 1
+          check() {
+            for i in $(seq 1 10); do
+              if curl -fsS "$1"; then echo; return 0; fi
+              sleep 5
+            done
+            echo "Health check failed: $1"; return 1
+          }
+          check "http://${{ secrets.EC2_HOST }}:8086/actuator/health"
+          check "https://medioo.eliooo.org/actuator/health"
