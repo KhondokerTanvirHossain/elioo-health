@@ -57,7 +57,8 @@ class AddReportSheetPageTest {
         assertThat(html).contains("<form id=\"add\" class=\"add\" method=\"post\" enctype=\"multipart/form-data\" action=\"/app/add\"");
         assertThat(html).containsPattern("<input type=\"radio\" name=\"patient\" value=\"" + ma.patient().id() + "\" required checked>");
         assertThat(html).contains("আম্মা · ৬৪");   // the age in Bangla digits (rule 13); the relation joins when the profile has one
-        assertThat(classed(Dom.parse(html), "hint")).singleElement().extracting(Dom.Element::ownText)
+        assertThat(classed(Dom.parse(html), "hint").stream().filter(h -> h.parent().classes().contains("pick")))   // D3 adds the group's own
+                .singleElement().extracting(Dom.Element::ownText)
                 .as("s07 as drawn, F8: the possessive and the objective of the name")
                 .isEqualTo("শুধু আম্মার ফাইল আছে, তাই আম্মাকেই বেছে রাখা হয়েছে");
         // three ways in, each a real input the browser posts on its own
@@ -318,5 +319,57 @@ class AddReportSheetPageTest {
                 new com.elioo.baymax.web.domain.AttentionItem.Retake(UUID.randomUUID(), NOW),
                 new com.elioo.baymax.web.domain.AttentionItem.FollowUp(rx, "Next visit", day.plusDays(8), "f/p/" + rx + "/crop-f.jpg"),
                 new com.elioo.baymax.web.domain.AttentionItem.Reading(UUID.randomUUID(), NOW));
+    }
+
+    // --- D3 ---------------------------------------------------------------------------------------------------------
+
+    /** Every sheet carries a fresh key, inside the form, so a double tap or a browser resubmit is one press. */
+    @Test
+    void everySheetCarriesAFreshKeySoADoubleTapOrAResubmitIsOneDocument() {
+        when(kit.uploads.uploadOptions(WebUiTestKit.FAMILY)).thenReturn(Mono.just(new UploadOptions(List.of(patient("আম্মা", 64, true)), List.of(), used(0))));
+        java.util.regex.Pattern key = java.util.regex.Pattern.compile(
+                "<form id=\"add\"[^>]*>(?:(?!</form>).)*<input type=\"hidden\" name=\"upload_key\" value=\"([0-9a-f-]{36})\">", java.util.regex.Pattern.DOTALL);
+        java.util.regex.Matcher first = key.matcher(sheet()), second = key.matcher(sheet());
+        assertThat(first.find()).as("the key is a field of the form that posts").isTrue();
+        assertThat(second.find()).isTrue();
+        assertThat(first.group(1)).isNotEqualTo(second.group(1));   // a new sheet is a new press; the same sheet resubmitted is not
+    }
+
+    /** s08: the family says what several pages are, and "একটা রিপোর্ট" is the default — Medioo never matches pages. */
+    @Test
+    void theSheetAsksWhetherSeveralPagesAreOneReportAndDefaultsToOne() {
+        when(kit.uploads.uploadOptions(WebUiTestKit.FAMILY)).thenReturn(Mono.just(new UploadOptions(List.of(patient("আম্মা", 64, true)), List.of(), used(0))));
+        String html = sheet();
+        assertThat(html).contains("name=\"group\" value=\"one\" checked>").contains("name=\"group\" value=\"separate\">")
+                .doesNotContain("value=\"separate\" checked");
+        assertThat(html).contains("একাধিক পাতা দিলে, সেগুলো কি একই রিপোর্টের?")
+                .contains("একটা রিপোর্ট — সব পাতা মিলে একটা কাগজ").contains("আলাদা আলাদা — প্রতিটি পাতা আলাদা কাগজ")
+                .contains("আপনি বেছে দিন — Medioo নিজে পাতা মেলাবে না");
+        assertThat(html.indexOf("name=\"group\"")).as("inside the form, before the send button")
+                .isGreaterThan(html.indexOf("<form id=\"add\"")).isLessThan(html.indexOf("<button type=\"submit\""));
+        assertThat(kit.page("/app/add", "en")).contains("If you add several pages, are they one report?")
+                .contains("Separate — each page is its own paper");
+    }
+
+    /** The chosen answer is filled and the other is not, read from the served stylesheet. */
+    @Test
+    void theChosenGroupingIsFilledAndTheOtherIsNot() {
+        List<Css.Rule> rules = Css.rules(kit.servedText("/assets/baymax.css"));
+        when(kit.uploads.uploadOptions(WebUiTestKit.FAMILY)).thenReturn(Mono.just(new UploadOptions(List.of(patient("আম্মা", 64, true)), List.of(), used(0))));
+        List<Dom.Element> options = classed(Dom.parse(sheet()), "opt");
+        assertThat(options).hasSize(2);
+        for (Dom.Element option : options) {
+            boolean chosen = option.children().get(0).attrs().containsKey("checked");
+            String background = Css.valueOf(Css.winner(rules, option, "background").orElseThrow(), "background");
+            assertThat(background).as(option.describe()).isEqualTo(chosen ? "var(--c-primary-container)" : "var(--c-surface)");
+        }
+        assertThat(options.stream().filter(o -> o.children().get(0).attrs().containsKey("checked"))).hasSize(1);
+    }
+
+    /** At the cap there is no form, so there is no key and no question to answer. */
+    @Test
+    void atTheCapThereIsNoKeyAndNoQuestion() {
+        when(kit.uploads.uploadOptions(WebUiTestKit.FAMILY)).thenReturn(Mono.just(new UploadOptions(List.of(patient("আম্মা", 64, true)), List.of(), used(3))));
+        assertThat(sheet()).doesNotContain("upload_key").doesNotContain("name=\"group\"");
     }
 }

@@ -10,10 +10,12 @@ import com.elioo.baymax.web.application.port.in.TimelineUseCase;
 import com.elioo.baymax.web.application.port.in.UploadUseCase;
 import com.elioo.baymax.web.application.port.out.AuditPort;
 import com.elioo.baymax.web.domain.AuditEvent;
+import com.elioo.baymax.web.domain.Grouping;
 import com.elioo.baymax.web.domain.PatientSummary;
 import com.elioo.baymax.web.domain.UploadOptions;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Clock;
@@ -43,15 +45,23 @@ public class UploadService implements UploadUseCase {
                 allowance)));
     }
 
+    /** The JSON API's upload: one document of every file, no key, so never a replay. */
     @Override
     public Mono<Document> upload(UUID familyId, UUID patientId, List<Upload> uploads) {
+        return upload(familyId, patientId, uploads, Grouping.ONE, null).map(documents -> documents.get(0));
+    }
+
+    @Override
+    public Mono<List<Document>> upload(UUID familyId, UUID patientId, List<Upload> uploads, Grouping grouping, String uploadKey) {
         return records.visiblePatient(familyId, patientId)
                 .switchIfEmpty(Mono.error(BaymaxException.notFound("patient_not_found", "no patient with id " + patientId)))
-                .flatMap(access -> access.owner()
-                        ? intake.accept(patientId, uploads)
-                        : Mono.error(BaymaxException.forbidden("shared_patient_read_only",
-                                "a shared patient's records can be seen but not added to")))
-                .flatMap(d -> audit.record(AuditEvent.family(AuditEvent.Kind.DOCUMENT_UPLOAD, familyId, patientId, d.id(), clock.instant()))
-                        .thenReturn(d));
+                .flatMap(access -> access.owner() ? Mono.just(access) : Mono.error(BaymaxException.forbidden("shared_patient_read_only",
+                        "a shared patient's records can be seen but not added to")))
+                .flatMap(access -> grouping == Grouping.SEPARATE
+                        ? intake.acceptEach(patientId, uploads, uploadKey).collectList()
+                        : intake.accept(patientId, uploads, uploadKey).map(List::of))
+                .flatMap(documents -> Flux.fromIterable(documents)
+                        .concatMap(d -> audit.record(AuditEvent.family(AuditEvent.Kind.DOCUMENT_UPLOAD, familyId, patientId, d.id(), clock.instant())))
+                        .then(Mono.just(documents)));
     }
 }

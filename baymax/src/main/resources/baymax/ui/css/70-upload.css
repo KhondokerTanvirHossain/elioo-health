@@ -21,6 +21,14 @@ body.has-sheet::after{content:"";position:fixed;inset:0;z-index:3;background:var
 /* the chosen chip is filled, as drawn; the radio stays visible, so a browser without :has still shows the choice */
 .pick .chip:has(input:checked){border-color:var(--c-primary);background:var(--c-primary-container);color:var(--c-on-primary-container)}
 .hint{margin:0;color:var(--c-text-muted);font-size:var(--fs-subhead);line-height:var(--lh-subhead)}
+/* D3: one report or separate papers (s08's question), on the sheet so it needs no script. Full-width rows: the answers are long */
+.group{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--sp-2);min-width:0}
+.group legend{margin:0 0 var(--sp-2);padding:0;font-size:var(--fs-headline);line-height:var(--lh-headline);font-weight:600}
+.opts{display:flex;flex-direction:column;gap:var(--sp-2)}
+.opt{display:flex;align-items:center;gap:var(--sp-3);min-height:var(--target-min);margin:0;padding:var(--sp-2) var(--sp-4) var(--sp-2) var(--sp-3);border:1px solid var(--c-outline);border-radius:var(--r-m);background:var(--c-surface);color:var(--c-text);font-size:var(--fs-label);line-height:var(--lh-label);font-weight:600;cursor:pointer}
+.opt input{flex:none;width:22px;height:22px;margin:0;accent-color:var(--c-primary)}
+.opt:focus-within{border-color:var(--c-primary);box-shadow:0 0 0 1px var(--c-primary)}
+.opt:has(input:checked){border:2px solid var(--c-primary);background:var(--c-primary-container);color:var(--c-on-primary-container)}
 .src{display:flex;flex-direction:column;gap:var(--sp-2)}
 .src-row{position:relative;display:grid;grid-template-columns:48px 1fr;align-items:center;gap:var(--sp-2) var(--sp-4);min-height:72px;margin:0;padding:var(--sp-3) var(--sp-4) var(--sp-3) var(--sp-3);border:1px solid var(--c-outline);border-radius:var(--r-m);background:var(--c-surface);color:var(--c-text);font-weight:400;cursor:pointer}
 .src-row:focus-within{border-color:var(--c-primary);box-shadow:0 0 0 1px var(--c-primary)}
