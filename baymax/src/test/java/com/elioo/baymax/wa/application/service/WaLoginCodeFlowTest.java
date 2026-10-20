@@ -102,8 +102,12 @@ class WaLoginCodeFlowTest {
         CompositeOtpDelivery delivery = new CompositeOtpDelivery(beans.getBeanProvider(WaMessagingPort.class), new Copy(), props);
         auth = new WebAuthService(otps, sessions, delivery, audit, records, new PhoneHasher(props), props,
                 Clock.fixed(NOW, ZoneOffset.UTC), window);
-        intake = new WaIntakeService(records, mock(DocumentRecordPort.class), mock(ExplainDocumentUseCase.class),
-                mock(DocumentIntakeUseCase.class), graph, new Copy(), props, auth);
+        DocumentRecordPort documents = mock(DocumentRecordPort.class);
+        when(documents.latestDoneDocument(any())).thenReturn(Mono.empty());   // the greeting reads the latest paper (PR 7)
+        intake = new WaIntakeService(records, documents, mock(ExplainDocumentUseCase.class),
+                mock(DocumentIntakeUseCase.class), graph, new Copy(), props, auth,
+                mock(com.elioo.baymax.outbound.application.port.out.OutboundMessagePort.class), Clock.fixed(NOW, ZoneOffset.UTC),
+                mock(com.elioo.baymax.family.application.port.in.FreeTierUseCase.class));
 
         root = (Logger) LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
         before = root.getLevel();
