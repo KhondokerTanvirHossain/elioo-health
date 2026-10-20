@@ -4,6 +4,7 @@ import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
 import com.elioo.baymax.web.domain.TimelineEntry;
+import com.elioo.baymax.web.domain.TimelineFilter;
 import com.elioo.baymax.web.domain.WebSession;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -16,7 +17,10 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
-/** {@code GET /me} and {@code GET /patients/{id}/timeline}, session-scoped. */
+/**
+ * {@code GET /me} and {@code GET /patients/{id}/timeline}, session-scoped. The timeline takes {@code cursor} (a previous
+ * page's opaque {@code next_cursor}) and {@code type} ({@code lab}, {@code rx}; anything else is every paper).
+ */
 @Component
 @RequiredArgsConstructor
 public class TimelineApiHandler {
@@ -48,7 +52,8 @@ public class TimelineApiHandler {
         WebSession session = SessionAuthFilter.session(request);
         UUID patientId = uuid(request.pathVariable("id"), "patient id");
         String cursor = request.queryParam("cursor").orElse(null);
-        return timeline.timeline(session.familyId(), patientId, cursor)
+        TimelineFilter filter = TimelineFilter.fromParam(request.queryParam("type").orElse(null));
+        return timeline.timeline(session.familyId(), patientId, cursor, filter)
                 .flatMap(page -> Flux.fromIterable(page.entries())
                         .concatMap(e -> timeline.imageUrl(session.familyId(), e.documentId(), e.pageOneKey())
                                 .map(url -> entry(e, url.toString()))
@@ -72,6 +77,12 @@ public class TimelineApiHandler {
         m.put("status", e.status());
         m.put("counts", Map.of("values", e.values(), "medicines", e.medicines(), "follow_up", e.followUps()));
         m.put("unverified", e.unverified());
+        // C2: the stored F1 level (null = not yet assessed), the F2 outside count, the latest explanation's gate status,
+        // and the F5 code of a retake — the code, never the developer prose
+        m.put("urgency", e.urgency() == null ? null : e.urgency().dbValue());
+        m.put("outside", e.outside());
+        m.put("review_state", e.reviewState());
+        m.put("retake_reason_code", e.retakeReasonCode());
         m.put("thumbnail_url", thumbnail);
         return m;
     }

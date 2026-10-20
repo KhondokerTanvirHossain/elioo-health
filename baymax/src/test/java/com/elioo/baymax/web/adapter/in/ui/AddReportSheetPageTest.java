@@ -219,7 +219,7 @@ class AddReportSheetPageTest {
     @Test
     void thePapersTabLinksTheOwnerToTheSheetAndPostsNoFormOfItsOwn() {
         kit.familyWith(kit.ma(0));
-        when(kit.timeline.timeline(eq(WebUiTestKit.FAMILY), eq(WebUiTestKit.MA_ID), any())).thenReturn(Mono.just(new TimelinePage(List.of(), null)));
+        when(kit.timeline.timeline(eq(WebUiTestKit.FAMILY), eq(WebUiTestKit.MA_ID), any(), any())).thenReturn(Mono.just(new TimelinePage(List.of(), null)));
         String html = kit.page("/app/timeline", "bn");
         String back = URLEncoder.encode("/app/timeline?patient=" + WebUiTestKit.MA_ID, StandardCharsets.UTF_8);
         assertThat(html).contains("href=\"/app/add?patient=" + WebUiTestKit.MA_ID + "&amp;back=" + back + "\"")
@@ -232,7 +232,7 @@ class AddReportSheetPageTest {
     void aSharedPatientsPapersOfferNoAddLink() {
         PatientSummary shared = kit.patient("খালা", false, 0);
         kit.familyWith(shared);
-        when(kit.timeline.timeline(eq(WebUiTestKit.FAMILY), eq(shared.patient().id()), any())).thenReturn(Mono.just(new TimelinePage(List.of(), null)));
+        when(kit.timeline.timeline(eq(WebUiTestKit.FAMILY), eq(shared.patient().id()), any(), any())).thenReturn(Mono.just(new TimelinePage(List.of(), null)));
         assertThat(kit.page("/app/timeline", "bn")).doesNotContain("/app/add").doesNotContain("কাগজ পাঠান");
     }
 }

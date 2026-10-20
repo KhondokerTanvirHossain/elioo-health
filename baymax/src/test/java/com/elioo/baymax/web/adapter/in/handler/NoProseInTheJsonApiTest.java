@@ -18,7 +18,9 @@ import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.application.port.in.UploadUseCase;
 import com.elioo.baymax.web.application.port.out.AuditPort;
+import com.elioo.baymax.web.application.port.out.TimelineReadPort;
 import com.elioo.baymax.web.application.service.TimelineService;
+import com.elioo.baymax.web.domain.TimelineEntry;
 import com.elioo.baymax.web.domain.WebSession;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -35,6 +37,7 @@ import reactor.core.publisher.Mono;
 import java.net.URI;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -56,8 +59,9 @@ import static org.springframework.web.reactive.function.server.RequestPredicates
  * writes, each with its code, and a FAILED row carrying a provider error — goes through the real intake view, the real
  * timeline service and the real handlers; the response is parsed and EVERY string value and EVERY field name in the
  * tree is walked — a field check, never a substring of the document. The document JSON names the reason by its code,
- * {@code retake_reason_code}; the timeline entry gains that field with its read model (C2, which extends
- * {@link #theTimelineJsonCarriesNoProseAndNoReasonField} to assert it), and until then carries no reason of any kind.
+ * {@code retake_reason_code}; so does the timeline entry, from its read model (C2: the row carries the stored code of a
+ * NEEDS_RETAKE paper, as {@code PostgresTimelineReadAdapter} reads it, and the handler must pass the code and nothing
+ * else).
  */
 class NoProseInTheJsonApiTest {
 
@@ -91,8 +95,11 @@ class NoProseInTheJsonApiTest {
         DocumentRecordPort documents = mock(DocumentRecordPort.class);
         when(documents.find(DOC)).thenReturn(Mono.just(retake));
         when(documents.findVisible(FAMILY, DOC)).thenReturn(Mono.just(retake));
-        when(documents.timelineOf(eq(PATIENT), any(), anyInt())).thenReturn(Flux.just(retake));
-        when(documents.sectionCounts(DOC)).thenReturn(Mono.just(new int[]{0, 0, 0}));
+        // the read model's row for this paper: the code on a retake (the adapter reads it only then), never the prose
+        TimelineReadPort timelineRead = mock(TimelineReadPort.class);
+        when(timelineRead.page(eq(PATIENT), any(), any(), anyInt())).thenReturn(Flux.just(new TimelineEntry(DOC,
+                LocalDate.parse("2026-10-19"), true, null, null, status, 0, 0, 0, 0, "k/" + DOC + "/page-1.jpg", T,
+                null, 0, null, "NEEDS_RETAKE".equals(status) ? code : null)));
         HealthRecordPort records = mock(HealthRecordPort.class);
         when(records.visiblePatient(FAMILY, PATIENT)).thenReturn(Mono.just(new PatientAccess(
                 new PatientProfile(PATIENT, FAMILY, "Ma", 68, PatientProfile.Sex.FEMALE, List.of(), T, T), true)));
@@ -106,7 +113,7 @@ class NoProseInTheJsonApiTest {
 
         DocumentIntakeService intake = new DocumentIntakeService(records, documents, mock(FreeTierUseCase.class), storage,
                 new PageRenderer(), new BaymaxProperties(), clock, mock(DocumentProcessingChain.class));
-        TimelineService timeline = new TimelineService(records, documents, intake, storage, audit, clock, urgency);
+        TimelineService timeline = new TimelineService(records, documents, intake, storage, audit, clock, urgency, timelineRead);
         DocumentHandler documentApi = new DocumentHandler(intake, timeline, mock(ExplainDocumentUseCase.class), mock(UploadUseCase.class));
         TimelineApiHandler timelineApi = new TimelineApiHandler(timeline);
 
@@ -146,6 +153,9 @@ class NoProseInTheJsonApiTest {
         assertThat(body.path("documents")).as("the entry is there to be checked").hasSize(1);
         assertThat(body.path("documents").get(0).path("status").asText()).isEqualTo(status);
         assertNoProseAndNoReasonField(uri, body, prose);
+        JsonNode reasonCode = body.path("documents").get(0).path("retake_reason_code");
+        assertThat(reasonCode.isMissingNode()).as(uri + " $.documents[0].retake_reason_code is a field").isFalse();
+        assertThat(reasonCode.isNull() ? null : reasonCode.asText()).as(uri + " $.documents[0].retake_reason_code").isEqualTo(code);
     }
 
     private JsonNode get(String uri) throws Exception {

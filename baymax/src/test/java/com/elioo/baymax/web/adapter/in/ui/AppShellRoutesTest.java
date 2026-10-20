@@ -32,7 +32,7 @@ class AppShellRoutesTest {
     private final PatientSummary baba = kit.patient("আব্বু", true, 0);
 
     private void noPapers(PatientSummary p) {
-        when(kit.timeline.timeline(eq(WebUiTestKit.FAMILY), eq(p.patient().id()), any())).thenReturn(Mono.just(new TimelinePage(List.of(), null)));
+        when(kit.timeline.timeline(eq(WebUiTestKit.FAMILY), eq(p.patient().id()), any(), any())).thenReturn(Mono.just(new TimelinePage(List.of(), null)));
     }
 
     static String between(String html, String start, String end) {
@@ -93,7 +93,7 @@ class AppShellRoutesTest {
         String html = kit.page(tab.path, "bn");
         // PAPERS would read the guessed patient's timeline; CHAT reads nobody's papers even when it guesses, so on
         // CHAT these two can never fail — the chooser below and the header test after this one are its guards
-        verify(kit.timeline, never()).timeline(any(), any(), any());
+        verify(kit.timeline, never()).timeline(any(), any(), any(), any());
         verify(kit.timeline, never()).document(any(), any());
         Dom dom = Dom.parse(html);
         assertThat(dom.unclosed).isEmpty();
@@ -157,7 +157,7 @@ class AppShellRoutesTest {
             kit.client.get().uri(tab.path + "?patient=" + asked).cookie("baymax_session", "tok").exchange()
                     .expectStatus().isNotFound();
         }
-        verify(kit.timeline, never()).timeline(any(), any(), any());
+        verify(kit.timeline, never()).timeline(any(), any(), any(), any());
     }
 
     /** WhatsApp messages and bookmarks carry the old URL; it opens কাগজপত্র with the patient chosen (profile: L5). */
@@ -191,9 +191,9 @@ class AppShellRoutesTest {
                 .exchange().expectStatus().isOk().expectBody(String.class).returnResult();
         assertThat(text(only(Dom.parse(r.getResponseBody()), "header", "appbar"))).contains("আব্বু").doesNotContain("আম্মা");
         assertThat(r.getResponseHeaders().getFirst(HttpHeaders.SET_COOKIE)).startsWith("baymax_patient=" + baba.patient().id() + ";");
-        verify(kit.timeline, never()).timeline(any(), eq(ma.patient().id()), any());
+        verify(kit.timeline, never()).timeline(any(), eq(ma.patient().id()), any(), any());
         if (tab == Tab.PAPERS) {
-            verify(kit.timeline).timeline(WebUiTestKit.FAMILY, baba.patient().id(), null);
+            verify(kit.timeline).timeline(WebUiTestKit.FAMILY, baba.patient().id(), null, com.elioo.baymax.web.domain.TimelineFilter.ALL);
         }
     }
 
@@ -206,7 +206,7 @@ class AppShellRoutesTest {
         noPapers(baba);
         kit.client.get().uri(tab.path + "?patient=" + UUID.randomUUID()).cookie("baymax_session", "tok")
                 .cookie("baymax_patient", ma.patient().id().toString()).exchange().expectStatus().isNotFound();
-        verify(kit.timeline, never()).timeline(any(), any(), any());
+        verify(kit.timeline, never()).timeline(any(), any(), any(), any());
     }
 
     /**
@@ -223,7 +223,7 @@ class AppShellRoutesTest {
                 .expectStatus().isFound().returnResult(Void.class).getResponseHeaders().getFirst(HttpHeaders.LOCATION);
         assertThat(location).isEqualTo("/app/timeline?patient=" + unseen);
         kit.client.get().uri(location).cookie("baymax_session", "tok").exchange().expectStatus().isNotFound();
-        verify(kit.timeline, never()).timeline(any(), any(), any());
+        verify(kit.timeline, never()).timeline(any(), any(), any(), any());
     }
 
     @Test
@@ -240,8 +240,8 @@ class AppShellRoutesTest {
                 .expectStatus().isOk().expectBody(String.class).returnResult().getResponseBody();
         assertThat(between(next, "<header class=\"appbar\"", "</header>")).contains("আব্বু").doesNotContain("আম্মা");
         // both pages read Baba's papers, the chosen one and the remembered one, and never Ma's
-        verify(kit.timeline, times(2)).timeline(WebUiTestKit.FAMILY, baba.patient().id(), null);
-        verify(kit.timeline, never()).timeline(any(), eq(ma.patient().id()), any());
+        verify(kit.timeline, times(2)).timeline(WebUiTestKit.FAMILY, baba.patient().id(), null, com.elioo.baymax.web.domain.TimelineFilter.ALL);
+        verify(kit.timeline, never()).timeline(any(), eq(ma.patient().id()), any(), any());
     }
 
     /** A Set-Cookie header split into its fields, so an attribute is matched whole, never as a substring of another. */
@@ -259,7 +259,7 @@ class AppShellRoutesTest {
         plainHttp.getAuth().setCookieSecure(false);
         WebUiTestKit local = new WebUiTestKit(org.mockito.Mockito.mock(WebAuthUseCase.class), plainHttp, true);
         local.familyWith(ma, baba);
-        when(local.timeline.timeline(eq(WebUiTestKit.FAMILY), eq(baba.patient().id()), any())).thenReturn(Mono.just(new TimelinePage(List.of(), null)));
+        when(local.timeline.timeline(eq(WebUiTestKit.FAMILY), eq(baba.patient().id()), any(), any())).thenReturn(Mono.just(new TimelinePage(List.of(), null)));
         String c = local.client.get().uri("/app/timeline?patient=" + baba.patient().id()).cookie("baymax_session", "tok").exchange()
                 .expectStatus().isOk().returnResult(String.class).getResponseHeaders().getFirst(HttpHeaders.SET_COOKIE);
         assertThat(cookieAttributes(c)).startsWith("baymax_patient=" + baba.patient().id())
@@ -398,7 +398,7 @@ class AppShellRoutesTest {
         Dom dom = Dom.parse(kit.page(tab.path + "?sheet=patient", "bn"));
         assertNoSheet(dom);
         assertThat(dom.all.stream().filter(e -> e.tag().equals("h1")).map(Dom.Element::ownText)).containsExactly("কার কাগজ দেখবেন?");
-        verify(kit.timeline, never()).timeline(any(), any(), any());
+        verify(kit.timeline, never()).timeline(any(), any(), any(), any());
     }
 
     /**
@@ -440,7 +440,7 @@ class AppShellRoutesTest {
                     .expectBody(String.class).returnResult().getResponseBody();
             assertThat(html).as("cookie " + stale).contains("কার কাগজ দেখবেন?");
         }
-        verify(kit.timeline, never()).timeline(any(), any(), any());
+        verify(kit.timeline, never()).timeline(any(), any(), any(), any());
     }
 
     /** The legacy upload form (a page cached before A7) lands where the sheet's does: on the paper it sent (A8). */
@@ -462,7 +462,7 @@ class AppShellRoutesTest {
         Dom dom = Dom.parse(kit.page(tab.path, "bn"));
         assertThat(dom.all.stream().filter(e -> e.tag().equals("h1")).map(Dom.Element::ownText))
                 .containsExactly(kit.copy.t(Lang.BN, tab.labelKey));
-        verify(kit.timeline, never()).timeline(any(), any(), any());
+        verify(kit.timeline, never()).timeline(any(), any(), any(), any());
     }
 
     /** The চ্যাট placeholder: the composer says chat is coming and can send nothing (C4 keeps this test). */

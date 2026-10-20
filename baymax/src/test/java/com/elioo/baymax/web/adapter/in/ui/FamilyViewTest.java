@@ -123,7 +123,7 @@ class FamilyViewTest {
         assertThat(html).contains("<form method=\"post\" action=\"/app/logout\">")
                 .contains("href=\"/lang/en?back=%2Fapp%2Ffamily\"");
         // the other direction: no other tab carries a phone number in any form
-        when(kit.timeline.timeline(eq(WebUiTestKit.FAMILY), eq(ma.patient().id()), any())).thenReturn(Mono.just(new TimelinePage(List.of(), null)));
+        when(kit.timeline.timeline(eq(WebUiTestKit.FAMILY), eq(ma.patient().id()), any(), any())).thenReturn(Mono.just(new TimelinePage(List.of(), null)));
         for (Tab t : List.of(Tab.CHAT, Tab.PAPERS)) {
             assertThat(kit.page(t.path, "bn")).as(t.path).doesNotContainPattern(BaymaxWebUiRouterTest.BD_MOBILE);
         }

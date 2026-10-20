@@ -13,14 +13,16 @@ import com.elioo.baymax.storage.domain.DeletionReport;
 import com.elioo.baymax.storage.domain.StorageKeys;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
 import com.elioo.baymax.web.application.port.out.AuditPort;
+import com.elioo.baymax.web.application.port.out.TimelineReadPort;
 import com.elioo.baymax.web.domain.AuditEvent;
 import com.elioo.baymax.web.domain.FamilyOverview;
 import com.elioo.baymax.web.domain.PatientSummary;
+import com.elioo.baymax.web.domain.TimelineCursor;
 import com.elioo.baymax.web.domain.TimelineEntry;
+import com.elioo.baymax.web.domain.TimelineFilter;
 import com.elioo.baymax.web.domain.TimelinePage;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import reactor.core.publisher.Flux;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.family.application.service.FamilyAccountService;
 import reactor.core.publisher.Mono;
@@ -28,8 +30,6 @@ import reactor.core.publisher.Mono;
 import java.net.URI;
 import java.time.Clock;
 import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -55,6 +55,8 @@ public class TimelineService implements TimelineUseCase {
     private final Clock clock;
     /** F1: the stored level the document page shows; nothing under web assesses urgency itself. */
     private final DocumentUrgencyUseCase urgency;
+    /** C2: the one owner of the timeline's order, cursor, stored chip and counts; read only, after visibility. */
+    private final TimelineReadPort timelineRead;
 
     @Override
     public Mono<FamilyOverview> me(UUID familyId) {
@@ -72,30 +74,21 @@ public class TimelineService implements TimelineUseCase {
     }
 
     @Override
-    public Mono<TimelinePage> timeline(UUID familyId, UUID patientId, String cursor) {
-        Instant before = parseCursor(cursor);
-        return visiblePatient(familyId, patientId)
-                .flatMap(access -> audit.record(AuditEvent.family(AuditEvent.Kind.TIMELINE_VIEW, familyId, patientId, null, clock.instant()))
-                        .thenReturn(access))
-                .flatMapMany(access -> documents.timelineOf(patientId, before, PAGE_SIZE + 1))
-                .collectList()
-                .flatMap(page -> {
+    public Mono<TimelinePage> timeline(UUID familyId, UUID patientId, String cursor, TimelineFilter filter) {
+        // parsed inside the chain, so a bad cursor is a 400 signal and nothing is read for it
+        return Mono.fromCallable(() -> TimelineCursor.parse(cursor))
+                .flatMap(after -> visiblePatient(familyId, patientId)
+                        .flatMap(access -> audit.record(AuditEvent.family(AuditEvent.Kind.TIMELINE_VIEW, familyId, patientId, null, clock.instant()))
+                                .thenReturn(access))
+                        .flatMap(access -> timelineRead.page(patientId, after, filter, PAGE_SIZE + 1).collectList()))
+                .map(page -> {
                     boolean more = page.size() > PAGE_SIZE;
-                    List<Document> shown = more ? page.subList(0, PAGE_SIZE) : page;
-                    String next = more ? shown.get(shown.size() - 1).createdAt().toString() : null;
-                    return Flux.fromIterable(shown).concatMap(this::entry).collectList()
-                            .map(entries -> new TimelinePage(entries, next));
+                    List<TimelineEntry> shown = more ? page.subList(0, PAGE_SIZE) : page;
+                    TimelineEntry last = more ? shown.get(shown.size() - 1) : null;
+                    // the whole (date, upload, id) of the last row shown: rows sharing an instant are neither skipped nor repeated
+                    String next = last == null ? null : new TimelineCursor(last.date(), last.createdAt(), last.documentId()).encode();
+                    return new TimelinePage(shown, next);
                 });
-    }
-
-    private Mono<TimelineEntry> entry(Document d) {
-        return documents.sectionCounts(d.id()).defaultIfEmpty(new int[]{0, 0, 0}).map(counts -> {
-            boolean fallback = d.docDate() == null;
-            LocalDate date = fallback ? LocalDate.ofInstant(d.createdAt(), ZoneOffset.UTC) : d.docDate();
-            return new TimelineEntry(d.id(), date, fallback, d.documentType(), d.facility(), d.status().name(),
-                    counts[0], counts[1], counts[2], d.unverified() == null ? 0 : d.unverified().total(),
-                    StorageKeys.page(d.familyId(), d.patientId(), d.id(), 1), d.createdAt());
-        });
     }
 
     @Override
@@ -151,17 +144,6 @@ public class TimelineService implements TimelineUseCase {
     private Mono<Document> visibleDocument(UUID familyId, UUID documentId) {
         return documents.findVisible(familyId, documentId)
                 .switchIfEmpty(Mono.error(BaymaxException.notFound("document_not_found", "no document with id " + documentId)));
-    }
-
-    static Instant parseCursor(String cursor) {
-        if (cursor == null || cursor.isBlank()) {
-            return NO_CURSOR;
-        }
-        try {
-            return Instant.parse(cursor);
-        } catch (RuntimeException e) {
-            throw BaymaxException.badRequest("invalid_cursor", "cursor must be the next_cursor of a previous page");
-        }
     }
 
     @Override
