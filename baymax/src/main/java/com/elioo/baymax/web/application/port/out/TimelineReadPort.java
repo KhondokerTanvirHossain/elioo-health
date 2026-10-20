@@ -20,4 +20,7 @@ public interface TimelineReadPort {
 
     /** DONE papers uploaded at or after {@code since} with a stored NOW or THIS_WEEK, in any review state; NOW first, then newest. */
     Flux<TimelineEntry> attention(UUID patientId, Instant since, int limit);
+
+    /** RECEIVED, PROCESSING and NEEDS_RETAKE papers uploaded at or after {@code since}, newest upload first (C4's cards). */
+    Flux<TimelineEntry> inFlightAndRetakes(UUID patientId, Instant since);
 }

@@ -405,6 +405,31 @@ class TimelineReadModelTest {
         });
     }
 
+    /**
+     * C4's "being read" and "waiting for a retake" cards: RECEIVED, PROCESSING and NEEDS_RETAKE papers uploaded at or after
+     * {@code since}, newest upload first. Never a DONE or a FAILED one, never one a second before the window, never
+     * another patient's. Both window edges and every status V5 allows are written out.
+     */
+    @Test
+    void inFlightAndRetakesAreTheUnfinishedPapersInsideTheWindowNewestFirst() {
+        runner().run(context -> {
+            UUID p = patient(context);
+            UUID other = patient(context);
+            Instant since = NOW.minus(Duration.ofDays(30));
+            UUID edge = doc(context, p, since.toString(), null, null, "RECEIVED");                    // in: the window's start
+            UUID retake = doc(context, p, "2026-10-18T08:00:00Z", null, "lab_report", "NEEDS_RETAKE"); // in
+            UUID reading = doc(context, p, "2026-10-20T03:00:00Z", null, null, "PROCESSING");          // in: the newest
+            doc(context, p, since.minusSeconds(1).toString(), null, null, "PROCESSING");               // out: a second early
+            doc(context, p, "2026-10-19T08:00:00Z", "2026-10-19", "lab_report", "DONE");               // out: finished
+            doc(context, p, "2026-10-19T09:00:00Z", null, null, "FAILED");                            // out: not coming
+            doc(context, other, "2026-10-19T10:00:00Z", null, null, "PROCESSING");                     // out: not this patient
+            List<TimelineEntry> rows = context.getBean(TimelineReadPort.class).inFlightAndRetakes(p, since).collectList().block();
+            assertThat(rows).extracting(TimelineEntry::documentId).containsExactly(reading, retake, edge);
+            assertThat(rows).extracting(TimelineEntry::status).containsExactly("PROCESSING", "NEEDS_RETAKE", "RECEIVED");
+            assertThat(rows.get(1).retakeReasonCode()).as("the retake keeps its F5 code").isEqualTo("low_overall");
+        });
+    }
+
     private static void sql(String statement) throws Exception {
         try (Connection c = connect(); Statement s = c.createStatement()) {
             s.execute(statement);

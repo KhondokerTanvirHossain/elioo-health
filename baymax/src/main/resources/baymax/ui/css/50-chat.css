@@ -4,3 +4,26 @@ body.in-app.has-composer{padding-bottom:calc(var(--tabbar-h) + var(--composer-h)
 .bubble{max-width:320px;padding:var(--sp-3) var(--sp-4);background:var(--c-surface);color:var(--c-text);border-radius:var(--r-l) var(--r-l) var(--r-l) var(--r-tail);box-shadow:var(--shadow-1)}
 .composer{position:fixed;left:0;right:0;bottom:calc(var(--tabbar-h) + env(safe-area-inset-bottom));z-index:2;display:flex;align-items:center;min-height:var(--composer-h);padding:var(--sp-2) max(var(--sp-3),env(safe-area-inset-right)) var(--sp-2) max(var(--sp-3),env(safe-area-inset-left));background:var(--c-surface);box-shadow:var(--shadow-2)}
 .composer .soon{margin:0;color:var(--c-text-muted);font-size:var(--fs-footnote);line-height:var(--lh-footnote)}
+/* C4: the attention stack (AttentionCard README, kit §12): one card per thing to act on, one action each */
+.attn-stack{display:flex;flex-direction:column;gap:var(--sp-3);margin-bottom:var(--sp-5)}
+.attn{overflow:clip;background:var(--c-surface);border:1px solid var(--c-line);border-radius:var(--r-m)}
+.attn .head{display:flex;gap:var(--sp-3);align-items:flex-start;padding:var(--sp-4) var(--sp-4) 0;font-weight:700}
+.attn .head svg{flex:none}
+.attn .body{display:flex;flex-direction:column;align-items:flex-start;gap:var(--sp-3);padding:var(--sp-3) var(--sp-4) var(--sp-4)}
+.attn .body .btn{margin:0}
+.attn .body .paper{align-self:stretch;margin:0}
+.attn .disc{display:flex;align-items:center;justify-content:center;flex:none;width:40px;height:40px;border-radius:var(--r-pill);background:var(--c-surface)}
+.attn.now{background:var(--c-status-now-container);border:0}
+.attn.now .head{position:sticky;top:var(--header-h);align-items:center;min-height:var(--now-strip-h);padding:var(--sp-4);background:var(--c-status-now-solid);color:var(--c-on-status-now);font-size:var(--fs-title-3);line-height:var(--lh-title-3)}
+.attn.soon{background:var(--c-status-soon-container);border:0}
+.attn.soon .head svg{color:var(--c-status-soon)}
+.attn.retake{background:var(--c-warn-container);border-color:var(--c-warn-line)}
+.btn.outlined{background:var(--c-surface);color:var(--c-text);border:1px solid var(--c-outline)}
+.btn.outlined:hover{background:var(--c-surface-2);color:var(--c-text)}
+.icon-btn.tonal{background:var(--c-primary-container);color:var(--c-on-primary-container)}
+.composer .icon-btn{margin-right:var(--sp-3)}
+/* the "এখন যা দেখার" strip on কাগজপত্র: the same urgent papers, compact links with the stored chip */
+.attn-strip{margin:0 0 var(--sp-4)}
+.attn-strip h2{margin:0 0 var(--sp-2)}
+.attn-strip ul{display:flex;flex-direction:column;gap:var(--sp-2);margin:0;padding:0;list-style:none}
+.attn-strip a{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--sp-2);min-height:var(--target-min);padding:var(--sp-2) var(--sp-4);background:var(--c-surface);border:1px solid var(--c-line);border-radius:var(--r-m);color:var(--c-text);text-decoration:none}

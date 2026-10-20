@@ -114,6 +114,11 @@ final class PageFixtures {
         variant("GET /app/timeline", Fixture.get("/app/timeline?patient=" + ma + "&type=rx", true, Stubs::maNoPapers).named("filtered-empty"));
         variant("GET /app/timeline", Fixture.get("/app/timeline?patient=" + ma + "&cursor=v1.next-page", true, Stubs::maNoPapers).named("later-empty"));
         variant("GET /app/home", Fixture.get("/app/home?patient=" + ma + "&sheet=patient", true, Stubs::familyOfTwo).named("switcher"));
+        // C4: every card the চ্যাট stack draws (NOW, THIS_WEEK, retake, the doctor's follow-up, being read), the empty চ্যাট, and
+        // the কাগজপত্র strip, so every derived page check (touch targets, contrast, paper vs Medioo, inline code) reads them
+        variant("GET /app/home", Fixture.get("/app/home", true, Stubs::maStack).named("stack"));
+        variant("GET /app/home", Fixture.get("/app/home", true, Stubs::maWithNoPapersYet).named("empty"));
+        variant("GET /app/timeline", Fixture.get("/app/timeline?patient=" + ma, true, Stubs::maStackAndPapers).named("strip"));
         // A6: the patient in view as the owner sees them (and after a save), and a shared patient (no save, no switch)
         variant("GET /app/family", Fixture.get("/app/family?patient=" + ma, true, Stubs::familyOfTwo).named("chosen"));
         variant("GET /app/family", Fixture.get("/app/family?patient=" + ma + "&saved=1", true, Stubs::maProfile).named("saved"));
@@ -261,6 +266,35 @@ final class PageFixtures {
                     new TimelineEntry(PROCESSING_DOC, LocalDate.parse("2026-10-18"), true, null, null, "PROCESSING",
                             // still being read: not assessed, nothing counted, no review yet, no retake code
                             0, 0, 0, 0, "f/p/" + PROCESSING_DOC + "/page-1.jpg", WebUiTestKit.NOW, null, 0, null, null)), null)));
+        }
+
+        /** C4: one card of each kind on Ma's চ্যাট stack, in the service's order (the follow-up carries its crop), and its urgent two for the strip. */
+        static void maStack(WebUiTestKit k) {
+            familyOfMa(k);
+            java.time.Instant sent = WebUiTestKit.NOW;
+            when(k.attention.attention(WebUiTestKit.FAMILY, WebUiTestKit.MA_ID)).thenReturn(Mono.just(List.of(
+                    new com.elioo.baymax.web.domain.AttentionItem.Urgent(DONE_DOC, Urgency.NOW, "lab_report", LocalDate.parse("2026-10-12"), false, sent),
+                    new com.elioo.baymax.web.domain.AttentionItem.Urgent(UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100031"), Urgency.THIS_WEEK,
+                            null, LocalDate.parse("2026-10-15"), true, sent),
+                    new com.elioo.baymax.web.domain.AttentionItem.Retake(UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100032"), sent),
+                    new com.elioo.baymax.web.domain.AttentionItem.FollowUp(EARLIER_DOC, "Next visit: 20/10/26", LocalDate.parse("2026-10-20"),
+                            "f/p/" + EARLIER_DOC + "/crop-f.jpg"),
+                    new com.elioo.baymax.web.domain.AttentionItem.Reading(PROCESSING_DOC, sent))));
+            when(k.attention.urgent(WebUiTestKit.FAMILY, WebUiTestKit.MA_ID)).thenReturn(Mono.just(List.of(
+                    new com.elioo.baymax.web.domain.AttentionItem.Urgent(DONE_DOC, Urgency.NOW, "lab_report", LocalDate.parse("2026-10-12"), false, sent),
+                    new com.elioo.baymax.web.domain.AttentionItem.Urgent(UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100031"), Urgency.THIS_WEEK,
+                            null, LocalDate.parse("2026-10-15"), true, sent))));
+        }
+
+        /** C4: Ma before her first paper — the empty চ্যাট (the intro and the one camera). */
+        static void maWithNoPapersYet(WebUiTestKit k) {
+            k.familyWith(k.ma(0));
+        }
+
+        /** C4: Ma's papers under the strip of her urgent ones. */
+        static void maStackAndPapers(WebUiTestKit k) {
+            maStack(k);
+            maPapers(k);
         }
 
         static void maNoPapers(WebUiTestKit k) {

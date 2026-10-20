@@ -38,6 +38,12 @@ public interface NudgeDataPort {
     /** Open follow-ups with exactly this due date. */
     Flux<FollowUpRow> openFollowUpsDueOn(LocalDate dueDate);
 
+    /**
+     * Open follow-ups of one patient, from finished (DONE) papers, whose written date is in [from, to] (both included),
+     * soonest first: the চ্যাট attention stack's doctor's dates (C4). A follow-up with no written date is never here.
+     */
+    Flux<FollowUpRow> openFollowUpsOfPatient(UUID patientId, LocalDate from, LocalDate to);
+
     /** Medication events that carry a duration text, recorded since {@code since}. */
     Flux<MedicationRow> medicationsWithDurationSince(Instant since);
 

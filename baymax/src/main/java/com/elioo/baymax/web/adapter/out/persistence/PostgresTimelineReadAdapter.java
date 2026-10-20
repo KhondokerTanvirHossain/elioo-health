@@ -60,6 +60,12 @@ public class PostgresTimelineReadAdapter implements TimelineReadPort {
             LIMIT :limit
             """;
 
+    /** C4: the papers not finished yet — being read, or waiting for a retake — newest upload first. Never DONE or FAILED. */
+    private static final String IN_FLIGHT = COLUMNS + """
+            WHERE d.patient_id = :patient AND d.status IN ('RECEIVED', 'PROCESSING', 'NEEDS_RETAKE') AND d.created_at >= :since
+            ORDER BY d.created_at DESC, d.id DESC
+            """;
+
     private final DatabaseClient db;
 
     @Override
@@ -80,6 +86,14 @@ public class PostgresTimelineReadAdapter implements TimelineReadPort {
                 .bind("patient", patientId)
                 .bind("since", OffsetDateTime.ofInstant(since, ZoneOffset.UTC))
                 .bind("limit", limit)
+                .map(PostgresTimelineReadAdapter::entry).all();
+    }
+
+    @Override
+    public Flux<TimelineEntry> inFlightAndRetakes(UUID patientId, Instant since) {
+        return db.sql(IN_FLIGHT)
+                .bind("patient", patientId)
+                .bind("since", OffsetDateTime.ofInstant(since, ZoneOffset.UTC))
                 .map(PostgresTimelineReadAdapter::entry).all();
     }
 

@@ -255,23 +255,64 @@ class AddReportSheetPageTest {
     }
 
     /**
-     * The other direction, over both pages the owner gets a link on: a shared patient's list of papers and their empty
-     * panel offer no way to add one — no link to the sheet anywhere, and not the words either.
+     * The other direction, derived over every tab ({@link Tab#values()}), so a tab or an add link added later is covered
+     * without anyone remembering to list it: each tab, with papers (and a চ্যাট stack of every card) and with no papers
+     * yet, is drawn from the same stubs for the owner and for a share member. A member's page offers no way to add a
+     * paper — no link to the sheet anywhere, and not the words either. The owner's pages are this check's guard against
+     * passing vacuously: some of them must carry an add link, and every member page must show the patient (never the
+     * chooser or an error), or the member half proved nothing.
      */
     @Test
-    void aSharedPatientsPapersOfferNoAddLink() {
-        PatientSummary shared = kit.patient("খালা", false, 0);
-        kit.familyWith(shared);
-        when(kit.timeline.timeline(eq(WebUiTestKit.FAMILY), eq(shared.patient().id()), any(), any()))
-                .thenReturn(Mono.just(new TimelinePage(List.of(aPaper()), null)), Mono.just(new TimelinePage(List.of(), null)));
-        for (String state : List.of("a list of papers", "no papers yet")) {
-            String html = kit.page("/app/timeline", "bn");
-            Dom dom = Dom.parse(html);
-            assertThat(dom.all.stream().filter(e -> e.classes().contains("titem")).count()).as(state)
-                    .isEqualTo(state.equals("a list of papers") ? 1 : 0);
-            assertThat(addLinks(dom).stream().map(Dom.Element::describe)).as(state + ": a share member cannot add a paper").isEmpty();
-            assertThat(html).as(state).doesNotContain("/app/add").doesNotContain(kit.copy.t(Lang.BN, "timeline.add"))
-                    .doesNotContain(kit.copy.t(Lang.BN, "chat.empty.action"));
+    void aSharedPatientsPagesOfferNoAddLinkOnAnyTab() {
+        List<String> ownerPagesWithALink = new java.util.ArrayList<>();
+        int memberPages = 0;
+        for (Tab tab : Tab.values()) {
+            for (boolean papers : new boolean[]{true, false}) {
+                for (boolean owner : new boolean[]{true, false}) {
+                    WebUiTestKit k = new WebUiTestKit();
+                    PatientSummary khala = k.patient("খালা", owner, papers ? 1 : 0);
+                    UUID id = khala.patient().id();
+                    k.familyWith(khala);
+                    when(k.timeline.timeline(eq(WebUiTestKit.FAMILY), eq(id), any(), any()))
+                            .thenReturn(Mono.just(new TimelinePage(papers ? List.of(aPaper()) : List.of(), null)));
+                    if (papers) {
+                        List<com.elioo.baymax.web.domain.AttentionItem> stack = everyCard();
+                        when(k.attention.attention(WebUiTestKit.FAMILY, id)).thenReturn(Mono.just(stack));
+                        when(k.attention.urgent(WebUiTestKit.FAMILY, id)).thenReturn(Mono.just(stack.stream()
+                                .filter(com.elioo.baymax.web.domain.AttentionItem.Urgent.class::isInstance)
+                                .map(com.elioo.baymax.web.domain.AttentionItem.Urgent.class::cast).toList()));
+                    }
+                    String state = tab + (papers ? " with papers" : " with no papers yet") + (owner ? " as the owner" : " as a share member");
+                    String html = k.page(tab.path + "?patient=" + id, "bn");
+                    Dom dom = Dom.parse(html);
+                    assertThat(dom.unclosed).as(state).isEmpty();
+                    if (owner) {
+                        if (!addLinks(dom).isEmpty()) {
+                            ownerPagesWithALink.add(state);
+                        }
+                        continue;
+                    }
+                    memberPages++;
+                    assertThat(html).as(state + ": the patient's own page").contains("খালা");
+                    assertThat(addLinks(dom).stream().map(Dom.Element::describe)).as(state + ": a share member cannot add a paper").isEmpty();
+                    assertThat(html).as(state).doesNotContain("/app/add").doesNotContain(kit.copy.t(Lang.BN, "timeline.add"))
+                            .doesNotContain(kit.copy.t(Lang.BN, "chat.empty.action")).doesNotContain(kit.copy.t(Lang.BN, "chat.camera"));
+                }
+            }
         }
+        assertThat(memberPages).as("member pages checked").isEqualTo(Tab.values().length * 2);
+        assertThat(ownerPagesWithALink).as("the owner's pages carry an add link, so the member half can fail").isNotEmpty();
+    }
+
+    /** One card of every kind the চ্যাট stack draws, for a page with papers. */
+    private static List<com.elioo.baymax.web.domain.AttentionItem> everyCard() {
+        java.time.LocalDate day = java.time.LocalDate.parse("2026-10-12");
+        UUID rx = UUID.randomUUID();
+        return List.of(
+                new com.elioo.baymax.web.domain.AttentionItem.Urgent(UUID.randomUUID(), com.elioo.baymax.outbound.domain.Urgency.NOW, "lab_report", day, false, NOW),
+                new com.elioo.baymax.web.domain.AttentionItem.Urgent(UUID.randomUUID(), com.elioo.baymax.outbound.domain.Urgency.THIS_WEEK, "lab_report", day, false, NOW),
+                new com.elioo.baymax.web.domain.AttentionItem.Retake(UUID.randomUUID(), NOW),
+                new com.elioo.baymax.web.domain.AttentionItem.FollowUp(rx, "Next visit", day.plusDays(8), "f/p/" + rx + "/crop-f.jpg"),
+                new com.elioo.baymax.web.domain.AttentionItem.Reading(UUID.randomUUID(), NOW));
     }
 }

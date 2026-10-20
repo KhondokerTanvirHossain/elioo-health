@@ -261,6 +261,20 @@ class WebOnlyJourneyAcceptanceTest {
             assertThat(nowChips).as("the NOW chip in this paper's row").hasSize(1);
             assertThat(nowChips.get(0).ownText()).isEqualTo(copy.urgency(Lang.BN, Urgency.NOW, true));
 
+            // 5e. C4: the চ্যাট tab leads with this paper's NOW card, read from the stored level, its one action opening the paper,
+            // and the কাগজপত্র strip carries the same paper
+            Dom home = Dom.parse(get(web, session, "/app/home"));
+            List<Dom.Element> nowCards = home.all.stream()
+                    .filter(e -> e.tag().equals("section") && e.classes().equals(java.util.Set.of("attn", "now"))).toList();
+            assertThat(nowCards).as("one NOW card on the চ্যাট tab").hasSize(1);
+            assertThat(AppShellRoutesTest.subtree(nowCards.get(0)).stream().filter(e -> e.tag().equals("a")).map(e -> e.attrs().get("href")))
+                    .as("its one action opens this paper").containsExactly(documentPath);
+            assertThat(AppShellRoutesTest.text(nowCards.get(0))).contains(copy.urgency(Lang.BN, Urgency.NOW, false));
+            List<Dom.Element> strip = papers.all.stream().filter(e -> e.classes().contains("attn-strip")).toList();
+            assertThat(strip).as("the strip on কাগজপত্র").hasSize(1);
+            assertThat(AppShellRoutesTest.subtree(strip.get(0)).stream().filter(e -> e.tag().equals("a")).map(e -> e.attrs().get("href")))
+                    .containsExactly(documentPath);
+
             // 5b. the pictures the result page shows, fetched by the src it renders and checked by what they show
             List<String> crops = srcs(result, "/image\\?key=[^\"]+");
             List<String> pages = srcs(result, "/page/[0-9]+");
