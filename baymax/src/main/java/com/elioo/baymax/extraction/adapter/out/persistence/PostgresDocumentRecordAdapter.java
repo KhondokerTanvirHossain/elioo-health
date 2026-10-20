@@ -3,6 +3,7 @@ package com.elioo.baymax.extraction.adapter.out.persistence;
 import com.elioo.baymax.config.BaymaxSchema;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.elioo.baymax.extraction.application.port.out.DocumentRecordPort;
+import com.elioo.baymax.extraction.domain.CreatedDocument;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.VerifiedItems;
 import lombok.RequiredArgsConstructor;
@@ -41,6 +42,34 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
         DocumentEntity entity = DocumentEntity.from(document);
         entity.setId(null);
         return documents.save(entity).map(DocumentEntity::toRecord);
+    }
+
+    /**
+     * One statement, so the database decides: {@code ON CONFLICT … DO NOTHING} on V21's partial unique index leaves the
+     * loser's {@code RETURNING} empty, and it reads the winner's row. A read-then-insert would let two racing presses
+     * both see "none" and both insert.
+     */
+    @Override
+    public Mono<CreatedDocument> createOnce(Document d, String uploadKey) {
+        if (uploadKey == null) {
+            return create(d).map(doc -> new CreatedDocument(doc, true));
+        }
+        return db.sql("INSERT INTO " + S + ".document (patient_id, family_id, status, page_count, created_at, updated_at, upload_key) "
+                        + "VALUES (:patient, :family, :status, :pages, :createdAt, :updatedAt, :key) "
+                        + "ON CONFLICT (family_id, upload_key) WHERE upload_key IS NOT NULL DO NOTHING RETURNING id")
+                .bind("patient", d.patientId()).bind("family", d.familyId()).bind("status", d.status().name())
+                .bind("pages", d.pageCount())
+                .bind("createdAt", OffsetDateTime.ofInstant(d.createdAt(), ZoneOffset.UTC))
+                .bind("updatedAt", OffsetDateTime.ofInstant(d.updatedAt(), ZoneOffset.UTC))
+                .bind("key", uploadKey)
+                .map((row, meta) -> row.get("id", UUID.class)).one()
+                .flatMap(id -> find(id).map(doc -> new CreatedDocument(doc, true)))
+                .switchIfEmpty(Mono.defer(() -> findByUploadKey(d.familyId(), uploadKey).map(doc -> new CreatedDocument(doc, false))));
+    }
+
+    @Override
+    public Mono<Document> findByUploadKey(UUID familyId, String uploadKey) {
+        return documents.findByFamilyIdAndUploadKey(familyId, uploadKey).map(DocumentEntity::toRecord);
     }
 
     @Override

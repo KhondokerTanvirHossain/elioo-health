@@ -7,6 +7,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.ReadOnlyProperty;
 import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
 
@@ -64,13 +65,17 @@ public class DocumentEntity {
     /** F5 (V20): the retake reason code, on NEEDS_RETAKE only. {@code timeline_date} is generated and never mapped. */
     @Column("status_reason_code")
     private String statusReasonCode;
+    /** D3 (V21): the web press that made this document. Read here, written only by {@code createOnce}'s SQL. */
+    @Column("upload_key")
+    @ReadOnlyProperty
+    private String uploadKey;
 
     static DocumentEntity from(Document d) {
         return new DocumentEntity(d.id(), d.patientId(), d.familyId(), d.documentType(), d.docDate(),
                 d.facility(), d.extractionJson(), d.confidenceOverall(), d.status().name(), d.statusReason(),
                 d.modelFinal(), d.costUsd(), d.pageCount(), d.createdAt(), d.updatedAt(),
                 d.unverified().values(), d.unverified().medicines(), d.unverified().followUp(),
-                d.unverified().clinicalContext(), d.clinicalContextJson(), d.statusReasonCode());
+                d.unverified().clinicalContext(), d.clinicalContextJson(), d.statusReasonCode(), null);
     }
 
     Document toRecord() {

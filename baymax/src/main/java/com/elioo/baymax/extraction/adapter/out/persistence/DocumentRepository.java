@@ -15,4 +15,7 @@ public interface DocumentRepository extends ReactiveCrudRepository<DocumentEntit
     @org.springframework.data.r2dbc.repository.Query(
             "SELECT * FROM baymax.document WHERE family_id = :familyId AND status = 'DONE' ORDER BY created_at DESC LIMIT 1")
     reactor.core.publisher.Mono<DocumentEntity> latestDone(java.util.UUID familyId);
+
+    /** D3: the document one web press made (V21's partial unique index makes it at most one). */
+    reactor.core.publisher.Mono<DocumentEntity> findByFamilyIdAndUploadKey(java.util.UUID familyId, String uploadKey);
 }
