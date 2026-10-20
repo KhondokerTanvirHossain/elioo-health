@@ -7,8 +7,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Refuses to start with a malformed WhatsApp configuration (BMX-10).
@@ -34,10 +39,53 @@ public class WaConfigValidator {
     /** A system-user token is long; this only rules out obvious truncation and placeholders. */
     private static final int MIN_TOKEN_LENGTH = 40;
 
+    /**
+     * When each Graph API version stops working, from Meta's changelog
+     * (https://developers.facebook.com/docs/graph-api/changelog/versions, fetched 2026-10-21; the page lists v26.0,
+     * released 2026-07-29, with expiry "TBD", so it is not in this table yet). Add a row when the version changes.
+     */
+    static final Map<String, LocalDate> GRAPH_EXPIRY = Map.of(
+            "v21.0", LocalDate.parse("2027-01-21"),
+            "v22.0", LocalDate.parse("2027-05-20"),
+            "v23.0", LocalDate.parse("2027-10-08"),
+            "v24.0", LocalDate.parse("2028-02-18"),
+            "v25.0", LocalDate.parse("2028-07-29"));
+    /** How long before expiry startup starts warning. */
+    static final int EXPIRY_WARNING_DAYS = 90;
+    private static final Set<String> READ_RECEIPT_MODES = Set.of("off", "read", "typing");
+
     private final BaymaxProperties properties;
+
+    /**
+     * The startup warnings for a Graph version, derived from {@link #GRAPH_EXPIRY} and the version actually in use.
+     * Logged at WARN, never thrown: refusing to start over an expiry would take MedScribe down with Baymax. Every line
+     * contains "graph version", which the post-deploy check greps for.
+     */
+    static List<String> graphVersionWarnings(String version, LocalDate today) {
+        LocalDate expiry = GRAPH_EXPIRY.get(version);
+        if (expiry == null) {
+            return List.of("wa graph version " + version + " is not in the expiry table (WaConfigValidator.GRAPH_EXPIRY); "
+                    + "check https://developers.facebook.com/docs/graph-api/changelog/versions and add it");
+        }
+        long daysLeft = ChronoUnit.DAYS.between(today, expiry);
+        if (daysLeft <= 0) {
+            return List.of("wa graph version " + version + " expired " + expiry
+                    + ": Graph calls may already fail; set BAYMAX_WA_GRAPH_VERSION blank (the shipped default) or newer");
+        }
+        if (daysLeft <= EXPIRY_WARNING_DAYS) {
+            return List.of("wa graph version " + version + " expires " + expiry + " (" + daysLeft
+                    + " days); move off it before then");
+        }
+        return List.of();
+    }
 
     @PostConstruct
     void validate() {
+        validate(LocalDate.now(ZoneOffset.UTC));
+    }
+
+    /** {@code today} is the UTC date the expiry warning is computed against; a seam so tests can stand on any date. */
+    void validate(LocalDate today) {
         BaymaxProperties.Wa wa = properties.getWa();
         List<String> problems = new ArrayList<>();
 
@@ -87,6 +135,15 @@ public class WaConfigValidator {
                     + window);
         }
 
+        String version = wa.getGraphVersion();
+        if (version == null || !version.matches("v\\d+\\.\\d+")) {
+            problems.add("BAYMAX_WA_GRAPH_VERSION must look like v25.0 (a 'v', then digits, a dot, digits), or be blank "
+                    + "for the shipped default; it is " + (version == null ? 0 : version.length()) + " characters");
+        }
+        if (!READ_RECEIPT_MODES.contains(wa.getReadReceipts())) {
+            problems.add("BAYMAX_WA_READ_RECEIPTS must be off, read or typing (or blank for off)");
+        }
+
         if (!problems.isEmpty()) {
             throw new IllegalStateException("WhatsApp channel is enabled but its configuration is malformed:\n  - "
                     + String.join("\n  - ", problems)
@@ -96,8 +153,12 @@ public class WaConfigValidator {
         if (publicNumber.isEmpty()) {
             log.warn("[baymax] BAYMAX_WA_PUBLIC_NUMBER is blank: the sign-in page will show no WhatsApp button");
         }
-        log.info("[baymax] wa config ok: phoneNumberId={} wabaId={} allowlist={} entries serviceWindow={}",
-                wa.getPhoneNumberId(), wa.getWabaId(), wa.getAllowlist().size(), window);
+        for (String warning : graphVersionWarnings(version, today)) {
+            log.warn("[baymax] {}", warning);
+        }
+        log.info("[baymax] wa config ok: phoneNumberId={} wabaId={} allowlist={} entries serviceWindow={} graphVersion={} "
+                        + "readReceipts={}",
+                wa.getPhoneNumberId(), wa.getWabaId(), wa.getAllowlist().size(), window, version, wa.getReadReceipts());
     }
 
     private static void required(List<String> problems, String name, String value) {

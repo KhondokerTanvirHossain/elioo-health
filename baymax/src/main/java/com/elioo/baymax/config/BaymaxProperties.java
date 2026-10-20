@@ -226,8 +226,18 @@ public class BaymaxProperties {
          * a production number.
          */
         private List<String> allowlist = new java.util.ArrayList<>();
-        /** Pinned in config, not the environment: this is a code-compatibility concern, not a deployment secret. */
-        private String graphVersion = "v21.0";
+        /**
+         * The Graph API version every call is made against. Shipped in code and in application.properties; the
+         * environment ({@code BAYMAX_WA_GRAPH_VERSION}) overrides it only to roll back without a code change. Its
+         * expiry is warned at startup ({@code WaConfigValidator.GRAPH_EXPIRY}).
+         */
+        private String graphVersion = DEFAULT_GRAPH_VERSION;
+        /**
+         * Read ticks for messages we answer: {@code off} (default), {@code read} (blue ticks), or {@code typing}
+         * (blue ticks, plus the typing indicator for a message whose answer takes time). Anything else refuses to
+         * start.
+         */
+        private String readReceipts = DEFAULT_READ_RECEIPTS;
         /**
          * The display number of {@link #phoneNumberId}, digits only (8801…), for the sign-in page's wa.me link
          * (D37: on /app only, never on the landing page). Blank = the page instructs but shows no link.
@@ -247,6 +257,28 @@ public class BaymaxProperties {
          */
         public boolean permits(String e164) {
             return e164 != null && (allowlist.isEmpty() || allowlist.stream().anyMatch(a -> a.trim().equals(e164)));
+        }
+
+        public static final String DEFAULT_GRAPH_VERSION = "v25.0";
+        public static final String DEFAULT_READ_RECEIPTS = "off";
+
+        /**
+         * Surrounding whitespace is dropped first: docker --env-file keeps a trailing space or a CR, the PO edits this
+         * line by hand during a Graph incident (the rollback), and a refused start takes MedScribe down too. Then blank
+         * is the shipped default: a blank line in the env file reaches Spring as an empty string, which
+         * {@code ${X:default}} keeps; without this the base URL would be {@code https://graph.facebook.com/}. What is
+         * left is kept as given, so a value malformed inside ({@code 21.0}, {@code v21.0 # rollback}) still reaches the
+         * validator and is refused.
+         */
+        public void setGraphVersion(String graphVersion) {
+            String v = graphVersion == null ? "" : graphVersion.strip();
+            this.graphVersion = v.isEmpty() ? DEFAULT_GRAPH_VERSION : v;
+        }
+
+        /** Stripped and lower-cased ({@code Typing} is {@code typing}); blank is {@code off}, as in {@link #setGraphVersion}. */
+        public void setReadReceipts(String readReceipts) {
+            String m = readReceipts == null ? "" : readReceipts.strip().toLowerCase(java.util.Locale.ROOT);
+            this.readReceipts = m.isEmpty() ? DEFAULT_READ_RECEIPTS : m;
         }
     }
 

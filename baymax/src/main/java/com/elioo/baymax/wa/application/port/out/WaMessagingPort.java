@@ -19,4 +19,16 @@ public interface WaMessagingPort {
      *         without an id is an error signal, because "no id" is "not accepted" for every caller
      */
     Mono<String> sendText(String toNumber, String body);
+
+    /**
+     * Marks an inbound message read (the family sees blue ticks). With {@code typing}, also shows the typing indicator,
+     * which WhatsApp clears at our next reply or after 25 seconds. Only for a message we will answer. A courtesy, never
+     * part of the answer: completes empty on any failure, never errors, and is bounded in time
+     * (WaIntakeService also bounds it, for any implementation), because the reply waits behind it.
+     *
+     * @param providerMessageId the inbound message's wamid
+     */
+    default Mono<Void> markRead(String providerMessageId, boolean typing) {
+        return Mono.empty();
+    }
 }

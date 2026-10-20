@@ -135,7 +135,7 @@ direction **fully automated first**: production stays `BAYMAX_GATE_MODE=off`.
 | 7 | **B1b** — standing urgency, free tier before the ack, failures after the ack | `feat/baymax-wa-greeting-urgency` | PR 6 | — | 7.1–7.4 | M |
 | 8 | **C1** — F9a inbound idempotency | `fix/baymax-wa-inbound-idempotency` | PR 7 | V22 (was V18; renumbered 2026-10-19) | 8.1–8.6 | M–L |
 | 9 | **B2** — every document ends with a reply | `fix/baymax-every-document-ends-with-a-reply` | PR 8 | V23 (was V19; renumbered 2026-10-19) | 9.1–9.4 | M |
-| 10 | **C3** — Graph v25.0, one allowlist rule, read receipts | `feat/baymax-wa-graph-v25-read-receipts` | PR 9 | — | 10.1–10.3 | S–M |
+| 10 | **C3** — Graph v25.0, one allowlist rule, read receipts | `feat/baymax-graph-v25` (planned as `feat/baymax-wa-graph-v25-read-receipts`) | ~~PR 9~~ `origin/main` after PR 12; **merges ahead of PRs 7–9** (note under PR 10, 2026-10-21) | — | 10.1–10.3 | S–M |
 | 11 | **1a-i** — every way of writing a number; Bangla-digit codes | `fix/baymax-number-and-bangla-code` | PR 10 | — | 11.1–11.2 | S |
 | 12 | **1a-ii** — sign-in by WhatsApp code, free (D2, DR-39 amended 2026-10-18) | `feat/baymax-whatsapp-sign-in` | PR 11 (+ Task 10.1 as its first commit), **after the env step**; merges ahead of PRs 7–10 | V17 | 12.0–12.8 | M |
 
@@ -143,7 +143,8 @@ Why this order: PR 1 stops live credential and number leaks before anything else
 are tiny live-defect fixes with no shared files. PR 4 comes next because every later deploy (`docker rm -f`, a SIGKILL)
 would otherwise strand an in-flight document. PR 5 owns the whole detail path (F4); PRs 6–7 build on its API; PR 8
 claims inbound messages in front of PR 6's single entry point; PR 9 writes its failure notices against PR 5's split
-and PR 4's chain; PR 10 bumps the Graph version once everything that calls Graph has landed; PRs 11–12 are Phase 1a.
+and PR 4's chain; PR 10 bumps the Graph version once everything that calls Graph has landed (*2026-10-21: it merges
+ahead of PRs 7–9 instead, because v21.0 expires 2027-01-21; see the note under PR 10*); PRs 11–12 are Phase 1a.
 
 ## File map (by PR)
 
@@ -5928,6 +5929,20 @@ class FailedHasOneWriterTest {
 ---
 
 ## PR 10 — C3: Graph v25.0, one allowlist rule, read receipts and typing behind a flag
+
+> **2026-10-21 — built and merged ahead of PRs 7–9 (PR #96, branch `feat/baymax-graph-v25`).** v21.0 expires
+> 2027-01-21, so the version could not wait for the B/C chain.
+> - Task 10.1 was already on `main` as PR 12's first commit (#63).
+> - `readReceipt` lives at the **top of `WaIntakeService.onInbound`**, bounded (`WaGraphClient.READ_RECEIPT_TIMEOUT`
+>   2 s, `WaIntakeService.READ_RECEIPT_BOUND` 3 s), not inside PR 8's `handle`, which does not exist yet. **PR 8's
+>   `handle` must call `onInbound` after its claim and must not add a second receipt**: a duplicate it deduplicates
+>   never reaches `onInbound`, so it gets no second tick. Task 10.3's "`handle` becomes `readReceipt(in).then(…)`" below
+>   is superseded.
+> - **PR 7** (which modifies `WaGraphClient` and `WaMessagingPort` per its file map) rebases onto `markRead`.
+> - Step 4's local check (`BAYMAX_WA_ENABLED=false … bootRun` shows no validator warning) is vacuous: with WhatsApp off
+>   the validator bean does not exist. It is replaced by `WaConfigValidatorTest`'s log-capturing cases on a fixed date.
+> - The post-deploy try is RUNBOOK "Graph API version": outbound first with the dashboard on v21.0 (including the
+>   photo), then the dashboard webhook version, each with its own rollback.
 
 Branch `feat/baymax-wa-graph-v25-read-receipts`, from merged PR 9. No migration.
 
