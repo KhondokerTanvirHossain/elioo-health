@@ -52,9 +52,22 @@ public class PostgresNudgeDataAdapter implements NudgeDataPort, NudgeOptOutPort 
         return db.sql("SELECT u.id, u.patient_id, d.family_id, u.document_id, u.instruction, u.due_date, u.crop_key FROM " + S + ".follow_up u "
                         + "JOIN " + S + ".document d ON d.id = u.document_id WHERE u.status = 'open' AND u.due_date = :due")
                 .bind("due", dueDate)
-                .map((row, meta) -> new FollowUpRow(row.get("id", UUID.class), row.get("patient_id", UUID.class), row.get("family_id", UUID.class),
-                        row.get("document_id", UUID.class), row.get("instruction", String.class), row.get("due_date", LocalDate.class), row.get("crop_key", String.class)))
-                .all();
+                .map((row, meta) -> followUp(row)).all();
+    }
+
+    @Override
+    public Flux<FollowUpRow> openFollowUpsOfPatient(UUID patientId, LocalDate from, LocalDate to) {
+        return db.sql("SELECT u.id, u.patient_id, d.family_id, u.document_id, u.instruction, u.due_date, u.crop_key FROM " + S + ".follow_up u "
+                        + "JOIN " + S + ".document d ON d.id = u.document_id WHERE u.patient_id = :patient AND u.status = 'open' "
+                        + "AND d.status = 'DONE' AND u.due_date BETWEEN :from AND :to ORDER BY u.due_date, u.id")
+                .bind("patient", patientId).bind("from", from).bind("to", to)
+                .map((row, meta) -> followUp(row)).all();
+    }
+
+    private static FollowUpRow followUp(Row row) {
+        return new FollowUpRow(row.get("id", UUID.class), row.get("patient_id", UUID.class), row.get("family_id", UUID.class),
+                row.get("document_id", UUID.class), row.get("instruction", String.class), row.get("due_date", LocalDate.class),
+                row.get("crop_key", String.class));
     }
 
     @Override
