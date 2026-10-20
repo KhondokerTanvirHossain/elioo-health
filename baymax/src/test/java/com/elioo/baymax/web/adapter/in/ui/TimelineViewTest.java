@@ -94,12 +94,31 @@ class TimelineViewTest {
                 .as("pending on a routine paper: the review chip alone, no level").containsExactly("chip review");
     }
 
+    /** The row's title element, its own text exactly: "কাগজ · আম্মা" is a substring of "নতুন কাগজ · আম্মা". */
+    private static String title(String row) {
+        List<Dom.Element> found = Dom.parse(row).all.stream().filter(e -> e.classes().contains("ttitle")).toList();
+        assertThat(found).as("one title in the row").hasSize(1);
+        return found.get(0).ownText();
+    }
+
     @Test
     void aPaperThatIsNotDoneSaysWhereItIsAndCarriesNoUrgency() {
-        assertThat(view.item(Lang.BN, entry("PROCESSING", null, true), "আম্মা")).contains("পড়ছি…").contains("নতুন কাগজ · আম্মা");
-        assertThat(view.item(Lang.BN, entry("RECEIVED", null, true), "আম্মা")).contains("পড়ছি…");
-        assertThat(view.item(Lang.BN, entry("NEEDS_RETAKE", null, true), "আম্মা"))
-                .contains("কাগজ · আম্মা").contains("ঠিকমতো পড়তে পারিনি — আবার তুলতে হবে");
+        String reading = copy.t(Lang.BN, "timeline.reading.title") + " · আম্মা";
+        String paper = copy.t(Lang.BN, "timeline.paper") + " · আম্মা";
+        assertThat(reading).isEqualTo("নতুন কাগজ · আম্মা");
+        assertThat(paper).isEqualTo("কাগজ · আম্মা");
+        for (String s : List.of("RECEIVED", "PROCESSING")) {
+            String row = view.item(Lang.BN, entry(s, null, true), "আম্মা");
+            assertThat(title(row)).as(s).isEqualTo(reading);
+            assertThat(row).as(s).contains("পড়ছি…");
+        }
+        // a retake or a failure is not "new": it was read and could not be used, and its title must not say otherwise
+        for (String s : List.of("NEEDS_RETAKE", "FAILED")) {
+            String row = view.item(Lang.BN, entry(s, null, true), "আম্মা");
+            assertThat(title(row)).as(s).isEqualTo(paper);
+            assertThat(row).as(s).doesNotContain("নতুন কাগজ").doesNotContain("পড়ছি…");
+        }
+        assertThat(view.item(Lang.BN, entry("NEEDS_RETAKE", null, true), "আম্মা")).contains("ঠিকমতো পড়তে পারিনি — আবার তুলতে হবে");
         assertThat(view.item(Lang.BN, entry("FAILED", null, true), "আম্মা")).contains("পড়া যায়নি — আবার পাঠান");
         for (String s : List.of("RECEIVED", "PROCESSING", "NEEDS_RETAKE", "FAILED")) {
             // a stored level on a paper that is not DONE (it cannot have one, but the row must not trust that) shows nothing
@@ -141,6 +160,29 @@ class TimelineViewTest {
         assertThat(dom.all.stream().filter(e -> e.tag().equals("h2")).map(Dom.Element::ownText)).containsExactly("অক্টোবর ২০২৬", "সেপ্টেম্বর ২০২৬");
         assertThat(dom.all.stream().filter(e -> e.classes().contains("titem")).count()).isEqualTo(3);
         assertThat(view.items(Lang.BN, List.of(), "আম্মা")).isEmpty();
+    }
+
+    /**
+     * The month header is the paper's own date, never the day it was uploaded: an old paper sent today sits under its
+     * own month and year — on a Bangla page the row shows only "১২ মার্চ", so the header is the only place the year is.
+     * The other direction: a paper with no readable date sits under its upload month (its date is the upload day, marked).
+     */
+    @Test
+    void theMonthHeaderIsThePapersOwnDateNotItsUploadDay() {
+        Instant uploadedToday = Instant.parse("2026-10-12T08:00:00Z");
+        TimelineEntry old = new TimelineEntry(UUID.randomUUID(), LocalDate.parse("2019-03-12"), false, "lab_report", null, "DONE",
+                3, 0, 0, 0, "k", uploadedToday, null, 0, null, null);
+        Dom dom = Dom.parse(view.items(Lang.BN, List.of(old), "আম্মা"));
+        assertThat(dom.all.stream().filter(e -> e.tag().equals("h2")).map(Dom.Element::ownText)).containsExactly("মার্চ ২০১৯");
+        assertThat(dom.all.stream().map(Dom.Element::ownText)).noneMatch(t -> t.contains("অক্টোবর"));
+        assertThat(dom.all.stream().filter(e -> e.classes().contains("meta")).map(Dom.Element::ownText)).contains("১২ মার্চ");
+
+        TimelineEntry undated = new TimelineEntry(UUID.randomUUID(), LocalDate.parse("2026-10-12"), true, "lab_report", null, "DONE",
+                3, 0, 0, 0, "k", uploadedToday, null, 0, null, null);
+        assertThat(Dom.parse(view.items(Lang.BN, List.of(undated, old), "আম্মা")).all.stream().filter(e -> e.tag().equals("h2"))
+                .map(Dom.Element::ownText)).containsExactly("অক্টোবর ২০২৬", "মার্চ ২০১৯");
+        assertThat(Dom.parse(view.items(Lang.EN, List.of(old), "Ma")).all.stream().filter(e -> e.tag().equals("h2"))
+                .map(Dom.Element::ownText)).containsExactly("March 2019");
     }
 
     @Test

@@ -215,33 +215,63 @@ class AddReportSheetPageTest {
                 .isEqualTo(back);
     }
 
+    /** A paper on the list, so the page is the list and not the s16 empty panel. */
+    private static com.elioo.baymax.web.domain.TimelineEntry aPaper() {
+        return new com.elioo.baymax.web.domain.TimelineEntry(UUID.randomUUID(), java.time.LocalDate.parse("2026-10-12"), false,
+                "prescription", null, "DONE", 0, 2, 0, 0, "k", Instant.parse("2026-10-12T08:00:00Z"), null, 0, null, null);
+    }
+
+    /** The links on a page that open the add-report sheet, each element read on its own. */
+    private static List<Dom.Element> addLinks(Dom dom) {
+        return dom.all.stream().filter(e -> e.tag().equals("a") && e.attrs().getOrDefault("href", "").startsWith(UploadUiHandler.SHEET)).toList();
+    }
+
+    /** All the text inside an element, its children's included. */
+    private static String text(Dom.Element e) {
+        StringBuilder b = new StringBuilder(e.ownText());
+        e.children().forEach(c -> b.append(' ').append(text(c)));
+        return b.toString().trim();
+    }
+
     /**
      * The timeline's inline form is gone: the owner gets a link to the sheet for that patient, which comes back there —
-     * "কাগজ পাঠান" over a list, and s16's "ছবি তুলুন" on the empty panel (C3).
+     * "কাগজ পাঠান" over a list, and s16's "ছবি তুলুন" on the empty panel (C3). The href and the words are read off the
+     * same element, so words on one link and the sheet on another cannot pass.
      */
     @Test
     void thePapersTabLinksTheOwnerToTheSheetAndPostsNoFormOfItsOwn() {
         kit.familyWith(kit.ma(1));
-        com.elioo.baymax.web.domain.TimelineEntry paper = new com.elioo.baymax.web.domain.TimelineEntry(UUID.randomUUID(),
-                java.time.LocalDate.parse("2026-10-12"), false, "prescription", null, "DONE", 0, 2, 0, 0, "k", Instant.parse("2026-10-12T08:00:00Z"),
-                null, 0, null, null);
         when(kit.timeline.timeline(eq(WebUiTestKit.FAMILY), eq(WebUiTestKit.MA_ID), any(), any()))
-                .thenReturn(Mono.just(new TimelinePage(List.of(paper), null)), Mono.just(new TimelinePage(List.of(), null)));
+                .thenReturn(Mono.just(new TimelinePage(List.of(aPaper()), null)), Mono.just(new TimelinePage(List.of(), null)));
         String back = URLEncoder.encode("/app/timeline?patient=" + WebUiTestKit.MA_ID, StandardCharsets.UTF_8);
         for (String words : List.of(kit.copy.t(Lang.BN, "timeline.add"), kit.copy.t(Lang.BN, "chat.empty.action"))) {
             String html = kit.page("/app/timeline", "bn");
-            assertThat(html).as(words).contains("href=\"/app/add?patient=" + WebUiTestKit.MA_ID + "&amp;back=" + back + "\"")
-                    .contains("<span>" + words + "</span></a>")
-                    .doesNotContain("enctype=\"multipart/form-data\"").doesNotContain("type=\"file\"");
+            List<Dom.Element> links = addLinks(Dom.parse(html));
+            assertThat(links).as(words + ": one link to the sheet").hasSize(1);
+            assertThat(links.get(0).attrs().get("href")).as(words).isEqualTo("/app/add?patient=" + WebUiTestKit.MA_ID + "&amp;back=" + back);
+            assertThat(text(links.get(0))).as("the sheet link's own words").isEqualTo(words);
+            assertThat(html).as(words).doesNotContain("enctype=\"multipart/form-data\"").doesNotContain("type=\"file\"");
         }
     }
 
-    /** The other direction: a shared patient's papers offer no way to add one. */
+    /**
+     * The other direction, over both pages the owner gets a link on: a shared patient's list of papers and their empty
+     * panel offer no way to add one — no link to the sheet anywhere, and not the words either.
+     */
     @Test
     void aSharedPatientsPapersOfferNoAddLink() {
         PatientSummary shared = kit.patient("খালা", false, 0);
         kit.familyWith(shared);
-        when(kit.timeline.timeline(eq(WebUiTestKit.FAMILY), eq(shared.patient().id()), any(), any())).thenReturn(Mono.just(new TimelinePage(List.of(), null)));
-        assertThat(kit.page("/app/timeline", "bn")).doesNotContain("/app/add").doesNotContain("কাগজ পাঠান");
+        when(kit.timeline.timeline(eq(WebUiTestKit.FAMILY), eq(shared.patient().id()), any(), any()))
+                .thenReturn(Mono.just(new TimelinePage(List.of(aPaper()), null)), Mono.just(new TimelinePage(List.of(), null)));
+        for (String state : List.of("a list of papers", "no papers yet")) {
+            String html = kit.page("/app/timeline", "bn");
+            Dom dom = Dom.parse(html);
+            assertThat(dom.all.stream().filter(e -> e.classes().contains("titem")).count()).as(state)
+                    .isEqualTo(state.equals("a list of papers") ? 1 : 0);
+            assertThat(addLinks(dom).stream().map(Dom.Element::describe)).as(state + ": a share member cannot add a paper").isEmpty();
+            assertThat(html).as(state).doesNotContain("/app/add").doesNotContain(kit.copy.t(Lang.BN, "timeline.add"))
+                    .doesNotContain(kit.copy.t(Lang.BN, "chat.empty.action"));
+        }
     }
 }

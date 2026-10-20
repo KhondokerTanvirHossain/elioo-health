@@ -547,6 +547,36 @@ class AppShellRoutesTest {
                 .contains(Tab.PAPERS.path + "?patient=" + ma.patient().id());
     }
 
+    /**
+     * A later page that comes back empty (a stale or hand-made "আরও দেখুন" link) is neither "no papers yet" — earlier
+     * pages hold papers — nor "none of this kind" under "সব": it says only that there are no more, and keeps the filters.
+     */
+    @Test
+    void anEmptyLaterPageIsNotTheEmptyPanelAndDoesNotBlameTheFilter() {
+        kit.familyWith(ma);
+        noPapers(ma);
+        Dom dom = Dom.parse(kit.page(Tab.PAPERS.path + "?patient=" + ma.patient().id() + "&cursor=c2FtcGxl", "bn"));
+        assertThat(dom.unclosed).isEmpty();
+        assertThat(dom.all.stream().filter(e -> e.classes().contains("empty")).map(Dom.Element::describe)).as("the s16 empty panel").isEmpty();
+        List<String> lines = dom.all.stream().map(Dom.Element::ownText).toList();
+        assertThat(lines).as("\"none of this kind\" under \"সব\"").doesNotContain(kit.copy.t(Lang.BN, "timeline.filter.none"));
+        assertThat(lines).as("the line under the filters").contains(kit.copy.t(Lang.BN, "timeline.end"))
+                .doesNotContain(kit.copy.t(Lang.BN, "timeline.empty.title", "আম্মা"));
+        only(dom, "nav", "filters");
+    }
+
+    /** …and a filter that matches nothing still says so, not "no more" (the two lines are not interchangeable). */
+    @Test
+    void aFilterThatMatchesNothingSaysSoEvenOnALaterPage() {
+        kit.familyWith(ma);
+        noPapers(ma);
+        for (String q : List.of("&type=lab", "&type=lab&cursor=c2FtcGxl")) {
+            List<String> lines = Dom.parse(kit.page(Tab.PAPERS.path + "?patient=" + ma.patient().id() + q, "bn")).all.stream()
+                    .map(Dom.Element::ownText).toList();
+            assertThat(lines).as(q).contains(kit.copy.t(Lang.BN, "timeline.filter.none")).doesNotContain(kit.copy.t(Lang.BN, "timeline.end"));
+        }
+    }
+
     @Test
     void initialsKeepTheirVowelSignsAndConjuncts() {
         assertThat(AppShell.initial("আম্মা")).isEqualTo("আ");

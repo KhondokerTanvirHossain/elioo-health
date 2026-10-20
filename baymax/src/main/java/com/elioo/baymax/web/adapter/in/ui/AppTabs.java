@@ -138,7 +138,8 @@ public class AppTabs implements WebPages {
      * The কাগজপত্র tab (s16, spec §4.15): the title and whose papers these are, the owner's tonal "কাগজ পাঠান" to the
      * add-report sheet, the filter chips, then {@link TimelineView}'s month headers and rows, newest document date first
      * (C2's read model), and "আরও দেখুন" keeping the filter and the cursor. No paper at all is the s16 empty panel (its
-     * camera link for the owner only); a filter that matches nothing keeps the filters, so "সব" brings everything back.
+     * camera link for the owner only); a filter that matches nothing keeps the filters, so "সব" brings everything back,
+     * and an empty later page under "সব" says only that there are no more.
      * Reloads itself while a paper is still being read; no script on this page.
      */
     Mono<Body> papersBody(ServerRequest request, Lang lang, FamilyOverview me, ActivePatient active) {
@@ -170,7 +171,10 @@ public class AppTabs implements WebPages {
                 }
                 b.append("</nav>");
                 if (page.entries().isEmpty()) {
-                    b.append("<p class=\"psub\">").append(copy.t(lang, "timeline.filter.none")).append("</p>");
+                    // a filter that matches nothing says so; an empty later page under "সব" (a stale "আরও দেখুন") says
+                    // only that there are no more — never "none of this kind", and never "no papers yet"
+                    String line = filter == TimelineFilter.ALL ? "timeline.end" : "timeline.filter.none";
+                    b.append("<p class=\"psub\">").append(copy.t(lang, line)).append("</p>");
                 }
                 b.append(new TimelineView(copy).items(lang, page.entries(), name));
             }

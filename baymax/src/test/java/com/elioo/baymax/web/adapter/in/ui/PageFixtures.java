@@ -107,11 +107,12 @@ final class PageFixtures {
         variant("GET /app/family", Fixture.get("/app/family", true, Stubs::familyOfTwo).named("two"));
         // C1: the patient switcher sheet over the tab it was opened from, with no script
         variant("GET /app/timeline", Fixture.get("/app/timeline?patient=" + ma + "&sheet=patient", true, Stubs::maTimelineOfTwo).named("switcher"));
-        // C3 (s16): every kind of row across two months with a next page, the empty panel, and a filter that matches nothing,
-        // so every derived page check (touch targets, contrast, inline code, digits, upload entry) reads each of them
+        // C3 (s16): every kind of row across two months with a next page, the empty panel, a filter that matches nothing and
+        // an empty later page, so every derived page check (touch targets, contrast, inline code, digits, upload entry) reads each
         variant("GET /app/timeline", Fixture.get("/app/timeline?patient=" + ma, true, Stubs::maEveryRow).named("rows"));
         variant("GET /app/timeline", Fixture.get("/app/timeline?patient=" + ma, true, Stubs::maNoPapers).named("empty"));
         variant("GET /app/timeline", Fixture.get("/app/timeline?patient=" + ma + "&type=rx", true, Stubs::maNoPapers).named("filtered-empty"));
+        variant("GET /app/timeline", Fixture.get("/app/timeline?patient=" + ma + "&cursor=v1.next-page", true, Stubs::maNoPapers).named("later-empty"));
         variant("GET /app/home", Fixture.get("/app/home?patient=" + ma + "&sheet=patient", true, Stubs::familyOfTwo).named("switcher"));
         // A6: the patient in view as the owner sees them (and after a save), and a shared patient (no save, no switch)
         variant("GET /app/family", Fixture.get("/app/family?patient=" + ma, true, Stubs::familyOfTwo).named("chosen"));
