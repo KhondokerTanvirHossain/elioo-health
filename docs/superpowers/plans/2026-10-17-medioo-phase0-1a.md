@@ -66,9 +66,15 @@ direction **fully automated first**: production stays `BAYMAX_GATE_MODE=off`.
   | After PR | `WaIntakeService(...)` |
   |---|---|
   | main, 1–6 | `records, documents, explainer, intake, graph, copy, properties` |
-  | 7 (B1b) | `…, properties, messages, clock, freeTier` |
-  | 8 (C1) | `…, freeTier, inbound, hasher` |
-  | 12 (1a-ii) | `…, hasher, auth` |
+  | 12 (1a-ii) | `…, properties, auth` |
+  | 7 (B1b) | `…, auth, clock, freeTier, attention, urgency` |
+  | 8 (C1) | `…, urgency, inbound, hasher` |
+
+  *2026-10-21:* PRs 10, 11 and 12 merged ahead of PR 7, so `auth` comes right after `properties` and PR 7 appends after
+  it. PR 7 reads the standing urgency from F1's stored level (`AttentionUseCase` for `attention`, the চ্যাট stack's read;
+  `DocumentUrgencyUseCase` for `urgency`, the latest paper's `currentOrAssess`), never from `OutboundMessagePort`, so
+  `messages` is not a field. Full order after PR 7:
+  `records, documents, explainer, intake, graph, copy, properties, auth, clock, freeTier, attention, urgency`.
 
 - **Copy keys (one set; tests read the bundle, never retype a string):** `safety.red_flag_line` (the approved
   sentence inside `explanation.now`), `wa.detail.pending`, `wa.detail.unavailable`, `wa.detail.already_sent` (PR 5);

@@ -202,11 +202,17 @@ L() { docker logs medscribe-ai --since 15m 2>&1 | sed 's/\x1b\[[0-9;]*m//g'; }
    `GET /v25.0/{media-id}` and the media download, the calls most likely to differ between versions.
    `L | grep -E 'wa media resolved id=|wa media downloaded id=|wa intake accepted'` shows **all three** lines,
    `L | grep -c 'wa intake failed'` is 0, and the ack "ছবিটা পেয়েছি…" and then the explanation arrive on the phone.
+   **First rule out the free cap:** since PR 7 the cap is checked before the ack, so a family at it gets only "এই
+   মাসে বিনামূল্যের…", nothing is downloaded, and no media line appears. If `L | grep 'wa intake outcome=FREE_TIER'`
+   prints a line, step 3 is **inconclusive, not failed**: rerun with a family under the cap (`BAYMAX_FREE_MAX_DOCS_PER_MONTH`, 3 papers
+   per UTC month by default).
 4. Leak check, a number matched as a whole field so a media id or the phone-number id containing `8801…` cannot
    raise a false alarm: `L | grep -cE 'wamid\.|(^|[^0-9])\+?8801[0-9]{9}([^0-9]|$)'` is 0.
 
 **Outbound rollback**, if step 2 or 3 fails: no greeting, `wa media resolved` missing, a `wa intake failed` line,
-or a Graph 4xx/5xx in the log. Back up the env, add `BAYMAX_WA_GRAPH_VERSION=v21.0` on its own line, redeploy the
+or a Graph 4xx/5xx in the log. A `wa intake outcome=FREE_TIER` line (the phone shows "এই মাসে বিনামূল্যের…" alone)
+is not one of these: the photo never reached Graph, so it says nothing about the version; rerun step 3 with a family
+under the cap before rolling back. Back up the env, add `BAYMAX_WA_GRAPH_VERSION=v21.0` on its own line, redeploy the
 same tag, rerun (a) expecting `graphVersion=v21.0`, and record it in the build report. Remove the line once the cause
 is fixed; it must be gone before 2027-01-21.
 
