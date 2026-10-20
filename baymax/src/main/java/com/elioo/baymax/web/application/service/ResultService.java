@@ -68,18 +68,22 @@ public class ResultService implements ResultUseCase {
 
     @Override
     public Mono<ResultView> result(UUID familyId, UUID documentId) {
-        // the stored level is read (or, for an unassessed DONE document, assessed once) only after visibility is decided
-        return visibleDocument(familyId, documentId).flatMap(d -> Mono.zip(
+        // the stored level is read (or, for an unassessed DONE document, assessed once) only after visibility is decided,
+        // and the values only after the level: the level's read may assess the paper there and then (the page opened at
+        // DONE while the chain is still composing), and its verdicts commit with the level in one transaction. A view read
+        // alongside it could carry no verdict under a value_critical level, and the NOW block then drew the whole page
+        // as its proof above the page drawn below (WebOnlyJourneyAcceptanceTest's held journey).
+        return visibleDocument(familyId, documentId).flatMap(d -> stored(d).flatMap(level -> Mono.zip(
                         records.visiblePatient(familyId, d.patientId())
                                 .switchIfEmpty(Mono.error(BaymaxException.notFound("patient_not_found", "no patient with id " + d.patientId()))),
                         viewer(familyId),
                         audit.record(AuditEvent.family(AuditEvent.Kind.DOCUMENT_VIEW, familyId, d.patientId(), documentId, clock.instant()))
                                 .then(intake.view(documentId)),
-                        stored(d), gate(d), retakeOrdinal(d))
+                        gate(d), retakeOrdinal(d))
                 .map(t -> new ResultView(t.getT3(), t.getT1().patient(), t.getT1().owner(), t.getT2(),
-                        t.getT4().map(StoredUrgency::level).orElse(null), t.getT4().map(StoredUrgency::reasons).orElse(List.of()),
-                        t.getT5().state(), t.getT5().wording(), t.getT6(), properties.getOutbound().getReviewTypicalHours(),
-                        d.createdAt(), clock.instant())));
+                        level.map(StoredUrgency::level).orElse(null), level.map(StoredUrgency::reasons).orElse(List.of()),
+                        t.getT4().state(), t.getT4().wording(), t.getT5(), properties.getOutbound().getReviewTypicalHours(),
+                        d.createdAt(), clock.instant()))));
     }
 
     /** How many earlier readings the value sheet lists (s13 draws two; ten is a page, not a trend). */

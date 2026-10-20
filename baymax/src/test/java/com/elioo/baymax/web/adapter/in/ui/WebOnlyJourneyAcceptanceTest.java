@@ -6,11 +6,20 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.extraction.ExtractionPipelineAcceptanceTest;
+import com.elioo.baymax.extraction.application.port.in.DocumentIntakeUseCase;
+import com.elioo.baymax.extraction.application.service.DocumentIntakeService;
+import com.elioo.baymax.extraction.domain.CreatedDocument;
+import com.elioo.baymax.extraction.domain.Document;
+import com.elioo.baymax.extraction.domain.DocumentView;
+import com.elioo.baymax.extraction.domain.Upload;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.outbound.application.service.BanglaDate;
+import com.elioo.baymax.outbound.application.port.in.DocumentUrgencyUseCase;
 import com.elioo.baymax.outbound.application.service.Copy;
+import com.elioo.baymax.outbound.application.service.StoredUrgencyService;
+import com.elioo.baymax.outbound.domain.StoredUrgency;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.storage.application.port.out.StoragePort;
 import com.elioo.baymax.storage.domain.StorageKeys;
@@ -29,6 +38,7 @@ import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.web.reactive.WebFluxAutoConfiguration;
 import org.springframework.boot.test.context.runner.ReactiveWebApplicationContextRunner;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.server.PathContainer;
@@ -41,7 +51,9 @@ import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 
 import javax.imageio.ImageIO;
 import java.awt.Color;
@@ -114,6 +126,8 @@ class WebOnlyJourneyAcceptanceTest {
     private static final String NUMBER = "+8801700000731";
     /** The WhatsApp-on journey's family: its own number, so the two tests share no row and run in either order. */
     private static final String WA_NUMBER = "+8801700000732";
+    /** The held journey's family (aResultOpenedWhileThePaperIsStillBeingAssessedIsTheFinishedPage): its own number too. */
+    private static final String HELD_NUMBER = "+8801700000733";
     private static final String DELIVERY_LOGGER = "com.elioo.baymax.web.adapter.out.delivery";
     /** How long the WhatsApp port must stay silent before J1.2 counts its calls: longer than any retry or follow-up. */
     private static final Duration SETTLE = Duration.ofSeconds(3);
@@ -467,6 +481,164 @@ class WebOnlyJourneyAcceptanceTest {
         });
         assertThat(Mockito.mockingDetails(wa).getInvocations()).as("WhatsApp calls by the time the context closed")
                 .hasSize(counted.get());
+    }
+
+    /**
+     * The race behind the journey's flake, reproduced on Postgres and held open instead of hoped for. Main CI failed
+     * twice at "the page image on the result page" hasSize(1) (run 39245684895 attempt 1, B5 #81; run 39379212824
+     * attempt 1, #84), then passed on a rerun: the journey opens the result the moment the status says DONE, and DONE is written
+     * by extraction BEFORE the chain stores the urgency and the verdicts (DocumentProcessingChain), so the page can
+     * arrive while the chain is still composing. The page then assesses the paper itself (currentOrAssess), and its
+     * verdicts commit together with the level; a view read alongside that assessment held no verdict while the level
+     * said value_critical, so the NOW block drew the whole page as its proof above the page already drawn below.
+     *
+     * <p>Here the chain's assessment is held until the page has been drawn ({@link Hold#pageDrawn}), so the page always
+     * arrives mid-composition, and the page's own assessment yields until a DONE view has been read (at most
+     * {@link Hold#YIELD}), which is the interleaving that lost. DONE is the readiness signal the reading page itself
+     * opens the result on, so the page, not this wait, is what must be right at DONE.
+     */
+    @Test
+    void aResultOpenedWhileThePaperIsStillBeingAssessedIsTheFinishedPage() {
+        Hold hold = new Hold();
+        runner().withBean(Hold.class, () -> hold)
+                .withBean(HeldUrgency.class)
+                .withBean(SignallingIntake.class)
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    PatientProfile ma = familyWithMa(context, HELD_NUMBER);
+                    WebTestClient web = client(context);
+                    UiCopy copy = context.getBean(UiCopy.class);
+                    String login = cookie(web.post().uri("/app/login").contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                            .body(BodyInserters.fromFormData("whatsapp_number", "0" + HELD_NUMBER.substring(4)).with("confirmed", "1"))
+                            .exchange().expectStatus().isSeeOther(), "baymax_login");
+                    String code = codes.list.stream().map(ILoggingEvent::getFormattedMessage).filter(m -> m.contains("otp fallback"))
+                            .map(m -> m.replaceAll(".*code=([0-9]{6}).*", "$1")).findFirst()
+                            .orElseThrow(() -> new AssertionError("no code in the log fallback"));
+                    String session = enterCode(web, login, code);
+                    try {
+                        // the post, then the status poll alone: the page is opened once, at DONE, as the reading page opens it
+                        String sheet = get(web, session, "/app/add?patient=" + ma.id());
+                        Matcher key = Pattern.compile("name=\"upload_key\" value=\"([0-9a-f-]{36})\"").matcher(sheet);
+                        assertThat(key.find()).as("the sheet carries its press's key").isTrue();
+                        MultipartBodyBuilder body = new MultipartBodyBuilder();
+                        body.part("patient", ma.id().toString());
+                        body.part("upload_key", key.group(1));
+                        body.part("file", paintedPage()).filename("page-1.jpg").contentType(MediaType.IMAGE_JPEG);
+                        String documentPath = web.post().uri("/app/add").cookie("baymax_session", session)
+                                .body(BodyInserters.fromMultipartData(body.build())).exchange()
+                                .expectStatus().isSeeOther().returnResult(Void.class).getResponseHeaders().getFirst(HttpHeaders.LOCATION);
+                        assertThat(waitUntilFinished(web, session, documentPath)).as("the paper was read").isEqualTo("DONE");
+                        UUID documentId = idOf(documentPath);
+
+                        String result = get(web, session, documentPath);
+
+                        // the page was drawn mid-composition: the chain's assessment still waiting, nothing explained yet
+                        assertThat(hold.chainWaiting.get()).as("the chain's assessment, held while the page was drawn").isEqualTo(1);
+                        assertThat(scalar("select count(*) from baymax.outbound_message where document_id = '" + documentId + "'"))
+                                .as("no explanation composed when the page was drawn").isEqualTo("0");
+                        assertThat(scalar("select urgency from baymax.document where id = '" + documentId + "'"))
+                                .as("the level the page assessed itself").isEqualTo("now");
+
+                        assertThat(ResultFixtures.section(result, "urgency")).contains(copy.urgency(Lang.BN, Urgency.NOW, false));
+                        // the path, not only the count: the NOW block's proof is the Potassium row, never the stand-in pages
+                        assertThat(ResultFixtures.section(result, "why-value-critical")).as("the NOW block's proof")
+                                .contains("Potassium").doesNotContain("/page/");
+                        assertThat(srcs(result, "/page/[0-9]+")).as("the page image on the result page").hasSize(1);
+                        assertThat(srcs(result, "/image\\?key=[^\"]+")).as("the Potassium reading's crop on the result page").hasSize(1);
+                    } finally {
+                        hold.pageDrawn.tryEmitEmpty();
+                    }
+                    // the chain resumes and finishes: its own assessment, then the explanation (a page left open is not the end)
+                    String explained = "select count(*) from baymax.outbound_message where kind = 'explanation' and document_id in "
+                            + "(select id from baymax.document where patient_id = '" + ma.id() + "')";
+                    for (int i = 0; i < 60 && "0".equals(scalar(explained)); i++) {
+                        Thread.sleep(500);
+                    }
+                    assertThat(scalar(explained)).as("the chain finished once released").isEqualTo("1");
+                });
+    }
+
+    /** The held journey's two signals. */
+    static final class Hold {
+        /** How long the page's own assessment yields for a DONE view: long enough that a view read alongside it wins. */
+        static final Duration YIELD = Duration.ofSeconds(2);
+        final Sinks.Empty<Void> pageDrawn = Sinks.empty();
+        final Sinks.Empty<Void> doneViewRead = Sinks.empty();
+        final AtomicInteger chainWaiting = new AtomicInteger();
+    }
+
+    /**
+     * The real writer, with the chain's call held and the page's call yielding. The chain is the only caller of
+     * {@code assessAndStore} through the use case here (the sweep and currentOrAssess call it inside the service).
+     */
+    @Primary
+    static final class HeldUrgency implements DocumentUrgencyUseCase {
+        private final StoredUrgencyService real;
+        private final Hold hold;
+
+        HeldUrgency(StoredUrgencyService real, Hold hold) {
+            this.real = real;
+            this.hold = hold;
+        }
+
+        @Override
+        public Mono<StoredUrgency> assessAndStore(UUID documentId) {
+            return Mono.defer(() -> {
+                hold.chainWaiting.incrementAndGet();
+                return hold.pageDrawn.asMono().timeout(Duration.ofSeconds(60), Mono.empty());
+            }).doFinally(s -> hold.chainWaiting.decrementAndGet()).then(Mono.defer(() -> real.assessAndStore(documentId)));
+        }
+
+        @Override
+        public Mono<StoredUrgency> current(UUID documentId) {
+            return real.current(documentId);
+        }
+
+        @Override
+        public Mono<StoredUrgency> currentOrAssess(UUID documentId) {
+            return hold.doneViewRead.asMono().timeout(Hold.YIELD, Mono.empty()).then(Mono.defer(() -> real.currentOrAssess(documentId)));
+        }
+
+        @Override
+        public Mono<Long> sweep() {
+            return real.sweep();
+        }
+    }
+
+    /** The real intake; a view of a DONE paper, once read, lets the page's assessment go on. */
+    @Primary
+    static final class SignallingIntake implements DocumentIntakeUseCase {
+        private final DocumentIntakeService real;
+        private final Hold hold;
+
+        SignallingIntake(DocumentIntakeService real, Hold hold) {
+            this.real = real;
+            this.hold = hold;
+        }
+
+        @Override
+        public Mono<Document> accept(UUID patientId, List<Upload> uploads) {
+            return real.accept(patientId, uploads);
+        }
+
+        @Override
+        public Mono<CreatedDocument> accept(UUID patientId, List<Upload> uploads, String uploadKey) {
+            return real.accept(patientId, uploads, uploadKey);
+        }
+
+        @Override
+        public Flux<CreatedDocument> acceptEach(UUID patientId, List<Upload> uploads, String uploadKey) {
+            return real.acceptEach(patientId, uploads, uploadKey);
+        }
+
+        @Override
+        public Mono<DocumentView> view(UUID documentId) {
+            return real.view(documentId).doOnNext(v -> {
+                if (Document.Status.DONE.name().equals(v.status())) {
+                    hold.doneViewRead.tryEmitEmpty();
+                }
+            });
+        }
     }
 
     // ---- the steps, shared by both journeys -------------------------------------------------------------------
