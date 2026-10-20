@@ -20,9 +20,17 @@ class BaymaxWebUiRouterTest {
     /**
      * A Bangladeshi mobile number however it is written: +880 / 880 / 0, ASCII or Bangla digits, with or without a
      * space or hyphen between groups. Java's \\d does not match Bangla digits, and the page is in Bangla.
+     * <p>
+     * Matched as a field, not as a substring: the number must stand on its own, not inside a longer token. It may not
+     * touch a letter, a digit or an underscore, nor be hyphen-joined to one, on either side — so the eleven
+     * number-shaped digits a random UUID holds about once in 1,600 draws (the add sheet's {@code upload_key},
+     * {@code 19492940-0135-4005-952b-…}) are part of the id and never a number. Bangla letters may touch it
+     * ({@code নম্বর০১৭…}, {@code …-এ}): no id is written in them. PhoneNumberGuardTest holds both directions.
      */
     static final java.util.regex.Pattern BD_MOBILE = java.util.regex.Pattern.compile(
-            "(?:\\+?[8৮][8৮][0০][\\s-]?|[0০])[1১][3-9৩-৯](?:[\\s-]?[0-9০-৯]){8}");
+            "(?<![0-9A-Za-z০-৯_])(?<![0-9A-Za-z০-৯_][-])"
+                    + "(?:\\+?[8৮][8৮][0০][\\s-]?|[0০])[1১][3-9৩-৯](?:[\\s-]?[0-9০-৯]){8}"
+                    + "(?![0-9A-Za-z০-৯_])(?![-][0-9A-Za-z০-৯_])");
 
     private final WebAuthUseCase auth = mock(WebAuthUseCase.class);
     private final WebTestClient client;
