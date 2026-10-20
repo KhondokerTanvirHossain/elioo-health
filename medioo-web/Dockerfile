@@ -1,5 +1,6 @@
 # medioo-web: the Next.js standalone server (DR-40). Built from this directory as the context.
-# Not deployed until W1b; deploy.sh will run it on n8n_edge with no published port and no --env-file.
+# Pushed by the deploy job as ghcr.io/khondokertanvirhossain/elioo-health/medioo-web:<sha> (W1b); deploy.sh's deploy_web
+# runs it on n8n_edge with no published port and no --env-file, after Java is healthy (scripts/test_deploy_sh.sh).
 #
 # Reproducible on purpose: a rebuild of the same sha must give the runtime that was measured and tested.
 # - The base is pinned by digest (the multi-arch index of node:22-alpine as of 2026-10-21, Node 22.23.3, the version
@@ -22,6 +23,8 @@ COPY . .
 RUN corepack enable && pnpm build
 
 FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS run
+# links the GHCR package to this repository (and its Actions token) on the first push
+LABEL org.opencontainers.image.source="https://github.com/KhondokerTanvirHossain/elioo-health"
 WORKDIR /app
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \

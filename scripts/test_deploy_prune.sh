@@ -40,62 +40,11 @@ T5=e8f0a6d   # 2026-10-14 10:00:00
 T6=0b7c3d9   # 2026-10-15 10:00:00  newest
 NEW=9e1d2c4  # the tag a deploy pulls; not on the box yet
 
-# ---- the fakes ------------------------------------------------------------------------------------------------
+# ---- the fakes (shared with scripts/test_deploy_sh.sh) ---------------------------------------------------------
 BIN="$WORK/bin"
-mkdir -p "$BIN"
-cat > "$BIN/docker" <<'FAKE'
-#!/usr/bin/env bash
-# Records every call, one per line, then answers from fixture files in $FAKE_DIR:
-#   images.txt   "<repository> <tag> <id> <created...>", any order, every repository
-#   running.txt  "<container id> <image ref it was started with> <image id>", one per running container
-# FAKE_RMI_FAIL=<ref>    that rmi is refused, as when a stopped container still holds the image
-# FAKE_INSPECT_FAIL=1    `docker inspect` prints nothing and fails
-# FAKE_NETWORK=1         the edge network exists
-# `docker run` also writes its arguments, one per line, to run.args, so argument boundaries can be checked.
-printf 'docker %s\n' "$*" >> "$FAKE_DIR/calls.log"
-args="$*"
-case "$1" in
-  images)
-    cat "$FAKE_DIR/images.txt" ;;
-  ps)
-    if [[ "$args" == *'{{.Names}}'* ]]; then echo medscribe-ai
-    elif [[ "$args" == *'{{.Image}}'* ]]; then awk '{print $2}' "$FAKE_DIR/running.txt"
-    elif [[ " $args " == *' -q '* ]]; then awk '{print $1}' "$FAKE_DIR/running.txt"
-    fi ;;
-  inspect)
-    [ -n "${FAKE_INSPECT_FAIL:-}" ] && { echo "Error: inspect failed" >&2; exit 1; }
-    shift
-    for a in "$@"; do
-      case "$a" in --format|-f) continue ;; '{{.Image}}') continue ;; esac
-      awk -v c="$a" '$1==c {print $3}' "$FAKE_DIR/running.txt"
-    done ;;
-  rmi)
-    if [ -n "${FAKE_RMI_FAIL:-}" ] && [ "$2" = "$FAKE_RMI_FAIL" ]; then
-      echo "Error response from daemon: conflict: image is being used by stopped container" >&2; exit 1
-    fi ;;
-  network)
-    [ -n "${FAKE_NETWORK:-}" ] || exit 1 ;;
-  run)
-    shift; printf '%s\n' "$@" > "$FAKE_DIR/run.args" ;;
-  *) ;;         # pull, rm, logs: recorded, succeed
-esac
-exit 0
-FAKE
-cat > "$BIN/curl" <<'FAKE'
-#!/usr/bin/env bash
-# answers like Spring's health endpoint with show-details=always: the details must never reach the log
-printf 'curl %s\n' "$*" >> "$FAKE_DIR/calls.log"
-echo '{"status":"UP","components":{"diskSpace":{"status":"UP","details":{"total":20959212,"free":5452595,"path":"/app/."}},"r2dbc":{"status":"UP","details":{"database":"PostgreSQL"}}}}'
-FAKE
-cat > "$BIN/df" <<'FAKE'
-#!/usr/bin/env bash
-# FAKE_DF_KB: the "Available" KB on / (default 10 GB); "none" prints nothing and fails
-printf 'df %s\n' "$*" >> "$FAKE_DIR/calls.log"
-[ "${FAKE_DF_KB:-}" = none ] && exit 1
-echo "Filesystem     1024-blocks     Used Available Capacity Mounted on"
-echo "/dev/nvme0n1p1    20959212 10000000 ${FAKE_DF_KB:-10485760}      52% /"
-FAKE
-chmod +x "$BIN/docker" "$BIN/curl" "$BIN/df"
+# shellcheck source=deploy_test_fakes.sh
+source "$(cd "$(dirname "$0")" && pwd)/deploy_test_fakes.sh"
+write_deploy_fakes "$BIN"
 
 # Listed out of order so prune_repo has to sort itself; two bddrug tags and a look-alike repository, all OLDER
 # than every medscribe-ai tag, so a filter that leaks would pick them first; and a dangling <none> of our own
@@ -151,8 +100,8 @@ expect_removed() {   # <expected, from refs>
 
 no_pull() { ! grep -q '^docker pull ' "$FAKE_DIR/calls.log"; }
 
-# arg_pair <a> <b>: the recorded `docker run` has argument <a> immediately followed by argument <b>
-arg_pair() { awk -v a="$1" -v b="$2" 'prev == a && $0 == b {f = 1} {prev = $0} END {exit !f}' "$FAKE_DIR/run.args"; }
+# arg_pair <a> <b>: the recorded Java `docker run` has argument <a> immediately followed by argument <b>
+arg_pair() { awk -v a="$1" -v b="$2" 'prev == a && $0 == b {f = 1} {prev = $0} END {exit !f}' "$FAKE_DIR/run.medscribe-ai.args"; }
 
 printf 'SOME_SETTING=x\n' > "$WORK/env"
 
@@ -223,16 +172,17 @@ elif [ -n "$PULL_LINE" ] && [ "$LAST_RMI" -gt "$PULL_LINE" ]; then
 fi
 expect_removed "$(refs $T1 $T2 $T3)"
 grep -q '^docker image prune' "$FAKE_DIR/calls.log" && fail "$CASE: deploy.sh still calls the global docker image prune"
-if [ -f "$FAKE_DIR/run.args" ]; then
-  grep -qx -- '--network' "$FAKE_DIR/run.args" && fail "$CASE: --network passed with no edge network"
-  grep -qx -- '-v' "$FAKE_DIR/run.args" && fail "$CASE: a volume mounted with no GCP file"
-  grep -qx '' "$FAKE_DIR/run.args" && fail "$CASE: docker run got an empty argument: $(tr '\n' '|' < "$FAKE_DIR/run.args")"
-  [ "$(tail -1 "$FAKE_DIR/run.args")" = "$REPO:$NEW" ] || fail "$CASE: the image is not docker run's last argument"
+if [ -f "$FAKE_DIR/run.medscribe-ai.args" ]; then
+  grep -qx -- '--network' "$FAKE_DIR/run.medscribe-ai.args" && fail "$CASE: --network passed with no edge network"
+  grep -qx -- '-v' "$FAKE_DIR/run.medscribe-ai.args" && fail "$CASE: a volume mounted with no GCP file"
+  grep -qx '' "$FAKE_DIR/run.medscribe-ai.args" && fail "$CASE: docker run got an empty argument: $(tr '\n' '|' < "$FAKE_DIR/run.medscribe-ai.args")"
+  [ "$(tail -1 "$FAKE_DIR/run.medscribe-ai.args")" = "$REPO:$NEW" ] || fail "$CASE: the image is not docker run's last argument"
 else
   fail "$CASE: deploy.sh never ran a container"
 fi
 # the health body (disk, path, database details) must not reach the CI log, which is public (DR-38)
-grep -q 'diskSpace\|PostgreSQL\|/app/' "$FAKE_DIR/out.log" && fail "$CASE: the health body was printed: $(out)"
+# (the body's fields, not a bare "/app/": deploy.sh legitimately logs medioo-web's /app/healthz)
+grep -qF -e 'diskSpace' -e 'PostgreSQL' -e '"path":"/app/' "$FAKE_DIR/out.log" && fail "$CASE: the health body was printed: $(out)"
 grep -q 'Healthy after .*"status":"UP"' "$FAKE_DIR/out.log" || fail "$CASE: no healthy status logged: $(out)"
 
 # 10. the run line on the box's real path: edge network present and a GCP credentials file to mount
@@ -241,11 +191,11 @@ new_case deploy-args "c1 $REPO:$T6 sha256:0006
 : > "$WORK/gcp.json"
 printf 'SOME_SETTING=x\nGCP_CREDENTIALS_HOST_PATH=%s\n' "$WORK/gcp.json" > "$WORK/env-gcp"
 FAKE_NETWORK=1 run_deploy "$NEW" "$WORK/env-gcp" || fail "$CASE: deploy.sh failed: $(tail -5 "$FAKE_DIR/out.log" | tr '\n' '|')"
-if [ -f "$FAKE_DIR/run.args" ]; then
-  arg_pair --network n8n_edge || fail "$CASE: no '--network n8n_edge' in docker run: $(tr '\n' '|' < "$FAKE_DIR/run.args")"
+if [ -f "$FAKE_DIR/run.medscribe-ai.args" ]; then
+  arg_pair --network n8n_edge || fail "$CASE: no '--network n8n_edge' in docker run: $(tr '\n' '|' < "$FAKE_DIR/run.medscribe-ai.args")"
   arg_pair -v "$WORK/gcp.json:/secrets/gcp-credentials.json:ro" \
-    || fail "$CASE: GCP credentials not mounted read-only: $(tr '\n' '|' < "$FAKE_DIR/run.args")"
-  [ "$(tail -1 "$FAKE_DIR/run.args")" = "$REPO:$NEW" ] || fail "$CASE: the image is not docker run's last argument"
+    || fail "$CASE: GCP credentials not mounted read-only: $(tr '\n' '|' < "$FAKE_DIR/run.medscribe-ai.args")"
+  [ "$(tail -1 "$FAKE_DIR/run.medscribe-ai.args")" = "$REPO:$NEW" ] || fail "$CASE: the image is not docker run's last argument"
 else
   fail "$CASE: deploy.sh never ran a container"
 fi

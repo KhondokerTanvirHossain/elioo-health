@@ -8,6 +8,7 @@ on:
 
 env:
   IMAGE: ghcr.io/khondokertanvirhossain/elioo-health/medscribe-ai
+  WEB_IMAGE: ghcr.io/khondokertanvirhossain/elioo-health/medioo-web
 
 jobs:
   build:
@@ -38,14 +39,18 @@ jobs:
       # it fails in seconds rather than after 30 minutes of tests.
       - name: Refuse undeclared test fixtures
         run: scripts/check-test-fixtures.sh
-      # Two scripts, seconds, no network. test_deploy_is_tip.sh: the deploy job's tip check (below), tested both
+      # Three scripts, seconds, no network. test_deploy_is_tip.sh: the deploy job's tip check (below), tested both
       # ways against a throwaway repository. test_deploy_prune.sh: deploy.sh against a fake docker/curl/df — the
       # prune (only our repository, newest 3 by time, never the tag being deployed or a running image, before
-      # the pull), the free-space floor, the function-only mode and the `docker run` arguments.
-      - name: Deploy script tests (tip check, prune)
+      # the pull), the free-space floor, the function-only mode and the `docker run` arguments. test_deploy_sh.sh:
+      # the two-container deploy (DR-40 A2) — Java swapped and healthy before medioo-web is touched, a sha with no
+      # web image deploys Java only (unless WEB_IMAGE_REQUIRED=1), an unhealthy web exits 1 and leaves Java alone,
+      # no published port and no --env-file for Node, both repositories pruned. Fakes: scripts/deploy_test_fakes.sh.
+      - name: Deploy script tests (tip check, prune, two containers)
         run: |
           scripts/test_deploy_is_tip.sh
           bash scripts/test_deploy_prune.sh
+          bash scripts/test_deploy_sh.sh
       - uses: gradle/actions/setup-gradle@v4
       # Testcontainers pulls its images at test time, and a registry problem then fails the BUILD rather than
       # the pull: four acceptance tests — every one that needs MinIO — died with ContainerFetchException ->
@@ -98,7 +103,8 @@ jobs:
           cache-dependency-path: medioo-web/pnpm-lock.yaml
       - name: Upload script tests
         run: node --test baymax/src/test/js/*.test.mjs
-      # medioo-web (DR-40, plan W1a): built and tested here, not deployed — the deploy job does not build its image yet (W1b).
+      # medioo-web (DR-40, plan W1a): built and tested here; the deploy job builds its image and runs it beside Java (W1b),
+      # with no traffic until Caddy routes a path to it (W1c).
       # DR-40 A3, enforced here and in Java: no server action, no mutating route handler, Java fetched with GET/HEAD
       # only. The check's own cases run first (both directions, and a scan of zero files fails).
       - name: medioo-web server-mutation check
@@ -196,6 +202,21 @@ jobs:
             ${{ env.IMAGE }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      # medioo-web (DR-40 A1): same sha as the Java image, built here so deploy.sh can require it (WEB_IMAGE_REQUIRED=1
+      # below). Built before anything reaches the box: a web build failure stops the job with production untouched.
+      # Its own cache scope, so the Node layers never evict the Gradle ones.
+      - name: Build and push medioo-web image
+        if: steps.tip.outputs.current == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: medioo-web
+          file: medioo-web/Dockerfile
+          push: true
+          tags: |
+            ${{ env.WEB_IMAGE }}:${{ github.sha }}
+            ${{ env.WEB_IMAGE }}:latest
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
       - name: Copy deploy.sh to server
         if: steps.tip.outputs.current == 'true'
         uses: appleboy/scp-action@v1
@@ -220,7 +241,8 @@ jobs:
           script: |
             set -e
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-            IMAGE_TAG="$IMAGE_TAG" bash /home/ec2-user/deploy.sh
+            # this job has just pushed medioo-web:<sha>, so a failed pull of it is a fault, not a pre-W1b sha
+            WEB_IMAGE_REQUIRED=1 IMAGE_TAG="$IMAGE_TAG" bash /home/ec2-user/deploy.sh
             docker logout ghcr.io
       # Both must pass: the container on its host port, and the public https name through Caddy, which is the
       # path every user takes (a healthy :8086 behind a broken proxy or certificate is still an outage).
