@@ -11,7 +11,8 @@ public interface WaMessagingPort {
 
     /**
      * Fetches an inbound media object's bytes by its provider id. Fails with {@link MediaUnavailableException} only:
-     * the provider's own error names the signed download URL (DR-23), and every caller logs what it is given.
+     * the provider's own error names the signed download URL (DR-23), and every caller logs what it is given. Emits
+     * non-empty bytes or that error: never completes empty, and never waits unbounded (W13).
      */
     Mono<byte[]> downloadMedia(String mediaId);
 
