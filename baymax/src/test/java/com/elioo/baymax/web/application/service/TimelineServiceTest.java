@@ -114,7 +114,7 @@ class TimelineServiceTest {
     @Test
     void anotherFamilysPatientTimelineIs404() {
         when(records.visiblePatient(FAMILY_A, PATIENT_B)).thenReturn(Mono.empty());
-        StepVerifier.create(service.timeline(FAMILY_A, PATIENT_B, null))
+        StepVerifier.create(service.timeline(FAMILY_A, PATIENT_B, null, TimelineFilter.ALL))
                 .expectErrorMatches(e -> ((BaymaxException) e).status().value() == 404).verify();
         verify(timelineRead, never()).page(any(), any(), any(), anyInt());
     }
@@ -123,13 +123,13 @@ class TimelineServiceTest {
     @Test
     void aGarbageCursorIs400() {
         when(records.visiblePatient(FAMILY_B, PATIENT_B)).thenReturn(Mono.just(new PatientAccess(PATIENT, true)));
-        StepVerifier.create(Mono.defer(() -> service.timeline(FAMILY_B, PATIENT_B, "not-a-cursor")))
+        StepVerifier.create(Mono.defer(() -> service.timeline(FAMILY_B, PATIENT_B, "not-a-cursor", TimelineFilter.ALL)))
                 .expectErrorMatches(e -> e instanceof BaymaxException b && b.status().value() == 400 && "invalid_cursor".equals(b.reason()))
                 .verify();
         verify(timelineRead, never()).page(any(), any(), any(), anyInt());
     }
 
-    /** The cursor and the filter reach the read port as given; the three-argument form is the unfiltered list. */
+    /** The cursor and the filter reach the read port as given; no cursor is the first page. */
     @Test
     void theCursorAndTheFilterReachTheReadPort() {
         when(records.visiblePatient(FAMILY_B, PATIENT_B)).thenReturn(Mono.just(new PatientAccess(PATIENT, true)));
@@ -138,7 +138,7 @@ class TimelineServiceTest {
         StepVerifier.create(service.timeline(FAMILY_B, PATIENT_B, after.encode(), TimelineFilter.LAB))
                 .assertNext(page -> assertThat(page.nextCursor()).isNull()).verifyComplete();
         verify(timelineRead).page(PATIENT_B, after, TimelineFilter.LAB, 21);
-        StepVerifier.create(service.timeline(FAMILY_B, PATIENT_B, null))
+        StepVerifier.create(service.timeline(FAMILY_B, PATIENT_B, null, TimelineFilter.ALL))
                 .assertNext(page -> assertThat(page.entries()).isEmpty()).verifyComplete();
         verify(timelineRead).page(PATIENT_B, TimelineCursor.FIRST, TimelineFilter.ALL, 21);
     }
@@ -153,7 +153,7 @@ class TimelineServiceTest {
         when(timelineRead.page(eq(PATIENT_B), any(), any(), anyInt())).thenReturn(Flux.just(entry(DOC_B, NOW)));
         when(documents.findVisible(FAMILY_A, DOC_B)).thenReturn(Mono.just(DOCUMENT));
 
-        StepVerifier.create(service.timeline(FAMILY_A, PATIENT_B, null))
+        StepVerifier.create(service.timeline(FAMILY_A, PATIENT_B, null, TimelineFilter.ALL))
                 .assertNext(page -> {
                     assertThat(page.entries()).hasSize(1);
                     assertThat(page.entries().get(0).medicines()).isEqualTo(3);
@@ -210,7 +210,7 @@ class TimelineServiceTest {
         }
         when(timelineRead.page(eq(PATIENT_B), eq(TimelineCursor.FIRST), eq(TimelineFilter.ALL), eq(21))).thenReturn(Flux.fromIterable(rows));
         TimelineEntry e20 = rows.get(19);
-        StepVerifier.create(service.timeline(FAMILY_B, PATIENT_B, null))
+        StepVerifier.create(service.timeline(FAMILY_B, PATIENT_B, null, TimelineFilter.ALL))
                 .assertNext(page -> {
                     assertThat(page.entries()).hasSize(20).doesNotContain(rows.get(20));
                     // the whole (date, upload, id) of the last row shown, opaque: never a bare createdAt

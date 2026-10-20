@@ -1,1 +1,10 @@
 /* 40-papers: the papers tab, the timeline (C3). Tokens only. */
+/* C2: the stored urgency chip on a timeline row (kit §6): NOW and THIS_WEEK only, a <span>, not a control.
+   Scoped to the two levels, so the result page's .chip.review and the value-row chips keep their own rules. */
+.chip.now,.chip.soon{display:inline-flex;align-items:center;gap:var(--sp-2);padding:var(--chip-pad-y) var(--sp-3) var(--chip-pad-y) var(--sp-2);border-radius:var(--r-pill);font-size:var(--fs-label-small);line-height:var(--lh-label-small);font-weight:600}
+.chip.now{background:var(--c-status-now-solid);color:var(--c-on-status-now)}
+.chip.soon{background:var(--c-status-soon-container);color:var(--c-status-soon)}
+/* the filter links above the list: each a 48 px target; the one in view is filled */
+.filters{display:flex;flex-wrap:wrap;gap:var(--sp-2);margin:0 0 var(--sp-3)}
+.filters a{display:inline-flex;align-items:center;min-height:var(--target-min);padding:0 var(--sp-4);border:2px solid var(--c-outline);border-radius:var(--r-pill);color:var(--c-text);text-decoration:none}
+.filters a[aria-current="page"]{border-color:var(--c-primary);background:var(--c-primary-container);color:var(--c-on-primary-container)}

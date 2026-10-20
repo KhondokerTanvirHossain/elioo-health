@@ -21,14 +21,11 @@ public interface TimelineUseCase {
 
     Mono<FamilyOverview> me(UUID familyId);
 
-    /** The unfiltered list: {@link #timeline(UUID, UUID, String, TimelineFilter)} with {@link TimelineFilter#ALL}. */
-    default Mono<TimelinePage> timeline(UUID familyId, UUID patientId, String cursor) {
-        return timeline(familyId, patientId, cursor, TimelineFilter.ALL);
-    }
-
     /**
      * One page of a patient's papers, newest document date first (C2's read model). {@code cursor} is a previous page's
      * {@code nextCursor} (opaque); null, blank or a pre-C2 instant opens the first page; anything else is 400.
+     * {@link TimelineFilter#ALL} is the unfiltered list. One signature only: a second overload would let a mock stub or
+     * a {@code verify(never())} name the form no caller uses and pass for that reason.
      */
     Mono<TimelinePage> timeline(UUID familyId, UUID patientId, String cursor, TimelineFilter filter);
 

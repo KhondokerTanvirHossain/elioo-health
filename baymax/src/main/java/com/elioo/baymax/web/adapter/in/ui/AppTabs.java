@@ -8,6 +8,7 @@ import com.elioo.baymax.web.application.port.in.TimelineUseCase;
 import com.elioo.baymax.web.domain.FamilyOverview;
 import com.elioo.baymax.web.domain.PatientSummary;
 import com.elioo.baymax.web.domain.TimelineEntry;
+import com.elioo.baymax.web.domain.TimelineFilter;
 import com.elioo.baymax.web.domain.WebSession;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -134,13 +135,19 @@ public class AppTabs implements WebPages {
                 head(lang, Tab.CHAT), "has-composer"));
     }
 
-    /** The patient's papers, newest first; reloads itself while one is still being read. */
+    /**
+     * The patient's papers, newest document date first (C2's read model); reloads itself while one is still being read.
+     * Each finished paper shows its stored chip (NOW, THIS_WEEK; nothing on ROUTINE or unassessed), a pending-review chip
+     * beside it, and the code-built summary; {@code ?type=} filters, and "আরও দেখুন" keeps the filter and the cursor.
+     */
     Mono<Body> papersBody(ServerRequest request, Lang lang, FamilyOverview me, ActivePatient active) {
         PatientSummary patient = active.patient().orElseThrow();
         UUID patientId = patient.patient().id();
         String cursor = request.queryParam("cursor").orElse(null);
+        TimelineFilter filter = TimelineFilter.fromParam(request.queryParam("type").orElse(null));
         UUID familyId = SessionAuthFilter.session(request).familyId();
-        return timeline.timeline(familyId, patientId, cursor).map(page -> {
+        String list = Tab.PAPERS.path + "?patient=" + patientId;
+        return timeline.timeline(familyId, patientId, cursor, filter).map(page -> {
             StringBuilder b = new StringBuilder();
             b.append("<h1>").append(esc(patient.patient().name())).append("</h1>");
             b.append("<p class=\"small\"><a href=\"").append(Tab.FAMILY.path).append("?patient=").append(patientId).append("\">").append(copy.t(lang, "profile.link")).append("</a></p>");
@@ -160,6 +167,12 @@ public class AppTabs implements WebPages {
                         .append("<span>").append(copy.t(lang, "timeline.add")).append("</span></a></p>");
             }
             b.append("<h2>").append(copy.t(lang, "timeline.docs")).append("</h2>");
+            b.append("<nav class=\"filters\" aria-label=\"").append(copy.t(lang, "timeline.filter.label")).append("\">");
+            for (TimelineFilter f : TimelineFilter.values()) {
+                b.append("<a href=\"").append(list).append(typeParam(f)).append("\"").append(f == filter ? " aria-current=\"page\"" : "")
+                        .append(">").append(copy.t(lang, "timeline.filter." + (f == TimelineFilter.ALL ? "all" : f.param()))).append("</a>");
+            }
+            b.append("</nav>");
             if (page.entries().isEmpty()) {
                 b.append("<div class=\"card\">").append(copy.t(lang, "timeline.none")).append("</div>");
             }
@@ -174,7 +187,20 @@ public class AppTabs implements WebPages {
                         .append(e.dateIsFallback() ? " <span class=\"small\">" + copy.t(lang, "timeline.uploaddate") + "</span>" : "")
                         .append(e.facility() == null || e.facility().isBlank() ? "" : " · " + esc(e.facility())).append("</div>");
                 if ("DONE".equals(e.status())) {
-                    b.append("<div class=\"meta\">").append(copy.t(lang, "timeline.counts", e.values(), e.medicines(), e.followUps())).append("</div>");
+                    String summary = TimelineSummary.line(copy, lang, e);
+                    if (!summary.isEmpty()) {
+                        b.append("<div class=\"meta\">").append(summary).append("</div>");
+                    }
+                    // the stored level first; the review state beside it, never instead of it (D5: every gate state)
+                    String chip = UrgencyChip.html(copy, lang, e);
+                    boolean pending = "pending".equals(e.reviewState());
+                    if (!chip.isEmpty() || pending) {
+                        b.append("<div class=\"chips\">").append(chip);
+                        if (pending) {
+                            b.append("<span class=\"chip review\">").append(copy.t(lang, "timeline.review.pending")).append("</span>");
+                        }
+                        b.append("</div>");
+                    }
                     if (e.unverified() > 0) {
                         b.append("<div class=\"small\">").append(copy.t(lang, "timeline.unverified", e.unverified())).append("</div>");
                     }
@@ -182,13 +208,18 @@ public class AppTabs implements WebPages {
                 b.append("</div></div></div>");
             }
             if (page.nextCursor() != null) {
-                b.append("<p><a class=\"btn quiet\" href=\"").append(Tab.PAPERS.path).append("?patient=").append(patientId)
+                b.append("<p><a class=\"btn quiet\" href=\"").append(list).append(typeParam(filter))
                         .append("&amp;cursor=").append(esc(page.nextCursor())).append("\">").append(copy.t(lang, "timeline.more")).append("</a></p>");
             }
             // a document still being read: reload every few seconds until it is not
             boolean inFlight = page.entries().stream().anyMatch(e -> "RECEIVED".equals(e.status()) || "PROCESSING".equals(e.status()));
             return Body.of(b.toString(), head(lang, Tab.PAPERS).refresh(inFlight ? 5 : 0));
         });
+    }
+
+    /** The list's {@code type} parameter, HTML-escaped for an href; nothing for every paper. */
+    private static String typeParam(TimelineFilter f) {
+        return f == TimelineFilter.ALL ? "" : "&amp;type=" + f.param();
     }
 
     /** s21 basics ({@link FamilyView}): the cards, the patient in view, the consent, the reminders, the account. */

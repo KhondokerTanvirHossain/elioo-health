@@ -246,9 +246,12 @@ final class PageFixtures {
         }
 
         private static void maPapers(WebUiTestKit k) {
-            when(k.timeline.timeline(eq(WebUiTestKit.FAMILY), eq(WebUiTestKit.MA_ID), any())).thenReturn(Mono.just(new TimelinePage(List.of(
+            when(k.timeline.timeline(eq(WebUiTestKit.FAMILY), eq(WebUiTestKit.MA_ID), any(), any())).thenReturn(Mono.just(new TimelinePage(List.of(
                     new TimelineEntry(DONE_DOC, LocalDate.parse("2026-10-12"), false, "lab_report", "Shapla Diagnostics", "DONE",
-                            14, 2, 1, 3, "f/p/" + DONE_DOC + "/page-1.jpg", WebUiTestKit.NOW),
+                            // C2: a stored NOW, one value outside and a pending review, so every derived page check
+                            // (touch targets, contrast, inline code, Bangla digits) sees the chip and the review chip
+                            14, 2, 1, 3, "f/p/" + DONE_DOC + "/page-1.jpg", WebUiTestKit.NOW,
+                            com.elioo.baymax.outbound.domain.Urgency.NOW, 1, "pending", null),
                     new TimelineEntry(PROCESSING_DOC, LocalDate.parse("2026-10-18"), true, null, null, "PROCESSING",
                             0, 0, 0, 0, "f/p/" + PROCESSING_DOC + "/page-1.jpg", WebUiTestKit.NOW)), null)));
         }
