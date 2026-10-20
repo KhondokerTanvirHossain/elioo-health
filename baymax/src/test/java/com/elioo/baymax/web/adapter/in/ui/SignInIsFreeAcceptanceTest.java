@@ -139,8 +139,9 @@ class SignInIsFreeAcceptanceTest {
         when(documents.latestDoneDocument(any())).thenReturn(Mono.empty());   // the greeting reads the latest paper (PR 7)
         intake = new WaIntakeService(records, documents, mock(ExplainDocumentUseCase.class),
                 mock(DocumentIntakeUseCase.class), graph, new Copy(), props, auth,
-                mock(com.elioo.baymax.outbound.application.port.out.OutboundMessagePort.class), Clock.fixed(NOW, ZoneOffset.UTC),
-                mock(com.elioo.baymax.family.application.port.in.FreeTierUseCase.class));
+                Clock.fixed(NOW, ZoneOffset.UTC),
+                mock(com.elioo.baymax.family.application.port.in.FreeTierUseCase.class),
+                com.elioo.baymax.wa.WaFixtures.noUrgentPapers(), com.elioo.baymax.wa.WaFixtures.nothingStored());
         web = new WebUiTestKit(auth, props, false).client;
     }
 

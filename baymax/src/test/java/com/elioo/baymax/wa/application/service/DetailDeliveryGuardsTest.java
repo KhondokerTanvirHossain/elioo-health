@@ -107,18 +107,19 @@ class DetailDeliveryGuardsTest {
         props.getWa().setEnabled(true);
         props.getWa().setAllowlist(List.of(E164));
         MessageDeliveryPort whatsapp = new WhatsAppMessageDelivery(graph, records, props);
+        StoredUrgencyService storedUrgency = new StoredUrgencyService(new UrgencyService(props, clock),
+                new com.elioo.baymax.outbound.application.service.InMemoryDocumentUrgency(), documents, records, props, clock);
         explainer = new ExplanationService(documents, records, messages, metered,
                 new ExtractionModelConfiguration.ExtractionClients(sonnet, sonnet, sonnet, true),
                 new MessageSafetyCheck(props), new OutboundMessageGate(props),
-                reviewer, whatsapp, new Copy(), props, clock,
-                new StoredUrgencyService(new UrgencyService(props, clock),
-                        new com.elioo.baymax.outbound.application.service.InMemoryDocumentUrgency(), documents, records, props, clock));
+                reviewer, whatsapp, new Copy(), props, clock, storedUrgency);
         reviewGate = new ReviewGateService(messages, whatsapp, clock);
         com.elioo.baymax.family.application.port.in.FreeTierUseCase freeTier =
                 mock(com.elioo.baymax.family.application.port.in.FreeTierUseCase.class);
         when(freeTier.checkCanUploadDocument(any(FamilyAccount.class))).thenReturn(Mono.empty());
         wa = new WaIntakeService(records, documents, explainer, mock(DocumentIntakeUseCase.class), graph, new Copy(), props,
-                mock(com.elioo.baymax.web.application.port.in.WebAuthUseCase.class), messages, clock, freeTier);
+                mock(com.elioo.baymax.web.application.port.in.WebAuthUseCase.class), clock, freeTier,
+                WaFixtures.noUrgentPapers(), storedUrgency);
 
         when(graph.sendText(anyString(), anyString())).thenAnswer(i -> Mono.just(WaFixtures.wamid(FROM, wamids.incrementAndGet())));
         when(metered.using(any())).thenReturn(metered);

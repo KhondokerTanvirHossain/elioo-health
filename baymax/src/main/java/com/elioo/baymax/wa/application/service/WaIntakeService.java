@@ -9,6 +9,7 @@ import com.elioo.baymax.extraction.domain.Upload;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
+import com.elioo.baymax.outbound.application.port.in.DocumentUrgencyUseCase;
 import com.elioo.baymax.outbound.application.service.BanglaDate;
 import com.elioo.baymax.outbound.application.service.Copy;
 import com.elioo.baymax.outbound.application.service.UrgencyLines;
@@ -16,6 +17,8 @@ import com.elioo.baymax.outbound.domain.OutboundMessage;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.wa.application.port.out.WaMessagingPort;
 import com.elioo.baymax.wa.domain.WaInbound;
+import com.elioo.baymax.web.application.port.in.AttentionUseCase;
+import com.elioo.baymax.web.domain.AttentionItem;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -31,6 +34,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.function.Function;
 
 /**
@@ -62,11 +66,13 @@ public class WaIntakeService {
     private final Copy copy;
     private final BaymaxProperties properties;
     private final com.elioo.baymax.web.application.port.in.WebAuthUseCase auth;
-    /** The standing urgency of the latest paper, read in any gate state (plan PR 7, D5). */
-    private final com.elioo.baymax.outbound.application.port.out.OutboundMessagePort messages;
     private final java.time.Clock clock;
     /** Checked before the "got it" ack, so a family at the cap hears one true message (W15). */
     private final com.elioo.baymax.family.application.port.in.FreeTierUseCase freeTier;
+    /** The stored NOW / THIS_WEEK papers, as the চ্যাট attention stack reads them (F1, C2): what a greeting restates. */
+    private final AttentionUseCase attention;
+    /** F1's stored level of the latest paper, assessed once if it never was (a pre-V18 row). */
+    private final DocumentUrgencyUseCase urgency;
 
     /** Why an inbound image did not become a document; each carries the reply the family receives. */
     public enum Outcome {
@@ -245,6 +251,9 @@ public class WaIntakeService {
         return freeTier.checkCanUploadDocument(family)
                 .then(Mono.defer(() -> send(number, copy.bn(ackKey, Map.of()))))
                 .then(Mono.defer(() -> graph.downloadMedia(mediaId)))
+                // the port promises bytes or its one error; an empty completion here skipped accept and reported ACCEPTED,
+                // leaving the family on "পড়ে দেখছি" (W13). Not taken on trust: it is the download failure it means.
+                .switchIfEmpty(Mono.error(() -> new WaMessagingPort.MediaUnavailableException(200)))
                 .flatMap(bytes -> intake.accept(patient.id(), List.of(new Upload(mediaId + ".jpg", bytes))))
                 .doOnNext(document -> log.info("[baymax] wa intake accepted documentId={} patientId={} bytes>0",
                         document.id(), patient.id()))
@@ -315,40 +324,75 @@ public class WaIntakeService {
     private static final Duration STANDING = Duration.ofDays(30);
     private static final ZoneId DHAKA = ZoneId.of("Asia/Dhaka");
 
-    /**
-     * The latest DONE document and its standing urgency: NOW or THIS_WEEK, or null when nothing stands.
-     *
-     * <p>INTERIM until F1 (document.urgency, Phase 1b). The standing level is the highest urgency on the latest DONE
-     * document's newest EXPLANATION and DETAIL rows, in ANY gate state: the urgency column is always set, and a PENDING
-     * or FAILED_SAFETY row is exactly where a NOW would hide from latestDeliverable (D5). Known gap until F1 + D14: an
-     * older urgent document behind a newer routine one is not surfaced.
-     */
-    private record Latest(Document document, Urgency standing) {
+    /** A paper as the family is told of it: its id (for the link), its type and its date. */
+    private record Paper(UUID id, String documentType, LocalDate date) {
     }
 
+    /** The paper a greeting or a thanks names, and the level standing on it: NOW or THIS_WEEK, or null when none. */
+    private record Latest(Paper paper, Urgency standing) {
+    }
+
+    /**
+     * What a greeting or a thanks restates: the highest stored NOW / THIS_WEEK of any of the family's papers uploaded in
+     * the last 30 days, and that paper; with nothing standing, the latest DONE paper and no level. Empty: no DONE paper.
+     *
+     * <p>F1 (V18 document.urgency) is the only source, read as the চ্যাট attention stack reads it, never from a message row.
+     * A NOW whose explain() threw (stored before it composes, so no row was ever written), whose wording failed safety, or
+     * that waits for review stands as stored (D5); a level the hourly sweep raised stands without a new row; an older
+     * urgent paper behind a newer routine one still leads, and no newer lower paper downgrades it. The attention read only
+     * lists assessed papers, so the latest paper is also read through currentOrAssess, which assesses a never-assessed
+     * (pre-V18) one once through the writer, as the document page does.
+     */
     private Mono<Latest> latest(FamilyAccount family) {
         Instant cutoff = clock.instant().minus(STANDING);
         return documents.latestDoneDocument(family.id())
-                .flatMap(doc -> Flux.concat(messages.latestOfKind(doc.id(), OutboundMessage.Kind.EXPLANATION),
-                                messages.latestOfKind(doc.id(), OutboundMessage.Kind.DETAIL))
-                        .filter(m -> m.createdAt() != null && m.createdAt().isAfter(cutoff))
-                        .map(OutboundMessage::urgency)
-                        .reduce(Urgency.ROUTINE, Urgency::max)
-                        .map(level -> new Latest(doc, level.isAtLeast(Urgency.THIS_WEEK) ? level : null)));
+                .flatMap(newest -> standing(family, newest, cutoff)
+                        .defaultIfEmpty(new Latest(paperOf(newest), null)));
+    }
+
+    private Mono<Latest> standing(FamilyAccount family, Document newest, Instant cutoff) {
+        Flux<AttentionItem.Urgent> stored = records.patientsOf(family.id())
+                .concatMap(p -> attention.urgent(family.id(), p.id()))
+                .flatMapIterable(Function.identity());
+        Flux<AttentionItem.Urgent> newestStored = withinWindow(newest.createdAt(), cutoff)
+                ? urgency.currentOrAssess(newest.id())
+                        .filter(s -> s.level().isAtLeast(Urgency.THIS_WEEK))
+                        .map(s -> new AttentionItem.Urgent(newest.id(), s.level(), newest.documentType(), paperOf(newest).date(),
+                                newest.docDate() == null, newest.createdAt()))
+                        .flux()
+                : Flux.empty();
+        return Flux.concat(stored, newestStored)
+                // the read model's window is the same 30 days (spec §4.6); asserted here too, on every row, whatever its source
+                .filter(u -> withinWindow(u.receivedAt(), cutoff))
+                // highest first, then the newer paper: the attention stack's own order, so WhatsApp and the web agree
+                .sort(AttentionItem.ORDER)
+                .next()
+                .map(u -> new Latest(new Paper(u.documentId(), u.documentType(), u.date()), u.level()));
+    }
+
+    /** Uploaded at or after the cutoff: the read model's "at or after since". */
+    private static boolean withinWindow(Instant uploadedAt, Instant cutoff) {
+        return uploadedAt != null && !uploadedAt.isBefore(cutoff);
+    }
+
+    private Paper paperOf(Document d) {
+        LocalDate date = d.docDate() != null ? d.docDate()
+                : d.createdAt() != null ? LocalDate.ofInstant(d.createdAt(), DHAKA) : LocalDate.now(clock.withZone(DHAKA));
+        return new Paper(d.id(), d.documentType(), date);
     }
 
     /** The paper's name for the family: its type, its date in Bangla, and the link to what it says. */
-    private Map<String, String> paperVars(Document d) {
-        LocalDate today = LocalDate.now(clock.withZone(DHAKA));
-        LocalDate date = d.docDate() != null ? d.docDate()
-                : d.createdAt() != null ? LocalDate.ofInstant(d.createdAt(), DHAKA) : today;
-        return Map.of("document_type", copy.documentType(d.documentType()), "date", BanglaDate.format(date, today),
-                "link", properties.getOutbound().getPublicBaseUrl() + "/app/documents/" + d.id());
+    private Map<String, String> paperVars(Paper p) {
+        return Map.of("document_type", copy.documentType(p.documentType()),
+                "date", BanglaDate.format(p.date(), LocalDate.now(clock.withZone(DHAKA))),
+                "link", properties.getOutbound().getPublicBaseUrl() + "/app/documents/" + p.id());
     }
 
     /**
      * Mirrors the family's greeting and never assumes religion (spec §7.4); zero model calls (W1). A standing NOW or
-     * THIS_WEEK leads it, in its fixed words (UrgencyLines); otherwise it names the latest paper and its link.
+     * THIS_WEEK leads it, in its fixed words (UrgencyLines); otherwise it names the latest paper and its link. A read
+     * that fails still gets the greeting, with the red-flag line: the level could not be read, so a NOW must not be
+     * replaced by a bare hello, and every message gets exactly one reply (PR 6).
      */
     private Mono<Outcome> greet(String number, FamilyAccount family, WaTextRouter.Route route) {
         String opener = copy.bn(switch (route) {
@@ -361,22 +405,29 @@ public class WaIntakeService {
         return latest(family)
                 .map(l -> {
                     log.info("[baymax] wa reply key=wa.greeting route={} documentId={} standing={}", route,
-                            l.document().id(), l.standing() == null ? "none" : l.standing().dbValue());
+                            l.paper().id(), l.standing() == null ? "none" : l.standing().dbValue());
                     return l.standing() == null
-                            ? String.join("\n", opener, intro, copy.bn("wa.greeting.latest", paperVars(l.document())))
+                            ? String.join("\n", opener, intro, copy.bn("wa.greeting.latest", paperVars(l.paper())))
                             // the opener and the paper's name may precede the block; nothing it qualifies does (UrgencyLines)
-                            : String.join("\n", opener, copy.bn("wa.greeting.urgent", paperVars(l.document())),
+                            : String.join("\n", opener, copy.bn("wa.greeting.urgent", paperVars(l.paper())),
                                     UrgencyLines.lead(copy, l.standing(), intro));
                 })
                 .switchIfEmpty(Mono.fromSupplier(() -> {
                     log.info("[baymax] wa reply key=wa.greeting route={} documentId=none", route);
                     return String.join("\n", opener, intro, copy.bn("wa.greeting.none", Map.of()));
                 }))
+                .onErrorResume(e -> {
+                    log.warn("[baymax] wa standing urgency unavailable reply=wa.greeting error={}", e.getClass().getSimpleName());
+                    return Mono.just(withRedFlag(String.join("\n", opener, intro)));
+                })
                 .flatMap(text -> send(number, text))
                 .thenReturn(Outcome.REPLIED);
     }
 
-    /** W12: a one-line close plus the red-flag line; a standing NOW / THIS_WEEK is repeated, never closed over. */
+    /**
+     * W12: a one-line close plus the red-flag line; a standing NOW / THIS_WEEK is repeated, never closed over. A read that
+     * fails still gets the plain close, which carries the red-flag line as every thanks does.
+     */
     private Mono<Outcome> thanks(String number, FamilyAccount family) {
         return latest(family)
                 .filter(l -> l.standing() != null)
@@ -388,6 +439,10 @@ public class WaIntakeService {
                     log.info("[baymax] wa reply key=wa.thanks reason=thanks");
                     return copy.bn("wa.thanks", Map.of());
                 }))
+                .onErrorResume(e -> {
+                    log.warn("[baymax] wa standing urgency unavailable reply=wa.thanks error={}", e.getClass().getSimpleName());
+                    return Mono.just(copy.bn("wa.thanks", Map.of()));
+                })
                 // idempotent: a NOW / THIS_WEEK block already carries the red-flag line, once
                 .flatMap(body -> send(number, withRedFlag(body)))
                 .thenReturn(Outcome.REPLIED);

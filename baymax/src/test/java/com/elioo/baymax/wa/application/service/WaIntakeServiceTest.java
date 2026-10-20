@@ -15,6 +15,7 @@ import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.wa.WaFixtures;
 import com.elioo.baymax.wa.application.port.out.WaMessagingPort;
 import com.elioo.baymax.wa.domain.WaInbound;
+import com.elioo.baymax.web.domain.AttentionItem;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -65,11 +66,13 @@ class WaIntakeServiceTest {
     private final BaymaxProperties props = new BaymaxProperties();
     private final com.elioo.baymax.web.application.port.in.WebAuthUseCase auth =
             mock(com.elioo.baymax.web.application.port.in.WebAuthUseCase.class);
-    private final com.elioo.baymax.outbound.application.port.out.OutboundMessagePort messages =
-            mock(com.elioo.baymax.outbound.application.port.out.OutboundMessagePort.class);
     private final java.time.Clock clock = java.time.Clock.fixed(Instant.parse("2026-10-17T06:00:00Z"), java.time.ZoneOffset.UTC);
     private final com.elioo.baymax.family.application.port.in.FreeTierUseCase freeTier =
             mock(com.elioo.baymax.family.application.port.in.FreeTierUseCase.class);
+    private final com.elioo.baymax.web.application.port.in.AttentionUseCase attention =
+            mock(com.elioo.baymax.web.application.port.in.AttentionUseCase.class);
+    private final com.elioo.baymax.outbound.application.port.in.DocumentUrgencyUseCase urgency =
+            mock(com.elioo.baymax.outbound.application.port.in.DocumentUrgencyUseCase.class);
     /**
      * What actually went out, recorded when the send is SUBSCRIBED, not when sendText is called. WaGraphClient.sendText
      * is a lazy WebClient Mono that sends nothing until subscribed; a mock that recorded the call counted a reply built
@@ -91,20 +94,15 @@ class WaIntakeServiceTest {
         when(graph.markRead(anyString(), anyBoolean())).thenReturn(Mono.empty());
         // a sender is unknown unless a test says otherwise (familyWith), so no test dies on an unstubbed lookup
         when(records.findFamilyByWhatsapp(anyString())).thenReturn(Mono.empty());
-        // no paper read yet and no stored message, unless a test says otherwise; the cap is not reached
+        // no paper read yet, unless a test says otherwise; the cap is not reached
         when(documents.latestDoneDocument(any())).thenReturn(Mono.empty());
-        when(messages.latestOfKind(any(), any())).thenReturn(Mono.empty());
-        // the real port's meaning, so the mutation replay (greeting read from latestDeliverable) fails on the defect and not
-        // on an unstubbed mock: the newest row of the document with a body, RELEASED or APPROVED
-        when(messages.latestDeliverable(any())).thenAnswer(inv -> Flux.concat(
-                        messages.latestOfKind(inv.getArgument(0), OutboundMessage.Kind.EXPLANATION),
-                        messages.latestOfKind(inv.getArgument(0), OutboundMessage.Kind.DETAIL))
-                .filter(OutboundMessage::isDeliverable)
-                .sort(java.util.Comparator.comparing(OutboundMessage::createdAt).reversed())
-                .next());
         when(freeTier.checkCanUploadDocument(any(FamilyAccount.class))).thenReturn(Mono.empty());
+        // nothing stored NOW / THIS_WEEK and no stored level, unless a test says otherwise (stored)
+        when(attention.urgent(any(), any())).thenReturn(Mono.just(List.of()));
+        when(urgency.current(any())).thenReturn(Mono.empty());
+        when(urgency.currentOrAssess(any())).thenReturn(Mono.empty());
         service = new WaIntakeService(records, documents, explainer, intake, graph, new Copy(), props, auth,
-                messages, clock, freeTier);
+                clock, freeTier, attention, urgency);
     }
 
     private PatientProfile patient(String name) {
@@ -952,122 +950,359 @@ class WaIntakeServiceTest {
         assertThat(sentBodies()).as("every one of them is answered").isNotEmpty();
     }
 
-    // ---- B1b (plan PR 7, Task 7.1): a greeting and a thanks restate a standing NOW / THIS_WEEK, in any gate state ------
+    // ---- B1b (plan PR 7, Task 7.1): a greeting and a thanks restate a standing NOW / THIS_WEEK --------------------------
+    // The standing level is F1's stored one (V18 document.urgency), read the way the চ্যাট attention stack reads it, never
+    // from a message row: a NOW whose explanation threw, failed safety or waits for review stands exactly as it is stored.
+    // Every assertion in this section is on the WHOLE message: both branches name the paper, so a check on the paper's
+    // name alone passes for a "reminder" about nothing (review finding 1).
 
-    private Document doneDocument(LocalDate docDate) {
-        return new Document(UUID.randomUUID(), UUID.randomUUID(), FAMILY, "lab_report", docDate, "Shapla Diagnostics", "{}", 0.93,
-                Document.Status.DONE, null, "anthropic/claude-sonnet-5", null, 1, Instant.EPOCH, Instant.EPOCH);
+    /** The fixed clock's day in Dhaka, which BanglaDate judges "today" by. */
+    private static final LocalDate TODAY = LocalDate.parse("2026-10-17");
+    private static final java.time.ZoneId DHAKA = java.time.ZoneId.of("Asia/Dhaka");
+    private final java.util.Map<UUID, java.util.List<AttentionItem.Urgent>> urgentRows = new java.util.HashMap<>();
+
+    private Document doneDocument(PatientProfile p, LocalDate docDate, Instant uploadedAt) {
+        return new Document(UUID.randomUUID(), p.id(), FAMILY, "lab_report", docDate, "Shapla Diagnostics", "{}", 0.93,
+                Document.Status.DONE, null, "anthropic/claude-sonnet-5", null, 1, uploadedAt, uploadedAt);
     }
 
-    private OutboundMessage explained(Document doc, Urgency urgency, Instant at) {
-        return explained(doc, urgency, at, OutboundMessage.GateStatus.RELEASED);
+    /** A paper uploaded on the morning of its own date. */
+    private Document doneDocument(PatientProfile p, String docDate) {
+        LocalDate d = LocalDate.parse(docDate);
+        return doneDocument(p, d, d.atTime(8, 0).toInstant(java.time.ZoneOffset.UTC));
     }
 
-    private OutboundMessage explained(Document doc, Urgency urgency, Instant at, OutboundMessage.GateStatus gate) {
-        return new OutboundMessage(UUID.randomUUID(), FAMILY, doc.patientId(), doc.id(), OutboundMessage.Kind.EXPLANATION,
-                urgency, List.of(), gate == OutboundMessage.GateStatus.FAILED_SAFETY ? null : "…", gate, null, null, null, null, at);
+    private void latestIs(Document d) {
+        when(documents.latestDoneDocument(FAMILY)).thenReturn(Mono.just(d));
     }
 
-    /** D5 at the greeting: a NOW whose wording failed the checklist has no deliverable row, and must still lead the greeting. */
+    /**
+     * What F1 holds for a paper, as both reads see it: the document's own stored level, and (NOW or THIS_WEEK only) its
+     * row in the attention read, in the read model's order. The fake returns every row it is given, older than 30 days
+     * included, so the window these tests pin is this service's own and not the fake's.
+     */
+    private void stored(Document d, Urgency level) {
+        when(urgency.currentOrAssess(d.id())).thenReturn(Mono.just(
+                new com.elioo.baymax.outbound.domain.StoredUrgency(d.id(), level, List.of(), d.createdAt())));
+        if (level.isAtLeast(Urgency.THIS_WEEK)) {
+            java.util.List<AttentionItem.Urgent> rows = urgentRows.computeIfAbsent(d.patientId(), k -> new java.util.ArrayList<>());
+            rows.add(new AttentionItem.Urgent(d.id(), level, d.documentType(), d.docDate(), false, d.createdAt()));
+            rows.sort(AttentionItem.ORDER);
+            when(attention.urgent(FAMILY, d.patientId())).thenReturn(Mono.just(List.copyOf(rows)));
+        }
+    }
+
+    private Map<String, String> paper(Document d) {
+        return Map.of("document_type", copy.documentType(d.documentType()), "date", BanglaDate.format(d.docDate(), TODAY),
+                "link", props.getOutbound().getPublicBaseUrl() + "/app/documents/" + d.id());
+    }
+
+    /** Nothing stands: the opener, the intro and the latest paper with its link. No "মনে করিয়ে দিই", no urgency line. */
+    private String greetingNaming(Document d) {
+        return String.join("\n", bn("wa.greeting.hello"), bn("wa.greeting.intro"), copy.bn("wa.greeting.latest", paper(d)));
+    }
+
+    /** A standing level: the opener, the urgent paper's name, its fixed line and the red-flag line, then the intro. */
+    private String greetingLedBy(Urgency level, Document d) {
+        return String.join("\n", bn("wa.greeting.hello"), copy.bn("wa.greeting.urgent", paper(d)),
+                bn(level == Urgency.NOW ? "urgency.now" : "urgency.this_week"), bn("safety.red_flag_line"), bn("wa.greeting.intro"));
+    }
+
+    private String thanksLedBy(Urgency level) {
+        return String.join("\n", bn("wa.thanks.urgent"), bn(level == Urgency.NOW ? "urgency.now" : "urgency.this_week"),
+                bn("safety.red_flag_line"));
+    }
+
+    private String plainThanks() {
+        return bn("wa.thanks") + "\n" + bn("safety.red_flag_line");
+    }
+
+    /**
+     * Review blocker: a DONE NOW paper whose explain() threw has a stored NOW and no outbound row at all (ExplanationService
+     * stores before it composes). Read from message rows, the greeting named the paper and said nothing of the NOW.
+     */
     @Test
-    void aNowWhoseExplanationFailedSafetyStillLeadsTheGreeting() {
-        familyWith(patient("মা"));
-        Document doc = doneDocument(LocalDate.parse("2026-10-16"));
-        when(documents.latestDoneDocument(FAMILY)).thenReturn(Mono.just(doc));
-        when(messages.latestOfKind(doc.id(), OutboundMessage.Kind.EXPLANATION)).thenReturn(Mono.just(
-                explained(doc, Urgency.NOW, Instant.parse("2026-10-16T08:00:00Z"), OutboundMessage.GateStatus.FAILED_SAFETY)));
+    void aStoredNowWithNoMessageRowAtAllLeadsTheGreeting() {
+        PatientProfile ma = patient("মা");
+        familyWith(ma);
+        Document doc = doneDocument(ma, "2026-10-16");
+        latestIs(doc);
+        stored(doc, Urgency.NOW);
 
         service.onText(FROM, "Hi").block();
 
         assertThat(sentBodies()).singleElement().asString()
-                .as("a standing NOW hidden because its wording failed safety is the defect")
-                .contains(bn("urgency.now")).contains(bn("safety.red_flag_line"));
+                .as("a stored NOW hidden because no message row was ever written is the defect").contains(bn("urgency.now"));
+        assertThat(sentBodies()).containsExactly(greetingLedBy(Urgency.NOW, doc));
     }
 
-    /** The same under gate=urgency: a PENDING NOW is not deliverable, and its urgency still shows at once (D5). */
     @Test
-    void aPendingNowUnderTheUrgencyGateStillLeadsTheGreeting() {
-        props.getOutbound().setGateMode("urgency");
-        familyWith(patient("মা"));
-        Document doc = doneDocument(LocalDate.parse("2026-10-16"));
-        when(documents.latestDoneDocument(FAMILY)).thenReturn(Mono.just(doc));
-        when(messages.latestOfKind(doc.id(), OutboundMessage.Kind.EXPLANATION)).thenReturn(Mono.just(
-                explained(doc, Urgency.NOW, Instant.parse("2026-10-16T08:00:00Z"), OutboundMessage.GateStatus.PENDING)));
+    void aStoredNowWithNoMessageRowAtAllLeadsTheThanks() {
+        PatientProfile ma = patient("মা");
+        familyWith(ma);
+        Document doc = doneDocument(ma, "2026-10-16");
+        latestIs(doc);
+        stored(doc, Urgency.NOW);
+
+        service.onText(FROM, "ok thanks").block();
+
+        assertThat(sentBodies()).singleElement().asString().as("a thanks closing over a stored NOW").contains(bn("urgency.now"));
+        assertThat(sentBodies()).containsExactly(thanksLedBy(Urgency.NOW));
+    }
+
+    /** Review blocker (b): an older urgent paper behind a newer routine one still leads, and it is the one named. */
+    @Test
+    void anOlderStoredThisWeekBehindANewerRoutinePaperStillLeads() {
+        PatientProfile ma = patient("মা");
+        familyWith(ma);
+        Document older = doneDocument(ma, "2026-10-10");
+        Document newer = doneDocument(ma, "2026-10-16");
+        stored(older, Urgency.THIS_WEEK);
+        stored(newer, Urgency.ROUTINE);
+        latestIs(newer);
 
         service.onText(FROM, "Hi").block();
 
         assertThat(sentBodies()).singleElement().asString()
-                .as("a PENDING NOW hidden from the greeting contradicts D5")
-                .contains(bn("urgency.now")).contains(bn("safety.red_flag_line"));
+                .as("a newer routine paper hiding a standing THIS_WEEK is the defect").contains(bn("urgency.this_week"));
+        assertThat(sentBodies()).containsExactly(greetingLedBy(Urgency.THIS_WEEK, older));
     }
 
-    /** A DETAIL that rose higher than its explanation (follow_up_past_due is date-driven) is the level that stands. */
+    /**
+     * Review finding 2, the twin the old test could not tell apart: the NOW is OLDER than a lower paper. "Newest wins"
+     * downgrades a standing NOW to THIS_WEEK; only "highest wins" keeps it.
+     */
     @Test
-    void theHigherOfTheExplanationAndTheDetailStands() {
-        familyWith(patient("মা"));
-        Document doc = doneDocument(LocalDate.parse("2026-10-12"));
-        when(documents.latestDoneDocument(FAMILY)).thenReturn(Mono.just(doc));
-        when(messages.latestOfKind(doc.id(), OutboundMessage.Kind.EXPLANATION)).thenReturn(Mono.just(
-                explained(doc, Urgency.ROUTINE, Instant.parse("2026-10-12T08:00:00Z"))));
-        when(messages.latestOfKind(doc.id(), OutboundMessage.Kind.DETAIL)).thenReturn(Mono.just(new OutboundMessage(UUID.randomUUID(),
-                FAMILY, doc.patientId(), doc.id(), OutboundMessage.Kind.DETAIL, Urgency.THIS_WEEK, List.of("follow_up_past_due"), "…",
-                OutboundMessage.GateStatus.RELEASED, null, null, null, null, Instant.parse("2026-10-15T08:00:00Z"))));
+    void aStandingNowIsNotDowngradedByANewerLowerPaper() {
+        PatientProfile ma = patient("মা");
+        familyWith(ma);
+        Document now = doneDocument(ma, "2026-10-12");
+        Document thisWeek = doneDocument(ma, "2026-10-15");
+        stored(now, Urgency.NOW);
+        stored(thisWeek, Urgency.THIS_WEEK);
+        latestIs(thisWeek);
+
+        service.onText(FROM, "Hi").block();
+        service.onText(FROM, "ok thanks").block();
+
+        assertThat(sentBodies().get(0)).as("a newer THIS_WEEK downgrading a standing NOW is the defect")
+                .contains(bn("urgency.now")).doesNotContain(bn("urgency.this_week"));
+        assertThat(sentBodies()).containsExactly(greetingLedBy(Urgency.NOW, now), thanksLedBy(Urgency.NOW));
+    }
+
+    /** One number, two patients: Baba's stored NOW leads even though Ma's routine paper is the family's latest. */
+    @Test
+    void aStandingUrgencyOfAnyPatientOfTheFamilyLeads() {
+        PatientProfile ma = patient("মা");
+        PatientProfile baba = patient("বাবা");
+        familyWith(ma, baba);
+        Document babas = doneDocument(baba, "2026-10-14");
+        Document mas = doneDocument(ma, "2026-10-16");
+        stored(babas, Urgency.NOW);
+        stored(mas, Urgency.ROUTINE);
+        latestIs(mas);
 
         service.onText(FROM, "Hi").block();
 
-        assertThat(sentBodies().get(0)).as("the DETAIL's higher level is the one that stands").contains(bn("urgency.this_week"));
+        assertThat(sentBodies()).containsExactly(greetingLedBy(Urgency.NOW, babas));
+    }
+
+    /**
+     * The latest paper never assessed (a pre-V18 row, or one whose assessment threw before the sweep reached it) has no
+     * attention row; the document page's read, currentOrAssess, assesses it once through the writer and its level stands.
+     */
+    @Test
+    void aNeverAssessedLatestPaperIsAssessedAndItsNowLeads() {
+        PatientProfile ma = patient("মা");
+        familyWith(ma);
+        Document doc = doneDocument(ma, "2026-10-16");
+        latestIs(doc);
+        when(urgency.currentOrAssess(doc.id())).thenReturn(Mono.just(
+                new com.elioo.baymax.outbound.domain.StoredUrgency(doc.id(), Urgency.NOW, List.of(), clock.instant())));
+
+        service.onText(FROM, "Hi").block();
+
+        assertThat(sentBodies()).containsExactly(greetingLedBy(Urgency.NOW, doc));
     }
 
     /** W1: an unacknowledged THIS_WEEK in the last 30 days leads the greeting, in its fixed words. */
     @Test
     void aGreetingLeadsWithAStandingUrgencyVerbatim() {
-        familyWith(patient("মা"));
-        Document doc = doneDocument(LocalDate.parse("2026-10-10"));
-        when(documents.latestDoneDocument(FAMILY)).thenReturn(Mono.just(doc));
-        when(messages.latestOfKind(doc.id(), OutboundMessage.Kind.EXPLANATION)).thenReturn(Mono.just(
-                explained(doc, Urgency.THIS_WEEK, Instant.parse("2026-10-10T08:00:00Z"))));
+        PatientProfile ma = patient("মা");
+        familyWith(ma);
+        Document doc = doneDocument(ma, "2026-10-10");
+        latestIs(doc);
+        stored(doc, Urgency.THIS_WEEK);
 
         service.onText(FROM, "Hi").block();
 
         assertThat(sentBodies()).singleElement().asString()
-                .as("a greeting that hides a standing THIS_WEEK is the defect").contains(bn("urgency.this_week"))
-                .contains(BanglaDate.format(LocalDate.parse("2026-10-10"), LocalDate.parse("2026-10-17")));
-        // UrgencyLines: only the one-line address (the opener, the paper's name) precedes the block
-        String sent = sentBodies().get(0);
-        assertThat(sent).startsWith(bn("wa.greeting.hello"));
-        assertThat(sent.indexOf(bn("urgency.this_week"))).as("the block comes before the intro it does not qualify")
-                .isLessThan(sent.indexOf(bn("wa.greeting.intro")));
+                .as("a greeting that hides a standing THIS_WEEK is the defect").contains(bn("urgency.this_week"));
+        // UrgencyLines: only the one-line address (the opener, the paper's name) precedes the block; the intro follows it
+        assertThat(sentBodies()).containsExactly(greetingLedBy(Urgency.THIS_WEEK, doc));
     }
 
     /** W12, and NOW carries the red-flag line exactly once. */
     @Test
     void okThanksAfterANowRepeatsTheNowLine() {
-        familyWith(patient("মা"));
-        Document doc = doneDocument(LocalDate.parse("2026-10-16"));
-        when(documents.latestDoneDocument(FAMILY)).thenReturn(Mono.just(doc));
-        when(messages.latestOfKind(doc.id(), OutboundMessage.Kind.EXPLANATION)).thenReturn(Mono.just(
-                explained(doc, Urgency.NOW, Instant.parse("2026-10-16T08:00:00Z"))));
+        PatientProfile ma = patient("মা");
+        familyWith(ma);
+        Document doc = doneDocument(ma, "2026-10-16");
+        latestIs(doc);
+        stored(doc, Urgency.NOW);
 
         service.onText(FROM, "ok thanks").block();
 
         String sent = sentBodies().get(0);
-        assertThat(sent).as("a thanks after NOW must repeat it").contains(bn("urgency.now")).startsWith(bn("wa.thanks.urgent"));
+        assertThat(sent).as("a thanks after NOW must repeat it").contains(bn("urgency.now"));
         assertThat(sent.split(java.util.regex.Pattern.quote(bn("safety.red_flag_line")), -1)).as("red-flag line once").hasSize(2);
+        assertThat(sentBodies()).containsExactly(thanksLedBy(Urgency.NOW));
     }
 
-    /** The other direction: ROUTINE, or a THIS_WEEK older than 30 days, adds no urgency line. */
+    // -- the safe direction, each case on its own and on the whole message (review finding 1) --------------------------
+
+    /** A RECENT routine paper: named with its link, and no reminder about nothing. */
     @Test
-    void aRoutineOrStaleDocumentNamesThePaperWithoutAnUrgencyLine() {
-        familyWith(patient("মা"));
-        Document doc = doneDocument(LocalDate.parse("2026-09-01"));
-        when(documents.latestDoneDocument(FAMILY)).thenReturn(Mono.just(doc));
-        when(messages.latestOfKind(doc.id(), OutboundMessage.Kind.EXPLANATION)).thenReturn(Mono.just(
-                explained(doc, Urgency.THIS_WEEK, Instant.parse("2026-09-01T08:00:00Z"))));
+    void aRecentRoutinePaperIsNamedWithoutAnUrgencyLine() {
+        PatientProfile ma = patient("মা");
+        familyWith(ma);
+        Document doc = doneDocument(ma, "2026-10-16");
+        latestIs(doc);
+        stored(doc, Urgency.ROUTINE);
 
         service.onText(FROM, "Hi").block();
 
-        assertThat(sentBodies().get(0)).doesNotContain(bn("urgency.this_week")).doesNotContain(bn("urgency.now"))
-                .contains(new Copy().documentType("lab_report"));
+        assertThat(sentBodies()).singleElement().asString().doesNotContain("মনে করিয়ে দিই")
+                .contains("/app/documents/" + doc.id());
+        assertThat(sentBodies()).containsExactly(greetingNaming(doc));
+    }
+
+    /** A THIS_WEEK 46 days old no longer stands: named with its link, no urgency line, no reminder. */
+    @Test
+    void aStaleThisWeekPaperIsNamedWithoutAnUrgencyLine() {
+        PatientProfile ma = patient("মা");
+        familyWith(ma);
+        Document doc = doneDocument(ma, "2026-09-01");
+        latestIs(doc);
+        stored(doc, Urgency.THIS_WEEK);
+
+        service.onText(FROM, "Hi").block();
+
+        assertThat(sentBodies()).singleElement().asString().doesNotContain("মনে করিয়ে দিই")
+                .contains("/app/documents/" + doc.id());
+        assertThat(sentBodies()).containsExactly(greetingNaming(doc));
+    }
+
+    /** The thanks twins: a paper present and nothing standing is the plain close, not "ঠিক আছে। মনে করিয়ে দিই:". */
+    @Test
+    void aThanksAfterARecentRoutinePaperIsThePlainClose() {
+        PatientProfile ma = patient("মা");
+        familyWith(ma);
+        Document doc = doneDocument(ma, "2026-10-16");
+        latestIs(doc);
+        stored(doc, Urgency.ROUTINE);
+
+        service.onText(FROM, "ok thanks").block();
+
+        assertThat(sentBodies()).containsExactly(plainThanks());
+    }
+
+    @Test
+    void aThanksAfterAStaleThisWeekPaperIsThePlainClose() {
+        PatientProfile ma = patient("মা");
+        familyWith(ma);
+        Document doc = doneDocument(ma, "2026-09-01");
+        latestIs(doc);
+        stored(doc, Urgency.THIS_WEEK);
+
+        service.onText(FROM, "ok thanks").block();
+
+        assertThat(sentBodies()).containsExactly(plainThanks());
+    }
+
+    // -- the 30-day window, pinned at both sides from the clock (review finding 6) ---------------------------------------
+
+    @Test
+    void aThisWeekUploaded29DaysAgoStillLeadsTheGreeting() {
+        PatientProfile ma = patient("মা");
+        familyWith(ma);
+        Instant at = clock.instant().minus(Duration.ofDays(29));
+        Document doc = doneDocument(ma, LocalDate.ofInstant(at, DHAKA), at);
+        latestIs(doc);
+        stored(doc, Urgency.THIS_WEEK);
+
+        service.onText(FROM, "Hi").block();
+
+        assertThat(sentBodies()).containsExactly(greetingLedBy(Urgency.THIS_WEEK, doc));
+    }
+
+    @Test
+    void aThisWeekUploaded31DaysAgoNoLongerLeadsTheGreeting() {
+        PatientProfile ma = patient("মা");
+        familyWith(ma);
+        Instant at = clock.instant().minus(Duration.ofDays(31));
+        Document doc = doneDocument(ma, LocalDate.ofInstant(at, DHAKA), at);
+        latestIs(doc);
+        stored(doc, Urgency.THIS_WEEK);
+
+        service.onText(FROM, "Hi").block();
+
+        assertThat(sentBodies()).containsExactly(greetingNaming(doc));
+    }
+
+    // -- a read that fails still gets exactly one reply, and it carries the red-flag line (review findings 5 and 9) ------
+
+    /** Which of the standing-urgency reads fails. */
+    enum UnreadableRead { LATEST_PAPER, ATTENTION, STORED_LEVEL }
+
+    private void failing(UnreadableRead which, PatientProfile p, Document doc) {
+        IllegalStateException e = new IllegalStateException("connection to the pooler timed out");
+        switch (which) {
+            case LATEST_PAPER -> when(documents.latestDoneDocument(FAMILY)).thenReturn(Mono.error(e));
+            case ATTENTION -> when(attention.urgent(FAMILY, p.id())).thenReturn(Mono.error(e));
+            case STORED_LEVEL -> when(urgency.currentOrAssess(doc.id())).thenReturn(Mono.error(e));
+        }
+    }
+
+    /**
+     * Before PR 7 a greeting read nothing beyond the family; now a pooler timeout in any of its reads reached the webhook,
+     * which logs it and sends nothing (PR 6: every message gets exactly one reply). The level could not be read, so the
+     * plain greeting carries the red-flag line: a NOW must not be silently replaced by a bare hello.
+     */
+    @ParameterizedTest
+    @EnumSource(UnreadableRead.class)
+    void aGreetingWhoseStandingUrgencyCannotBeReadIsStillAnsweredOnceWithTheRedFlagLine(UnreadableRead which) {
+        PatientProfile ma = patient("মা");
+        familyWith(ma);
+        Document doc = doneDocument(ma, "2026-10-16");
+        latestIs(doc);
+        stored(doc, Urgency.NOW);
+        failing(which, ma, doc);
+
+        // as WaWebhookHandler does with an error: log it, and nothing more
+        WaIntakeService.Outcome outcome = service.onText(FROM, "Hi").onErrorResume(e -> Mono.empty()).block();
+
+        assertThat(sentBodies()).as("silence on a failed read is the defect").hasSize(1);
+        assertThat(outcome).isEqualTo(WaIntakeService.Outcome.REPLIED);
+        assertThat(sentBodies()).containsExactly(String.join("\n", bn("wa.greeting.hello"), bn("wa.greeting.intro"),
+                bn("safety.red_flag_line")));
+    }
+
+    @ParameterizedTest
+    @EnumSource(UnreadableRead.class)
+    void aThanksWhoseStandingUrgencyCannotBeReadIsStillAnsweredOnceWithTheRedFlagLine(UnreadableRead which) {
+        PatientProfile ma = patient("মা");
+        familyWith(ma);
+        Document doc = doneDocument(ma, "2026-10-16");
+        latestIs(doc);
+        stored(doc, Urgency.NOW);
+        failing(which, ma, doc);
+
+        WaIntakeService.Outcome outcome = service.onText(FROM, "ok thanks").onErrorResume(e -> Mono.empty()).block();
+
+        assertThat(sentBodies()).as("silence on a failed read is the defect").hasSize(1);
+        assertThat(outcome).isEqualTo(WaIntakeService.Outcome.REPLIED);
+        assertThat(sentBodies()).containsExactly(plainThanks());
     }
 
     // ---- W13 (plan PR 7, Task 7.3): a failure after the ack is told, never left on "পড়ে দেখছি" -------------------------
@@ -1092,26 +1327,73 @@ class WaIntakeServiceTest {
         verify(intake, never()).accept(any(), any());
     }
 
-    /** Every reason PageRenderer and intake can refuse a file with maps to a reply, and an unknown one to the generic. */
-    @ParameterizedTest
-    @CsvSource({"too_many_pages,wa.failed.too_many_pages", "empty_file,wa.failed.unreadable_file",
-            "empty_pdf,wa.failed.unreadable_file", "unreadable_pdf,wa.failed.unreadable_file",
-            "unsupported_image,wa.failed.unreadable_file", "encode_failed,wa.failed.unreadable_file",
-            "no_file,wa.failed.generic", "patient_not_found,wa.failed.generic"})
-    void everyRefusalReasonHasItsReply(String reason, String key) {
-        assertThat(WaIntakeService.failureKey(com.elioo.baymax.common.error.BaymaxException.badRequest(reason, "x"))).isEqualTo(key);
+    /**
+     * A download that completes EMPTY skipped intake.accept and still reported ACCEPTED: the family heard "পড়ে দেখছি" and
+     * nothing after it. The port promises bytes or its one error; this service does not take that on trust.
+     */
+    @Test
+    void aDownloadThatCompletesEmptyIsToldAsADownloadFailure() {
+        familyWith(patient("মা"));
+        when(graph.downloadMedia("MEDIA-15")).thenReturn(Mono.empty());
+        assertThat(service.onImage(FROM, "MEDIA-15").block()).as("an empty download reported as accepted is the defect")
+                .isEqualTo(WaIntakeService.Outcome.FAILED);
+        assertThat(sentBodies()).containsExactly(bn("wa.received"), bn("wa.failed.download"));
+        verify(intake, never()).accept(any(), any());
+    }
+
+    /**
+     * Reasons that get the generic "send it again in a little while" ON PURPOSE: none of them is about the file, so resending
+     * the same file is the right advice. no_file: the upload carried nothing (cannot come from WhatsApp, which always sends
+     * one). patient_not_found and document_not_found: a race with a deletion. upload_key_reused: a retried upload whose key
+     * belongs elsewhere.
+     */
+    private static final java.util.Set<String> GENERIC_ON_PURPOSE =
+            java.util.Set.of("no_file", "patient_not_found", "upload_key_reused", "document_not_found");
+
+    /**
+     * Every reason the intake path can refuse a file with, DERIVED from the sources that raise them (CLAUDE.md: never a
+     * hand-written list of what the author remembered). A new reason PageRenderer or the intake adds, say image_too_large,
+     * either gets its own reply or is added to GENERIC_ON_PURPOSE with its why; otherwise this goes red. A reason that
+     * means "this file cannot be read" falling into the generic reply has the family resend the same file forever.
+     */
+    @Test
+    void everyRefusalReasonTheIntakePathRaisesHasAReplyChosenForIt() throws java.io.IOException {
+        java.util.regex.Pattern raised = java.util.regex.Pattern.compile("BaymaxException\\.\\w+\\(\\s*\"([a-z_]+)\"");
+        java.util.Set<String> reasons = new java.util.TreeSet<>();
+        for (String source : List.of("PageRenderer.java", "DocumentIntakeService.java")) {
+            java.util.regex.Matcher m = raised.matcher(java.nio.file.Files.readString(
+                    java.nio.file.Path.of("src/main/java/com/elioo/baymax/extraction/application/service", source)));
+            while (m.find()) {
+                reasons.add(m.group(1));
+            }
+        }
+        // the sweep's own guard: an empty or shrunken read would pass vacuously
+        assertThat(reasons).as("the reasons were actually read from the sources")
+                .contains("too_many_pages", "unsupported_image", "empty_file", "no_file").hasSizeGreaterThanOrEqualTo(8);
+        assertThat(GENERIC_ON_PURPOSE).as("every generic-on-purpose reason still exists").isSubsetOf(reasons);
+
+        for (String reason : reasons) {
+            String key = WaIntakeService.failureKey(com.elioo.baymax.common.error.BaymaxException.badRequest(reason, "x"));
+            if (GENERIC_ON_PURPOSE.contains(reason)) {
+                assertThat(key).as(reason + " is generic on purpose").isEqualTo("wa.failed.generic");
+            } else {
+                assertThat(key).as(reason + " needs a reply chosen for it, not the generic one").isNotEqualTo("wa.failed.generic");
+                assertThat(bn(key)).as(reason + " maps to a key the copy has (Copy.bn throws on a missing one)").isNotBlank();
+            }
+        }
         assertThat(WaIntakeService.failureKey(new IllegalStateException("x"))).isEqualTo("wa.failed.generic");
     }
 
+    /** The reply reads baymax.extract.max-pages: at 7, a hardcoded "১০" (the default) would be wrong. */
     @Test
     void tooManyPagesSaysHowManyAreAllowed() {
+        props.getExtract().setMaxPages(7);
         familyWith(patient("মা"));
         when(intake.accept(any(), any())).thenReturn(Mono.error(
-                com.elioo.baymax.common.error.BaymaxException.badRequest("too_many_pages", "at most 10")));
+                com.elioo.baymax.common.error.BaymaxException.badRequest("too_many_pages", "at most 7")));
         service.onImage(FROM, "MEDIA-11").block();
         assertThat(sentBodies()).as("silence after the ack — the defect").hasSize(2);
-        assertThat(sentBodies().get(1)).isEqualTo(new Copy().bn("wa.failed.too_many_pages", java.util.Map.of("max",
-                BanglaDate.digits(String.valueOf(props.getExtract().getMaxPages())))));
+        assertThat(sentBodies().get(1)).isEqualTo(new Copy().bn("wa.failed.too_many_pages", java.util.Map.of("max", "৭")));
     }
 
     @Test
