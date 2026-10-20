@@ -42,6 +42,15 @@ public class PhoneHasher {
         }
     }
 
+    /**
+     * The key of an inbound WhatsApp message (F9a, V22): the same HMAC, domain-separated by a prefix so a provider id
+     * and a number can never produce the same key. A wamid is base64 of the sender's number, so it is never stored
+     * itself. Without the secret this throws the 503-shaped {@code auth_not_configured}, like {@link #phone}.
+     */
+    public String providerId(String providerMessageId) {
+        return phone("wamid:" + providerMessageId);
+    }
+
     public static String sha256(String value) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
