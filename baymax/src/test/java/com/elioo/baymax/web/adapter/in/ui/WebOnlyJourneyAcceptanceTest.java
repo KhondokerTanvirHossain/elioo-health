@@ -500,7 +500,10 @@ class WebOnlyJourneyAcceptanceTest {
     @Test
     void aResultOpenedWhileThePaperIsStillBeingAssessedIsTheFinishedPage() {
         Hold hold = new Hold();
-        runner().withBean(Hold.class, () -> hold)
+        // the hourly sweep is the one other writer of the level in this context (UrgencySweepJob, minute :20): switched
+        // off, so the stored level below can only be the page's own; HeldUrgency still counts any sweep that does run
+        runner().withPropertyValues("baymax.urgency.sweep-cron=-")
+                .withBean(Hold.class, () -> hold)
                 .withBean(HeldUrgency.class)
                 .withBean(SignallingIntake.class)
                 .run(context -> {
@@ -538,6 +541,7 @@ class WebOnlyJourneyAcceptanceTest {
                                 .as("no explanation composed when the page was drawn").isEqualTo("0");
                         assertThat(scalar("select urgency from baymax.document where id = '" + documentId + "'"))
                                 .as("the level the page assessed itself").isEqualTo("now");
+                        assertThat(hold.sweeps.get()).as("sweeps that could have stored that level instead of the page").isZero();
 
                         assertThat(ResultFixtures.section(result, "urgency")).contains(copy.urgency(Lang.BN, Urgency.NOW, false));
                         // the path, not only the count: the NOW block's proof is the Potassium row, never the stand-in pages
@@ -565,11 +569,15 @@ class WebOnlyJourneyAcceptanceTest {
         final Sinks.Empty<Void> pageDrawn = Sinks.empty();
         final Sinks.Empty<Void> doneViewRead = Sinks.empty();
         final AtomicInteger chainWaiting = new AtomicInteger();
+        final AtomicInteger sweeps = new AtomicInteger();
     }
 
     /**
-     * The real writer, with the chain's call held and the page's call yielding. The chain is the only caller of
-     * {@code assessAndStore} through the use case here (the sweep and currentOrAssess call it inside the service).
+     * The real writer, with the chain's call held and the page's call yielding. Every caller of the use case reaches it
+     * through this bean: the chain ({@code assessAndStore}, held), the page ({@code currentOrAssess}, yielding), and
+     * UrgencySweepJob ({@code sweep}, counted; its cron is off in this run). RecropHandler also calls
+     * {@code assessAndStore} through the use case, but this journey never re-crops; the sweep and
+     * {@code currentOrAssess} reach the service's own {@code assessAndStore} inside it, past this wrapper.
      */
     @Primary
     static final class HeldUrgency implements DocumentUrgencyUseCase {
@@ -601,6 +609,7 @@ class WebOnlyJourneyAcceptanceTest {
 
         @Override
         public Mono<Long> sweep() {
+            hold.sweeps.incrementAndGet();
             return real.sweep();
         }
     }
