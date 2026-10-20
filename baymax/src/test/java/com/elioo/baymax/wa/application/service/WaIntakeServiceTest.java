@@ -172,15 +172,34 @@ class WaIntakeServiceTest {
         verify(intake, never()).accept(any(), any());
     }
 
+    /**
+     * W15: a family at the cap heard "got it, reading now" and then "free reports used up". The check runs before the ack:
+     * one message, the true one, and nothing is downloaded. Replaces anExhaustedFreeTierIsExplainedRatherThanFailingSilently,
+     * whose endsWith accepted the ack in front of the refusal.
+     */
     @Test
-    void anExhaustedFreeTierIsExplainedRatherThanFailingSilently() {
-        PatientProfile ma = patient("মা");
-        familyWith(ma);
+    void aFamilyAtTheFreeCapHearsOneMessageAndItIsTheTrueOneAndNothingIsDownloaded() {
+        familyWith(patient("মা"));
+        FreeTierExceededException capped = new FreeTierExceededException(FreeTierExceededException.DOCUMENTS, "free tier");
+        when(freeTier.checkCanUploadDocument(any(FamilyAccount.class))).thenReturn(Mono.error(capped));
+        when(intake.accept(any(), any())).thenReturn(Mono.error(capped));   // the pipeline's own check, as before the fix
+
+        assertThat(service.onImage(FROM, "MEDIA-9").block()).isEqualTo(WaIntakeService.Outcome.FREE_TIER);
+
+        assertThat(sentBodies()).as("the ack must not precede the refusal")
+                .containsExactly(new Copy().bn("wa.free_tier", java.util.Map.of()));
+        verify(graph, never()).downloadMedia(anyString());
+    }
+
+    /** The race past the first check: intake.accept keeps its own, and the refusal after the ack is still truthful. */
+    @Test
+    void aCapReachedAfterTheAckIsStillToldAsTheFreeTier() {
+        familyWith(patient("মা"));
         when(intake.accept(any(), any())).thenReturn(Mono.error(
                 new FreeTierExceededException(FreeTierExceededException.DOCUMENTS, "free tier")));
 
         assertThat(service.onImage(FROM, "MEDIA-5").block()).isEqualTo(WaIntakeService.Outcome.FREE_TIER);
-        assertThat(sentBodies()).endsWith(bn("wa.free_tier"));
+        assertThat(sentBodies()).containsExactly(bn("wa.received"), bn("wa.free_tier"));
     }
 
     /** The allowlist is enforced here, not left to the Meta test number's own restriction. */

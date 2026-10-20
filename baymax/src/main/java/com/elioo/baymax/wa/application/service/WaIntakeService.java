@@ -190,7 +190,7 @@ public class WaIntakeService {
         String number = e164(from);
         return records.findFamilyByWhatsapp(number)
                 .flatMap(family -> records.patientsOf(family.id()).collectList()
-                        .flatMap(patients -> withPatients(number, mediaId, patients, ackKey)))
+                        .flatMap(patients -> withPatients(number, family, mediaId, patients, ackKey)))
                 // defer: switchIfEmpty evaluates its argument at assembly time, so an eager reply(...) here
                 // sent the unknown-sender message on EVERY inbound image, known families included
                 .switchIfEmpty(Mono.defer(() -> reply(number, "wa.unknown", Outcome.UNKNOWN_SENDER,
@@ -205,7 +205,8 @@ public class WaIntakeService {
                 });
     }
 
-    private Mono<Outcome> withPatients(String number, String mediaId, List<PatientProfile> patients, String ackKey) {
+    private Mono<Outcome> withPatients(String number, FamilyAccount family, String mediaId, List<PatientProfile> patients,
+                                       String ackKey) {
         if (patients.isEmpty()) {
             return reply(number, "wa.unknown", Outcome.UNKNOWN_SENDER, "family has no patient yet");
         }
@@ -216,7 +217,11 @@ public class WaIntakeService {
                     Map.of("link", properties.getOutbound().getPublicBaseUrl() + "/app"));
         }
         PatientProfile patient = patients.get(0);
-        return send(number, copy.bn(ackKey, Map.of()))
+        // the cap is checked BEFORE the ack: a family at the limit hears one true message, not "got it" and then "no" (W15).
+        // Mono.defer around the send: .then(send(...)) would call graph.sendText at assembly time, before the check ran.
+        // intake.accept keeps its own check, so a race past this one still gets wa.free_tier after the ack, truthfully.
+        return freeTier.checkCanUploadDocument(family)
+                .then(Mono.defer(() -> send(number, copy.bn(ackKey, Map.of()))))
                 .then(Mono.defer(() -> graph.downloadMedia(mediaId)))
                 .flatMap(bytes -> intake.accept(patient.id(), List.of(new Upload(mediaId + ".jpg", bytes))))
                 .doOnNext(document -> log.info("[baymax] wa intake accepted documentId={} patientId={} bytes>0",
