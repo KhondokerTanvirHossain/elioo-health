@@ -27,7 +27,9 @@ curl -fsSL "$BN_OFL_URL" -o "$WORK/bn-ofl.txt"; curl -fsSL "$LA_OFL_URL" -o "$WO
 # Bengali block + danda + ZWNJ/ZWJ + dotted circle; every layout feature, because Bangla shaping needs them all
 "$WORK/venv/bin/pyftsubset" "$WORK/bn-i.ttf" --unicodes="U+0964-0965,U+0980-09FE,U+200C-200D,U+25CC" \
   --layout-features='*' --flavor=woff2 --no-hinting --desubroutinize --output-file="$OUT/noto-sans-bengali.woff2"
-"$WORK/venv/bin/pyftsubset" "$WORK/la-i.ttf" --unicodes="U+0020-007E,U+00A0-00FF,U+00B5,U+2013-2014,U+2018-201D,U+2022,U+2026,U+2192,U+2212" \
+# No U+2192: Noto Sans has no arrows, so claiming it would download the file for a glyph it cannot draw
+# (FontCoverageTest reads the served cmap); the copy's arrow falls through to the system font.
+"$WORK/venv/bin/pyftsubset" "$WORK/la-i.ttf" --unicodes="U+0020-007E,U+00A0-00FF,U+00B5,U+2013-2014,U+2018-201D,U+2022,U+2026,U+2212" \
   --layout-features='*' --flavor=woff2 --no-hinting --desubroutinize --output-file="$OUT/noto-sans-latin.woff2"
 # Every code point a Bangla page can show must be in the Bengali subset's cmap (FontCoverageTest checks the CSS side).
 "$WORK/venv/bin/python" - "$OUT/noto-sans-bengali.woff2" baymax/src/main/resources/baymax <<'PY'
