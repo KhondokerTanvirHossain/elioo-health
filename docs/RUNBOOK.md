@@ -306,6 +306,14 @@ Redeploy the previous image tag; every merge to `main` is tagged with its git sh
 IMAGE_TAG=<previous git sha> bash ~/deploy.sh
 ```
 
+**Rollback floor (DR-40 A2, from the first route flip in W1c).** Caddy routing is state on the box, not tied to
+`IMAGE_TAG`. Before rolling back to a sha older than the most recent route flip, first revert that route in the box's
+Caddyfile (back up, write in place only, confirm the container sees it, validate, reload, as in the header of
+`docs/infra/Caddyfile.medioo`), then set `IMAGE_TAG`, then run `scripts/smoke-https.sh https://medioo.eliooo.org`.
+Rolling back past W1b leaves a newer `medioo-web` running; rolling Java back past an `/app/api` endpoint a flipped
+route calls breaks that route for every family. No route has flipped yet (2026-10-21), so today the one-liner above
+is the whole procedure.
+
 Migrations do not roll back. A release that adds a column is safe to roll back this way; one that changes the
 meaning of existing data is not, and needs a forward fix. To take Baymax out of service without changing
 version, set `BAYMAX_ENABLED=false` and redeploy: routes and migrations stop, MedScribe is untouched.

@@ -1,14 +1,33 @@
 # Medioo site blocks, copied read-only from the box on 2026-10-21 (DR-40, plan task X1).
 #
 # Source of truth: until W1c, the box is the source — /home/ec2-user/n8n/Caddyfile on the EC2 host, which also
-# holds the n8n ({$DOMAIN}) and bddrug (drugdb.eliooo.org) blocks; those are deliberately not copied here. From W1c
-# on, THIS file is the source and the box's medioo blocks are replaced from it.
+# holds the n8n ({$DOMAIN}) and bddrug (drugdb.eliooo.org) blocks; those are deliberately not copied here. One reload
+# affects all three tenants. From W1c on, the box's medioo/baymax blocks are pasted from THIS file. Editing this file
+# routes nothing by itself: a path reaches medioo-web only once it is routed in the box's Caddyfile.
 #
-# Reload after an edit on the box:
+# Drift: nothing detects it automatically until W1c adds the check to the post-deploy smoke. Before pasting from
+# this file, diff its blocks against the live Caddyfile's medioo/baymax blocks; any difference is a box edit to fold
+# in here first, never to overwrite.
+#
+# Editing the box. /home/ec2-user/n8n/Caddyfile is bind-mounted into n8n-caddy-1 as a SINGLE FILE (read-only inside
+# the container). Anything that replaces the inode — sed -i, mv of a temp file, rsync, an editor that saves by
+# rename — leaves the container reading the old file, and `caddy reload` then quietly reloads the stale config.
+#   cd /home/ec2-user/n8n
+#   cp Caddyfile Caddyfile.bak-$(date +%Y%m%d-%H%M)
+#   cat /path/to/new-Caddyfile > Caddyfile                     # in place only; never sed -i, mv or rsync
+#   docker exec n8n-caddy-1 cat /etc/caddy/Caddyfile | diff - Caddyfile          # must print nothing
+#   docker exec n8n-caddy-1 caddy validate --config /etc/caddy/Caddyfile        # must say Valid configuration
 #   docker exec n8n-caddy-1 caddy reload --config /etc/caddy/Caddyfile
+#   curl -sI https://medioo.eliooo.org/ ; curl -sI https://drugdb.eliooo.org/ ; curl -sI https://<n8n host>/
+#     -> compare each status code with the one recorded before the edit; any change means restore the backup
+#        (cat Caddyfile.bak-... > Caddyfile) and reload.
 #
-# DR-40 A1: Java is the default. A path goes to medioo-web:3000 only once it is listed in this block.
-# Flipping a route back is a one-line edit plus a reload.
+# Headers: deleting `-Server` makes Caddy defer this header block to response-write time, so the values below
+# OVERWRITE whatever the upstream sends. Caddy is therefore the owner of HSTS, X-Content-Type-Options and
+# Referrer-Policy on every path, Java's or Next's; an upstream that sets a different Referrer-Policy is overruled.
+#
+# DR-40 A1: Java is the default. A path goes to medioo-web:3000 only once it is listed here and applied on the box.
+# Flipping a route back is a one-line edit plus the procedure above.
 
 medioo.eliooo.org {
 	encode zstd gzip

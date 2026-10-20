@@ -1,7 +1,9 @@
 # Medioo — approved design, 2026-10-21
 
-What the PO approved before the Next.js rebuild. The rebuild implements this; when a screen and this folder disagree,
-this folder wins until the PO approves a change (record it as an amendment in `direction-contract.md`).
+What the PO approved before the Next.js rebuild. The rebuild implements this; when a screen and this folder disagree
+on look and layout, this folder wins until the PO approves a change (record it as an amendment in `direction-contract.md`).
+It never wins on copy or safety: copy comes from the `ui-*`/`messages_*` bundles, and urgency, wording, `tel:999`
+gating and every other safety rule from Java (DR-41 lists the places where the prototypes differ).
 
 | File | What it is |
 |---|---|

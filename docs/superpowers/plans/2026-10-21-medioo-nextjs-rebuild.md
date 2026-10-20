@@ -25,7 +25,10 @@
 - A value whose printed range is one-sided, or whose stored INSIDE the code cannot prove, renders as UNKNOWN with "কাগজে মিলিয়ে দেখুন". It is never "সীমার মধ্যে".
 - Medicines are shown verbatim and crop-first. Nothing is derived: no "current", no purpose, no dose advice.
 - "আমি ডাক্তার নই" appears on every page that shows a result. The NOW page carries `now.notdoctor` itself, not only the footer.
-- The NOW banner is global. "দেখেছি" (PO-approved 2026-10-21) hides the banner only. Stored urgency, the paper's NOW block and WhatsApp delivery are unchanged. A new NOW paper shows the banner again. The patient keeps a red mark.
+- The NOW banner is global. "দেখেছি" (PO-approved 2026-10-21) hides the banner only. Stored urgency, the paper's NOW block and WhatsApp delivery are unchanged. The patient keeps a red mark.
+  - The acknowledgement is keyed to the exact set of NOW documents the viewer saw at the tap: `(document_id, urgency_assessed_at, release state)`. The banner shows again whenever a visible NOW document is not in that set: a new upload, a `routine`/`this_week` → `now` raise or NULL first assessment on an existing paper (V18), an A11 sweep assessment, or a later gate release (DR-41 item 5).
+  - It is per account holder (member id), stored on the server so it holds across that person's devices, never per family: one member's tap must not hide the banner from another member who never saw it (Part B decision 8).
+- The prototypes win on look and layout only. Their NOW line with the name (Part B decision 3), unconditional `tel:999` (A5), canned answers, scene bar, receipts and toasts do not ship (DR-41).
 - All copy comes from `ui-*_{bn,en}.properties` and `messages_{bn,en}.properties`. No Bangla literal (U+0980–U+09FF) and no English UI prose may appear in `medioo-web/src` outside generated copy. New keys go through the copy owner and the PO.
 
 **Accessibility and design**
@@ -50,13 +53,14 @@
   - `img-src` is copied verbatim from `BaymaxSecurityHeadersFilter.CSP`: crops 302 to S3 and the upload tray uses `blob:`. Copying it means the two policies cannot drift.
   - No `style={}` in TSX and no `next/image`.
   - Fonts are the existing self-hosted Noto subsets. No Google Fonts, no Caveat or Galada.
-  - Next also sets `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: same-origin`.
+  - Next also sets `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: strict-origin-when-cross-origin`. Caddy's header block is deferred (it deletes `Server`) and overwrites `nosniff` and `Referrer-Policy` on every path, so Next uses Caddy's and Java's value; a different one would be tested locally and never reach a browser. `scripts/smoke-https.sh` asserts the production headers per path class.
 - Session cookie: `baymax_session` stays `Path=/app`. It is never widened (MedScribe's same-origin PoC script must not see it).
 - CSRF: every mutating `/app/api` route requires all three of:
   - `Content-Type: application/json` or `multipart/form-data`;
   - the header `X-Medioo: 1`;
-  - `Origin` equal to `baymax.web.public-origin` whenever an `Origin` header is sent.
+  - an `Origin` header that is present and equal to `baymax.web.public-origin`; a missing `Origin` is 403 `FORBIDDEN_ORIGIN` (browsers always send it on a fetch `POST`/`PUT`/`PATCH`/`DELETE`).
   - There is no CORS configuration, ever.
+- Next talks to Java server-side with `GET` and `HEAD` only. No server actions (`'use server'`), no mutating route handlers: every mutation goes browser → Caddy → Java (DR-40 A3). A `medioo-web` CI check enforces it.
 - Uploads, page and crop images, and every POST go to Java directly through Caddy. Next never proxies a request body.
 - Language: `bn` by default. `Accept-Language` never changes the language; only the `baymax_lang` cookie does.
 
@@ -81,17 +85,18 @@
 **A1. Topology.** `medioo-web` is a Next standalone container (`node:22-alpine`).
 - **Network:** it joins `n8n_edge` with no published port, `--memory=320m`. The template is `bddrug-web`, already running on the box at about 75 MiB.
 - **Image:** it is built and tagged with the same git sha as the Java image by the same deploy job.
-- **Caddy routes per path, and Java is the default.** A path goes to `medioo-web:3000` only once it is listed in the versioned site block `docs/infra/Caddyfile.medioo`. There is no Next fallback proxy: that would buffer 60 MB uploads and add a second hop.
+- **Caddy routes per path, and Java is the default.** A path goes to `medioo-web:3000` only once it is listed in the versioned site block `docs/infra/Caddyfile.medioo` and applied on the box. There is no Next fallback proxy: that would buffer 60 MB uploads and add a second hop.
+- **Java off the public port (W1c).** Java binds `127.0.0.1:8086` and the security group closes 8086. Until W1c lands this is a known gap: `:8086` is reachable over plain HTTP from outside, bypassing Caddy.
 - **Flipping a route back** is a one-line Caddy edit plus a reload.
 
 **A2. Deploy order and rollback.** `deploy.sh` swaps Java first and waits for its health, then swaps Node.
 - **Missing web image:** if a `medioo-web:<sha>` image does not exist (any sha before W1b), the web step logs and is skipped, and the deploy stays green.
-- **One `IMAGE_TAG` rolls back both,** so the RUNBOOK one-liner keeps working.
+- **One `IMAGE_TAG` rolls back both, down to the routes floor.** Caddy routing is box state, not tied to `IMAGE_TAG`. Rolling back to a sha older than the most recent route flip first reverts that route on the box (backup, in-place write, validate, reload), then sets `IMAGE_TAG`, then runs `scripts/smoke-https.sh`. From W1c, each flip records the routes-floor sha and `deploy.sh` refuses an `IMAGE_TAG` that is not a descendant of it unless `FORCE=1`.
 - **API compatibility:** API changes are additive only, so old Java plus new UI and new Java plus old UI never break.
 
 **A3. Auth across the boundary.**
 - **The browser** calls `/app/api/*`. Caddy sends these to Java, and the `Path=/app` cookie travels on its own.
-- **Server components** call `http://medscribe-ai:8086/app/api/*` and forward the incoming `Cookie` header, nothing else. Next never mints or reads a session.
+- **Server components** call `http://medscribe-ai:8086/app/api/*` with `GET` or `HEAD` only and forward the incoming `Cookie` header, nothing else. Next never mints or reads a session, and has no server actions or mutating route handlers: a fetch from Node sends no `Origin`, so it would pass an Origin check by construction.
 - **Cookies are set only in the browser.** Server components cannot set cookies, so the active patient and the theme or sound preferences are set by browser calls (for example `PUT /app/api/active-patient`), and Java answers with `Set-Cookie`.
 - **Preview:** Java decides whether a family sees Next twins before a route flips, through the `BAYMAX_WEB_PREVIEW_FAMILIES` allowlist exposed as `me.preview`. It is never a cookie anyone can set.
 
@@ -149,7 +154,7 @@ The ledger is generated, not hand-written. `scripts/ui-test-ledger.sh` lists eve
 | 5 | **The same paper sent twice** (image hash). | Warn ("এই কাগজটা আগেও পাঠিয়েছেন") and let the family choose. Never merge silently. | D5 |
 | 6 | **Landing page.** | Keep it in Java until W-del; port last (W13). | W13 |
 | 7 | **The one NOW red.** | `#d12c24` light and `#d93229` dark (both meet ≥4.5:1 with white). | W2a |
-| 8 | **দেখেছি scope.** | Per family, stored on the server, so it holds across devices. | B3 |
+| 8 | **দেখেছি scope.** | Per account holder (member id), stored on the server so it holds across that person's devices. Not per family: one member's tap would hide the NOW banner from every other member, including ones who never saw it. If per family is chosen, record that trade-off in DR-41 before B3 merges. | B3 |
 | 9 | **"Current medicines".** | Show "প্রেসক্রিপশনে যেমন লেখা — সর্বশেষ, তারিখসহ" only. No active or stopped state. | B6, W9 |
 | 10 | **New scope (DR-44):** voice, sounds, the স্বাস্থ্য tab, keepmd-parity later. | Record as approved MVP scope. Each keepmd feature gets its own BMX ticket later. | W9, W11, W12 |
 
@@ -210,7 +215,7 @@ Each line is one PR. The **Waves** order work; within a wave, lanes run in paral
 - **W3** Sign-in (held until decision 1). Flips `/app/`, `/app/login`, `/app/verify`. Board: welcome, number, error, code sent, code not sent (wa.me), wrong code, done.
 - **W4** Shell: tabs and three columns, the patient switcher, never guessing the patient (the chooser), the 401 → sign-in `next=` flow. Board: layouts at 390/1024/1440 × 0/1/2 patients.
 - **B3** Attention stack, timeline by month, follow-ups, NOW ack (migration with `family_id` and `patient_id` NOT NULL, FK, in the delete order). Proof:
-  - two-direction ack tests: it hides the banner; it never changes stored urgency, the NOW block or WhatsApp; a new NOW shows the banner again;
+  - two-direction ack tests, written first: it hides the banner for exactly the documents acked; it never changes stored urgency, the NOW block or WhatsApp; a new NOW upload, a `this_week` → `now` raise, a sweep assessment and a later gate release on an existing paper after the ack each show the banner again; after member A acks, member B in the same family still gets the banner;
   - Testcontainers deletion with a real ack row.
 - **W5** Chat thread (read-only: documents, outbound messages, nudges), the NOW banner with দেখেছি, the honest composer. Flips `/app/home`. Board: default, NOW, retake, first run.
 - **W6** Paper detail: the stored page image with DR-12 crops, zoom, every gate state, NOW and NOW-abroad, retake, failed, multi-page, delete; Review Focus 2 and 5. Flips `/app/documents/{id}`, `/all`, `/values/{obs}`. Proof:
@@ -317,7 +322,7 @@ Each line is one PR. The **Waves** order work; within a wave, lanes run in paral
 - [ ] **Step 1:** Copy the live site block. Over SSH, read `/home/ec2-user/n8n/Caddyfile` (read-only), extract the `medioo.eliooo.org` and `baymax.eliooo.org` blocks, and save them to `docs/infra/Caddyfile.medioo` with a header comment saying the box is the source until W1c, after which this file is. Confirm it contains no secrets with `grep -nE 'token|key|password'`. Expected: nothing.
 - [ ] **Step 2:** Append **DR-40** ("Next.js frontend beside Java", recording Part A1–A8 as decided) and **DR-41** ("Messages grammar, Mio, wordmark, legibility floor, the দেখেছি acknowledgement: the 2026-10-21 amendment") to `docs/DECISIONS.md`, in the existing DR format with Decision / Why / Alternatives.
 - [ ] **Step 3:** Update `CLAUDE.md` and `docs/MEDIOO.md` as listed. Keep CLAUDE.md's "keep it short" rule: at most 4 new lines.
-- [ ] **Step 4:** Check the design files for real data: `grep -cE '\+?8801[3-9][0-9]{8}' docs/design/2026-10-21-approved/*.html`. Expected: 0 per file.
+- [ ] **Step 4:** Check every text file in the design folder for real numbers, in all three forms (international, local with hyphens or spaces, Bangla digits): `grep -nE '(\+?880[- ]?|(^|[^0-9])0)1[3-9][0-9]{2}[- ]?[0-9]{6}' docs/design/2026-10-21-approved/*.{html,md}` and `grep -nE '(\+?৮৮০[- ]?)?০১[৩-৯][০-৯]{2}[- ]?[০-৯]{6}' docs/design/2026-10-21-approved/*.{html,md}`. Expected: the first matches the `01700-000000` placeholder (proof that it can fire) and every hit is a fictional placeholder; record each hit.
 - [ ] **Step 5: Commit.**
   ```bash
   git add docs/DECISIONS.md docs/infra/Caddyfile.medioo CLAUDE.md docs/MEDIOO.md
@@ -343,7 +348,7 @@ Each line is one PR. The **Waves** order work; within a wave, lanes run in paral
 - Produces:
   - `buildCsp(nonce: string): string`, in `src/security/csp.ts`. Exactly the policy in Global Constraints, with `nonce` substituted.
   - `GET /app/healthz` returns `200 {"service":"medioo-web","sha":"<GIT_SHA env>"}` with `cache-control: no-store`.
-  - Middleware sets `content-security-policy`, `x-frame-options: DENY`, `x-content-type-options: nosniff`, `referrer-policy: same-origin` and passes the nonce to the layout via the `x-nonce` request header.
+  - Middleware sets `content-security-policy`, `x-frame-options: DENY`, `x-content-type-options: nosniff`, `referrer-policy: strict-origin-when-cross-origin` and passes the nonce to the layout via the `x-nonce` request header.
 
 - [ ] **Step 1: Write the failing unit test** `csp.test.ts`:
   - `buildCsp("abc")` contains `script-src 'self' 'nonce-abc'`;
@@ -366,6 +371,7 @@ Each line is one PR. The **Waves** order work; within a wave, lanes run in paral
   - `pnpm/action-setup` and `actions/setup-node` with `node-version: "22"`;
   - `pnpm -C medioo-web install --frozen-lockfile`;
   - `lint`, `typecheck`, `vitest run`, `build`;
+  - the server-mutation check (DR-40 A3): fail if `medioo-web/src` contains `'use server'` or `"use server"`, or any fetch to `JAVA_INTERNAL_URL` with a method other than `GET`/`HEAD`; it fails too if it scanned zero files. Replay it red once against a planted `'use server'` and quote the failure line in the PR body;
   - `exec playwright install --with-deps chromium`;
   - `exec playwright test`;
   - upload `medioo-web/playwright-report` on failure.
@@ -387,7 +393,7 @@ Each line is one PR. The **Waves** order work; within a wave, lanes run in paral
 - Modify: `deploy.sh` (add `deploy_web`; Java first; prune both repositories)
 - Create: `scripts/test_deploy_sh.sh`
 - Modify: `.github/workflows/ci-cd.yml` (the deploy job builds and pushes `ghcr.io/khondokertanvirhossain/elioo-health/medioo-web:<sha>` from `medioo-web/Dockerfile`; the test runs in "Build and test")
-- Modify: `docs/RUNBOOK.md` (two images, rollback by one `IMAGE_TAG`, pre-W1b shas deploy Java only)
+- Modify: `docs/RUNBOOK.md` (two images, rollback by one `IMAGE_TAG` down to the routes floor, pre-W1b shas deploy Java only and leave a newer `medioo-web` running)
 
 **Interfaces:**
 - Consumes: `prune_repo` (X0), `GET /app/healthz` (W1a).
@@ -426,7 +432,8 @@ Each line is one PR. The **Waves** order work; within a wave, lanes run in paral
 - Create: `scripts/smoke-https.sh` (the path-class table)
 - Modify: `.github/workflows/ci-cd.yml` (run `scripts/smoke-https.sh` after deploy; then drop the `:8086` smoke test)
 - Modify: `deploy.sh` (`-p 127.0.0.1:${PORT}:${PORT}` instead of `-p ${PORT}:${PORT}`), `scripts/test_deploy_sh.sh` (assert the Java port binds to 127.0.0.1)
-- Modify: `docs/RUNBOOK.md` (how to flip a route: edit `Caddyfile.medioo`, back up the box Caddyfile, `caddy validate`, reload, run `scripts/smoke-https.sh`)
+- Modify: `docs/RUNBOOK.md` (how to flip a route: edit `Caddyfile.medioo`, diff the box's medioo/baymax blocks against it first, back up the box Caddyfile, write it in place only — single-file bind mount, never `sed -i`/`mv`/`rsync` — confirm the container sees the new file, `caddy validate`, reload, `curl -sI` medioo, n8n and drugdb, run `scripts/smoke-https.sh`; and the rollback floor: revert the route before rolling back past it)
+- Modify: `deploy.sh` (record and enforce the routes floor: refuse an `IMAGE_TAG` that is not a descendant of the recorded routes-floor sha unless `FORCE=1`), `scripts/test_deploy_sh.sh` (both directions: a descendant deploys, an ancestor is refused, `FORCE=1` overrides)
 
 **Interfaces:**
 - Produces: `scripts/smoke-https.sh <base-url>`. It exits 0 only when every row passes:
@@ -435,10 +442,12 @@ Each line is one PR. The **Waves** order work; within a wave, lanes run in paral
   - `/app/` → 200, HTML from Java (contains `name="whatsapp_number"`);
   - `/medscribeai` and `/medscribeai/` → not 404;
   - `/baymax` → 301 to `/`;
-  - `/api/v1/baymax/wa/webhook` (GET, no params) → Java's verification refusal status (the same as today, measured in Step 1).
+  - `/api/v1/baymax/wa/webhook` (GET, no params) → Java's verification refusal status (the same as today, measured in Step 1);
+  - the actual response headers per path class (Java page, Next page, API): `content-security-policy` present (the nonce CSP on Next paths), `x-frame-options: DENY`, `x-content-type-options: nosniff`, `referrer-policy: strict-origin-when-cross-origin`, `strict-transport-security` present;
+- Produces: a drift step in the deploy job, after the smoke, over the job's existing SSH: extract the box's live medioo/baymax blocks read-only and diff them against `docs/infra/Caddyfile.medioo`. A difference fails the step with "box Caddyfile drifted from the repo — fold the box edit in first". Test it both ways against fixture files: identical blocks pass, one changed header line fails.
 
 - [ ] **Step 1:** Run each table URL against production now. Record today's status codes as the expected values (the webhook refusal code in particular). Write `scripts/smoke-https.sh` with those values and run it. Expected: everything passes except `/app/healthz`, which fails because Next is not routed yet.
-- [ ] **Step 2:** Apply on the box. Back up the Caddyfile (`cp Caddyfile Caddyfile.bak-$(date +%Y%m%d-%H%M)`). Paste the updated block. Run `docker exec n8n-caddy-1 caddy validate --config /etc/caddy/Caddyfile`. Expected: `Valid configuration`. Then reload.
+- [ ] **Step 2:** Apply on the box, following the `Caddyfile.medioo` header. First diff the live medioo/baymax blocks against the repo file; any difference is a box edit to fold into the repo file first, never overwrite. Record `curl -sI` status codes for medioo, n8n and drugdb. Back up the Caddyfile (`cp Caddyfile Caddyfile.bak-$(date +%Y%m%d-%H%M)`). Write it in place only (`cat new > Caddyfile`; never `sed -i`, `mv` or `rsync`: the file is a single-file bind mount). Confirm `docker exec n8n-caddy-1 cat /etc/caddy/Caddyfile | diff - /home/ec2-user/n8n/Caddyfile` prints nothing. Run `docker exec n8n-caddy-1 caddy validate --config /etc/caddy/Caddyfile`. Expected: `Valid configuration`. Then reload, and record the routes-floor sha.
 - [ ] **Step 3:** Run `scripts/smoke-https.sh https://medioo.eliooo.org`. Expected: every row PASS. Also check `bddrug` and `n8n` still answer (`curl -sI` each host; the status codes are unchanged). Report the box change.
 - [ ] **Step 4:** Update the `-p` binding test, then implement and run the deploy tests. Expected: PASS.
 - [ ] **Step 5: Commit.**
@@ -470,6 +479,7 @@ Each line is one PR. The **Waves** order work; within a wave, lanes run in paral
   - `GET /app/api/me` with no session → 401 `{"reason":"UNAUTHENTICATED"}`;
   - `PUT /app/api/active-patient` with a session and JSON but no `X-Medioo` → 403 `MISSING_HEADER`;
   - the same with `X-Medioo: 1` and `Origin: https://evil.example` → 403 `FORBIDDEN_ORIGIN`;
+  - the same with `X-Medioo: 1` and no `Origin` at all (a server-side fetch) → 403 `FORBIDDEN_ORIGIN`;
   - the same with `X-Medioo: 1`, the correct `Origin` and `Content-Type: text/plain` → 415 `UNSUPPORTED_MEDIA_TYPE`;
   - the same with `X-Medioo: 1`, the correct `Origin` and JSON → 204;
   - a `GET` with a session needs no `X-Medioo` → 200.

@@ -48,8 +48,8 @@ uses R2DBC. Schema is `medscribe`. New migrations: next `V<n>__description.sql`,
 - `elioo-llm/` — provider-neutral LLM layer (`LlmClient`, prompt templates, Anthropic + OpenAI-compatible clients, `LlmAutoConfiguration`).
 - `elioo-aws-*`, `elioo-gcp-*` — thin cloud SDK wrappers with Spring auto-configuration; no business logic.
 - `docs/superpowers/{specs,plans}` — design specs and the plans that executed them; `docs/archive` — PoC history, not current.
-- `medioo-web/` (from plan task W1a) — the Next.js frontend beside Java (DR-40): renders Java's display model, derives no safety rule; Caddy routes a path to it only once it is listed in `docs/infra/Caddyfile.medioo`.
-- `docs/design/2026-10-21-approved/` — the PO-approved phone and desktop design, Mio and the wordmark (DR-41); it wins over a screen until the PO amends it.
+- `medioo-web/` (created by W1a; not yet in the tree) — the Next.js frontend beside Java (DR-40): renders Java's display model, derives no safety rule, mutates only from the browser; a path reaches it only once it is listed in `docs/infra/Caddyfile.medioo` and applied on the box.
+- `docs/design/2026-10-21-approved/` — the PO-approved phone and desktop design, Mio and the wordmark (DR-41); it wins over a screen on look and layout only — copy comes from the `ui-*`/`messages_*` bundles and every safety rule and wording from Java; its NOW line with the name, unconditional `tel:999`, canned answers, scene bar, receipts and toasts do not ship.
 - `.github/workflows/ci-cd.yml` — build on every push; on `main` also image → GHCR → SSH deploy via `deploy.sh`.
 
 Key files when changing behaviour:
@@ -184,7 +184,7 @@ Key files when changing behaviour:
 
 ## Environment facts (2026-09)
 
-- Server: EC2 `ec2-13-205-14-249.ap-south-1.compute.amazonaws.com`, user `ec2-user`, shared with an n8n stack; Caddy there does HTTPS for `medioo.eliooo.org` and redirects `baymax.eliooo.org` to it, path preserved (Caddyfile at `/home/ec2-user/n8n/Caddyfile`; its medioo/baymax blocks are versioned in `docs/infra/Caddyfile.medioo`, the box is the source until W1c and the repo after; reload with `docker exec n8n-caddy-1 caddy reload --config /etc/caddy/Caddyfile`). **Both hostnames are separate A records pointing at the EC2 IP — not a CNAME — so moving the box means changing both in Hostinger.**
+- Server: EC2 `ec2-13-205-14-249.ap-south-1.compute.amazonaws.com`, user `ec2-user`, shared with an n8n stack; Caddy there does HTTPS for `medioo.eliooo.org` and redirects `baymax.eliooo.org` to it, path preserved (Caddyfile at `/home/ec2-user/n8n/Caddyfile`; its medioo/baymax blocks are versioned in `docs/infra/Caddyfile.medioo`, the box is the source until W1c and the repo after; it is a single-file bind mount, so back it up and write it in place only, never `sed -i`/`mv`/`rsync` — the header of `Caddyfile.medioo` has the full validate-and-reload procedure; reload with `docker exec n8n-caddy-1 caddy reload --config /etc/caddy/Caddyfile`). **Both hostnames are separate A records pointing at the EC2 IP — not a CNAME — so moving the box means changing both in Hostinger.**
 - Runtime config on the server: `/home/ec2-user/medscribe.env` (mode 600). Redeploy manually: `IMAGE_TAG=<git sha> bash ~/deploy.sh`. Back it up before editing and list every change in the build report; which `BAYMAX_*` lines must be blank vs set, and the post-deploy self-test, are in [docs/RUNBOOK.md](docs/RUNBOOK.md).
 - Database: Supabase project `niramoy-rx` (ap-south-1), role/schema `medscribe`, via the session pooler on port 5432.
 - LLM: `groq` by default (`openai/gpt-oss-120b`, free tier 8k tokens/min); switch to `anthropic` (`claude-opus-5`) for demos by editing the server env and redeploying.

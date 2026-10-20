@@ -24,3 +24,7 @@ FORM: The Conversation (position 1 of 7, seed bb429a92), with The Wall Calendar 
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
 
 AMENDMENT 2026-10-21 (PO): the conversation follows Apple Messages exactly — grey received bubbles, teal (#06788a) sent bubbles on a plain background — instead of the mist ground / white Medioo bubbles / soft-green family bubbles above. Mascot is the PO's Mio (unchanged), wordmark the PO's medioo (vector master in ~/medioo-design/logo/). Legibility floor for elderly users: every status = colour + icon/shape + word; no text under 12px; secondary text ≥ 4.5:1 in both themes (axe clean on 30 screens).
+
+AMENDMENT 2026-10-21 (PO, recorded in the repo by DR-41): "দেখেছি" on the global NOW banner hides the banner only. Stored urgency, the paper's NOW block and WhatsApp delivery are unchanged; a new NOW paper shows the banner again; the patient keeps the red mark. The wordmark's vector master named above is committed in this folder as medioo-light.svg, medioo-dark.svg, medioo-mono-ink.svg and medioo-mono-white.svg; those files, not ~/medioo-design/logo/, are the source.
+
+SCOPE (DR-41, engineering record, not a PO amendment): this contract and the prototypes govern look and layout only. Copy comes from the ui-*/messages_* bundles; urgency, display kind, wording, tel:999 gating and every other safety rule stay with Java and the PO.
