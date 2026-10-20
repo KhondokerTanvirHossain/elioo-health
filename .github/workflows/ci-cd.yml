@@ -71,6 +71,13 @@ jobs:
           # presence-only: the context test never calls the provider
           LLM_PROVIDER: groq
           GROQ_API_KEY: ci-placeholder
+      # D4: the add sheet's script (baymax/ui/upload.js) — its pure rules, including exactly what one press sends.
+      # The DOM wiring and the ES5 parse are covered inside the Gradle build (UploadScriptTest); this runs the rest.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Upload script tests
+        run: node --test baymax/src/test/js/*.test.mjs
       - name: Upload test reports
         if: failure()
         uses: actions/upload-artifact@v4
