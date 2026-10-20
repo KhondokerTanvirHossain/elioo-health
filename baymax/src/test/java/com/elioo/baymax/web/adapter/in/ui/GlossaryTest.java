@@ -36,6 +36,10 @@ class GlossaryTest {
     static final List<String> MESSAGE_RANGE_WORDS = List.of("স্বাভাবিক সীমা", "ছাপা সীমা", "তুলনা নেই");
     /** messages_bn exemptions, each with its owner: the D35 claim wording is the PO's (Phase 0 PR 2). */
     static final Map<String, String> MESSAGE_EXEMPT = Map.of("explanation.routine", "স্বাভাবিক সীমা");
+    /** The English twin of "রিপোর্টে লেখা সীমা": the range is the one printed on the report, never a "normal" one. */
+    static final String EN_RETIRED_RANGE = "normal range";
+    /** messages_en exemptions: the English twin of the PO's D35 wording. */
+    static final Map<String, String> MESSAGE_EXEMPT_EN = Map.of("explanation.routine", EN_RETIRED_RANGE);
 
     /**
      * "<lang-part>:<key> <word>" for every violation main still has. Emptied by D2 (2026-10-20): a new violation is red
@@ -67,6 +71,9 @@ class GlossaryTest {
                 if (GLUED_CASE_EN.matcher(e.getValue()).find()) {
                     found.add(part + "_en:" + e.getKey() + " glued-case");
                 }
+                if (e.getValue().toLowerCase(java.util.Locale.ROOT).contains(EN_RETIRED_RANGE)) {
+                    found.add(part + "_en:" + e.getKey() + " " + EN_RETIRED_RANGE);
+                }
             }
         }
         for (Map.Entry<String, String> e : BundleFiles.messages(Lang.BN).entrySet()) {
@@ -75,6 +82,12 @@ class GlossaryTest {
                 if (e.getValue().contains(w) && !w.equals(MESSAGE_EXEMPT.get(e.getKey()))) {
                     found.add("messages:" + e.getKey() + " " + w);
                 }
+            }
+        }
+        for (Map.Entry<String, String> e : BundleFiles.messages(Lang.EN).entrySet()) {
+            enKeys++;
+            if (e.getValue().toLowerCase(java.util.Locale.ROOT).contains(EN_RETIRED_RANGE) && !MESSAGE_EXEMPT_EN.containsKey(e.getKey())) {
+                found.add("messages_en:" + e.getKey() + " " + EN_RETIRED_RANGE);
             }
         }
         assertThat(keys).as("keys read; an empty read would pass vacuously").isGreaterThan(200);
@@ -88,6 +101,13 @@ class GlossaryTest {
         MESSAGE_EXEMPT.forEach((k, w) -> {
             try {
                 assertThat(BundleFiles.messages(Lang.BN).get(k)).as("exemption " + k + " still needed").contains(w);
+            } catch (java.io.IOException ex) {
+                throw new java.io.UncheckedIOException(ex);
+            }
+        });
+        MESSAGE_EXEMPT_EN.forEach((k, w) -> {
+            try {
+                assertThat(BundleFiles.messages(Lang.EN).get(k)).as("English exemption " + k + " still needed").containsIgnoringCase(w);
             } catch (java.io.IOException ex) {
                 throw new java.io.UncheckedIOException(ex);
             }
