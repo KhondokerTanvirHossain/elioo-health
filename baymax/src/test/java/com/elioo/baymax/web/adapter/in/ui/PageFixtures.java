@@ -119,6 +119,8 @@ final class PageFixtures {
         variant("GET /app/home", Fixture.get("/app/home", true, Stubs::maStack).named("stack"));
         variant("GET /app/home", Fixture.get("/app/home", true, Stubs::maWithNoPapersYet).named("empty"));
         variant("GET /app/timeline", Fixture.get("/app/timeline?patient=" + ma, true, Stubs::maStackAndPapers).named("strip"));
+        // D1: the heaviest কাগজপত্র FirstLoadBudgetTest weighs — twenty papers over three months, a third NOW and a third THIS_WEEK
+        variant("GET /app/timeline", Fixture.get("/app/timeline?patient=" + ma, true, Stubs::maTwentyPapers).named("heaviest"));
         // A6: the patient in view as the owner sees them (and after a save), and a shared patient (no save, no switch)
         variant("GET /app/family", Fixture.get("/app/family?patient=" + ma, true, Stubs::familyOfTwo).named("chosen"));
         variant("GET /app/family", Fixture.get("/app/family?patient=" + ma + "&saved=1", true, Stubs::maProfile).named("saved"));
@@ -295,6 +297,25 @@ final class PageFixtures {
         static void maStackAndPapers(WebUiTestKit k) {
             maStack(k);
             maPapers(k);
+        }
+
+        /**
+         * D1: twenty read papers of Ma's across August to October with a next page — seven NOW, seven THIS_WEEK and six
+         * routine prescriptions — the longest list one page of কাগজপত্র draws, for the first-load budget.
+         */
+        static void maTwentyPapers(WebUiTestKit k) {
+            familyOfMa(k);
+            List<TimelineEntry> entries = new java.util.ArrayList<>();
+            for (int i = 0; i < 20; i++) {
+                Urgency level = i % 3 == 0 ? Urgency.NOW : i % 3 == 1 ? Urgency.THIS_WEEK : Urgency.ROUTINE;
+                boolean lab = level != Urgency.ROUTINE;
+                UUID id = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a41001%02d".formatted(i));
+                entries.add(new TimelineEntry(id, LocalDate.parse("2026-10-18").minusDays(4L * i), false, lab ? "lab_report" : "prescription",
+                        lab ? "Shapla Diagnostics" : null, "DONE", lab ? 14 : 0, lab ? 0 : 3, 1, 0, "f/p/" + id + "/page-1.jpg",
+                        WebUiTestKit.NOW, level, lab ? 2 : 0, "released", null));
+            }
+            when(k.timeline.timeline(eq(WebUiTestKit.FAMILY), eq(WebUiTestKit.MA_ID), any(), any()))
+                    .thenReturn(Mono.just(new TimelinePage(List.copyOf(entries), "v1.next-page")));
         }
 
         static void maNoPapers(WebUiTestKit k) {
