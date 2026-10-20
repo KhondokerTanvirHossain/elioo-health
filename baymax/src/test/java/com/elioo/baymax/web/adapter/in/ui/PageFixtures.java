@@ -253,7 +253,8 @@ final class PageFixtures {
                             14, 2, 1, 3, "f/p/" + DONE_DOC + "/page-1.jpg", WebUiTestKit.NOW,
                             com.elioo.baymax.outbound.domain.Urgency.NOW, 1, "pending", null),
                     new TimelineEntry(PROCESSING_DOC, LocalDate.parse("2026-10-18"), true, null, null, "PROCESSING",
-                            0, 0, 0, 0, "f/p/" + PROCESSING_DOC + "/page-1.jpg", WebUiTestKit.NOW)), null)));
+                            // still being read: not assessed, nothing counted, no review yet, no retake code
+                            0, 0, 0, 0, "f/p/" + PROCESSING_DOC + "/page-1.jpg", WebUiTestKit.NOW, null, 0, null, null)), null)));
         }
 
         static void maProfile(WebUiTestKit k) {

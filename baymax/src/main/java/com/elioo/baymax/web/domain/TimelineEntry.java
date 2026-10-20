@@ -22,14 +22,6 @@ public record TimelineEntry(UUID documentId, LocalDate date, boolean dateIsFallb
                             int unverified, String pageOneKey, Instant createdAt,
                             Urgency urgency, int outside, String reviewState, String retakeReasonCode) {
 
-    /** The pre-C2 shape: no stored urgency, nothing outside, no review state, no retake code. */
-    public TimelineEntry(UUID documentId, LocalDate date, boolean dateIsFallback, String documentType,
-                         String facility, String status, int values, int medicines, int followUps,
-                         int unverified, String pageOneKey, Instant createdAt) {
-        this(documentId, date, dateIsFallback, documentType, facility, status, values, medicines, followUps,
-                unverified, pageOneKey, createdAt, null, 0, null, null);
-    }
-
     /** D27: NOW and THIS_WEEK get a chip; ROUTINE and unassessed get none. The rule lives here, once; UrgencyChip calls it. */
     public Optional<Urgency> chip() {
         return urgency == null || urgency == Urgency.ROUTINE ? Optional.empty() : Optional.of(urgency);

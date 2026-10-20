@@ -111,6 +111,51 @@ class TimelineReadModelTest {
         });
     }
 
+    /**
+     * All three parts of the cursor, across pages. Three printed dates whose uploads run the other way (the oldest paper
+     * was sent last), and on each date ids that run against the upload order, with two uploads sharing an instant. Paged
+     * five at a time from the last row shown, the pages joined must be exactly the one ORDER BY over every row: none
+     * skipped, none repeated. A cursor in upload order, or one that drops the upload instant, loses rows at the join.
+     */
+    @Test
+    void pagingThroughPapersWhoseDatesUploadsAndIdsDisagreeYieldsEveryRowOnceInOrder() {
+        runner().run(context -> {
+            UUID p = patient(context);
+            String tail = UUID.randomUUID().toString().substring(8);   // unique to this test; the rank in front sets the id order
+            String[] dates = {"2026-10-12", "2026-09-12", "2026-08-12"};
+            String[] uploadDays = {"2026-10-17", "2026-10-18", "2026-10-19"};   // the oldest paper uploaded last
+            int rank = 0;
+            for (int d = 0; d < dates.length; d++) {
+                for (int slot = 0; slot < 8; slot++) {
+                    int hour = 8 + (slot == 4 ? 3 : slot);   // slots 3 and 4 share one instant: the id alone orders them
+                    UUID made = doc(context, p, uploadDays[d] + "T" + String.format("%02d", hour) + ":00:00Z", dates[d], "lab_report", "DONE");
+                    // within a date, the later the upload the SMALLER the id, so the id order runs against the upload order
+                    UUID id = UUID.fromString(String.format("%08x", 1000 + d * 100 + (100 - slot)) + tail);
+                    sql("UPDATE baymax.document SET id = '" + id + "' WHERE id = '" + made + "'");
+                    rank++;
+                }
+            }
+            List<String> expected = ids("ORDER BY timeline_date DESC, created_at DESC, id DESC", p);
+            // the data really exercises every part of the cursor: neither of the broken orders agrees with the true one
+            assertThat(expected).hasSize(rank).isNotEqualTo(ids("ORDER BY created_at DESC, id DESC", p))
+                    .isNotEqualTo(ids("ORDER BY timeline_date DESC, id DESC", p));
+
+            TimelineReadPort port = context.getBean(TimelineReadPort.class);
+            List<String> seen = new java.util.ArrayList<>();
+            TimelineCursor after = TimelineCursor.FIRST;
+            for (int pages = 0; pages < 20; pages++) {
+                List<TimelineEntry> page = port.page(p, after, TimelineFilter.ALL, 5).collectList().block();
+                if (page.isEmpty()) {
+                    break;
+                }
+                page.forEach(e -> seen.add(e.documentId().toString()));
+                TimelineEntry last = page.get(page.size() - 1);
+                after = new TimelineCursor(last.date(), last.createdAt(), last.documentId());
+            }
+            assertThat(seen).as("every paper exactly once, in the list's order, across the page joins").containsExactlyElementsOf(expected);
+        });
+    }
+
     /** §4.15: newest DOCUMENT date first. A 12 July report uploaded today sits below a 12 October one uploaded last week. */
     @Test
     void theTimelineIsOrderedByDocumentDateNotByUpload() {
@@ -272,6 +317,64 @@ class TimelineReadModelTest {
         });
     }
 
+    /**
+     * The other direction of "DONE only": a paper still being read, or one waiting for a retake, never reaches the stack
+     * even with a stored NOW. The finished NOW paper beside them is there, so an empty answer cannot pass.
+     */
+    @Test
+    void aPaperThatIsNotDoneIsNeverOnTheAttentionStack() {
+        runner().run(context -> {
+            UUID p = patient(context);
+            UUID done = doc(context, p, "2026-10-19T08:00:00Z", "2026-10-18", "lab_report", "DONE");
+            urgency(done, "now");
+            for (String status : List.of("NEEDS_RETAKE", "PROCESSING", "RECEIVED", "FAILED")) {
+                UUID notDone = doc(context, p, "2026-10-19T09:00:00Z", "2026-10-19", "lab_report", status);
+                urgency(notDone, "now");
+            }
+            assertThat(scalar("SELECT count(*) FROM baymax.document WHERE patient_id = '" + p + "' AND urgency = 'now' AND status <> 'DONE'"))
+                    .as("the not-DONE papers really carry a stored NOW").isEqualTo("4");
+            assertThat(context.getBean(TimelineReadPort.class).attention(p, NOW.minus(Duration.ofDays(30)), 5)
+                    .map(TimelineEntry::documentId).collectList().block()).containsExactly(done);
+        });
+    }
+
+    /** Newest document date first within a level, whatever the upload order: the older paper was sent later. */
+    @Test
+    void withinALevelTheNewerDocumentDateComesFirst() {
+        runner().run(context -> {
+            UUID p = patient(context);
+            UUID newerPaper = doc(context, p, "2026-10-10T08:00:00Z", "2026-10-09", "lab_report", "DONE");
+            urgency(newerPaper, "now");
+            UUID olderPaper = doc(context, p, "2026-10-19T08:00:00Z", "2026-10-01", "lab_report", "DONE");
+            urgency(olderPaper, "now");
+            UUID newerWeek = doc(context, p, "2026-10-11T08:00:00Z", "2026-10-08", "lab_report", "DONE");
+            urgency(newerWeek, "this_week");
+            UUID olderWeek = doc(context, p, "2026-10-18T08:00:00Z", "2026-10-02", "lab_report", "DONE");
+            urgency(olderWeek, "this_week");
+            assertThat(context.getBean(TimelineReadPort.class).attention(p, NOW.minus(Duration.ofDays(30)), 5)
+                    .map(TimelineEntry::documentId).collectList().block()).containsExactly(newerPaper, olderPaper, newerWeek, olderWeek);
+        });
+    }
+
+    /** "Any review state" over every gate state V9 allows: the stack shows the level whatever the reviewer did. */
+    @Test
+    void attentionHoldsANowPaperInEveryGateState() {
+        runner().run(context -> {
+            UUID p = patient(context);
+            List<String> gates = List.of("released", "pending", "approved", "rejected", "failed_safety");
+            List<UUID> expected = new java.util.ArrayList<>();
+            for (int i = 0; i < gates.size(); i++) {
+                // later index = newer document date, so the expected order is the reverse of insertion
+                UUID d = doc(context, p, "2026-10-19T08:00:0" + i + "Z", "2026-10-1" + i, "lab_report", "DONE");
+                urgency(d, "now");
+                explanation(d, gates.get(i));
+                expected.add(0, d);
+            }
+            assertThat(context.getBean(TimelineReadPort.class).attention(p, NOW.minus(Duration.ofDays(30)), 10)
+                    .map(TimelineEntry::documentId).collectList().block()).containsExactlyElementsOf(expected);
+        });
+    }
+
     /** RECENT_LIMIT's defect: 51 newer routine papers cannot push an older NOW paper off the stack (filtered in SQL). */
     @Test
     void manyNewerRoutinePapersDoNotHideANowPaper() {
@@ -306,6 +409,18 @@ class TimelineReadModelTest {
         try (Connection c = connect(); Statement s = c.createStatement()) {
             s.execute(statement);
         }
+    }
+
+    /** This patient's document ids in {@code orderBy}, straight from Postgres: the reference a paged read must equal. */
+    private static List<String> ids(String orderBy, UUID patient) throws Exception {
+        List<String> out = new java.util.ArrayList<>();
+        try (Connection c = connect(); Statement s = c.createStatement();
+             ResultSet rs = s.executeQuery("SELECT id FROM baymax.document WHERE patient_id = '" + patient + "' " + orderBy)) {
+            while (rs.next()) {
+                out.add(rs.getString(1));
+            }
+        }
+        return out;
     }
 
     private static String scalar(String query) throws Exception {

@@ -150,13 +150,14 @@ class TimelineServiceTest {
     @Test
     void aShareMemberSeesTheTimelineButMayNotDelete() {
         when(records.visiblePatient(FAMILY_A, PATIENT_B)).thenReturn(Mono.just(new PatientAccess(PATIENT, false)));
-        when(timelineRead.page(eq(PATIENT_B), any(), any(), anyInt())).thenReturn(Flux.just(entry(DOC_B, NOW)));
+        TimelineEntry row = entry(DOC_B, NOW);
+        when(timelineRead.page(eq(PATIENT_B), any(), any(), anyInt())).thenReturn(Flux.just(row));
         when(documents.findVisible(FAMILY_A, DOC_B)).thenReturn(Mono.just(DOCUMENT));
 
+        // the service passes the read port's row through untouched; its counts are pinned on Postgres (TimelineReadModelTest)
         StepVerifier.create(service.timeline(FAMILY_A, PATIENT_B, null, TimelineFilter.ALL))
                 .assertNext(page -> {
-                    assertThat(page.entries()).hasSize(1);
-                    assertThat(page.entries().get(0).medicines()).isEqualTo(3);
+                    assertThat(page.entries()).containsExactly(row);
                     assertThat(page.nextCursor()).isNull();
                 }).verifyComplete();
 
@@ -218,10 +219,13 @@ class TimelineServiceTest {
                 }).verifyComplete();
     }
 
-    /** A read-model row as TimelineReadPort returns it: three medicines, nothing assessed. */
+    /**
+     * A read-model row as TimelineReadPort returns it. The C2 fields are given on purpose (a stored THIS_WEEK, nothing
+     * outside, a released review, no retake code), so no fixture reads as "unassessed" by a constructor default.
+     */
     private static TimelineEntry entry(UUID id, Instant createdAt) {
         return new TimelineEntry(id, LocalDate.parse("2026-09-17"), false, "prescription", null, "DONE", 0, 3, 0, 0,
-                "k/" + id + "/page-1.jpg", createdAt);
+                "k/" + id + "/page-1.jpg", createdAt, Urgency.THIS_WEEK, 0, "released", null);
     }
 
     @Test
