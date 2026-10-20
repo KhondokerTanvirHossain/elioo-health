@@ -24,7 +24,7 @@
     var t = out[i]; out[i] = out[j]; out[j] = t;
     return out;
   }
-  /** "আলাদা আলাদা" is a paper per page; one report is one paper whatever the pages. */
+  /** "Separate" is a paper per page; one report is one paper whatever the pages. */
   function documentsNeeded(count, group) { return group === 'separate' ? count : (count > 0 ? 1 : 0); }
   /** The allowance, before a byte leaves the phone; remaining < 0 is a paying family, with no cap. */
   function allowed(count, group, remaining) { return remaining < 0 || documentsNeeded(count, group) <= remaining; }
@@ -47,7 +47,7 @@
   }
   /** The only name a page is sent under: never the file's own name, which may name the patient. */
   function pageName(i, ext) { return 'page-' + (i + 1) + '.' + ext; }
-  /** One press of "পাঠান" as fields and files: the same pages and key always make the same request (a retry). */
+  /** One press of "send" as fields and files: the same pages and key always make the same request (a retry). */
   function buildRequest(pages, group, key, patient) {
     return {
       fields: [['patient', patient], ['group', pages.length < 2 ? 'one' : group], ['upload_key', key]],

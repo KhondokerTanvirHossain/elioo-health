@@ -53,6 +53,8 @@ final class WebUiTestKit {
     final WebTestClient client;
     /** The document screen, for the render tests that call {@code render(...)} directly. */
     DocumentPages documents;
+    /** The add sheet's handler, for the tests that draw the sheet's body directly (UploadScriptTest). */
+    UploadUiHandler upload;
 
     WebUiTestKit() {
         this(mock(WebAuthUseCase.class), new BaymaxProperties(), true);
@@ -92,7 +94,7 @@ final class WebUiTestKit {
         documents = new DocumentPages(timeline, copy, chrome, results);
         List<WebPages> pages = List.of(new LandingPages(copy, chrome), new SignInPages(auth, sessions, copy, chrome, properties),
                 new OptOutPages(optOut, copy, chrome), new AppTabs(timeline, copy, chrome, nudgeData, properties, attention), documents,
-                new ProfilePages(timeline, optOut), new UploadUiHandler(uploads, copy, properties),
+                new ProfilePages(timeline, optOut), upload = new UploadUiHandler(uploads, copy, properties),
                 new AssetHandler());
         return new BaymaxWebUiRouter().baymaxWebUiRoutes(pages, sessions, chrome);
     }
