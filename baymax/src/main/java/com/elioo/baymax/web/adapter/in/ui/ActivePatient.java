@@ -18,18 +18,31 @@ import java.util.UUID;
  * README). The visible set is {@code timeline.me()}, i.e. {@code records.visiblePatients} in SQL; the cookie is never
  * trusted: it only names a patient to look for in that set, and one that is not there is forgotten, never a fallback.
  */
-record ActivePatient(Optional<PatientSummary> patient) {
+public record ActivePatient(Optional<PatientSummary> patient) {
 
-    static final String COOKIE = "baymax_patient";
+    public static final String COOKIE = "baymax_patient";
     /** Thirty minutes of silence forgets the choice (PatientSwitcher README: "expires after 30 minutes of silence"). */
     static final Duration TTL = Duration.ofMinutes(30);
 
     static ActivePatient resolve(ServerRequest request, FamilyOverview me) {
         Optional<String> asked = request.queryParam("patient");
         if (asked.isPresent()) {
-            return new ActivePatient(Optional.of(find(me, asked.get())
-                    .orElseThrow(() -> BaymaxException.notFound("patient_not_found", "no such patient"))));
+            return chosen(me, asked.get());
         }
+        return remembered(request, me);
+    }
+
+    /**
+     * {@code PUT /app/api/active-patient}: the patient this family chose, looked for in its visible set exactly as
+     * {@code ?patient=} is — one it cannot see, or a malformed id, is the same 404 as one that does not exist.
+     */
+    public static ActivePatient chosen(FamilyOverview me, String patientId) {
+        return new ActivePatient(Optional.of(find(me, patientId)
+                .orElseThrow(() -> BaymaxException.notFound("patient_not_found", "no such patient"))));
+    }
+
+    /** The remembered choice if this family still sees it, else the only patient, else empty: {@link #resolve} without {@code ?patient=}. */
+    public static ActivePatient remembered(ServerRequest request, FamilyOverview me) {
         Optional<PatientSummary> remembered = Optional.ofNullable(request.cookies().getFirst(COOKIE))
                 .map(HttpCookie::getValue).flatMap(v -> find(me, v));
         if (remembered.isPresent()) {
@@ -39,7 +52,7 @@ record ActivePatient(Optional<PatientSummary> patient) {
     }
 
     /** Sliding: re-set on every page that has a patient in view, so thirty minutes of silence forgets it. */
-    Optional<ResponseCookie> cookie(boolean secure) {
+    public Optional<ResponseCookie> cookie(boolean secure) {
         return patient.map(p -> ResponseCookie.from(COOKIE, p.patient().id().toString()).httpOnly(true).secure(secure)
                 .sameSite("Lax").path(PageChrome.BASE).maxAge(TTL).build());
     }

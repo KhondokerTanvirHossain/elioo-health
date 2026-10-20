@@ -1,0 +1,123 @@
+package com.elioo.baymax.web.adapter.in.api;
+
+import com.elioo.baymax.common.error.BaymaxException;
+import com.elioo.baymax.config.BaymaxProperties;
+import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
+import com.elioo.baymax.web.domain.WebSession;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.InvalidMediaTypeException;
+import org.springframework.http.MediaType;
+import org.springframework.stereotype.Component;
+import org.springframework.web.reactive.function.server.HandlerFilterFunction;
+import org.springframework.web.reactive.function.server.HandlerFunction;
+import org.springframework.web.reactive.function.server.ServerRequest;
+import org.springframework.web.reactive.function.server.ServerResponse;
+import org.springframework.web.server.ResponseStatusException;
+import reactor.core.publisher.Mono;
+
+import java.util.Optional;
+import java.util.Set;
+
+/**
+ * Everything every {@code /app/api} route shares, in this order:
+ * <ol>
+ *   <li>the session, resolved by {@link SessionAuthFilter#resolve} (the one resolver: the same {@code Path=/app} cookie,
+ *       the same store, the same sliding expiry as the HTML pages). None is a 401 {@code UNAUTHENTICATED} — never the
+ *       HTML pages' 303, so a page left open past its session learns why and can send the family to sign in;</li>
+ *   <li>for a mutation (POST, PUT, PATCH, DELETE), CSRF: the header {@code X-Medioo: 1} (403 {@code MISSING_HEADER}); an
+ *       {@code Origin}, whenever one is sent, equal to {@code baymax.web.public-origin} (403 {@code FORBIDDEN_ORIGIN});
+ *       and a JSON or multipart body (415 {@code UNSUPPORTED_MEDIA_TYPE}). A cross-site form can set neither the
+ *       header nor the JSON type without a CORS preflight, and there is no CORS configuration to answer one;</li>
+ *   <li>errors as {@code {"reason":"<NAME>"}} ({@link ApiReason#of}), never a developer message;</li>
+ *   <li>{@code Cache-Control: no-store} on every answer (family data, and a 401 that must not be replayed from a cache);</li>
+ *   <li>one INFO line per request: method, path, status, duration. Paths carry ids only; never a body, a name, a number.</li>
+ * </ol>
+ */
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class AppApiGuard implements HandlerFilterFunction<ServerResponse, ServerResponse> {
+
+    public static final String HEADER = "X-Medioo";
+    private static final Set<HttpMethod> MUTATING = Set.of(HttpMethod.POST, HttpMethod.PUT, HttpMethod.PATCH, HttpMethod.DELETE);
+
+    private final SessionAuthFilter sessions;
+    private final BaymaxProperties properties;
+
+    @Override
+    public Mono<ServerResponse> filter(ServerRequest request, HandlerFunction<ServerResponse> next) {
+        long started = System.nanoTime();
+        request.exchange().getResponse().getHeaders().setCacheControl("no-store");
+        return sessions.resolve(request).map(Optional::of).defaultIfEmpty(Optional.empty())
+                .flatMap(session -> session.isEmpty() ? ApiReason.UNAUTHENTICATED.respond() : admitted(request, next, session.get()))
+                .onErrorResume(e -> error(request, e))
+                .doOnNext(response -> log.info("[baymax-api] {} {} {} {}ms", request.method(), request.path(),
+                        response.statusCode().value(), (System.nanoTime() - started) / 1_000_000));
+    }
+
+    private Mono<ServerResponse> admitted(ServerRequest request, HandlerFunction<ServerResponse> next, WebSession session) {
+        request.attributes().put(SessionAuthFilter.SESSION_ATTRIBUTE, session);
+        Optional<ApiReason> refused = MUTATING.contains(request.method()) ? csrf(request) : Optional.empty();
+        if (refused.isPresent()) {
+            return refused.get().respond();
+        }
+        // defer: a handler that throws before returning its Mono is mapped like one that signals an error
+        return Mono.defer(() -> next.handle(request));
+    }
+
+    /** The three rules, in the order the tests name them; the first broken one is the answer. */
+    private Optional<ApiReason> csrf(ServerRequest request) {
+        if (!"1".equals(request.headers().firstHeader(HEADER))) {
+            return Optional.of(ApiReason.MISSING_HEADER);
+        }
+        String origin = request.headers().firstHeader(HttpHeaders.ORIGIN);
+        if (origin != null && !origin.equals(publicOrigin())) {
+            return Optional.of(ApiReason.FORBIDDEN_ORIGIN);
+        }
+        if (!acceptedBody(request)) {
+            return Optional.of(ApiReason.UNSUPPORTED_MEDIA_TYPE);
+        }
+        return Optional.empty();
+    }
+
+    /** Blank configuration matches no Origin at all: fail closed. */
+    private String publicOrigin() {
+        String configured = properties.getWeb().getPublicOrigin();
+        if (configured == null || configured.isBlank()) {
+            return null;
+        }
+        String o = configured.strip();
+        return o.endsWith("/") ? o.substring(0, o.length() - 1) : o;
+    }
+
+    /** Exactly application/json or multipart/form-data (any parameters); a wildcard or a missing type is not either. */
+    private static boolean acceptedBody(ServerRequest request) {
+        try {
+            return request.headers().contentType()
+                    .map(t -> t.equalsTypeAndSubtype(MediaType.APPLICATION_JSON) || t.equalsTypeAndSubtype(MediaType.MULTIPART_FORM_DATA))
+                    .orElse(false);
+        } catch (InvalidMediaTypeException e) {
+            return false;
+        }
+    }
+
+    private static Mono<ServerResponse> error(ServerRequest request, Throwable e) {
+        Optional<ApiReason> reason = ApiReason.of(e);
+        if (reason.isPresent()) {
+            return reason.get().respond();
+        }
+        if (e instanceof BaymaxException be) {
+            return ServerResponse.status(be.status()).build();
+        }
+        if (e instanceof ResponseStatusException rse) {
+            return ServerResponse.status(rse.getStatusCode()).build();
+        }
+        // the class, never the message: an exception message can carry patient text
+        log.error("[baymax-api] unhandled error on {} {} error={}", request.method(), request.path(), e.getClass().getSimpleName());
+        log.debug("[baymax-api] unhandled error detail", e);
+        return ServerResponse.status(500).build();
+    }
+}

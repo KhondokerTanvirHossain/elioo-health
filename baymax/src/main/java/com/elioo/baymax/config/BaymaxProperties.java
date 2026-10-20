@@ -31,6 +31,7 @@ public class BaymaxProperties {
     private Upload upload = new Upload();
     private Extract extract = new Extract();
     private Auth auth = new Auth();
+    private Web web = new Web();
     private Wa wa = new Wa();
     private Outbound outbound = new Outbound();
     private Nudge nudge = new Nudge();
@@ -136,6 +137,22 @@ public class BaymaxProperties {
         private String cookieName = "baymax_session";
         /** Secure attribute on the cookie. Browsers exempt http://localhost, so this stays true in dev too. */
         private boolean cookieSecure = true;
+    }
+
+    /** The browser JSON namespace {@code /app/api/**} that the Next.js frontend calls (rebuild plan, B1). */
+    @Data
+    public static class Web {
+        /**
+         * The one origin a mutating {@code /app/api} request may come from whenever it sends an {@code Origin} header
+         * (scheme + host [+ port], no trailing slash). Blank refuses every request that sends one, which is fail-closed;
+         * a laptop sets {@code BAYMAX_WEB_PUBLIC_ORIGIN=http://localhost:8086}. There is no CORS configuration, ever.
+         */
+        private String publicOrigin = "https://medioo.eliooo.org";
+        /**
+         * Families that see the Next.js twins of routes not yet flipped ({@code me.preview}), from
+         * {@code BAYMAX_WEB_PREVIEW_FAMILIES} (comma-separated family ids). Decided here only, never by a cookie.
+         */
+        private List<java.util.UUID> previewFamilyIds = new ArrayList<>();
     }
 
     /**
