@@ -13,6 +13,8 @@ final class Icons {
             Map.entry("octagon", "<path d=\"M8 2.5h8l5.5 5.5v8L16 21.5H8L2.5 16V8z\"/><path d=\"M12 7.5v5.5M12 16.5h.01\"/>"),
             Map.entry("camera", "<path d=\"M4.5 8h2.8l1.8-2.5h5.8L16.7 8h2.8A1.5 1.5 0 0 1 21 9.5v8.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18V9.5A1.5 1.5 0 0 1 4.5 8z\"/><circle cx=\"12\" cy=\"13.5\" r=\"3.5\"/>"),
             Map.entry("chevron-down", "<path d=\"M6 9l6 6 6-6\"/>"),
+            Map.entry("chevron-up", "<path d=\"M6 15l6-6 6 6\"/>"),
+            Map.entry("plus", "<path d=\"M12 5v14M5 12h14\"/>"),
             Map.entry("chevron-right", "<path d=\"M9 6l6 6-6 6\"/>"),
             Map.entry("check", "<path d=\"M5 12.5l4.5 4.5L19 7.5\"/>"),
             Map.entry("page", "<path d=\"M7 3.5h7l4.5 4.5v12.5H7z\"/><path d=\"M14 3.5V8h4.5\"/>"),

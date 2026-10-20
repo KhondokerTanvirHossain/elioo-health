@@ -44,3 +44,32 @@ body.has-sheet::after{content:"";position:fixed;inset:0;z-index:3;background:var
 .quota{margin:0;color:var(--c-text-muted);font-size:var(--fs-subhead);line-height:var(--lh-subhead)}
 /* the papers tab's way in: one primary link with the camera, as tall as a control */
 .add-link{display:inline-flex;align-items:center;gap:var(--sp-2);margin-top:0}
+/* D4: the page tray (s08) and the upload step (s09), shown by upload.js. Without the script none of this is visible and
+   the form above posts as it is. Under .js a file input covers its row and stays focusable, so the keyboard reaches it and
+   the ring sits on the row (:focus-within); the no-JS send button gives way to the tray's. */
+/* hidden must hide whatever else styles the element: an id rule below sets display on #up-retry (AddReportSheetPageTest
+   derives this over every element of the sheet) */
+.sheet [hidden]{display:none!important}
+.js .src-row input[type=file]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+.src-row.off{opacity:.5;cursor:default}
+.js .nojs{display:none}
+.tray,.up{display:flex;flex-direction:column;gap:var(--sp-3)}
+.tray h2,.up h2{margin:0;font-size:var(--fs-headline);line-height:var(--lh-headline);font-weight:600}
+/* the tray's title asks the question; the moved fieldset's legend says it to a screen reader only */
+.tray .group legend{position:absolute;width:1px;height:1px;margin:0;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.tray-order{margin:0;color:var(--c-text-muted);font-size:var(--fs-subhead);line-height:var(--lh-subhead);font-weight:600}
+.tray-list,.up-pages{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--sp-2)}
+.t{display:flex;align-items:center;gap:var(--sp-2);padding:var(--sp-2);border:1px solid var(--c-line);border-radius:var(--r-m);background:var(--c-surface)}
+.t-thumb{flex:none;width:var(--sp-7);aspect-ratio:3/4;border-radius:var(--r-xs);background:var(--c-surface-2);overflow:hidden;display:flex;align-items:center;justify-content:center}
+.t-thumb img{width:100%;height:100%;object-fit:cover}
+.t-text{flex:1;min-width:0;display:flex;flex-direction:column}
+.t-text strong{font-size:var(--fs-label);line-height:var(--lh-label)}
+.t-src{color:var(--c-text-muted);font-size:var(--fs-subhead);line-height:var(--lh-subhead)}
+button.icon-btn{padding:0;margin:0;border:0;cursor:pointer}
+button.icon-btn:disabled{opacity:.4;cursor:default}
+#tray-more,#tray-send,#up-retry{display:inline-flex;align-items:center;justify-content:center;gap:var(--sp-2);margin:0;min-height:var(--target-min)}
+#tray-more:disabled{opacity:.5;cursor:default}
+.up progress{width:100%;height:var(--sp-2);accent-color:var(--c-primary)}
+.up-count{margin:0;font-weight:600}
+.up-pages li{display:flex;justify-content:space-between;align-items:center;gap:var(--sp-2);min-height:var(--target-min);border-bottom:1px solid var(--c-line)}
+.up .warn{margin:0}

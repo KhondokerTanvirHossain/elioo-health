@@ -189,6 +189,8 @@ final class Css {
             case ":first-of-type" -> siblings.stream().filter(s -> s.tag().equals(e.tag())).findFirst().orElse(null) == e;
             // the state a page is rendered in: a radio or checkbox the server marked checked
             case ":checked" -> e.attrs().containsKey("checked");
+            // likewise a control the server rendered disabled (it renders none: upload.js disables the tray's ends, D4)
+            case ":disabled" -> e.attrs().containsKey("disabled");
             default -> {
                 if (pseudo.startsWith(":has(") && pseudo.endsWith(")")) {
                     Compound inner = Compound.parse(pseudo.substring(5, pseudo.length() - 1), pseudo);
@@ -213,11 +215,23 @@ final class Css {
         return out;
     }
 
-    /** The rule that wins any of {@code properties} on the element itself (specificity, then source order), if any. */
+    /**
+     * The rule that wins any of {@code properties} on the element itself, if any: an {@code !important} declaration first,
+     * then specificity, then source order — the cascade a browser applies (D4's {@code [hidden]} rule needs the first).
+     */
     static Optional<Rule> winner(List<Rule> rules, Dom.Element e, String... properties) {
         List<String> props = List.of(properties);
         return rules.stream().filter(r -> props.stream().anyMatch(r.decls()::containsKey)).filter(r -> matches(r, e))
-                .max(Comparator.comparingInt(Rule::specificity).thenComparingInt(Rule::order));
+                .max(Comparator.comparing((Rule r) -> important(r, props)).thenComparingInt(Rule::specificity).thenComparingInt(Rule::order));
+    }
+
+    private static boolean important(Rule r, List<String> props) {
+        return props.stream().map(r.decls()::get).anyMatch(v -> v != null && v.replace(" ", "").endsWith("!important"));
+    }
+
+    /** A declared value without its {@code !important}. */
+    static String bare(String value) {
+        return value.replaceAll("\\s*!\\s*important$", "").trim();
     }
 
     /** The value the rule gives the first of {@code properties} it declares. */

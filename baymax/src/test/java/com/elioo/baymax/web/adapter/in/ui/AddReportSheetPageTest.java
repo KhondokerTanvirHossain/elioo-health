@@ -55,7 +55,7 @@ class AddReportSheetPageTest {
         when(kit.uploads.uploadOptions(WebUiTestKit.FAMILY)).thenReturn(Mono.just(new UploadOptions(List.of(ma), List.of(), used(0))));
         String html = sheet();
         assertThat(html).contains("<form id=\"add\" class=\"add\" method=\"post\" enctype=\"multipart/form-data\" action=\"/app/add\"");
-        assertThat(html).containsPattern("<input type=\"radio\" name=\"patient\" value=\"" + ma.patient().id() + "\" required checked>");
+        assertThat(html).containsPattern("<input type=\"radio\" data-up-title=\"[^\"]+\" name=\"patient\" value=\"" + ma.patient().id() + "\" required checked>");
         assertThat(html).contains("আম্মা · ৬৪");   // the age in Bangla digits (rule 13); the relation joins when the profile has one
         assertThat(classed(Dom.parse(html), "hint").stream().filter(h -> h.parent().classes().contains("pick")))   // D3 adds the group's own
                 .singleElement().extracting(Dom.Element::ownText)
@@ -69,7 +69,8 @@ class AddReportSheetPageTest {
         assertThat(html).doesNotContain(" disabled");   // nothing the server renders waits for a script to enable it
         assertThat(classed(Dom.parse(html), "quota")).singleElement().extracting(Dom.Element::ownText)
                 .isEqualTo("এ মাসে বিনা খরচে আরও ৩টি কাগজ পড়াতে পারবেন। কোনো ছবি পড়তে না পারলে সেটা গোনা হবে না।");
-        assertThat(html).doesNotContain("<script");   // A7 ships no script; D4 adds exactly one
+        // D4 enhances the form with one script file; nothing inline, and the form above is complete without it
+        assertThat(html).doesNotContainPattern("<script(?![^>]*\\bsrc=\"/assets/)");
     }
 
     static List<Dom.Element> classed(Dom dom, String cls) {
@@ -319,6 +320,201 @@ class AddReportSheetPageTest {
                 new com.elioo.baymax.web.domain.AttentionItem.Retake(UUID.randomUUID(), NOW),
                 new com.elioo.baymax.web.domain.AttentionItem.FollowUp(rx, "Next visit", day.plusDays(8), "f/p/" + rx + "/crop-f.jpg"),
                 new com.elioo.baymax.web.domain.AttentionItem.Reading(UUID.randomUUID(), NOW));
+    }
+
+    // --- D4 ---------------------------------------------------------------------------------------------------------
+
+    /** The sheet's one script: a file from /assets/, deferred and versioned, never inline (CSP script-src 'self'). */
+    @Test
+    void theSheetLoadsExactlyOneScriptFromAssetsAndOnlyWhenThereIsAFormToEnhance() {
+        when(kit.uploads.uploadOptions(WebUiTestKit.FAMILY)).thenReturn(Mono.just(new UploadOptions(List.of(patient("আম্মা", 64, true)), List.of(), used(0))));
+        String html = sheet();
+        assertThat(html).containsOnlyOnce("<script").containsPattern("<script src=\"/assets/upload\\.js\\?v=[0-9a-f]+\" defer></script>");
+        assertThat(html).doesNotContainPattern("<script(?![^>]*\\bsrc=)");   // nothing inline
+        when(kit.uploads.uploadOptions(WebUiTestKit.FAMILY)).thenReturn(Mono.just(new UploadOptions(List.of(patient("আম্মা", 64, true)), List.of(), used(3))));
+        assertThat(sheet()).as("at the cap there is no form, so nothing to enhance (spec §10)").doesNotContain("<script");
+    }
+
+    /**
+     * Derived over every page the router renders, both directions: a page that draws the sheet's form (the sheet, and a
+     * refusal drawn on it) loads upload.js and no other script; a page without that form never loads it. Either set empty
+     * would make its half vacuous, so both are asserted non-empty.
+     */
+    @Test
+    void uploadJsIsOnEveryPageWithTheFormAndOnNoOtherPage() {
+        java.util.regex.Pattern upload = java.util.regex.Pattern.compile("<script src=\"/assets/upload\\.js\\?v=[0-9a-f]+\" defer></script>");
+        List<String> withForm = new java.util.ArrayList<>();
+        List<String> without = new java.util.ArrayList<>();
+        List<String> wrong = new java.util.ArrayList<>();
+        RenderedPages.all().forEach((where, html) -> {
+            long scripts = upload.matcher(html).results().count();
+            if (html.contains("<form id=\"add\"")) {
+                withForm.add(where);
+                if (scripts != 1 || html.split("<script", -1).length - 1 != 1) {
+                    wrong.add(where + ": the form's page carries " + scripts + " upload.js and " + (html.split("<script", -1).length - 1) + " scripts");
+                }
+            } else {
+                without.add(where);
+                if (html.contains("upload.js")) {
+                    wrong.add(where + ": loads upload.js with no form to enhance");
+                }
+            }
+        });
+        assertThat(withForm).as("pages that draw the add form").isNotEmpty().anyMatch(k -> k.startsWith("POST "));
+        assertThat(without).as("pages without it").isNotEmpty();
+        assertThat(wrong).isEmpty();
+    }
+
+    /** The element with this id, or a failure naming it. */
+    static Dom.Element byId(Dom dom, String id) {
+        return dom.all.stream().filter(e -> id.equals(e.attrs().get("id"))).findFirst()
+                .orElseThrow(() -> new AssertionError("no #" + id + " on the sheet"));
+    }
+
+    private static boolean inside(Dom.Element e, Dom.Element ancestor) {
+        for (Dom.Element x = e.parent(); x != null; x = x.parent()) {
+            if (x == ancestor) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * s08/s09 as the server leaves them for the script: the form carries the limits as machine values (ASCII, whatever
+     * the page's language) and the digit set the page counts in; the tray and the upload step are inside the form, so
+     * the group radios the script moves stay in it, and hidden until the script shows them; every button they hold is
+     * type="button", so none of them posts the form on its own.
+     */
+    @Test
+    void theFormCarriesWhatTheScriptNeedsAndTheTrayAndUploadStepWaitHidden() {
+        when(kit.uploads.uploadOptions(WebUiTestKit.FAMILY)).thenReturn(Mono.just(new UploadOptions(List.of(patient("আম্মা", 64, true)), List.of(), used(1))));
+        Dom dom = Dom.parse(sheet());
+        assertThat(dom.unclosed).isEmpty();
+        Dom.Element form = byId(dom, "add");
+        assertThat(form.attrs()).containsEntry("data-max-pages", "10").containsEntry("data-remaining", "2")
+                .containsEntry("data-max-request-bytes", "62914560").containsEntry("data-downscale-edge", "0")
+                .containsEntry("data-downscale-quality", "0.92").containsEntry("data-pass-bytes", "1500000")
+                .containsEntry("data-digits", "০১২৩৪৫৬৭৮৯");
+        for (String id : List.of("tray", "up")) {
+            Dom.Element section = byId(dom, id);
+            assertThat(inside(section, form)).as("#" + id + " inside the form").isTrue();
+            assertThat(section.attrs()).as("#" + id).containsKey("hidden");
+        }
+        assertThat(byId(dom, "up").attrs()).containsEntry("aria-live", "polite");
+        assertThat(byId(dom, "up-copy").attrs()).containsKey("hidden");
+        assertThat(byId(dom, "up-bar").tag()).isEqualTo("progress");
+        assertThat(byId(dom, "up-retry").attrs()).containsKey("hidden");
+        assertThat(byId(dom, "up-slow").attrs()).containsKey("hidden");
+        Dom.Element item = byId(dom, "t-item");
+        assertThat(item.tag()).isEqualTo("template");
+        assertThat(item.children()).singleElement().extracting(Dom.Element::tag).isEqualTo("li");
+        List<Dom.Element> buttons = dom.all.stream().filter(e -> e.tag().equals("button")
+                && (inside(e, byId(dom, "tray")) || inside(e, byId(dom, "up")) || inside(e, item))).toList();
+        assertThat(buttons.stream().map(b -> b.attrs().getOrDefault("id", String.join(".", b.classes()))))
+                .containsExactlyInAnyOrder("tray-more", "tray-send", "up-retry", "icon-btn.t-up", "icon-btn.t-down", "icon-btn.t-remove");
+        assertThat(buttons).allSatisfy(b -> assertThat(b.attrs()).as(b.describe()).containsEntry("type", "button"));
+        // the one submit is the no-JS one; the script hides it and sends from the tray
+        assertThat(dom.all.stream().filter(e -> "submit".equals(e.attrs().get("type")))).singleElement()
+                .satisfies(b -> assertThat(b.classes()).contains("nojs"));
+    }
+
+    /**
+     * {@code hidden} hides, on a real page: the attribute only works while no author rule that outranks it sets
+     * {@code display} on the element (an id rule did, and the retry showed beside every normal send). Derived both ways
+     * from what is actually there, with the page in the script's state ({@code html.js}): every element of the rendered
+     * sheet, given {@code hidden}, computes display:none through the served stylesheet; every element upload.js hides or
+     * shows (its ids read from the script itself), without {@code hidden}, does not. Either set empty would be vacuous.
+     */
+    @Test
+    void anElementGivenHiddenIsHiddenAndEveryOneTheScriptShowsIsShown() {
+        List<Css.Rule> rules = Css.rules(kit.servedText("/assets/baymax.css"));
+        when(kit.uploads.uploadOptions(WebUiTestKit.FAMILY)).thenReturn(Mono.just(new UploadOptions(List.of(patient("আম্মা", 64, true)), List.of(), used(0))));
+        Dom dom = Dom.parse(sheet());
+        dom.all.stream().filter(e -> e.tag().equals("html")).findFirst().orElseThrow()
+                .attrs().merge("class", "js", (was, js) -> was.isBlank() ? js : was + " " + js);
+        Dom.Element sheet = classed(dom, "sheet").get(0);
+        List<Dom.Element> onSheet = dom.all.stream().filter(e -> inside(e, sheet)).toList();
+        java.util.Set<String> toggled = toggledIds(kit.servedText("/assets/upload.js"));
+        assertThat(onSheet).as("elements on the sheet").hasSizeGreaterThan(20);
+        assertThat(toggled).as("ids upload.js hides or shows, read from the script").contains("tray", "up", "up-retry", "up-slow", "add-alert");
+        List<String> stillShown = new java.util.ArrayList<>();
+        for (Dom.Element e : onSheet) {
+            String before = e.attrs().put("hidden", "");
+            String display = display(rules, e);
+            if (!display.startsWith("none")) {
+                stillShown.add(e.describe() + " " + display);
+            }
+            if (before == null) {
+                e.attrs().remove("hidden");
+            }
+        }
+        List<String> neverShown = new java.util.ArrayList<>();
+        for (String id : toggled) {
+            Dom.Element e = byId(dom, id);
+            String before = e.attrs().remove("hidden");
+            String display = display(rules, e);
+            if (display.startsWith("none")) {
+                neverShown.add("#" + id + " " + display);
+            }
+            if (before != null) {
+                e.attrs().put("hidden", before);
+            }
+        }
+        assertThat(stillShown).as("given hidden, still displayed").isEmpty();
+        assertThat(neverShown).as("shown by the script, still display:none").isEmpty();
+    }
+
+    /** The element's computed display and the rule that gave it; with no author rule, the browser's own: hidden → none. */
+    private static String display(List<Css.Rule> rules, Dom.Element e) {
+        return Css.winner(rules, e, "display")
+                .map(r -> Css.bare(Css.valueOf(r, "display")) + " from `" + r.selector() + "` (spec " + r.specificity() + ")")
+                .orElse(e.attrs().containsKey("hidden") ? "none (the browser's own)" : "as the browser draws it");
+    }
+
+    /** Every id whose {@code .hidden} upload.js assigns, directly or through a variable it bound to that id. */
+    static java.util.Set<String> toggledIds(String script) {
+        java.util.Map<String, String> vars = new java.util.HashMap<>();
+        java.util.regex.Matcher bind = java.util.regex.Pattern.compile("\\b([A-Za-z]+)\\s*=\\s*\\$\\('([a-z-]+)'\\)").matcher(script);
+        while (bind.find()) {
+            vars.put(bind.group(1), bind.group(2));
+        }
+        java.util.Set<String> ids = new java.util.TreeSet<>();
+        java.util.regex.Matcher set = java.util.regex.Pattern.compile("(?:\\$\\('([a-z-]+)'\\)|\\b([A-Za-z]+))\\.hidden\\s*=(?!=)").matcher(script);
+        while (set.find()) {
+            String id = set.group(1) != null ? set.group(1) : vars.get(set.group(2));
+            assertThat(id).as("upload.js sets .hidden on `" + set.group() + "`, bound to no id the guard can read").isNotNull();
+            ids.add(id);
+        }
+        return ids;
+    }
+
+    /**
+     * s09 names the patient (principle 9, spec §4.9: "আম্মার কাগজ পাঠানো হচ্ছে"): each patient's radio carries the upload
+     * step's title for that patient, in the page's language and the possessive F8 writes, for the script to show.
+     */
+    @Test
+    void eachPatientsChipCarriesTheUploadStepsTitleNamingThatPatient() {
+        PatientSummary ma = patient("আম্মা", 64, true);
+        PatientSummary baba = patient("রহিম", 72, true);
+        when(kit.uploads.uploadOptions(WebUiTestKit.FAMILY)).thenReturn(Mono.just(new UploadOptions(List.of(ma, baba), List.of(), used(0))));
+        Dom bn = Dom.parse(sheet());
+        java.util.Map<String, String> titles = new java.util.HashMap<>();
+        bn.all.stream().filter(e -> "patient".equals(e.attrs().get("name"))).forEach(r -> titles.put(r.attrs().get("value"), r.attrs().get("data-up-title")));
+        assertThat(titles).containsOnly(java.util.Map.entry(ma.patient().id().toString(), "আম্মার কাগজ পাঠানো হচ্ছে"),
+                java.util.Map.entry(baba.patient().id().toString(), "রহিমের কাগজ পাঠানো হচ্ছে"));
+        when(kit.uploads.uploadOptions(WebUiTestKit.FAMILY)).thenReturn(Mono.just(new UploadOptions(List.of(patient("Ma \"M\"", 64, true)), List.of(), used(0))));
+        String en = kit.page("/app/add", "en");
+        assertThat(en).contains("data-up-title=\"Sending Ma &quot;M&quot;&#39;s paper\"");   // the name escaped once, inside the attribute
+    }
+
+    /** An English page counts in ASCII; a paying family has no cap, which the script reads as -1. */
+    @Test
+    void anEnglishPageCountsInAsciiAndAPayingFamilyHasNoCap() {
+        when(kit.uploads.uploadOptions(WebUiTestKit.FAMILY)).thenReturn(Mono.just(new UploadOptions(List.of(patient("Ma", 64, true)), List.of(),
+                DocumentAllowance.unlimited(YearMonth.of(2026, 10)))));
+        Dom.Element form = byId(Dom.parse(kit.page("/app/add", "en")), "add");
+        assertThat(form.attrs()).containsEntry("data-digits", "0123456789").containsEntry("data-remaining", "-1");
     }
 
     // --- D3 ---------------------------------------------------------------------------------------------------------
