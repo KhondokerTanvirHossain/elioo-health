@@ -122,7 +122,8 @@ public class PostgresHealthRecordAdapter implements HealthRecordPort {
     /**
      * The whole graph for one family, in FK order, in one transaction. Every table in the schema that carries a
      * family, patient or document id is deleted here — including {@code audit_event} and {@code stored_object},
-     * which carry the ids with no foreign key at all, so nothing in the database would ever have flagged them.
+     * which carry the ids with no foreign key at all, so nothing in the database would ever have flagged them — and
+     * {@code inbound_message} (V22), whose family and patient keys deliberately carry no cascade.
      *
      * <p>Before this, the method deleted only share_member, patient_profile and family_account: {@code document}
      * was never deleted, so the patient_profile delete violated {@code document_patient_id_fkey} and the route
@@ -148,6 +149,9 @@ public class PostgresHealthRecordAdapter implements HealthRecordPort {
                 .flatMap(c -> add(c, "follow_up", "DELETE FROM " + S + ".follow_up WHERE patient_id IN " + patientsOf, "family", familyId))
                 .flatMap(c -> add(c, "outbound_message", "DELETE FROM " + S + ".outbound_message WHERE family_id = :family", "family", familyId))
                 .flatMap(c -> add(c, "nudge", "DELETE FROM " + S + ".nudge WHERE family_id = :family", "family", familyId))
+                // V22: every inbound WhatsApp message of this family, text included; before document (its FK is SET NULL)
+                // and patient_profile / family_account (no cascade, so forgetting this table fails the delete loudly)
+                .flatMap(c -> add(c, "inbound_message", "DELETE FROM " + S + ".inbound_message WHERE family_id = :family", "family", familyId))
                 .flatMap(c -> add(c, "stored_object", "DELETE FROM " + S + ".stored_object WHERE family_id = :family", "family", familyId))
                 .flatMap(c -> add(c, "document", "DELETE FROM " + S + ".document WHERE family_id = :family", "family", familyId))
                 .flatMap(c -> add(c, "web_session", "DELETE FROM " + S + ".web_session WHERE family_id = :family", "family", familyId))
@@ -170,6 +174,8 @@ public class PostgresHealthRecordAdapter implements HealthRecordPort {
                 .flatMap(c -> add(c, "follow_up", "DELETE FROM " + S + ".follow_up WHERE patient_id = :patient", "patient", patientId))
                 .flatMap(c -> add(c, "outbound_message", "DELETE FROM " + S + ".outbound_message WHERE patient_id = :patient", "patient", patientId))
                 .flatMap(c -> add(c, "nudge", "DELETE FROM " + S + ".nudge WHERE patient_id = :patient", "patient", patientId))
+                // V22: the photos and files filed under this patient; a family-level text (patient_id NULL) stays with the family
+                .flatMap(c -> add(c, "inbound_message", "DELETE FROM " + S + ".inbound_message WHERE patient_id = :patient", "patient", patientId))
                 .flatMap(c -> add(c, "stored_object", "DELETE FROM " + S + ".stored_object WHERE patient_id = :patient", "patient", patientId))
                 .flatMap(c -> add(c, "document", "DELETE FROM " + S + ".document WHERE patient_id = :patient", "patient", patientId))
                 .flatMap(c -> add(c, "patient_profile", "DELETE FROM " + S + ".patient_profile WHERE id = :patient", "patient", patientId));
