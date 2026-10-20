@@ -550,7 +550,7 @@ class AppShellRoutesTest {
         Dom dom = Dom.parse(kit.page(Tab.PAPERS.path + "?patient=" + ma.patient().id() + "&type=rx", "bn"));
         assertThat(dom.all.stream().filter(e -> e.classes().contains("empty")).map(Dom.Element::describe)).as("the s16 empty panel").isEmpty();
         String words = dom.all.stream().map(Dom.Element::ownText).collect(java.util.stream.Collectors.joining(" "));
-        assertThat(words).doesNotContain("আম্মার কোনো কাগজ এখনো নেই")
+        assertThat(words).doesNotContain(emptyTitle("আম্মা"))
                 .contains(kit.copy.t(Lang.BN, "timeline.filter.none"));
         Dom.Element nav = only(dom, "nav", "filters");
         assertThat(subtree(nav).stream().filter(e -> e.tag().equals("a")).map(e -> e.attrs().get("href")))
@@ -571,7 +571,7 @@ class AppShellRoutesTest {
         List<String> lines = dom.all.stream().map(Dom.Element::ownText).toList();
         assertThat(lines).as("\"none of this kind\" under \"সব\"").doesNotContain(kit.copy.t(Lang.BN, "timeline.filter.none"));
         assertThat(lines).as("the line under the filters").contains(kit.copy.t(Lang.BN, "timeline.end"))
-                .doesNotContain("আম্মার কোনো কাগজ এখনো নেই");
+                .doesNotContain(emptyTitle("আম্মা"));
         only(dom, "nav", "filters");
     }
 
@@ -733,5 +733,13 @@ class AppShellRoutesTest {
         strips.forEach(key -> assertThat(Dom.parse(pages.get(key)).all.stream().filter(e -> e.classes().contains("attn-strip"))).as(key).hasSize(1));
         empties.forEach(key -> assertThat(Dom.parse(pages.get(key)).all.stream().filter(e -> e.tag().equals("section") && e.classes().contains("empty")))
                 .as(key).hasSize(1));
+    }
+
+    /**
+     * The s16 empty title for this name, from the bundle: a negative check built from the copy keeps failing for its
+     * reason after the copy owner rewords it, where a literal would pass over any wording.
+     */
+    private String emptyTitle(String name) {
+        return kit.copy.t(Lang.BN, "timeline.empty.title", kit.copy.poss(Lang.BN, name));
     }
 }

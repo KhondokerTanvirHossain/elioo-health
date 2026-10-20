@@ -148,6 +148,9 @@ class UiCopyTest {
         assertThat(copy.poss(Lang.BN, "রহিম")).isEqualTo("রহিমের");
         assertThat(copy.poss(Lang.EN, " Ma ")).isEqualTo("Ma's");
         assertThat(copy.poss(Lang.EN, "James")).isEqualTo("James'");
+        // pinned, not endorsed: a Bangla-script name on an English page takes the English apostrophe ("আম্মা's"); whether
+        // it should take NameGrammar's form instead is the copy owner's call (D2 PR body)
+        assertThat(copy.poss(Lang.EN, "আম্মা")).isEqualTo("আম্মা's");
         assertThat(copy.poss(Lang.EN, null)).isEmpty();
         assertThat(copy.poss(Lang.BN, "  ")).isEmpty();
         assertThat(copy.obj(Lang.BN, "আম্মা")).isEqualTo("আম্মাকে");
