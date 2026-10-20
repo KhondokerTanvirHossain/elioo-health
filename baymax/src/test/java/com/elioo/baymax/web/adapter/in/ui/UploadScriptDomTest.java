@@ -22,7 +22,7 @@ import static org.mockito.Mockito.when;
  * id the script reads and the markup does not carry fails here. What leaves the phone is read off the fake
  * {@code XMLHttpRequest}: a file the server would refuse and a press the allowance would refuse send nothing; a send is
  * the pages as page-N with the form's own key; a stalled send is retried as the same press. Timers run by hand; the
- * fake {@code Promise} settles at once (the downscale path, which needs a canvas, is the node tests' and the Try-it's).
+ * fake {@code Promise} settles at once; the downscale path runs over a fake bitmap and canvas that record what is drawn.
  */
 class UploadScriptDomTest {
 
@@ -163,13 +163,16 @@ class UploadScriptDomTest {
     }
 
     private ScriptEngine run(String html, boolean withXhr) throws ScriptException {
+        return run(html, withXhr ? "" : "XMLHttpRequest = undefined;");
+    }
+
+    /** The page with {@code before} run over the fake browser and the page, just before the script. */
+    private ScriptEngine run(String html, String before) throws ScriptException {
         ScriptEngine js = new NashornScriptEngineFactory().getScriptEngine("--language=es5");
         js.eval(BROWSER);
         js.eval(tree(Dom.parse(html)));
         js.eval(HELPERS);
-        if (!withXhr) {
-            js.eval("XMLHttpRequest = undefined;");
-        }
+        js.eval(before);
         js.eval(SCRIPT);
         return js;
     }
@@ -228,6 +231,10 @@ class UploadScriptDomTest {
         when(kit.uploads.uploadOptions(WebUiTestKit.FAMILY)).thenReturn(Mono.just(one(0)));
         ScriptEngine old = run(kit.page("/app/add", "bn"), false);
         assertThat((Boolean) v(old, "document.documentElement.classList.contains('js')")).as("a browser with no XHR keeps the plain form").isFalse();
+
+        // send() waits on a Promise: without one the enhanced form would hide its submit and then never send anything
+        ScriptEngine noPromise = run(kit.page("/app/add", "bn"), "Promise = undefined;");
+        assertThat((Boolean) v(noPromise, "document.documentElement.classList.contains('js')")).as("a browser with no Promise keeps the plain form").isFalse();
     }
 
     // --- what never leaves the phone ----------------------------------------------------------------------------------
@@ -328,7 +335,7 @@ class UploadScriptDomTest {
         assertThat((Boolean) v(js, "$('up').hidden")).isFalse();
         js.eval("xhrs[0].upload.onprogress({ lengthComputable: true, loaded: 120, total: 220 })");
         assertThat(v(js, "$('up-count').textContent")).isEqualTo(t("up.count").replace("{total}", "২").replace("{n}", "১"));
-        assertThat(n(js, "$('up-bar').value")).isEqualTo(1);
+        assertThat(v(js, "$('up-bar').value + '/' + $('up-bar').max")).as("the bar is the bytes, not the pages").isEqualTo("120/220");
         assertThat(v(js, "pageLines()")).isEqualTo(t("tray.page").replace("{n}", "১") + "|" + t("up.sent") + " / "
                 + t("tray.page").replace("{n}", "২") + "|");
     }
@@ -371,11 +378,165 @@ class UploadScriptDomTest {
         assertThat((Boolean) v(js, "$('tray').hidden")).isFalse();
         assertThat(n(js, "assigned.length")).isZero();
 
-        js.eval("$('tray-send').click(); xhrs[1].status = 200; xhrs[1].ctype = 'text/html'; xhrs[1].responseURL = 'https://medioo.example/app/'; xhrs[1].onload()");
-        assertThat(v(js, "$('add-alert').textContent")).as("the session lapsed: the sign-in page answered").isEqualTo(t("upload.err.signed_out"));
+        // where a lapsed session actually lands, from the router itself: the browser follows the redirect, and the script
+        // sees the page it landed on (its URL and type), not the redirect
+        java.net.URI landed = signedOutLanding();
+        String landedType = String.valueOf(kit.client.get().uri(landed.getPath()).exchange().expectStatus().isOk()
+                .returnResult(String.class).getResponseHeaders().getContentType());
+        js.eval("$('tray-send').click(); xhrs[1].status = 200; xhrs[1].ctype = '" + landedType + "'; xhrs[1].responseURL = '" + landed + "'; xhrs[1].onload()");
+        assertThat(v(js, "$('add-alert').textContent")).as("the session lapsed: " + landed + " answered").isEqualTo(t("upload.err.signed_out"));
 
         js.eval("$('tray-send').click(); xhrs[2].status = 500; xhrs[2].ctype = 'text/html'; xhrs[2].responseURL = 'https://medioo.example/app/add'; xhrs[2].onload()");
         assertThat(v(js, "$('add-alert').textContent")).isEqualTo(t("app.err.generic"));
+    }
+
+    /** POST /app/add with no session, as the router answers it: the absolute URL the browser ends up on. */
+    private java.net.URI signedOutLanding() {
+        java.net.URI location = kit.client.post().uri("/app/add").accept(org.springframework.http.MediaType.APPLICATION_JSON).exchange()
+                .expectStatus().is3xxRedirection().returnResult(Void.class).getResponseHeaders().getLocation();
+        assertThat(location).as("a POST with no session is redirected").isNotNull();
+        return java.net.URI.create("https://medioo.example/app/add").resolve(location);
+    }
+
+    @Test
+    void theBarMovesWithTheBytesEvenWhenThereIsOnlyOnePage() throws ScriptException {
+        ScriptEngine js = load(one(0));
+        js.eval("choose('camera', [file('a.jpg', 'image/jpeg', 100)]); $('tray-send').click()");
+        js.eval("xhrs[0].upload.onprogress({ lengthComputable: true, loaded: 50, total: 100 })");
+        assertThat(v(js, "$('up-bar').value / $('up-bar').max")).as("half the bytes: half the bar").isEqualTo(0.5);
+        assertThat(v(js, "$('up-count').textContent")).as("the page counts once the server has it")
+                .isEqualTo(t("up.count").replace("{total}", "১").replace("{n}", "০"));
+        js.eval("xhrs[0].upload.onprogress({ lengthComputable: true, loaded: 100, total: 100 })");
+        assertThat(v(js, "$('up-bar').value / $('up-bar').max")).isEqualTo(1.0);
+    }
+
+    @Test
+    void aQuietSendIsAStallButEveryByteSentAndTheServerStillWorkingIsNot() throws ScriptException {
+        ScriptEngine js = load(one(0));
+        js.eval("choose('camera', [file('a.jpg', 'image/jpeg', 100)]); $('tray-send').click()");
+        js.eval("xhrs[0].upload.onprogress({ lengthComputable: true, loaded: 40, total: 100 })");
+        assertThat((Boolean) v(js, "run(30000)")).as("bytes left to send and nothing moves for 30 s: a stall").isTrue();
+        assertThat((Boolean) v(js, "xhrs[0].aborted")).isTrue();
+
+        js.eval("$('up-retry').click(); xhrs[1].upload.onprogress({ lengthComputable: true, loaded: 100, total: 100 })");
+        assertThat((Boolean) v(js, "run(30000)")).as("every byte sent: the server is storing the pages, not a stalled network").isFalse();
+        assertThat((Boolean) v(js, "xhrs[1].aborted || !$('up-retry').hidden || !$('up-slow').hidden")).isFalse();
+        assertThat((Boolean) v(js, "run(120000)")).as("a server that never answers is still given up on").isTrue();
+        assertThat((Boolean) v(js, "xhrs[1].aborted")).isTrue();
+
+        js.eval("$('up-retry').click(); xhrs[2].upload.onload()");   // the browser's own word that the body has gone
+        assertThat((Boolean) v(js, "run(30000)")).isFalse();
+        assertThat((Boolean) v(js, "xhrs[2].aborted")).isFalse();
+    }
+
+    @Test
+    void aSecondTapOnTheRetryWhileItIsSendingSendsNothingAndAFreshStallStillRetries() throws ScriptException {
+        ScriptEngine js = load(one(0));
+        js.eval("choose('camera', [file('a.jpg', 'image/jpeg', 100)]); $('tray-send').click(); run(30000)");
+        assertThat((Boolean) v(js, "$('up-retry').hidden")).isFalse();
+        js.eval("$('up-retry').click(); $('up-retry').click()");
+        assertThat(n(js, "xhrs.length")).as("a second tap during the retry").isEqualTo(2);
+        js.eval("xhrs[1].onerror()");
+        js.eval("$('up-retry').click()");
+        assertThat(n(js, "xhrs.length")).as("a fresh stall: the retry works again").isEqualTo(3);
+    }
+
+    // --- the patient is named, and a retry stays with that patient ----------------------------------------------------
+
+    @Test
+    void theUploadStepNamesThePatientAndARetryGoesForThatPatientWhateverTheChipSays() throws ScriptException {
+        ScriptEngine only = load(one(0));
+        only.eval("choose('camera', [file('a.jpg', 'image/jpeg', 100)]); $('tray-send').click()");
+        assertThat(v(only, "$('up-title').textContent")).as("one patient, preselected: still named")
+                .isEqualTo(t("up.title.for", kit.copy.poss(Lang.BN, "আম্মা")));
+
+        ScriptEngine js = load(new UploadOptions(List.of(ma, baba), List.of(), AddReportSheetPageTest.used(0)));
+        js.eval("pick('" + baba.patient().id() + "'); choose('camera', [file('a.jpg', 'image/jpeg', 100)]); $('tray-send').click()");
+        String title = t("up.title.for", kit.copy.poss(Lang.BN, "আব্বু"));
+        assertThat(v(js, "$('up-title').textContent")).isEqualTo(title);
+        assertThat(n(js, "F.querySelectorAll('input[name=patient]').filter(function (r) { return !r.disabled; }).length"))
+                .as("the picker is locked while the paper is on its way").isZero();
+        String first = (String) v(js, "sent(xhrs[0])");
+        assertThat(first).startsWith("patient=" + baba.patient().id() + "&");
+        js.eval("run(30000)");
+        js.eval("pick('" + ma.patient().id() + "')");   // the chip moves anyway (the fake lets a disabled radio change)
+        js.eval("$('up-retry').click()");
+        assertThat(v(js, "sent(xhrs[1])")).as("the retry is for the patient the paper was sent for").isEqualTo(first);
+        assertThat(v(js, "$('up-title').textContent")).isEqualTo(title);
+
+        js.eval("xhrs[1].status = 413; xhrs[1].ctype = 'application/json'; xhrs[1].responseText = JSON.stringify({ reason: 'x', text: 'no' }); xhrs[1].onload()");
+        assertThat(n(js, "F.querySelectorAll('input[name=patient]').filter(function (r) { return r.disabled; }).length"))
+                .as("refused, back on the tray: the family may choose again").isZero();
+    }
+
+    // --- the tray is a screen of its own (s08), and so is the upload step (s09) ---------------------------------------
+
+    @Test
+    void theWaysInAndTheTipsGiveWayToTheTrayAndTheUploadStepAndFocusGoesThere() throws ScriptException {
+        ScriptEngine js = load(one(0));
+        String chrome = "[$('add-src').hidden, $('add-tips').hidden, $('add-quota').hidden].join()";
+        assertThat(v(js, chrome)).as("the sheet before a page is chosen").isEqualTo("false,false,false");
+        js.eval("choose('gallery', [file('a.jpg', 'image/jpeg', 100), file('b.jpg', 'image/jpeg', 100)])");
+        assertThat(v(js, chrome)).as("the tray: its own screen").isEqualTo("true,true,true");
+        assertThat((Boolean) v(js, "focused === $('tray-title')")).as("a phone's screen moves to the tray").isTrue();
+
+        js.eval("$('tray-send').click()");
+        assertThat(v(js, chrome)).as("the upload step: its own screen").isEqualTo("true,true,true");
+        assertThat((Boolean) v(js, "focused === $('up-title')")).isTrue();
+        js.eval("choose('camera', [file('c.jpg', 'image/jpeg', 100)])");   // a way in reached anyway while sending
+        assertThat((Boolean) v(js, "$('tray').hidden")).as("no tray beside the upload step").isTrue();
+        js.eval("xhrs[0].status = 413; xhrs[0].ctype = 'application/json'; xhrs[0].responseText = JSON.stringify({ reason: 'x', text: 'no' }); xhrs[0].onload()");
+        assertThat(n(js, "items().length")).as("nothing was added while sending").isEqualTo(2);
+        assertThat(v(js, chrome)).as("refused: back on the tray").isEqualTo("true,true,true");
+
+        js.eval("items()[0].querySelector('.t-remove').click(); items()[0].querySelector('.t-remove').click()");
+        assertThat((Boolean) v(js, "$('tray').hidden")).isTrue();
+        assertThat(v(js, chrome)).as("every page removed: the ways in again").isEqualTo("false,false,false");
+    }
+
+    // --- the downscale, when the server turns it on (D5) --------------------------------------------------------------
+
+    /** A fake bitmap and canvas that record what is drawn; {@code next} is the size of the JPEG the canvas makes. */
+    private static final String CANVAS = """
+            var drawn = [], next = 0;
+            F.dataset.downscaleEdge = '2200';
+            function createImageBitmap(f, o) { drawn.push('decode:' + o.imageOrientation); return Promise.resolve({ width: f.w, height: f.h, close: function () { drawn.push('close'); } }); }
+            var plainElement = document.createElement;
+            document.createElement = function (t) {
+              var e = plainElement(t);
+              if (t === 'canvas') {
+                e.getContext = function () { return {
+                  fillRect: function (x, y, w, h) { drawn.push('fill:' + this.fillStyle + ':' + w + 'x' + h); },
+                  drawImage: function (b, x, y, w, h) { drawn.push('draw:' + w + 'x' + h); } }; };
+                e.toBlob = function (cb, type, q) { drawn.push('jpeg:' + type + ':' + q + ':' + e.width + 'x' + e.height); cb({ size: next, type: type }); };
+              }
+              return e;
+            };
+            function photo(name, type, size, w, h) { var f = file(name, type, size); f.w = w; f.h = h; return f; }
+            """;
+
+    private String[] downscaled(String photo, int canvasBytes) throws ScriptException {
+        when(kit.uploads.uploadOptions(WebUiTestKit.FAMILY)).thenReturn(Mono.just(one(0)));
+        ScriptEngine js = run(kit.page("/app/add", "bn"), CANVAS);
+        js.eval("next = " + canvasBytes + "; choose('camera', [" + photo + "]); $('tray-send').click()");
+        String sent = (String) v(js, "sent(xhrs[0])");
+        return new String[]{sent.substring(sent.indexOf("&file=") + 1), (String) v(js, "drawn.join(' ')")};
+    }
+
+    @Test
+    void aBigPhotoIsScaledOnThePhoneOverWhiteAndOnlyASmallerResultIsSent() throws ScriptException {
+        String[] big = downscaled("photo('IMG_0001.jpg', 'image/jpeg', 5000000, 4000, 3000)", 800000);
+        assertThat(big[0]).as("the scaled JPEG goes, as page-1").isEqualTo("file=page-1.jpg:800000");
+        assertThat(big[1]).as("upright, white first (a JPEG has no alpha), the bitmap freed, then encoded at the server's quality")
+                .isEqualTo("decode:from-image fill:white:2200x1650 draw:2200x1650 close jpeg:image/jpeg:0.92:2200x1650");
+
+        String[] worse = downscaled("photo('Screenshot.png', 'image/png', 900000, 1080, 2400)", 950000);
+        assertThat(worse[0]).as("a result bigger than the original: the original goes, as it was").isEqualTo("file=page-1.png:900000");
+        assertThat(worse[1]).contains("jpeg:image/jpeg:0.92:990x2200");
+
+        String[] small = downscaled("photo('t1.jpg', 'image/jpeg', 230947, 1240, 1754)", 1);
+        assertThat(small[0]).as("a small JPEG goes byte for byte").isEqualTo("file=page-1.jpg:230947");
+        assertThat(small[1]).as("and is never re-encoded").doesNotContain("jpeg:").doesNotContain("draw:");
     }
 
     // --- the tray -----------------------------------------------------------------------------------------------------

@@ -63,7 +63,8 @@
   // --- the sheet: only when this browser can do all of it; otherwise the form posts as it is ---------------------
   var form = document.getElementById('add');
   var copyEl = document.getElementById('up-copy');
-  if (!form || !copyEl || !root.FormData || !root.XMLHttpRequest || !root.URL || !URL.createObjectURL) { return; }
+  // send() waits on a Promise: a browser without one keeps the plain form, which posts on its own
+  if (!form || !copyEl || !root.FormData || !root.XMLHttpRequest || !root.URL || !URL.createObjectURL || !root.Promise) { return; }
   document.documentElement.classList.add('js');
 
   var copy = copyEl.dataset;
@@ -76,6 +77,7 @@
   var tray = [], busy = false, lastSent = 0, again = null;
   var $ = function (id) { return document.getElementById(id); };
   var trayEl = $('tray'), listEl = $('tray-list'), upEl = $('up'), alertEl = $('add-alert'), itemTpl = $('t-item');
+  var upTitle = $('up-title').textContent;   // the fallback; the drawn screen names the patient (data-up-title)
   trayEl.insertBefore($('group'), $('tray-order'));   // one set of group radios: the no-JS fieldset moves into the tray
 
   function say(text) { alertEl.textContent = text || ''; alertEl.hidden = !text; }
@@ -89,6 +91,8 @@
   }
 
   function add(files, src) {
+    if (busy) { return; }   // a paper is on its way: nothing joins it, and no tray opens beside the upload step
+    var first = tray.length === 0;
     say('');
     for (var i = 0; i < files.length; i++) {
       var f = files[i];
@@ -97,11 +101,13 @@
       tray.push({ file: f, src: src, url: /^image\//.test(f.type) ? URL.createObjectURL(f) : null });
     }
     render();
+    if (first && tray.length) { $('tray-title').focus(); }   // on a phone the tray may open below the fold
     if (src === 'pdf' && tray.length === 1) { send(); }   // spec 4.8: a single PDF or screenshot skips the tray
   }
 
   function render() {
     trayEl.hidden = tray.length === 0;
+    chrome();
     $('tray-title').textContent = fill(copy.trayTitle, { n: tray.length }, set);
     $('group').hidden = tray.length < 2;
     $('tray-limit').textContent = fill(copy.trayLimit, { max: maxPages, n: tray.length }, set);
@@ -132,6 +138,18 @@
     (b && !b.disabled ? b : (li ? li.querySelector('.t-remove') : $('tray-more'))).focus();
   }
 
+  /** s08 and s09 are screens of their own: the ways in, the tips and the quota give way while the tray holds a page (the upload step sends the tray). */
+  function chrome() {
+    var away = tray.length > 0;
+    $('add-src').hidden = away;
+    $('add-tips').hidden = away;
+    if ($('add-quota')) { $('add-quota').hidden = away; }
+  }
+  /** While a paper is on its way the patient it is for cannot change; refused, back on the tray, it can. */
+  function lock(on) {
+    Array.prototype.forEach.call(form.querySelectorAll('input[name=patient]'), function (r) { r.disabled = on; });
+  }
+
   function prepare(item, i) {
     var f = item.file, ext = f.type === 'application/pdf' ? 'pdf' : (f.type === 'image/png' ? 'png' : 'jpg');
     function named(blob, e) { return { blob: blob, name: pageName(i, e) }; }
@@ -155,48 +173,63 @@
   function send() {
     if (busy) { return; }
     var group = tray.length < 2 ? 'one' : (chosen('group') || 'one');
-    if (!chosen('patient')) { say(copy.choosePatient); return; }
+    var who = form.querySelector('input[name="patient"]:checked');
+    if (!who) { say(copy.choosePatient); return; }
     if (!tray.length) { say(copy.noFile); return; }
     if (!allowed(tray.length, group, remaining)) { say(copy.overAllowance); return; }   // before a byte leaves the phone
-    busy = true; say(''); lastSent = 0; progress(0, tray.length, false);
+    // the patient is taken once, here: every retry of this press goes for the same patient under the same title
+    var press = { patient: who.value, title: who.dataset.upTitle || upTitle };
+    busy = true; say(''); lastSent = 0; lock(true);
+    $('up-title').textContent = press.title;
+    progress(0, tray.length, false); bar(0, 1);
+    $('up-title').focus();
     prepareAll(0, []).then(function (pages) {
       var total = pages.reduce(function (s, p) { return s + p.blob.size; }, 0);
       if (maxBytes && total > maxBytes) { busy = false; back(); say(copy.tooLarge); return; }
-      post(pages, group);
+      post(pages, group, press);
     });
   }
 
-  /** One press on the wire. A retry calls this again with the same pages and the form's same key: never a second paper. */
-  function post(pages, group) {
+  /** One press on the wire. A retry calls this again with the same pages, patient and the form's key: never a second paper. */
+  function post(pages, group, press) {
     var fd = new FormData(), xhr = new XMLHttpRequest(), quiet = null;
     var sizes = pages.map(function (p) { return p.blob.size; });
-    var req = buildRequest(pages, group, form.elements.upload_key.value, chosen('patient'));
+    var req = buildRequest(pages, group, form.elements.upload_key.value, press.patient);
     req.fields.forEach(function (f) { fd.append(f[0], f[1]); });
     req.files.forEach(function (f) { fd.append('file', f.blob, f.name); });
-    function stall() { clearTimeout(quiet); quiet = setTimeout(function () { xhr.abort(); }, 30000); }
+    // 30 s with no byte moving is a stalled network; once every byte has gone the server is storing the pages, and
+    // only a server silent for two minutes is given up on (the retry then replays the same press)
+    function wait(ms) { clearTimeout(quiet); quiet = setTimeout(function () { xhr.abort(); }, ms); }
     xhr.open('POST', form.action);
     xhr.setRequestHeader('Accept', 'application/json');
-    xhr.upload.onprogress = function (e) { stall(); if (e.lengthComputable) { progress(pagesSent(e.loaded, e.total, sizes, false), sizes.length, false); } };
+    xhr.upload.onprogress = function (e) {
+      if (!e.lengthComputable) { wait(30000); return; }
+      wait(e.loaded >= e.total ? 120000 : 30000);
+      bar(e.loaded, e.total);
+      progress(pagesSent(e.loaded, e.total, sizes, false), sizes.length, false);
+    };
+    xhr.upload.onload = function () { wait(120000); };
     xhr.onload = function () {
       clearTimeout(quiet);
       var body = null;
       if (/json/.test(xhr.getResponseHeader('Content-Type') || '')) { try { body = JSON.parse(xhr.responseText); } catch (ignored) { body = null; } }
       busy = false;
-      if (body && xhr.status < 300 && body.next) { progress(sizes.length, sizes.length, false); root.location.assign(body.next); return; }
+      if (body && xhr.status < 300 && body.next) { bar(1, 1); progress(sizes.length, sizes.length, false); root.location.assign(body.next); return; }
       back();
       // no JSON: the session lapsed and the sign-in page answered, or the server failed outright
       say(body ? (body.text || copy.generic) : (/\/app\/?$/.test(xhr.responseURL || '') ? copy.signedOut : copy.generic));
     };
-    xhr.onerror = xhr.onabort = function () { clearTimeout(quiet); stuck(pages, group); };
-    stall();
+    xhr.onerror = xhr.onabort = function () { clearTimeout(quiet); stuck(pages, group, press); };
+    wait(30000);
     xhr.send(fd);
   }
 
+  /** The bar is the bytes (spec 4.9), so a one-page send moves too; the line under it counts pages. */
+  function bar(loaded, size) { var b = $('up-bar'); b.max = size > 0 ? size : 1; b.value = Math.min(loaded, b.max); }
   function progress(n, total, isStuck) {
-    lastSent = n; trayEl.hidden = true; upEl.hidden = false;
+    lastSent = n; trayEl.hidden = true; upEl.hidden = false; chrome();
     var line = fill(copy.upCount, { n: n, total: total }, set);
     $('up-count').textContent = line;
-    $('up-bar').max = total; $('up-bar').value = n;
     $('up-bar').setAttribute('aria-label', line);
     $('up-slow').hidden = !isStuck;
     var ol = $('up-pages');
@@ -208,13 +241,14 @@
       li.appendChild(a); li.appendChild(b); ol.appendChild(li);
     }
   }
-  function stuck(pages, group) {
+  function stuck(pages, group, press) {
     progress(lastSent, pages.length, true);
     again = $('up-retry'); again.hidden = false;
-    again.onclick = function () { again.hidden = true; post(pages, group); };   // the same upload_key: a retry, never a second paper
+    // one tap is one retry: the handler goes with the first tap, and only the next stall sets it again
+    again.onclick = function () { again.onclick = null; again.hidden = true; post(pages, group, press); };   // the same press: never a second paper
     root.addEventListener('online', function once() { root.removeEventListener('online', once); if (!again.hidden) { again.click(); } });
   }
-  function back() { upEl.hidden = true; trayEl.hidden = tray.length === 0; }
+  function back() { upEl.hidden = true; trayEl.hidden = tray.length === 0; lock(false); chrome(); }
 
   Array.prototype.forEach.call(form.querySelectorAll('input[type=file]'), function (input) {
     input.addEventListener('change', function () {

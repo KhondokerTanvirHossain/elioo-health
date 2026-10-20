@@ -127,7 +127,9 @@ public class UploadUiHandler implements WebPages {
         b.append("<fieldset class=\"pick\"><legend>").append(copy.t(lang, "add.who")).append("</legend><div class=\"chips\">");
         for (PatientSummary p : o.canSend()) {
             boolean checked = chosen.filter(p.patient().id()::equals).isPresent();
-            b.append("<label class=\"chip\"><input type=\"radio\" name=\"patient\" value=\"").append(p.patient().id())
+            // data-up-title: s09's title for this patient, which upload.js shows while the paper is on its way (principle 9)
+            b.append("<label class=\"chip\"><input type=\"radio\" data-up-title=\"")
+                    .append(copy.t(lang, "up.title.for", copy.poss(lang, p.patient().name()))).append("\" name=\"patient\" value=\"").append(p.patient().id())
                     .append("\" required").append(checked ? " checked" : "").append(">")
                     .append(copy.t(lang, "add.patient", p.patient().name(), p.patient().age())).append("</label>");
         }
@@ -139,7 +141,7 @@ public class UploadUiHandler implements WebPages {
             b.append("<p class=\"hint\">").append(hint).append("</p>");
         }
         b.append("</fieldset>");
-        b.append("<div class=\"src\">")
+        b.append("<div id=\"add-src\" class=\"src\">")
                 .append(row(lang, "camera", "accept=\"image/*\" capture=\"environment\"", "camera"))
                 .append(row(lang, "gallery", "accept=\"image/*\" multiple", "papers"))
                 .append(row(lang, "pdf", "accept=\"application/pdf,image/*\"", "page"))
@@ -151,10 +153,10 @@ public class UploadUiHandler implements WebPages {
                 .append("</div><p class=\"hint\">").append(copy.t(lang, "add.group.hint")).append("</p></fieldset>");
         b.append(tray(lang)).append(uploadStep(lang));
         b.append("<button type=\"submit\" class=\"btn primary nojs\">").append(copy.t(lang, "add.send")).append("</button>");
-        b.append("<section class=\"tips\" aria-labelledby=\"tips-title\"><h2 id=\"tips-title\">").append(copy.t(lang, "add.tips"))
+        b.append("<section id=\"add-tips\" class=\"tips\" aria-labelledby=\"tips-title\"><h2 id=\"tips-title\">").append(copy.t(lang, "add.tips"))
                 .append("</h2><ul>").append(tip(lang, "flat")).append(tip(lang, "light")).append(tip(lang, "frame")).append("</ul></section>");
         if (a.limited()) {
-            b.append("<p class=\"quota\">").append(copy.t(lang, "add.quota", a.remaining())).append("</p>");
+            b.append("<p id=\"add-quota\" class=\"quota\">").append(copy.t(lang, "add.quota", a.remaining())).append("</p>");
         }
         return b.append("</form>").append(scriptCopy(lang, a)).append("</section>").toString();
     }
@@ -182,7 +184,7 @@ public class UploadUiHandler implements WebPages {
      * in stays one of the form's fields. Every button is {@code type="button"}: none of them posts the form by itself.
      */
     private String tray(Lang lang) {
-        return "<section id=\"tray\" class=\"tray\" hidden aria-labelledby=\"tray-title\"><h2 id=\"tray-title\"></h2>"
+        return "<section id=\"tray\" class=\"tray\" hidden aria-labelledby=\"tray-title\"><h2 id=\"tray-title\" tabindex=\"-1\"></h2>"
                 + "<p id=\"tray-order\" class=\"tray-order\">" + copy.t(lang, "tray.order") + "</p>"
                 + "<ol id=\"tray-list\" class=\"tray-list\"></ol>"
                 + "<button type=\"button\" id=\"tray-more\" class=\"btn quiet\">" + Icons.svg("plus", 20) + "<span>" + copy.t(lang, "tray.more") + "</span></button>"
@@ -195,10 +197,14 @@ public class UploadUiHandler implements WebPages {
                 + "<button type=\"button\" class=\"icon-btn t-remove\">" + Icons.svg("x", 24) + "</button></li></template>";
     }
 
-    /** s09's upload step: a real byte progress bar per page, the slow line and the retry, hidden until a send starts. */
+    /**
+     * s09's upload step: the title (the script names the patient, from the chosen chip's {@code data-up-title}), a byte
+     * progress bar, the per-page lines, the slow line and the retry, hidden until a send starts. Both titles take focus
+     * when their screen opens ({@code tabindex="-1"}), so a phone scrolls to them.
+     */
     private String uploadStep(Lang lang) {
         return "<section id=\"up\" class=\"up\" hidden aria-live=\"polite\" aria-labelledby=\"up-title\">"
-                + "<h2 id=\"up-title\">" + copy.t(lang, "up.title") + "</h2>"
+                + "<h2 id=\"up-title\" tabindex=\"-1\">" + copy.t(lang, "up.title") + "</h2>"
                 + "<p id=\"up-count\" class=\"up-count\"></p><progress id=\"up-bar\" max=\"1\" value=\"0\"></progress>"
                 + "<ol id=\"up-pages\" class=\"up-pages\"></ol>"
                 + "<p id=\"up-slow\" class=\"warn\" hidden>" + copy.t(lang, "up.slow") + "</p>"

@@ -55,7 +55,7 @@ class AddReportSheetPageTest {
         when(kit.uploads.uploadOptions(WebUiTestKit.FAMILY)).thenReturn(Mono.just(new UploadOptions(List.of(ma), List.of(), used(0))));
         String html = sheet();
         assertThat(html).contains("<form id=\"add\" class=\"add\" method=\"post\" enctype=\"multipart/form-data\" action=\"/app/add\"");
-        assertThat(html).containsPattern("<input type=\"radio\" name=\"patient\" value=\"" + ma.patient().id() + "\" required checked>");
+        assertThat(html).containsPattern("<input type=\"radio\" data-up-title=\"[^\"]+\" name=\"patient\" value=\"" + ma.patient().id() + "\" required checked>");
         assertThat(html).contains("আম্মা · ৬৪");   // the age in Bangla digits (rule 13); the relation joins when the profile has one
         assertThat(classed(Dom.parse(html), "hint").stream().filter(h -> h.parent().classes().contains("pick")))   // D3 adds the group's own
                 .singleElement().extracting(Dom.Element::ownText)
@@ -417,6 +417,95 @@ class AddReportSheetPageTest {
         // the one submit is the no-JS one; the script hides it and sends from the tray
         assertThat(dom.all.stream().filter(e -> "submit".equals(e.attrs().get("type")))).singleElement()
                 .satisfies(b -> assertThat(b.classes()).contains("nojs"));
+    }
+
+    /**
+     * {@code hidden} hides, on a real page: the attribute only works while no author rule that outranks it sets
+     * {@code display} on the element (an id rule did, and the retry showed beside every normal send). Derived both ways
+     * from what is actually there, with the page in the script's state ({@code html.js}): every element of the rendered
+     * sheet, given {@code hidden}, computes display:none through the served stylesheet; every element upload.js hides or
+     * shows (its ids read from the script itself), without {@code hidden}, does not. Either set empty would be vacuous.
+     */
+    @Test
+    void anElementGivenHiddenIsHiddenAndEveryOneTheScriptShowsIsShown() {
+        List<Css.Rule> rules = Css.rules(kit.servedText("/assets/baymax.css"));
+        when(kit.uploads.uploadOptions(WebUiTestKit.FAMILY)).thenReturn(Mono.just(new UploadOptions(List.of(patient("আম্মা", 64, true)), List.of(), used(0))));
+        Dom dom = Dom.parse(sheet());
+        dom.all.stream().filter(e -> e.tag().equals("html")).findFirst().orElseThrow()
+                .attrs().merge("class", "js", (was, js) -> was.isBlank() ? js : was + " " + js);
+        Dom.Element sheet = classed(dom, "sheet").get(0);
+        List<Dom.Element> onSheet = dom.all.stream().filter(e -> inside(e, sheet)).toList();
+        java.util.Set<String> toggled = toggledIds(kit.servedText("/assets/upload.js"));
+        assertThat(onSheet).as("elements on the sheet").hasSizeGreaterThan(20);
+        assertThat(toggled).as("ids upload.js hides or shows, read from the script").contains("tray", "up", "up-retry", "up-slow", "add-alert");
+        List<String> stillShown = new java.util.ArrayList<>();
+        for (Dom.Element e : onSheet) {
+            String before = e.attrs().put("hidden", "");
+            String display = display(rules, e);
+            if (!display.startsWith("none")) {
+                stillShown.add(e.describe() + " " + display);
+            }
+            if (before == null) {
+                e.attrs().remove("hidden");
+            }
+        }
+        List<String> neverShown = new java.util.ArrayList<>();
+        for (String id : toggled) {
+            Dom.Element e = byId(dom, id);
+            String before = e.attrs().remove("hidden");
+            String display = display(rules, e);
+            if (display.startsWith("none")) {
+                neverShown.add("#" + id + " " + display);
+            }
+            if (before != null) {
+                e.attrs().put("hidden", before);
+            }
+        }
+        assertThat(stillShown).as("given hidden, still displayed").isEmpty();
+        assertThat(neverShown).as("shown by the script, still display:none").isEmpty();
+    }
+
+    /** The element's computed display and the rule that gave it; with no author rule, the browser's own: hidden → none. */
+    private static String display(List<Css.Rule> rules, Dom.Element e) {
+        return Css.winner(rules, e, "display")
+                .map(r -> Css.bare(Css.valueOf(r, "display")) + " from `" + r.selector() + "` (spec " + r.specificity() + ")")
+                .orElse(e.attrs().containsKey("hidden") ? "none (the browser's own)" : "as the browser draws it");
+    }
+
+    /** Every id whose {@code .hidden} upload.js assigns, directly or through a variable it bound to that id. */
+    static java.util.Set<String> toggledIds(String script) {
+        java.util.Map<String, String> vars = new java.util.HashMap<>();
+        java.util.regex.Matcher bind = java.util.regex.Pattern.compile("\\b([A-Za-z]+)\\s*=\\s*\\$\\('([a-z-]+)'\\)").matcher(script);
+        while (bind.find()) {
+            vars.put(bind.group(1), bind.group(2));
+        }
+        java.util.Set<String> ids = new java.util.TreeSet<>();
+        java.util.regex.Matcher set = java.util.regex.Pattern.compile("(?:\\$\\('([a-z-]+)'\\)|\\b([A-Za-z]+))\\.hidden\\s*=(?!=)").matcher(script);
+        while (set.find()) {
+            String id = set.group(1) != null ? set.group(1) : vars.get(set.group(2));
+            assertThat(id).as("upload.js sets .hidden on `" + set.group() + "`, bound to no id the guard can read").isNotNull();
+            ids.add(id);
+        }
+        return ids;
+    }
+
+    /**
+     * s09 names the patient (principle 9, spec §4.9: "আম্মার কাগজ পাঠানো হচ্ছে"): each patient's radio carries the upload
+     * step's title for that patient, in the page's language and the possessive F8 writes, for the script to show.
+     */
+    @Test
+    void eachPatientsChipCarriesTheUploadStepsTitleNamingThatPatient() {
+        PatientSummary ma = patient("আম্মা", 64, true);
+        PatientSummary baba = patient("রহিম", 72, true);
+        when(kit.uploads.uploadOptions(WebUiTestKit.FAMILY)).thenReturn(Mono.just(new UploadOptions(List.of(ma, baba), List.of(), used(0))));
+        Dom bn = Dom.parse(sheet());
+        java.util.Map<String, String> titles = new java.util.HashMap<>();
+        bn.all.stream().filter(e -> "patient".equals(e.attrs().get("name"))).forEach(r -> titles.put(r.attrs().get("value"), r.attrs().get("data-up-title")));
+        assertThat(titles).containsOnly(java.util.Map.entry(ma.patient().id().toString(), "আম্মার কাগজ পাঠানো হচ্ছে"),
+                java.util.Map.entry(baba.patient().id().toString(), "রহিমের কাগজ পাঠানো হচ্ছে"));
+        when(kit.uploads.uploadOptions(WebUiTestKit.FAMILY)).thenReturn(Mono.just(new UploadOptions(List.of(patient("Ma \"M\"", 64, true)), List.of(), used(0))));
+        String en = kit.page("/app/add", "en");
+        assertThat(en).contains("data-up-title=\"Sending Ma &quot;M&quot;&#39;s paper\"");   // the name escaped once, inside the attribute
     }
 
     /** An English page counts in ASCII; a paying family has no cap, which the script reads as -1. */

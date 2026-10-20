@@ -752,7 +752,7 @@ class WebOnlyJourneyAcceptanceTest {
 
     /** The add sheet's allowance line ({@code <p class="quota">}), as served. */
     private static String quotaLine(String sheet) {
-        Matcher m = Pattern.compile("<p class=\"quota\">[^<]*</p>").matcher(sheet);
+        Matcher m = Pattern.compile("<p[^>]* class=\"quota\">[^<]*</p>").matcher(sheet);
         assertThat(m.find()).as("the allowance line on the add sheet").isTrue();
         return m.group();
     }

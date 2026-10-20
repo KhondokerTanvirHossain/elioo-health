@@ -47,7 +47,9 @@ body.has-sheet::after{content:"";position:fixed;inset:0;z-index:3;background:var
 /* D4: the page tray (s08) and the upload step (s09), shown by upload.js. Without the script none of this is visible and
    the form above posts as it is. Under .js a file input covers its row and stays focusable, so the keyboard reaches it and
    the ring sits on the row (:focus-within); the no-JS send button gives way to the tray's. */
-.add [hidden]{display:none}
+/* hidden must hide whatever else styles the element: an id rule below sets display on #up-retry (AddReportSheetPageTest
+   derives this over every element of the sheet) */
+.sheet [hidden]{display:none!important}
 .js .src-row input[type=file]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
 .src-row.off{opacity:.5;cursor:default}
 .js .nojs{display:none}

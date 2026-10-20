@@ -56,7 +56,9 @@ test('a page counts as sent only when its bytes have left, and the last one only
   assert.equal(u.pagesSent(0, 0, sizes, false), 0);
 });
 
-test('a page is sent as page-N, never under its own name (a filename may name the patient)', () => {
+// The names a page can be sent under. That a file's own name never reaches the wire (FormData.append's filename) is
+// guarded where the script builds the request: UploadScriptDomTest.onePressSendsThePagesInTrayOrderAsPageNWithTheFormsKey.
+test('pages are named page-N, and the request carries the names it is given and no field from the file', () => {
   assert.equal(u.pageName(0, 'jpg'), 'page-1.jpg');
   assert.equal(u.pageName(9, 'pdf'), 'page-10.pdf');
   const req = u.buildRequest([{ blob: { size: 3, name: 'Rokeya-Begum-CBC.jpg' }, name: u.pageName(0, 'jpg') }], 'separate', 'k-0f8e2c1a', 'p-1');
