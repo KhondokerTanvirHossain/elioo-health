@@ -8,6 +8,7 @@ import com.elioo.baymax.web.application.port.in.UploadUseCase;
 import com.elioo.baymax.web.application.port.in.WebAuthUseCase;
 import com.elioo.baymax.web.domain.Grouping;
 import com.elioo.baymax.web.domain.UploadOptions;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpHeaders;
@@ -61,6 +62,15 @@ class AddReportSubmitTest {
     private WebTestClient.ResponseSpec post(MultipartBodyBuilder body, MediaType... accept) {
         return client.post().uri("/app/add").cookie("baymax_session", "tok").accept(accept.length == 0 ? new MediaType[]{MediaType.TEXT_HTML} : accept)
                 .body(BodyInserters.fromMultipartData(body.build())).exchange();
+    }
+
+    /**
+     * The sheet posts through the five-argument upload only. Every {@code never()} below names that form, so a handler
+     * that switched back to the JSON API's three-argument form (no key, no grouping) must fail here, not slip past them.
+     */
+    @AfterEach
+    void theSheetNeverUsesTheKeylessForm() {
+        verify(uploads, never()).upload(any(), any(), any());
     }
 
     @Test
@@ -362,7 +372,8 @@ class AddReportSubmitTest {
     @Test
     void aKeyThatIsNotOurShapeIsIgnoredNotStored() throws IOException {
         UUID ma = UUID.randomUUID();
-        when(uploads.upload(eq(family), eq(ma), anyList(), eq(Grouping.ONE), isNull()))
+        // stubbed for any grouping and key, so a handler that passes the raw value still answers 303 and fails on the verify
+        when(uploads.upload(eq(family), eq(ma), anyList(), any(), any()))
                 .thenReturn(Mono.just(List.of(Document.received(ma, family, 1, NOW).withId(UUID.randomUUID()))));
         MultipartBodyBuilder body = new MultipartBodyBuilder();
         body.part("patient", ma.toString());

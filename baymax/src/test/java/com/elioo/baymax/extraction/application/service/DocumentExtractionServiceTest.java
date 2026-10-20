@@ -548,7 +548,8 @@ class DocumentExtractionServiceTest {
                 .map(c -> java.util.Map.<String, Object>of("type", c.type(), "overall", c.overall(),
                         "sections", c.sections()))
                 .toList();
-        Process python = new ProcessBuilder("python3", "-I", "-c", driver, harness.toString()).start();
+        // -B: no scripts/__pycache__ left behind, so the ignored-source check after a build prints nothing
+        Process python = new ProcessBuilder("python3", "-I", "-B", "-c", driver, harness.toString()).start();
         try (var stdin = python.getOutputStream()) {
             stdin.write(new ObjectMapper().writeValueAsBytes(input));
         }
