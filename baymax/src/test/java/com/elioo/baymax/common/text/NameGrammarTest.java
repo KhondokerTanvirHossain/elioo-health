@@ -27,5 +27,13 @@ class NameGrammarTest {
     @CsvSource(value = {"NULL", "''", "'   '"}, nullValues = "NULL")
     void nothingInNothingOut(String name) {
         assertThat(NameGrammar.possessive(name)).isEmpty();
+        assertThat(NameGrammar.objective(name)).isEmpty();
+    }
+
+    /** F8: "কে" always attaches to a Bangla name, whatever its last letter; a Latin name keeps a hyphen. */
+    @ParameterizedTest
+    @CsvSource({"আম্মা,আম্মাকে", "রহিম,রহিমকে", "শরৎ,শরৎকে", "Rina,Rina-কে", "John,John-কে", "নাম ২,নাম ২-কে", "'  আব্বু ',আব্বুকে"})
+    void theObjectiveAttachesKeToABanglaNameAndHyphensAnyOther(String name, String expected) {
+        assertThat(NameGrammar.objective(name)).isEqualTo(expected);
     }
 }
