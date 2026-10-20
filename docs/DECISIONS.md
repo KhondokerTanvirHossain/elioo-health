@@ -684,6 +684,17 @@ by Claude Code, recorded as Part A1–A8 of [the rebuild plan](superpowers/plans
    the flip records a routes-floor sha, and `deploy.sh` refuses an `IMAGE_TAG` that is not a descendant of it unless
    `FORCE=1`. The RUNBOOK rollback one-liner carries the same floor. Within the floor, API changes are additive only,
    so old Java with a new UI and new Java with an old UI never break.
+   - **Amended 2026-10-21 (W1b, PR #100), for the PO to confirm.** "No `medioo-web` image" now means GHCR's
+     missing-tag answer (`manifest unknown` / `not found`) only, and only that skips the web step green. Any other
+     pull error (`denied`, `unauthorized`, rate limit, network, no space) fails the deploy after Java is healthy,
+     because a green run would claim a rollback the web never took; a tag already on the box is used when the pull
+     fails. CI deploys set `WEB_IMAGE_REQUIRED=1`: the job has just pushed `medioo-web:<sha>`, so there even a missing
+     tag is a fault and the deploy goes red after Java is healthy; a manual run keeps the skip-and-stay-green rule for
+     a missing tag. A failed web swap (no start, or no `/app/healthz` for the sha within 60 s) puts the previous
+     `medioo-web` back and still exits 1; a missing `n8n_edge` fails the web step before the running one is touched.
+     The health check requires `sha` (run-time `GIT_SHA`) and `build` (the image's baked `BUILD_SHA`) to equal the
+     deployed tag. Consequence for manual rollbacks: with a private `medioo-web` package, a logged-out run whose web
+     tag is not on the box goes red rather than green; log in first, or make the package public.
 3. **Auth across the boundary (A3).** The browser calls `/app/api/*`, which Caddy sends to Java; the `Path=/app`
    session cookie travels on its own and is never widened. Server components call `http://medscribe-ai:8086/app/api/*`
    forwarding the incoming `Cookie` header and nothing else, and **only with `GET` or `HEAD`**; Next never mints or

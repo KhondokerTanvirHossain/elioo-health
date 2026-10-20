@@ -82,8 +82,11 @@ Everything comes from the environment; see `medscribe.env.example`. The importan
 
 ## Deployment
 
-Push to `main` -> `.github/workflows/ci-cd.yml` -> Gradle build and tests -> Docker image to GHCR ->
-SSH to the EC2 host -> `deploy.sh` replaces the `medscribe-ai` container and waits for `/actuator/health`.
+Push to `main` -> `.github/workflows/ci-cd.yml` -> Gradle build and tests -> two Docker images to GHCR, both
+tagged with the same sha (`medscribe-ai`, and `medioo-web` from W1b) -> SSH to the EC2 host -> `deploy.sh` swaps
+the `medscribe-ai` container and waits for `/actuator/health`, then swaps `medioo-web` and waits for `/app/healthz`
+to answer for that sha (a failed web swap puts the previous one back). A sha with no web image (any before W1b)
+deploys Java only. Details: [RUNBOOK.md](RUNBOOK.md).
 Caddy (from the co-located n8n stack) terminates HTTPS for `medioo.eliooo.org` (301 from `baymax.eliooo.org`) and proxies to the container
 over the `n8n_edge` Docker network.
 

@@ -11,16 +11,47 @@ and this file should be fixed.
 | Host | EC2 `i-0215d6b600b251455`, `ec2-13-205-14-249.ap-south-1.compute.amazonaws.com`, user `ec2-user`, region ap-south-1 |
 | Shared with | an n8n stack; its Caddy terminates HTTPS for `medioo.eliooo.org` (and answers `baymax.eliooo.org` with a permanent redirect to it, path preserved — DR-15) and reaches the app as `medscribe-ai:8086` on the docker network `n8n_edge` |
 | DNS | `medioo.eliooo.org` **and** `baymax.eliooo.org` are each an **A record** pointing at the EC2 IP (`13.205.14.249`) in Hostinger (zone on `dns-parking.com`), TTL 14400. They are *not* CNAMEs, so **moving the box means changing both records** — updating only `medioo` leaves the old hostname resolving to a dead IP. `baymax` was added 2026-09-19; before that the documented redirect had never worked, because only `medioo` existed. **Negative caching: a newly added record can keep reading NXDOMAIN on a machine that looked it up while it was still missing — up to the zone's negative TTL (4h here) after the record is live.** `curl`, `host` and `getent` then fail while `dig @8.8.8.8 <name>` answers correctly, because `dig` bypasses the system resolver. That is a stale local cache, **not** a failed deploy: confirm from the EC2 box (`ssh … 'curl -sS -o /dev/null -w "%{http_code} %{redirect_url}\n" https://baymax.eliooo.org/app/home'`) before treating it as one |
-| Container | `medscribe-ai`, image `ghcr.io/khondokertanvirhossain/elioo-health/medscribe-ai:<git sha>` |
+| Containers | `medscribe-ai` (Java), image `ghcr.io/khondokertanvirhossain/elioo-health/medscribe-ai:<git sha>`, host port 8086, `--env-file`; and `medioo-web` (Next.js, DR-40, from W1b), image `ghcr.io/khondokertanvirhossain/elioo-health/medioo-web:<git sha>`, same sha, on `n8n_edge` only (no host port), no env file, 320 MB cap. **No route sends `medioo-web` anything until W1c** |
 | Runtime config | `/home/ec2-user/medscribe.env`, mode 600, passed to `docker run --env-file` |
 | Database | Supabase `niramoy-rx`, session pooler, schemas `medscribe` and `baymax` |
 | Object storage | AWS S3 `elioo-baymax-prod` (ap-south-1, private, SSE-S3) via the EC2 instance role (DR-5) |
 | Deploy | push to `main` → GitHub Actions → GHCR → SSH → `deploy.sh`. Manually: `IMAGE_TAG=<git sha> bash ~/deploy.sh` |
 
-`deploy.sh` first prunes old local tags of its own image (see [Disk](#disk) below), then refuses to go on if
-`/` has less than the free-space floor, then pulls the tag, removes the old container, starts the new one with
+`deploy.sh` first prunes old local tags of both its images (see [Disk](#disk) below), then refuses to go on if
+`/` has less than the free-space floor, then pulls the Java tag, removes the old container, starts the new one with
 `--env-file` and the GCP credentials mounted read-only, then polls `/actuator/health` for 90 seconds. It exits
 non-zero and prints the last 50 log lines if the container never becomes healthy, so a failed deploy is loud.
+
+**Java first, then Node** (DR-40 A2, `deploy_web` in `deploy.sh`, tested by `scripts/test_deploy_sh.sh` against fakes
+and by `scripts/test_deploy_web_docker.sh` against the real image and daemon). Only once Java is healthy does
+`deploy.sh` touch `medioo-web`: it pulls `medioo-web:<same sha>`, removes the old `medioo-web`, and starts the new
+one. It runs with `--network n8n_edge`, no `-p` and no `--env-file`, so Node never holds Java's secrets. Its
+environment is only `JAVA_INTERNAL_URL=http://medscribe-ai:8086` and `GIT_SHA=<sha>`. It also gets `--memory=320m`,
+`--restart unless-stopped` and rotated logs (`max-size=10m`, `max-file=3`). Then `deploy.sh` waits up to 60 s
+(wall clock; each try is capped at 5 s and its fetch at 2 s) for `/app/healthz`, fetched inside the container, to
+answer `service == "medioo-web"` with `sha` (the `GIT_SHA` it was started with) **and** `build` (the `BUILD_SHA` CI
+baked into the image) both equal to the tag `deploy.sh` holds. The `build` field is what makes it a check of the
+image: a container started from an image built from another sha cannot pass. Needs coreutils `timeout` (the box has
+`/usr/bin/timeout`).
+- **The web step fails:** if the new `medioo-web` cannot start or never becomes healthy, the deploy exits 1 and
+  prints its last 50 log lines, then **puts the previous `medioo-web` back** (the image it was running, with that
+  sha) and checks it healthy. Java, already healthy, is not touched. On the first deploy there is no previous one,
+  and the failed container is left in place to inspect (`docker logs medioo-web`).
+- **No edge network:** `n8n_edge` missing fails the web step (exit 1) before the running `medioo-web` is touched. On
+  any other network it would pass its in-container probe while Caddy could not reach it nor it Java.
+- **The web pull fails.** If that tag is already on the box (a manual rollback, logged out, to a tag the prune kept),
+  `deploy.sh` logs `web pull failed (<docker's error>); using the local <sha>` and deploys it. Otherwise:
+  - GHCR's missing-tag answer (`manifest unknown` / `not found`; every sha before W1b has no web image): logs
+    `web image <sha> not found; Java-only deploy (<docker's error>)`, leaves any running `medioo-web` as it is, and
+    exits 0. **In CI** the deploy job passes `WEB_IMAGE_REQUIRED=1`, because it has just pushed that image: there a
+    missing tag fails the deploy, after Java is up.
+  - Any other error (`denied`/`unauthorized` on the private package, a rate limit, the network, no space left) is a
+    fault, not a pre-W1b sha: `ERROR: could not pull web image <sha>: <docker's error>`, exit 1, whatever
+    `WEB_IMAGE_REQUIRED` says, with Java deployed and `medioo-web` unchanged. A green run means the web is at the sha.
+
+The web image is built (with `--build-arg BUILD_SHA=<sha>`) and pushed by the same deploy job, before anything
+reaches the box. A web build failure stops the job with production untouched; the build job already built the same
+Dockerfile on the PR (`scripts/test_deploy_web_docker.sh`).
 After the deploy job, CI's smoke test checks both `http://<EC2 host>:8086/actuator/health` and
 `https://medioo.eliooo.org/actuator/health`; both must pass, because a healthy container behind a broken Caddy
 or certificate is still an outage. It prints only the HTTP status, never the health body, because the Actions
@@ -31,7 +62,8 @@ internet, which serves the whole app (login and admin routes included) over plai
 TLS. The PR that binds Java to `127.0.0.1` (W1c) must remove the `:8086` check from the smoke step in the same
 change, or every deploy after it turns `main` red.
 
-`DEPLOY_FUNCTIONS_ONLY=1` is for `scripts/test_deploy_prune.sh`, which sources `deploy.sh` for its functions.
+`DEPLOY_FUNCTIONS_ONLY=1` is for `scripts/test_deploy_prune.sh`, `scripts/test_deploy_sh.sh` (both use the fakes in
+`scripts/deploy_test_fakes.sh`) and `scripts/test_deploy_web_docker.sh`, which source `deploy.sh` for its functions.
 Executing `deploy.sh` with it set fails on purpose rather than exiting 0 having deployed nothing.
 
 ## Disk
@@ -42,12 +74,18 @@ The root volume is 20 GB and shared with n8n and bddrug. Each `medscribe-ai` ima
 ```bash
 df -h /
 docker images ghcr.io/khondokertanvirhossain/elioo-health/medscribe-ai --format '{{.Tag}} {{.CreatedAt}} {{.ID}}'
+docker images ghcr.io/khondokertanvirhossain/elioo-health/medioo-web --format '{{.Tag}} {{.CreatedAt}} {{.ID}}'
 ```
 
-**The pruning rule** (`prune_repo` in `deploy.sh`, tested by `scripts/test_deploy_prune.sh`): before every
-pull, remove local tags of exactly `ghcr.io/khondokertanvirhossain/elioo-health/medscribe-ai`, keep the newest 3
-by creation time (date and time of day; the tags are git shas, so name order means nothing), never remove the
-tag being deployed, and never remove the image of a running container, whatever its age. Removal is by
+`medioo-web` images (from W1b) are about 240 MB each (242 MB built locally on 2026-10-21), and tags share the
+`node:22-alpine` base layers.
+
+**The pruning rule** (`prune_repo` in `deploy.sh`; the rule is tested by `scripts/test_deploy_prune.sh`, and its use
+on both repositories, before the free-space floor, by `scripts/test_deploy_sh.sh`): before every pull, remove local
+tags of exactly each of our two repositories (`ghcr.io/khondokertanvirhossain/elioo-health/medscribe-ai` and
+`ghcr.io/khondokertanvirhossain/elioo-health/medioo-web`), separately, keeping the newest 3 of each by creation time
+(date and time of day; the tags are git shas, so name order means nothing). Never remove the tag being deployed (in
+either repository), and never remove the image of a running container, whatever its age. Removal is by
 `repo:tag`, never by image id, and never touches another repository: n8n's and bddrug's images belong to
 their own deploys. A removal the daemon refuses is logged and skipped, so pruning cannot fail a deploy. Older
 tags stay in GHCR, so a rollback to one of them is still `IMAGE_TAG=<sha> bash ~/deploy.sh`; if that sha is
@@ -56,7 +94,10 @@ cannot take the known-good image away.
 
 **Steady state to plan disk against:** the prune runs before the pull, so after a deploy the box holds **up to
 4** `medscribe-ai` tags (the 3 kept plus the new one), about 1.8 GB at 456 MB each, plus one more if a running
-image older than those is protected, or if a rollback target is.
+image older than those is protected, or if a rollback target is. Add up to 4 `medioo-web` tags, at most about
+1 GB and less in practice because of the shared base layers. Both repositories are pruned before the free-space
+floor is read, so space either one frees counts for both pulls. The one floor covers both pulls: the web pull,
+about 240 MB, comes after the Java one.
 
 **The free-space floor:** after the prune and before the pull, `deploy.sh` reads the free KB on `/`
 (`df -Pk /`) and **refuses to pull below 1.5 GB (1572864 KB, about 3x the image)**, or when the figure cannot
@@ -342,6 +383,15 @@ curl -s -o /dev/null -w '%{http_code}\n' https://medioo.eliooo.org/api/v1/baymax
 
 Baymax health returning 404 in production means the module did not load: `BAYMAX_ENABLED` is not `true`.
 
+The second container (from W1b), on the box. Until W1c nothing outside the box can reach it, by design:
+
+```bash
+docker ps --format '{{.Names}} {{.Image}} {{.Status}}' | grep -E '^(medscribe-ai|medioo-web) '   # both, same sha, medioo-web "(healthy)"
+docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' medioo-web                          # under 320 MiB (about 45 MiB idle)
+docker port medioo-web                                                                          # prints nothing: no host port
+free -m                                                                                         # "available" stays at 1 GB or more
+```
+
 ## Migrations
 
 Two independent Flyway instances run at startup over JDBC, then the app uses R2DBC:
@@ -373,6 +423,25 @@ Redeploy the previous image tag; every merge to `main` is tagged with its git sh
 IMAGE_TAG=<previous git sha> bash ~/deploy.sh
 ```
 
+**One `IMAGE_TAG` rolls back both containers** (DR-40 A2). Both images carry the sha of the merge that built
+them, so the one variable sets Java and `medioo-web` together, Java first. The limit is the routes floor below.
+- **Neither copy of the target is pruned:** the tag being deployed is protected in both repositories, so a rollback
+  to a sha still on the box keeps its Java and web images (`rollback-both` in `scripts/test_deploy_sh.sh`).
+- **Rollback to a sha from before W1b:** GHCR has no `medioo-web` image for it. `deploy.sh` deploys Java only, logs
+  `web image <sha> not found; Java-only deploy (Error response from daemon: manifest unknown)`, exits 0, and leaves
+  the newer `medioo-web` running. That is safe, because API changes are additive only (DR-40 A2).
+- **A manual run is not logged in to GHCR** (the CI deploy logs out on every exit). If the web tag is still on the
+  box, a failed pull uses that copy (`using the local <sha>`). If it is not, and the `medioo-web` package is private,
+  the pull answers `denied`, and the run **fails** (exit 1, `ERROR: could not pull web image ...`) after Java is
+  rolled back: it does not report a Java-only success, because the web would then be at another sha. GHCR may give
+  the same `denied` for a pre-W1b sha of a private package, so log in first for any manual rollback
+  (`docker login ghcr.io`, then `docker logout ghcr.io` afterwards), or have the package made public like
+  `medscribe-ai`'s (PO choice).
+- **A failed web swap puts the previous one back**, so a rollback whose web image is broken leaves the web where it
+  was and turns the run red; Java stays at the rollback sha.
+- **Taking `medioo-web` away entirely:** after W1c, first revert its routes as below. Then
+  `docker rm -f medioo-web`.
+
 **Rollback floor (DR-40 A2, from the first route flip in W1c).** Caddy routing is state on the box, not tied to
 `IMAGE_TAG`. Before rolling back to a sha older than the most recent route flip, first revert that route in the box's
 Caddyfile (back up, write in place only, confirm the container sees it, validate, reload, as in the header of
@@ -397,6 +466,8 @@ IMAGE_TAG=$(docker inspect -f '{{.Config.Image}}' medscribe-ai | awk -F: '{print
 ```bash
 docker logs --tail 200 medscribe-ai 2>&1 | sed 's/\x1b\[[0-9;]*m//g'
 docker logs medscribe-ai 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep '\[baymax\]'
+docker logs --tail 200 medioo-web 2>&1          # Next.js; rotated at 10 MB x 3 files
+docker exec medioo-web node -e "fetch('http://127.0.0.1:3000/app/healthz').then(r=>r.text()).then(console.log)"   # sha and build: both the deployed sha
 ```
 
 Patient text never appears at INFO. Prompts, model replies and OCR text are DEBUG only; `ai_call_log` and

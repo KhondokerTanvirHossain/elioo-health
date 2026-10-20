@@ -1,14 +1,23 @@
 #!/usr/bin/env bash
 # MedScribe AI — server-side deploy. Invoked by GitHub Actions over SSH:
-#   IMAGE_TAG=<git sha> bash /home/ec2-user/deploy.sh
+#   WEB_IMAGE_REQUIRED=1 IMAGE_TAG=<git sha> bash /home/ec2-user/deploy.sh
+# Manually (a rollback): IMAGE_TAG=<git sha> bash ~/deploy.sh
 # Requires: docker, a prior `docker login ghcr.io`, and $ENV_FILE (mode 600).
 #
-# DEPLOY_FUNCTIONS_ONLY=1 makes `source deploy.sh` define the functions and stop (scripts/test_deploy_prune.sh).
-# It is honoured only when the file is SOURCED: executing deploy.sh with it set fails, so a stray export can
-# never turn a deploy into a silent no-op that exits 0.
+# Two containers, one sha (DR-40 A2): Java (medscribe-ai) is swapped first and must be healthy; only then is
+# medioo-web (Next.js) swapped, by deploy_web. A sha GHCR has no medioo-web image for (every sha before W1b) deploys
+# Java only and leaves whatever medioo-web is running alone; WEB_IMAGE_REQUIRED=1 (set by CI, which has just pushed
+# that image) turns a missing web image into a failure instead. Any other web pull error fails the deploy. A web
+# swap that fails puts the previous medioo-web back. Tested by scripts/test_deploy_sh.sh (fakes) and
+# scripts/test_deploy_web_docker.sh (the real image and daemon). Needs coreutils `timeout` (the box has it).
 #
-# MIN_FREE_KB (default 1572864, i.e. 1.5 GB, about 3x the image): after the prune, the deploy refuses to pull
-# below this much free space on / and exits non-zero while the old container keeps serving. docs/RUNBOOK.md -> Disk.
+# DEPLOY_FUNCTIONS_ONLY=1 makes `source deploy.sh` define the functions and stop (scripts/test_deploy_prune.sh,
+# scripts/test_deploy_sh.sh). It is honoured only when the file is SOURCED: executing deploy.sh with it set fails,
+# so a stray export can never turn a deploy into a silent no-op that exits 0.
+#
+# MIN_FREE_KB (default 1572864, i.e. 1.5 GB, about 3x the Java image): after pruning both repositories, the deploy
+# refuses to pull below this much free space on / and exits non-zero while the old containers keep serving. The one
+# floor covers both pulls: the web image is a fraction of the Java one. docs/RUNBOOK.md -> Disk.
 set -euo pipefail
 
 log() { printf '[deploy] %s\n' "$*"; }
@@ -80,6 +89,143 @@ require_free_kb() {
   log "Disk free on $path: ${free} KB (floor ${min} KB)"
 }
 
+WEB_IMAGE="${WEB_IMAGE:-ghcr.io/khondokertanvirhossain/elioo-health/medioo-web}"
+WEB_CONTAINER_NAME="${WEB_CONTAINER_NAME:-medioo-web}"
+WEB_HEALTH_DEADLINE_S="${WEB_HEALTH_DEADLINE_S:-60}"   # the whole health wait, wall clock
+WEB_PROBE_TIMEOUT_S="${WEB_PROBE_TIMEOUT_S:-5}"        # one try: docker exec, a node start and the fetch (2 s of it)
+
+# The health probe, run inside the container as `node -e "$WEB_PROBE" <tag>`. It passes only when /app/healthz
+# answers 2xx JSON with service "medioo-web", sha == <tag> (the GIT_SHA the container was started with) AND
+# build == <tag> (the BUILD_SHA baked into the image when CI built it). <tag> is the literal deploy.sh holds, passed
+# as an argument, never read from the container's own environment: a probe that compares the container's answer
+# with the container's env agrees with itself whatever is running. The build field is what makes it a check of the
+# IMAGE: an image tagged <tag> but built from another sha fails. The fetch has its own 2 s deadline and exitCode
+# starts at 1, so a hung server, or a path that reaches neither exit, fails rather than passing or stalling.
+WEB_PROBE="process.exitCode=1;const t=process.argv[1];fetch('http://127.0.0.1:3000/app/healthz',{signal:AbortSignal.timeout(2000)}).then(r=>r.ok?r.json():Promise.reject(r.status)).then(j=>process.exit(t&&j&&j.service==='medioo-web'&&j.sha===t&&j.build===t?0:1)).catch(()=>process.exit(1))"
+
+# web_start <tag> <network>: the one place medioo-web's `docker run` arguments are written (new and put-back alike).
+# On <network> with no published port (nothing reaches it except through Caddy), no --env-file and no mounts (Node
+# never holds Java's secrets: it gets the two variables it needs), capped at 320 MB, with rotated logs (the box is
+# shared and low on disk; Next writes a stack trace per server error).
+web_start() {
+  docker run -d \
+    --name "$WEB_CONTAINER_NAME" \
+    --restart unless-stopped \
+    --memory=320m \
+    --log-opt max-size=10m --log-opt max-file=3 \
+    --network "$2" \
+    -e JAVA_INTERNAL_URL=http://medscribe-ai:8086 \
+    -e "GIT_SHA=$1" \
+    "${WEB_IMAGE}:$1" >/dev/null
+}
+
+# web_wait_healthy <tag>: 0 once WEB_PROBE passes for <tag>. Each try is bounded by WEB_PROBE_TIMEOUT_S (a hung exec
+# or node cannot stall it), the whole wait by WEB_HEALTH_DEADLINE_S of wall clock and by 30 tries.
+web_wait_healthy() {
+  local tag="$1" i=0 start=$SECONDS
+  while [ "$i" -lt 30 ] && [ $((SECONDS - start)) -lt "$WEB_HEALTH_DEADLINE_S" ]; do
+    i=$((i + 1))
+    if timeout "$WEB_PROBE_TIMEOUT_S" docker exec "$WEB_CONTAINER_NAME" node -e "$WEB_PROBE" "$tag" >/dev/null 2>&1; then
+      log "$WEB_CONTAINER_NAME healthy after $((SECONDS - start))s, try $i (sha ${tag})"
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
+}
+
+# web_restore <previous image ref> <failed tag> <network>: puts the previous medioo-web back after a failed swap. The
+# container is stateless, so unlike Java it can be restored without a person: from W1c Caddy routes paths to it, and
+# one bad web build must not leave them down until someone acts. With no previous one of ours (the first deploy),
+# the failed container is left in place to inspect.
+web_restore() {
+  local prev="$1" failed="$2" edge="$3" ptag=""
+  case "$prev" in "${WEB_IMAGE}:"*) ptag="${prev##*:}" ;; esac
+  if [ -z "$ptag" ] || [ "$ptag" = "$failed" ]; then
+    log "No previous $WEB_CONTAINER_NAME to put back${prev:+ (was $prev)}; the failed one is left in place: docker logs $WEB_CONTAINER_NAME"
+    return 0
+  fi
+  log "Putting the previous $WEB_CONTAINER_NAME ($ptag) back"
+  if docker ps -a --format '{{.Names}}' | grep -qx "$WEB_CONTAINER_NAME"; then
+    docker rm -f "$WEB_CONTAINER_NAME" >/dev/null || { log "ERROR: could not remove the failed $WEB_CONTAINER_NAME; nothing put back"; return 0; }
+  fi
+  if ! web_start "$ptag" "$edge"; then
+    log "ERROR: could not start the previous $WEB_CONTAINER_NAME ($ptag); none is running"
+    return 0
+  fi
+  if web_wait_healthy "$ptag"; then
+    log "The previous $WEB_CONTAINER_NAME ($ptag) is back and healthy"
+  else
+    log "ERROR: the previous $WEB_CONTAINER_NAME ($ptag) is back but did not answer /app/healthz either"
+  fi
+}
+
+# deploy_web <tag>: swaps the medioo-web container to <tag>. Called only once Java is healthy.
+#
+# - Prunes the web repository to 3 tags (never <tag>, never the running image).
+# - Pulls <tag>. If the pull fails and <tag> is already on disk, uses that copy (a logged-out manual rollback to a
+#   tag the prune kept). Otherwise only GHCR's missing-tag answer ("manifest unknown" / "not found": every sha
+#   before W1b) skips the web step: it logs that, leaves the running medioo-web as it is and returns 0; unless
+#   WEB_IMAGE_REQUIRED=1 (CI, which has just pushed this image), when it returns 1. Any other pull error (denied,
+#   unauthorized, rate limit, network, no space) is a fault and returns 1 whatever WEB_IMAGE_REQUIRED says: a green
+#   run that left the web at another sha would read as a successful rollback.
+# - No edge network: returns 1 before the running medioo-web is touched. Anywhere else the new one would pass its
+#   in-container probe while neither Caddy nor it could reach the other side.
+# - Replaces the container (web_start) and waits for this tag's /app/healthz (web_wait_healthy). If the run fails or
+#   the wait times out: prints the last 50 log lines, puts the previous medioo-web back (web_restore), returns 1.
+#   Java is never touched.
+#
+# Every step checks its own status: the caller runs it as `deploy_web ... || exit 1`, where `set -e` is off.
+deploy_web() {
+  local tag="$1" err line edge="${EDGE_NETWORK:-n8n_edge}" prev
+  # the main body prunes both repositories before the free-space floor and records it; once per run is enough
+  [ "${WEB_PRUNED_FOR:-}" = "$tag" ] || prune_repo "$WEB_IMAGE" 3 "$tag"
+
+  log "Pulling ${WEB_IMAGE}:${tag}"
+  if ! err="$(docker pull "${WEB_IMAGE}:${tag}" 2>&1 >/dev/null)"; then
+    line="${err%%$'\n'*}"
+    if docker image inspect "${WEB_IMAGE}:${tag}" >/dev/null 2>&1; then
+      log "web pull failed (${line}); using the local ${tag}"
+    elif printf '%s\n' "$err" | grep -qiE 'manifest unknown|not found'; then
+      if [ "${WEB_IMAGE_REQUIRED:-}" = 1 ]; then
+        log "ERROR: web image ${tag} not found and WEB_IMAGE_REQUIRED=1 (${line}). Java is deployed and healthy; $WEB_CONTAINER_NAME is unchanged."
+        return 1
+      fi
+      log "web image ${tag} not found; Java-only deploy (${line}). $WEB_CONTAINER_NAME, if running, is unchanged."
+      return 0
+    else
+      log "ERROR: could not pull web image ${tag}: ${line}. Not a missing tag, so not skipped. Java is deployed and healthy; $WEB_CONTAINER_NAME is unchanged."
+      return 1
+    fi
+  fi
+
+  if ! docker network inspect "$edge" >/dev/null 2>&1; then
+    log "ERROR: network $edge not found; $WEB_CONTAINER_NAME would be unreachable (Caddy could not reach it, nor it Java). Java is deployed and healthy; $WEB_CONTAINER_NAME is unchanged."
+    return 1
+  fi
+
+  prev="$(docker inspect -f '{{.Config.Image}}' "$WEB_CONTAINER_NAME" 2>/dev/null || true)"
+  if docker ps -a --format '{{.Names}}' | grep -qx "$WEB_CONTAINER_NAME"; then
+    log "Removing existing container $WEB_CONTAINER_NAME${prev:+ ($prev)}"
+    docker rm -f "$WEB_CONTAINER_NAME" >/dev/null || { log "ERROR: could not remove $WEB_CONTAINER_NAME"; return 1; }
+  fi
+
+  log "Starting $WEB_CONTAINER_NAME"
+  if ! web_start "$tag" "$edge"; then
+    log "ERROR: could not start $WEB_CONTAINER_NAME (sha ${tag}). Java is deployed and untouched."
+    web_restore "$prev" "$tag" "$edge"
+    return 1
+  fi
+
+  log "Waiting for $WEB_CONTAINER_NAME /app/healthz"
+  if web_wait_healthy "$tag"; then return 0; fi
+
+  log "ERROR: $WEB_CONTAINER_NAME did not become healthy in ${WEB_HEALTH_DEADLINE_S}s (sha ${tag}). Java is deployed and untouched. Last 50 log lines:"
+  docker logs --tail 50 "$WEB_CONTAINER_NAME" 2>&1 || true
+  web_restore "$prev" "$tag" "$edge"
+  return 1
+}
+
 if [ "${DEPLOY_FUNCTIONS_ONLY:-}" = 1 ]; then
   if [ "${BASH_SOURCE[0]}" != "$0" ]; then return 0; fi
   log "ERROR: DEPLOY_FUNCTIONS_ONLY=1 is set but deploy.sh was executed, not sourced; refusing to deploy"
@@ -118,7 +264,10 @@ fi
 MIN_FREE_KB="${MIN_FREE_KB:-1572864}"
 case "$MIN_FREE_KB" in ''|*[!0-9]*) log "ERROR: MIN_FREE_KB '$MIN_FREE_KB' is not a number"; exit 1 ;; esac
 
+# both repositories, before the floor is read: what either frees counts for both pulls
 prune_repo "$IMAGE" 3 "$IMAGE_TAG"
+prune_repo "$WEB_IMAGE" 3 "$IMAGE_TAG"
+WEB_PRUNED_FOR="$IMAGE_TAG"
 require_free_kb / "$MIN_FREE_KB" || exit 1
 
 log "Pulling ${IMAGE}:${IMAGE_TAG}"
@@ -142,15 +291,23 @@ docker run -d \
   "${IMAGE}:${IMAGE_TAG}" >/dev/null
 
 log "Waiting for health at $HEALTH_URL"
+JAVA_HEALTHY=0
 for i in $(seq 1 45); do
   if curl -fsS "$HEALTH_URL" >/dev/null 2>&1; then
     # only the top-level status: the full body (disk, paths, database details) would land in the public CI log
     log "Healthy after $((i*2))s: $(curl -fsS "$HEALTH_URL" 2>/dev/null | grep -o '"status":"[A-Z_]*"' | head -1 || true)"
-    exit 0
+    JAVA_HEALTHY=1
+    break
   fi
   sleep 2
 done
 
-log "ERROR: container did not become healthy in 90s. Last 50 log lines:"
-docker logs --tail 50 "$CONTAINER_NAME" || true
-exit 1
+if [ "$JAVA_HEALTHY" != 1 ]; then
+  log "ERROR: container did not become healthy in 90s; $WEB_CONTAINER_NAME not touched. Last 50 log lines:"
+  docker logs --tail 50 "$CONTAINER_NAME" || true
+  exit 1
+fi
+
+# Java first, then Node (DR-40 A2): a web failure turns the deploy red but never costs the Java deploy
+deploy_web "$IMAGE_TAG" || exit 1
+exit 0
