@@ -98,6 +98,35 @@ class PapersTabTimelineTest {
         assertThat(chips(card(html, WEEK_DOC))).as("released: no review chip").containsExactly("chip soon");
     }
 
+    /**
+     * Kit §6, asked of the served stylesheet's cascade on the rendered row, never of a class name: the pending chip sits
+     * beside the level chip at the level chip's own size, weight and padding, in the unknown-status colour. The result
+     * page's .chip.review has none of these, so reused as-is it renders at body size beside a 14 px chip.
+     */
+    @Test
+    void thePendingChipIsDrawnAtTheLevelChipsSizeBesideIt() {
+        papers(null);
+        Dom dom = Dom.parse(kit.page(papers, "bn"));
+        List<Css.Rule> rules = Css.rules(kit.servedText("/assets/baymax.css"));
+        Dom.Element row = dom.all.stream().filter(e -> e.classes().contains("chips")
+                && AppShellRoutesTest.subtree(e).stream().anyMatch(x -> x.classes().contains("now"))).findFirst().orElseThrow();
+        Dom.Element level = AppShellRoutesTest.subtree(row).stream().filter(e -> e.classes().contains("now")).findFirst().orElseThrow();
+        Dom.Element review = AppShellRoutesTest.subtree(row).stream().filter(e -> e.classes().contains("review")).findFirst().orElseThrow();
+        for (String property : List.of("font-size", "line-height", "font-weight")) {
+            assertThat(declared(rules, review, property)).as("the pending chip's " + property + " is the level chip's")
+                    .isPresent().isEqualTo(declared(rules, level, property));
+        }
+        // the vertical padding (the first value); the level chip's left side is narrower for its icon
+        assertThat(declared(rules, review, "padding").map(v -> v.split("\\s+")[0])).as("the pending chip's vertical padding")
+                .isPresent().isEqualTo(declared(rules, level, "padding").map(v -> v.split("\\s+")[0]));
+        assertThat(Css.winner(rules, review, "color").map(r -> Css.valueOf(r, "color"))).contains("var(--c-status-unknown)");
+    }
+
+    /** The value the winning rule of the served cascade gives {@code property} on the element itself, if any rule does. */
+    private static java.util.Optional<String> declared(List<Css.Rule> rules, Dom.Element e, String property) {
+        return Css.winner(rules, e, property).map(r -> Css.valueOf(r, property));
+    }
+
     @Test
     void theRowSummaryIsTheCodeBuiltLine() {
         papers(null);
