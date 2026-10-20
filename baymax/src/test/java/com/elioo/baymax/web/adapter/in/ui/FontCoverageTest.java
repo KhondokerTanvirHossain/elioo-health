@@ -98,7 +98,26 @@ class FontCoverageTest {
         assertThat(checked).isGreaterThan(100);
     }
 
-    /** Bold headings are bold: each face's weight is inside the file's real weight axis, and Bangla shaping is there. */
+    /**
+     * OFL 1.1 §2: each copy of the font carries its copyright notice and the licence, which "can be included either as
+     * stand-alone text files, human-readable headers or in the appropriate machine-readable metadata fields". OFL-Noto.txt
+     * is private (in the jar, never served), so the file a phone downloads must carry both in its own name table: the
+     * copyright line (ID 0), the licence description (ID 13) and the licence URL (ID 14). Read from the served bytes.
+     */
+    @Test
+    void eachServedFontCarriesItsCopyrightAndTheOflInItsNameTable() {
+        WebUiTestKit kit = new WebUiTestKit();
+        List<String> urls = faces(kit.servedText("/assets/baymax.css")).stream().map(Face::url).distinct().toList();
+        assertThat(urls).as("self-hosted font files in the served CSS").hasSize(2);
+        for (String url : urls) {
+            java.util.Map<Integer, String> names = Woff2.read(kit.served(url)).names();
+            assertThat(names.get(0)).as(url + " name ID 0, the copyright").contains("Copyright").contains("Noto Project Authors");
+            assertThat(names.get(13)).as(url + " name ID 13, the licence").contains("SIL Open Font License, Version 1.1");
+            assertThat(names.get(14)).as(url + " name ID 14, the licence URL").containsIgnoringCase("openfontlicense.org");
+        }
+    }
+
+    /** Bold headings are bold:each face's weight is inside the file's real weight axis, and Bangla shaping is there. */
     @Test
     void eachFacesWeightIsOnTheFontsAxisAndTheBengaliFileShapesBangla() {
         WebUiTestKit kit = new WebUiTestKit();

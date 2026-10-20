@@ -24,13 +24,15 @@ curl -fsSL "$BN_OFL_URL" -o "$WORK/bn-ofl.txt"; curl -fsSL "$LA_OFL_URL" -o "$WO
 { head -n 1 "$WORK/bn-ofl.txt"; head -n 1 "$WORK/la-ofl.txt"; tail -n +2 "$WORK/bn-ofl.txt"; } > "$OUT/OFL-Noto.txt"
 "$WORK/venv/bin/fonttools" varLib.instancer "$WORK/bn.ttf" wdth=100 wght=400:700 -q -o "$WORK/bn-i.ttf"
 "$WORK/venv/bin/fonttools" varLib.instancer "$WORK/la.ttf" wdth=100 wght=400:700 -q -o "$WORK/la-i.ttf"
+# The OFL travels inside each file (OFL §2, "machine-readable metadata"): pyftsubset keeps name IDs 0-6 by default, so
+# 13 (licence) and 14 (licence URL) are kept explicitly; OFL-Noto.txt itself stays private (FontCoverageTest reads them).
 # Bengali block + danda + ZWNJ/ZWJ + dotted circle; every layout feature, because Bangla shaping needs them all
 "$WORK/venv/bin/pyftsubset" "$WORK/bn-i.ttf" --unicodes="U+0964-0965,U+0980-09FE,U+200C-200D,U+25CC" \
-  --layout-features='*' --flavor=woff2 --no-hinting --desubroutinize --output-file="$OUT/noto-sans-bengali.woff2"
+  --layout-features='*' --name-IDs+=13,14 --flavor=woff2 --no-hinting --desubroutinize --output-file="$OUT/noto-sans-bengali.woff2"
 # No U+2192: Noto Sans has no arrows, so claiming it would download the file for a glyph it cannot draw
 # (FontCoverageTest reads the served cmap); the copy's arrow falls through to the system font.
-"$WORK/venv/bin/pyftsubset" "$WORK/la-i.ttf" --unicodes="U+0020-007E,U+00A0-00FF,U+00B5,U+2013-2014,U+2018-201D,U+2022,U+2026,U+2212" \
-  --layout-features='*' --flavor=woff2 --no-hinting --desubroutinize --output-file="$OUT/noto-sans-latin.woff2"
+"$WORK/venv/bin/pyftsubset" "$WORK/la-i.ttf" --unicodes="U+0020-007E,U+00A0-00FF,U+2013-2014,U+2018-201D,U+2022,U+2026,U+2212" \
+  --layout-features='*' --name-IDs+=13,14 --flavor=woff2 --no-hinting --desubroutinize --output-file="$OUT/noto-sans-latin.woff2"
 # Every code point a Bangla page can show must be in the Bengali subset's cmap (FontCoverageTest checks the CSS side).
 "$WORK/venv/bin/python" - "$OUT/noto-sans-bengali.woff2" baymax/src/main/resources/baymax <<'PY'
 import sys, glob
@@ -46,8 +48,8 @@ missing = sorted(c for c in need if c not in cmap)
 assert not missing, "missing from the Bengali subset: " + " ".join("U+%04X" % c for c in missing)
 print("bengali subset covers", len(need), "code points")
 PY
-ls -l "$OUT"/noto-sans-*.woff2   # measured 2026-10-20: 69,756 and 27,788 bytes
+ls -l "$OUT"/noto-sans-*.woff2   # measured 2026-10-20: 69,784 and 27,864 bytes
 # sha256 of the committed outputs (2026-10-20, two runs identical); a re-run that prints others changed the inputs or tools:
-#   960239c1daab6c3a93965b39fadf9d0e5603a4e2a0c3ce0726978bdc36ed8417  noto-sans-bengali.woff2
-#   b578a795cf74ff1130e26d7702e199a9ae830974b7e34ed4d8c7d76d51f7af12  noto-sans-latin.woff2
+#   c2dd079240f512ace8b3799c3bebafc93763a44cefe3b8e2ded5c2294f46e84b  noto-sans-bengali.woff2
+#   5d53ac5d9db3ccb5690968c0caa00eddc72b74976500df799afabf4b821c84c2  noto-sans-latin.woff2
 shasum -a 256 "$OUT"/noto-sans-*.woff2

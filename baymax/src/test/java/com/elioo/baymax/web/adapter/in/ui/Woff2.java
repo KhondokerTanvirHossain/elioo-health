@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 
 /**
@@ -166,6 +167,31 @@ final class Woff2 {
             byte[] tag = new byte[4];
             gsub.get(list + 2 + i * 6, tag);
             out.add(new String(tag, StandardCharsets.US_ASCII));
+        }
+        return out;
+    }
+
+    /**
+     * The name table's Windows-Unicode English records (platform 3, encoding 1, language 0x409), by name ID: 0 is the
+     * copyright line, 13 the licence description, 14 the licence URL (OpenType "name" table).
+     */
+    Map<Integer, String> names() {
+        ByteBuffer name = table("name");
+        int count = Short.toUnsignedInt(name.getShort(2));
+        int strings = Short.toUnsignedInt(name.getShort(4));
+        Map<Integer, String> out = new TreeMap<>();
+        for (int i = 0; i < count; i++) {
+            int r = 6 + i * 12;
+            int platform = Short.toUnsignedInt(name.getShort(r));
+            int encoding = Short.toUnsignedInt(name.getShort(r + 2));
+            int language = Short.toUnsignedInt(name.getShort(r + 4));
+            if (platform != 3 || encoding != 1 || language != 0x409) {
+                continue;
+            }
+            int id = Short.toUnsignedInt(name.getShort(r + 6));
+            byte[] text = new byte[Short.toUnsignedInt(name.getShort(r + 8))];
+            name.get(strings + Short.toUnsignedInt(name.getShort(r + 10)), text);
+            out.put(id, new String(text, StandardCharsets.UTF_16BE));
         }
         return out;
     }
