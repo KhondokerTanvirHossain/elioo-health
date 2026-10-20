@@ -100,7 +100,12 @@ class EveryInboundTypeIsAnsweredTest {
         // The real service, observed: finished counts intake Monos that have completed, so the test waits on the work itself.
         com.elioo.baymax.web.application.port.in.WebAuthUseCase auth = mock(com.elioo.baymax.web.application.port.in.WebAuthUseCase.class);
         when(auth.noteInbound(anyString(), any())).thenReturn(Mono.empty());
-        WaIntakeService service = new WaIntakeService(records, documents, explainer, intake, graph, copy, props, auth) {
+        com.elioo.baymax.family.application.port.in.FreeTierUseCase freeTier =
+                mock(com.elioo.baymax.family.application.port.in.FreeTierUseCase.class);
+        when(freeTier.checkCanUploadDocument(any(FamilyAccount.class))).thenReturn(Mono.empty());
+        WaIntakeService service = new WaIntakeService(records, documents, explainer, intake, graph, copy, props, auth,
+                java.time.Clock.systemUTC(), freeTier,com.elioo.baymax.wa.WaFixtures.noUrgentPapers(),
+                com.elioo.baymax.wa.WaFixtures.nothingStored()) {
             @Override
             public Mono<Outcome> onInbound(WaInbound in) {
                 return super.onInbound(in).doFinally(signal -> finished.incrementAndGet());

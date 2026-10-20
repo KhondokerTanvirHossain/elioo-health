@@ -13,6 +13,24 @@ public final class WaFixtures {
     private WaFixtures() {
     }
 
+    /** The চ্যাট attention read with nothing stored NOW or THIS_WEEK, for any patient: no greeting has an urgency to lead. */
+    public static com.elioo.baymax.web.application.port.in.AttentionUseCase noUrgentPapers() {
+        com.elioo.baymax.web.application.port.in.AttentionUseCase attention =
+                org.mockito.Mockito.mock(com.elioo.baymax.web.application.port.in.AttentionUseCase.class);
+        org.mockito.Mockito.when(attention.urgent(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(reactor.core.publisher.Mono.just(java.util.List.of()));
+        return attention;
+    }
+
+    /** F1 with nothing stored for any document. */
+    public static com.elioo.baymax.outbound.application.port.in.DocumentUrgencyUseCase nothingStored() {
+        com.elioo.baymax.outbound.application.port.in.DocumentUrgencyUseCase urgency =
+                org.mockito.Mockito.mock(com.elioo.baymax.outbound.application.port.in.DocumentUrgencyUseCase.class);
+        org.mockito.Mockito.when(urgency.current(org.mockito.ArgumentMatchers.any())).thenReturn(reactor.core.publisher.Mono.empty());
+        org.mockito.Mockito.when(urgency.currentOrAssess(org.mockito.ArgumentMatchers.any())).thenReturn(reactor.core.publisher.Mono.empty());
+        return urgency;
+    }
+
     public static String wamid(String digits) {
         return wamid(digits, 1);
     }

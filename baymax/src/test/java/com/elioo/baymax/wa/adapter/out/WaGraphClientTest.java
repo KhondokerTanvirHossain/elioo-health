@@ -7,6 +7,7 @@ import ch.qos.logback.core.read.ListAppender;
 import com.elioo.baymax.common.redact.Redact;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.wa.WaFixtures;
+import com.elioo.baymax.wa.application.port.out.WaMessagingPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,15 +16,18 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.mock.http.client.reactive.MockClientHttpRequest;
+import org.springframework.web.reactive.function.client.ClientRequest;
 import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -314,5 +318,128 @@ class WaGraphClientTest {
                 .doesNotContain(inbound.substring("wamid.".length(), "wamid.".length() + 16))
                 .doesNotContain("8801700000000")
                 .doesNotContain("Invalid parameter");
+    }
+
+    // ---- W13 (plan PR 7, Task 7.3): a failed download's error carries no signed URL -------------------------------------
+
+    /**
+     * The descriptor answers 200 with the signed lookaside URL; the download of that URL answers 404. The 404 carries
+     * its request, as the real exchange does: a bare ClientResponse.create makes Spring print "404 Not Found from
+     * UNKNOWN", so the guard passed on the pre-fix code for a reason production does not share (the probe printed it).
+     */
+    private WaGraphClient clientWhoseDownloadIs404() {
+        BaymaxProperties props = new BaymaxProperties();
+        props.getWa().setEnabled(true);
+        props.getWa().setToken(BEARER);
+        List<Integer> call = new ArrayList<>(List.of(0));
+        WebClient http = WebClient.builder().exchangeFunction(request -> {
+            requestedUris.add(request.url().toString());
+            boolean descriptor = call.set(0, call.get(0) + 1) == 0;
+            return Mono.just(descriptor
+                    ? ClientResponse.create(HttpStatus.OK).header("Content-Type", MediaType.APPLICATION_JSON_VALUE)
+                            .body("{\"url\":\"" + MEDIA_URL + "\",\"mime_type\":\"image/jpeg\",\"file_size\":12}").build()
+                    : ClientResponse.create(HttpStatus.NOT_FOUND)
+                            .request(new org.springframework.mock.http.client.MockClientHttpRequest(request.method(), request.url()))
+                            .build());
+        }).build();
+        return new WaGraphClient(props, http);
+    }
+
+    /** DR-23: an error travels into every caller's log. It must not carry the signed lookaside URL or its token. */
+    @Test
+    void aFailedDownloadsErrorCarriesNeitherTheUrlNorItsToken() {
+        StepVerifier.create(clientWhoseDownloadIs404().downloadMedia("MEDIA-ID-3"))
+                .expectErrorSatisfies(e -> {
+                    assertThat(requestedUris).as("it really fetched the signed URL").anyMatch(u -> u.contains(TOKEN_IN_URL));
+                    assertThat(e.toString() + " / " + e.getCause())
+                            .as("the error a caller logs must not carry the media URL").doesNotContain(TOKEN_IN_URL).doesNotContain("lookaside");
+                    // the absence of the URL alone passes for ANY cause-free error; the service answers wa.failed.download
+                    // only for this type, so the type and its status are what the family's reply rests on
+                    isUnavailable(e, 404);
+                })
+                .verify();
+    }
+
+    /** Answers the descriptor call, then the bytes call, each with its own response (or none at all). */
+    private WaGraphClient clientWhoseCallsAnswer(Function<ClientRequest, Mono<ClientResponse>> descriptor,
+                                                 Function<ClientRequest, Mono<ClientResponse>> bytes) {
+        BaymaxProperties props = new BaymaxProperties();
+        props.getWa().setEnabled(true);
+        props.getWa().setToken(BEARER);
+        List<Integer> call = new ArrayList<>(List.of(0));
+        WebClient http = WebClient.builder().exchangeFunction(request -> {
+            requestedUris.add(request.url().toString());
+            return call.set(0, call.get(0) + 1) == 0 ? descriptor.apply(request) : bytes.apply(request);
+        }).build();
+        return new WaGraphClient(props, http);
+    }
+
+    private static Mono<ClientResponse> descriptorOk(ClientRequest request) {
+        return Mono.just(ClientResponse.create(HttpStatus.OK).header("Content-Type", MediaType.APPLICATION_JSON_VALUE)
+                .body("{\"url\":\"" + MEDIA_URL + "\",\"mime_type\":\"image/jpeg\",\"file_size\":12}").build());
+    }
+
+    /** The one error downloadMedia may emit: the type the service maps to wa.failed.download, its status, no cause. */
+    private static void isUnavailable(Throwable e, int status) {
+        assertThat(e).isInstanceOf(WaMessagingPort.MediaUnavailableException.class);
+        assertThat(((WaMessagingPort.MediaUnavailableException) e).status()).isEqualTo(status);
+        assertThat(e.getCause()).as("no cause: the cause's message holds the signed URL").isNull();
+    }
+
+    /** The descriptor call itself refused (an expired token): the same one error, with Graph's status. */
+    @Test
+    void aRefusedDescriptorCallIsTheSameOneError() {
+        StepVerifier.create(clientWhoseCallsAnswer(
+                        r -> Mono.just(ClientResponse.create(HttpStatus.UNAUTHORIZED)
+                                .request(new org.springframework.mock.http.client.MockClientHttpRequest(r.method(), r.url())).build()),
+                        WaGraphClientTest::descriptorOk).downloadMedia("MEDIA-ID-4"))
+                .expectErrorSatisfies(e -> isUnavailable(e, 401))
+                .verify();
+    }
+
+    /** No HTTP answer at all (a reset): status 0, the same type, so the family still hears "send it again". */
+    @Test
+    void aConnectionFailureIsTheSameOneErrorWithStatusZero() {
+        StepVerifier.create(clientWhoseCallsAnswer(r -> Mono.error(new java.io.IOException("connection reset")),
+                        WaGraphClientTest::descriptorOk).downloadMedia("MEDIA-ID-5"))
+                .expectErrorSatisfies(e -> isUnavailable(e, 0))
+                .verify();
+    }
+
+    /**
+     * W13: a 200 with no body completes the bytes call EMPTY. Before, intake.accept was skipped and the photo was reported
+     * ACCEPTED: the family heard "পড়ে দেখছি" and nothing followed. Empty is not a value here; it is the one error.
+     */
+    @Test
+    void aDownloadThatAnswers200WithNoBodyIsUnavailableNotEmpty() {
+        StepVerifier.create(clientWhoseCallsAnswer(WaGraphClientTest::descriptorOk,
+                        r -> Mono.just(ClientResponse.create(HttpStatus.OK).header("Content-Type", MediaType.IMAGE_JPEG_VALUE).build()))
+                        .downloadMedia("MEDIA-ID-6"))
+                .expectErrorSatisfies(e -> isUnavailable(e, 200))
+                .verify();
+    }
+
+    /** The descriptor answering 200 with no body is the same silence one step earlier. */
+    @Test
+    void aDescriptorThatAnswers200WithNoBodyIsUnavailableNotEmpty() {
+        StepVerifier.create(clientWhoseCallsAnswer(
+                        r -> Mono.just(ClientResponse.create(HttpStatus.OK).header("Content-Type", MediaType.APPLICATION_JSON_VALUE).build()),
+                        WaGraphClientTest::descriptorOk).downloadMedia("MEDIA-ID-7"))
+                .expectErrorSatisfies(e -> isUnavailable(e, 200))
+                .verify();
+    }
+
+    /**
+     * W13: WebClient has no response timeout. A lookaside connection that stalls never errors, so the family stayed on
+     * "পড়ে দেখছি" for as long as the stall lasted. Bounded by DOWNLOAD_TIMEOUT, in virtual time.
+     */
+    @Test
+    void aStalledDownloadEndsAsTheOneErrorAfterTheBound() {
+        StepVerifier.withVirtualTime(() -> clientWhoseCallsAnswer(WaGraphClientTest::descriptorOk, r -> Mono.never())
+                        .downloadMedia("MEDIA-ID-8"))
+                .expectSubscription()
+                .thenAwait(WaGraphClient.DOWNLOAD_TIMEOUT)
+                .expectErrorSatisfies(e -> isUnavailable(e, 0))
+                .verify(Duration.ofSeconds(5));
     }
 }

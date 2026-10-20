@@ -9,8 +9,27 @@ import reactor.core.publisher.Mono;
  */
 public interface WaMessagingPort {
 
-    /** Fetches an inbound media object's bytes by its provider id. */
+    /**
+     * Fetches an inbound media object's bytes by its provider id. Fails with {@link MediaUnavailableException} only:
+     * the provider's own error names the signed download URL (DR-23), and every caller logs what it is given. Emits
+     * non-empty bytes or that error: never completes empty, and never waits unbounded (W13).
+     */
     Mono<byte[]> downloadMedia(String mediaId);
+
+    /** downloadMedia's only error. It carries the HTTP status and nothing else: no URL, no cause (DR-23). */
+    class MediaUnavailableException extends RuntimeException {
+        private final int status;
+
+        public MediaUnavailableException(int status) {
+            super("media unavailable status=" + status, null, false, false);
+            this.status = status;
+        }
+
+        /** The provider's HTTP status, or 0 when the failure was not an HTTP answer (a timeout, a reset). */
+        public int status() {
+            return status;
+        }
+    }
 
     /**
      * Sends a free-form session message, valid only inside the 24-hour window the family's own message opened.

@@ -42,6 +42,9 @@ public class WaGraphClient implements com.elioo.baymax.wa.application.port.out.W
         this.http = http;
     }
 
+    /** The bound on descriptor plus bytes: a photo or a multi-page PDF from the lookaside host, with room to spare. */
+    static final java.time.Duration DOWNLOAD_TIMEOUT = java.time.Duration.ofSeconds(30);
+
     /** What a media id resolves to before the bytes are fetched. */
     public record Media(String url, String mimeType, long sizeBytes, String sha256) {
     }
@@ -76,10 +79,31 @@ public class WaGraphClient implements com.elioo.baymax.wa.application.port.out.W
                 .doOnNext(bytes -> log.info("[baymax] wa media downloaded id={} bytes={}", mediaId, bytes.length));
     }
 
-    /** Convenience: descriptor then bytes, for the one case phase 1 has. */
+    /**
+     * Convenience: descriptor then bytes, for the one case phase 1 has. Every failure becomes a
+     * {@link MediaUnavailableException} with the status and no cause: Spring's own error reads "404 Not Found from GET
+     * https://lookaside.fbsbx.com/…", and the caller logs what it is given (DR-23).
+     *
+     * <p>Never empty and never unbounded (W13): a 200 with no body (descriptor or bytes) completes {@code bodyToMono}
+     * empty, which the caller read as success and the family heard "পড়ে দেখছি" and nothing more; and WebClient has no
+     * response timeout, so a stalled lookaside connection did the same for as long as it stalled. Both are the one error.
+     */
     @Override
     public Mono<byte[]> downloadMedia(String mediaId) {
-        return media(mediaId).flatMap(m -> download(m, mediaId));
+        return media(mediaId).flatMap(m -> download(m, mediaId))
+                .filter(bytes -> bytes.length > 0)
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.warn("[baymax] wa media download failed id={} status=200 error=empty body", mediaId);
+                    return Mono.error(new MediaUnavailableException(200));
+                }))
+                .timeout(DOWNLOAD_TIMEOUT)
+                .onErrorMap(e -> !(e instanceof MediaUnavailableException), e -> {
+                    int status = e instanceof org.springframework.web.reactive.function.client.WebClientResponseException w
+                            ? w.getStatusCode().value() : 0;
+                    log.warn("[baymax] wa media download failed id={} status={} error={}", mediaId, status,
+                            e.getClass().getSimpleName());
+                    return new MediaUnavailableException(status);   // no cause: the cause's message holds the signed URL
+                });
     }
 
     /**

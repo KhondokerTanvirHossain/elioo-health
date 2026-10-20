@@ -135,8 +135,13 @@ class SignInIsFreeAcceptanceTest {
         WebAuthService auth = new WebAuthService(otps, sessions,
                 new CompositeOtpDelivery(beans.getBeanProvider(WaMessagingPort.class), new Copy(), props),
                 audit, records, hasher, props, Clock.fixed(NOW, ZoneOffset.UTC), window);
-        intake = new WaIntakeService(records, mock(DocumentRecordPort.class), mock(ExplainDocumentUseCase.class),
-                mock(DocumentIntakeUseCase.class), graph, new Copy(), props, auth);
+        DocumentRecordPort documents = mock(DocumentRecordPort.class);
+        when(documents.latestDoneDocument(any())).thenReturn(Mono.empty());   // the greeting reads the latest paper (PR 7)
+        intake = new WaIntakeService(records, documents, mock(ExplainDocumentUseCase.class),
+                mock(DocumentIntakeUseCase.class), graph, new Copy(), props, auth,
+                Clock.fixed(NOW, ZoneOffset.UTC),
+                mock(com.elioo.baymax.family.application.port.in.FreeTierUseCase.class),
+                com.elioo.baymax.wa.WaFixtures.noUrgentPapers(), com.elioo.baymax.wa.WaFixtures.nothingStored());
         web = new WebUiTestKit(auth, props, false).client;
     }
 
