@@ -119,6 +119,11 @@ final class PageFixtures {
         variant("GET /app/home", Fixture.get("/app/home", true, Stubs::maStack).named("stack"));
         variant("GET /app/home", Fixture.get("/app/home", true, Stubs::maWithNoPapersYet).named("empty"));
         variant("GET /app/timeline", Fixture.get("/app/timeline?patient=" + ma, true, Stubs::maStackAndPapers).named("strip"));
+        // D1: the heaviest কাগজপত্র FirstLoadBudgetTest weighs — a full page of papers (TimelineService.PAGE_SIZE) over three
+        // months, a third NOW and a third THIS_WEEK, under a full urgent strip (AttentionService.URGENT_LIMIT)
+        variant("GET /app/timeline", Fixture.get("/app/timeline?patient=" + ma, true, Stubs::maFullPageOfPapers).named("heaviest"));
+        // D1: the heaviest চ্যাট — a full urgent strip and three of every other card
+        variant("GET /app/home", Fixture.get("/app/home", true, Stubs::maFullStack).named("heaviest"));
         // A6: the patient in view as the owner sees them (and after a save), and a shared patient (no save, no switch)
         variant("GET /app/family", Fixture.get("/app/family?patient=" + ma, true, Stubs::familyOfTwo).named("chosen"));
         variant("GET /app/family", Fixture.get("/app/family?patient=" + ma + "&saved=1", true, Stubs::maProfile).named("saved"));
@@ -156,6 +161,15 @@ final class PageFixtures {
         put("GET /app/documents/{id}/values/{obs}", Fixture.get("/app/documents/" + doc + "/values/" + Stubs.HBA1C + "?from=summary", true, Stubs::valueSheet));
         variant("GET /app/documents/{id}/values/{obs}", Fixture.get("/app/documents/" + doc + "/values/" + Stubs.CREATININE, true, Stubs::valueSheet).named("unknown"));
         variant("GET /app/documents/{id}/values/{obs}", Fixture.get("/app/documents/" + doc + "/values/" + Stubs.HBA1C + "?from=all", true, Stubs::valueSheet).named("fromall"));
+        // D1: the heaviest document pages FirstLoadBudgetTest weighs, sized from the largest labelled documents in the testset
+        // (docs/testset, 2026-10-20: a lab report of 29 values, batch2/lab2; a prescription of 10 medicines and 13 doctor's
+        // lines, expected/4 and expected/2) at twice that, and a value sheet with every earlier reading the service lists
+        variant("GET /app/documents/{id}", Fixture.get("/app/documents/" + doc, true, Stubs::heaviestLab).named("heaviest"));
+        variant("GET /app/documents/{id}", Fixture.get("/app/documents/" + doc, true, Stubs::heaviestPrescription).named("heaviestrx"));
+        variant("GET /app/documents/{id}/all", Fixture.get("/app/documents/" + doc + "/all", true, Stubs::heaviestLab).named("heaviest"));
+        variant("GET /app/documents/{id}/all", Fixture.get("/app/documents/" + doc + "/all", true, Stubs::heaviestPrescription).named("heaviestrx"));
+        variant("GET /app/documents/{id}/values/{obs}", Fixture.get("/app/documents/" + doc + "/values/" + Stubs.HBA1C + "?from=summary", true,
+                Stubs::valueSheetWithEveryEarlierReading).named("heaviest"));
         put("POST /app/login", new Fixture("/app/login", false, Body.FORM, Map.of("whatsapp_number", "01700000000", "confirmed", "1"), Stubs::noCode));
         variant("POST /app/login", new Fixture("/app/login", false, Body.FORM, Map.of("whatsapp_number", "01700000000"), Stubs::noCode).named("confirm"));
         variant("POST /app/login", new Fixture("/app/login", false, Body.FORM, Map.of("whatsapp_number", "12"), k -> { }).named("invalid"));
@@ -295,6 +309,151 @@ final class PageFixtures {
         static void maStackAndPapers(WebUiTestKit k) {
             maStack(k);
             maPapers(k);
+        }
+
+        /**
+         * D1: a full page of read papers of Ma's (TimelineService.PAGE_SIZE) with a next page — a third NOW, a third
+         * THIS_WEEK, the rest routine prescriptions — under a full urgent strip (AttentionService.URGENT_LIMIT): the most
+         * one page of কাগজপত্র draws, for the first-load budget.
+         */
+        static void maFullPageOfPapers(WebUiTestKit k) {
+            familyOfMa(k);
+            when(k.attention.urgent(WebUiTestKit.FAMILY, WebUiTestKit.MA_ID)).thenReturn(Mono.just(fullUrgentStrip()));
+            List<TimelineEntry> entries = new java.util.ArrayList<>();
+            for (int i = 0; i < com.elioo.baymax.web.application.service.TimelineService.PAGE_SIZE; i++) {
+                Urgency level = i % 3 == 0 ? Urgency.NOW : i % 3 == 1 ? Urgency.THIS_WEEK : Urgency.ROUTINE;
+                boolean lab = level != Urgency.ROUTINE;
+                UUID id = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a41001%02d".formatted(i));
+                entries.add(new TimelineEntry(id, LocalDate.parse("2026-10-18").minusDays(4L * i), false, lab ? "lab_report" : "prescription",
+                        lab ? "Shapla Diagnostics" : null, "DONE", lab ? 14 : 0, lab ? 0 : 3, 1, 0, "f/p/" + id + "/page-1.jpg",
+                        WebUiTestKit.NOW, level, lab ? 2 : 0, "released", null));
+            }
+            when(k.timeline.timeline(eq(WebUiTestKit.FAMILY), eq(WebUiTestKit.MA_ID), any(), any()))
+                    .thenReturn(Mono.just(new TimelinePage(List.copyOf(entries), "v1.next-page")));
+        }
+
+        /** D1: AttentionService.URGENT_LIMIT urgent papers, NOW first, then THIS_WEEK, each named by its type and date. */
+        static List<com.elioo.baymax.web.domain.AttentionItem.Urgent> fullUrgentStrip() {
+            List<com.elioo.baymax.web.domain.AttentionItem.Urgent> urgent = new java.util.ArrayList<>();
+            for (int i = 0; i < com.elioo.baymax.web.application.service.AttentionService.URGENT_LIMIT; i++) {
+                urgent.add(new com.elioo.baymax.web.domain.AttentionItem.Urgent(
+                        UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a41002%02d".formatted(i)), i < 5 ? Urgency.NOW : Urgency.THIS_WEEK,
+                        i % 2 == 0 ? "lab_report" : "prescription", LocalDate.parse("2026-10-18").minusDays(i), i % 3 == 0,
+                        WebUiTestKit.NOW.minusSeconds(3600L * i)));
+            }
+            return List.copyOf(urgent);
+        }
+
+        /** D1: the heaviest চ্যাট — a full urgent strip, then three retakes, three of the doctor's follow-ups and three being read. */
+        static void maFullStack(WebUiTestKit k) {
+            familyOfMa(k);
+            List<com.elioo.baymax.web.domain.AttentionItem> stack = new java.util.ArrayList<>(fullUrgentStrip());
+            for (int i = 0; i < 3; i++) {
+                stack.add(new com.elioo.baymax.web.domain.AttentionItem.Retake(UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a41003%02d".formatted(i)),
+                        WebUiTestKit.NOW.minusSeconds(600L * i)));
+            }
+            for (int i = 0; i < 3; i++) {
+                UUID d = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a41004%02d".formatted(i));
+                stack.add(new com.elioo.baymax.web.domain.AttentionItem.FollowUp(d, "Next visit after 7 days with all reports",
+                        LocalDate.parse("2026-10-20").plusDays(i), "f/p/" + d + "/crop-f.jpg"));
+            }
+            for (int i = 0; i < 3; i++) {
+                stack.add(new com.elioo.baymax.web.domain.AttentionItem.Reading(UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a41005%02d".formatted(i)),
+                        WebUiTestKit.NOW.minusSeconds(30L * i)));
+            }
+            when(k.attention.attention(WebUiTestKit.FAMILY, WebUiTestKit.MA_ID)).thenReturn(Mono.just(List.copyOf(stack)));
+            when(k.attention.urgent(WebUiTestKit.FAMILY, WebUiTestKit.MA_ID)).thenReturn(Mono.just(fullUrgentStrip()));
+        }
+
+        /** Marker names of a full panel as labs print them, so a row weighs what a real row weighs. */
+        private static final List<String> MARKERS = List.of("Haemoglobin", "Total WBC Count", "Neutrophils", "Lymphocytes", "Monocytes",
+                "Eosinophils", "Basophils", "Total RBC Count", "Haematocrit (PCV)", "MCV", "MCH", "MCHC", "RDW-CV", "Platelet Count",
+                "ESR (Westergren)", "Fasting Blood Sugar", "HbA1c", "Serum Creatinine", "Blood Urea Nitrogen", "Uric Acid",
+                "Total Cholesterol", "Triglycerides", "HDL Cholesterol", "LDL Cholesterol", "SGPT (ALT)", "SGOT (AST)",
+                "Alkaline Phosphatase", "Total Bilirubin", "Serum TSH");
+
+        /**
+         * D1: a read two-page lab report of twice the testset's largest (2 x 29 values): every third outside the printed
+         * range (high and low in turn), one in six that Medioo could not place, the rest inside, each with its crop, a
+         * follow-up and a doctor's line — stored THIS_WEEK and released, so the summary draws every outside and unknown row.
+         */
+        static void heaviestLab(WebUiTestKit k) {
+            String crop = "f/p/" + WebUiTestKit.DOC_ID + "/crop-";
+            List<Map<String, Object>> values = new java.util.ArrayList<>();
+            for (int i = 0; i < 2 * 29; i++) {
+                Map<String, Object> v = new java.util.LinkedHashMap<>();
+                v.put("id", UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a41006%02d".formatted(i)));
+                v.put("name", MARKERS.get(i % MARKERS.size()));
+                v.put("canonical_name", "marker_" + i);
+                v.put("unit", "mg/dL");
+                v.put("ref_low", "70");
+                v.put("ref_high", "110");
+                if (i % 6 == 5) {
+                    v.put("value", "1+");
+                    v.put("verdict", "unknown");
+                } else if (i % 3 == 0) {
+                    v.put("value", i % 2 == 0 ? "182.4" : "51.6");
+                    v.put("verdict", "outside");
+                    v.put("verdict_side", i % 2 == 0 ? "high" : "low");
+                } else {
+                    v.put("value", "96.2");
+                    v.put("verdict", "inside");
+                }
+                v.put("crop_key", crop + "v" + i + ".jpg");
+                values.add(Map.copyOf(v));
+            }
+            result(k, new DocumentView(WebUiTestKit.DOC_ID.toString(), "DONE", null, "lab_report", "2026-10-12",
+                    "Shapla Diagnostics", 0.9, "m", 2, List.copyOf(values), List.of(),
+                    List.of(Map.of("instruction", "আবার দেখাবেন", "due_date", "2026-11-15", "crop_key", crop + "f.jpg")),
+                    Map.of("diagnosis", List.of(Map.of("text", "Type 2 diabetes", "crop_key", crop + "d.jpg"))), null));
+        }
+
+        /**
+         * D1: a read prescription of twice the testset's largest — 20 medicines and 26 doctor's lines across the context
+         * sections — with two follow-ups, stored THIS_WEEK and released.
+         */
+        static void heaviestPrescription(WebUiTestKit k) {
+            String crop = "f/p/" + WebUiTestKit.DOC_ID + "/crop-";
+            List<Map<String, Object>> medicines = new java.util.ArrayList<>();
+            for (int i = 0; i < 2 * 10; i++) {
+                medicines.add(Map.of("name", "Tab. Metformin " + (i + 1), "dose_text", "500 mg", "frequency_text", "1+0+1",
+                        "timing_text", "after meals", "duration_text", "30 days", "crop_key", crop + "m" + i + ".jpg"));
+            }
+            Map<String, Object> context = new java.util.LinkedHashMap<>();
+            String[] sections = {"chief_complaint", "diagnosis", "investigations_advised", "advice"};
+            for (int s = 0; s < sections.length; s++) {
+                List<Map<String, Object>> lines = new java.util.ArrayList<>();
+                for (int i = s; i < 2 * 13; i += sections.length) {
+                    lines.add(Map.of("text", "Burning sensation in chest after meals for 3 weeks", "crop_key", crop + "c" + i + ".jpg"));
+                }
+                context.put(sections[s], List.copyOf(lines));
+            }
+            result(k, new DocumentView(WebUiTestKit.DOC_ID.toString(), "DONE", null, "prescription", "2026-10-12",
+                    "Dr. Rahman's Chamber", 0.9, "m", 2, List.of(), List.copyOf(medicines),
+                    List.of(Map.of("instruction", "আবার দেখাবেন", "due_date", "2026-11-15", "crop_key", crop + "f1.jpg"),
+                            Map.of("instruction", "১৫ দিন পর রিপোর্টসহ আসবেন", "due_date", "2026-11-01", "crop_key", crop + "f2.jpg")),
+                    Map.copyOf(context), null));
+        }
+
+        /** A read paper of Ma's whose page is the result summary, stored THIS_WEEK and released (as {@link #doneLab}). */
+        private static void result(WebUiTestKit k, DocumentView view) {
+            when(k.results.status(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(Document.Status.DONE));
+            when(k.results.result(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(new ResultView(view,
+                    k.ma(3).patient(), true, new ViewerLocale(true), Urgency.THIS_WEEK, List.of("diagnosis_present"),
+                    GateState.RELEASED, "রিপোর্টটি পেয়েছি। এ সপ্তাহের মধ্যে একজন ডাক্তার দেখান।", 0, 2,
+                    WebUiTestKit.NOW.minusSeconds(3600), WebUiTestKit.NOW)));
+        }
+
+        /** D1: {@link #doneLab}'s HbA1c sheet with every earlier reading the service lists (ResultService.EARLIER_READINGS). */
+        static void valueSheetWithEveryEarlierReading(WebUiTestKit k) {
+            doneLab(k);
+            List<com.elioo.baymax.web.domain.EarlierReading> earlier = new java.util.ArrayList<>();
+            for (int i = 0; i < com.elioo.baymax.web.application.service.ResultService.EARLIER_READINGS; i++) {
+                UUID d = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a41007%02d".formatted(i));
+                earlier.add(new com.elioo.baymax.web.domain.EarlierReading(d, UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a41008%02d".formatted(i)),
+                        "7." + i, "%", "f/p/" + d + "/crop-1.jpg", LocalDate.parse("2026-09-12").minusMonths(i), i % 2 == 0));
+            }
+            when(k.results.earlierReadings(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID, HBA1C)).thenReturn(reactor.core.publisher.Flux.fromIterable(earlier));
         }
 
         static void maNoPapers(WebUiTestKit k) {

@@ -83,7 +83,7 @@ public class ResultService implements ResultUseCase {
     }
 
     /** How many earlier readings the value sheet lists (s13 draws two; ten is a page, not a trend). */
-    static final int EARLIER_READINGS = 10;
+    public static final int EARLIER_READINGS = 10;
 
     /**
      * The document through {@link #visibleDocument} (404 for another family), then the observation among THAT document's

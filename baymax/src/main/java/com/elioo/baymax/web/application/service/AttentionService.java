@@ -34,7 +34,7 @@ public class AttentionService implements AttentionUseCase {
     static final Duration WINDOW = Duration.ofDays(30);
     /** A follow-up the doctor wrote due within seven days of the patient's today (both days included). */
     static final int FOLLOW_UP_DAYS = 7;
-    static final int URGENT_LIMIT = 10;
+    public static final int URGENT_LIMIT = 10;
 
     private final HealthRecordPort records;
     private final TimelineReadPort timeline;

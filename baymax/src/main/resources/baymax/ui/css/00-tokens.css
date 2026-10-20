@@ -63,3 +63,13 @@
   --shadow-1:0 0 0 1px #2b3b46;--shadow-2:0 -1px 0 #2b3b46;--shadow-3:0 0 0 1px #2b3b46,0 12px 40px #00000080;
   --shadow-toast:0 8px 24px #00000099;
 }
+/* Fonts (spec §8): the phone's own Noto first; the self-hosted subset only when it is missing. unicode-range keeps the
+   Bengali file off English pages. One variable file per script serves 400, 600 and 700; each weight is its own face,
+   because one 400–700 face whose local() resolved to the static Regular would draw bold Bangla at regular weight.
+   Built by scripts/fonts/build-ui-fonts.sh (SIL OFL 1.1). */
+@font-face{font-family:"Noto Sans Bengali";font-style:normal;font-weight:400;font-display:swap;src:local("Noto Sans Bengali Regular"),local("Noto Sans Bengali"),local("NotoSansBengali-Regular"),local("Noto Sans Bengali UI Regular"),local("NotoSansBengaliUI-Regular"),url(/assets/noto-sans-bengali.woff2) format("woff2");unicode-range:U+0964-0965,U+0980-09FE,U+200C-200D,U+25CC}
+@font-face{font-family:"Noto Sans Bengali";font-style:normal;font-weight:600;font-display:swap;src:local("Noto Sans Bengali SemiBold"),local("NotoSansBengali-SemiBold"),local("Noto Sans Bengali UI SemiBold"),local("NotoSansBengaliUI-SemiBold"),url(/assets/noto-sans-bengali.woff2) format("woff2");unicode-range:U+0964-0965,U+0980-09FE,U+200C-200D,U+25CC}
+@font-face{font-family:"Noto Sans Bengali";font-style:normal;font-weight:700;font-display:swap;src:local("Noto Sans Bengali Bold"),local("NotoSansBengali-Bold"),local("Noto Sans Bengali UI Bold"),local("NotoSansBengaliUI-Bold"),url(/assets/noto-sans-bengali.woff2) format("woff2");unicode-range:U+0964-0965,U+0980-09FE,U+200C-200D,U+25CC}
+@font-face{font-family:"Noto Sans";font-style:normal;font-weight:400;font-display:swap;src:local("Noto Sans Regular"),local("Noto Sans"),local("NotoSans-Regular"),url(/assets/noto-sans-latin.woff2) format("woff2");unicode-range:U+0020-007E,U+00A0-00FF,U+2013-2014,U+2018-201D,U+2022,U+2026,U+2212}
+@font-face{font-family:"Noto Sans";font-style:normal;font-weight:600;font-display:swap;src:local("Noto Sans SemiBold"),local("NotoSans-SemiBold"),url(/assets/noto-sans-latin.woff2) format("woff2");unicode-range:U+0020-007E,U+00A0-00FF,U+2013-2014,U+2018-201D,U+2022,U+2026,U+2212}
+@font-face{font-family:"Noto Sans";font-style:normal;font-weight:700;font-display:swap;src:local("Noto Sans Bold"),local("NotoSans-Bold"),url(/assets/noto-sans-latin.woff2) format("woff2");unicode-range:U+0020-007E,U+00A0-00FF,U+2013-2014,U+2018-201D,U+2022,U+2026,U+2212}

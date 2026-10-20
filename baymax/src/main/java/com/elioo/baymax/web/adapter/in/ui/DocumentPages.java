@@ -742,7 +742,7 @@ public class DocumentPages implements WebPages {
                         typeText(lang, doc.documentType())))
                 .append("</p></div><a class=\"icon-btn\" href=\"").append(close).append("\" aria-label=\"").append(copy.t(lang, "sheet.close"))
                 .append("\">").append(Icons.svg("x", 24)).append("</a></div>")
-                .append("<a class=\"sheet-crop\" href=\"").append(src).append("\"><img class=\"crop big\" alt=\"\" src=\"").append(src)
+                .append("<a class=\"sheet-crop\" href=\"").append(src).append("\"><img class=\"crop big\" loading=\"lazy\" alt=\"\" src=\"").append(src)
                 .append("\"><span class=\"zoom\">").append(copy.t(lang, "crop.zoom")).append("</span></a>")
                 .append(ValueRows.sheetValue(copy, lang, v));
         if (ValueRows.kindOf(v) == ValueVerdict.Kind.UNKNOWN) {
