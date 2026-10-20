@@ -1,0 +1,1104 @@
+<title>Medioo Prototype</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;500;600;700&family=Noto+Sans+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: an iPhone running Medioo — Messages grammar for the conversation, iOS chrome everywhere else, the wall calendar for papers. */
+:root {
+  --bg: #ffffff;
+  --bg2: #f2f2f7;
+  --bg3: #ffffff;
+  --label: #000000;
+  --label2: rgba(60, 60, 67, 0.82);
+  --label3: rgba(60, 60, 67, 0.36);
+  --sep: rgba(60, 60, 67, 0.18);
+  --fill: rgba(120, 120, 128, 0.12);
+  --recv: #e9e9eb;
+  --recv-ink: #000000;
+  --sent: #06788a;
+  --sent-ink: #ffffff;
+  --tint: #06788a;
+  --tint-soft: rgba(6, 120, 138, 0.12);
+  --mio-bg: #dff0f2;
+  --wordmark: url("medioo-light.svg");
+  --on-tint: #ffffff; --tint-ink: #045f6d; --now-ink: #a3201a;
+  --green: #34c759;
+  --now: #d12c24; --now-fill: #d12c24;
+  --now-soft: rgba(224, 53, 43, 0.12);
+  --week: #92400e;
+  --week-soft: rgba(255, 149, 0, 0.16);
+  --unk-soft: rgba(120, 120, 128, 0.14);
+  --paper: #fffdf8;
+  --paper-ink: #2b2b2b;
+  --bar: rgba(249, 249, 249, 0.84);
+  --scrim: rgba(0, 0, 0, 0.32);
+  --stage: #d9dde3;
+  --sys: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Noto Sans Bengali", "Segoe UI", Roboto, sans-serif;
+  --bnf: "Noto Sans Bengali", -apple-system, BlinkMacSystemFont, sans-serif;
+  --mono: "Noto Sans Mono", ui-monospace, Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #000000; --bg2: #000000; --bg3: #1c1c1e; --label: #ffffff; --label2: rgba(235, 235, 245, 0.78); --label3: rgba(235, 235, 245, 0.32);
+  --sep: rgba(84, 84, 88, 0.6); --fill: rgba(120, 120, 128, 0.24); --recv: #26252a; --recv-ink: #ffffff; --sent: #06788a;
+  --tint: #5cc8d6; --tint-soft: rgba(92, 200, 214, 0.16); --mio-bg: #1d3b41; --wordmark: url("medioo-dark.svg"); --on-tint: #062a30; --tint-ink: var(--tint); --now-ink: var(--now); --green: #30d158; --now: #ff8a80; --now-fill: #d93229; --now-soft: rgba(255, 90, 79, 0.18);
+  --week: #ffb340; --week-soft: rgba(255, 159, 10, 0.2); --unk-soft: rgba(120, 120, 128, 0.26); --paper: #f4efe4;
+  --bar: rgba(22, 22, 24, 0.84); --scrim: rgba(0, 0, 0, 0.5); --stage: #0b0c0e; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #000000; --bg2: #000000; --bg3: #1c1c1e; --label: #ffffff; --label2: rgba(235, 235, 245, 0.78); --label3: rgba(235, 235, 245, 0.32);
+  --sep: rgba(84, 84, 88, 0.6); --fill: rgba(120, 120, 128, 0.24); --recv: #26252a; --recv-ink: #ffffff; --sent: #06788a;
+  --tint: #5cc8d6; --tint-soft: rgba(92, 200, 214, 0.16); --mio-bg: #1d3b41; --wordmark: url("medioo-dark.svg"); --on-tint: #062a30; --tint-ink: var(--tint); --now-ink: var(--now); --green: #30d158; --now: #ff8a80; --now-fill: #d93229; --now-soft: rgba(255, 90, 79, 0.18);
+  --week: #ffb340; --week-soft: rgba(255, 159, 10, 0.2); --unk-soft: rgba(120, 120, 128, 0.26); --paper: #f4efe4;
+  --bar: rgba(22, 22, 24, 0.84); --scrim: rgba(0, 0, 0, 0.5); --stage: #0b0c0e; color-scheme: dark }
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--stage); color: var(--label); font: 17px/1.5 var(--sys); -webkit-font-smoothing: antialiased; }
+::selection { background: var(--tint-soft); }
+button, input { font: inherit; color: inherit; }
+button { -webkit-user-select: none; user-select: none; }
+a { color: inherit; text-decoration: none; }
+:focus-visible { outline: 3px solid var(--tint); outline-offset: 2px; border-radius: 10px; }
+svg.i { width: 24px; height: 24px; stroke: currentColor; fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+/* Stage */
+.stage { min-height: 100%; display: flex; flex-direction: column; align-items: center; gap: 14px; padding-block: 18px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.jump { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; max-width: 760px; font-family: var(--bnf); }
+.jump button { border: 0; background: var(--bg3); border-radius: 999px; padding: 6px 14px; font-size: 14px; line-height: 1.4; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.jump button:active { transform: scale(.96); }
+.jump button[aria-pressed="true"] { background: var(--label); color: var(--bg); }
+.phone { width: 393px; max-width: 100%; height: 852px; max-height: calc(100vh - 110px); min-height: 640px; position: relative; overflow: hidden; background: #000; border-radius: 54px; box-shadow: 0 0 0 11px #1b1c1f, 0 0 0 12px #3a3b3f, 0 40px 90px rgba(0,0,0,.35); isolation: isolate; }
+.island { position: absolute; top: 11px; left: 50%; width: 124px; height: 36px; margin-left: -62px; background: #000; border-radius: 20px; z-index: 50; pointer-events: none; }
+.screen { position: absolute; inset: 0; background: var(--bg); overflow: hidden; transition: transform 420ms cubic-bezier(.2,.9,.25,1), border-radius 420ms, filter 420ms; transform-origin: 50% 0; }
+.screen.light2 { background: var(--bg2); }
+.screen.pushed { transform: scale(0.93) translateY(12px); border-radius: 16px; filter: brightness(0.88); }
+.home-ind { position: absolute; bottom: 8px; left: 50%; width: 134px; height: 5px; margin-left: -67px; border-radius: 3px; background: var(--label); opacity: .85; z-index: 60; pointer-events: none; }
+@media (max-width: 480px) {
+  .stage { padding: 0; gap: 0; }
+  .jump { order: 2; padding: 10px 12px 28px; }
+  .phone { width: 100%; height: 100dvh; max-height: none; border-radius: 0; box-shadow: none; }
+  .island, .home-ind { display: none; }
+}
+
+/* iOS bars */
+.navbar { position: absolute; top: 0; left: 0; right: 0; z-index: 10; padding-top: 50px; background: var(--bar); -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%); border-bottom: 0.5px solid transparent; transition: border-color 200ms; }
+.navbar.scrolled { border-bottom-color: var(--sep); }
+.navrow { min-height: 44px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 0 8px; }
+.navrow .ttl { font: 600 17px var(--bnf); opacity: 0; transition: opacity 180ms; }
+.navbar.scrolled .navrow .ttl { opacity: 1; }
+.navbtn { border: 0; background: none; color: var(--tint); min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; font: 400 17px var(--bnf); cursor: pointer; padding: 0 8px; border-radius: 10px; }
+.navbtn:active { opacity: .4; }
+.navbtn.r { justify-self: end; }
+.largettl { font: 700 34px/1.2 var(--bnf); margin: 4px 16px 10px; transition: opacity 160ms; }
+.navbar.scrolled + .content .largettl { opacity: 0; }
+.chathead { display: flex; flex-direction: column; align-items: center; gap: 3px; border: 0; background: none; cursor: pointer; padding: 2px 8px 7px; border-radius: 12px; }
+.chathead:active { opacity: .55; }
+.chathead .today { color: var(--label2); font-weight: 400; }
+.callbtn { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 10px 0 0 34px; min-height: 52px; border-radius: 16px; background: var(--now-fill); color: #fff; font: 700 18px var(--bnf); }
+.callbtn:active { transform: scale(.98); }
+.callbtn svg { width: 22px; height: 22px; }
+.demo-ex { pointer-events: none; margin: 4px 0 18px; }
+.demo-ex .card { width: 100%; }
+.sq.tinted { background: var(--tint-soft); color: var(--tint); }
+.chathead small { display: inline-flex; align-items: center; gap: 2px; font: 500 12px var(--bnf); color: var(--label); }
+.av { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; font: 600 18px var(--bnf); color: var(--tint); background: var(--tint-soft); flex: none; font-weight: 700; }
+.av.b, .av.c { background: var(--fill); color: var(--label); }
+.av.sm { width: 34px; height: 34px; font-size: 15px; }
+.tabbar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 11; height: 83px; padding-bottom: 28px; display: grid; grid-template-columns: repeat(4, 1fr); background: var(--bar); -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%); border-top: 0.5px solid var(--sep); }
+.tab { border: 0; background: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; font: 500 12px var(--bnf); color: var(--label2); cursor: pointer; padding-top: 4px; }
+.tab svg { width: 27px; height: 27px; }
+.tab:active svg { transform: scale(.9); }
+.tab[aria-current="page"] { color: var(--tint); }
+.tab[aria-current="page"] svg { fill: var(--tint-soft); }
+.content { position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain; padding: 98px 0 110px; }
+
+/* Messages thread */
+.thread, .content, .sheet .bd { scrollbar-width: none; }
+.thread::-webkit-scrollbar, .content::-webkit-scrollbar, .sheet .bd::-webkit-scrollbar { display: none; }
+.thread { position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain; padding: 140px 14px 168px; background: var(--bg); }
+.stamp { text-align: center; font: 500 13px var(--bnf); color: var(--label2); margin: 18px 0 8px; }
+.stamp b { font-weight: 600; }
+.msg { display: flex; flex-direction: column; margin: 2px 0; }
+.msg.me { align-items: flex-end; }
+.msg.them { align-items: flex-start; }
+.b { max-width: 76%; padding: 8px 14px 9px; border-radius: 19px; font: 400 17px/1.45 var(--bnf); position: relative; overflow-wrap: anywhere; }
+.them .b { background: var(--recv); color: var(--recv-ink); }
+.me .b { background: var(--sent); color: var(--sent-ink); }
+/* The Messages tail: a bubble-coloured curl, then a background-coloured mask that carves its inner curve. */
+.msg.tail .b::before, .msg.tail .b::after { content: ""; position: absolute; bottom: 0; height: 17px; }
+.msg.tail.them .b::before { left: -7px; width: 20px; background: var(--recv); border-bottom-right-radius: 16px 14px; }
+.msg.tail.them .b::after { left: -26px; width: 26px; background: var(--bg); border-bottom-right-radius: 10px; }
+.msg.tail.me .b::before { right: -7px; width: 20px; background: var(--sent); border-bottom-left-radius: 16px 14px; }
+.msg.tail.me .b::after { right: -26px; width: 26px; background: var(--bg); border-bottom-left-radius: 10px; }
+.receipt { font: 500 13px var(--bnf); color: var(--label2); margin: 3px 6px 4px; text-align: right; }
+.msg.them + .receipt.l { text-align: left; }
+.gap { height: 10px; }
+.attach { padding: 0; overflow: hidden; background: none; border-radius: 18px; border: 0; cursor: pointer; display: block; box-shadow: 0 0 0 0.5px var(--sep); }
+.attach .slip { width: 214px; height: 150px; }
+.attach:active, .card:active { filter: brightness(0.93); }
+
+/* Verdict card — the Messages rich-link grammar: preview on top, title and source below */
+.card { width: min(300px, 82%); background: var(--recv); border-radius: 19px; overflow: hidden; border: 0; padding: 0; text-align: left; cursor: pointer; color: var(--recv-ink); display: block; transition: filter 120ms; }
+.card .band { display: flex; align-items: center; gap: 7px; padding: 9px 13px; font: 600 15px/1.35 var(--bnf); }
+.band.now { background: var(--now-fill); color: #fff; }
+.band.week { background: var(--week-soft); color: var(--week); }
+.card .pv { background: var(--paper); padding: 10px 12px; }
+.card .meta { padding: 10px 14px 12px; }
+.card .meta b { display: block; font: 700 21px/1.3 var(--bnf); }
+.card .meta small { display: block; font: 400 13px/1.4 var(--bnf); color: var(--label2); margin-top: 2px; }
+.card .rows { display: grid; gap: 6px; margin-top: 9px; padding-top: 9px; border-top: 0.5px solid var(--sep); }
+.r { display: flex; align-items: center; justify-content: space-between; gap: 8px; font: 400 15px/1.35 var(--sys); }
+.r .v { font-weight: 600; font-variant-numeric: tabular-nums; }
+.chip { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 1px 9px; font: 600 13px/1.6 var(--bnf); white-space: nowrap; }
+.chip svg { width: 13px; height: 13px; stroke-width: 2.4; }
+.chip.in { background: var(--tint-soft); color: var(--tint-ink); }
+.chip.out { background: var(--week-soft); color: var(--week); }
+.chip.crit { background: var(--now-soft); color: var(--now-ink); }
+.chip.unk { background: var(--unk-soft); color: var(--label2); }
+
+.typing { display: inline-flex; gap: 4px; align-items: center; height: 38px; padding: 0 15px; background: var(--recv); border-radius: 19px; position: relative; }
+.typing::before { content: ""; position: absolute; left: -1px; bottom: -1px; width: 12px; height: 12px; border-radius: 50%; background: var(--recv); }
+.typing::after { content: ""; position: absolute; left: -6px; bottom: -7px; width: 6px; height: 6px; border-radius: 50%; background: var(--recv); }
+.typing i { width: 8px; height: 8px; border-radius: 50%; background: var(--label3); animation: tp 1.3s infinite; }
+.typing i:nth-child(2) { animation-delay: .18s; } .typing i:nth-child(3) { animation-delay: .36s; }
+@keyframes tp { 0%, 70%, 100% { opacity: .35; transform: scale(.88) } 35% { opacity: 1; transform: scale(1) } }
+.in-me { animation: inMe 460ms cubic-bezier(.18,1.15,.3,1) both; transform-origin: 100% 100%; }
+.in-them { animation: inThem 380ms cubic-bezier(.2,1.1,.3,1) both; transform-origin: 0 100%; }
+@keyframes inMe { from { transform: translate(-8px, 64px) scale(.7); opacity: 0 } 40% { opacity: 1 } to { transform: none; opacity: 1 } }
+@keyframes inThem { from { transform: scale(.82); opacity: 0 } to { transform: none; opacity: 1 } }
+.suggest { display: flex; gap: 8px; overflow-x: auto; padding: 8px 2px 2px; margin: 0 -2px; scrollbar-width: none; }
+.suggest::-webkit-scrollbar { display: none; }
+.suggest button { flex: none; border: 1px solid var(--sep); background: var(--bg); color: var(--tint); border-radius: 18px; padding: 6px 14px; font: 500 15px var(--bnf); cursor: pointer; }
+.suggest button:active { background: var(--tint-soft); }
+
+/* Composer — the Messages input bar, sitting on the tab bar */
+.composer { position: absolute; left: 0; right: 0; bottom: 83px; z-index: 10; padding: 8px 10px; display: flex; align-items: flex-end; gap: 8px; background: var(--bar); -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%); }
+.camb { width: 46px; height: 46px; border-radius: 50%; border: 0; background: var(--tint); color: var(--on-tint); display: grid; place-items: center; cursor: pointer; flex: none; transition: transform 120ms; }
+.camb:active { transform: scale(.9); }
+.camb svg { width: 25px; height: 25px; }
+.field { flex: 1; min-height: 36px; border-radius: 18px; border: 1px solid var(--sep); display: flex; align-items: center; padding: 2px 3px 2px 14px; background: var(--bg); }
+.field input { flex: 1; border: 0; background: none; outline: 0; font: 400 17px var(--bnf); min-width: 0; padding: 4px 0; }
+.field input::placeholder { color: var(--label2); }
+.send { width: 30px; height: 30px; border-radius: 50%; border: 0; background: var(--sent); color: #fff; place-items: center; cursor: pointer; flex: none; display: none; }
+.send.on { display: grid; animation: popin 260ms cubic-bezier(.3,1.5,.5,1) both; }
+.send svg { width: 18px; height: 18px; stroke-width: 2.6; }
+
+/* Long-press menu over a blurred thread */
+.ctx { position: absolute; inset: 0; z-index: 40; -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); background: rgba(0,0,0,.16); display: flex; flex-direction: column; justify-content: center; padding: 0 14px; gap: 10px; animation: fade 180ms ease both; }
+.ctx .msg { animation: lift 260ms cubic-bezier(.2,1.2,.3,1) both; }
+.ctx .menu { width: 250px; background: var(--bar); -webkit-backdrop-filter: blur(30px) saturate(180%); backdrop-filter: blur(30px) saturate(180%); border-radius: 14px; overflow: hidden; animation: pop 280ms cubic-bezier(.2,1.2,.3,1) both; transform-origin: 20px 0; box-shadow: 0 10px 40px rgba(0,0,0,.18); }
+.ctx .menu.r { align-self: flex-end; transform-origin: 230px 0; }
+.ctx .menu button { width: 100%; border: 0; background: none; display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; font: 400 17px var(--bnf); border-top: 0.5px solid var(--sep); cursor: pointer; text-align: left; }
+.ctx .menu button:first-child { border-top: 0; }
+.ctx .menu button:active { background: var(--fill); }
+.ctx .menu svg { width: 20px; height: 20px; }
+@keyframes fade { from { opacity: 0 } }
+@keyframes pop { from { transform: scale(.35); opacity: 0 } }
+@keyframes lift { to { transform: scale(1.03) } }
+
+/* Grouped lists */
+.sect { margin: 24px 16px 0; }
+.sect h3, .sect h2.sh { font: 400 13px var(--bnf); color: var(--label2); margin: 0 16px 6px; }
+.sect .foot { font: 400 13px/1.5 var(--bnf); color: var(--label2); margin: 6px 16px 0; }
+.group { background: var(--bg3); border-radius: 12px; overflow: hidden; }
+.cell { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 16px; border: 0; background: none; width: 100%; text-align: left; cursor: pointer; position: relative; font: 400 17px/1.35 var(--bnf); color: var(--label); }
+.cell + .cell::before { content: ""; position: absolute; top: 0; left: 16px; right: 0; height: 0.5px; background: var(--sep); }
+.cell.ic + .cell.ic::before { left: 62px; }
+button.cell:active { background: var(--fill); }
+.cell .grow { flex: 1; min-width: 0; }
+.cell small { display: block; font-size: 14px; color: var(--label2); line-height: 1.4; }
+.cell .val { color: var(--label2); font-size: 16px; font-family: var(--sys); }
+.cell .chev { color: var(--label3); width: 18px; height: 18px; }
+.cell .tickmark { color: var(--tint); width: 20px; height: 20px; stroke-width: 2.4; }
+.sq { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; color: #fff; flex: none; }
+.sq svg { width: 19px; height: 19px; stroke-width: 2; }
+.soon { font: 500 12px var(--bnf); color: var(--label2); background: var(--fill); border-radius: 6px; padding: 1px 7px; white-space: nowrap; }
+.sw { width: 51px; height: 31px; border-radius: 16px; background: var(--fill); border: 0; position: relative; cursor: pointer; flex: none; transition: background 250ms; }
+.sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff; box-shadow: 0 3px 8px rgba(0,0,0,.15), 0 1px 1px rgba(0,0,0,.16); transition: transform 320ms cubic-bezier(.3,1.3,.5,1); }
+.sw[aria-checked="true"] { background: var(--tint); }
+.sw[aria-checked="true"]::after { transform: translateX(20px); }
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: var(--fill); border-radius: 9px; padding: 2px; margin: 0 16px; }
+.seg button { border: 0; background: none; border-radius: 7px; min-height: 32px; font: 500 14px var(--bnf); cursor: pointer; transition: background 200ms, box-shadow 200ms; }
+.seg button[aria-pressed="true"] { background: var(--bg3); box-shadow: 0 3px 8px rgba(0,0,0,.12), 0 0 0 0.5px rgba(0,0,0,.04); font-weight: 600; }
+.search { margin: 0 16px; display: flex; align-items: center; gap: 6px; background: var(--fill); border-radius: 10px; height: 36px; padding: 0 8px; color: var(--label2); font: 400 17px var(--bnf); border: 0; width: calc(100% - 32px); cursor: text; text-align: left; }
+.search svg { width: 18px; height: 18px; }
+
+/* Calendar */
+.calhd { display: flex; align-items: center; justify-content: space-between; margin: 22px 8px 4px 16px; }
+.calhd b { font: 700 22px var(--bnf); }
+.calhd span { display: flex; }
+.cal { margin: 0 8px; }
+.wk, .days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); text-align: center; }
+.wk span { font: 500 12px var(--bnf); color: var(--label2); padding: 6px 0; }
+.wk span.fri, .d.fri { color: var(--label2); }
+.d { border: 0; background: none; aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer; font: 400 20px var(--bnf); font-variant-numeric: tabular-nums; color: var(--label); }
+.d.blank { visibility: hidden; }
+.d .n { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; transition: background 160ms; }
+.d.today .n { background: var(--label); color: var(--bg); font-weight: 700; }
+.d.sel:not(.today) .n { background: var(--tint-soft); color: var(--tint); font-weight: 700; box-shadow: inset 0 0 0 2px var(--tint); }
+.d .dots { display: flex; gap: 3px; height: 5px; }
+.d .dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--label3); }
+.d .dots { height: 7px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 10px 16px 0; font: 500 13px var(--bnf); color: var(--label2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.legend i.ok { background: var(--tint); } .legend i.week { background: var(--week); } .legend i.now { background: var(--now-fill); }
+.legend i.ring { background: none; box-shadow: inset 0 0 0 2px var(--tint); width: 12px; height: 12px; }
+.d .dots i.week { background: var(--week); } .d .dots i.now { background: var(--now-fill); } .d .dots i.ok { background: var(--tint); }
+.d.ring .n { box-shadow: 0 0 0 2px var(--tint); }
+.duecard { margin: 4px 16px 0; background: var(--bg3); border-radius: 14px; padding: 12px 14px; display: flex; gap: 14px; align-items: center; border: 0; width: calc(100% - 32px); text-align: left; cursor: pointer; }
+.duecard:active { background: var(--fill); }
+.duecard .big { width: 52px; border-radius: 10px; overflow: hidden; text-align: center; flex: none; box-shadow: 0 0 0 0.5px var(--sep); }
+.duecard .big small { display: block; background: var(--tint); color: var(--on-tint); font: 600 11px/1.8 var(--bnf); }
+.duecard .big span { display: block; font: 600 26px/1.5 var(--bnf); }
+.duecard b { display: block; font: 600 16px var(--bnf); } .duecard em { font: 400 14px var(--bnf); color: var(--label2); font-style: normal; }
+.thumb { width: 42px; height: 52px; border-radius: 6px; overflow: hidden; flex: none; box-shadow: 0 0 0 0.5px var(--sep); }
+.thumb .slip { height: 100%; padding: 4px 5px; font-size: 5px; line-height: 1.5; }
+.thumb .slip .lab { font-size: 6px; }
+
+/* Paper */
+.slip { background: var(--paper); color: var(--paper-ink); font: 12.5px/1.5 var(--sys); padding: 10px 12px; overflow: hidden; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,.08); }
+.slip .lab { font: 600 13px var(--sys); color: #1d4e89; }
+.slip .rule { height: 1px; background: #cdd2da; margin: 6px 0; }
+.slip .ln { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; white-space: nowrap; }
+.slip .hl { background: rgba(255, 214, 10, 0.5); margin: 0 -4px; padding: 0 4px; border-radius: 3px; }
+.slip.crop { border-radius: 8px; box-shadow: 0 0 0 0.5px rgba(0,0,0,.12); }
+
+/* Sheets */
+.scrim { position: absolute; inset: 0; z-index: 30; background: var(--scrim); opacity: 0; transition: opacity 320ms; }
+.scrim.on { opacity: 1; }
+.sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 31; height: calc(100% - 58px); background: var(--bg2); border-radius: 14px 14px 0 0; transform: translateY(110%); will-change: transform; display: flex; flex-direction: column; box-shadow: 0 -10px 40px rgba(0,0,0,.18); }
+.sheet.medium { height: 54%; }
+.sheet .grab { flex: none; height: 20px; display: grid; place-items: center; cursor: grab; touch-action: none; }
+.sheet .grab i { width: 36px; height: 5px; border-radius: 3px; background: var(--label3); }
+.sheet .hd { flex: none; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 0 8px 6px; touch-action: none; }
+.sheet .hd b { font: 600 17px var(--bnf); text-align: center; }
+.sheet .bd { overflow-y: auto; padding-bottom: 44px; flex: 1; }
+.r-hero { margin: 4px 16px 0; }
+.r-hero h2 { font: 700 26px/1.3 var(--bnf); margin: 0 0 4px; text-wrap: balance; }
+.r-hero p { margin: 0; font: 400 15px var(--bnf); color: var(--label2); }
+.verdictbox { margin: 14px 16px 0; border-radius: 14px; padding: 12px 14px; font: 600 17px/1.45 var(--bnf); display: flex; gap: 10px; align-items: flex-start; }
+.verdictbox.week { background: var(--week-soft); color: var(--week); }
+.verdictbox.ok { background: var(--tint-soft); color: var(--tint); }
+.verdictbox.unk { background: var(--unk-soft); color: var(--label); }
+.verdictbox small { display: block; font-weight: 400; font-size: 14px; margin-top: 2px; }
+.say { margin: 12px 16px 0; background: var(--bg3); border-radius: 14px; padding: 12px 14px; font: 400 16px/1.6 var(--bnf); }
+.say b { display: block; font: 600 13px var(--bnf); color: var(--label2); margin-bottom: 3px; }
+.vrow { padding: 11px 16px; }
+.vrow + .vrow { border-top: 0.5px solid var(--sep); }
+.vrow .top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.vrow .top b { font: 600 16px var(--sys); }
+.vrow .top .x { font: 700 20px var(--sys); font-variant-numeric: tabular-nums; }
+.vrow .top .x small { font: 500 13px var(--sys); color: var(--label2); }
+.vrow .mid { display: flex; align-items: center; gap: 8px; margin: 4px 0 7px; font: 400 13px var(--bnf); color: var(--label2); flex-wrap: wrap; }
+.emerg { margin: 14px 16px 0; background: var(--now-fill); color: #fff; border-radius: 16px; padding: 16px; }
+.emerg h3, .emerg h2.sh { margin: 0 0 4px; font: 700 20px/1.4 var(--bnf); }
+.emerg p { margin: 0 0 14px; font: 400 15px/1.5 var(--bnf); }
+.emerg .call { display: inline-flex; align-items: center; gap: 8px; background: #fff; color: #c4271e; border-radius: 12px; padding: 10px 20px; font: 700 20px var(--sys); }
+.btns { margin: 20px 16px 0; display: grid; gap: 10px; }
+.btn { border: 0; border-radius: 14px; min-height: 50px; font: 600 17px var(--bnf); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; transition: transform 120ms, filter 120ms, opacity 200ms; }
+.btn:active { transform: scale(0.97); filter: brightness(.94); }
+.btn.fill { background: var(--tint); color: var(--on-tint); }
+.btn.plain { background: var(--bg3); color: var(--tint); }
+.btn.destr { background: var(--bg3); color: var(--now); }
+.btn.red { background: var(--now-fill); color: #fff; }
+.btn[aria-disabled="true"] { opacity: .4; }
+.apps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; padding: 10px 16px 0; }
+.app { border: 0; background: none; display: grid; justify-items: center; gap: 7px; cursor: pointer; font: 400 13px var(--bnf); color: var(--label); }
+.app .ic { width: 62px; height: 62px; border-radius: 16px; display: grid; place-items: center; color: #fff; transition: transform 120ms; }
+.app .ic svg { width: 30px; height: 30px; }
+.app:active .ic { transform: scale(.9); }
+.note { margin: 18px 20px 0; font: 400 14px/1.55 var(--bnf); color: var(--label2); }
+.tray { display: flex; gap: 10px; overflow-x: auto; padding: 8px 16px 14px; }
+.pg { flex: none; width: 104px; position: relative; }
+.pg .slip { height: 136px; border-radius: 10px; font-size: 7px; }
+.pg span { position: absolute; top: 6px; left: 6px; background: rgba(0,0,0,.7); color: #fff; font: 600 12px var(--bnf); border-radius: 8px; padding: 0 7px; }
+.pg.add { height: 136px; border: 1.5px dashed var(--label3); border-radius: 10px; display: grid; place-items: center; background: none; color: var(--label2); cursor: pointer; }
+.toast { position: absolute; left: 50%; bottom: 168px; z-index: 45; background: var(--bar); -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px); border-radius: 22px; padding: 10px 18px; font: 500 15px var(--bnf); display: flex; align-items: center; gap: 8px; box-shadow: 0 8px 26px rgba(0,0,0,.16); white-space: nowrap; transform: translate(-50%, 12px); opacity: 0; visibility: hidden; transition: transform 240ms cubic-bezier(.2,.8,.2,1), opacity 240ms, visibility 0s 240ms; }
+.toast.on { transform: translate(-50%, 0); opacity: 1; visibility: visible; transition: transform 240ms cubic-bezier(.2,.8,.2,1), opacity 240ms; }
+.toast svg { color: var(--green); width: 20px; height: 20px; }
+
+/* Sign-in */
+.welcome-top { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.welcome-top img { width: 92px; height: auto; }
+.onb { position: absolute; inset: 0; background: var(--bg); display: flex; flex-direction: column; padding: 64px 28px 40px; font-family: var(--bnf); overflow-y: auto; }
+.onb.step { animation: slidein 420ms cubic-bezier(.2,.9,.25,1) both; }
+@keyframes slidein { from { transform: translateX(40px); opacity: 0 } }
+.appicon { width: 78px; height: 78px; border-radius: 18px; background: linear-gradient(160deg, #3cc493, #0a7a62 70%); display: grid; place-items: center; box-shadow: 0 10px 24px rgba(10,122,98,.28), inset 0 0.5px 0 rgba(255,255,255,.4); align-self: center; }
+.appicon svg { width: 44px; height: 44px; stroke: #fff; stroke-width: 2; }
+.onb h1 { font: 700 30px/1.3 var(--bnf); margin: 22px 0 28px; text-align: center; text-wrap: balance; }
+.feat { display: grid; grid-template-columns: 46px 1fr; gap: 14px; align-items: start; margin-bottom: 22px; }
+.feat .fi { width: 46px; height: 46px; color: var(--tint); display: grid; place-items: center; }
+.feat .fi svg { width: 34px; height: 34px; stroke-width: 1.7; }
+.feat b { display: block; font: 600 17px/1.4 var(--bnf); }
+.feat span { font: 400 15px/1.5 var(--bnf); color: var(--label2); }
+.onb .push { flex: 1; min-height: 16px; }
+.onb .fine { font: 400 13px/1.55 var(--bnf); color: var(--label2); text-align: center; margin: 14px 0 0; }
+.onb .fine svg { width: 13px; height: 13px; vertical-align: -2px; }
+.back { align-self: flex-start; margin: -34px 0 6px -14px; }
+.form-ttl { font: 700 30px/1.3 var(--bnf); margin: 4px 0 6px; }
+.form-sub { font: 400 16px/1.55 var(--bnf); color: var(--label2); margin: 0 0 24px; }
+.inset { background: var(--bg2); border-radius: 12px; overflow: hidden; }
+.country { display: flex; align-items: center; justify-content: space-between; border: 0; background: none; padding: 14px 16px; font: 400 17px var(--bnf); width: 100%; cursor: pointer; }
+.country span { color: var(--label2); font-family: var(--sys); }
+.numfield { display: flex; align-items: center; gap: 10px; padding: 0 16px; min-height: 58px; border-top: 0.5px solid var(--sep); }
+.inset:focus-within { box-shadow: inset 0 0 0 2px var(--tint); }
+.numfield b { font: 500 20px var(--sys); color: var(--label2); }
+.numfield input { border: 0; background: none; outline: 0; font: 500 22px var(--sys); letter-spacing: 0.02em; width: 100%; font-variant-numeric: tabular-nums; }
+.numfield input::placeholder { color: var(--label2); }
+.err { color: var(--now); font: 400 14px var(--bnf); min-height: 22px; margin: 8px 4px 0; }
+.otp { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+.otp input { width: 100%; aspect-ratio: .8; text-align: center; font: 600 28px var(--sys); border: 0; background: var(--bg2); border-radius: 12px; outline: 0; caret-color: var(--tint); transition: box-shadow 150ms; }
+.otp input:focus { box-shadow: inset 0 0 0 2px var(--tint); }
+.otp.bad { animation: shake 420ms; }
+.otp.bad input { box-shadow: inset 0 0 0 2px var(--now); }
+.otp.good input { box-shadow: inset 0 0 0 2px var(--green); }
+@keyframes shake { 20%, 60% { transform: translateX(-9px) } 40%, 80% { transform: translateX(9px) } }
+.sentcard { display: flex; gap: 12px; align-items: center; background: var(--bg2); border-radius: 14px; padding: 12px 14px; margin-bottom: 20px; }
+.sentcard .wa { width: 36px; height: 36px; border-radius: 10px; background: #25d366; color: #fff; display: grid; place-items: center; flex: none; animation: popin 520ms cubic-bezier(.2,1.4,.4,1) both; }
+.sentcard .wa svg { width: 22px; height: 22px; }
+@keyframes popin { from { transform: scale(0) } }
+.sentcard b { display: block; font: 600 16px var(--bnf); } .sentcard small { font: 400 14px var(--bnf); color: var(--label2); }
+.resend { border: 0; background: none; color: var(--tint); font: 500 16px var(--bnf); padding: 12px 0; cursor: pointer; align-self: flex-start; }
+.resend[disabled] { color: var(--label3); cursor: default; }
+.welcome-done { position: absolute; inset: 0; display: grid; place-items: center; align-content: center; gap: 18px; background: var(--bg); z-index: 5; animation: fade 200ms both; font: 600 20px var(--bnf); }
+.welcome-done .tickbig { width: 88px; height: 88px; border-radius: 50%; background: var(--green); display: grid; place-items: center; color: #fff; animation: popin 560ms cubic-bezier(.2,1.4,.4,1) both; }
+.welcome-done .tickbig svg { width: 46px; height: 46px; stroke-width: 3; }
+
+/* Voice and sound picker */
+.voice { position: absolute; left: 50%; bottom: 142px; width: calc(100% - 20px); transform: translate(-50%, 24px) scale(.96); opacity: 0; z-index: 95; transition: transform 380ms cubic-bezier(.2,1.1,.3,1), opacity 180ms; }
+.voice.on { transform: translate(-50%, 0) scale(1); opacity: 1; }
+.vbox { background: var(--bar); -webkit-backdrop-filter: blur(30px) saturate(180%); backdrop-filter: blur(30px) saturate(180%); border-radius: 24px; box-shadow: 0 24px 70px rgba(0,0,0,.3), 0 0 0 0.5px var(--sep); padding: 14px 16px 16px; }
+.vtop { display: flex; align-items: center; gap: 12px; }
+.vorb { width: 46px; height: 46px; border-radius: 50%; background: var(--tint); color: var(--on-tint); display: grid; place-items: center; flex: none; transition: background 200ms; }
+.vorb svg { width: 22px; height: 22px; }
+.vorb.on { animation: orb 1.4s ease-in-out infinite; }
+.vorb.done { background: var(--green); animation: none; }
+@keyframes orb { 50% { box-shadow: 0 0 0 10px color-mix(in srgb, var(--tint) 18%, transparent) } }
+.vtx { flex: 1; min-width: 0; }
+.vtx b { display: block; font: 600 16px/1.4 var(--bnf); }
+.vtx span { display: block; font: 400 14px/1.45 var(--bnf); color: var(--label2); overflow: hidden; text-overflow: ellipsis; }
+.vwave { display: flex; gap: 3px; align-items: center; height: 30px; }
+.vwave i { width: 3px; height: 5px; border-radius: 2px; background: var(--tint); opacity: .5; }
+.vwave.on i { animation: wv .9s ease-in-out infinite; opacity: 1; }
+.vwave i:nth-child(2) { animation-delay: .12s; } .vwave i:nth-child(3) { animation-delay: .24s; } .vwave i:nth-child(4) { animation-delay: .36s; } .vwave i:nth-child(5) { animation-delay: .48s; }
+@keyframes wv { 50% { height: 26px } }
+.vin { display: flex; gap: 8px; margin-top: 12px; }
+.vin input { flex: 1; min-width: 0; height: 40px; border-radius: 20px; border: 1px solid var(--sep); background: var(--bg); padding: 0 16px; font: 400 15.5px var(--bnf); outline: 0; color: var(--label); }
+.vin input:focus { border-color: var(--tint); }
+.vgo { width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--tint); color: var(--on-tint); display: grid; place-items: center; cursor: pointer; flex: none; }
+.vex { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+.vex button { border: 0; background: var(--fill); color: var(--label); border-radius: 14px; padding: 4px 12px; font: 500 13.5px var(--bnf); cursor: pointer; }
+.vex button:hover { background: var(--tint-soft); color: var(--tint); }
+.sgrp { background: var(--bg2); border-radius: 12px; overflow: hidden; margin-top: 12px; box-shadow: 0 0 0 0.5px var(--sep); }
+.sgh2 { font: 600 12px var(--bnf); color: var(--label2); padding: 10px 14px 2px; }
+.sopt { display: flex; gap: 12px; align-items: center; width: 100%; border: 0; background: none; padding: 8px 14px; text-align: left; cursor: pointer; font: 500 15px/1.4 var(--bnf); color: var(--label); }
+.sopt:hover { background: var(--hover); }
+.sopt .grow { flex: 1; min-width: 0; }
+.sopt small { display: block; font: 400 12.5px/1.45 var(--bnf); color: var(--label2); }
+.sp-play { width: 30px; height: 30px; border-radius: 50%; background: var(--tint-soft); color: var(--tint); display: grid; place-items: center; flex: none; }
+.sp-play svg { width: 14px; height: 14px; }
+.tickm { color: var(--tint); }
+.snote { font: 400 12.5px/1.55 var(--bnf); color: var(--label2); margin: 12px 2px 0; }
+.srow { display: flex; align-items: center; gap: 12px; padding: 10px 14px; font: 500 15px var(--bnf); }
+.srow .grow { flex: 1; } .srow small { display: block; font: 400 12.5px var(--bnf); color: var(--label2); }
+.mic { width: 30px; height: 30px; touch-action: none; -webkit-user-select: none; user-select: none; border-radius: 50%; border: 0; background: none; color: var(--label2); display: grid; place-items: center; cursor: pointer; flex: none; }
+.mic:hover { color: var(--tint); background: var(--tint-soft); }
+.field:has(.send.on) .mic { display: none; }
+kbd.k { font: 600 11px var(--sys); border: 0.5px solid var(--label3); border-bottom-width: 1.5px; border-radius: 4px; padding: 0 4px; color: var(--label2); }
+@media (prefers-reduced-transparency: reduce) { .vbox { background: var(--bg3); -webkit-backdrop-filter: none; backdrop-filter: none; } }
+.vbox { --hover: var(--fill); }
+.sopt:active { background: var(--fill); }
+/* The wordmark follows the theme: navy "medi" on light, the reversed file on dark */
+.wordmark { display: block; background: var(--wordmark) center / contain no-repeat; }
+/* Legibility floor for older eyes: status is never colour alone (shape + word), no text under 12px, focus always visible */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.dots i.week, .dot.week, .legend i.week { border-radius: 0; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+.dots i.now, .dot.now, .legend i.now { border-radius: 0; clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
+/* Mio — the PO's own mascot, used exactly as drawn; all motion moves the whole figure */
+.msg.them { padding-left: 34px; position: relative; }
+.msg.them.tail::after { content: ""; position: absolute; left: 0; bottom: 0; width: 28px; height: 28px; border-radius: 50%; background: var(--mio-bg) url("mio-head.webp") center / 104% no-repeat; box-shadow: 0 0 0 0.5px var(--sep); transform-origin: 50% 90%; }
+.msg.mio-think::after { animation: mio-bob 1.1s ease-in-out infinite; }
+.msg.mio-read::after { animation: mio-scan 1.8s ease-in-out infinite; }
+.msg.mio-glad::after { animation: mio-hop 700ms cubic-bezier(.3,.7,.4,1) 2; }
+.mio-wave { animation: mio-rock 2.6s ease-in-out 2; transform-origin: 50% 100%; }
+.mio-in { animation: mio-in 700ms cubic-bezier(.2,1.2,.3,1) both; }
+.mio-intro { display: grid; place-items: center; margin: 6px 0 0; }
+.vorb { background: var(--mio-bg) !important; overflow: hidden; box-shadow: 0 0 0 2.5px var(--tint); }
+.vorb img { width: 100%; height: 100%; object-fit: cover; transform-origin: 50% 90%; }
+.vorb.on img { animation: mio-listen 1.4s ease-in-out infinite; }
+.vorb.done { box-shadow: 0 0 0 2.5px var(--green); }
+.vorb.done img { animation: mio-hop 600ms cubic-bezier(.3,.7,.4,1) 1; }
+@keyframes mio-bob { 0%, 100% { transform: translateY(0) rotate(0) } 50% { transform: translateY(-2px) rotate(-6deg) } }
+@keyframes mio-scan { 0%, 100% { transform: rotate(-8deg) } 50% { transform: rotate(8deg) } }
+@keyframes mio-hop { 0%, 100% { transform: translateY(0) scale(1) } 30% { transform: translateY(-7px) scale(1.04) } 60% { transform: translateY(0) scale(.97, 1.03) } }
+@keyframes mio-rock { 0%, 60%, 100% { transform: rotate(0) translateY(0) } 10%, 30%, 50% { transform: rotate(-3.5deg) translateY(-2px) } 20%, 40% { transform: rotate(2.5deg) translateY(-2px) } }
+@keyframes mio-in { from { transform: translateY(24px) scale(.85); opacity: 0 } }
+@keyframes mio-listen { 0%, 100% { transform: rotate(-8deg) } 50% { transform: rotate(-3deg) translateY(1px) } }
+@media (prefers-reduced-motion: reduce) { .msg.them::after, .mio-wave, .mio-in, .vorb img { animation: none !important; } }
+@media (prefers-reduced-motion: reduce) {
+  .in-me, .in-them, .otp.bad, .ctx, .ctx .menu, .ctx .msg, .sentcard .wa, .welcome-done .tickbig, .onb.step { animation: none; }
+  .typing i { animation: none; opacity: .6; }
+  .screen, .toast, .sw::after, .send { transition: none; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .navbar, .tabbar, .composer, .toast, .ctx .menu { background: var(--bg3); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+</style>
+
+<div class="stage">
+  <nav class="jump" id="jump" aria-label="Prototype scenes">
+    <button data-scene="welcome">সাইন ইন</button>
+    <button data-scene="chat" aria-pressed="true">চ্যাট</button>
+    <button data-scene="now">জরুরি ফল</button>
+    <button data-scene="retake">আবার তুলতে হবে</button>
+    <button data-scene="first">প্রথমবার</button>
+    <button data-scene="papers">কাগজপত্র</button>
+    <button data-scene="health">স্বাস্থ্য</button>
+    <button data-scene="family">পরিবার</button>
+    <button data-scene="sound" id="soundBtn">শব্দ বাছুন</button>
+    <button data-scene="voice">কণ্ঠে বলুন</button>
+    <button data-scene="theme">আলো / অন্ধকার</button>
+  </nav>
+  <main class="phone" id="phone" aria-label="Medioo"><div class="island"></div><div class="home-ind"></div><div id="root"></div></main>
+</div>
+
+<script>
+(() => {
+  document.documentElement.lang = "bn";
+  const BN = "০১২৩৪৫৬৭৮৯";
+  const bn = (n) => String(n).replace(/[0-9]/g, (d) => BN[d]);
+  const svg = (p, cls = "") => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${p}</svg>`;
+  const P_ = {
+    cam: '<path d="M4 8h3l2-2.5h6L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.6"/>',
+    plus: '<path d="M12 6v12M6 12h12"/>',
+    chat: '<path d="M12 4.5c4.7 0 8.5 3.1 8.5 7s-3.8 7-8.5 7c-1 0-2-.1-2.9-.4L5 19.5l1.2-3.4C4.8 14.9 3.5 13.3 3.5 11.5c0-3.9 3.8-7 8.5-7z"/>',
+    cal: '<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
+    heart: '<path d="M12 20s-7.5-4.6-7.5-10A4.3 4.3 0 0 1 12 7.3 4.3 4.3 0 0 1 19.5 10c0 5.4-7.5 10-7.5 10z"/>',
+    fam: '<circle cx="9" cy="8.5" r="3.2"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9.5" r="2.4"/><path d="M15.6 14.3c2.4.1 4.1 1.6 4.6 4.2"/>',
+    chev: '<path d="M9.5 6l6 6-6 6"/>',
+    back: '<path d="M15 5l-7 7 7 7"/>',
+    down: '<path d="M8 10l4 4 4-4"/>',
+    left: '<path d="M15 6l-6 6 6 6"/>', right: '<path d="M9 6l6 6-6 6"/>',
+    check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+    arrowup: '<path d="M12 19V6M7 11l5-5 5 5"/>',
+    q: '<circle cx="12" cy="12" r="8.5"/><path d="M12 8v4.5M12 16v.01"/>',
+    octa: '<path d="M8.2 3h7.6L21 8.2v7.6L15.8 21H8.2L3 15.8V8.2z"/><path d="M12 7.5v5.5M12 16.2v.01"/>',
+    calw: '<rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4M12 13v3"/>',
+    phone: '<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a1 1 0 0 1-1 1A16 16 0 0 1 4 5a1 1 0 0 1 1-1z"/>',
+    share: '<path d="M12 15V4M8 8l4-4 4 4M5 13v6a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-6"/>',
+    trash: '<path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13"/>',
+    doc: '<path d="M7 3.5h7l4 4V20a.5.5 0 0 1-.5.5h-10A.5.5 0 0 1 7 20z"/><path d="M14 3.5V8h4M9.5 12h5M9.5 15.5h5"/>',
+    gal: '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="M20 16l-5-5-8 8"/>',
+    copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>',
+    lock: '<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/>',
+    shield: '<path d="M12 3l7 3v6c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V6z"/><path d="M9 12l2 2 4-4"/>',
+    search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>',
+    flask: '<path d="M9.5 3.5h5M10.5 3.5v5.2L5.4 18a1.7 1.7 0 0 0 1.5 2.5h10.2a1.7 1.7 0 0 0 1.5-2.5l-5.1-9.3V3.5"/><path d="M7.5 14.5h9"/>',
+    pill: '<rect x="3" y="9" width="18" height="6" rx="3" transform="rotate(-35 12 12)"/><path d="M9.3 8.2l5.4 7.6"/>',
+    syringe: '<path d="M14 4l6 6M17 7l-9.5 9.5-3 .5.5-3L14.5 4.5M10 11l3 3M3.5 20.5l2-2"/>',
+    xray: '<rect x="4" y="3.5" width="16" height="17" rx="2.5"/><path d="M12 6.5v11M9 9h6M8.5 12h7M9 15h6"/>',
+    watch: '<rect x="7" y="6.5" width="10" height="11" rx="3"/><path d="M9 6.5L9.5 3h5l.5 3.5M9 17.5l.5 3.5h5l.5-3.5M12 10v2.5l1.5 1"/>',
+    allergy: '<circle cx="12" cy="12" r="8.5"/><path d="M6 6l12 12"/>',
+    card: '<rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="M12 9v6M9 12h6"/>',
+    summary: '<path d="M6 3.5h12a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-15a1 1 0 0 1 1-1z"/><path d="M8.5 8h7M8.5 11.5h7M8.5 15h4"/>',
+    wa: '<path d="M4 20l1.2-3.7A8 8 0 1 1 8 19z"/><path d="M9 9.5c.3 2.5 2.4 4.6 5 5l1.3-1.2-1.8-1-1 .6a4 4 0 0 1-1.9-1.9l.6-1-1-1.8z"/>',
+    mic: '<rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3"/>',
+    play: '<path d="M8 5.5v13l10.5-6.5z"/>',
+    x: '<path d="M7 7l10 10M17 7L7 17"/>',
+    up: '<path d="M12 19V6M7 11l5-5 5 5"/>',
+    leaf: '<path d="M5 19c0-8 5-13 14-14 0 9-5 14-13 14z"/><path d="M5 19l7-7"/>',
+  };
+  const I = Object.fromEntries(Object.entries(P_).map(([k, v]) => [k, svg(v)]));
+  const ic = (k, cls) => svg(P_[k], cls);
+
+  const PATIENTS = {
+    amma: { id: "amma", name: "আম্মা", full: "রোকেয়া বেগম", age: 68, init: "র", cls: "" },
+    abbu: { id: "abbu", name: "আব্বু", full: "আব্দুল করিম", age: 74, init: "ক", cls: "b" },
+  };
+  const P = {
+    cbc: { id: "cbc", title: "রক্ত পরীক্ষা", sub: "CBC, HbA1c", day: 20, lab: "Shapla Diagnostics", urgency: "ok",
+      verdict: "সব মান রিপোর্টে লেখা সীমার মধ্যে।", say: "তিনটা মানই কাগজে লেখা সীমার মধ্যে। কাগজটা ক্যালেন্ডারে আজকের তারিখে রাখলাম।",
+      values: [["HbA1c", "5.4", "%", "4.0 - 5.6", "in"], ["Haemoglobin", "12.6", "g/dL", "11.5 - 15.5", "in"], ["Platelet Count", "245", "10^3/µL", "150 - 450", "in"]] },
+    lipid: { id: "lipid", title: "লিপিড প্রোফাইল", sub: "Lipid profile", day: 13, lab: "Shapla Diagnostics", urgency: "unk",
+      verdict: "৩টি মান কাগজে মিলিয়ে দেখুন।", say: "এই রিপোর্টে সীমাগুলো এক দিকে লেখা (যেমন “<100”), তাই Medioo নিজে মেলাতে পারে না — কিছু ঠিক আছে বলে দাবি করছি না।",
+      values: [["LDL Cholesterol", "90", "mg/dL", "<100", "unk"], ["HDL Cholesterol", "52", "mg/dL", ">40", "unk"], ["Triglycerides", "120", "mg/dL", "<150", "unk"]] },
+    creat: { id: "creat", title: "বায়োকেমিস্ট্রি", sub: "Creatinine, Urea", day: 14, lab: "Shapla Diagnostics", urgency: "week",
+      verdict: "Creatinine সীমার বেশি।", reason: "Creatinine 1.6 — রিপোর্টে লেখা সীমা 0.6–1.3", say: "একটা মান কাগজে লেখা সীমার চেয়ে বেশি, বাকি দুটো সীমার মধ্যে। ডাক্তার দেখানোর সময় এই কাগজটা সাথে নিন।",
+      values: [["Serum Creatinine", "1.6", "mg/dL", "0.6 - 1.3", "out"], ["Blood Urea", "32", "mg/dL", "15 - 40", "in"], ["Serum Potassium", "4.3", "mmol/L", "3.5 - 5.1", "in"]] },
+    potas: { id: "potas", title: "বায়োকেমিস্ট্রি", sub: "Potassium, Sodium", day: 16, lab: "Shapla Diagnostics", urgency: "now",
+      verdict: "Potassium অনেক বেশি।", reason: "Potassium 11.0 — রিপোর্টে লেখা সীমা 3.5–5.1, সীমার দ্বিগুণের বেশি",
+      values: [["Serum Potassium", "11.0", "mmol/L", "3.5 - 5.1", "crit"], ["Serum Sodium", "139", "mmol/L", "135 - 145", "in"]] },
+    rx: { id: "rx", title: "প্রেসক্রিপশন", sub: "Dr. Selina Haque", day: 15, lab: "Shapla Nagar Clinic", urgency: "rx",
+      verdict: "২টি ওষুধ · ২২ অক্টোবর আবার যেতে বলেছেন", say: "ডাক্তার ২২ অক্টোবর আবার যেতে বলেছেন — ক্যালেন্ডারে দাগ দিয়ে রেখেছি, আগের দিন মনে করিয়ে দেব।",
+      meds: ["Tab. Demoprol 5 mg — ১+০+১ — খাবার পরে — ১ মাস", "Tab. Exampin 500 — ০+০+১ — রাতে খাবার পরে — ১৪ দিন"], values: [] },
+    blur: { id: "blur", title: "রক্ত পরীক্ষা", sub: "পড়া যায়নি", day: 20, lab: "", urgency: "retake", values: [] },
+  };
+
+  const st = { scene: "chat", tab: "chat", patient: "amma", calDay: 20, sound: true, extra: [], authStep: "welcome", number: "", reminders: true, speak: true, conds: ["ডায়াবেটিস", "উচ্চ রক্তচাপ"] };
+  const root = document.getElementById("root");
+  const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // Sound bank: every cue is synthesized here (Apple's own sound files are Apple's and can't ship in Medioo).
+  // Each option is drawn in the character of a classic iPhone cue; the picker lets the PO choose one send and one receive sound.
+  const SOUND_OPTS = {
+    send: [["swoosh", "সুইশ", "পুরোনো iMessage পাঠানোর মতো — বাতাস কেটে উঠে যাওয়া"], ["whoosh", "নরম হাওয়া", "একটু লম্বা, নিচু সুইশ"], ["pop", "পপ", "ছোট বুদবুদ ফাটার শব্দ"], ["tap", "টোকা", "খুব ছোট, প্রায় শোনা যায় না"], ["none", "কোনো শব্দ নয়", ""]],
+    recv: [["tritone", "ট্রাই-টোন", "পুরোনো iPhone SMS-এর মতো তিনটা উঠতি নোট"], ["note", "নোট", "iMessage-এর ডিফল্টের মতো নরম দুই নোট"], ["glass", "কাচ", "একটা উঁচু, পরিষ্কার টুং"], ["chord", "কর্ড", "তিনটা নোট একসাথে, ঘণ্টার মতো"], ["bamboo", "বাঁশ", "কাঠের মতো দুটো নরম টোকা"], ["none", "কোনো শব্দ নয়", ""]],
+  };
+  const SND = { send: "swoosh", recv: "tritone" };
+  try { const v = JSON.parse(localStorage.getItem("medioo-sounds") || "{}"); if (v.send) SND.send = v.send; if (v.recv) SND.recv = v.recv; } catch (e) {}
+  const saveSnd = () => { try { localStorage.setItem("medioo-sounds", JSON.stringify(SND)); } catch (e) {} };
+  let ac = null;
+  function audio() { if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { ac = null; } } if (ac && ac.state === "suspended") ac.resume(); return ac; }
+  function tone(freq, at, dur, peak, type = "sine", attack = 0.006) { const o = ac.createOscillator(), g = ac.createGain(); o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(peak, at + attack); g.gain.exponentialRampToValueAtTime(0.0001, at + dur); o.connect(g).connect(ac.destination); o.start(at); o.stop(at + dur + 0.05); }
+  function noiseSweep(t, len, f0, f1, peak, q = 1.6) { const buf = ac.createBuffer(1, Math.floor(ac.sampleRate * len), ac.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 2);
+    const s = ac.createBufferSource(); s.buffer = buf; const f = ac.createBiquadFilter(); f.type = "bandpass"; f.Q.value = q; f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(f1, t + len);
+    const g = ac.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + len * 0.14); g.gain.exponentialRampToValueAtTime(0.0001, t + len); s.connect(f).connect(g).connect(ac.destination); s.start(t); }
+  function play(id) {
+    if (!st.sound || id === "none" || !audio()) return; const t = ac.currentTime;
+    switch (id) {
+      case "swoosh": noiseSweep(t, 0.26, 600, 4200, 0.28); break;
+      case "whoosh": noiseSweep(t, 0.42, 350, 2200, 0.22, 1.1); break;
+      case "pop": { const o = ac.createOscillator(), g = ac.createGain(); o.frequency.setValueAtTime(900, t); o.frequency.exponentialRampToValueAtTime(260, t + 0.07); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.3, t + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.09); o.connect(g).connect(ac.destination); o.start(t); o.stop(t + 0.12); break; }
+      case "tap": tone(2400, t, 0.03, 0.05); break;
+      case "tritone": [[1318.5, 0], [1661.2, 0.11], [1975.5, 0.22]].forEach(([f, dt]) => { tone(f, t + dt, 0.32, 0.12, "triangle"); tone(f * 2, t + dt, 0.12, 0.025); }); break;
+      case "note": [[1318.5, 0], [1975.5, 0.085]].forEach(([f, dt]) => tone(f, t + dt, 0.45, 0.14)); break;
+      case "glass": tone(1760, t, 1.1, 0.12); tone(1760 * 2.76, t, 0.5, 0.03); tone(1760 * 5.4, t, 0.25, 0.012); break;
+      case "chord": [1046.5, 1318.5, 1568].forEach((f) => { tone(f, t, 0.9, 0.06, "sine", 0.01); tone(f * 3, t, 0.25, 0.01); }); break;
+      case "bamboo": [[740, 0], [988, 0.12]].forEach(([f, dt]) => { tone(f, t + dt, 0.16, 0.16, "square", 0.002); tone(f * 0.5, t + dt, 0.12, 0.1, "sine", 0.002); }); break;
+      case "tick": tone(2400, t, 0.025, 0.04); break;
+    }
+  }
+  const swoosh = () => play(SND.send), ding = () => play(SND.recv), tick = () => play("tick");
+  function soundPickerHTML() {
+    const row = (kind, [id, name, sub]) => `<button class="sopt" data-snd="${kind}:${id}" aria-pressed="${SND[kind] === id}"><span class="sp-play">${ic(id === "none" ? "x" : "play")}</span><span class="grow">${name}${sub ? `<small>${sub}</small>` : ""}</span>${SND[kind] === id ? ic("check", "tickm") : ""}</button>`;
+    return `<div class="sgrp"><div class="sgh2">পাঠালে</div>${SOUND_OPTS.send.map((o) => row("send", o)).join("")}</div><div class="sgrp"><div class="sgh2">উত্তর এলে</div>${SOUND_OPTS.recv.map((o) => row("recv", o)).join("")}</div>
+      <p class="snote">সবগুলো এখানেই তৈরি করা শব্দ, পুরোনো iPhone-এর শব্দের ধাঁচে। Apple-এর আসল শব্দের ফাইল Medioo-তে ব্যবহার করা যায় না, কারণ সেগুলো Apple-এর নিজের।</p>`;
+  }
+
+  function slip(p) {
+    if (p.id === "rx") return `<div class="slip"><div class="lab">Dr. Selina Haque · Shapla Nagar Clinic</div><div class="rule"></div><div style="font:700 15px var(--sys);color:#1d4e89">Rx</div><div>1. Tab. Demoprol 5 mg — ১+০+১</div><div>2. Tab. Exampin 500 — ০+০+১</div><div style="margin-top:3px">পরামর্শ: ৭ দিন পর আসবেন।</div></div>`;
+    if (p.id === "blur") return `<div class="slip" style="filter:blur(2.4px)"><div class="lab">Shapla Diagnostics</div><div class="rule"></div><div class="ln"><span>Haemoglobin</span><span>12.6</span><span>11.5-15.5</span></div><div class="ln"><span>WBC</span><span>7.2</span><span>4.0-11.0</span></div><div class="ln"><span>Platelet</span><span>245</span><span>150-450</span></div></div>`;
+    return `<div class="slip"><div class="lab">${p.lab}</div><div class="rule"></div>${p.values.map((v) => `<div class="ln"><span>${v[0]}</span><span>${v[1]} ${v[2]}</span><span>${v[3]}</span></div>`).join("")}</div>`;
+  }
+  const lineSlip = (v, crop = false) => `<div class="slip ${crop ? "crop" : ""}"><div class="ln hl"><span>${v[0]}</span><span>${v[1]} ${v[2]}</span><span>${v[3]}</span></div></div>`;
+  const medSlip = (m) => `<div class="slip crop" style="font-size:13px"><div class="ln hl" style="grid-template-columns:1fr;white-space:normal"><span>${m}</span></div></div>`;
+  const chip = (k) => ({ in: `<span class="chip in">${I.check}সীমার মধ্যে</span>`, out: `<span class="chip out">${I.arrowup}সীমার বেশি</span>`, crit: `<span class="chip crit">${I.arrowup}অনেক বেশি</span>`, unk: `<span class="chip unk">${I.q}কাগজে মিলিয়ে দেখুন</span>` }[k]);
+  const pname = () => PATIENTS[st.patient].name;
+  const chev = () => ic("chev", "chev");
+  const tickmark = () => ic("check", "tickmark");
+
+  function verdictCard(p) {
+    const band = p.urgency === "now" ? `<div class="band now">${I.octa}এখনই ${pname()}কে ডাক্তারের কাছে নিয়ে যান। দেরি করবেন না।</div>`
+      : p.urgency === "week" ? `<div class="band week">${I.calw}এ সপ্তাহের মধ্যে একজন ডাক্তার দেখান।</div>` : "";
+    const rows = p.values.slice(0, 3).map((v) => `<div class="r"><span>${v[0]}</span><span style="display:flex;gap:8px;align-items:center"><span class="v">${v[1]}</span>${chip(v[4])}</span></div>`).join("");
+    const meds = p.meds ? p.meds.map((m) => `<div class="r" style="font-family:var(--bnf)"><span>${m.split(" — ")[0]}</span><span class="v">${m.split(" — ")[1]}</span></div>`).join("") : "";
+    const pv = p.id === "rx" ? `<div class="slip" style="padding:0;background:none"><div class="ln hl" style="grid-template-columns:1fr"><span>${p.meds[0]}</span></div></div>` : lineSlip(p.values[0]);
+    return `<button class="card" data-open="${p.id}" aria-label="${p.verdict} পুরো কাগজটা দেখুন">${band}<div class="pv">${pv}</div>
+      <div class="meta"><b>${p.verdict}</b><small>${pname()} · ${p.title} · ${bn(p.day)} অক্টোবর</small><div class="rows">${rows || meds}</div></div></button>`;
+  }
+  const me = (inner, tail = true, anim = "") => `<div class="msg me ${tail ? "tail" : ""} ${anim}">${inner}</div>`;
+  const them = (inner, tail = true, anim = "") => `<div class="msg them ${tail ? "tail" : ""} ${anim}">${inner}</div>`;
+  const txt = (s) => `<div class="b">${s}</div>`;
+  const photo = (p) => `<button class="attach" data-open="${p.id}" aria-label="পাঠানো ছবি: ${p.title}">${slip(p)}</button>`;
+
+  function threadHTML() {
+    if (st.scene === "first") {
+      return `<div class="mio-intro"><img class="mio-wave" src="mio.webp" alt="Mio — Medioo-র সঙ্গী" width="96" height="118"></div><div class="stamp"><b>আজ</b> সকাল ৯:০০</div>${them(txt(`আসসালামু আলাইকুম! আমি Medioo। ${pname()}র যেকোনো রিপোর্ট বা প্রেসক্রিপশনের ছবি পাঠান।`), false)}
+        ${them(txt("পড়ে সহজ বাংলায় বলে দেব কিছু দেখার আছে কি না, আর সব কাগজ তারিখ ধরে গুছিয়ে রাখব।"), false)}
+        ${them(txt("নিচের ক্যামেরা বোতামটা চাপুন — পুরো পাতাটা যেন ছবিতে আসে।"))}
+        <div class="suggest"><button data-quick="how">কীভাবে কাজ করে?</button><button data-quick="safe">আমার কাগজ কে দেখবে?</button></div>` + st.extra.join("");
+    }
+    let h = `<div class="stamp"><b>বুধ, ১৪ অক্টোবর</b> সকাল ৯:১২</div>` + me(photo(P.creat), false) + me(txt(`${pname()}র কিডনির রিপোর্ট`)) + `<div class="gap"></div>` + them(verdictCard(P.creat), false);
+    h += `<div class="stamp"><b>বৃহস্পতি, ১৫ অক্টোবর</b> বিকেল ৫:৪০</div>` + me(photo(P.rx)) + `<div class="gap"></div>` + them(verdictCard(P.rx), false) + them(txt(P.rx.say));
+    if (st.scene === "now") {
+      h += `<div class="stamp"><b>আজ</b> সকাল ১০:০৫</div>` + me(photo(P.potas)) + `<div class="receipt">পড়া হয়েছে ১০:০৫</div>` + them(verdictCard(P.potas), false)
+        + them(txt("এখনই কাছের হাসপাতালের জরুরি বিভাগে নিয়ে যান, বা ৯৯৯-এ ফোন করুন। কাগজের ছবিটা সাথে রাখুন।"))
+        + `<a class="callbtn" href="tel:999">${I.phone}৯৯৯-এ ফোন করুন</a><div class="suggest"><button data-quick="share">নাজমাকে (বোন) জানাই</button><button data-open="potas">কাগজটা দেখাও</button></div>`;
+    } else if (st.scene === "retake") {
+      h += `<div class="stamp"><b>আজ</b> দুপুর ১২:২০</div>` + me(photo(P.blur)) + `<div class="receipt">পড়া হয়েছে ১২:২০</div>`
+        + them(txt("ছবিটা ঝাপসা এসেছে, তাই আন্দাজে কিছু বলব না।"), false)
+        + them(txt("আরেকবার তুলবেন? দিনের আলোয়, কাগজটা সমান করে, ফোন ঠিক উপর থেকে। এই ছবিটা মাসের হিসাবে গোনা হবে না।"))
+        + `<div class="suggest"><button data-action="camera">আবার তুলি</button><button data-quick="tips">ভালো ছবির উপায়</button></div>`;
+    } else {
+      h += `<div class="stamp"><b>আজ</b> সকাল ৮:৩০</div>` + me(photo(P.cbc)) + `<div class="receipt">পড়া হয়েছে ৮:৩১</div>` + them(verdictCard(P.cbc), false) + them(txt(P.cbc.say))
+        + `<div class="suggest"><button data-quick="compare">আগেরটার সাথে মেলাও</button><button data-quick="doctor">ডাক্তারকে কী জিজ্ঞেস করব?</button></div>`;
+    }
+    return h + st.extra.join("");
+  }
+
+  const tabs = () => {
+    const t = (id, l, k) => `<button class="tab" data-tab="${id}" ${st.tab === id ? 'aria-current="page"' : ""}>${I[k]}${l}</button>`;
+    return `<nav class="tabbar" aria-label="প্রধান">${t("chat", "চ্যাট", "chat")}${t("papers", "কাগজপত্র", "cal")}${t("health", "স্বাস্থ্য", "heart")}${t("family", "পরিবার", "fam")}</nav>`;
+  };
+  function chatScreen() {
+    const p = PATIENTS[st.patient];
+    return `<div class="screen" id="scr"><h1 class="sr-only">Medioo — ${pname()}র কাগজ নিয়ে কথা</h1><div class="thread" id="thread" role="log" aria-label="Medioo-র সাথে কথোপকথন">${threadHTML()}</div>
+      <div class="navbar scrolled" id="nav"><div class="navrow"><span></span><button class="chathead" data-action="switch" aria-label="${p.name}র কাগজ দেখছেন, রোগী বদলাতে চাপুন"><span class="av ${p.cls}">${p.init}</span><small>${p.name} ${ic("down")}</small><small class="today">২০ অক্টোবর, মঙ্গলবার</small></button><span></span></div></div>
+      <div class="composer"><button class="camb" data-action="camera" aria-label="কাগজের ছবি তুলুন">${I.cam}</button>
+        <div class="field"><input id="msgIn" placeholder="Medioo-কে লিখুন" aria-label="বার্তা" autocomplete="off" enterkeyhint="send"><button class="mic" data-mic="1" aria-label="ধরে রেখে বলুন">${I.mic}</button><button class="send" id="sendBtn" data-action="sendtext" aria-label="পাঠান">${I.arrowup}</button></div></div>${tabs()}</div>`;
+  }
+  function largeScreen(title, inner) {
+    return `<div class="screen light2" id="scr"><div class="navbar" id="nav"><div class="navrow"><span></span><span class="ttl">${title}</span><span></span></div></div>
+      <div class="content" id="content"><h1 class="largettl">${title}</h1>${inner}</div>${tabs()}</div>`;
+  }
+  function paperCell(k) {
+    const p = P[k];
+    const c = p.urgency === "now" ? `<span class="chip crit">${I.octa}এখনই</span>` : p.urgency === "week" ? `<span class="chip out">${I.calw}এ সপ্তাহে</span>` : p.urgency === "retake" ? `<span class="chip unk">${I.cam}আবার তুলতে হবে</span>` : p.urgency === "unk" ? chip("unk") : "";
+    return `<button class="cell" data-open="${k}"><span class="thumb">${slip(p)}</span><span class="grow">${p.title}<small>${bn(p.day)} অক্টোবর · ${p.sub}</small>${c ? `<span style="display:block;margin-top:4px">${c}</span>` : ""}</span>${chev()}</button>`;
+  }
+  function papersScreen() {
+    const first = new Date(2026, 9, 1).getDay(), off = (first + 1) % 7;
+    const marks = { 13: "", 14: "week", 15: "", 16: "now", 20: "ok" };
+    let cells = ""; for (let i = 0; i < off; i++) cells += `<span class="d blank"></span>`;
+    for (let d = 1; d <= 31; d++) { const wd = (off + d - 1) % 7;
+      const c = ["d", wd === 6 ? "fri" : "", d === 20 ? "today" : "", d === st.calDay ? "sel" : "", d === 22 ? "ring" : ""].join(" ");
+      cells += `<button class="${c}" data-day="${d}" aria-label="${bn(d)} অক্টোবর${d === 22 ? ", ডাক্তারের কাছে যাওয়ার দিন" : ""}" ${d === st.calDay ? 'aria-pressed="true"' : ""}><span class="n">${bn(d)}</span><span class="dots">${d in marks ? `<i class="${marks[d]}"></i>` : ""}</span></button>`; }
+    const byDay = { 13: ["lipid"], 14: ["creat"], 15: ["rx"], 16: ["potas"], 20: ["cbc", "blur"] };
+    const dayList = (byDay[st.calDay] || []).map(paperCell).join("") || `<div class="cell" style="color:var(--label2)">${st.calDay === 22 ? "ডাক্তারের কাছে আবার যাওয়ার দিন · ১৫ অক্টোবরের প্রেসক্রিপশন" : "এই দিনে কোনো কাগজ নেই"}</div>`;
+    return largeScreen("কাগজপত্র", `
+      <div class="seg" role="group" aria-label="দেখার ধরন" style="margin-bottom:16px"><button aria-pressed="true">মাস</button><button aria-pressed="false">তালিকা</button></div>
+      <button class="duecard" data-open="rx"><span class="big"><small>অক্টোবর</small><span>${bn(22)}</span></span><span><b>ডাক্তারের কাছে আবার যাওয়ার দিন</b><em>১৫ অক্টোবরের প্রেসক্রিপশনে লেখা · আর ২ দিন</em></span></button>
+      <div class="calhd"><b>অক্টোবর ২০২৬</b><span><button class="navbtn" data-action="soon" aria-label="আগের মাস">${I.left}</button><button class="navbtn" data-action="soon" aria-label="পরের মাস">${I.right}</button></span></div>
+      <div class="cal"><div class="wk"><span>শনি</span><span>রবি</span><span>সোম</span><span>মঙ্গল</span><span>বুধ</span><span>বৃহঃ</span><span class="fri">শুক্র</span></div><div class="days">${cells}</div></div>
+      <div class="legend" aria-hidden="true"><span><i class="ok"></i>সীমার মধ্যে</span><span><i class="week"></i>এ সপ্তাহে</span><span><i class="now"></i>এখনই</span><span><i class="ring"></i>ডাক্তারের কাছে যাওয়া</span></div>
+      <div class="sect" style="margin-top:12px"><h2 class="sh">${bn(st.calDay)} অক্টোবর</h2><div class="group">${dayList}</div></div>
+      <div class="sect"><h2 class="sh">অক্টোবরের সব কাগজ</h2><div class="group">${["cbc", "potas", "rx", "creat", "lipid"].map(paperCell).join("")}</div></div>`);
+  }
+  function healthRow(k, color, label, sub, action) {
+    return `<button class="cell ic" data-action="${action || "soon"}"><span class="sq tinted">${I[k]}</span><span class="grow">${label}${sub ? `<small>${sub}</small>` : ""}</span>${action ? chev() : `<span class="soon">শিগগিরই</span>`}</button>`;
+  }
+  function healthScreen() {
+    return largeScreen("স্বাস্থ্য", `
+      <button class="search" data-action="soon">${I.search}<span>খুঁজুন, যেমন HbA1c</span></button>
+      <div class="sect"><h2 class="sh">${pname()}র স্বাস্থ্যের খাতা</h2><div class="group">
+        ${healthRow("flask", "#e0352b", "ল্যাবের মান", "HbA1c, Creatinine, Potassium · সময়ের সাথে", "labs")}
+        ${healthRow("pill", "#0a84ff", "ওষুধ", "২টি · প্রেসক্রিপশনে যেমন লেখা", "meds")}
+        ${healthRow("doc", "#8e8e93", "সব কাগজ", "৬টি · তারিখ ধরে", "papers")}</div></div>
+      <div class="sect"><div class="group"><button class="cell ic" data-action="comingsoon"><span class="sq tinted">${I.calw}</span><span class="grow">আরও আসছে<small>ডাক্তারের জন্য সারাংশ, জরুরি কার্ড, টিকা, ডিভাইস</small></span>${chev()}</button></div></div>
+      <p class="note" style="margin:18px 32px 0">Medioo ডাক্তার নয়। কাগজে যা লেখা আছে সেটাই গুছিয়ে দেখায় আর সহজ করে বলে।</p>`);
+  }
+  function familyScreen() {
+    const per = (q) => `<button class="cell ic" data-person="${q.id}"><span class="av sm ${q.cls}">${q.init}</span><span class="grow">${q.name}<small>${q.full} · ${bn(q.age)} বছর</small></span>${st.patient === q.id ? tickmark() : ""}</button>`;
+    const conds = ["ডায়াবেটিস", "উচ্চ রক্তচাপ", "কিডনির রোগ", "থাইরয়েড"].map((c) => `<button class="cell" data-cond="${c}" aria-pressed="${st.conds.includes(c)}"><span class="grow">${c}</span>${st.conds.includes(c) ? tickmark() : ""}</button>`).join("");
+    return largeScreen("পরিবার", `
+      <div class="sect" style="margin-top:6px"><h2 class="sh">যাঁদের কাগজ রাখছেন</h2><div class="group">${per(PATIENTS.amma)}${per(PATIENTS.abbu)}<button class="cell ic" data-action="addperson"><span class="sq" style="background:var(--fill);color:var(--tint)">${I.plus}</span><span class="grow" style="color:var(--tint)">কাউকে যোগ করুন</span></button></div></div>
+      <div class="sect"><h2 class="sh">${pname()}র দীর্ঘমেয়াদি অসুখ</h2><div class="group">${conds}</div><p class="foot">ডাক্তার যা বলেছেন শুধু সেটাই বাছুন। Medioo এগুলো দেখে কোন রিপোর্ট কবে আসার কথা মনে করায়।</p></div>
+      <div class="sect"><div class="group"><div class="cell"><span class="grow">মনে করিয়ে দেওয়া<small>ফলো-আপ, নতুন পরীক্ষার সময়</small></span><button class="sw" role="switch" aria-checked="${st.reminders}" data-action="rem" aria-label="মনে করিয়ে দেওয়া"></button></div></div></div>
+      <div class="sect"><h2 class="sh">একসাথে দেখছেন</h2><div class="group"><div class="cell ic"><span class="av sm c">ন</span><span class="grow">নাজমা (বোন)<small>দেখতে আর কাগজ পাঠাতে পারেন</small></span></div><button class="cell ic" data-action="invite"><span class="sq" style="background:var(--fill);color:var(--tint)">${I.share}</span><span class="grow" style="color:var(--tint)">ভাই বা বোনকে আমন্ত্রণ</span></button></div></div>
+      <div class="sect"><h2 class="sh">অ্যাকাউন্ট</h2><div class="group"><div class="cell"><span class="grow">WhatsApp নম্বর</span><span class="val">+880 17•• ••••71</span></div><button class="cell" data-action="lang"><span class="grow">ভাষা</span><span class="val">বাংলা</span>${chev()}</button><button class="cell" data-action="signout"><span class="grow" style="color:var(--now)">বের হন</span></button></div></div>`);
+  }
+
+  // Sign-in: an Apple-style welcome (app icon, three promises, one button), then number, then a code that arrives in WhatsApp.
+  const digits = (s) => s.replace(/[০-৯]/g, (d) => BN.indexOf(d)).replace(/\D/g, "");
+  const local = (s) => digits(s).replace(/^880/, "").replace(/^0/, "");
+  const valid = (s) => /^1[3-9]\d{8}$/.test(local(s));
+  const fmt = (s) => { const d = local(s); return d.length > 4 ? d.slice(0, 4) + "-" + d.slice(4, 10) : d; };
+  function onboardingScreen() {
+    if (st.authStep === "welcome") {
+      const f = (k, b, s) => `<div class="feat"><span class="fi">${I[k]}</span><div><b>${b}</b><span>${s}</span></div></div>`;
+      return `<div class="onb"><div class="welcome-top"><img class="mio-wave" src="mio.webp" alt="Mio — Medioo-র সঙ্গী" width="118" height="146"><span class="wordmark" role="img" aria-label="medioo" style="width:132px;height:47px"></span></div>
+        <h1 style="margin:18px 0 24px">আম্মা-আব্বার সব কাগজ, এক জায়গায়</h1>
+        <div class="demo-ex" inert>${me(txt("আম্মার কিডনির রিপোর্ট"))}<div class="gap"></div>${them(verdictCard(P.creat))}</div>
+        <div class="push"></div>
+        <button class="btn fill" data-action="start">শুরু করুন</button>
+        <p class="fine">${I.lock} Medioo ডাক্তার নয় — কাগজে যা লেখা, সেটাই সহজ করে বলে।</p></div>`;
+    }
+    if (st.authStep === "number") {
+      return `<div class="onb step"><button class="navbtn back" data-action="toWelcome" aria-label="ফিরে যান">${ic("back")}</button>
+        <h2 class="form-ttl">আপনার WhatsApp নম্বর</h2><p class="form-sub">এই নম্বরের WhatsApp-এ একটা ৬ সংখ্যার কোড পাঠাব। কোনো পাসওয়ার্ড লাগবে না।</p>
+        <div class="inset"><button class="country" data-action="country"><span style="color:var(--label);font-family:var(--bnf)">দেশ</span><span>বাংলাদেশ +880 ${chev()}</span></button>
+        <label class="numfield"><b>+880</b><input id="num" inputmode="tel" autocomplete="tel-national" placeholder="1712-345678" value="${fmt(st.number)}" aria-label="ফোন নম্বর" aria-describedby="err"></label></div>
+        <p class="err" id="err" aria-live="polite"></p>
+        <div class="push"></div>
+        <button class="btn fill" id="contBtn" data-action="toCode" aria-disabled="${!valid(st.number)}">কোড পাঠান</button>
+        <p class="fine">যে নম্বরে WhatsApp চালান, সেটাই দিন।</p></div>`;
+    }
+    return `<div class="onb step"><button class="navbtn back" data-action="toNumber" aria-label="নম্বর বদলান">${ic("back")}</button>
+      <h2 class="form-ttl">কোডটা লিখুন</h2><p class="form-sub" style="margin-bottom:18px">+880 ${fmt(st.number) || "1712-345678"} · <button class="resend" style="padding:0;font-size:16px" data-action="toNumber">নম্বর বদলান</button></p>
+      <div class="sentcard"><span class="wa">${I.wa}</span><span><b>WhatsApp-এ কোড পাঠিয়েছি</b><small>Medioo-র চ্যাটে এসেছে, এক মিনিটের মধ্যে</small></span></div>
+      <div class="otp" id="otp" role="group" aria-label="৬ সংখ্যার কোড">${[0, 1, 2, 3, 4, 5].map((i) => `<input inputmode="numeric" autocomplete="${i === 0 ? "one-time-code" : "off"}" aria-label="কোডের ${bn(i + 1)} নম্বর ঘর" data-otp="${i}">`).join("")}</div>
+      <p class="err" id="otperr" aria-live="polite"></p>
+      <button class="resend" id="resend" disabled data-action="resend">আবার পাঠান ০:৩০</button>
+      <div class="push"></div>
+      <p class="fine">প্রোটোটাইপ: যেকোনো ৬ সংখ্যা দিন · ০০০০০০ দিলে ভুল কোড দেখাবে<br>Medioo কখনো ফোন করে কোড চায় না।</p></div>`;
+  }
+
+  function render() {
+    let html;
+    if (st.scene === "welcome") html = onboardingScreen();
+    else html = st.tab === "papers" ? papersScreen() : st.tab === "health" ? healthScreen() : st.tab === "family" ? familyScreen() : chatScreen();
+    root.innerHTML = html + `<div class="toast" id="toast" role="status"></div>`;
+    if (st.scene === "welcome") return bindAuth();
+    if (st.tab === "chat") {
+      const t = document.getElementById("thread"); t.scrollTop = t.scrollHeight;
+      const inp = document.getElementById("msgIn"), sb = document.getElementById("sendBtn");
+      inp.addEventListener("input", () => sb.classList.toggle("on", inp.value.trim().length > 0));
+      inp.addEventListener("keydown", (e) => { if (e.key === "Enter" && inp.value.trim()) { e.preventDefault(); sendText(inp.value.trim()); } });
+      bindLongPress(t);
+    } else {
+      const c = document.getElementById("content"), nav = document.getElementById("nav");
+      c.addEventListener("scroll", () => nav.classList.toggle("scrolled", c.scrollTop > 34), { passive: true });
+    }
+  }
+  function toast(msg) { const t = document.getElementById("toast"); if (!t) return; t.innerHTML = `${I.check}${msg}`; t.classList.add("on"); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("on"), 2000); }
+  function scrollEnd() { const t = document.getElementById("thread"); if (t) t.scrollTo({ top: t.scrollHeight, behavior: reduced() ? "auto" : "smooth" }); }
+  function append(html) { const t = document.getElementById("thread"); if (!t) return null; const w = document.createElement("div"); w.innerHTML = html; t.append(w); scrollEnd(); return w; }
+
+  function reply(text, after) {
+    const w = append(them(`<div class="typing" aria-label="Medioo লিখছে"><i></i><i></i><i></i></div>`, true, "in-them mio-think"));
+    if (!w) return;
+    setTimeout(() => { w.innerHTML = them(txt(text), true, "in-them"); st.extra.push(them(txt(text))); ding(); scrollEnd(); after && after(); }, 1100 + Math.min(1400, text.length * 8));
+  }
+  const ANSWERS = [
+    [/creatinine|ক্রিয়েটিনিন|কিডনি/i, () => `${pname()}র Creatinine: ১৪ অক্টোবর 1.6 mg/dL (রিপোর্টে লেখা সীমা 0.6–1.3)। এর আগের কোনো রিপোর্টে Creatinine নেই, তাই তুলনা করা যাচ্ছে না।`],
+    [/hba1c|সুগার|ডায়াবেটিস/i, () => `${pname()}র HbA1c তিনটা কাগজে: মে 6.1, জুলাই 5.8, আজ 5.4 %। আজকেরটা কাগজে লেখা সীমা 4.0–5.6-এর মধ্যে। কেন বদলেছে, সেটা ডাক্তার বলবেন।`],
+    [/ওষুধ|medicine|dose|ডোজ|অর্ধেক|বন্ধ/i, () => "ওষুধ বা মাত্রা নিয়ে আমি কিছু বলি না — সেটা শুধু ডাক্তার ঠিক করবেন। প্রেসক্রিপশনে যেমন লেখা আছে, স্বাস্থ্য ট্যাবের ওষুধের তালিকায় সেভাবেই রাখা আছে।"],
+    [/ব্যথা|শ্বাস|অজ্ঞান|pain|bleed|রক্ত পড়/i, () => "এটা জরুরি হতে পারে। এখনই কাছের হাসপাতালের জরুরি বিভাগে নিয়ে যান বা ৯৯৯-এ ফোন করুন।"],
+    [/.*/, () => `এটার উত্তর এখনো দিতে পারি না। ${pname()}র কাগজ বা কোনো মান নিয়ে জিজ্ঞেস করুন, যেমন “HbA1c কত?” — বা নতুন কাগজের ছবি পাঠান।`],
+  ];
+  function sendMine(html, withReceipt = true) {
+    audio(); document.querySelectorAll("#thread .receipt.live").forEach((r) => r.remove());
+    const w = append(me(html, true, "in-me") + (withReceipt ? `<div class="receipt live">পৌঁছেছে</div>` : "")); swoosh();
+    st.extra.push(me(html));
+    if (withReceipt) setTimeout(() => { const r = w && w.querySelector(".receipt"); if (r) r.textContent = "পড়া হয়েছে"; }, 700);
+    return w;
+  }
+  function sendText(text) {
+    const inp = document.getElementById("msgIn"); inp.value = ""; document.getElementById("sendBtn").classList.remove("on");
+    sendMine(txt(text.replace(/</g, "&lt;")));
+    setTimeout(() => reply(ANSWERS.find(([re]) => re.test(text))[1]()), 650);
+  }
+
+  // Long-press a bubble: the Messages context menu over a blurred thread, the bubble lifted, the menu growing from it.
+  function bindLongPress(t) {
+    let timer = null, x0 = 0, y0 = 0;
+    t.addEventListener("pointerdown", (e) => { const b = e.target.closest(".b, .card"); if (!b) return; x0 = e.clientX; y0 = e.clientY; timer = setTimeout(() => { timer = null; menu(b); }, 450); });
+    t.addEventListener("pointermove", (e) => { if (timer && Math.hypot(e.clientX - x0, e.clientY - y0) > 10) { clearTimeout(timer); timer = null; } }, { passive: true });
+    ["pointerup", "pointercancel", "scroll"].forEach((ev) => t.addEventListener(ev, () => { clearTimeout(timer); timer = null; }, { passive: true }));
+  }
+  function menu(b) {
+    tick(); if (navigator.vibrate) navigator.vibrate(8);
+    const msg = b.closest(".msg"), mine = msg.classList.contains("me");
+    const c = document.createElement("div"); c.className = "ctx"; c.dataset.action = "closectx";
+    const clone = msg.cloneNode(true); clone.classList.remove("in-me", "in-them"); clone.querySelectorAll("[data-open]").forEach((n) => n.removeAttribute("data-open"));
+    c.append(clone);
+    c.insertAdjacentHTML("beforeend", `<div class="menu ${mine ? "r" : ""}" role="menu"><button data-action="copyctx" role="menuitem">কপি করুন ${I.copy}</button><button data-action="sharectx" role="menuitem">পরিবারকে পাঠান ${I.share}</button>${b.closest("[data-open]") ? `<button data-open="${b.closest("[data-open]").dataset.open}" role="menuitem">কাগজটা খুলুন ${I.doc}</button>` : ""}</div>`);
+    root.append(c);
+  }
+
+  // Sheets: an iOS card sheet with the page pushed back; drag down to dismiss, momentum projected, velocity handed to the spring.
+  let sheet = null, scrim = null;
+  function spring(el, from, to, v0, damping, done) {
+    if (reduced()) { el.style.transform = `translateY(${to}px)`; done && done(); return; }
+    const k = 260, c = 2 * Math.sqrt(k) * damping; let x = from, v = v0, last = performance.now();
+    el._spring = (el._spring || 0) + 1; const id = el._spring;
+    (function step(now) { if (el._spring !== id) return; const dt = Math.min(0.032, (now - last) / 1000); last = now; v += (-k * (x - to) - c * v) * dt; x += v * dt;
+      el.style.transform = `translateY(${x}px)`; if (Math.abs(v) < 6 && Math.abs(x - to) < 0.5) { el.style.transform = `translateY(${to}px)`; done && done(); } else requestAnimationFrame(step); })(last);
+  }
+  const curY = (el) => new DOMMatrix(getComputedStyle(el).transform).m42 || 0;
+  function openSheet(title, body, size = "large") {
+    closeSheet(true); root.querySelector(".ctx")?.remove();
+    scrim = document.createElement("div"); scrim.className = "scrim"; scrim.dataset.action = "close";
+    sheet = document.createElement("div"); sheet.className = "sheet" + (size === "medium" ? " medium" : ""); sheet.setAttribute("role", "dialog"); sheet.setAttribute("aria-modal", "true"); sheet.setAttribute("aria-label", title);
+    sheet.innerHTML = `<div class="grab"><i></i></div><div class="hd"><span></span><b>${body.includes('class="r-hero"') ? "" : title}</b><button class="navbtn r" data-action="close">বন্ধ</button></div><div class="bd">${body}</div>`;
+    root.append(scrim, sheet);
+    const scr = document.getElementById("scr"); if (scr && size !== "medium") scr.classList.add("pushed");
+    requestAnimationFrame(() => scrim.classList.add("on"));
+    const h = sheet.getBoundingClientRect().height; sheet.style.transform = `translateY(${h}px)`;
+    spring(sheet, h, 0, 0, 1.0); drag(sheet);
+    setTimeout(() => sheet && sheet.querySelector(".hd .navbtn")?.focus({ preventScroll: true }), 60);
+  }
+  function closeSheet(instant, v0 = 0) {
+    if (!sheet) return; const s = sheet, sc = scrim; sheet = scrim = null; const scr = document.getElementById("scr"); if (scr) scr.classList.remove("pushed");
+    if (instant) { s.remove(); sc.remove(); return; } sc.classList.remove("on");
+    spring(s, curY(s), s.getBoundingClientRect().height + 30, v0, 1.0, () => { s.remove(); sc.remove(); });
+  }
+  function drag(s) {
+    let y0 = null, start = 0, hist = [];
+    s.addEventListener("pointerdown", (e) => { if (!e.target.closest(".grab, .hd") || e.target.closest("button")) return; s._spring = (s._spring || 0) + 1; start = curY(s); y0 = e.clientY; hist = [[e.clientY, performance.now()]]; s.setPointerCapture(e.pointerId); });
+    s.addEventListener("pointermove", (e) => { if (y0 === null) return; const dy = start + e.clientY - y0; hist.push([e.clientY, performance.now()]); if (hist.length > 5) hist.shift();
+      s.style.transform = `translateY(${dy >= 0 ? dy : -(Math.abs(dy) * 0.55 * 80) / (80 + 0.55 * Math.abs(dy))}px)`; });
+    const end = () => { if (y0 === null) return; y0 = null; const cur = curY(s);
+      const [a, b] = [hist[0], hist[hist.length - 1]]; const vel = b && a && b[1] > a[1] ? (b[0] - a[0]) / (b[1] - a[1]) * 1000 : 0;
+      const proj = cur + (vel / 1000) * 0.998 / (1 - 0.998);
+      if (proj > s.getBoundingClientRect().height * 0.5) closeSheet(false, vel); else spring(s, cur, 0, vel, 0.8); };
+    s.addEventListener("pointerup", end); s.addEventListener("pointercancel", end);
+  }
+
+  function paperSheet(id) {
+    const p = P[id]; let box = "";
+    if (p.urgency === "now") box = `<div class="emerg"><h2 class="sh">এখনই ${pname()}কে ডাক্তারের কাছে নিয়ে যান। দেরি করবেন না।</h2><p>${p.reason}। কাগজটা সাথে নিন।</p><a class="call" href="tel:999">${I.phone} ৯৯৯</a></div>`;
+    else if (p.urgency === "week") box = `<div class="verdictbox week">${I.calw}<span>এ সপ্তাহের মধ্যে একজন ডাক্তার দেখান।<small>${p.reason}</small></span></div>`;
+    else if (p.urgency === "ok") box = `<div class="verdictbox ok">${I.check}<span>${p.verdict}</span></div>`;
+    else if (p.urgency === "unk") box = `<div class="verdictbox unk">${I.q}<span>${p.verdict}<small>সীমা এক দিকে লেখা, তাই Medioo নিজে মেলায়নি।</small></span></div>`;
+    else if (p.urgency === "retake") box = `<div class="verdictbox unk">${I.cam}<span>ছবিটা ঝাপসা — আবার তুলে পাঠান।<small>আন্দাজে কিছু বলব না।</small></span></div>`;
+    const order = { crit: 0, out: 1, unk: 2, in: 3 };
+    const vals = p.values.slice().sort((a, b) => order[a[4]] - order[b[4]]).map((v) => `<div class="vrow"><div class="top"><b>${v[0]}</b><span class="x">${v[1]} <small>${v[2]}</small></span></div><div class="mid">${chip(v[4])}<span>রিপোর্টে লেখা সীমা ${v[3]}</span></div>${lineSlip(v, true)}</div>`).join("");
+    const meds = p.meds ? `<div class="sect"><h2 class="sh">ওষুধ — কাগজে যেমন লেখা</h2><div class="group">${p.meds.map((m) => `<div class="vrow">${medSlip(m)}</div>`).join("")}</div><p class="foot">ফার্মেসিতে মূল প্রেসক্রিপশনটাই দেখান। ওষুধ বদলানো বা বন্ধ করা শুধু ডাক্তার ঠিক করবেন।</p></div><div class="sect"><h2 class="sh">ডাক্তার লিখেছেন</h2><div class="group"><div class="vrow"><div class="slip crop">পরামর্শ: ৭ দিন পর আসবেন।</div></div></div></div>` : "";
+    return `<div class="r-hero"><h2>${p.title}</h2><p>${pname()} · ${bn(p.day)} অক্টোবর${p.lab ? " · " + p.lab : ""}</p></div>${box}
+      ${p.say ? `<div class="say"><b>Medioo-র কথা</b>${p.say}</div>` : ""}
+      ${vals ? `<div class="sect"><h2 class="sh">মান — প্রতিটার পাশে কাগজের সেই লাইন</h2><div class="group">${vals}</div></div>` : ""}${meds}
+      <div class="sect"><h2 class="sh">মূল কাগজ</h2><div class="group" style="padding:10px">${slip(p)}</div></div>
+      <div class="btns">${id === "blur" ? `<button class="btn fill" data-action="camera">${I.cam}আবার তুলুন</button>` : `<button class="btn fill" data-action="askabout">${I.chat}এটা নিয়ে জিজ্ঞেস করুন</button>`}
+        <button class="btn plain" data-action="sharepaper">${I.share}পরিবারের কাউকে পাঠান</button><button class="btn destr" data-action="del">${I.trash}কাগজটা মুছুন</button></div>`;
+  }
+  const cameraSheet = () => `<div class="apps"><button class="app" data-action="pages"><span class="ic" style="background:var(--tint);color:var(--on-tint)">${I.cam}</span>ছবি তুলুন</button>
+      <button class="app" data-action="pages"><span class="ic" style="background:#0a84ff">${I.gal}</span>গ্যালারি</button>
+      <button class="app" data-action="pages"><span class="ic" style="background:#636366">${I.doc}</span>PDF বা ফাইল</button></div>
+      <p class="note">${pname()}র কাগজ হিসেবে রাখব · এ মাসে বিনা খরচে আরও ${bn(26)}টি পড়তে পারব।<br>দিনের আলোয়, কাগজ সমান করে, পুরো পাতা ফ্রেমে রাখুন।</p>`;
+  const pagesSheet = () => `<p class="note" style="margin-top:0">২টি পাতা বাছাই করেছেন</p>
+      <div class="tray"><div class="pg"><span>${bn(1)}</span>${slip(P.creat)}</div><div class="pg"><span>${bn(2)}</span>${slip(P.cbc)}</div><button class="pg add" data-action="soon" aria-label="আরেকটা পাতা যোগ করুন">${I.plus}</button></div>
+      <div class="seg" role="group" aria-label="পাতাগুলো কীভাবে পড়ব"><button aria-pressed="true">একটাই রিপোর্ট</button><button aria-pressed="false">আলাদা আলাদা</button></div>
+      <div class="btns"><button class="btn fill" data-action="sendpaper">পাঠান</button></div>`;
+  function sendPaper() {
+    closeSheet(false);
+    if (st.tab !== "chat" || !["chat", "first"].includes(st.scene)) { st.tab = "chat"; if (!["chat", "first"].includes(st.scene)) st.scene = "chat"; render(); }
+    setTimeout(() => {
+      const w = sendMine(photo(P.creat), false);
+      if (w) w.insertAdjacentHTML("beforeend", `<div class="receipt live">পাঠাচ্ছি…</div>`);
+      setTimeout(() => { const r = w && w.querySelector(".receipt"); if (r) r.textContent = "পড়া হয়েছে"; }, 900);
+      setTimeout(() => {
+        const typ = append(them(`<div class="typing" aria-label="Medioo পড়ছে"><i></i><i></i><i></i></div>`, true, "in-them mio-read") + `<div class="receipt" style="text-align:left">পড়ছি… সাধারণত ৩০ সেকেন্ড</div>`);
+        setTimeout(() => { if (!typ) return; typ.innerHTML = them(verdictCard(P.creat), true, "in-them"); ding(); st.extra.push(them(verdictCard(P.creat))); scrollEnd(); }, 2600);
+      }, 1000);
+    }, 260);
+  }
+
+  function labsSheet() {
+    const row = (name, v, unit, k, date, act) => `<button class="cell" ${act}><span class="grow" style="font-family:var(--sys)">${name}<small style="font-family:var(--bnf)">${date}</small></span><span style="display:grid;justify-items:end;gap:2px"><span class="val" style="color:var(--label);font-weight:600">${v} <small style="display:inline;font-weight:400">${unit}</small></span>${chip(k)}</span>${chev()}</button>`;
+    return `<div class="sect" style="margin-top:4px"><div class="group">
+      ${row("HbA1c", "5.4", "%", "in", "২০ অক্টোবর · ৩টি কাগজে", 'data-action="trend"')}
+      ${row("Serum Potassium", "11.0", "mmol/L", "crit", "১৬ অক্টোবর", 'data-open="potas"')}
+      ${row("Serum Creatinine", "1.6", "mg/dL", "out", "১৪ অক্টোবর", 'data-open="creat"')}
+      ${row("LDL Cholesterol", "90", "mg/dL", "unk", "১৩ অক্টোবর", 'data-open="lipid"')}</div>
+      <p class="foot">প্রতিটা সংখ্যা কাগজে যেমন লেখা, তেমনই। চাপলে সেই কাগজ খুলবে।</p></div>`;
+  }
+  function medsSheet() {
+    return `<div class="sect" style="margin-top:4px"><h2 class="sh">১৫ অক্টোবর · Dr. Selina Haque</h2><div class="group">${P.rx.meds.map((m) => `<div class="vrow">${medSlip(m)}</div>`).join("")}</div>
+      <p class="foot">প্রেসক্রিপশনে যেমন লেখা, তেমনই রাখা। ওষুধ বদলানো বা বন্ধ করা শুধু ডাক্তার ঠিক করবেন।</p></div>
+      <div class="btns"><button class="btn plain" data-open="rx">${I.doc}প্রেসক্রিপশনটা দেখুন</button></div>`;
+  }
+  function trendSheet() {
+    return `<div class="r-hero"><h2 style="font:700 34px var(--sys)">5.4 <small style="font-size:17px;color:var(--label2);font-weight:500">%</small></h2><p>${pname()} · সর্বশেষ ২০ অক্টোবর · রিপোর্টে লেখা সীমা 4.0–5.6</p></div>
+      <div class="sect"><div class="group" style="padding:14px 14px 8px"><svg viewBox="0 0 320 160" width="100%" role="img" aria-label="HbA1c তিনটা কাগজে: মে 6.1, জুলাই 5.8, অক্টোবর 5.4">
+        <rect x="0" y="48" width="320" height="62" fill="var(--tint)" opacity=".1"/><text x="6" y="64" font-size="11" fill="var(--tint)">সীমা 4.0–5.6</text>
+        <polyline points="40,29 160,40 280,56" fill="none" stroke="var(--label3)" stroke-width="2" stroke-dasharray="3 4"/>
+        <circle cx="40" cy="29" r="6" fill="var(--week)"/><circle cx="160" cy="40" r="6" fill="var(--week)"/><circle cx="280" cy="56" r="7" fill="var(--tint)"/>
+        <text x="40" y="18" font-size="12" text-anchor="middle" fill="var(--label)">6.1</text><text x="160" y="29" font-size="12" text-anchor="middle" fill="var(--label)">5.8</text><text x="280" y="44" font-size="12" text-anchor="middle" fill="var(--label)" font-weight="600">5.4</text>
+        <text x="40" y="146" font-size="12" text-anchor="middle" fill="var(--label2)">মে</text><text x="160" y="146" font-size="12" text-anchor="middle" fill="var(--label2)">জুলাই</text><text x="280" y="146" font-size="12" text-anchor="middle" fill="var(--label2)">অক্টোবর</text></svg></div>
+        <p class="foot">প্রতিটা বিন্দু একটা কাগজ। কেন বদলেছে সেটা ডাক্তার বলবেন — Medioo শুধু কাগজের সংখ্যা পাশাপাশি রাখে।</p></div>
+      <div class="sect"><h2 class="sh">কাগজগুলো</h2><div class="group">${paperCell("cbc")}<div class="cell"><span class="grow">রক্ত পরীক্ষা<small>১২ জুলাই · HbA1c 5.8 %</small></span></div><div class="cell"><span class="grow">রক্ত পরীক্ষা<small>৩ মে · HbA1c 6.1 %</small></span></div></div></div>`;
+  }
+
+  function setScene(s) {
+    st.scene = s; st.extra = []; closeSheet(true); root.querySelector(".ctx")?.remove();
+    document.querySelectorAll("#jump [data-scene]").forEach((b) => { if (!["sound", "theme"].includes(b.dataset.scene)) b.setAttribute("aria-pressed", String(b.dataset.scene === s)); });
+    if (s === "welcome") st.authStep = "welcome";
+    st.tab = ["papers", "health", "family"].includes(s) ? s : "chat";
+    render();
+  }
+  function bindAuth() {
+    const num = document.getElementById("num");
+    if (num) {
+      setTimeout(() => num.focus({ preventScroll: true }), 300);
+      num.addEventListener("input", () => { st.number = num.value; const f = fmt(num.value); if (local(num.value).length > 4 && num.value !== f) num.value = f;
+        document.getElementById("contBtn").setAttribute("aria-disabled", String(!valid(num.value))); document.getElementById("err").textContent = ""; });
+      num.addEventListener("keydown", (e) => { if (e.key === "Enter") document.getElementById("contBtn").click(); });
+    }
+    const boxes = [...root.querySelectorAll("[data-otp]")];
+    if (!boxes.length) return;
+    setTimeout(() => boxes[0].focus({ preventScroll: true }), 300);
+    let left = 30; const rs = document.getElementById("resend");
+    const timer = setInterval(() => { if (!document.body.contains(rs)) return clearInterval(timer); left--; if (left <= 0) { rs.disabled = false; rs.textContent = "আবার পাঠান"; clearInterval(timer); } else rs.textContent = `আবার পাঠান ০:${bn(String(left).padStart(2, "0"))}`; }, 1000);
+    const fill = (str, from) => { str.split("").slice(0, 6 - from).forEach((ch, j) => { boxes[from + j].value = ch; }); const next = boxes.find((x) => !x.value); if (next) next.focus(); else check(); };
+    boxes.forEach((b, i) => {
+      b.addEventListener("input", () => { const d = digits(b.value); b.value = ""; if (d) { tick(); fill(d, i); } });
+      b.addEventListener("paste", (e) => { e.preventDefault(); const d = digits((e.clipboardData || window.clipboardData).getData("text")); if (d) fill(d, 0); });
+      b.addEventListener("keydown", (e) => { if (e.key === "Backspace" && !b.value && boxes[i - 1]) { e.preventDefault(); boxes[i - 1].value = ""; boxes[i - 1].focus(); } });
+    });
+    function check() {
+      const code = boxes.map((x) => x.value).join(""), g = document.getElementById("otp");
+      if (code === "000000") { g.classList.remove("bad"); void g.offsetWidth; g.classList.add("bad"); if (navigator.vibrate) navigator.vibrate([20, 40, 20]);
+        document.getElementById("otperr").textContent = "কোডটা মেলেনি — WhatsApp-এ আসা সবশেষ কোডটা দিন।"; setTimeout(() => { boxes.forEach((x) => (x.value = "")); boxes[0].focus(); g.classList.remove("bad"); }, 700); return; }
+      boxes.forEach((x) => x.blur()); g.classList.add("good");
+      setTimeout(() => { const d = document.createElement("div"); d.className = "welcome-done"; d.innerHTML = `<img class="mio-in" src="mio.webp" alt="" width="110" height="136">আপনি ঢুকেছেন`; root.append(d); ding();
+        setTimeout(() => { st.scene = "first"; st.tab = "chat"; st.extra = []; document.querySelectorAll("#jump [data-scene]").forEach((b) => { if (!["sound", "theme"].includes(b.dataset.scene)) b.setAttribute("aria-pressed", String(b.dataset.scene === "first")); }); render(); }, 1000); }, 260);
+    }
+  }
+
+  document.getElementById("jump").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-scene]"); if (!b) return; const s = b.dataset.scene;
+    if (s === "theme") { const r = document.documentElement; const dark = r.dataset.theme ? r.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches; r.dataset.theme = dark ? "light" : "dark"; return; }
+    if (s === "sound") { openSoundPicker(); return; }
+    if (s === "voice") { if (st.scene === "welcome") setScene("chat"); voiceStart(); return; }
+    setScene(s);
+  });
+
+  const QUICK = {
+    compare: ["আগেরটার সাথে মেলাও", () => ANSWERS[1][1]()],
+    doctor: ["ডাক্তারকে কী জিজ্ঞেস করব?", () => `কাগজটা দেখিয়ে জিজ্ঞেস করতে পারেন: “${pname()}র HbA1c কত রাখা দরকার, আর আবার কবে পরীক্ষা করাব?” আমি ডাক্তার নই, তাই ওষুধ বা মাত্রা নিয়ে কিছু বলব না।`],
+    share: ["নাজমাকে (বোন) জানাই", () => "নাজমাকে এই ফলটা পাঠিয়েছি — উনি WhatsApp-এ পাবেন।"],
+    how: ["কীভাবে কাজ করে?", () => "ছবি পাঠালে আমি কাগজটা পড়ি, প্রতিটা মান রিপোর্টে লেখা সীমার সাথে মিলিয়ে দেখি, আর সহজ বাংলায় বলি। সব কাগজ ক্যালেন্ডারে তারিখ ধরে থাকে।"],
+    safe: ["আমার কাগজ কে দেখবে?", () => "শুধু আপনি, আর আপনি যাঁদের যোগ করবেন। চাইলে যেকোনো সময় সব মুছে দিতে পারেন — পরিবার ট্যাব থেকে।"],
+    tips: ["ভালো ছবির উপায়", () => "জানালার পাশে দিনের আলোয় রাখুন, কাগজটা টেবিলে সমান করুন, ফোনটা ঠিক উপর থেকে ধরুন যেন চার কোনা দেখা যায়।"],
+  };
+
+  root.addEventListener("click", (e) => {
+    const sg = e.target.closest(".seg button");
+    if (sg) { sg.parentElement.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === sg))); tick(); if (sg.textContent === "তালিকা") toast("তালিকা দৃশ্য শিগগিরই"); return; }
+    const el = e.target.closest("[data-action],[data-tab],[data-open],[data-day],[data-person],[data-cond],[data-quick]"); if (!el) return; const d = el.dataset;
+    if (d.tab) { if (st.tab === d.tab) return; st.tab = d.tab; tick(); closeSheet(true); render(); return; }
+    if (d.open) { const p = P[d.open]; openSheet(p.urgency === "retake" ? "আবার তুলতে হবে" : p.title, paperSheet(d.open)); return; }
+    if (d.day) { st.calDay = Number(d.day); tick(); const c = document.getElementById("content"), y = c.scrollTop; render(); document.getElementById("content").scrollTop = y; return; }
+    if (d.person) { st.patient = d.person; closeSheet(false); const c = document.getElementById("content"), y = c ? c.scrollTop : 0; render(); const c2 = document.getElementById("content"); if (c2) c2.scrollTop = y; toast(`${PATIENTS[d.person].name}র কাগজ দেখাচ্ছি`); return; }
+    if (d.cond) { const i = st.conds.indexOf(d.cond); i >= 0 ? st.conds.splice(i, 1) : st.conds.push(d.cond); tick(); const y = document.getElementById("content").scrollTop; render(); document.getElementById("content").scrollTop = y; return; }
+    if (d.quick) { const q = QUICK[d.quick]; el.closest(".suggest")?.remove(); sendMine(txt(q[0])); setTimeout(() => reply(q[1]()), 600); return; }
+    switch (d.action) {
+      case "close": closeSheet(false); break;
+      case "closectx": if (e.target === el) root.querySelector(".ctx")?.remove(); break;
+      case "copyctx": root.querySelector(".ctx")?.remove(); toast("কপি হয়েছে"); break;
+      case "sharectx": root.querySelector(".ctx")?.remove(); toast("নাজমাকে পাঠানো হয়েছে"); break;
+      case "switch": openSheet("কার কাগজ দেখবেন?", `<div class="sect" style="margin-top:4px"><div class="group">${Object.values(PATIENTS).map((q) => `<button class="cell ic" data-person="${q.id}"><span class="av sm ${q.cls}">${q.init}</span><span class="grow">${q.name}<small>${q.full} · ${bn(q.age)} বছর</small></span>${st.patient === q.id ? tickmark() : ""}</button>`).join("")}<button class="cell ic" data-action="addperson"><span class="sq" style="background:var(--fill);color:var(--tint)">${I.plus}</span><span class="grow" style="color:var(--tint)">কাউকে যোগ করুন</span></button></div></div>`, "medium"); break;
+      case "camera": openSheet("কাগজ পাঠান", cameraSheet(), "medium"); break;
+      case "pages": openSheet("পাতাগুলো ঠিক আছে?", pagesSheet(), "medium"); break;
+      case "sendpaper": sendPaper(); break;
+      case "sendtext": { const v = document.getElementById("msgIn").value.trim(); if (v) sendText(v); break; }
+      case "askabout": closeSheet(false); if (st.tab !== "chat") { st.tab = "chat"; if (!["chat", "first"].includes(st.scene)) st.scene = "chat"; render(); } setTimeout(() => document.getElementById("msgIn")?.focus(), 300); break;
+      case "sharepaper": case "invite": toast(d.action === "invite" ? "আমন্ত্রণের লিংক কপি হয়েছে" : "নাজমাকে পাঠানো হয়েছে"); break;
+      case "del": openSheet("কাগজটা মুছবেন?", `<p class="note" style="font-size:17px;color:var(--label);margin-top:6px">কাগজ আর এর ছবি স্থায়ীভাবে মুছে যাবে, ফিরিয়ে আনা যাবে না।</p><div class="btns"><button class="btn red" data-action="deleted">মুছে দিন</button><button class="btn plain" data-action="close">থাক</button></div>`, "medium"); break;
+      case "deleted": closeSheet(false); toast("মুছে দেওয়া হয়েছে"); break;
+      case "rem": st.reminders = !st.reminders; el.setAttribute("aria-checked", String(st.reminders)); tick(); break;
+      case "addperson": openSheet("কার কাগজ রাখবেন?", `<div class="sect" style="margin-top:4px"><div class="group">${["মা", "বাবা", "নিজে", "নানি", "দাদা", "শ্বশুর", "শাশুড়ি"].map((r) => `<button class="cell" data-action="added"><span class="grow">${r}</span>${chev()}</button>`).join("")}</div></div>`, "medium"); break;
+      case "added": closeSheet(false); toast("যোগ করার ফর্ম শিগগিরই"); break;
+      case "labs": openSheet("ল্যাবের মান", labsSheet()); break;
+      case "meds": openSheet("ওষুধ", medsSheet()); break;
+      case "trend": openSheet("HbA1c", trendSheet()); break;
+      case "papers": st.tab = "papers"; render(); break;
+      case "lang": toast("English শিগগিরই"); break;
+      case "country": toast("এখন শুধু বাংলাদেশের নম্বর"); break;
+      case "soon": toast("শিগগিরই আসছে"); break;
+      case "comingsoon": openSheet("আরও আসছে", `<div class="sect" style="margin-top:4px"><div class="group">${[["summary","ডাক্তারের জন্য এক পাতার সারাংশ","ভিজিটের আগে সব একসাথে"],["card","জরুরি কার্ড","রক্তের গ্রুপ, অ্যালার্জি, জরুরি নম্বর"],["allergy","অসুখ ও অ্যালার্জি",""],["syringe","টিকা",""],["xray","এক্স-রে ও স্ক্যান",""],["watch","ডিভাইস","প্রেশার মেশিন, গ্লুকোমিটার"],["calw","অ্যাপয়েন্টমেন্ট",""]].map(([k,l,s]) => `<div class="cell ic"><span class="sq tinted">${I[k]}</span><span class="grow">${l}${s ? `<small>${s}</small>` : ""}</span><span class="soon">শিগগিরই</span></div>`).join("")}</div><p class="foot">চালু হলে WhatsApp-এ জানাব।</p></div>`); break;
+      case "signout": setScene("welcome"); break;
+      case "start": st.authStep = "number"; render(); break;
+      case "toWelcome": st.authStep = "welcome"; render(); break;
+      case "toNumber": st.authStep = "number"; render(); break;
+      case "toCode": if (!valid(st.number)) { document.getElementById("err").textContent = "নম্বরটা ঠিক মনে হচ্ছে না — যেমন 1712-345678"; return; } st.authStep = "code"; render(); break;
+      case "resend": toast("নতুন কোড WhatsApp-এ পাঠিয়েছি"); el.disabled = true; break;
+    }
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") { if (root.querySelector(".ctx")) root.querySelector(".ctx").remove(); else closeSheet(false); } });
+
+  // Voice: say what you need, and Medioo does it. One parser for every surface; each surface supplies its own executor.
+  const MARKERS = [["HbA1c", /hba1c|এইচবিএ|সুগার|ডায়াবেটিস|sugar/i], ["Serum Creatinine", /creatinine|ক্রিয়েটিনিন|ক্রিয়েটিনিন|কিডনি/i], ["Serum Potassium", /potassium|পটাশিয়াম|পটাসিয়াম/i], ["Haemoglobin", /haemoglobin|hemoglobin|হিমোগ্লোবিন/i], ["LDL Cholesterol", /cholesterol|কোলেস্টেরল|lipid|লিপিড/i]];
+  function parseCommand(text) {
+    const s = text.trim(), c = {};
+    if (/আব্বু|আব্বা|বাবা|abbu|father/i.test(s)) c.patient = "abbu"; else if (/আম্মা|আম্মু|মায়ের|মা\b|amma|mother/i.test(s)) c.patient = "amma";
+    const m = MARKERS.find(([, re]) => re.test(s)); if (m) c.marker = m[0];
+    const asks = /কত|কেমন|কী|কি\b|কেন|ঠিক আছে|\?|what|how/i.test(s), shows = /দেখাও|খোলো|খুলুন|দেখান|গ্রাফ|show|open/i.test(s);
+    if (/নাজমা|বোন|শেয়ার|share/i.test(s)) c.do = "share";
+    else if (/জরুরি|খারাপ|দেখার আছে|সমস্যা|urgent|কিছু হয়েছে/i.test(s)) c.do = "urgent";
+    else if (/পাঠা|আপলোড|upload|নতুন কাগজ|ছবি তুল|স্ক্যান/i.test(s)) c.do = "upload";
+    else if (c.marker) c.do = asks && !shows ? "ask" : "lab";
+    else if (/ক্যালেন্ডার|calendar|কাগজপত্র|কবে যেতে|ডাক্তারের কাছে কবে/i.test(s)) c.do = "calendar";
+    else if (/ওষুধ|ঔষধ|medicine/i.test(s)) c.do = asks && !shows ? "ask" : "meds";
+    else if (/ল্যাব|মানগুলো|lab/i.test(s)) c.do = "labs";
+    else if (/সর্বশেষ|শেষ রিপোর্ট|নতুন রিপোর্ট|আজকের|latest/i.test(s)) c.do = "latest";
+    else if (/সেটিং|অ্যাকাউন্ট|settings/i.test(s)) c.do = "settings";
+    else if (c.patient && s.split(/\s+/).length <= 3) c.do = "switch";
+    else c.do = "ask";
+    c.text = s; return c;
+  }
+  function describe(c) {
+    const who = c.patient ? PATIENTS[c.patient].name + "র " : "";
+    return { share: "নাজমাকে পাঠাচ্ছি", urgent: "দেখছি কারও কিছু জরুরি আছে কি না", upload: "নতুন কাগজ পাঠানোর জায়গা খুলছি", lab: `${who}${c.marker} খুলছি`, ask: "Medioo-কে জিজ্ঞেস করছি", calendar: `${who}ক্যালেন্ডার খুলছি`,
+      meds: `${who}ওষুধ খুলছি`, labs: `${who}ল্যাবের মান খুলছি`, latest: `${who}সর্বশেষ কাগজ খুলছি`, settings: "সেটিংস খুলছি", switch: `${who}কাগজ খুলছি` }[c.do];
+  }
+  function urgentSummary() {
+    const parts = [];
+    Object.values(PATIENTS).forEach((q) => { const ps = (typeof papersOf === "function" ? papersOf(q.id) : []);
+      ps.filter((p) => p.urgency === "now").forEach((p) => parts.push(`${q.name}র ${p.verdict.replace("।", "")} — এখনই ডাক্তারের কাছে নিয়ে যান।`));
+      ps.filter((p) => p.urgency === "week").forEach((p) => parts.push(`${q.name}র ${p.verdict.replace("।", "")} — এ সপ্তাহের মধ্যে ডাক্তার দেখান।`)); });
+    return parts.length ? parts.join(" ") : "এখন জরুরি কিছু নেই — সব কাগজের মান লেখা সীমার মধ্যে, বা আগেই দেখানো হয়েছে।";
+  }
+  const VOICE_EXAMPLES = ["আব্বুর Potassium দেখাও", "আম্মার HbA1c কত?", "ক্যালেন্ডার খোলো", "নতুন কাগজ পাঠাব", "কিছু জরুরি আছে?"];
+  let rec = null, vstate = null;
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  function voiceOverlay(mode) {
+    let o = document.getElementById("voice");
+    if (!o) { o = document.createElement("div"); o.id = "voice"; o.className = "voice"; o.setAttribute("role", "dialog"); o.setAttribute("aria-label", "কণ্ঠে বলুন"); root.append(o); }
+    o.innerHTML = `<div class="vbox"><div class="vtop"><span class="vorb ${mode === "listen" ? "on" : ""}"><img src="mio-head.webp" alt=""></span><div class="vtx"><b id="vhead">${mode === "listen" ? "শুনছি…" : "কী করব বলুন বা লিখুন"}</b><span id="vlive">${mode === "listen" ? VOICE_HINT_LISTEN : "যেমন: “আব্বুর Potassium দেখাও”"}</span></div><span class="vwave ${mode === "listen" ? "on" : ""}" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span></div>
+      ${mode === "type" ? `<div class="vin"><input id="vinput" placeholder="যেমন: আম্মার HbA1c কত?" aria-label="কমান্ড লিখুন" autocomplete="off"><button class="vgo" data-vgo="1" aria-label="করুন">${ic("up")}</button></div>` : ""}
+      <div class="vex">${VOICE_EXAMPLES.map((x) => `<button data-vcmd="${x}">${x}</button>`).join("")}</div></div>`;
+    requestAnimationFrame(() => o.classList.add("on"));
+    if (mode === "type") setTimeout(() => { const i = document.getElementById("vinput"); if (i) { i.focus(); i.addEventListener("keydown", (e) => { if (e.key === "Enter" && i.value.trim()) runCommand(i.value); if (e.key === "Escape") voiceClose(); }); } }, 30);
+  }
+  function voiceClose() { const o = document.getElementById("voice"); if (o) { o.classList.remove("on"); setTimeout(() => o.remove(), 220); } vstate = null; try { rec && rec.abort(); } catch (e) {} rec = null; }
+  function voiceStart() {
+    if (vstate) return; vstate = { text: "" }; tick();
+    if (!SR) { voiceOverlay("type"); document.getElementById("vlive").textContent = "এই ব্রাউজারে কণ্ঠ শোনা যায় না — লিখে দিন, বা নিচের একটা চাপুন"; vstate.typed = true; return; }
+    voiceOverlay("listen");
+    try {
+      rec = new SR(); rec.lang = "bn-BD"; rec.interimResults = true; rec.continuous = true;
+      rec.onresult = (e) => { let t = ""; for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript; if (vstate) vstate.text = t; const l = document.getElementById("vlive"); if (l) l.textContent = t || VOICE_HINT_LISTEN; };
+      rec.onerror = () => { if (!vstate || vstate.typed) return; vstate.typed = true; voiceOverlay("type"); document.getElementById("vlive").textContent = "মাইক্রোফোন পাওয়া গেল না — লিখে দিন, বা নিচের একটা চাপুন"; };
+      rec.start();
+    } catch (e) { vstate.typed = true; voiceOverlay("type"); }
+  }
+  function voiceStop() { if (!vstate || vstate.typed) return; const t = vstate.text; try { rec && rec.stop(); } catch (e) {} if (t.trim()) runCommand(t); else { vstate.typed = true; voiceOverlay("type"); document.getElementById("vlive").textContent = "কিছু শুনতে পাইনি — আবার ধরে রেখে বলুন, বা লিখে দিন"; } }
+  function runCommand(text) {
+    const c = parseCommand(text), h = document.getElementById("vhead"), l = document.getElementById("vlive");
+    if (h) h.textContent = describe(c); if (l) l.textContent = `“${text}”`;
+    document.querySelector(".vorb")?.classList.add("done"); ding();
+    setTimeout(() => { voiceClose(); execCommand(c); }, 650);
+  }
+  function speak(text) { try { const v = speechSynthesis.getVoices().find((x) => /^bn/i.test(x.lang)); if (!v || !st.speak) return; const u = new SpeechSynthesisUtterance(text); u.voice = v; u.lang = v.lang; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch (e) {} }
+
+  const VOICE_HINT_LISTEN = "বলুন — আঙুল তুললে করে দেব";
+  const papersOf = (id) => id === "amma" ? [P.creat].concat(st.scene === "now" ? [P.potas] : []) : [];
+  function openSoundPicker() {
+    openSheet("শব্দ", `<p class="note" style="margin-top:0">পাঠানো আর উত্তর আসার শব্দ বেছে নিন — চাপলে শুনতে পাবেন।</p>
+      <div style="margin:0 16px"><div class="sgrp"><div class="srow"><span class="grow">শব্দ চালু<small>সব শব্দ একসাথে বন্ধ করা যায়</small></span><button class="sw" role="switch" aria-checked="${st.sound}" data-snds="sndall" aria-label="শব্দ চালু"></button></div>
+      <div class="srow" style="border-top:0.5px solid var(--sep)"><span class="grow">উত্তর জোরে পড়ে শোনানো<small>ফোনে বাংলা কণ্ঠ থাকলে</small></span><button class="sw" role="switch" aria-checked="${st.speak}" data-snds="speakall" aria-label="উত্তর পড়ে শোনানো"></button></div></div>
+      <div id="sndlist">${soundPickerHTML()}</div></div>`);
+  }
+  function execCommand(c) {
+    if (c.patient) st.patient = c.patient;
+    const askChat = (answer) => { closeSheet(true); st.tab = "chat"; if (!["chat", "first", "now", "retake"].includes(st.scene)) st.scene = "chat"; render(); setTimeout(() => { sendMine(txt(c.text.replace(/</g, "&lt;"))); setTimeout(() => { const a = answer(); reply(a); setTimeout(() => speak(a), 1200); }, 500); }, 120); };
+    const go = (tab) => { closeSheet(true); st.tab = tab; render(); };
+    const paperFor = { "Serum Creatinine": "creat", "Serum Potassium": st.scene === "now" ? "potas" : "creat", "Haemoglobin": "cbc", "LDL Cholesterol": "lipid" };
+    switch (c.do) {
+      case "share": render(); toast("নাজমাকে পাঠানো হয়েছে"); break;
+      case "urgent": askChat(urgentSummary); break;
+      case "upload": go("chat"); openSheet("কাগজ পাঠান", cameraSheet(), "medium"); break;
+      case "lab": go("health"); if (c.marker === "HbA1c") openSheet("HbA1c", trendSheet()); else { const k = paperFor[c.marker]; openSheet(P[k].title, paperSheet(k)); } break;
+      case "ask": askChat(() => ANSWERS.find(([re]) => re.test(c.text))[1]()); break;
+      case "calendar": go("papers"); break;
+      case "meds": go("health"); openSheet("ওষুধ", medsSheet()); break;
+      case "labs": go("health"); openSheet("ল্যাবের মান", labsSheet()); break;
+      case "latest": go("chat"); openSheet(P.cbc.title, paperSheet("cbc")); break;
+      case "settings": go("family"); break;
+      case "switch": render(); toast(`${PATIENTS[st.patient].name}র কাগজ দেখাচ্ছি`); break;
+    }
+  }
+  // The mic in the composer works like Messages' dictation: hold to talk, lift to run; a quick tap opens the panel for typing.
+  let micAt = 0;
+  root.addEventListener("pointerdown", (e) => { if (!e.target.closest("[data-mic]")) return; e.preventDefault(); try { e.target.closest("[data-mic]").setPointerCapture(e.pointerId); } catch (x) {} micAt = performance.now(); if (navigator.vibrate) navigator.vibrate(8); voiceStart(); });
+  root.addEventListener("pointerup", (e) => { if (!e.target.closest("[data-mic]") || !vstate) return;
+    if (performance.now() - micAt < 300 && !vstate.typed) { vstate.typed = true; try { rec && rec.abort(); } catch (x) {} voiceOverlay("type"); return; } voiceStop(); });
+  root.addEventListener("click", (e) => {
+    const sn = e.target.closest("[data-snd]");
+    if (sn) { e.stopPropagation(); const [k, id] = sn.dataset.snd.split(":"); SND[k] = id; saveSnd(); const was = st.sound; st.sound = true; play(id); st.sound = was; document.getElementById("sndlist").innerHTML = soundPickerHTML(); return; }
+    const sw = e.target.closest("[data-snds]");
+    if (sw) { e.stopPropagation(); if (sw.dataset.snds === "sndall") st.sound = !st.sound; else st.speak = !st.speak; sw.setAttribute("aria-checked", String(sw.dataset.snds === "sndall" ? st.sound : st.speak)); if (st.sound) tick(); return; }
+    const vc = e.target.closest("[data-vcmd]"); if (vc) { e.stopPropagation(); runCommand(vc.dataset.vcmd); return; }
+    if (e.target.closest("[data-vgo]")) { e.stopPropagation(); const i = document.getElementById("vinput"); if (i && i.value.trim()) runCommand(i.value); return; }
+    if (e.target.closest("[data-mic]")) { e.stopPropagation(); return; }
+    if (vstate && !e.target.closest(".voice")) voiceClose();
+  }, true);
+
+  render();
+})();
+</script>
