@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { buildCsp } from "../src/security/csp";
 
 /** Records every CSP violation the page reports, from the first byte of the document on. */
 async function collectViolations(page: Page) {
@@ -17,6 +18,27 @@ function nonceOf(csp: string | undefined): string | undefined {
   return csp?.match(/'nonce-([^']+)'/)?.[1];
 }
 
+/**
+ * The policy actually sent is the policy: the header must be exactly buildCsp() for the nonce it carries. A presence
+ * check let the middleware send any string (`script-src 'self' https: 'unsafe-eval'` stayed green); this cannot.
+ */
+function expectExactCsp(header: string | undefined, where: string) {
+  const nonce = nonceOf(header);
+  expect(nonce, `nonce in the CSP header on ${where}`).toBeTruthy();
+  expect(header, `CSP header on ${where}`).toBe(buildCsp(nonce!));
+}
+
+/** The values Next sends on every response it serves (Global Constraints, DR-40 A1: the same value Caddy and Java send). */
+const SECURITY_HEADERS = {
+  "x-frame-options": "DENY",
+  "x-content-type-options": "nosniff",
+  "referrer-policy": "strict-origin-when-cross-origin",
+} as const;
+
+function expectSecurityHeaders(headers: Record<string, string>, where: string) {
+  for (const [name, value] of Object.entries(SECURITY_HEADERS)) expect(headers[name], `${where} ${name}`).toBe(value);
+}
+
 test.describe("CSP on Next pages", () => {
   test("the probe renders with zero violations, every script nonced and no inline style", async ({ page }) => {
     await collectViolations(page);
@@ -25,13 +47,13 @@ test.describe("CSP on Next pages", () => {
     await page.waitForLoadState("networkidle");
 
     const header = response?.headers()["content-security-policy"];
-    expect(header, "CSP header on /app/probe").toBeTruthy();
+    expectExactCsp(header, "/app/probe");
     const nonce = nonceOf(header);
-    expect(nonce, "nonce in the CSP header").toBeTruthy();
 
     expect(await violations(page)).toEqual([]);
 
-    // The nonce IDL property, not the attribute: browsers blank the attribute once the CSP has applied it.
+    // The nonce IDL property, not the attribute: browsers blank the attribute once the CSP has applied it. This is
+    // also the guard on how Next learns the nonce (see middleware.ts): if it stopped stamping it, this fails.
     const scripts = await page.evaluate(() =>
       Array.from(document.querySelectorAll("script")).map((s) => ({ src: s.src || "inline", nonce: s.nonce })),
     );
@@ -52,14 +74,26 @@ test.describe("CSP on Next pages", () => {
     expect(styled.filter((s) => s !== '<next-route-announcer style="position: absolute;"></next-route-announcer>')).toEqual([]);
   });
 
-  test("/app/healthz carries the policy and reports no violation", async ({ page }) => {
+  test("/app/healthz carries the policy and names the image it runs", async ({ page }) => {
+    // The sha the server was started with (playwright.config.ts sets GIT_SHA from it). W1b reads this route to
+    // confirm the right image is running, so a constant or a missing sha must fail here.
+    const sha = process.env.E2E_GIT_SHA;
+    expect(sha, "E2E_GIT_SHA: the GIT_SHA the server under test was started with").toBeTruthy();
+
     await collectViolations(page);
     const response = await page.goto("/app/healthz");
     expect(response?.status()).toBe(200);
-    expect(response?.headers()["content-security-policy"], "CSP header on /app/healthz").toBeTruthy();
+    expectExactCsp(response?.headers()["content-security-policy"], "/app/healthz");
     expect(response?.headers()["cache-control"]).toBe("no-store");
-    expect(await response?.json()).toMatchObject({ service: "medioo-web" });
+    expect(await response?.json()).toEqual({ service: "medioo-web", sha });
     expect(await violations(page)).toEqual([]);
+  });
+
+  test("<html lang> is bn whatever Accept-Language says", async ({ request }) => {
+    for (const lang of ["en", "en-US,en;q=0.9", "bn"]) {
+      const html = await (await request.get("/app/probe", { headers: { "accept-language": lang } })).text();
+      expect(html.match(/<html[^>]*\slang="([^"]*)"/)?.[1], `lang with Accept-Language: ${lang}`).toBe("bn");
+    }
   });
 
   test("the nonce is fresh on every request", async ({ request }) => {
@@ -70,12 +104,57 @@ test.describe("CSP on Next pages", () => {
     expect(a).not.toBe(b);
   });
 
-  test("the security headers are set on pages and on static assets", async ({ request }) => {
-    for (const path of ["/app/probe", "/app/healthz", "/fonts/noto-sans-latin.woff2"]) {
-      const h = (await request.get(path)).headers();
-      expect(h["x-frame-options"], `${path} x-frame-options`).toBe("DENY");
-      expect(h["x-content-type-options"], `${path} x-content-type-options`).toBe("nosniff");
-      expect(h["referrer-policy"], `${path} referrer-policy`).toBe("same-origin");
+  // Derived, not listed: every same-origin response a cold probe load makes (HTML, every script, the stylesheet, both
+  // fonts), plus the health route. The set is guarded against vacuity so a load that fetched nothing cannot pass.
+  test("the security headers are set on every response a page load makes", async ({ page, baseURL }) => {
+    const origin = new URL(baseURL!).origin;
+    const seen = new Map<string, Record<string, string>>();
+    page.on("response", (r) => {
+      if (new URL(r.url()).origin === origin) seen.set(r.url().replace(origin, ""), r.headers());
+    });
+    await page.goto("/app/probe");
+    await page.waitForLoadState("networkidle");
+    await page.evaluate(() => document.fonts.ready.then(() => undefined));
+    await page.waitForLoadState("networkidle");
+    const health = await page.request.get("/app/healthz");
+    seen.set("/app/healthz", health.headers());
+
+    const paths = [...seen.keys()];
+    expect(paths, "the HTML").toContain("/app/probe");
+    expect(paths.filter((p) => /^\/_next\/static\/.+\.js$/.test(p)).length, "a /_next/static script").toBeGreaterThan(0);
+    expect(paths.filter((p) => /^\/_next\/static\/.+\.css$/.test(p)).length, "the stylesheet").toBeGreaterThan(0);
+    expect(paths, "both fonts").toEqual(
+      expect.arrayContaining(["/fonts/noto-sans-bengali.woff2", "/fonts/noto-sans-latin.woff2"]),
+    );
+
+    for (const [path, headers] of seen) expectSecurityHeaders(headers, path);
+  });
+
+  // A path nothing serves must be an honest 404 under the policy, never a 500 error page with un-nonced scripts and no
+  // CSP. /fonts/* and look-alikes of /_next/static used to skip the middleware, reach the root layout without a nonce
+  // and 500. /_next/image is the image optimizer: the app bans next/image, so it must not answer at all.
+  for (const path of [
+    "/nope",
+    "/fonts/missing.woff2",
+    "/fonts/",
+    "/_next/staticx",
+    "/_next/image?url=%2Ffonts%2Fnoto-sans-latin.woff2&w=64&q=75",
+  ]) {
+    test(`${path} is a 404 under the exact policy`, async ({ request }) => {
+      const response = await request.get(path);
+      expect(response.status(), `${path} status`).toBe(404);
+      const headers = response.headers();
+      expectExactCsp(headers["content-security-policy"], path);
+      expectSecurityHeaders(headers, path);
+    });
+  }
+
+  test("a real font is served with the security headers", async ({ request }) => {
+    for (const path of ["/fonts/noto-sans-bengali.woff2", "/fonts/noto-sans-latin.woff2"]) {
+      const response = await request.get(path);
+      expect(response.status(), `${path} status`).toBe(200);
+      expect(response.headers()["content-type"], `${path} content-type`).toBe("font/woff2");
+      expectSecurityHeaders(response.headers(), path);
     }
   });
 

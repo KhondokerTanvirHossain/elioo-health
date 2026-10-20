@@ -22,6 +22,12 @@ function kindOf(response: Response): Kind {
 test("cold first load of the probe, by resource class", async ({ page, baseURL }, testInfo) => {
   const origin = new URL(baseURL!).origin;
   const responses: Response[] = [];
+  // Every script the page TRIED to load, from the request side: a foreign script that never answers (DNS failure,
+  // blocked, offline CI) produces no response, and a response-only check would never see it.
+  const scriptRequests: string[] = [];
+  page.on("request", (r) => {
+    if (r.resourceType() === "script") scriptRequests.push(r.url());
+  });
   page.on("response", (r) => {
     if (!r.url().startsWith("data:")) responses.push(r);
   });
@@ -64,7 +70,8 @@ test("cold first load of the probe, by resource class", async ({ page, baseURL }
   );
 
   // The one rule enforced now: every script is our own.
-  const foreign = rows.filter((r) => r.kind === "script" && !r.sameOrigin).map((r) => r.url);
+  expect(scriptRequests.length, "script requests seen").toBeGreaterThan(0);
+  const foreign = scriptRequests.filter((url) => new URL(url).origin !== origin);
   expect(foreign, "third-party scripts").toEqual([]);
 
   // A measurement that missed a class is flattering, not small: require each class the probe is built to exercise.

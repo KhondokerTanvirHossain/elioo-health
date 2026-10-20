@@ -1,22 +1,18 @@
 import type { NextConfig } from "next";
-
-// The security headers that the middleware cannot reach: it skips /_next/static (hashed, immutable assets) so each
-// asset request does not mint a nonce, but those responses still must not be sniffed or framed.
-const STATIC_HEADERS = [
-  { key: "X-Content-Type-Options", value: "nosniff" },
-  { key: "X-Frame-Options", value: "DENY" },
-  { key: "Referrer-Policy", value: "same-origin" },
-];
+import { SECURITY_HEADERS } from "./src/security/headers";
 
 const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
   reactStrictMode: true,
+  // The image optimizer (/_next/image) is never needed — next/image is banned by lint and crops are served by Java —
+  // and it is sharp work plus a recurring CVE surface in a 320m container on a shared box. Unoptimized, it answers
+  // 404 under the middleware's policy (csp.spec.ts asserts it).
+  images: { unoptimized: true },
   async headers() {
-    return [
-      { source: "/_next/static/:path*", headers: STATIC_HEADERS },
-      { source: "/fonts/:path*", headers: STATIC_HEADERS },
-    ];
+    // The middleware skips /_next/static (hashed, immutable assets) so each asset request does not mint a nonce, but
+    // those responses still must not be sniffed or framed. Everything else gets the headers from the middleware.
+    return [{ source: "/_next/static/:path*", headers: [...SECURITY_HEADERS] }];
   },
 };
 

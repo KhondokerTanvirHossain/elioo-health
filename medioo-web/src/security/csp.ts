@@ -1,8 +1,9 @@
 /**
  * The Content-Security-Policy for every Next page (plan 2026-10-21, Global Constraints → Web platform).
  *
- * - script-src: this origin plus the per-request nonce; Next stamps the nonce on its own inline scripts, reading it
- *   from the CSP request header the middleware forwards.
+ * - script-src: this origin plus the per-request nonce. Next stamps the nonce on its own scripts; observed, it takes it
+ *   from the middleware's response CSP (dropping the forwarded request-header copy changed nothing; that copy is kept
+ *   as the documented API). csp.spec.ts fails if Next stops: every <script> must carry exactly the header's nonce.
  * - style-src 'self': no inline styles anywhere, so no `style={}` in TSX (lint) and no next/image or next/font.
  * - img-src is copied verbatim from the Java pages' BaymaxSecurityHeadersFilter.CSP so the two policies cannot drift:
  *   crops 302 to S3 (https:), and the upload tray previews blob: URLs.

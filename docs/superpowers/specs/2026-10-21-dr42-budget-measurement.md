@@ -1,10 +1,11 @@
 # DR-42 input: what a Next.js page costs over the wire (W1a measurement)
 
 **Status:** measurement and proposal only. **The PO decides DR-42** (plan `2026-10-21-medioo-nextjs-rebuild.md`,
-Part B, decision 1). This file does not decide it. Until the PO decides, W3 (sign-in) stays held and every W budget
-test records numbers without enforcing a limit.
+Part B, decision 1). This file does not decide it, and sets no interim policy: what the W budget tests do before
+DR-42 is listed under "Decisions for the PO" as a proposal.
 
-**Measured:** 2026-10-21, on branch `feat/medioo-web-skeleton` (PR W1a).
+**Measured:** 2026-10-21, on branch `feat/medioo-web-skeleton` (PR W1a), re-measured after the review fixes. Every
+number in the tables below comes from the runs named beside it; nothing is carried over from an earlier session.
 
 ## The question
 
@@ -20,23 +21,22 @@ budget is set from a measured number.
 - the App Router client runtime, rendered per request with a fresh CSP nonce.
 
 The text is shipped copy (`landing.h1`, `landing.sub`, `tab.*`), copied verbatim and pinned to the `.properties`
-by `probe-copy.test.ts`.
+by `probe-copy.test.ts`. It is hand-copied, a deliberate exception until W2b generates copy (see `copy/probe.bn.json`).
 
 The fonts are declared with `url()` only, without production's `local()` first. That makes the probe measure the worst
 case, a phone without Noto, and `budget.spec.ts` fails if either font is not fetched. A measurement that did not
 download the fonts would be smaller than the truth, not a smaller page.
 
-**Setup.** The numbers were taken in four places. The table uses the first.
+**Setup.**
 
 | | Server | In front | Client |
 |---|---|---|---|
-| Primary | the `medioo-web` Docker image (`node:22-alpine`, Node 22.23.3, `node server.js` from `output: "standalone"`) | local Caddy v2.11.7 with the production `medioo.eliooo.org` block | Playwright 1.64.1 Chromium, Pixel 7 profile at 390×844, fresh context |
-| Same image, curl | as above | as above | `curl` with `Accept-Encoding: zstd, gzip`, then `identity` |
-| `next start` | `next start` (Node 24.6.0) | the same Caddy block | the same Chromium; agrees with the primary within 0.05% |
-| Today's Java pages | production, `https://medioo.eliooo.org` (HTTP/2) | production Caddy | the same Chromium, for comparison |
+| Reference | the `medioo-web` Docker image built from this branch (`node:22-alpine@sha256:0a7108bf…`, Node 22.23.3, `node server.js` from `output: "standalone"`), `--memory=320m` | local Caddy v2.11.7 with the production `medioo.eliooo.org` block | Playwright 1.64.1 Chromium, Pixel 7 profile at 390×844, fresh context |
+| Comparison | the same image rebuilt with `compress: false` in `next.config.ts`, otherwise identical | the same Caddy block, a second port, the same Caddy process | the same |
+| Today's Java pages | production, `https://medioo.eliooo.org` (HTTP/2) | production Caddy | the same Chromium; measured in the first W1a session, not re-run |
 
-The production site block was read from `/home/ec2-user/n8n/Caddyfile` on the box, read-only. Only the address
-(plain http on a local port) and the upstream changed:
+The production site block is the one versioned in `docs/infra/Caddyfile.medioo` (read from the box, read-only). Only
+the address (plain http on a local port) and the upstream changed:
 
 ```
 encode zstd gzip
@@ -49,6 +49,9 @@ header {
 reverse_proxy <upstream>
 ```
 
+The whole e2e suite also ran behind this replica against the reference image: **32 of 32 passed**, including the exact
+CSP, the exact `/app/healthz` body and the security headers on every response of a page load.
+
 **Byte columns:**
 - **wire** is the encoded body that crossed the network, from Chromium's network stack (`request.sizes().responseBodySize`). It is not a `content-length` header: the streamed HTML has none.
 - **decoded** is what the browser parsed.
@@ -57,67 +60,84 @@ Headers are not counted.
 
 ## Results: cold first load of `/app/probe`, phone, behind Caddy
 
-Three runs gave the same bytes, within 6 B of HTML chunk framing.
+Three cold runs of `budget.spec.ts` against the reference image, one `budget.json` each. They differ only in the gzip
+framing of the streamed HTML and of the React DOM chunk:
+
+| Run | document | stylesheet | script (4) | font (2) | **Total wire (B)** | Decoded (B) |
+|---|---:|---:|---:|---:|---:|---:|
+| 1 | 3,336 | 805 | 102,164 | 97,648 | 203,953 | 458,314 |
+| 2 | 3,349 | 805 | 102,171 | 97,648 | 203,973 | 458,314 |
+| **3 (median, the reference)** | **3,352** | **805** | **102,164** | **97,648** | **203,969** | **458,314** |
+
+Run 3 by class. Every row is from that run's `budget.json`, and the rows sum to the total:
 
 | Class | Requests | Encoding on the wire | Wire (B) | Decoded (B) | Share of wire |
 |---|---:|---|---:|---:|---:|
-| document (HTML, inline RSC payload) | 1 | gzip (by Next) | 3,343 | 7,896 | 1.6% |
+| document (HTML, inline RSC payload) | 1 | gzip (by Next) | 3,352 | 7,896 | 1.6% |
 | stylesheet | 1 | gzip (by Next) | 805 | 1,739 | 0.4% |
-| script (Next + React runtime) | 4 | gzip by Next; one small chunk zstd by Caddy | **102,171** | 351,031 | 50.1% |
+| script (Next + React runtime) | 4 | gzip by Next; one small chunk zstd by Caddy | **102,164** | 351,031 | 50.1% |
 | font (two woff2 subsets) | 2 | none (already compressed) | **97,648** | 97,648 | 47.9% |
 | RSC (separate flight requests) | 0 | | 0 | 0 | 0% |
-| **Total** | **8** | | **203,968** | **458,314** | |
+| other | 0 | | 0 | 0 | 0% |
+| **Total** | **8** | | **203,969** | **458,314** | |
 
-Script detail:
+The run's eight rows, as `budget.json` records them:
 
-| Chunk | Wire (B) | Decoded (B) |
-|---|---:|---:|
-| `36602703-*.js` (React DOM) | 54,416 | 173,019 |
-| `55-*.js` (Next app-router runtime) | 45,847 | 174,128 |
-| `webpack-*.js` | 1,686 | 3,329 |
-| `main-app-*.js` | 222 | 555 |
+| Kind | Encoding | Wire (B) | Decoded (B) | URL |
+|---|---|---:|---:|---|
+| document | gzip | 3,352 | 7,896 | `/app/probe` |
+| stylesheet | gzip | 805 | 1,739 | `/_next/static/css/4edf6f1d5f4c8efe.css` |
+| script | zstd | 222 | 555 | `/_next/static/chunks/main-app-b7db46937935e25c.js` |
+| script | gzip | 1,686 | 3,329 | `/_next/static/chunks/webpack-362a0f38c59e86b3.js` |
+| script | gzip | 45,847 | 174,128 | `/_next/static/chunks/55-85a36c42c1557044.js` (Next app-router runtime) |
+| script | gzip | 54,409 | 173,019 | `/_next/static/chunks/36602703-06bcd4c2df799e19.js` (React DOM) |
+| font | identity | 27,864 | 27,864 | `/fonts/noto-sans-latin.woff2` |
+| font | identity | 69,784 | 69,784 | `/fonts/noto-sans-bengali.woff2` |
 
 `polyfills-*.js` is `noModule`, so a modern browser never fetches it. `next build` reports "First Load JS shared by
-all: 102 kB", which agrees with the wire column.
+all: 102 kB", which agrees with the script total.
 
-### For comparison: today's Java pages in production (same client, 2026-10-21)
+### For comparison: today's Java pages in production
+
+Measured in the first W1a session (2026-10-21) with the same client; not part of the runs above.
 
 | Page | JS (B) | CSS (B) | Fonts (B) | Images (B) | HTML (B) | Total wire (B) |
 |---|---:|---:|---:|---:|---:|---:|
 | `/app/` (sign-in) | 0 | 13,035 | 97,927 | 0 | 1,438 | **112,400** |
 | `/` (landing) | 0 | 13,017 | 97,936 | 31,531 | 4,051 | **146,535** |
 
-The Next probe costs about **92 KB more on the wire** than today's sign-in page, and nearly all of it is the
-framework's JavaScript. The fonts are the same bytes in both stacks.
+The Next probe costs about **92 KB more on the wire** than today's sign-in page (203,969 − 112,400 = 91,569 B), and
+nearly all of it is the framework's JavaScript. The fonts are the same bytes in both stacks.
 
-At 1.6 Mbit/s, the throughput Lighthouse uses for "slow 4G", the probe's 203,968 B take about 1.0 s to transfer. The
+At 1.6 Mbit/s, the throughput Lighthouse uses for "slow 4G", the probe's 203,969 B take about 1.0 s to transfer. The
 Java sign-in page takes about 0.56 s. That is transfer time only, before round trips and parse.
 
 ## Findings that bear on W1b and W1c
 
-These came up while measuring. None is changed in this PR.
-
-1. **Production Caddy overwrites `Referrer-Policy`.**
-   - The `header` block sets `strict-origin-when-cross-origin`. Because the block also deletes a header (`-Server`), it runs when the response is written, so it replaces the `same-origin` that Next sends.
-   - The plan's Global Constraints require `same-origin`, and Java pages already receive Caddy's value today.
-   - Behind the replica, `csp.spec.ts` fails on exactly this: `Expected: "same-origin"` / `Received: "strict-origin-when-cross-origin"`. Every other assertion passes there.
-   - **W1c needs a choice:** drop that line from the medioo block, or accept Caddy's value and change the constraint. Either way it is a PO-visible header change on the live site.
+1. **Referrer-Policy: resolved by DR-40 A1.**
+   - Production Caddy's medioo header block runs at response-write time (it deletes `Server`), so it overwrites the upstream `Referrer-Policy` with `strict-origin-when-cross-origin` on every path.
+   - DR-40 A1 and the Global Constraints now set Next's value to the same `strict-origin-when-cross-origin`, and this branch sends it. Behind the replica, the header tests pass (32 of 32).
+   - No live header changes. A Caddy default-only form (`?Referrer-Policy`) was considered and is not needed: it would only matter if Next sent a different value.
 2. **Next compresses its own responses, and Caddy passes them through.**
    - Next gzips by default. Caddy does not re-encode a body that already has a `Content-Encoding`, so the browser gets gzip, not zstd.
-   - With Next's compression off (`compress: false`), Caddy's zstd at its default level came out **2.5% larger** in total: 206,450 B against 203,968 B. Scripts grew from 102,188 to 105,472 B.
-   - **Keep Next's default.** This PR does.
-3. **Static paths must move with the first route.**
+   - With Next's compression off (`compress: false`), Caddy's zstd at its default level came out **1.2% larger in total**. Median of three runs, each against its own image in the same session as the reference: **206,451 B against 203,969 B**.
+   - By class, same two runs: scripts **+3.2%** (105,473 against 102,164 B), stylesheet 822 against 805 B, the HTML **25% smaller** (2,508 against 3,352 B), fonts unchanged.
+   - The three comparison runs were 206,451, 206,450 and 206,452 B.
+   - **Keep Next's default.** This branch does. The HTML gain is real but small next to the script loss. W2a or later may revisit this with Caddy's `zstd` level raised, which this measurement did not try.
+3. **Static paths must move with the first HTML route, and only those.**
    - A Next page loads `/_next/static/*` and `/fonts/*`. If W1c routes a page to `medioo-web` but leaves those paths on Java's default, the HTML arrives and its scripts and fonts 404.
-   - The per-path table in `Caddyfile.medioo` needs `/_next/*` and `/fonts/*` routed to `medioo-web` the first time any HTML route flips. `/app/healthz` alone does not need them.
+   - W1c routes **`/_next/static/*` and `/fonts/*`**, plus the HTML routes it flips, the first time any HTML route flips. `/app/healthz` alone does not need them.
+   - **Never `/_next/*`.** That would also expose `/_next/image`, Next's image optimizer: sharp work in a 320m container on a shared box, and a recurring CVE surface. This branch sets `images: { unoptimized: true }` (next/image is banned by lint anyway), so it answers 404 under the CSP, and `csp.spec.ts` asserts that. Not routing it keeps it off the internet whatever a later Next does.
+   - The middleware now runs on everything except `/_next/static/`, so a missing font or a look-alike path is a 404 under the policy. Before the review it was a 500 error page with no CSP and a stack trace in the log. W1b caps the container log anyway: `--log-opt max-size=10m --log-opt max-file=3`.
 4. **Font caching.**
    - Next serves `public/` with `Cache-Control: public, max-age=0`, so a repeat visit revalidates both fonts (a 304 each).
    - Today's Java assets carry no `Cache-Control` at all.
    - `/_next/static/*` is `max-age=31536000, immutable`.
    - W2a, which owns the fonts, should serve them under hashed names with the immutable header. Repeat visits then cost the HTML only.
 5. **Image and memory.**
-   - The image is 242 MB uncompressed.
-   - It reports `healthy` through the Dockerfile `HEALTHCHECK` within 25 s.
-   - Idle, it uses 49–60 MiB under `--memory=320m`, in line with `bddrug-web`'s ~75 MiB on the box.
+   - The image is 242 MB uncompressed (242,270,873 B).
+   - It reports `healthy` through the Dockerfile `HEALTHCHECK`.
+   - It used 45 MiB under `--memory=320m` after the full e2e suite and six budget runs, below `bddrug-web`'s ~75 MiB on the box.
    - The 242 MB matters for X0's disk work: the box had 232 MB free when the plan was written.
 6. **No RSC requests on a cold load.**
    - The flight payload is inlined in the HTML: 7.9 KB decoded, mostly the payload.
@@ -130,32 +150,37 @@ These came up while measuring. None is changed in this PR.
    - Every mutation needs JavaScript: sign-in, upload, delete, settings and দেখেছি.
    - The probe already passes a no-JS reading test (`reading.spec.ts`), so every later page inherits the check.
 2. **First-load wire budget per routed page: ≤ measured probe + 60 KB.**
-   - 203,968 B + 61,440 B (60 × 1024) = **265,408 B**.
+   - 203,969 B + 61,440 B (60 × 1024) = **265,409 B**.
    - It is measured exactly as `budget.spec.ts` measures: cold, phone profile, both fonts counted, behind `encode zstd gzip`.
    - The route's own code, CSS, copy and data get 60 KB on the wire above the framework floor.
 3. **The floor gets its own ceiling.**
-   - Probe ≤ 203,968 B + 5% = **214,166 B**.
+   - Probe ≤ 203,969 B + 5%, rounded down = **214,167 B**.
    - Without it, a Next or React upgrade that grows the runtime would silently eat every route's 60 KB. With it, that growth fails the probe and becomes a PO decision.
+   - Run-to-run noise was 20 B (203,953 to 203,973), far inside 5%.
 4. **Where the numbers live.**
    - Both ceilings go in one committed file, read by the budget tests.
    - The tests assert against that file, never against a probe measured in the same run, which would move with the framework.
    - The file changes only with PO sign-off.
 5. **What "JS ≤ 40 KB" becomes.**
-   - The framework's JavaScript alone is 102,171 B on the wire, 2.5× the old limit, before any Medioo code.
+   - The framework's JavaScript alone is 102,164 B on the wire, about 2.5× the old limit, before any Medioo code.
    - The proposal replaces the JS-only limit with the total first-load limit in item 2. The total includes fonts, which are half the bytes and the same cost the Java pages pay today.
 
 **Decisions for the PO:**
 - Accept item 2's 60 KB margin, or name another.
 - Accept item 3's 5% floor tolerance.
 - Accept the no-JS scope in item 1. That releases W3.
-- Separately, for W1c: choose a Referrer-Policy (finding 1).
+- Proposed: until DR-42 is written, a W budget test records its numbers and does not enforce a limit (the plan lists those tests as blocked by DR-42; this would let them land and measure meanwhile). Accept, or keep them blocked.
 
 ## How to reproduce
 
 ```bash
 pnpm -C medioo-web install --frozen-lockfile
-pnpm -C medioo-web build
-pnpm -C medioo-web exec playwright test -c e2e/playwright.config.ts   # writes medioo-web/test-results/budget.json
-# behind Caddy: run the production block above in front of the server, then
-E2E_BASE_URL=http://127.0.0.1:<caddy-port> pnpm -C medioo-web exec playwright test -c e2e/playwright.config.ts e2e/budget.spec.ts
+docker build -t medioo-web:local medioo-web
+docker run -d --name medioo-web-local --memory=320m -p 127.0.0.1:3471:3000 -e GIT_SHA=local medioo-web:local
+# Caddy in front: the production block above with the address http://127.0.0.1:8471 and reverse_proxy 127.0.0.1:3471
+E2E_BASE_URL=http://127.0.0.1:8471 E2E_GIT_SHA=local \
+  pnpm -C medioo-web exec playwright test -c e2e/playwright.config.ts                 # the whole suite behind Caddy
+E2E_BASE_URL=http://127.0.0.1:8471 E2E_GIT_SHA=local \
+  pnpm -C medioo-web exec playwright test -c e2e/playwright.config.ts e2e/budget.spec.ts --project phone
+# -> medioo-web/test-results/budget.json (Playwright empties test-results/ on every run: copy it out between runs)
 ```
