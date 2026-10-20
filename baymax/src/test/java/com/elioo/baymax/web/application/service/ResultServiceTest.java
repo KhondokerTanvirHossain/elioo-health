@@ -326,6 +326,19 @@ class ResultServiceTest {
         verify(audit).record(argThat(e -> e.kind() == AuditEvent.Kind.DOCUMENT_VIEW && DOC.equals(e.documentId())));
     }
 
+    /**
+     * Waiting for the level never costs the read its audit row: a page whose assessment fails is still recorded as
+     * viewed (the row is written before the level is read, and the failure still reaches the caller). Reading the
+     * values after the level must not move the DOCUMENT_VIEW row behind an assessment that may fail.
+     */
+    @Test
+    void aFailedAssessmentStillLeavesTheViewsAuditRow() {
+        done();
+        when(urgencies.currentOrAssess(DOC)).thenReturn(Mono.error(new IllegalStateException("assessment failed")));
+        StepVerifier.create(service.result(FAMILY, DOC)).expectErrorMessage("assessment failed").verify();
+        verify(audit).record(argThat(e -> e.kind() == AuditEvent.Kind.DOCUMENT_VIEW && DOC.equals(e.documentId())));
+    }
+
     /** A DONE view with one Potassium row, its verdict as the database holds it at the moment of the read. */
     private static DocumentView potassiumView(String verdict) {
         Map<String, Object> row = new HashMap<>(Map.of("name", "Potassium", "value", "11.0", "unit", "mmol/L"));

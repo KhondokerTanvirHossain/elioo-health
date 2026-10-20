@@ -72,13 +72,15 @@ public class ResultService implements ResultUseCase {
         // and the values only after the level: the level's read may assess the paper there and then (the page opened at
         // DONE while the chain is still composing), and its verdicts commit with the level in one transaction. A view read
         // alongside it could carry no verdict under a value_critical level, and the NOW block then drew the whole page
-        // as its proof above the page drawn below (WebOnlyJourneyAcceptanceTest's held journey).
-        return visibleDocument(familyId, documentId).flatMap(d -> stored(d).flatMap(level -> Mono.zip(
+        // as its proof above the page drawn below (WebOnlyJourneyAcceptanceTest's held journey). The view is recorded
+        // first, before an assessment that may fail, so a failed read is still an audited one.
+        return visibleDocument(familyId, documentId).flatMap(d -> audit.record(
+                        AuditEvent.family(AuditEvent.Kind.DOCUMENT_VIEW, familyId, d.patientId(), documentId, clock.instant()))
+                .then(Mono.defer(() -> stored(d))).flatMap(level -> Mono.zip(
                         records.visiblePatient(familyId, d.patientId())
                                 .switchIfEmpty(Mono.error(BaymaxException.notFound("patient_not_found", "no patient with id " + d.patientId()))),
                         viewer(familyId),
-                        audit.record(AuditEvent.family(AuditEvent.Kind.DOCUMENT_VIEW, familyId, d.patientId(), documentId, clock.instant()))
-                                .then(intake.view(documentId)),
+                        intake.view(documentId),
                         gate(d), retakeOrdinal(d))
                 .map(t -> new ResultView(t.getT3(), t.getT1().patient(), t.getT1().owner(), t.getT2(),
                         level.map(StoredUrgency::level).orElse(null), level.map(StoredUrgency::reasons).orElse(List.of()),

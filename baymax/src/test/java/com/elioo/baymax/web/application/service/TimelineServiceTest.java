@@ -15,6 +15,7 @@ import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
 import com.elioo.baymax.storage.domain.DeletionReport;
 import com.elioo.baymax.web.application.port.out.AuditPort;
 import com.elioo.baymax.web.application.port.out.TimelineReadPort;
+import com.elioo.baymax.web.domain.AuditEvent;
 import com.elioo.baymax.web.domain.TimelineCursor;
 import com.elioo.baymax.web.domain.TimelineEntry;
 import com.elioo.baymax.web.domain.TimelineFilter;
@@ -37,6 +38,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -151,7 +153,22 @@ class TimelineServiceTest {
             assertThat(v.urgency()).isNull();
             assertThat(v.values()).extracting(row -> row.get("name")).containsExactly("Potassium");
         }).verifyComplete();
-        verify(audit).record(any());
+        verify(audit).record(argThat(e -> e.kind() == AuditEvent.Kind.DOCUMENT_VIEW && DOC_B.equals(e.documentId())));
+    }
+
+    /**
+     * Reading the view after the level must not move the DOCUMENT_VIEW row behind an assessment that may fail: the row
+     * is written before the level is read, as it was before the reorder, and the failure still reaches the caller.
+     */
+    @Test
+    void aFailedAssessmentStillLeavesTheReadsAuditRow() {
+        Document done = DOCUMENT.withStatus(Document.Status.DONE, null, NOW);
+        when(documents.findVisible(FAMILY_B, DOC_B)).thenReturn(Mono.just(done));
+        when(urgency.currentOrAssess(DOC_B)).thenReturn(Mono.error(new IllegalStateException("assessment failed")));
+        when(intake.view(DOC_B)).thenReturn(Mono.just(potassiumView(null)));
+
+        StepVerifier.create(service.document(FAMILY_B, DOC_B)).expectErrorMessage("assessment failed").verify();
+        verify(audit).record(argThat(e -> e.kind() == AuditEvent.Kind.DOCUMENT_VIEW && DOC_B.equals(e.documentId())));
     }
 
     /** A DONE view with one Potassium row, its verdict as the database holds it at the moment of the read. */
