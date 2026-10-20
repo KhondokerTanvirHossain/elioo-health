@@ -17,7 +17,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Set;
 
-/** {@code /assets/{file}}: the stylesheet, the landing images and the reading page's script from the jar. */
+/** {@code /assets/{file}}: the stylesheet, the landing images, the reading page's script and the two fonts from the jar. */
 @Component
 public class AssetHandler implements WebPages {
 
@@ -35,12 +35,17 @@ public class AssetHandler implements WebPages {
             "mio-head.webp",
             "mio.png",
             "mio.webp",
+            "noto-sans-bengali.woff2",
+            "noto-sans-latin.woff2",
             "paper-lab.svg",
             "paper-rx.svg",
             "progress.js");
 
     /** Directories under {@code baymax/ui/} that are never served as themselves: the stylesheet's parts. */
     static final List<String> PRIVATE_DIRS = List.of("css/");
+
+    /** Files under {@code baymax/ui/} that stay in the jar: the fonts' licence travels with them, it is not a page asset. */
+    static final Set<String> PRIVATE_FILES = Set.of("OFL-Noto.txt");
 
     /**
      * Listed names that may be absent from the jar: original assets from Tanvir; a slot renders only when
@@ -115,7 +120,8 @@ public class AssetHandler implements WebPages {
         MediaType type = file.endsWith(".css") ? new MediaType("text", "css", java.nio.charset.StandardCharsets.UTF_8)
                 : file.endsWith(".js") ? new MediaType("text", "javascript", java.nio.charset.StandardCharsets.UTF_8)
                 : file.endsWith(".svg") ? MediaType.valueOf("image/svg+xml")
-                : file.endsWith(".webp") ? MediaType.valueOf("image/webp") : MediaType.IMAGE_PNG;
+                : file.endsWith(".webp") ? MediaType.valueOf("image/webp")
+                : file.endsWith(".woff2") ? MediaType.valueOf("font/woff2") : MediaType.IMAGE_PNG;
         return ServerResponse.ok().contentType(type).cacheControl(CacheControl.maxAge(Duration.ofDays(1)).cachePublic())
                 .eTag("\"" + Integer.toHexString(java.util.Arrays.hashCode(bytes)) + "\"").bodyValue(bytes);
     }

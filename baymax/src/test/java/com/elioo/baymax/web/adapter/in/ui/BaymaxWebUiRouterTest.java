@@ -145,6 +145,17 @@ class BaymaxWebUiRouterTest {
         client.get().uri("/assets/..%2Fmessages_bn.properties").exchange().expectStatus().isNotFound();
     }
 
+    /** D1: the two self-hosted fonts leave the jar as woff2; their licence stays in it. The content check is FontCoverageTest. */
+    @Test
+    void theFontsAreServedAsWoff2FromTheJar() {
+        for (String f : new String[]{"noto-sans-bengali.woff2", "noto-sans-latin.woff2"}) {
+            client.get().uri("/assets/" + f).exchange().expectStatus().isOk()
+                    .expectHeader().contentType("font/woff2")
+                    .expectBody(byte[].class).value(b -> assertThat(new String(b, 0, 4, java.nio.charset.StandardCharsets.US_ASCII)).isEqualTo("wOF2"));
+        }
+        client.get().uri("/assets/OFL-Noto.txt").exchange().expectStatus().isNotFound();
+    }
+
     @Test
     void everyPageCarriesTheDisclaimerFooter() {
         java.time.Instant now = java.time.Instant.now();

@@ -25,8 +25,12 @@ class AssetListTest {
             files = walk.filter(Files::isRegularFile).map(p -> UI.relativize(p).toString().replace('\\', '/')).sorted().toList();
         }
         assertThat(files).as("files under baymax/ui").hasSizeGreaterThan(10);
-        assertThat(files.stream().filter(f -> !AssetHandler.ASSETS.contains(f) && AssetHandler.PRIVATE_DIRS.stream().noneMatch(f::startsWith)).toList())
+        assertThat(files.stream().filter(f -> !AssetHandler.ASSETS.contains(f) && !AssetHandler.PRIVATE_FILES.contains(f)
+                        && AssetHandler.PRIVATE_DIRS.stream().noneMatch(f::startsWith)).toList())
                 .as("on disk but neither served nor private").isEmpty();
+        assertThat(AssetHandler.PRIVATE_FILES).as("private files").isNotEmpty();
+        assertThat(AssetHandler.PRIVATE_FILES).as("a private file is on disk and never listed")
+                .allMatch(files::contains).noneMatch(AssetHandler.ASSETS::contains);
         WebUiTestKit kit = new WebUiTestKit();
         for (String listed : AssetHandler.ASSETS) {
             if (files.contains(listed) || "baymax.css".equals(listed)) {
