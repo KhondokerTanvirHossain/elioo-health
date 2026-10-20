@@ -365,6 +365,69 @@ class AddReportSheetPageTest {
         assertThat(wrong).isEmpty();
     }
 
+    /** The element with this id, or a failure naming it. */
+    static Dom.Element byId(Dom dom, String id) {
+        return dom.all.stream().filter(e -> id.equals(e.attrs().get("id"))).findFirst()
+                .orElseThrow(() -> new AssertionError("no #" + id + " on the sheet"));
+    }
+
+    private static boolean inside(Dom.Element e, Dom.Element ancestor) {
+        for (Dom.Element x = e.parent(); x != null; x = x.parent()) {
+            if (x == ancestor) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * s08/s09 as the server leaves them for the script: the form carries the limits as machine values (ASCII, whatever
+     * the page's language) and the digit set the page counts in; the tray and the upload step are inside the form, so
+     * the group radios the script moves stay in it, and hidden until the script shows them; every button they hold is
+     * type="button", so none of them posts the form on its own.
+     */
+    @Test
+    void theFormCarriesWhatTheScriptNeedsAndTheTrayAndUploadStepWaitHidden() {
+        when(kit.uploads.uploadOptions(WebUiTestKit.FAMILY)).thenReturn(Mono.just(new UploadOptions(List.of(patient("আম্মা", 64, true)), List.of(), used(1))));
+        Dom dom = Dom.parse(sheet());
+        assertThat(dom.unclosed).isEmpty();
+        Dom.Element form = byId(dom, "add");
+        assertThat(form.attrs()).containsEntry("data-max-pages", "10").containsEntry("data-remaining", "2")
+                .containsEntry("data-max-request-bytes", "62914560").containsEntry("data-downscale-edge", "0")
+                .containsEntry("data-downscale-quality", "0.92").containsEntry("data-pass-bytes", "1500000")
+                .containsEntry("data-digits", "০১২৩৪৫৬৭৮৯");
+        for (String id : List.of("tray", "up")) {
+            Dom.Element section = byId(dom, id);
+            assertThat(inside(section, form)).as("#" + id + " inside the form").isTrue();
+            assertThat(section.attrs()).as("#" + id).containsKey("hidden");
+        }
+        assertThat(byId(dom, "up").attrs()).containsEntry("aria-live", "polite");
+        assertThat(byId(dom, "up-copy").attrs()).containsKey("hidden");
+        assertThat(byId(dom, "up-bar").tag()).isEqualTo("progress");
+        assertThat(byId(dom, "up-retry").attrs()).containsKey("hidden");
+        assertThat(byId(dom, "up-slow").attrs()).containsKey("hidden");
+        Dom.Element item = byId(dom, "t-item");
+        assertThat(item.tag()).isEqualTo("template");
+        assertThat(item.children()).singleElement().extracting(Dom.Element::tag).isEqualTo("li");
+        List<Dom.Element> buttons = dom.all.stream().filter(e -> e.tag().equals("button")
+                && (inside(e, byId(dom, "tray")) || inside(e, byId(dom, "up")) || inside(e, item))).toList();
+        assertThat(buttons.stream().map(b -> b.attrs().getOrDefault("id", String.join(".", b.classes()))))
+                .containsExactlyInAnyOrder("tray-more", "tray-send", "up-retry", "icon-btn.t-up", "icon-btn.t-down", "icon-btn.t-remove");
+        assertThat(buttons).allSatisfy(b -> assertThat(b.attrs()).as(b.describe()).containsEntry("type", "button"));
+        // the one submit is the no-JS one; the script hides it and sends from the tray
+        assertThat(dom.all.stream().filter(e -> "submit".equals(e.attrs().get("type")))).singleElement()
+                .satisfies(b -> assertThat(b.classes()).contains("nojs"));
+    }
+
+    /** An English page counts in ASCII; a paying family has no cap, which the script reads as -1. */
+    @Test
+    void anEnglishPageCountsInAsciiAndAPayingFamilyHasNoCap() {
+        when(kit.uploads.uploadOptions(WebUiTestKit.FAMILY)).thenReturn(Mono.just(new UploadOptions(List.of(patient("Ma", 64, true)), List.of(),
+                DocumentAllowance.unlimited(YearMonth.of(2026, 10)))));
+        Dom.Element form = byId(Dom.parse(kit.page("/app/add", "en")), "add");
+        assertThat(form.attrs()).containsEntry("data-digits", "0123456789").containsEntry("data-remaining", "-1");
+    }
+
     // --- D3 ---------------------------------------------------------------------------------------------------------
 
     /** Every sheet carries a fresh key, inside the form, so a double tap or a browser resubmit is one press. */

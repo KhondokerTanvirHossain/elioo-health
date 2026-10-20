@@ -189,6 +189,8 @@ final class Css {
             case ":first-of-type" -> siblings.stream().filter(s -> s.tag().equals(e.tag())).findFirst().orElse(null) == e;
             // the state a page is rendered in: a radio or checkbox the server marked checked
             case ":checked" -> e.attrs().containsKey("checked");
+            // likewise a control the server rendered disabled (it renders none: upload.js disables the tray's ends, D4)
+            case ":disabled" -> e.attrs().containsKey("disabled");
             default -> {
                 if (pseudo.startsWith(":has(") && pseudo.endsWith(")")) {
                     Compound inner = Compound.parse(pseudo.substring(5, pseudo.length() - 1), pseudo);

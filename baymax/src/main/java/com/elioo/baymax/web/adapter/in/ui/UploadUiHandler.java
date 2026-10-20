@@ -5,6 +5,7 @@ import com.elioo.baymax.common.error.FreeTierExceededException;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.extraction.domain.Upload;
 import com.elioo.baymax.healthrecord.domain.DocumentAllowance;
+import com.elioo.baymax.outbound.application.service.BanglaDate;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.application.port.in.UploadUseCase;
 import com.elioo.baymax.web.domain.Grouping;
@@ -119,7 +120,8 @@ public class UploadUiHandler implements WebPages {
                     .append("\">").append(copy.t(lang, "app.err.return")).append("</a></section>").toString();
         }
         Optional<UUID> chosen = chosen(o, asked);
-        b.append("<form id=\"add\" class=\"add\" method=\"post\" enctype=\"multipart/form-data\" action=\"").append(SHEET).append("\">")
+        b.append("<form id=\"add\" class=\"add\" method=\"post\" enctype=\"multipart/form-data\" action=\"").append(SHEET).append("\"")
+                .append(scriptLimits(lang, a)).append(">")
                 .append("<input type=\"hidden\" name=\"upload_key\" value=\"").append(UUID.randomUUID()).append("\">")
                 .append("<input type=\"hidden\" name=\"back\" value=\"").append(esc(back)).append("\">");
         b.append("<fieldset class=\"pick\"><legend>").append(copy.t(lang, "add.who")).append("</legend><div class=\"chips\">");
@@ -147,13 +149,102 @@ public class UploadUiHandler implements WebPages {
         b.append("<fieldset id=\"group\" class=\"group\"><legend>").append(copy.t(lang, "add.group.q")).append("</legend><div class=\"opts\">")
                 .append(option(lang, "one", !separate)).append(option(lang, "separate", separate))
                 .append("</div><p class=\"hint\">").append(copy.t(lang, "add.group.hint")).append("</p></fieldset>");
+        b.append(tray(lang)).append(uploadStep(lang));
         b.append("<button type=\"submit\" class=\"btn primary nojs\">").append(copy.t(lang, "add.send")).append("</button>");
         b.append("<section class=\"tips\" aria-labelledby=\"tips-title\"><h2 id=\"tips-title\">").append(copy.t(lang, "add.tips"))
                 .append("</h2><ul>").append(tip(lang, "flat")).append(tip(lang, "light")).append(tip(lang, "frame")).append("</ul></section>");
         if (a.limited()) {
             b.append("<p class=\"quota\">").append(copy.t(lang, "add.quota", a.remaining())).append("</p>");
         }
-        return b.append("</form></section>").toString();
+        return b.append("</form>").append(scriptCopy(lang, a)).append("</section>").toString();
+    }
+
+    /**
+     * What upload.js (D4) reads off the form: the limits the server refuses by, as machine values (ASCII digits on every
+     * page), the free papers left ({@code -1}: a paying family, no cap), the downscale the server turned on ({@code 0}:
+     * off until D5) and the digit set the page counts in.
+     */
+    private String scriptLimits(Lang lang, DocumentAllowance a) {
+        BaymaxProperties.Upload up = properties.getUpload();
+        return " data-max-pages=\"" + properties.getExtract().getMaxPages() + "\""
+                + " data-remaining=\"" + (a.limited() ? a.remaining() : -1) + "\""
+                + " data-max-request-bytes=\"" + up.getMaxRequestBytes() + "\""
+                + " data-downscale-edge=\"" + up.getDownscaleMaxEdge() + "\""
+                + " data-downscale-quality=\"" + up.getDownscaleQuality() + "\""
+                + " data-pass-bytes=\"" + up.getPassThroughBytes() + "\""
+                + " data-digits=\"" + (lang == Lang.BN ? BanglaDate.digits(ASCII_DIGITS) : ASCII_DIGITS) + "\"";
+    }
+
+    private static final String ASCII_DIGITS = "0123456789";
+
+    /**
+     * s08, the page tray, for the script to fill and show; hidden, and inside the form so the group question it takes
+     * in stays one of the form's fields. Every button is {@code type="button"}: none of them posts the form by itself.
+     */
+    private String tray(Lang lang) {
+        return "<section id=\"tray\" class=\"tray\" hidden aria-labelledby=\"tray-title\"><h2 id=\"tray-title\"></h2>"
+                + "<p id=\"tray-order\" class=\"tray-order\">" + copy.t(lang, "tray.order") + "</p>"
+                + "<ol id=\"tray-list\" class=\"tray-list\"></ol>"
+                + "<button type=\"button\" id=\"tray-more\" class=\"btn quiet\">" + Icons.svg("plus", 20) + "<span>" + copy.t(lang, "tray.more") + "</span></button>"
+                + "<p id=\"tray-limit\" class=\"hint\"></p>"
+                + "<button type=\"button\" id=\"tray-send\" class=\"btn primary\">" + copy.t(lang, "add.send") + "</button></section>"
+                + "<template id=\"t-item\"><li class=\"t\"><span class=\"t-thumb\" aria-hidden=\"true\"></span>"
+                + "<span class=\"t-text\"><strong class=\"t-page\"></strong><span class=\"t-src\"></span></span>"
+                + "<button type=\"button\" class=\"icon-btn t-up\">" + Icons.svg("chevron-up", 24) + "</button>"
+                + "<button type=\"button\" class=\"icon-btn t-down\">" + Icons.svg("chevron-down", 24) + "</button>"
+                + "<button type=\"button\" class=\"icon-btn t-remove\">" + Icons.svg("x", 24) + "</button></li></template>";
+    }
+
+    /** s09's upload step: a real byte progress bar per page, the slow line and the retry, hidden until a send starts. */
+    private String uploadStep(Lang lang) {
+        return "<section id=\"up\" class=\"up\" hidden aria-live=\"polite\" aria-labelledby=\"up-title\">"
+                + "<h2 id=\"up-title\">" + copy.t(lang, "up.title") + "</h2>"
+                + "<p id=\"up-count\" class=\"up-count\"></p><progress id=\"up-bar\" max=\"1\" value=\"0\"></progress>"
+                + "<ol id=\"up-pages\" class=\"up-pages\"></ol>"
+                + "<p id=\"up-slow\" class=\"warn\" hidden>" + copy.t(lang, "up.slow") + "</p>"
+                + "<button type=\"button\" id=\"up-retry\" class=\"btn\" hidden>" + copy.t(lang, "up.retry") + "</button>"
+                + "<p class=\"hint\">" + copy.t(lang, "up.after") + "</p><p class=\"hint\">" + copy.t(lang, "up.keep") + "</p></section>";
+    }
+
+    /**
+     * Every string upload.js shows, in the page's language: the script holds no copy (UploadScriptTest derives the keys
+     * from the script and holds them to this element). Templates keep their named slots ({n}, {total}, {max}) for the
+     * script to fill in the page's digits. A press over the allowance is refused in the server's own words, with the
+     * count; a paying family's sheet has no allowance to be over, so it carries no such line.
+     */
+    private String scriptCopy(Lang lang, DocumentAllowance a) {
+        StringBuilder b = new StringBuilder("<div id=\"up-copy\" hidden");
+        SCRIPT_COPY.forEach((attr, key) -> b.append(" data-").append(attr).append("=\"").append(copy.t(lang, key)).append('"'));
+        if (a.limited()) {
+            b.append(" data-over-allowance=\"").append(copy.t(lang, "add.cap.separate", a.remaining())).append('"');
+        }
+        return b.append("></div>").toString();
+    }
+
+    /** {@code data-*} on {@code #up-copy} → its copy key; in the order the script meets them. */
+    private static final Map<String, String> SCRIPT_COPY = scriptCopyKeys();
+
+    private static Map<String, String> scriptCopyKeys() {
+        Map<String, String> m = new java.util.LinkedHashMap<>();
+        m.put("tray-title", "tray.title");
+        m.put("tray-page", "tray.page");
+        m.put("tray-src-camera", "tray.src.camera");
+        m.put("tray-src-gallery", "tray.src.gallery");
+        m.put("tray-src-pdf", "tray.src.pdf");
+        m.put("tray-up", "tray.up");
+        m.put("tray-down", "tray.down");
+        m.put("tray-remove", "tray.remove");
+        m.put("tray-limit", "tray.limit");
+        m.put("up-count", "up.count");
+        m.put("up-sent", "up.sent");
+        m.put("up-stuck", "up.stuck");
+        m.put("choose-patient", "add.choose");
+        m.put("no-file", "upload.err.no_file");
+        m.put("unsupported", "upload.err.unsupported");
+        m.put("too-large", "upload.err.too_large");
+        m.put("signed-out", "upload.err.signed_out");
+        m.put("generic", "app.err.generic");
+        return java.util.Collections.unmodifiableMap(m);
     }
 
     /** The only one the viewer may send for, else the one the link names if the viewer may send for it, else nobody. */

@@ -156,8 +156,11 @@ class AddReportSubmitTest {
         body.part("file", jpeg()).filename("p1.jpg");
         String html = post(body).expectStatus().isBadRequest().expectBody(String.class).returnResult().getResponseBody();
         assertThat(html).contains("<p id=\"add-alert\" class=\"warn\" role=\"alert\">কার কাগজ বেছে নিন — Medioo নিজে আন্দাজ করবে না</p>");
-        // s07--choose-patient draws the sentence once: the alert says it, so the fieldset's hint does not repeat it
-        assertThat(html.split("কার কাগজ বেছে নিন", -1)).as("times the sentence is on the page, plus one").hasSize(2);
+        // s07--choose-patient draws the sentence once: the alert says it, so the fieldset's hint does not repeat it. The
+        // script's copy (#up-copy, D4) carries it too, as an attribute that is never drawn: read the page without it
+        String drawn = html.replaceFirst("<div id=\"up-copy\"[^>]*>", "");
+        assertThat(drawn).isNotEqualTo(html);
+        assertThat(drawn.split("কার কাগজ বেছে নিন", -1)).as("times the sentence is on the page, plus one").hasSize(2);
         verify(uploads, never()).upload(any(), any(), any(), any(), any());
     }
 
