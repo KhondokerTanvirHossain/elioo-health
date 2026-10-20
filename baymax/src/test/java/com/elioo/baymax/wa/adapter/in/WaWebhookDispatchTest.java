@@ -57,7 +57,9 @@ class WaWebhookDispatchTest {
 
     private WaInbound deliver(String fields) throws Exception {
         reset(intake);
-        when(intake.onInbound(any())).thenReturn(Mono.just(WaIntakeService.Outcome.ACCEPTED));
+        // every message is fresh here; what is claimed is what is handled (F9a)
+        when(intake.claim(any())).thenAnswer(i -> Mono.just(i.getArgument(0)));
+        when(intake.handle(any())).thenReturn(Mono.just(WaIntakeService.Outcome.ACCEPTED));
         BaymaxProperties props = new BaymaxProperties();
         props.getWa().setEnabled(true);
         props.getWa().setVerifyToken("v");
@@ -71,7 +73,7 @@ class WaWebhookDispatchTest {
                 .contentType(MediaType.APPLICATION_JSON).bodyValue(body).exchange().expectStatus().isOk();
         ArgumentCaptor<WaInbound> in = ArgumentCaptor.forClass(WaInbound.class);
         // dispatch is detached on boundedElastic; wait for it rather than racing it
-        verify(intake, timeout(2000)).onInbound(in.capture());
+        verify(intake, timeout(2000)).handle(in.capture());
         return in.getValue();
     }
 

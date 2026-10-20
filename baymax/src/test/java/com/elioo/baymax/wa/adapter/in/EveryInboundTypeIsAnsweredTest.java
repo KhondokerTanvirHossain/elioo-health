@@ -103,9 +103,34 @@ class EveryInboundTypeIsAnsweredTest {
         com.elioo.baymax.family.application.port.in.FreeTierUseCase freeTier =
                 mock(com.elioo.baymax.family.application.port.in.FreeTierUseCase.class);
         when(freeTier.checkCanUploadDocument(any(FamilyAccount.class))).thenReturn(Mono.empty());
+        // F9a: the claim goes through a real PhoneHasher and a store that accepts each key once, as Postgres does
+        props.getAuth().setHmacSecret("s".repeat(32));
+        java.util.Set<String> claimed = java.util.concurrent.ConcurrentHashMap.newKeySet();
+        com.elioo.baymax.wa.application.port.out.InboundMessagePort inbound = new com.elioo.baymax.wa.application.port.out.InboundMessagePort() {
+            @Override
+            public Mono<com.elioo.baymax.wa.domain.InboundMessage> claim(com.elioo.baymax.wa.domain.InboundMessage m) {
+                return Mono.fromCallable(() -> claimed.add(m.providerKey()) ? m : null);
+            }
+
+            @Override
+            public Mono<Void> markHandled(String providerKey, String outcome) {
+                return Mono.empty();
+            }
+
+            @Override
+            public Mono<Void> linkDocument(String providerKey, UUID patientId, UUID documentId) {
+                return Mono.empty();
+            }
+
+            @Override
+            public Mono<Long> countUnhandledBefore(Instant before) {
+                return Mono.just(0L);
+            }
+        };
         WaIntakeService service = new WaIntakeService(records, documents, explainer, intake, graph, copy, props, auth,
-                java.time.Clock.systemUTC(), freeTier,com.elioo.baymax.wa.WaFixtures.noUrgentPapers(),
-                com.elioo.baymax.wa.WaFixtures.nothingStored()) {
+                java.time.Clock.systemUTC(), freeTier, com.elioo.baymax.wa.WaFixtures.noUrgentPapers(),
+                com.elioo.baymax.wa.WaFixtures.nothingStored(), inbound,
+                new com.elioo.baymax.web.application.service.PhoneHasher(props)) {
             @Override
             public Mono<Outcome> onInbound(WaInbound in) {
                 return super.onInbound(in).doFinally(signal -> finished.incrementAndGet());

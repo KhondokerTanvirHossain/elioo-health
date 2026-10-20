@@ -141,7 +141,8 @@ class SignInIsFreeAcceptanceTest {
                 mock(DocumentIntakeUseCase.class), graph, new Copy(), props, auth,
                 Clock.fixed(NOW, ZoneOffset.UTC),
                 mock(com.elioo.baymax.family.application.port.in.FreeTierUseCase.class),
-                com.elioo.baymax.wa.WaFixtures.noUrgentPapers(), com.elioo.baymax.wa.WaFixtures.nothingStored());
+                com.elioo.baymax.wa.WaFixtures.noUrgentPapers(), com.elioo.baymax.wa.WaFixtures.nothingStored(),
+                mock(com.elioo.baymax.wa.application.port.out.InboundMessagePort.class), hasher);
         web = new WebUiTestKit(auth, props, false).client;
     }
 

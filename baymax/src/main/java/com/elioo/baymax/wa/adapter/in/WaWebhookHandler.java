@@ -11,10 +11,14 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * The public WhatsApp webhook (BMX-10 phase 1).
@@ -63,9 +67,12 @@ public class WaWebhookHandler {
     }
 
     /**
-     * Inbound callbacks. Always 200 once the signature is good: Meta retries anything else, and a retry storm
-     * over a message we have already stored is worse than dropping one. Unsigned or mismatched is 403 and
-     * nothing is parsed.
+     * Inbound callbacks (F9a). 200 once every message in the callback is <b>claimed</b> — recorded under HMAC(wamid) in
+     * {@code inbound_message} — and dispatched; a message already claimed (Meta re-delivering it) is acknowledged and
+     * ignored, so the family hears one reply. If a claim fails (database down, HMAC secret missing) the answer is 503:
+     * nothing was recorded, so nothing is acknowledged, Meta retries for up to a week, and the claim makes that retry
+     * harmless. A signed body that is not JSON is still 200, because a retry will never parse either. Unsigned or
+     * mismatched is 403 and nothing is parsed.
      */
     public Mono<ServerResponse> receive(ServerRequest request) {
         String signature = request.headers().firstHeader("X-Hub-Signature-256");
@@ -77,45 +84,54 @@ public class WaWebhookHandler {
                                 body.length, signature != null);
                         return ServerResponse.status(403).bodyValue("forbidden");
                     }
-                    return handle(body).then(ServerResponse.ok().bodyValue("ok"));
+                    return handle(body)
+                            .then(Mono.defer(() -> ServerResponse.ok().bodyValue("ok")))
+                            .onErrorResume(e -> {
+                                // nothing was recorded, so nothing is acknowledged: Meta retries, and the claim makes that
+                                // safe. Class name only: a driver's message can quote the row it failed to write.
+                                log.error("[baymax] wa webhook: inbound could not be recorded, asking Meta to retry error={}",
+                                        e.getClass().getSimpleName());
+                                return ServerResponse.status(503).bodyValue("retry");
+                            });
                 });
     }
 
     /**
      * One callback may carry several entries, each with several changes, each with several messages — the
      * shape is nested and every level is optional, so each is walked defensively rather than assumed.
+     *
+     * <p>Each message is claimed in the request path, one at a time, and a failed claim fails the request (503). Its
+     * handling then runs detached: Meta retries anything that is not a prompt 200, and a download plus extraction is far
+     * slower than its timeout; the family hears back over WhatsApp, not over this response. No type is dropped here;
+     * the intake answers every one (Phase 0).
      */
     private Mono<Void> handle(byte[] body) {
-        return Mono.fromCallable(() -> json.readTree(body))
-                .doOnNext(this::logCallback)
-                .flatMap(this::dispatch)
-                .onErrorResume(e -> {
-                    // a Jackson parse error quotes the body it choked on, which is patient text: class name only
-                    log.error("[baymax] wa webhook: signed callback did not parse as JSON error={}",
-                            e.getClass().getSimpleName());
-                    return Mono.empty();
-                })
-                .then();
-    }
-
-    /**
-     * Intake runs detached from the HTTP response: Meta retries anything that is not a prompt 200, and a
-     * download plus extraction is far slower than its timeout. The callback is acknowledged as soon as it is
-     * stored-and-dispatched, and the family hears back over WhatsApp, not over this response.
-     *
-     * <p>No type is dropped here; the intake answers every one (Phase 0). Before, voice notes, stickers, reactions and
-     * button taps were logged as "ignored" and the family heard nothing.
-     */
-    private Mono<Void> dispatch(JsonNode root) {
+        JsonNode root;
+        try {
+            root = json.readTree(body);
+        } catch (java.io.IOException e) {
+            // a Jackson parse error quotes the body it choked on, which is patient text: class name only
+            log.error("[baymax] wa webhook: signed callback did not parse as JSON error={}", e.getClass().getSimpleName());
+            return Mono.empty();   // a retry will never parse either
+        }
+        if (root == null) {
+            return Mono.empty();
+        }
+        logCallback(root);
+        List<WaInbound> messages = new ArrayList<>();
         for (JsonNode entry : root.path("entry")) {
             for (JsonNode change : entry.path("changes")) {
-                for (JsonNode message : change.path("value").path("messages")) {
-                    WaInbound in = parse(message);
-                    subscribe(intake.onInbound(in), in.from());
+                for (JsonNode m : change.path("value").path("messages")) {
+                    messages.add(parse(m));
                 }
             }
         }
-        return Mono.empty();
+        return Flux.fromIterable(messages)
+                .concatMap(in -> Mono.defer(() -> intake.claim(in))
+                        .doOnNext(claimed -> subscribe(claimed))
+                        .switchIfEmpty(Mono.fromRunnable(() -> log.info(
+                                "[baymax] wa inbound duplicate ref={} ignored (already claimed)", Redact.id(in.providerMessageId())))))
+                .then();
     }
 
     /** Meta's message JSON → WaInbound. Every level is optional, so every read has a default. */
@@ -139,11 +155,14 @@ public class WaWebhookHandler {
                 media.path("id").asText(""), media.path("mime_type").asText(""), ts == 0 ? null : Instant.ofEpochSecond(ts));
     }
 
-    private void subscribe(Mono<com.elioo.baymax.wa.application.service.WaIntakeService.Outcome> work, String from) {
-        work.subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
-                .subscribe(outcome -> log.info("[baymax] wa intake done outcome={} from={}", outcome, maskedNumber(from)),
-                        error -> log.error("[baymax] wa intake errored from={} error={}", maskedNumber(from),
-                                error.getClass().getSimpleName()));
+    /** The claimed message's handling, detached from the HTTP response. */
+    private void subscribe(WaInbound in) {
+        Mono.defer(() -> intake.handle(in))
+                .subscribeOn(Schedulers.boundedElastic())
+                .subscribe(outcome -> log.info("[baymax] wa intake done ref={} outcome={} from={}",
+                                Redact.id(in.providerMessageId()), outcome, maskedNumber(in.from())),
+                        error -> log.error("[baymax] wa intake errored ref={} from={} error={}",
+                                Redact.id(in.providerMessageId()), maskedNumber(in.from()), error.getClass().getSimpleName()));
     }
 
     private void logCallback(JsonNode root) {
