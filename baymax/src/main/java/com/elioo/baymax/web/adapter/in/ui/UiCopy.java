@@ -109,6 +109,28 @@ public class UiCopy {
         return lang == Lang.BN ? BanglaDate.format(date, null) : date.toString();
     }
 
+    /** A month header, HTML-escaped: "অক্টোবর ২০২৬" on a Bangla page, "October 2026" on an English one. */
+    public String monthYear(Lang lang, LocalDate date) {
+        return Html.esc(lang == Lang.BN ? BanglaDate.monthYear(date)
+                : date.getMonth().getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH) + " " + date.getYear());
+    }
+
+    /**
+     * A date under its month header, HTML-escaped: on a Bangla page "১২ অক্টোবর" (the header carries the year), on an
+     * English page ISO, as {@link #date(Lang, LocalDate)} writes it.
+     */
+    public String dayMonth(Lang lang, LocalDate date) {
+        return Html.esc(dayMonthText(lang, date));
+    }
+
+    /** As {@link #dayMonth}, not escaped: for passing as an argument to {@link #t}, which escapes it once. */
+    public String dayMonthText(Lang lang, LocalDate date) {
+        if (date == null) {
+            return "";
+        }
+        return lang == Lang.BN ? BanglaDate.format(date, date) : date.toString();
+    }
+
     /** As {@link #date(Lang, LocalDate)} for a date stored as text; text that is not an ISO date is shown as written. */
     public String date(Lang lang, String isoDate) {
         if (isoDate == null) {

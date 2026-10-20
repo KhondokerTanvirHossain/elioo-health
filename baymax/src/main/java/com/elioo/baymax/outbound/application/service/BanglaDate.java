@@ -38,6 +38,11 @@ public final class BanglaDate {
         return today != null && date.getYear() == today.getYear() ? text : text + " " + digits(String.valueOf(date.getYear()));
     }
 
+    /** A month and its year, for a month header: "অক্টোবর ২০২৬". */
+    public static String monthYear(LocalDate date) {
+        return MONTHS[date.getMonthValue() - 1] + " " + digits(String.valueOf(date.getYear()));
+    }
+
     /** ASCII digits to Bangla numerals. */
     public static String digits(String text) {
         StringBuilder sb = new StringBuilder(text.length());

@@ -528,6 +528,11 @@ public class DocumentPages implements WebPages {
      * build does not know reads as the legacy line, so a retake always says why (V20 guarantees a code is stored).
      */
     private String retakeReason(Lang lang, String code) {
+        return retakeReason(copy, lang, code);
+    }
+
+    /** As above, for any page that shows a retake (the কাগজপত্র row, C3): one mapping from code to line. */
+    static String retakeReason(UiCopy copy, Lang lang, String code) {
         RetakeReason reason = RetakeReason.ofCode(code).orElse(RetakeReason.LEGACY);
         String section = RetakeReason.sectionOf(code);
         String specific = section == null ? null : copy.maybe(lang, "retake.reason." + reason.prefix() + "." + section);

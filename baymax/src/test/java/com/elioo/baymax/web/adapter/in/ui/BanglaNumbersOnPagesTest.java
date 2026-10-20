@@ -90,11 +90,18 @@ class BanglaNumbersOnPagesTest {
 
     @Test
     void theTimelineDateAndCountsAreInBanglaDigitsAndEnglishIsUnchanged() {
-        List<String> bn = metaLines(page("/app/timeline?patient=" + PATIENT, "bn"));
-        assertThat(bn).contains("১২ অক্টোবর ২০২৬", "১৪টি মান, ১২টি সীমার বাইরে", "৩ টি অংশ মূল ছবিতে খুঁজে পাওয়া যায়নি");
+        // C3 (s16): the month header carries the year, the row its day and month
+        String bnPage = page("/app/timeline?patient=" + PATIENT, "bn");
+        List<String> bn = metaLines(bnPage);
+        assertThat(bn).contains("১২ অক্টোবর", "১৪টি মান, ১২টি সীমার বাইরে", "৩ টি অংশ মূল ছবিতে খুঁজে পাওয়া যায়নি");
+        assertThat(bn).as("no meta line on the Bangla papers tab carries an ASCII digit")
+                .isNotEmpty().noneMatch(line -> ASCII_DIGIT.matcher(line).find());
+        assertThat(bnPage).contains("<h2>অক্টোবর ২০২৬</h2>");
 
-        List<String> en = metaLines(page("/app/timeline?patient=" + PATIENT, "en"));
+        String enPage = page("/app/timeline?patient=" + PATIENT, "en");
+        List<String> en = metaLines(enPage);
         assertThat(en).contains("2026-10-12", "14 values, 12 outside the range", "3 items could not be found in the original image");
+        assertThat(enPage).contains("<h2>October 2026</h2>");
     }
 
     /** The other direction: a value keeps the digits printed on the paper, on a Bangla page too. */

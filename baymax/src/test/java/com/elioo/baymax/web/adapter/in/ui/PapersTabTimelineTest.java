@@ -21,9 +21,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * C2 on today's কাগজপত্র list (C3 restyles it): each finished paper's row carries the stored chip (NOW, THIS_WEEK; nothing
- * on ROUTINE or unassessed), the pending-review chip beside it, and the code-built summary; the filter links and
- * "আরও দেখুন" carry {@code type} and the opaque cursor. Every row is read by its own card, never from the page as a whole.
+ * C2 on the কাগজপত্র list, as C3 draws it (s16): each finished paper's row carries the stored chip (NOW, THIS_WEEK;
+ * nothing on ROUTINE or unassessed), the pending-review chip beside it, and the code-built summary; the filter chips and
+ * "আরও দেখুন" carry {@code type} and the opaque cursor. Every row is read by its own link, never from the page as a whole.
  */
 class PapersTabTimelineTest {
 
@@ -51,14 +51,14 @@ class PapersTabTimelineTest {
                 done(UNASSESSED_DOC, null, 9, 0, null)), nextCursor)));
     }
 
-    /** The card of one paper: the element with class "card" that links to that document. */
+    /** The row of one paper: the {@code a.titem} that links to that document (kit §14: the whole row is the link). */
     private static String card(String html, UUID doc) {
         Dom dom = Dom.parse(html);
         assertThat(dom.unclosed).isEmpty();
-        List<Dom.Element> cards = dom.all.stream().filter(e -> e.classes().contains("card"))
-                .filter(e -> AppShellRoutesTest.subtree(e).stream().anyMatch(x -> (PageChrome.BASE + "/documents/" + doc).equals(x.attrs().get("href"))))
+        List<Dom.Element> cards = dom.all.stream().filter(e -> e.tag().equals("a") && e.classes().contains("titem"))
+                .filter(e -> (PageChrome.BASE + "/documents/" + doc).equals(e.attrs().get("href")))
                 .toList();
-        assertThat(cards).as("one card for " + doc).hasSize(1);
+        assertThat(cards).as("one row for " + doc).hasSize(1);
         return AppShellRoutesTest.subtree(cards.get(0)).stream().map(e -> "<" + e.tag() + " class=\"" + String.join(" ", e.classes()) + "\">" + e.ownText())
                 .reduce("", String::concat);
     }
@@ -135,7 +135,7 @@ class PapersTabTimelineTest {
         assertThat(card(html, ROUTINE_DOC)).contains("৯টি মান").doesNotContain("সীমা");
     }
 
-    /** The filter links name their type; the one in view is marked; the request's type reaches the read model. */
+    /** The filter chips name their type; the one in view is marked; the request's type reaches the read model. */
     @Test
     void theFilterLinksCarryTheTypeAndTheChosenOneReachesTheReadModel() {
         papers(null);
@@ -146,7 +146,9 @@ class PapersTabTimelineTest {
         List<Dom.Element> links = AppShellRoutesTest.subtree(nav).stream().filter(e -> e.tag().equals("a")).toList();
         assertThat(links).extracting(e -> e.attrs().get("href")).containsExactly(
                 papers, papers + "&amp;type=lab", papers + "&amp;type=rx");   // as written in the HTML
-        assertThat(links).extracting(e -> e.attrs().get("aria-current")).containsExactly(null, null, "page");
+        // kit §26b: the chosen chip is marked, and carries the check icon — colour is never the only cue
+        assertThat(links).extracting(e -> e.attrs().get("aria-current")).containsExactly(null, null, "true");
+        assertThat(links).extracting(e -> e.children().stream().anyMatch(c -> c.tag().equals("svg"))).containsExactly(false, false, true);
         assertThat(links).extracting(Dom.Element::ownText).containsExactly(
                 kit.copy.t(Lang.BN, "timeline.filter.all"), kit.copy.t(Lang.BN, "timeline.filter.lab"), kit.copy.t(Lang.BN, "timeline.filter.rx"));
     }

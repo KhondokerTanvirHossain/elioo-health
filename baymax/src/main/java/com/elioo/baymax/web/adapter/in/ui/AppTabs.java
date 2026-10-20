@@ -7,7 +7,6 @@ import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
 import com.elioo.baymax.web.domain.FamilyOverview;
 import com.elioo.baymax.web.domain.PatientSummary;
-import com.elioo.baymax.web.domain.TimelineEntry;
 import com.elioo.baymax.web.domain.TimelineFilter;
 import com.elioo.baymax.web.domain.WebSession;
 import lombok.RequiredArgsConstructor;
@@ -136,9 +135,11 @@ public class AppTabs implements WebPages {
     }
 
     /**
-     * The patient's papers, newest document date first (C2's read model); reloads itself while one is still being read.
-     * Each finished paper shows its stored chip (NOW, THIS_WEEK; nothing on ROUTINE or unassessed), a pending-review chip
-     * beside it, and the code-built summary; {@code ?type=} filters, and "আরও দেখুন" keeps the filter and the cursor.
+     * The কাগজপত্র tab (s16, spec §4.15): the title and whose papers these are, the owner's tonal "কাগজ পাঠান" to the
+     * add-report sheet, the filter chips, then {@link TimelineView}'s month headers and rows, newest document date first
+     * (C2's read model), and "আরও দেখুন" keeping the filter and the cursor. No paper at all is the s16 empty panel (its
+     * camera link for the owner only); a filter that matches nothing keeps the filters, so "সব" brings everything back.
+     * Reloads itself while a paper is still being read; no script on this page.
      */
     Mono<Body> papersBody(ServerRequest request, Lang lang, FamilyOverview me, ActivePatient active) {
         PatientSummary patient = active.patient().orElseThrow();
@@ -147,74 +148,66 @@ public class AppTabs implements WebPages {
         TimelineFilter filter = TimelineFilter.fromParam(request.queryParam("type").orElse(null));
         UUID familyId = SessionAuthFilter.session(request).familyId();
         String list = Tab.PAPERS.path + "?patient=" + patientId;
+        String name = patient.patient().name();
         return timeline.timeline(familyId, patientId, cursor, filter).map(page -> {
-            StringBuilder b = new StringBuilder();
-            b.append("<h1>").append(esc(patient.patient().name())).append("</h1>");
-            b.append("<p class=\"small\"><a href=\"").append(Tab.FAMILY.path).append("?patient=").append(patientId).append("\">").append(copy.t(lang, "profile.link")).append("</a></p>");
+            boolean nothingAtAll = page.entries().isEmpty() && filter == TimelineFilter.ALL && cursor == null;
+            StringBuilder b = new StringBuilder("<div class=\"phead\"><div><h1>").append(copy.t(lang, "timeline.docs")).append("</h1>")
+                    .append("<p class=\"psub\">").append(copy.t(lang, "timeline.sub", name)).append("</p></div>");
+            if (patient.owner() && !nothingAtAll) {
+                // the one upload entry (A7): the add-report sheet for this patient, which comes back here
+                b.append("<a class=\"btn tonal\" href=\"").append(addHref(patientId)).append("\">").append(Icons.svg("camera", 24))
+                        .append("<span>").append(copy.t(lang, "timeline.add")).append("</span></a>");
+            }
+            b.append("</div>");
+            if (nothingAtAll) {
+                b.append(empty(lang, patient));
+            } else {
+                b.append("<nav class=\"filters\" aria-label=\"").append(copy.t(lang, "timeline.filter.label")).append("\">");
+                for (TimelineFilter f : TimelineFilter.values()) {
+                    // kit §26b: the chosen chip is marked and carries the check icon — colour is never the only cue
+                    b.append("<a href=\"").append(list).append(typeParam(f)).append("\"").append(f == filter ? " aria-current=\"true\">" + Icons.svg("check", 18) : ">")
+                            .append(copy.t(lang, "timeline.filter." + (f == TimelineFilter.ALL ? "all" : f.param()))).append("</a>");
+                }
+                b.append("</nav>");
+                if (page.entries().isEmpty()) {
+                    b.append("<p class=\"psub\">").append(copy.t(lang, "timeline.filter.none")).append("</p>");
+                }
+                b.append(new TimelineView(copy).items(lang, page.entries(), name));
+            }
+            if (page.nextCursor() != null) {
+                b.append("<p><a class=\"btn quiet\" href=\"").append(list).append(typeParam(filter))
+                        .append("&amp;cursor=").append(esc(page.nextCursor())).append("\">").append(copy.t(lang, "timeline.more")).append("</a></p>");
+            }
             // BMX-8 (PO option 1): a patient with no chronic flags is asked once, here, where the family already is —
-            // nothing infers them, and the silence rule can never fire until someone answers
+            // nothing infers them, and the silence rule can never fire until someone answers (under the list, C3)
             if (patient.patient().chronicFlags() == null || patient.patient().chronicFlags().isEmpty()) {
                 b.append("<div class=\"card ask\"><strong>").append(copy.t(lang, "timeline.flags.ask")).append("</strong>")
                         .append("<p class=\"small\">").append(copy.t(lang, "timeline.flags.why")).append("</p>")
                         .append("<a class=\"btn quiet\" href=\"").append(Tab.FAMILY.path).append("?patient=").append(patientId).append("\">")
                         .append(copy.t(lang, "timeline.flags.cta")).append("</a></div>");
             }
-            if (patient.owner()) {
-                // the one upload entry (A7): the add-report sheet for this patient, which comes back here
-                String back = java.net.URLEncoder.encode(Tab.PAPERS.path + "?patient=" + patientId, java.nio.charset.StandardCharsets.UTF_8);
-                b.append("<p><a class=\"btn primary add-link\" href=\"").append(UploadUiHandler.SHEET).append("?patient=").append(patientId)
-                        .append("&amp;back=").append(back).append("\">").append(Icons.svg("camera", 24))
-                        .append("<span>").append(copy.t(lang, "timeline.add")).append("</span></a></p>");
-            }
-            b.append("<h2>").append(copy.t(lang, "timeline.docs")).append("</h2>");
-            b.append("<nav class=\"filters\" aria-label=\"").append(copy.t(lang, "timeline.filter.label")).append("\">");
-            for (TimelineFilter f : TimelineFilter.values()) {
-                b.append("<a href=\"").append(list).append(typeParam(f)).append("\"").append(f == filter ? " aria-current=\"page\"" : "")
-                        .append(">").append(copy.t(lang, "timeline.filter." + (f == TimelineFilter.ALL ? "all" : f.param()))).append("</a>");
-            }
-            b.append("</nav>");
-            if (page.entries().isEmpty()) {
-                b.append("<div class=\"card\">").append(copy.t(lang, "timeline.none")).append("</div>");
-            }
-            for (TimelineEntry e : page.entries()) {
-                String href = BASE + "/documents/" + e.documentId();
-                b.append("<div class=\"card\"><div class=\"row\">")
-                        .append("<a href=\"").append(href).append("\"><img alt=\"\" loading=\"lazy\" src=\"")
-                        .append(PageChrome.imageHref(e.documentId(), e.pageOneKey())).append("\"></a>")
-                        .append("<div><div><a href=\"").append(href).append("\"><strong>").append(chrome.documentType(lang, e.documentType()))
-                        .append("</strong></a> ").append(chrome.status(lang, e.status())).append("</div>")
-                        .append("<div class=\"meta\">").append(copy.date(lang, e.date()))
-                        .append(e.dateIsFallback() ? " <span class=\"small\">" + copy.t(lang, "timeline.uploaddate") + "</span>" : "")
-                        .append(e.facility() == null || e.facility().isBlank() ? "" : " · " + esc(e.facility())).append("</div>");
-                if ("DONE".equals(e.status())) {
-                    String summary = TimelineSummary.line(copy, lang, e);
-                    if (!summary.isEmpty()) {
-                        b.append("<div class=\"meta\">").append(summary).append("</div>");
-                    }
-                    // the stored level first; the review state beside it, never instead of it (D5: every gate state)
-                    String chip = UrgencyChip.html(copy, lang, e);
-                    boolean pending = "pending".equals(e.reviewState());
-                    if (!chip.isEmpty() || pending) {
-                        b.append("<div class=\"chips\">").append(chip);
-                        if (pending) {
-                            b.append("<span class=\"chip review\">").append(copy.t(lang, "timeline.review.pending")).append("</span>");
-                        }
-                        b.append("</div>");
-                    }
-                    if (e.unverified() > 0) {
-                        b.append("<div class=\"small\">").append(copy.t(lang, "timeline.unverified", e.unverified())).append("</div>");
-                    }
-                }
-                b.append("</div></div></div>");
-            }
-            if (page.nextCursor() != null) {
-                b.append("<p><a class=\"btn quiet\" href=\"").append(list).append(typeParam(filter))
-                        .append("&amp;cursor=").append(esc(page.nextCursor())).append("\">").append(copy.t(lang, "timeline.more")).append("</a></p>");
-            }
             // a document still being read: reload every few seconds until it is not
             boolean inFlight = page.entries().stream().anyMatch(e -> "RECEIVED".equals(e.status()) || "PROCESSING".equals(e.status()));
             return Body.of(b.toString(), head(lang, Tab.PAPERS).refresh(inFlight ? 5 : 0));
         });
+    }
+
+    /** s16 empty: whose papers, why send one, and — for the owner only — the camera to the sheet for this patient. */
+    private String empty(Lang lang, PatientSummary patient) {
+        StringBuilder b = new StringBuilder("<section class=\"empty\"><span class=\"disc\" aria-hidden=\"true\">")
+                .append(Icons.svg("papers", 32)).append("</span><h2>").append(copy.t(lang, "timeline.empty.title", patient.patient().name()))
+                .append("</h2><p>").append(copy.t(lang, "timeline.empty.body")).append("</p>");
+        if (patient.owner()) {
+            b.append("<a class=\"btn\" href=\"").append(addHref(patient.patient().id())).append("\">").append(Icons.svg("camera", 24))
+                    .append("<span>").append(copy.t(lang, "chat.empty.action")).append("</span></a>");
+        }
+        return b.append("<p class=\"small\">").append(copy.t(lang, "timeline.empty.foot")).append("</p></section>").toString();
+    }
+
+    /** The add-report sheet for this patient, coming back to this tab (A7's one upload entry); escaped for an href. */
+    private static String addHref(UUID patientId) {
+        String back = java.net.URLEncoder.encode(Tab.PAPERS.path + "?patient=" + patientId, java.nio.charset.StandardCharsets.UTF_8);
+        return UploadUiHandler.SHEET + "?patient=" + patientId + "&amp;back=" + back;
     }
 
     /** The list's {@code type} parameter, HTML-escaped for an href; nothing for every paper. */

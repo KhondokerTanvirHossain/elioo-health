@@ -251,9 +251,9 @@ class WebOnlyJourneyAcceptanceTest {
             assertThat(result.indexOf("id=\"urgency\"")).as("the urgency leads the page").isLessThan(result.indexOf("Potassium"));
             assertThat(result).contains("<span class=\"pchip\">" + copy.t(Lang.BN, "result.patient", "Rokeya", 68) + "</span>");
 
-            // 5a. C2: the কাগজপত্র list, read from the stored row: this paper's own card carries the NOW short form
+            // 5a. C2: the কাগজপত্র list, read from the stored row: this paper's own row (C3: the a.titem) carries the NOW short form
             Dom papers = Dom.parse(get(web, session, "/app/timeline?patient=" + ma.id()));
-            List<Dom.Element> paperCards = papers.all.stream().filter(e -> e.classes().contains("card"))
+            List<Dom.Element> paperCards = papers.all.stream().filter(e -> e.classes().contains("titem"))
                     .filter(e -> AppShellRoutesTest.subtree(e).stream().anyMatch(x -> documentPath.equals(x.attrs().get("href")))).toList();
             assertThat(paperCards).as("one card for this paper on the list").hasSize(1);
             List<Dom.Element> nowChips = AppShellRoutesTest.subtree(paperCards.get(0)).stream()

@@ -107,6 +107,11 @@ final class PageFixtures {
         variant("GET /app/family", Fixture.get("/app/family", true, Stubs::familyOfTwo).named("two"));
         // C1: the patient switcher sheet over the tab it was opened from, with no script
         variant("GET /app/timeline", Fixture.get("/app/timeline?patient=" + ma + "&sheet=patient", true, Stubs::maTimelineOfTwo).named("switcher"));
+        // C3 (s16): every kind of row across two months with a next page, the empty panel, and a filter that matches nothing,
+        // so every derived page check (touch targets, contrast, inline code, digits, upload entry) reads each of them
+        variant("GET /app/timeline", Fixture.get("/app/timeline?patient=" + ma, true, Stubs::maEveryRow).named("rows"));
+        variant("GET /app/timeline", Fixture.get("/app/timeline?patient=" + ma, true, Stubs::maNoPapers).named("empty"));
+        variant("GET /app/timeline", Fixture.get("/app/timeline?patient=" + ma + "&type=rx", true, Stubs::maNoPapers).named("filtered-empty"));
         variant("GET /app/home", Fixture.get("/app/home?patient=" + ma + "&sheet=patient", true, Stubs::familyOfTwo).named("switcher"));
         // A6: the patient in view as the owner sees them (and after a save), and a shared patient (no save, no switch)
         variant("GET /app/family", Fixture.get("/app/family?patient=" + ma, true, Stubs::familyOfTwo).named("chosen"));
@@ -255,6 +260,30 @@ final class PageFixtures {
                     new TimelineEntry(PROCESSING_DOC, LocalDate.parse("2026-10-18"), true, null, null, "PROCESSING",
                             // still being read: not assessed, nothing counted, no review yet, no retake code
                             0, 0, 0, 0, "f/p/" + PROCESSING_DOC + "/page-1.jpg", WebUiTestKit.NOW, null, 0, null, null)), null)));
+        }
+
+        static void maNoPapers(WebUiTestKit k) {
+            familyOfMa(k);
+            when(k.timeline.timeline(eq(WebUiTestKit.FAMILY), eq(WebUiTestKit.MA_ID), any(), any()))
+                    .thenReturn(Mono.just(new TimelinePage(List.of(), null)));
+        }
+
+        /** C3: one of each row the list draws — THIS_WEEK, a prescription by its upload date, a retake, a failure, one received. */
+        static void maEveryRow(WebUiTestKit k) {
+            familyOfMa(k);
+            java.time.Instant sent = WebUiTestKit.NOW;
+            when(k.timeline.timeline(eq(WebUiTestKit.FAMILY), eq(WebUiTestKit.MA_ID), any(), any())).thenReturn(Mono.just(new TimelinePage(List.of(
+                    new TimelineEntry(UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100031"), LocalDate.parse("2026-10-15"), false, "lab_report",
+                            "Shapla Diagnostics", "DONE", 9, 0, 0, 0, "k", sent, com.elioo.baymax.outbound.domain.Urgency.THIS_WEEK, 2, "released", null),
+                    new TimelineEntry(UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100032"), LocalDate.parse("2026-10-10"), true, null,
+                            null, "NEEDS_RETAKE", 0, 0, 0, 0, "k", sent, null, 0, null, "expected_section_empty:values"),
+                    new TimelineEntry(UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100033"), LocalDate.parse("2026-10-09"), true, null,
+                            null, "FAILED", 0, 0, 0, 0, "k", sent, null, 0, null, null),
+                    new TimelineEntry(UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100034"), LocalDate.parse("2026-10-08"), true, null,
+                            null, "RECEIVED", 0, 0, 0, 0, "k", sent, null, 0, null, null),
+                    new TimelineEntry(UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100035"), LocalDate.parse("2026-09-21"), true, "prescription",
+                            null, "DONE", 0, 2, 0, 0, "k", sent, com.elioo.baymax.outbound.domain.Urgency.ROUTINE, 0, "released", null)),
+                    "v1.next-page")));
         }
 
         static void maProfile(WebUiTestKit k) {

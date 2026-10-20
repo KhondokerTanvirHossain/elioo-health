@@ -7,7 +7,32 @@
 /* the pending-review chip beside it (kit §6 review state): the level chip's size, in the unknown-status colour.
    Scoped to the row's .chips, so the result page's gate chip (60-result.css .chip.review) is unchanged. */
 .chips .chip.review{padding:var(--chip-pad-y) var(--sp-3);font-size:var(--fs-label-small);line-height:var(--lh-label-small);font-weight:600;color:var(--c-status-unknown)}
-/* the filter links above the list: each a 48 px target; the one in view is filled */
-.filters{display:flex;flex-wrap:wrap;gap:var(--sp-2);margin:0 0 var(--sp-3)}
-.filters a{display:inline-flex;align-items:center;min-height:var(--target-min);padding:0 var(--sp-4);border:2px solid var(--c-outline);border-radius:var(--r-pill);color:var(--c-text);text-decoration:none}
-.filters a[aria-current="page"]{border-color:var(--c-primary);background:var(--c-primary-container);color:var(--c-on-primary-container)}
+/* C3: the কাগজপত্র tab (s16; kit §6, §14, §19, §26b) */
+.phead{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:var(--sp-3);margin:0 0 var(--sp-4)}
+.phead h1{margin:0;font-size:var(--fs-title-2);line-height:var(--lh-title-2)}
+.psub{margin:0;color:var(--c-text-muted);font-size:var(--fs-subhead);line-height:var(--lh-subhead)}
+.btn.tonal{display:inline-flex;align-items:center;gap:var(--sp-2);margin-top:0;padding:0 var(--sp-4) 0 var(--sp-3);background:var(--c-primary-container);color:var(--c-on-primary-container)}
+.btn.tonal:hover{background:var(--c-surface-3);color:var(--c-text)}
+/* the filter chips above the list (kit §26b): each a 48 px target; the chosen one is filled and carries the check */
+.filters{display:flex;flex-wrap:wrap;gap:var(--sp-2);margin:0 0 var(--sp-4)}
+.filters a{display:inline-flex;align-items:center;gap:6px;min-height:var(--target-min);padding:0 var(--sp-4);border:1px solid var(--c-outline);border-radius:var(--r-pill);background:var(--c-surface);color:var(--c-text);text-decoration:none;font-size:var(--fs-label);line-height:var(--lh-label);font-weight:600}
+.filters a[aria-current=true]{padding-left:var(--sp-3);border:2px solid var(--c-primary);background:var(--c-primary-container);color:var(--c-on-primary-container);font-weight:700}
+/* a month of papers, and each paper one >= 88 px link (kit §14); the thumb is drawn, no picture per row */
+.month h2{margin:var(--sp-5) 0 var(--sp-3);font-size:var(--fs-title-3);line-height:var(--lh-title-3);font-weight:600}
+.titems{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--sp-2)}
+.titem{display:flex;align-items:center;gap:var(--sp-3);min-height:88px;padding:var(--sp-3);background:var(--c-surface);border:1px solid var(--c-line);border-radius:var(--r-m);color:var(--c-text);text-decoration:none}
+.titem:hover{color:var(--c-text);border-color:var(--c-outline)}
+.titem>svg{flex:none;color:var(--c-text-muted)}
+.thumb{position:relative;flex:none;display:flex;flex-direction:column;gap:5px;width:48px;height:64px;padding:9px 7px;background:var(--c-paper);border:1px solid var(--c-paper-line);border-radius:4px}
+.thumb i{display:block;height:3px;background:var(--c-paper-line);border-radius:2px}
+.thumb i:nth-child(2){width:70%}
+.thumb .badge{position:absolute;left:4px;bottom:4px;padding:0 4px;border-radius:3px;background:var(--c-text);color:var(--c-bg);font-family:var(--font-latin);font-size:var(--fs-badge-latin);line-height:var(--lh-badge-latin);font-weight:700}
+.tbody{flex:1;min-width:0;display:flex;flex-direction:column;gap:var(--sp-1)}
+.ttitle{font-size:var(--fs-headline);line-height:var(--lh-headline);font-weight:600}
+.titem .meta,.titem .state{font-size:var(--fs-subhead);line-height:var(--lh-subhead);color:var(--c-text-muted)}
+.titem .chips{gap:6px}
+/* s16 empty: the disc, whose papers, why, the camera (owner only), and what this list will be */
+.empty{display:flex;flex-direction:column;align-items:center;gap:var(--sp-4);padding:var(--sp-6) var(--sp-5);text-align:center;background:var(--c-surface);border-radius:var(--r-l)}
+.empty h2,.empty p{margin:0}
+.empty .btn{display:inline-flex;align-items:center;gap:var(--sp-2);margin-top:0}
+.empty .disc{display:flex;align-items:center;justify-content:center;width:72px;height:72px;border-radius:var(--r-pill);background:var(--c-primary-container);color:var(--c-on-primary-container)}

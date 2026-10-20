@@ -215,16 +215,25 @@ class AddReportSheetPageTest {
                 .isEqualTo(back);
     }
 
-    /** The timeline's inline form is gone: the owner gets a link to the sheet for that patient, which comes back there. */
+    /**
+     * The timeline's inline form is gone: the owner gets a link to the sheet for that patient, which comes back there —
+     * "কাগজ পাঠান" over a list, and s16's "ছবি তুলুন" on the empty panel (C3).
+     */
     @Test
     void thePapersTabLinksTheOwnerToTheSheetAndPostsNoFormOfItsOwn() {
-        kit.familyWith(kit.ma(0));
-        when(kit.timeline.timeline(eq(WebUiTestKit.FAMILY), eq(WebUiTestKit.MA_ID), any(), any())).thenReturn(Mono.just(new TimelinePage(List.of(), null)));
-        String html = kit.page("/app/timeline", "bn");
+        kit.familyWith(kit.ma(1));
+        com.elioo.baymax.web.domain.TimelineEntry paper = new com.elioo.baymax.web.domain.TimelineEntry(UUID.randomUUID(),
+                java.time.LocalDate.parse("2026-10-12"), false, "prescription", null, "DONE", 0, 2, 0, 0, "k", Instant.parse("2026-10-12T08:00:00Z"),
+                null, 0, null, null);
+        when(kit.timeline.timeline(eq(WebUiTestKit.FAMILY), eq(WebUiTestKit.MA_ID), any(), any()))
+                .thenReturn(Mono.just(new TimelinePage(List.of(paper), null)), Mono.just(new TimelinePage(List.of(), null)));
         String back = URLEncoder.encode("/app/timeline?patient=" + WebUiTestKit.MA_ID, StandardCharsets.UTF_8);
-        assertThat(html).contains("href=\"/app/add?patient=" + WebUiTestKit.MA_ID + "&amp;back=" + back + "\"")
-                .contains("কাগজ পাঠান")
-                .doesNotContain("enctype=\"multipart/form-data\"").doesNotContain("type=\"file\"");
+        for (String words : List.of(kit.copy.t(Lang.BN, "timeline.add"), kit.copy.t(Lang.BN, "chat.empty.action"))) {
+            String html = kit.page("/app/timeline", "bn");
+            assertThat(html).as(words).contains("href=\"/app/add?patient=" + WebUiTestKit.MA_ID + "&amp;back=" + back + "\"")
+                    .contains("<span>" + words + "</span></a>")
+                    .doesNotContain("enctype=\"multipart/form-data\"").doesNotContain("type=\"file\"");
+        }
     }
 
     /** The other direction: a shared patient's papers offer no way to add one. */
