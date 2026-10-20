@@ -44,6 +44,7 @@ class WaConfigValidatorTest {
         wa.setPhoneNumberId("1412074765313019");
         wa.setWabaId("4407553579467225");
         wa.setAllowlist(List.of("+8801700000000"));
+        p.getAuth().setHmacSecret("s".repeat(32));   // F9a: every inbound message is keyed by it
         return p;
     }
 
@@ -79,6 +80,30 @@ class WaConfigValidatorTest {
     @Test
     void awellFormedConfigurationStarts() {
         assertThatCode(() -> validate(valid())).doesNotThrowAnyException();
+    }
+
+    /**
+     * F9a: the webhook claims every message under HMAC(wamid) before it answers. Without the secret every claim fails
+     * and every callback is a 503 — Meta retrying for a week while no family hears anything. Refused at startup instead.
+     */
+    @Test
+    void withoutTheHmacSecretWhatsappRefusesToStartAndSaysWhy() {
+        for (String blank : new String[]{null, "", "   "}) {
+            BaymaxProperties p = valid();
+            p.getAuth().setHmacSecret(blank);
+            assertThatThrownBy(() -> validate(p)).as("hmac secret <%s>", blank)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("BAYMAX_AUTH_HMAC_SECRET")
+                    .hasMessageContaining("inbound messages are keyed by it")
+                    .hasMessageContaining("every webhook answers 503");
+        }
+    }
+
+    @Test
+    void withTheHmacSecretSetWhatsappStarts() {
+        BaymaxProperties p = valid();
+        p.getAuth().setHmacSecret("a-long-random-server-secret-0123456789");
+        assertThatCode(() -> validate(p)).doesNotThrowAnyException();
     }
 
     /**

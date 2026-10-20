@@ -120,6 +120,11 @@ public class WaConfigValidator {
             }
         }
 
+        if (trimmedOrEmpty(properties.getAuth().getHmacSecret()).isEmpty()) {
+            // F9a: the webhook claims each message under HMAC(wamid) before it answers; no secret, no claim, no 200
+            problems.add("BAYMAX_AUTH_HMAC_SECRET is blank but the channel is enabled: inbound messages are keyed by it; "
+                    + "without it every webhook answers 503 and no family hears anything");
+        }
         if (properties.getAuth().isWebMintsCode()) {
             problems.add("BAYMAX_AUTH_WEB_MINTS_CODE must be false while BAYMAX_WA_ENABLED=true — the web form must never "
                     + "send codes to typed numbers (D2, DR-39)");
