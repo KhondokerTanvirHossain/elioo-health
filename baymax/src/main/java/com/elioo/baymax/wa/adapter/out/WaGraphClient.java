@@ -76,10 +76,21 @@ public class WaGraphClient implements com.elioo.baymax.wa.application.port.out.W
                 .doOnNext(bytes -> log.info("[baymax] wa media downloaded id={} bytes={}", mediaId, bytes.length));
     }
 
-    /** Convenience: descriptor then bytes, for the one case phase 1 has. */
+    /**
+     * Convenience: descriptor then bytes, for the one case phase 1 has. Every failure becomes a
+     * {@link MediaUnavailableException} with the status and no cause: Spring's own error reads "404 Not Found from GET
+     * https://lookaside.fbsbx.com/…", and the caller logs what it is given (DR-23).
+     */
     @Override
     public Mono<byte[]> downloadMedia(String mediaId) {
-        return media(mediaId).flatMap(m -> download(m, mediaId));
+        return media(mediaId).flatMap(m -> download(m, mediaId))
+                .onErrorMap(e -> !(e instanceof MediaUnavailableException), e -> {
+                    int status = e instanceof org.springframework.web.reactive.function.client.WebClientResponseException w
+                            ? w.getStatusCode().value() : 0;
+                    log.warn("[baymax] wa media download failed id={} status={} error={}", mediaId, status,
+                            e.getClass().getSimpleName());
+                    return new MediaUnavailableException(status);   // no cause: the cause's message holds the signed URL
+                });
     }
 
     /**

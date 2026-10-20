@@ -1069,4 +1069,58 @@ class WaIntakeServiceTest {
         assertThat(sentBodies().get(0)).doesNotContain(bn("urgency.this_week")).doesNotContain(bn("urgency.now"))
                 .contains(new Copy().documentType("lab_report"));
     }
+
+    // ---- W13 (plan PR 7, Task 7.3): a failure after the ack is told, never left on "পড়ে দেখছি" -------------------------
+
+    /** Stock-take wa-failure-reply (2): after the ack, the download failed and the family was left on "পড়ে দেখছি". */
+    @Test
+    void aDownloadThatFailsAfterTheAckIsToldNotLeftWaiting() {
+        familyWith(patient("মা"));
+        when(graph.downloadMedia("MEDIA-10")).thenReturn(Mono.error(new RuntimeException("boom")));
+        service.onImage(FROM, "MEDIA-10").block();
+        assertThat(sentBodies()).as("after the ack the family must hear what happened — silence was the defect").hasSize(2);
+        assertThat(sentBodies().get(1)).isEqualTo(bn("wa.failed.generic"));
+    }
+
+    /** downloadMedia's one error (WaGraphClient maps every failure to it) gets the "send it again" reply. */
+    @Test
+    void aMediaUnavailableErrorGetsTheDownloadReply() {
+        familyWith(patient("মা"));
+        when(graph.downloadMedia("MEDIA-14")).thenReturn(Mono.error(new WaMessagingPort.MediaUnavailableException(404)));
+        assertThat(service.onImage(FROM, "MEDIA-14").block()).isEqualTo(WaIntakeService.Outcome.FAILED);
+        assertThat(sentBodies()).containsExactly(bn("wa.received"), bn("wa.failed.download"));
+        verify(intake, never()).accept(any(), any());
+    }
+
+    /** Every reason PageRenderer and intake can refuse a file with maps to a reply, and an unknown one to the generic. */
+    @ParameterizedTest
+    @CsvSource({"too_many_pages,wa.failed.too_many_pages", "empty_file,wa.failed.unreadable_file",
+            "empty_pdf,wa.failed.unreadable_file", "unreadable_pdf,wa.failed.unreadable_file",
+            "unsupported_image,wa.failed.unreadable_file", "encode_failed,wa.failed.unreadable_file",
+            "no_file,wa.failed.generic", "patient_not_found,wa.failed.generic"})
+    void everyRefusalReasonHasItsReply(String reason, String key) {
+        assertThat(WaIntakeService.failureKey(com.elioo.baymax.common.error.BaymaxException.badRequest(reason, "x"))).isEqualTo(key);
+        assertThat(WaIntakeService.failureKey(new IllegalStateException("x"))).isEqualTo("wa.failed.generic");
+    }
+
+    @Test
+    void tooManyPagesSaysHowManyAreAllowed() {
+        familyWith(patient("মা"));
+        when(intake.accept(any(), any())).thenReturn(Mono.error(
+                com.elioo.baymax.common.error.BaymaxException.badRequest("too_many_pages", "at most 10")));
+        service.onImage(FROM, "MEDIA-11").block();
+        assertThat(sentBodies()).as("silence after the ack — the defect").hasSize(2);
+        assertThat(sentBodies().get(1)).isEqualTo(new Copy().bn("wa.failed.too_many_pages", java.util.Map.of("max",
+                BanglaDate.digits(String.valueOf(props.getExtract().getMaxPages())))));
+    }
+
+    @Test
+    void aFileThatCannotBeOpenedSaysSo() {
+        familyWith(patient("মা"));
+        when(intake.accept(any(), any())).thenReturn(Mono.error(
+                com.elioo.baymax.common.error.BaymaxException.badRequest("unsupported_image", "could not read MEDIA-12.jpg")));
+        service.onImage(FROM, "MEDIA-12").block();
+        assertThat(sentBodies()).as("silence after the ack — the defect").hasSize(2);
+        assertThat(sentBodies().get(1)).isEqualTo(bn("wa.failed.unreadable_file"));
+    }
 }

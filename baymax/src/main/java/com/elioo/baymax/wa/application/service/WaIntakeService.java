@@ -198,11 +198,33 @@ public class WaIntakeService {
                 .onErrorResume(FreeTierExceededException.class, e ->
                         reply(number, "wa.free_tier", Outcome.FREE_TIER, "free tier exhausted"))
                 .onErrorResume(e -> {
-                    // e.toString() of a WebClientResponseException is "404 … from GET <signed media URL>"
-                    log.error("[baymax] wa intake failed mediaId={} error={}", mediaId,
-                            e instanceof BaymaxException b ? "BaymaxException:" + b.reason() : e.getClass().getSimpleName());
-                    return Mono.just(Outcome.FAILED);
+                    // W13: after "পেয়েছি" the family is told, never left on "পড়ে দেখছি". Class and machine reason only in
+                    // the log: an exception message can carry a signed URL (DR-23) or a filename.
+                    String key = failureKey(e);
+                    log.error("[baymax] wa intake failed mediaId={} reply={} error={}", mediaId, key, describe(e));
+                    return reply(number, key, Outcome.FAILED, "intake failed",
+                            Map.of("max", BanglaDate.digits(String.valueOf(properties.getExtract().getMaxPages()))));
                 });
+    }
+
+    /** The reply for a photo or file that could not be kept; the reasons are PageRenderer's and DocumentIntakeService's. */
+    static String failureKey(Throwable e) {
+        if (e instanceof WaMessagingPort.MediaUnavailableException) {
+            return "wa.failed.download";
+        }
+        if (e instanceof BaymaxException b) {
+            return switch (b.reason()) {
+                case "too_many_pages" -> "wa.failed.too_many_pages";
+                case "empty_file", "empty_pdf", "unreadable_pdf", "unsupported_image", "encode_failed" -> "wa.failed.unreadable_file";
+                default -> "wa.failed.generic";
+            };
+        }
+        return "wa.failed.generic";
+    }
+
+    /** For the log: the class and, for a BaymaxException, its machine reason. Never the message. */
+    static String describe(Throwable e) {
+        return e instanceof BaymaxException b ? e.getClass().getSimpleName() + ":" + b.reason() : e.getClass().getSimpleName();
     }
 
     private Mono<Outcome> withPatients(String number, FamilyAccount family, String mediaId, List<PatientProfile> patients,

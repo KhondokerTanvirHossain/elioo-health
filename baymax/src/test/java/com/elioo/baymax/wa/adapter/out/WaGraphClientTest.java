@@ -315,4 +315,41 @@ class WaGraphClientTest {
                 .doesNotContain("8801700000000")
                 .doesNotContain("Invalid parameter");
     }
+
+    // ---- W13 (plan PR 7, Task 7.3): a failed download's error carries no signed URL -------------------------------------
+
+    /**
+     * The descriptor answers 200 with the signed lookaside URL; the download of that URL answers 404. The 404 carries
+     * its request, as the real exchange does: a bare ClientResponse.create makes Spring print "404 Not Found from
+     * UNKNOWN", so the guard passed on the pre-fix code for a reason production does not share (the probe printed it).
+     */
+    private WaGraphClient clientWhoseDownloadIs404() {
+        BaymaxProperties props = new BaymaxProperties();
+        props.getWa().setEnabled(true);
+        props.getWa().setToken(BEARER);
+        List<Integer> call = new ArrayList<>(List.of(0));
+        WebClient http = WebClient.builder().exchangeFunction(request -> {
+            requestedUris.add(request.url().toString());
+            boolean descriptor = call.set(0, call.get(0) + 1) == 0;
+            return Mono.just(descriptor
+                    ? ClientResponse.create(HttpStatus.OK).header("Content-Type", MediaType.APPLICATION_JSON_VALUE)
+                            .body("{\"url\":\"" + MEDIA_URL + "\",\"mime_type\":\"image/jpeg\",\"file_size\":12}").build()
+                    : ClientResponse.create(HttpStatus.NOT_FOUND)
+                            .request(new org.springframework.mock.http.client.MockClientHttpRequest(request.method(), request.url()))
+                            .build());
+        }).build();
+        return new WaGraphClient(props, http);
+    }
+
+    /** DR-23: an error travels into every caller's log. It must not carry the signed lookaside URL or its token. */
+    @Test
+    void aFailedDownloadsErrorCarriesNeitherTheUrlNorItsToken() {
+        StepVerifier.create(clientWhoseDownloadIs404().downloadMedia("MEDIA-ID-3"))
+                .expectErrorSatisfies(e -> {
+                    assertThat(requestedUris).as("it really fetched the signed URL").anyMatch(u -> u.contains(TOKEN_IN_URL));
+                    assertThat(e.toString() + " / " + e.getCause())
+                            .as("the error a caller logs must not carry the media URL").doesNotContain(TOKEN_IN_URL).doesNotContain("lookaside");
+                })
+                .verify();
+    }
 }
