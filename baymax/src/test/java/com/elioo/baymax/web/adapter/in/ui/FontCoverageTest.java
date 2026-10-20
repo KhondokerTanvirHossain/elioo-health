@@ -13,8 +13,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Every code point a Bangla page can show falls in the unicode-range of a self-hosted Bengali face, and every face draws
- * what its range claims: each copy code point inside a face's range is in the cmap of the file that face serves, read
- * from the served bytes. Derived from the bundles and the served stylesheet, never from a list.
+ * what its range claims: each code point inside a face's range is in the cmap of the file that face serves, read from
+ * the served bytes. "What a page can show" is the bundles AND the HTML every router page actually sends (text written in
+ * page code, such as SignInPages' "কোড", never passes through a bundle). Derived from the bundles, the rendered pages and
+ * the served stylesheet, never from a list.
  */
 class FontCoverageTest {
 
@@ -51,9 +53,52 @@ class FontCoverageTest {
         return faces;
     }
 
-    /** Every code point of the given bundles, after Properties has resolved escapes (as a page sees it). */
+    /** Every router page in both languages, rendered once for this class (RenderedPages renders every fixture). */
+    private static java.util.Map<String, String> pages;
+
+    private static synchronized java.util.Map<String, String> pages() {
+        if (pages == null) {
+            pages = RenderedPages.all();
+        }
+        return pages;
+    }
+
+    private static final Pattern ENTITY = Pattern.compile("&(#[0-9]+|#[xX][0-9A-Fa-f]+|[A-Za-z]+);");
+    private static final java.util.Map<String, String> NAMED = java.util.Map.of("amp", "&", "lt", "<", "gt", ">", "quot", "\"",
+            "apos", "'", "nbsp", "\u00A0", "copy", "\u00A9");
+
+    /** The page as drawn: character references decoded, so a code point written as {@code &#2509;} is still counted. */
+    static String shown(String html) {
+        Matcher m = ENTITY.matcher(html);
+        StringBuilder out = new StringBuilder();
+        while (m.find()) {
+            String e = m.group(1);
+            String text;
+            if (e.startsWith("#x") || e.startsWith("#X")) {
+                text = Character.toString(Integer.parseInt(e.substring(2), 16));
+            } else if (e.startsWith("#")) {
+                text = Character.toString(Integer.parseInt(e.substring(1)));
+            } else {
+                text = NAMED.get(e);
+                assertThat(text).as("a named character reference this test can decode: &" + e + ";").isNotNull();
+            }
+            m.appendReplacement(out, Matcher.quoteReplacement(text));
+        }
+        return m.appendTail(out).toString();
+    }
+
+    /**
+     * Every code point of the given bundles, after Properties has resolved escapes, and of every rendered page in those
+     * languages: what the stylesheet's faces are asked to draw.
+     */
     private static Set<Integer> copy(List<Lang> langs) throws Exception {
         Set<Integer> out = new TreeSet<>();
+        List<String> suffixes = langs.stream().map(l -> " " + l.name().toLowerCase(java.util.Locale.ROOT)).toList();
+        java.util.Map<String, String> rendered = pages();
+        List<String> sent = rendered.entrySet().stream().filter(e -> suffixes.stream().anyMatch(e.getKey()::endsWith))
+                .map(java.util.Map.Entry::getValue).toList();
+        assertThat(sent).as("rendered pages in " + langs).isNotEmpty();
+        sent.forEach(html -> shown(html).codePoints().forEach(out::add));
         for (Lang lang : langs) {
             for (String part : UiCopy.PARTS) {
                 BundleFiles.values(part, lang).values().forEach(v -> v.codePoints().forEach(out::add));
