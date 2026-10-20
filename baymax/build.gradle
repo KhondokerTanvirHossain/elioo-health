@@ -59,3 +59,11 @@ dependencies {
     // the self-hosted fonts (D1) are checked by their content: a woff2's tables are one Brotli stream (Google's pure-Java decoder)
     testImplementation 'org.brotli:dec:0.1.2'
 }
+
+// A red test in CI prints its assertion message, not only "AssertionError at Foo.java:174": the page sweep's
+// failure names what it matched and where (PhoneGuard), and that is only useful if the log shows it.
+tasks.named('test') {
+    testLogging {
+        exceptionFormat = 'full'
+    }
+}

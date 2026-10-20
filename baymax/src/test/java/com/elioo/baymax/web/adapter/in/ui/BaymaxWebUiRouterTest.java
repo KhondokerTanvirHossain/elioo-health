@@ -17,21 +17,6 @@ import static org.mockito.Mockito.when;
 /** BMX-6b: Baymax serves /, the app lives at /app, old /baymax URLs 301, the language is a cookie. */
 class BaymaxWebUiRouterTest {
 
-    /**
-     * A Bangladeshi mobile number however it is written: +880 / 880 / 0, ASCII or Bangla digits, with or without a
-     * space or hyphen between groups. Java's \\d does not match Bangla digits, and the page is in Bangla.
-     * <p>
-     * Matched as a field, not as a substring: the number must stand on its own, not inside a longer token. It may not
-     * touch a letter, a digit or an underscore, nor be hyphen-joined to one, on either side — so the eleven
-     * number-shaped digits a random UUID holds about once in 1,600 draws (the add sheet's {@code upload_key},
-     * {@code 19492940-0135-4005-952b-…}) are part of the id and never a number. Bangla letters may touch it
-     * ({@code নম্বর০১৭…}, {@code …-এ}): no id is written in them. PhoneNumberGuardTest holds both directions.
-     */
-    static final java.util.regex.Pattern BD_MOBILE = java.util.regex.Pattern.compile(
-            "(?<![0-9A-Za-z০-৯_])(?<![0-9A-Za-z০-৯_][-])"
-                    + "(?:\\+?[8৮][8৮][0০][\\s-]?|[0০])[1১][3-9৩-৯](?:[\\s-]?[0-9০-৯]){8}"
-                    + "(?![0-9A-Za-z০-৯_])(?![-][0-9A-Za-z০-৯_])");
-
     private final WebAuthUseCase auth = mock(WebAuthUseCase.class);
     private final WebTestClient client;
 
@@ -42,15 +27,25 @@ class BaymaxWebUiRouterTest {
         client = new WebUiTestKit(auth, props, true).client;
     }
 
-    /** The page check is only as good as its pattern: every way the number is written, and not a date or a price. */
+    /**
+     * The page check is only as good as its pattern: every way the number is written, raw and URL-encoded as this app
+     * writes URLs (the language toggle's {@code ?back=}, the NOW page's wa.me text), and not a date, a price or an id.
+     */
     @Test
     void thePhonePatternCatchesEveryWayANumberIsWrittenAndNothingElse() {
         for (String number : java.util.List.of("+8801700000000", "8801700000000", "01700000000", "০১৭০০০০০০০০",
                 "+৮৮০১৭০০০০০০০০", "+880 1700-000000", "+880 1700 000 000", "০১৭০০-০০০০০০")) {
-            assertThat(BD_MOBILE.matcher(number).find()).as(number).isTrue();
+            assertThat(PhoneGuard.find(number)).as(number).isPresent();
+            String back = "/lang/en?back=" + java.net.URLEncoder.encode("/app/x?to=" + number, java.nio.charset.StandardCharsets.UTF_8);
+            assertThat(PhoneGuard.find(back)).as(back).isPresent();
+            String share = "https://wa.me/?text=" + java.net.URLEncoder.encode("কল " + number, java.nio.charset.StandardCharsets.UTF_8)
+                    .replace("+", "%20");
+            assertThat(PhoneGuard.find(share)).as(share).isPresent();
         }
-        for (String other : java.util.List.of("২০২৬-০৯-২১", "2026-09-21", "১.১ → ১.৩ → ১.৫", "৳ ১,২০০", "HbA1c 8.2")) {
-            assertThat(BD_MOBILE.matcher(other).find()).as(other).isFalse();
+        for (String other : java.util.List.of("২০২৬-০৯-২১", "2026-09-21", "১.১ → ১.৩ → ১.৫", "৳ ১,২০০", "HbA1c 8.2",
+                "value=\"19492940-0135-4005-952b-d3d76ee5b1d2\"", "key=f%2Fp%2F19492940-0135-4005-952B-D3D76EE5B1D2%2Fpage-1.jpg",
+                "width:100%;", "%E0%A6 broken escape %zz", "/assets/baymax.css?v=7f3a01c9")) {
+            assertThat(PhoneGuard.find(other)).as(other).isEmpty();
         }
     }
 
@@ -62,7 +57,8 @@ class BaymaxWebUiRouterTest {
         assertThat(html).contains("চিকিৎসা পরামর্শ নয়").contains("Medioo").contains("Elioo Health");
         // every CTA is the app login until WhatsApp exists (BMX-10): no wa.me, no dead button, no placeholder address
         assertThat(html).contains("class=\"cta\" href=\"/app\"").doesNotContain("wa.me").doesNotContain("8801700000000").doesNotContain("example.com").doesNotContain("XXXX");
-        assertThat(html).contains("href=\"mailto:k.tanvir.hossain@gmail.com\"").doesNotContainPattern(BD_MOBILE);   // no phone number, in any form, is on the page
+        assertThat(html).contains("href=\"mailto:k.tanvir.hossain@gmail.com\"");
+        assertThat(PhoneGuard.find(html)).as("a phone number, in any form, on the landing page").isEmpty();
         // the trend renders once, inside its own span — not a span between every character
         assertThat(html).containsOnlyOnce("<span class=\"nw\">১.১ → ১.৩ → ১.৫</span>").doesNotContain("<span class=\"nw\"></span>");
         assertThat(html).doesNotContain("<script").doesNotContain("src=\"http").doesNotContain("href=\"http://");

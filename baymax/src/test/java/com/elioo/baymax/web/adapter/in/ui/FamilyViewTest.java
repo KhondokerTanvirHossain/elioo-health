@@ -135,14 +135,14 @@ class FamilyViewTest {
     void theAccountShowsTheOwnersNumberOnceAndOnlyHere() {
         PatientSummary ma = kit.patient("আম্মা", true, 0);
         String html = family(ma, false);
-        assertThat(count(BaymaxWebUiRouterTest.BD_MOBILE, html)).as("a phone number in any form on পরিবার").isEqualTo(1);
+        assertThat(PhoneGuard.count(html)).as("a phone number in any form on পরিবার").isEqualTo(1);
         assertThat(html).contains(PhoneDisplay.full(WebUiTestKit.OWNER_NUMBER));
         assertThat(html).contains("<form method=\"post\" action=\"/app/logout\">")
                 .contains("href=\"/lang/en?back=%2Fapp%2Ffamily\"");
         // the other direction: no other tab carries a phone number in any form
         when(kit.timeline.timeline(eq(WebUiTestKit.FAMILY), eq(ma.patient().id()), any(), any())).thenReturn(Mono.just(new TimelinePage(List.of(), null)));
         for (Tab t : List.of(Tab.CHAT, Tab.PAPERS)) {
-            assertThat(kit.page(t.path, "bn")).as(t.path).doesNotContainPattern(BaymaxWebUiRouterTest.BD_MOBILE);
+            assertThat(PhoneGuard.find(kit.page(t.path, "bn"))).as(t.path).isEmpty();
         }
     }
 
@@ -170,8 +170,8 @@ class FamilyViewTest {
                         continue;
                     }
                     String key = route.key() + " " + f.uri() + " #" + f.name() + " " + lang;
-                    assertThat(new String(r.getResponseBody(), java.nio.charset.StandardCharsets.UTF_8)).as(key)
-                            .doesNotContainPattern(BaymaxWebUiRouterTest.BD_MOBILE);
+                    // the match and its neighbourhood are in the failure, so a red sweep in CI names what it saw
+                    assertThat(PhoneGuard.find(new String(r.getResponseBody(), java.nio.charset.StandardCharsets.UTF_8))).as(key).isEmpty();
                     swept.add(key);
                 }
             }
