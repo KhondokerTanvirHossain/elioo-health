@@ -3,6 +3,7 @@ package com.elioo.baymax.web.application.port.in;
 import com.elioo.baymax.extraction.domain.DocumentView;
 import com.elioo.baymax.storage.domain.DeletionReport;
 import com.elioo.baymax.web.domain.FamilyOverview;
+import com.elioo.baymax.web.domain.TimelineFilter;
 import com.elioo.baymax.web.domain.TimelinePage;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import reactor.core.publisher.Mono;
@@ -20,7 +21,16 @@ public interface TimelineUseCase {
 
     Mono<FamilyOverview> me(UUID familyId);
 
-    Mono<TimelinePage> timeline(UUID familyId, UUID patientId, String cursor);
+    /** The unfiltered list: {@link #timeline(UUID, UUID, String, TimelineFilter)} with {@link TimelineFilter#ALL}. */
+    default Mono<TimelinePage> timeline(UUID familyId, UUID patientId, String cursor) {
+        return timeline(familyId, patientId, cursor, TimelineFilter.ALL);
+    }
+
+    /**
+     * One page of a patient's papers, newest document date first (C2's read model). {@code cursor} is a previous page's
+     * {@code nextCursor} (opaque); null, blank or a pre-C2 instant opens the first page; anything else is 400.
+     */
+    Mono<TimelinePage> timeline(UUID familyId, UUID patientId, String cursor, TimelineFilter filter);
 
     Mono<DocumentView> document(UUID familyId, UUID documentId);
 

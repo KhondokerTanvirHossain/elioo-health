@@ -14,6 +14,10 @@ import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
 import com.elioo.baymax.storage.domain.DeletionReport;
 import com.elioo.baymax.web.application.port.out.AuditPort;
+import com.elioo.baymax.web.application.port.out.TimelineReadPort;
+import com.elioo.baymax.web.domain.TimelineCursor;
+import com.elioo.baymax.web.domain.TimelineEntry;
+import com.elioo.baymax.web.domain.TimelineFilter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -22,6 +26,7 @@ import reactor.test.StepVerifier;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
@@ -53,6 +58,7 @@ class TimelineServiceTest {
     private final DocumentStorageUseCase storage = mock(DocumentStorageUseCase.class);
     private final AuditPort audit = mock(AuditPort.class);
     private final DocumentUrgencyUseCase urgency = mock(DocumentUrgencyUseCase.class);
+    private final TimelineReadPort timelineRead = mock(TimelineReadPort.class);
     private TimelineService service;
 
     private static final PatientProfile PATIENT = new PatientProfile(PATIENT_B, FAMILY_B, "Ma", 60,
@@ -61,10 +67,12 @@ class TimelineServiceTest {
 
     @BeforeEach
     void wire() {
-        service = new TimelineService(records, documents, intake, storage, audit, Clock.fixed(NOW, ZoneOffset.UTC), urgency);
+        service = new TimelineService(records, documents, intake, storage, audit, Clock.fixed(NOW, ZoneOffset.UTC), urgency, timelineRead);
         when(audit.record(any())).thenReturn(Mono.empty());
         // stubbed for every test, so a path that asks for urgency fails on verify(never()), not on a null Mono
         when(urgency.currentOrAssess(any())).thenReturn(Mono.empty());
+        // likewise: a path that reads the timeline when it must not fails on verify(never()) or its assertion, not on a null Flux
+        when(timelineRead.page(any(), any(), any(), anyInt())).thenReturn(Flux.empty());
     }
 
     /** Acceptance: given family A's session and family B's document id, then 404. */
@@ -108,7 +116,31 @@ class TimelineServiceTest {
         when(records.visiblePatient(FAMILY_A, PATIENT_B)).thenReturn(Mono.empty());
         StepVerifier.create(service.timeline(FAMILY_A, PATIENT_B, null))
                 .expectErrorMatches(e -> ((BaymaxException) e).status().value() == 404).verify();
-        verify(documents, never()).timelineOf(any(), any(), anyInt());
+        verify(timelineRead, never()).page(any(), any(), any(), anyInt());
+    }
+
+    /** A cursor that is neither absent, a pre-C2 instant, nor a v1 token is a 400, and nothing is read. */
+    @Test
+    void aGarbageCursorIs400() {
+        when(records.visiblePatient(FAMILY_B, PATIENT_B)).thenReturn(Mono.just(new PatientAccess(PATIENT, true)));
+        StepVerifier.create(Mono.defer(() -> service.timeline(FAMILY_B, PATIENT_B, "not-a-cursor")))
+                .expectErrorMatches(e -> e instanceof BaymaxException b && b.status().value() == 400 && "invalid_cursor".equals(b.reason()))
+                .verify();
+        verify(timelineRead, never()).page(any(), any(), any(), anyInt());
+    }
+
+    /** The cursor and the filter reach the read port as given; the three-argument form is the unfiltered list. */
+    @Test
+    void theCursorAndTheFilterReachTheReadPort() {
+        when(records.visiblePatient(FAMILY_B, PATIENT_B)).thenReturn(Mono.just(new PatientAccess(PATIENT, true)));
+        when(timelineRead.page(eq(PATIENT_B), any(), any(), eq(21))).thenReturn(Flux.empty());
+        TimelineCursor after = new TimelineCursor(LocalDate.parse("2026-10-12"), NOW, DOC_B);
+        StepVerifier.create(service.timeline(FAMILY_B, PATIENT_B, after.encode(), TimelineFilter.LAB))
+                .assertNext(page -> assertThat(page.nextCursor()).isNull()).verifyComplete();
+        verify(timelineRead).page(PATIENT_B, after, TimelineFilter.LAB, 21);
+        StepVerifier.create(service.timeline(FAMILY_B, PATIENT_B, null))
+                .assertNext(page -> assertThat(page.entries()).isEmpty()).verifyComplete();
+        verify(timelineRead).page(PATIENT_B, TimelineCursor.FIRST, TimelineFilter.ALL, 21);
     }
 
     /**
@@ -118,8 +150,7 @@ class TimelineServiceTest {
     @Test
     void aShareMemberSeesTheTimelineButMayNotDelete() {
         when(records.visiblePatient(FAMILY_A, PATIENT_B)).thenReturn(Mono.just(new PatientAccess(PATIENT, false)));
-        when(documents.timelineOf(eq(PATIENT_B), any(), anyInt())).thenReturn(Flux.just(DOCUMENT));
-        when(documents.sectionCounts(DOC_B)).thenReturn(Mono.just(new int[]{2, 3, 0}));
+        when(timelineRead.page(eq(PATIENT_B), any(), any(), anyInt())).thenReturn(Flux.just(entry(DOC_B, NOW)));
         when(documents.findVisible(FAMILY_A, DOC_B)).thenReturn(Mono.just(DOCUMENT));
 
         StepVerifier.create(service.timeline(FAMILY_A, PATIENT_B, null))
@@ -173,18 +204,24 @@ class TimelineServiceTest {
     @Test
     void aTimelinePageOfTwentyOneMeansThereIsANextCursor() {
         when(records.visiblePatient(FAMILY_B, PATIENT_B)).thenReturn(Mono.just(new PatientAccess(PATIENT, true)));
-        List<Document> docs = new java.util.ArrayList<>();
+        List<TimelineEntry> rows = new java.util.ArrayList<>();
         for (int i = 0; i < 21; i++) {
-            docs.add(Document.received(PATIENT_B, FAMILY_B, 1, NOW.minusSeconds(i)).withId(UUID.randomUUID()));
+            rows.add(entry(UUID.randomUUID(), NOW.minusSeconds(i)));
         }
-        when(documents.timelineOf(eq(PATIENT_B), any(), eq(21))).thenReturn(Flux.fromIterable(docs));
-        when(documents.sectionCounts(any())).thenReturn(Mono.just(new int[]{0, 0, 0}));
+        when(timelineRead.page(eq(PATIENT_B), eq(TimelineCursor.FIRST), eq(TimelineFilter.ALL), eq(21))).thenReturn(Flux.fromIterable(rows));
+        TimelineEntry e20 = rows.get(19);
         StepVerifier.create(service.timeline(FAMILY_B, PATIENT_B, null))
                 .assertNext(page -> {
-                    assertThat(page.entries()).hasSize(20);
-                    assertThat(page.nextCursor()).isEqualTo(NOW.minusSeconds(19).toString());
-                    assertThat(page.entries().get(0).dateIsFallback()).isTrue();   // received(): no doc_date yet
+                    assertThat(page.entries()).hasSize(20).doesNotContain(rows.get(20));
+                    // the whole (date, upload, id) of the last row shown, opaque: never a bare createdAt
+                    assertThat(page.nextCursor()).isEqualTo(new TimelineCursor(e20.date(), e20.createdAt(), e20.documentId()).encode());
                 }).verifyComplete();
+    }
+
+    /** A read-model row as TimelineReadPort returns it: three medicines, nothing assessed. */
+    private static TimelineEntry entry(UUID id, Instant createdAt) {
+        return new TimelineEntry(id, LocalDate.parse("2026-09-17"), false, "prescription", null, "DONE", 0, 3, 0, 0,
+                "k/" + id + "/page-1.jpg", createdAt);
     }
 
     @Test
