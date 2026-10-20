@@ -59,6 +59,11 @@ public class UploadUiHandler implements WebPages {
     private final UiCopy copy;
     /** The per-file and per-request byte caps ({@code baymax.upload.*}) and the page limit the refusal names. */
     private final BaymaxProperties properties;
+    /**
+     * Where the sheet's {@code upload_key} comes from: a fresh random UUID per draw. Package-private and not final so a
+     * test can draw a known key (PhoneNumberGuardTest pins the number-shaped key that once flaked the page sweep).
+     */
+    java.util.function.Supplier<UUID> uploadKeys = UUID::randomUUID;
 
     @Override
     public int order() {
@@ -122,7 +127,7 @@ public class UploadUiHandler implements WebPages {
         Optional<UUID> chosen = chosen(o, asked);
         b.append("<form id=\"add\" class=\"add\" method=\"post\" enctype=\"multipart/form-data\" action=\"").append(SHEET).append("\"")
                 .append(scriptLimits(lang, a)).append(">")
-                .append("<input type=\"hidden\" name=\"upload_key\" value=\"").append(UUID.randomUUID()).append("\">")
+                .append("<input type=\"hidden\" name=\"upload_key\" value=\"").append(uploadKeys.get()).append("\">")
                 .append("<input type=\"hidden\" name=\"back\" value=\"").append(esc(back)).append("\">");
         b.append("<fieldset class=\"pick\"><legend>").append(copy.t(lang, "add.who")).append("</legend><div class=\"chips\">");
         for (PatientSummary p : o.canSend()) {
