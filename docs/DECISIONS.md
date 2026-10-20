@@ -584,6 +584,14 @@ has been in place long enough to trust.
 this plan (the API answers 403, "Upgrade to GitHub Pro or make this repository public"). `main` is therefore not
 technically protected; the "Build and test" check is enforced by process (CLAUDE.md, Branching).
 
+*Amended 2026-10-18 and 2026-10-20 (PO):* the repository is **public**. GitHub Actions on a private repository
+needed paid billing, which the project does not have; public repositories run Actions free. With the repository
+public, branch protection is available again and was re-enabled on 2026-10-20 ("Build and test" required, admins
+included, no force-push or deletion). **The history rewrite is declined** (PO, 2026-10-20): the two images DR-36 names
+stay reachable in the history from `5529cb6` to PR #54 and in the tag `medscribe-poc-v1`. They came from a public image
+search; no secret was ever committed (history scanned 2026-10-18: only AWS's documented example key and a `"..."`
+placeholder). DR-36's check still keeps any new real document out of the tree.
+
 ## DR-39 | 2026-10-17 | Sign-in is inbound-first
 
 **Decision:** the web sign-in code is fetched, not pushed (PO, D2, with D36 and D37 as recommended). The family texts
