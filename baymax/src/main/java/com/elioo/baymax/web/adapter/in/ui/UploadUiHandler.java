@@ -81,7 +81,22 @@ public class UploadUiHandler implements WebPages {
         String back = back(request);
         Optional<String> asked = request.queryParam("patient");
         return uploads.uploadOptions(session.familyId()).flatMap(options -> Html.html(HttpStatus.OK,
-                new AppShell(copy).sheet(lang, Tab.of(back), "add.title", sheetBody(lang, options, asked, back, null, Grouping.ONE))));
+                page(lang, back, options, sheetBody(lang, options, asked, back, null, Grouping.ONE))));
+    }
+
+    /**
+     * The sheet's page over the tab {@code back} belongs to. {@code /assets/upload.js} (D4) is loaded only when the sheet
+     * draws its form: with no form there is nothing to enhance, and a page without script loads none (spec §10).
+     */
+    private String page(Lang lang, String back, UploadOptions o, String body) {
+        AppShell shell = new AppShell(copy);
+        Html.Head head = shell.head(lang, "add.title");
+        return shell.sheet(lang, Tab.of(back), formShown(o) ? head.script("upload.js") : head, body);
+    }
+
+    /** The sheet draws its form when the viewer may send for someone and the allowance has room for one more paper. */
+    private static boolean formShown(UploadOptions o) {
+        return !o.canSend().isEmpty() && o.allowance().allows(1);
     }
 
     /**
@@ -97,7 +112,7 @@ public class UploadUiHandler implements WebPages {
                 .append("\">").append(Icons.svg("x", 24)).append("</a></div>");
         b.append("<p id=\"add-alert\" class=\"warn\" role=\"alert\"").append(alert == null ? " hidden>" : ">" + alert).append("</p>");
         DocumentAllowance a = o.allowance();
-        if (o.canSend().isEmpty() || !a.allows(1)) {
+        if (!formShown(o)) {
             String why = !o.canSend().isEmpty() ? capText(lang, a)
                     : copy.t(lang, o.viewOnly().isEmpty() ? "add.nopatient" : "add.viewonly");
             return b.append("<p class=\"card\">").append(why).append("</p><a class=\"btn quiet\" href=\"").append(esc(back))
@@ -289,7 +304,7 @@ public class UploadUiHandler implements WebPages {
             // at the cap the sheet itself already says so, with the reset date; the alert does not say it twice
             String alert = tooFew ? copy.t(lang, "add.cap.separate", o.allowance().remaining())
                     : cap ? (o.allowance().allows(1) ? capText(lang, o.allowance()) : null) : copy.t(lang, key, maxPages);
-            return Html.html(e.status(), new AppShell(copy).sheet(lang, Tab.of(back), "add.title", sheetBody(lang, o, chosen, back, alert, grouping)));
+            return Html.html(e.status(), page(lang, back, o, sheetBody(lang, o, chosen, back, alert, grouping)));
         });
     }
 

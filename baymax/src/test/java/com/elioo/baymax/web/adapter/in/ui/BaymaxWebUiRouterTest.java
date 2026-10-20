@@ -145,6 +145,13 @@ class BaymaxWebUiRouterTest {
         client.get().uri("/assets/..%2Fmessages_bn.properties").exchange().expectStatus().isNotFound();
     }
 
+    /** D4: the add sheet's script leaves the jar as JavaScript, so the browser runs it under script-src 'self'. */
+    @Test
+    void theUploadScriptIsServedAsJavascript() {
+        client.get().uri("/assets/upload.js").exchange().expectStatus().isOk()
+                .expectHeader().contentTypeCompatibleWith("text/javascript");
+    }
+
     /** D1: the two self-hosted fonts leave the jar as woff2; their licence stays in it. The content check is FontCoverageTest. */
     @Test
     void theFontsAreServedAsWoff2FromTheJar() {

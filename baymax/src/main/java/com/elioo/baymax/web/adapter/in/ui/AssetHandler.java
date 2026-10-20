@@ -17,7 +17,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Set;
 
-/** {@code /assets/{file}}: the stylesheet, the landing images, the reading page's script and the two fonts from the jar. */
+/** {@code /assets/{file}}: the stylesheet, the landing images, the reading page's and the add sheet's scripts and the two fonts from the jar. */
 @Component
 public class AssetHandler implements WebPages {
 
@@ -39,7 +39,8 @@ public class AssetHandler implements WebPages {
             "noto-sans-latin.woff2",
             "paper-lab.svg",
             "paper-rx.svg",
-            "progress.js");
+            "progress.js",
+            "upload.js");
 
     /** Directories under {@code baymax/ui/} that are never served as themselves: the stylesheet's parts. */
     static final List<String> PRIVATE_DIRS = List.of("css/");

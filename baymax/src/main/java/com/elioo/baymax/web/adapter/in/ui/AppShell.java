@@ -75,7 +75,17 @@ final class AppShell {
      * opened from, inert behind the sheet; nothing of anyone's papers is read for the page under it.
      */
     String sheet(Lang lang, Tab under, String titleKey, String sheet) {
-        return Html.appPage(lang, Html.Head.of(copy.t(lang, titleKey) + " — " + copy.t(lang, "app.title")),
+        return sheet(lang, under, head(lang, titleKey), sheet);
+    }
+
+    /** The head a sheet's page carries by default: its title only. */
+    Html.Head head(Lang lang, String titleKey) {
+        return Html.Head.of(copy.t(lang, titleKey) + " — " + copy.t(lang, "app.title"));
+    }
+
+    /** As above with a head of the sheet's own (the add sheet: its script, D4, when it draws the form). */
+    String sheet(Lang lang, Tab under, Html.Head head, String sheet) {
+        return Html.appPage(lang, head,
                 "<header class=\"appbar\">" + Html.brand(copy.t(lang, "app.title")) + "</header>", "",
                 copy.t(lang, "disclaimer"), tabs(lang, under), sheet, "has-sheet");
     }

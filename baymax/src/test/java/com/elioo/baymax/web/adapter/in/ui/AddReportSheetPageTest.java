@@ -69,7 +69,8 @@ class AddReportSheetPageTest {
         assertThat(html).doesNotContain(" disabled");   // nothing the server renders waits for a script to enable it
         assertThat(classed(Dom.parse(html), "quota")).singleElement().extracting(Dom.Element::ownText)
                 .isEqualTo("এ মাসে বিনা খরচে আরও ৩টি কাগজ পড়াতে পারবেন। কোনো ছবি পড়তে না পারলে সেটা গোনা হবে না।");
-        assertThat(html).doesNotContain("<script");   // A7 ships no script; D4 adds exactly one
+        // D4 enhances the form with one script file; nothing inline, and the form above is complete without it
+        assertThat(html).doesNotContainPattern("<script(?![^>]*\\bsrc=\"/assets/)");
     }
 
     static List<Dom.Element> classed(Dom dom, String cls) {
@@ -319,6 +320,49 @@ class AddReportSheetPageTest {
                 new com.elioo.baymax.web.domain.AttentionItem.Retake(UUID.randomUUID(), NOW),
                 new com.elioo.baymax.web.domain.AttentionItem.FollowUp(rx, "Next visit", day.plusDays(8), "f/p/" + rx + "/crop-f.jpg"),
                 new com.elioo.baymax.web.domain.AttentionItem.Reading(UUID.randomUUID(), NOW));
+    }
+
+    // --- D4 ---------------------------------------------------------------------------------------------------------
+
+    /** The sheet's one script: a file from /assets/, deferred and versioned, never inline (CSP script-src 'self'). */
+    @Test
+    void theSheetLoadsExactlyOneScriptFromAssetsAndOnlyWhenThereIsAFormToEnhance() {
+        when(kit.uploads.uploadOptions(WebUiTestKit.FAMILY)).thenReturn(Mono.just(new UploadOptions(List.of(patient("আম্মা", 64, true)), List.of(), used(0))));
+        String html = sheet();
+        assertThat(html).containsOnlyOnce("<script").containsPattern("<script src=\"/assets/upload\\.js\\?v=[0-9a-f]+\" defer></script>");
+        assertThat(html).doesNotContainPattern("<script(?![^>]*\\bsrc=)");   // nothing inline
+        when(kit.uploads.uploadOptions(WebUiTestKit.FAMILY)).thenReturn(Mono.just(new UploadOptions(List.of(patient("আম্মা", 64, true)), List.of(), used(3))));
+        assertThat(sheet()).as("at the cap there is no form, so nothing to enhance (spec §10)").doesNotContain("<script");
+    }
+
+    /**
+     * Derived over every page the router renders, both directions: a page that draws the sheet's form (the sheet, and a
+     * refusal drawn on it) loads upload.js and no other script; a page without that form never loads it. Either set empty
+     * would make its half vacuous, so both are asserted non-empty.
+     */
+    @Test
+    void uploadJsIsOnEveryPageWithTheFormAndOnNoOtherPage() {
+        java.util.regex.Pattern upload = java.util.regex.Pattern.compile("<script src=\"/assets/upload\\.js\\?v=[0-9a-f]+\" defer></script>");
+        List<String> withForm = new java.util.ArrayList<>();
+        List<String> without = new java.util.ArrayList<>();
+        List<String> wrong = new java.util.ArrayList<>();
+        RenderedPages.all().forEach((where, html) -> {
+            long scripts = upload.matcher(html).results().count();
+            if (html.contains("<form id=\"add\"")) {
+                withForm.add(where);
+                if (scripts != 1 || html.split("<script", -1).length - 1 != 1) {
+                    wrong.add(where + ": the form's page carries " + scripts + " upload.js and " + (html.split("<script", -1).length - 1) + " scripts");
+                }
+            } else {
+                without.add(where);
+                if (html.contains("upload.js")) {
+                    wrong.add(where + ": loads upload.js with no form to enhance");
+                }
+            }
+        });
+        assertThat(withForm).as("pages that draw the add form").isNotEmpty().anyMatch(k -> k.startsWith("POST "));
+        assertThat(without).as("pages without it").isNotEmpty();
+        assertThat(wrong).isEmpty();
     }
 
     // --- D3 ---------------------------------------------------------------------------------------------------------
