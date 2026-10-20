@@ -90,6 +90,11 @@ jobs:
     needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    # One deploy at a time: two merges landing close together queue here instead of running deploy.sh on the box at
+    # once. Never cancelled: a deploy stopped halfway leaves the server between images, so the later one waits.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
     permissions:
       contents: read
       packages: write
