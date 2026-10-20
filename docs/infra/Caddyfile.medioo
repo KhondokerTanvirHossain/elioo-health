@@ -1,0 +1,29 @@
+# Medioo site blocks, copied read-only from the box on 2026-10-21 (DR-40, plan task X1).
+#
+# Source of truth: until W1c, the box is the source — /home/ec2-user/n8n/Caddyfile on the EC2 host, which also
+# holds the n8n ({$DOMAIN}) and bddrug (drugdb.eliooo.org) blocks; those are deliberately not copied here. From W1c
+# on, THIS file is the source and the box's medioo blocks are replaced from it.
+#
+# Reload after an edit on the box:
+#   docker exec n8n-caddy-1 caddy reload --config /etc/caddy/Caddyfile
+#
+# DR-40 A1: Java is the default. A path goes to medioo-web:3000 only once it is listed in this block.
+# Flipping a route back is a one-line edit plus a reload.
+
+medioo.eliooo.org {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	reverse_proxy medscribe-ai:8086
+}
+
+# Old public name (DR-15, 2026-09-19): every URL already sent to families keeps working via a permanent redirect.
+baymax.eliooo.org {
+	redir https://medioo.eliooo.org{uri} permanent
+}

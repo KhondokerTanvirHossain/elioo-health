@@ -645,3 +645,110 @@ A family delete locks the family row first, so a WhatsApp message arriving mid-d
 - Auto-send reaches every account holder inside the window once `BAYMAX_WA_ALLOWLIST` is blank (blank = no phase-1
   restriction). Until the PO widens it on purpose the allowlist stays set to the pilot numbers; blanking it is a PO step,
   not an env tidy-up.
+
+## DR-40 | 2026-10-21 | Next.js frontend beside Java
+
+**Decision:** the Medioo web UI is rebuilt as a separate Next.js frontend, `medioo-web`, beside the Java app (PO
+direction 2026-10-20: the web UI reads as toy-like; rebuild it in React/Next.js behind a visual QA gate). Architecture
+by Claude Code, recorded as Part A1–A8 of [the rebuild plan](superpowers/plans/2026-10-21-medioo-nextjs-rebuild.md):
+
+1. **Topology (A1).** `medioo-web` is a Next standalone container (`node:22-alpine`, `--memory=320m`) on `n8n_edge`
+   with no published port, built and tagged with the same git sha as the Java image by the same deploy job. Caddy
+   routes per path and **Java is the default**: a path reaches `medioo-web:3000` only once it is listed in the
+   versioned site block [`docs/infra/Caddyfile.medioo`](infra/Caddyfile.medioo). There is no Next fallback proxy.
+   Flipping a route back is a one-line Caddy edit plus a reload.
+2. **Deploy order and rollback (A2).** `deploy.sh` swaps Java first and waits for its health, then Node. A sha with no
+   `medioo-web` image skips the web step and the deploy stays green. One `IMAGE_TAG` rolls back both. API changes are
+   additive only, so old Java with a new UI and new Java with an old UI never break.
+3. **Auth across the boundary (A3).** The browser calls `/app/api/*`, which Caddy sends to Java; the `Path=/app`
+   session cookie travels on its own and is never widened. Server components call `http://medscribe-ai:8086/app/api/*`
+   forwarding the incoming `Cookie` header and nothing else; Next never mints or reads a session. Cookies are set only
+   by browser calls that Java answers with `Set-Cookie`. Whether a family sees a Next twin before its route flips is
+   Java's decision (`BAYMAX_WEB_PREVIEW_FAMILIES`, exposed as `me.preview`), never a cookie anyone can set.
+4. **No-JS scope (A4).** The timeline, a paper, a NOW result and the opt-out confirmation are server-rendered and
+   readable with JavaScript off. Every mutation (sign-in, upload, delete, settings, দেখেছি) needs JavaScript. This
+   changes spec principle 14 and is **not in force until the PO accepts it as DR-42** (plan Part B, decision 1); until
+   then sign-in stays on the Java pages and Caddy keeps `/app/`, `/app/login` and `/app/verify` on Java.
+5. **Display model (A5).** Java owns `DisplayKind`: `ValueRows.kindOf` moves into the application layer, and with it
+   the order of NOW reasons, the counts line, the gate state, wording only when `RELEASED`, `viewer.bangladesh`
+   (`tel:999` only for +880 viewers), the retake ordinal, the owner flag and the NameGrammar forms. React renders these
+   fields and derives none of them. The JSON never carries `confidence`, `model` or developer `status_reason` prose.
+6. **Test migration (A6).** No Java UI test is deleted until its rule exists as a Java contract test on `/app/api` and
+   a Playwright assertion on the routed page. The ledger is generated (`scripts/ui-test-ledger.sh`), and CI fails if
+   any listed test lacks a resolving `// successor:` or if the list is empty. Java pages are deleted per route as each
+   flips, never in one PR.
+7. **Visual gate is a review (A7).** Every W PR publishes a private screenshot board (phone 390×844, desktop 1280×800,
+   light and dark) beside the matching prototype scene for the PO. Correctness comes from content checks: axe, the CSP
+   violation hook, overflow checks with the longest real-length strings, every value and medicine `<img>` resolving to
+   its own row's crop with `naturalWidth > 0`, and the network budget. Before a route flips, Tanvir tries it on his
+   phone with preview on.
+8. **Guards replayed on both sides (A8).** Java contract guards are replayed against a deliberately broken build and
+   React safety tests against a mutated component (`scripts/replay-web-guard.sh`); the failure message must name the
+   defect. MSW fixtures are byte-compared with the files the Java contract tests write in the same CI run.
+
+**Why:** the rebuild must change how Medioo looks without moving a single safety rule out of the code that already
+enforces it, and without a day on which every screen is new at once. Per-path routing with Java as the default turns
+the rebuild into a sequence of one-route flips, each reversible by one line. Keeping urgency, display kind, wording and
+NameGrammar in Java means there is one implementation of each rule; a TypeScript copy would be a second one that drifts.
+The generated ledger exists because a hand-written list of moved tests is exactly the check this repo has learned
+cannot be trusted (CLAUDE.md: derive the assertion from the system, never from what the author remembered).
+
+**Alternatives:**
+- *Restyle the Java server-rendered pages.* Rejected by the PO on 2026-10-20 in favour of React/Next.js.
+- *Next in front of everything, proxying to Java as a fallback.* Rejected: it would buffer 60 MB uploads in Node and
+  add a second hop to every Java request. Uploads, images and every POST go to Java directly through Caddy.
+- *A big-bang cut-over.* Rejected: no route can be flipped back on its own, and every Java UI test would have to be
+  replaced before anything ships.
+- *Next owns the session (BFF), or the cookie is widened past `/app`.* Rejected: two places would hold auth, and a
+  wider cookie would be visible to MedScribe's same-origin PoC script.
+- *Safety rules re-implemented in React.* Rejected: two implementations of urgency and wording would drift.
+
+**Supersedes:** none. The Java UI under `web/adapter/in/ui` stays in force route by route until each route flips.
+DR-42 (no-JS scope and budget), DR-43 (voice privacy) and DR-44 (new scope) are reserved for the PO decisions in plan
+Part B.
+
+## DR-41 | 2026-10-21 | Messages grammar, Mio, wordmark, legibility floor, the দেখেছি acknowledgement: the 2026-10-21 amendment
+
+**Decision:** the PO-approved design for the rebuild is
+[`docs/design/2026-10-21-approved/`](design/2026-10-21-approved/README.md) (phone and desktop prototypes and the
+direction contract), with the PO's 2026-10-21 amendment to that contract. When a screen and that folder disagree, the
+folder wins until the PO approves a change, recorded as an amendment in its `direction-contract.md`. The amendment:
+
+1. **Messages grammar.** The conversation follows Apple Messages exactly: grey received bubbles, teal (`#06788a`) sent
+   bubbles, on a plain background. This replaces the contract's mist ground, white Medioo bubbles and soft-green family
+   bubbles.
+2. **Mio as drawn by the PO.** The mascot is the PO's Mio, used exactly as drawn, stethoscope included (PO,
+   2026-10-20), from `mio.webp` and `mio-head.webp`. No redraw, no simplified or generated variant. The rebuild plan
+   adds three motion rules: Mio moves only as a whole figure, never animates on a NOW result, and any looping motion
+   plays at most twice.
+3. **The vector wordmark.** The medioo wordmark is the vector master traced from the PO's `medioo.webp`, letters and
+   colours unchanged: `medioo-light.svg` and `medioo-dark.svg`, chosen by theme, and `medioo-mono-ink.svg` /
+   `medioo-mono-white.svg` for one-colour uses (WhatsApp profile picture, stamps, print).
+4. **The legibility floor** (for a parent reading Bangla alone, as well as the adult child): every status is colour +
+   icon or shape + word; no text under 12 px; secondary text at least 4.5:1 in both themes; axe reports zero violations
+   on every routed page in both themes. The plan adds touch targets of at least 44 px, primary actions at least 48 px.
+5. **The দেখেছি acknowledgement (PO-approved 2026-10-21).** The NOW banner is global, and "দেখেছি" **hides the banner
+   only**. Stored urgency, the paper's NOW block and WhatsApp delivery are unchanged; a new NOW paper shows the banner
+   again; the patient keeps the red mark. Whether the acknowledgement is per family and server-stored (so it holds
+   across devices) is still open as plan Part B, decision 8, and blocks only B3.
+
+**Why:** the PO judged the earlier web UI toy-like and chose a grammar every family already reads fluently; WhatsApp
+and Messages are the quality bar the contract names. Mio and the wordmark are the PO's own work and the brand, so the
+rebuild uses them as made; the vector master also clears MEDIOO.md's TODO that the only wordmark was a 246×88 raster
+extracted from a downloaded page. The legibility floor states the elderly reader's needs as checks a test can fail on
+rather than as taste. দেখেছি answers a real nuisance, a global red banner that cannot be put away once it has been
+read, without touching hard constraint 2: nothing a family does lowers stored urgency (V18 forbids it in the schema),
+so the acknowledgement is a display preference and not a change to the record.
+
+**Alternatives:**
+- *Keep the contract's original own-world (mist ground, white and soft-green bubbles).* Replaced by the PO's amendment.
+- *A redrawn, simplified or animated-in-parts Mio.* Rejected: the PO's figure is used as drawn.
+- *Keep the raster wordmark.* Rejected: it blurs on high-density screens and has no dark-ground or one-colour form.
+- *দেখেছি that lowers the document's urgency or clears the patient's red mark.* Rejected: urgency is only ever raised
+  (hard constraint 2, V18), and a family that has read the banner still needs to see which parent the NOW paper is for.
+- *No acknowledgement at all.* Rejected by the PO on 2026-10-21.
+
+**Supersedes:** amends DR-14 and its DR-15 amendments for the rebuilt web UI: the conversation surface is the
+Messages grammar above rather than warm paper surfaces, and the wordmark asset is the vector master rather than
+`/assets/medioo.webp`. Teal primary, red reserved for NOW, amber for THIS_WEEK and dark (not red) destructive actions
+are unchanged. Amends the direction contract's OWN-WORLD line in `docs/design/2026-10-21-approved/direction-contract.md`.
