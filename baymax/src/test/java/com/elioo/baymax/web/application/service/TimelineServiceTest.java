@@ -15,6 +15,7 @@ import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
 import com.elioo.baymax.storage.domain.DeletionReport;
 import com.elioo.baymax.web.application.port.out.AuditPort;
 import com.elioo.baymax.web.application.port.out.TimelineReadPort;
+import com.elioo.baymax.web.domain.AuditEvent;
 import com.elioo.baymax.web.domain.TimelineCursor;
 import com.elioo.baymax.web.domain.TimelineEntry;
 import com.elioo.baymax.web.domain.TimelineFilter;
@@ -28,12 +29,16 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -109,6 +114,69 @@ class TimelineServiceTest {
 
         StepVerifier.create(service.document(FAMILY_B, DOC_B)).assertNext(v -> assertThat(v.urgency()).isNull())
                 .verifyComplete();
+    }
+
+    /**
+     * The JSON document read has the result page's race (ResultServiceTest#theValuesAreReadOnlyAfterTheStoredLevelSoTheyCarryItsVerdicts):
+     * the view was read first and the level after, and the level's read may assess the paper there and then, committing
+     * its verdicts with it. A paper read the moment it turned DONE then answered urgency "now" over values with no
+     * verdict. The view is read after the level, so it carries what the level was assessed with. Modelled as the
+     * database answers: a view is what has committed when it is read.
+     */
+    @Test
+    void theViewIsReadAfterTheLevelSoItCarriesItsVerdicts() {
+        Document done = DOCUMENT.withStatus(Document.Status.DONE, null, NOW);
+        when(documents.findVisible(FAMILY_B, DOC_B)).thenReturn(Mono.just(done));
+        AtomicBoolean committed = new AtomicBoolean();
+        when(urgency.currentOrAssess(DOC_B)).thenReturn(Mono.fromCallable(() -> {
+            committed.set(true);   // the assessment's transaction: the level and the verdicts together
+            return new StoredUrgency(DOC_B, Urgency.NOW, List.of("value_critical:potassium|stopgap"), NOW);
+        }));
+        when(intake.view(DOC_B)).thenReturn(Mono.fromCallable(() -> potassiumView(committed.get() ? "critical" : null)));
+
+        StepVerifier.create(service.document(FAMILY_B, DOC_B)).assertNext(v -> {
+            assertThat(v.urgency()).isEqualTo("now");
+            assertThat(v.values()).as("the verdict the stored level was assessed with")
+                    .extracting(row -> row.get("verdict")).containsExactly("critical");
+        }).verifyComplete();
+    }
+
+    /** The other direction: a level that cannot be read never costs the read its view, nor the view its audit row. */
+    @Test
+    void aDocumentWithNoLevelStillGetsItsViewAndItsAuditRow() {
+        Document done = DOCUMENT.withStatus(Document.Status.DONE, null, NOW);
+        when(documents.findVisible(FAMILY_B, DOC_B)).thenReturn(Mono.just(done));
+        when(urgency.currentOrAssess(DOC_B)).thenReturn(Mono.empty());
+        when(intake.view(DOC_B)).thenReturn(Mono.just(potassiumView(null)));
+
+        StepVerifier.create(service.document(FAMILY_B, DOC_B)).assertNext(v -> {
+            assertThat(v.urgency()).isNull();
+            assertThat(v.values()).extracting(row -> row.get("name")).containsExactly("Potassium");
+        }).verifyComplete();
+        verify(audit).record(argThat(e -> e.kind() == AuditEvent.Kind.DOCUMENT_VIEW && DOC_B.equals(e.documentId())));
+    }
+
+    /**
+     * Reading the view after the level must not move the DOCUMENT_VIEW row behind an assessment that may fail: the row
+     * is written before the level is read, as it was before the reorder, and the failure still reaches the caller.
+     */
+    @Test
+    void aFailedAssessmentStillLeavesTheReadsAuditRow() {
+        Document done = DOCUMENT.withStatus(Document.Status.DONE, null, NOW);
+        when(documents.findVisible(FAMILY_B, DOC_B)).thenReturn(Mono.just(done));
+        when(urgency.currentOrAssess(DOC_B)).thenReturn(Mono.error(new IllegalStateException("assessment failed")));
+        when(intake.view(DOC_B)).thenReturn(Mono.just(potassiumView(null)));
+
+        StepVerifier.create(service.document(FAMILY_B, DOC_B)).expectErrorMessage("assessment failed").verify();
+        verify(audit).record(argThat(e -> e.kind() == AuditEvent.Kind.DOCUMENT_VIEW && DOC_B.equals(e.documentId())));
+    }
+
+    /** A DONE view with one Potassium row, its verdict as the database holds it at the moment of the read. */
+    private static DocumentView potassiumView(String verdict) {
+        Map<String, Object> row = new HashMap<>(Map.of("name", "Potassium", "value", "11.0", "unit", "mmol/L"));
+        row.put("verdict", verdict);
+        return new DocumentView(DOC_B.toString(), "DONE", null, "lab_report", "2026-10-12", null, 0.95, null, 1,
+                List.of(row), List.of(), List.of(), Map.of(), null);
     }
 
     @Test

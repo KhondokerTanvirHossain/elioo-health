@@ -33,8 +33,11 @@ import reactor.test.StepVerifier;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -279,6 +282,69 @@ class ResultServiceTest {
         when(reads.retakeOrdinal(DOC)).thenReturn(Mono.just(3));
         StepVerifier.create(service.result(FAMILY, DOC)).assertNext(r -> assertThat(r.retakeOrdinal()).isZero()).verifyComplete();
         verify(reads, never()).retakeOrdinal(any());
+    }
+
+    /**
+     * The race behind the journey's two-page flake (main CI runs 39245684895 on B5 #81 and 39379212824 on #84, each at "the
+     * page image on the result page" hasSize(1)): the page's values are read only after the stored level has resolved. A page opened
+     * the moment the paper turns DONE can find the chain still composing, so {@code currentOrAssess} assesses there and
+     * then, and its verdicts commit in the same transaction as the level (PostgresDocumentUrgencyAdapter). A view read
+     * alongside it saw no verdict while the level said value_critical, so the NOW block found no CRITICAL row and drew
+     * the whole page as its proof, above the page already drawn below: two page images. Modelled as the database
+     * answers it: a view is what has committed when it is read. The real-database reproduction is
+     * WebOnlyJourneyAcceptanceTest#aResultOpenedWhileThePaperIsStillBeingAssessedIsTheFinishedPage.
+     */
+    @Test
+    void theValuesAreReadOnlyAfterTheStoredLevelSoTheyCarryItsVerdicts() {
+        done();
+        AtomicBoolean committed = new AtomicBoolean();
+        when(urgencies.currentOrAssess(DOC)).thenReturn(Mono.fromCallable(() -> {
+            committed.set(true);   // the assessment's transaction: the level and the verdicts together
+            return new StoredUrgency(DOC, Urgency.NOW, List.of("value_critical:potassium|stopgap"), NOW);
+        }));
+        when(intake.view(DOC)).thenReturn(Mono.fromCallable(() -> potassiumView(committed.get() ? "critical" : null)));
+        StepVerifier.create(service.result(FAMILY, DOC)).assertNext(r -> {
+            assertThat(r.urgencyReasons()).containsExactly("value_critical:potassium|stopgap");
+            assertThat(r.document().values()).as("the verdict the stored level was assessed with")
+                    .extracting(v -> v.get("verdict")).containsExactly("critical");
+        }).verifyComplete();
+    }
+
+    /**
+     * The other direction: waiting for the level never costs the page its values. A DONE paper whose level cannot be read
+     * (empty: the assessment found no row to raise) is still drawn from its view, with no level, and its view recorded.
+     */
+    @Test
+    void aDonePaperWithNoLevelStillGetsItsValues() {
+        done();
+        when(urgencies.currentOrAssess(DOC)).thenReturn(Mono.empty());
+        when(intake.view(DOC)).thenReturn(Mono.just(potassiumView(null)));
+        StepVerifier.create(service.result(FAMILY, DOC)).assertNext(r -> {
+            assertThat(r.urgency()).isNull();
+            assertThat(r.document().values()).extracting(v -> v.get("name")).containsExactly("Potassium");
+        }).verifyComplete();
+        verify(audit).record(argThat(e -> e.kind() == AuditEvent.Kind.DOCUMENT_VIEW && DOC.equals(e.documentId())));
+    }
+
+    /**
+     * Waiting for the level never costs the read its audit row: a page whose assessment fails is still recorded as
+     * viewed (the row is written before the level is read, and the failure still reaches the caller). Reading the
+     * values after the level must not move the DOCUMENT_VIEW row behind an assessment that may fail.
+     */
+    @Test
+    void aFailedAssessmentStillLeavesTheViewsAuditRow() {
+        done();
+        when(urgencies.currentOrAssess(DOC)).thenReturn(Mono.error(new IllegalStateException("assessment failed")));
+        StepVerifier.create(service.result(FAMILY, DOC)).expectErrorMessage("assessment failed").verify();
+        verify(audit).record(argThat(e -> e.kind() == AuditEvent.Kind.DOCUMENT_VIEW && DOC.equals(e.documentId())));
+    }
+
+    /** A DONE view with one Potassium row, its verdict as the database holds it at the moment of the read. */
+    private static DocumentView potassiumView(String verdict) {
+        Map<String, Object> row = new HashMap<>(Map.of("name", "Potassium", "value", "11.0", "unit", "mmol/L"));
+        row.put("verdict", verdict);
+        return new DocumentView(DOC.toString(), "DONE", null, "lab_report", "2026-10-12", null, 0.95, null, 1,
+                List.of(row), List.of(), List.of(), Map.of(), null);
     }
 
     private static OutboundMessage message(OutboundMessage.GateStatus gate, String body, Urgency level) {

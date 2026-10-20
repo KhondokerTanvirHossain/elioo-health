@@ -94,12 +94,15 @@ public class TimelineService implements TimelineUseCase {
     @Override
     public Mono<DocumentView> document(UUID familyId, UUID documentId) {
         // the stored level is read (or, for an unassessed DONE document, assessed once) only after visibility is
-        // decided: a document the family cannot see is never assessed on its behalf
+        // decided: a document the family cannot see is never assessed on its behalf. The view is read after the level, as
+        // ResultService reads it: the level's read may assess the paper, committing its verdicts with it, so a view read
+        // first could answer "now" over values with no verdict. The read is recorded before the level, as before, so a
+        // failed assessment still leaves its audit row.
         return visibleDocument(familyId, documentId)
                 .flatMap(d -> audit.record(AuditEvent.family(AuditEvent.Kind.DOCUMENT_VIEW, familyId, d.patientId(), documentId, clock.instant()))
-                        .then(intake.view(documentId)))
-                .flatMap(view -> urgency.currentOrAssess(documentId).map(Optional::of).defaultIfEmpty(Optional.empty())
-                        .map(stored -> view.withUrgency(stored.map(s -> s.level().dbValue()).orElse(null))));
+                        .then(Mono.defer(() -> urgency.currentOrAssess(documentId)).map(Optional::of).defaultIfEmpty(Optional.empty()))
+                        .flatMap(stored -> intake.view(documentId)
+                                .map(view -> view.withUrgency(stored.map(s -> s.level().dbValue()).orElse(null)))));
     }
 
     @Override
