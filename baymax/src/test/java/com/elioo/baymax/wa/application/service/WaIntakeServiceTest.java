@@ -18,7 +18,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import com.elioo.baymax.wa.WaFixtures;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -29,6 +31,8 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -74,6 +78,7 @@ class WaIntakeServiceTest {
         }));
         when(graph.downloadMedia(anyString())).thenReturn(Mono.just(new byte[]{1, 2, 3}));
         when(auth.noteInbound(anyString(), any())).thenReturn(Mono.empty());
+        when(graph.markRead(anyString(), anyBoolean())).thenReturn(Mono.empty());
         // a sender is unknown unless a test says otherwise (familyWith), so no test dies on an unstubbed lookup
         when(records.findFamilyByWhatsapp(anyString())).thenReturn(Mono.empty());
         service = new WaIntakeService(records, documents, explainer, intake, graph, new Copy(), props, auth);
@@ -739,6 +744,99 @@ class WaIntakeServiceTest {
         familyWith(patient("মা"));
         when(auth.noteInbound(anyString(), any())).thenReturn(Mono.error(new IllegalStateException("db down")));
         assertThat(service.onInbound(new WaInbound("w", FROM, WaInbound.Type.TEXT, "hi", "", "")).block())
+                .isEqualTo(WaIntakeService.Outcome.REPLIED);
+        assertThat(sentBodies()).hasSize(1);
+    }
+
+    // ---- read receipts and typing, behind BAYMAX_WA_READ_RECEIPTS (plan PR 10, Task 10.3) -------------------------
+
+    @Test
+    void withTypingOnAPhotoIsMarkedReadWithTypingBeforeTheWork() {
+        props.getWa().setReadReceipts("typing");
+        PatientProfile ma = patient("মা");
+        familyWith(ma);
+        when(intake.accept(eq(ma.id()), any())).thenReturn(Mono.just(mock(Document.class)));
+        service.onInbound(new WaInbound(WaFixtures.wamid(FROM, 61), FROM, WaInbound.Type.IMAGE, "", "MEDIA-1", "image/jpeg")).block();
+        InOrder order = inOrder(graph, intake);
+        order.verify(graph).markRead(WaFixtures.wamid(FROM, 61), true);
+        order.verify(graph).sendText(eq(E164), anyString());
+        order.verify(intake).accept(eq(ma.id()), any());
+    }
+
+    @Test
+    void withTypingAPlainTextGetsTheTickButNoDots() {          // a greeting is answered at once from a template: the tick, no dots
+        props.getWa().setReadReceipts("typing");
+        familyWith(patient("মা"));
+        service.onInbound(new WaInbound(WaFixtures.wamid(FROM, 62), FROM, WaInbound.Type.TEXT, "hello", "", "")).block();
+        verify(graph).markRead(WaFixtures.wamid(FROM, 62), false);
+        assertThat(sentBodies()).hasSize(1);
+    }
+
+    /** The detail is a model call or a stored body to fetch: it takes time, so it gets the dots. */
+    @Test
+    void withTypingTheDetailWordGetsTheDots() {
+        props.getWa().setReadReceipts("typing");
+        familyWith(patient("মা"));
+        latestDone();
+        when(explainer.detail(DOC)).thenReturn(Mono.just(
+                detailRow(OutboundMessage.GateStatus.RELEASED, Urgency.ROUTINE, "বিস্তারিত: সব স্বাভাবিক", Instant.EPOCH)));
+        service.onInbound(new WaInbound(WaFixtures.wamid(FROM, 65), FROM, WaInbound.Type.TEXT, "বিস্তারিত", "", "")).block();
+        verify(graph).markRead(WaFixtures.wamid(FROM, 65), true);
+    }
+
+    /** read: the blue ticks only, never the dots, even for a photo. */
+    @Test
+    void readModeNeverShowsTheDots() {
+        props.getWa().setReadReceipts("read");
+        PatientProfile ma = patient("মা");
+        familyWith(ma);
+        when(intake.accept(eq(ma.id()), any())).thenReturn(Mono.just(mock(Document.class)));
+        service.onInbound(new WaInbound(WaFixtures.wamid(FROM, 66), FROM, WaInbound.Type.IMAGE, "", "MEDIA-1", "image/jpeg")).block();
+        verify(graph).markRead(WaFixtures.wamid(FROM, 66), false);
+    }
+
+    /** The default. The detail word is the strongest case (it would get the dots), and it is still answered. */
+    @Test
+    void offMeansNoReadReceiptAtAll() {
+        familyWith(patient("মা"));
+        latestDone();
+        when(explainer.detail(DOC)).thenReturn(Mono.just(
+                detailRow(OutboundMessage.GateStatus.RELEASED, Urgency.ROUTINE, "বিস্তারিত: সব স্বাভাবিক", Instant.EPOCH)));
+        service.onInbound(new WaInbound(WaFixtures.wamid(FROM, 63), FROM, WaInbound.Type.TEXT, "বিস্তারিত", "", "")).block();
+        verify(graph, never()).markRead(anyString(), anyBoolean());
+        assertThat(sentBodies()).as("the message was still answered, so the silence is the mode's").hasSize(1);
+    }
+
+    /** The one allowlist rule covers the third outbound path too: a read receipt is a message to that number. */
+    @Test
+    void aSenderOffTheAllowlistGetsNoReadReceipt() {
+        props.getWa().setReadReceipts("typing");
+        props.getWa().setAllowlist(List.of("+8801700000999"));
+        familyWith(patient("মা"));
+        latestDone();
+        when(explainer.detail(DOC)).thenReturn(Mono.just(
+                detailRow(OutboundMessage.GateStatus.RELEASED, Urgency.ROUTINE, "বিস্তারিত: সব স্বাভাবিক", Instant.EPOCH)));
+        service.onInbound(new WaInbound(WaFixtures.wamid(FROM, 64), FROM, WaInbound.Type.TEXT, "বিস্তারিত", "", "")).block();
+        verify(explainer).detail(DOC);   // the message was handled: the receipt is absent because of the rule, not a crash
+        verify(graph, never()).markRead(anyString(), anyBoolean());
+    }
+
+    /** Meta: show the indicator only when we will respond. What needs no reply gets no tick either. */
+    @Test
+    void whatNeedsNoReplyGetsNoReadReceipt() {
+        props.getWa().setReadReceipts("typing");
+        service.onInbound(new WaInbound(WaFixtures.wamid(FROM, 67), FROM, WaInbound.Type.SYSTEM, "", "", "")).block();
+        service.onInbound(new WaInbound(WaFixtures.wamid(FROM, 68), FROM, WaInbound.Type.REACTION, "", "", "")).block();
+        verify(graph, never()).markRead(anyString(), anyBoolean());
+    }
+
+    /** A courtesy that fails must not cost the family the reply. */
+    @Test
+    void aReadReceiptThatFailsStillGetsTheReply() {
+        props.getWa().setReadReceipts("typing");
+        familyWith(patient("মা"));
+        when(graph.markRead(anyString(), anyBoolean())).thenReturn(Mono.error(new IllegalStateException("graph down")));
+        assertThat(service.onInbound(new WaInbound(WaFixtures.wamid(FROM, 69), FROM, WaInbound.Type.TEXT, "hi", "", "")).block())
                 .isEqualTo(WaIntakeService.Outcome.REPLIED);
         assertThat(sentBodies()).hasSize(1);
     }

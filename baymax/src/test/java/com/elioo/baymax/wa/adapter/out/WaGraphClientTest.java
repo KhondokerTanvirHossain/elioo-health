@@ -16,9 +16,11 @@ import org.springframework.http.MediaType;
 import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
+import reactor.test.StepVerifier;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -75,6 +77,23 @@ class WaGraphClientTest {
                             .body(body).build());
                 })
                 .codecs(c -> c.defaultCodecs().maxInMemorySize(16 * 1024 * 1024))
+                .build();
+        return new WaGraphClient(props, http);
+    }
+
+    /** Answers every call with the given status and Meta's error shape, recording the URI and the body it was sent. */
+    private WaGraphClient clientAnswering(HttpStatus status) {
+        BaymaxProperties props = new BaymaxProperties();
+        props.getWa().setEnabled(true);
+        props.getWa().setToken(BEARER);
+        props.getWa().setPhoneNumberId("1412074765313019");
+        WebClient http = WebClient.builder()
+                .exchangeFunction(request -> {
+                    requestedUris.add(request.url().toString());
+                    return Mono.just(ClientResponse.create(status)
+                            .header("Content-Type", MediaType.APPLICATION_JSON_VALUE)
+                            .body("{\"error\":{\"message\":\"(#100) Invalid parameter\",\"code\":100}}").build());
+                })
                 .build();
         return new WaGraphClient(props, http);
     }
@@ -169,5 +188,44 @@ class WaGraphClientTest {
                             .doesNotContain("8801700000000").doesNotContain("ok\""))
                     .verify();
         }
+    }
+
+    // ---- read receipts and typing (plan PR 10, Task 10.3) --------------------------------------------------------
+
+    /** Meta's documented shape: "status":"read" marks the message read; typing_indicator adds the dots. */
+    @Test
+    void theReadPayloadMarksReadAndOnlyAddsTypingWhenAsked() {
+        String inbound = WaFixtures.wamid("8801700000000", 51);
+        assertThat(WaGraphClient.readPayload(inbound, false))
+                .isEqualTo(Map.of("messaging_product", "whatsapp", "status", "read", "message_id", inbound));
+        assertThat(WaGraphClient.readPayload(inbound, true))
+                .containsEntry("typing_indicator", Map.of("type", "text"))
+                .containsEntry("status", "read")
+                .containsEntry("message_id", inbound)
+                .hasSize(4);
+    }
+
+    @Test
+    void markReadPostsToTheMessagesEndpointOfThePinnedVersion() {
+        WaGraphClient client = clientReturning("{\"success\":true}");
+        client.markRead(WaFixtures.wamid("8801700000000", 51), true).block();
+        assertThat(requestedUris).containsExactly("https://graph.facebook.com/v25.0/1412074765313019/messages");
+        assertThat(everythingLogged()).contains("wa read receipt sent")
+                .doesNotContain(WaFixtures.wamid("8801700000000", 51)).doesNotContain("8801700000000");
+    }
+
+    /** A read receipt is a courtesy: its failure never fails the answer, and its log line carries no wamid. */
+    @Test
+    void aFailedReadReceiptCompletesEmpty() {
+        String inbound = WaFixtures.wamid("8801700000000", 51);
+        StepVerifier.create(clientAnswering(HttpStatus.BAD_REQUEST).markRead(inbound, false)).verifyComplete();
+        // it really did call Graph, so the clean log is not the clean log of a call that never happened
+        assertThat(requestedUris).hasSize(1);
+        assertThat(everythingLogged()).contains("wa read receipt failed").contains("status=400")
+                .doesNotContain(BEARER)
+                .doesNotContain(inbound)
+                .doesNotContain(inbound.substring("wamid.".length(), "wamid.".length() + 16))
+                .doesNotContain("8801700000000")
+                .doesNotContain("Invalid parameter");
     }
 }

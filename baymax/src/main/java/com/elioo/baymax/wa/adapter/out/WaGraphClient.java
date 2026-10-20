@@ -110,4 +110,42 @@ public class WaGraphClient implements com.elioo.baymax.wa.application.port.out.W
                         : Mono.just(id))
                 .doOnNext(id -> log.info("[baymax] wa outbound sent ref={} chars={}", Redact.id(id), body.length()));
     }
+
+    /**
+     * Meta's read receipt: {@code "status":"read"} on the inbound message id; with typing, the
+     * {@code typing_indicator} that shows dots until our reply or 25 s
+     * (https://developers.facebook.com/docs/whatsapp/cloud-api/typing-indicators).
+     */
+    static Map<String, Object> readPayload(String providerMessageId, boolean typing) {
+        Map<String, Object> read = Map.of(
+                "messaging_product", "whatsapp",
+                "status", "read",
+                "message_id", providerMessageId);
+        if (!typing) {
+            return read;
+        }
+        Map<String, Object> withTyping = new java.util.HashMap<>(read);
+        withTyping.put("typing_indicator", Map.of("type", "text"));
+        return Map.copyOf(withTyping);
+    }
+
+    /**
+     * Blue ticks, and with typing the dots. A courtesy: any failure is logged by status (never the wamid, which is base64
+     * of the family's number, and never Meta's error text) and completes empty, so it can never cost the answer.
+     */
+    @Override
+    public Mono<Void> markRead(String providerMessageId, boolean typing) {
+        return http.post().uri(graph() + "/" + properties.getWa().getPhoneNumberId() + "/messages")
+                .header("Authorization", "Bearer " + token())
+                .bodyValue(readPayload(providerMessageId, typing))
+                .retrieve().toBodilessEntity()
+                .doOnNext(r -> log.info("[baymax] wa read receipt sent ref={} typing={}", Redact.id(providerMessageId), typing))
+                .then()
+                .onErrorResume(e -> {
+                    log.warn("[baymax] wa read receipt failed ref={} typing={} status={}", Redact.id(providerMessageId), typing,
+                            e instanceof org.springframework.web.reactive.function.client.WebClientResponseException w
+                                    ? w.getStatusCode().value() : e.getClass().getSimpleName());
+                    return Mono.empty();
+                });
+    }
 }

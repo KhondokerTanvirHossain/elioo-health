@@ -82,12 +82,48 @@ public class WaIntakeService {
         // DR-39 (2026-10-18): every message the family sends opens WhatsApp's free 24 h window, in which a web sign-in
         // code may be sent automatically. Recorded first, at Meta's send time (a retried callback arrives late); a
         // failure here is logged and never costs the family a reply.
-        return auth.noteInbound(number, in.timestamp())
-                .onErrorResume(e -> {
-                    log.warn("[baymax] wa inbound window not recorded error={}", e.getClass().getSimpleName());
-                    return Mono.empty();
-                })
+        // The read receipt goes first so the ticks (and, for a slow answer, the dots) appear before the work starts.
+        return readReceipt(in, number)
+                .then(Mono.defer(() -> auth.noteInbound(number, in.timestamp())
+                        .onErrorResume(e -> {
+                            log.warn("[baymax] wa inbound window not recorded error={}", e.getClass().getSimpleName());
+                            return Mono.empty();
+                        })))
                 .then(Mono.defer(() -> dispatch(in, number)));
+    }
+
+    /**
+     * Blue ticks, and the typing dots while a slow answer is prepared (BAYMAX_WA_READ_RECEIPTS: off | read | typing).
+     * Only for a message that gets a reply (onInbound returned already for the rest) and only to a number the allowlist
+     * permits: a read receipt is a message to that number like any other. A courtesy, never part of the answer, so a
+     * failure here is swallowed.
+     */
+    private Mono<Void> readReceipt(WaInbound in, String number) {
+        String mode = properties.getWa().getReadReceipts();
+        if ("off".equals(mode) || in.providerMessageId() == null || in.providerMessageId().isBlank()
+                || !properties.getWa().permits(number)) {
+            return Mono.empty();
+        }
+        boolean typing = "typing".equals(mode) && takesTime(in);
+        return Mono.defer(() -> graph.markRead(in.providerMessageId(), typing))
+                .onErrorResume(e -> {
+                    log.warn("[baymax] wa read receipt skipped error={}", e.getClass().getSimpleName());
+                    return Mono.empty();
+                });
+    }
+
+    /**
+     * Meta: show typing only when the response takes a few seconds. A photo or a readable file (a download, then the
+     * acknowledgement) and the detail word (a stored body or a model call) do; a greeting, a thanks or a fallback is a
+     * fixed template answered at once and gets the tick alone.
+     */
+    static boolean takesTime(WaInbound in) {
+        return switch (in.type()) {
+            case IMAGE -> true;
+            case DOCUMENT -> readable(in.mimeType());
+            case TEXT, INTERACTIVE, BUTTON -> WaTextRouter.route(in.text()) == WaTextRouter.Route.DETAIL;
+            default -> false;
+        };
     }
 
     private Mono<Outcome> dispatch(WaInbound in, String number) {
