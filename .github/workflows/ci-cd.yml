@@ -35,11 +35,13 @@ jobs:
       # it fails in seconds rather than after 30 minutes of tests.
       - name: Refuse undeclared test fixtures
         run: scripts/check-test-fixtures.sh
-      # The deploy job's tip check (below), tested both ways against a throwaway repository: seconds, no network.
-      - name: Deploy tip check tests
+      # Two scripts, seconds, no network. test_deploy_is_tip.sh: the deploy job's tip check (below), tested both
+      # ways against a throwaway repository. test_deploy_prune.sh: deploy.sh against a fake docker/curl/df — the
+      # prune (only our repository, newest 3 by time, never the tag being deployed or a running image, before
+      # the pull), the free-space floor, the function-only mode and the `docker run` arguments.
+      - name: Deploy script tests (tip check, prune)
         run: |
           scripts/test_deploy_is_tip.sh
-          # deploy.sh's prune_repo against a fake docker: only our repository, never a running image, before the pull
           bash scripts/test_deploy_prune.sh
       - uses: gradle/actions/setup-gradle@v4
       # Testcontainers pulls its images at test time, and a registry problem then fails the BUILD rather than
@@ -159,15 +161,22 @@ jobs:
             docker logout ghcr.io
       # Both must pass: the container on its host port, and the public https name through Caddy, which is the
       # path every user takes (a healthy :8086 behind a broken proxy or certificate is still an outage).
+      # Only the HTTP status is printed, never the body: this log is public (DR-38) and the health body carries
+      # disk, path and database details.
+      # The :8086 check works only while host port 8086 is open to the internet, which is itself an exposure
+      # (the whole app over plain HTTP, bypassing Caddy). It MUST be removed in the same PR that binds Java to
+      # 127.0.0.1 (plan W1c), or every deploy after that one goes red; the https check then stays as the smoke.
       - name: Smoke test from runner
         if: steps.tip.outputs.current == 'true'
         run: |
           check() {
+            local code=""
             for i in $(seq 1 10); do
-              if curl -fsS "$1"; then echo; return 0; fi
+              code=$(curl -sS -o /dev/null -w '%{http_code}' "$1" || true)
+              if [ "$code" = 200 ]; then echo "UP ($code): $1"; return 0; fi
               sleep 5
             done
-            echo "Health check failed: $1"; return 1
+            echo "Health check failed: $1 (last HTTP status: ${code:-none})"; return 1
           }
           check "http://${{ secrets.EC2_HOST }}:8086/actuator/health"
           check "https://medioo.eliooo.org/actuator/health"
