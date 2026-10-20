@@ -19,9 +19,6 @@ import org.springframework.boot.autoconfigure.r2dbc.R2dbcTransactionManagerAutoC
 import org.springframework.boot.autoconfigure.transaction.TransactionAutoConfiguration;
 import org.springframework.boot.test.context.runner.ReactiveWebApplicationContextRunner;
 import org.springframework.context.ApplicationContext;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.web.reactive.function.server.RouterFunction;
@@ -73,27 +70,27 @@ class WaInboundIdempotencyAcceptanceTest {
                    "text":{"body":"বিস্তারিত"}}]}}]}]}""".formatted(wamid);
     }
 
-    @Configuration
-    static class StubGraph {
-        @Bean
-        @Primary
-        WaMessagingPort recordingGraph() {
-            return new WaMessagingPort() {
-                @Override
-                public Mono<byte[]> downloadMedia(String mediaId) {
-                    return Mono.error(new IllegalStateException("no media in this test"));
-                }
+    /**
+     * Graph, stubbed: records what would have been sent. Registered with withBean, never as a nested @Configuration:
+     * BaymaxAutoConfiguration's component scan covers com.elioo.baymax, test classes included, and a scanned stub would
+     * become a second primary WaMessagingPort in every other test's context.
+     */
+    static WaMessagingPort recordingGraph() {
+        return new WaMessagingPort() {
+            @Override
+            public Mono<byte[]> downloadMedia(String mediaId) {
+                return Mono.error(new IllegalStateException("no media in this test"));
+            }
 
-                @Override
-                public Mono<String> sendText(String to, String body) {
-                    // lazy, like WaGraphClient: recorded when the send is subscribed, not when it is built
-                    return Mono.fromCallable(() -> {
-                        SENT.add(body);
-                        return WaFixtures.wamid(DIGITS, 100 + SENT.size());
-                    });
-                }
-            };
-        }
+            @Override
+            public Mono<String> sendText(String to, String body) {
+                // lazy, like WaGraphClient: recorded when the send is subscribed, not when it is built
+                return Mono.fromCallable(() -> {
+                    SENT.add(body);
+                    return WaFixtures.wamid(DIGITS, 100 + SENT.size());
+                });
+            }
+        };
     }
 
     @BeforeEach
@@ -107,7 +104,8 @@ class WaInboundIdempotencyAcceptanceTest {
                         R2dbcAutoConfiguration.class, R2dbcDataAutoConfiguration.class,
                         R2dbcTransactionManagerAutoConfiguration.class, TransactionAutoConfiguration.class,
                         LlmAutoConfiguration.class, BaymaxAutoConfiguration.class))
-                .withUserConfiguration(StubGraph.class)
+                .withBean("recordingGraph", WaMessagingPort.class, WaInboundIdempotencyAcceptanceTest::recordingGraph,
+                        bd -> bd.setPrimary(true))
                 .withPropertyValues(
                         "baymax.enabled=true", "llm.provider=groq", "llm.groq.api-key=test-key",
                         "baymax.wa.enabled=true",
