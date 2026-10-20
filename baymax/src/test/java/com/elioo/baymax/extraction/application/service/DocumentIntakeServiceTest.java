@@ -4,13 +4,16 @@ import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.common.error.FreeTierExceededException;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.extraction.application.port.out.DocumentRecordPort;
+import com.elioo.baymax.extraction.domain.CreatedDocument;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.Upload;
 import com.elioo.baymax.family.application.port.in.FreeTierUseCase;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
+import com.elioo.baymax.storage.domain.DeletionReport;
 import com.elioo.baymax.storage.domain.ObjectKind;
+import com.elioo.baymax.testsupport.TryDocuments;
 import com.elioo.baymax.storage.domain.StoredObject;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -31,6 +34,8 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -71,8 +76,10 @@ class DocumentIntakeServiceTest {
         when(records.findPatient(PATIENT)).thenReturn(Mono.just(new PatientProfile(
                 PATIENT, FAMILY, "Ma", 74, PatientProfile.Sex.FEMALE, List.of(), NOW, NOW)));
         when(freeTier.checkCanUploadDocument(FAMILY)).thenReturn(Mono.empty());
-        when(documents.create(any())).thenAnswer(i -> Mono.just(
-                ((Document) i.getArgument(0)).withId(UUID.randomUUID())));
+        when(freeTier.checkCanUploadDocuments(any(UUID.class), anyInt())).thenReturn(Mono.empty());
+        when(documents.createOnce(any(), any())).thenAnswer(i -> Mono.just(new CreatedDocument(
+                ((Document) i.getArgument(0)).withId(UUID.randomUUID()), true)));
+        when(documents.findByUploadKey(any(), any())).thenReturn(Mono.empty());
         when(storage.storePage(any(), any(), any(), anyInt(), any())).thenAnswer(i -> Mono.just(
                 new StoredObject(UUID.randomUUID(), FAMILY, PATIENT, i.getArgument(2), ObjectKind.PAGE,
                         i.getArgument(3), null, "page", "image/jpeg", 10, NOW)));
@@ -112,7 +119,7 @@ class DocumentIntakeServiceTest {
                         && f.reason().equals("free_tier_documents"))
                 .verify();
 
-        verify(documents, never()).create(any());
+        verify(documents, never()).createOnce(any(), any());
         verify(storage, never()).storePage(any(), any(), any(), anyInt(), any());
         verify(extraction, never()).process(any(), any());
     }
@@ -142,7 +149,150 @@ class DocumentIntakeServiceTest {
                 .expectErrorMatches(e -> e instanceof BaymaxException b && b.reason().equals("too_many_pages"))
                 .verify();
 
-        verify(documents, never()).create(any());
+        verify(documents, never()).createOnce(any(), any());
+    }
+
+    // --- D3: one press of "পাঠান" is one document; "আলাদা আলাদা" is all-or-nothing --------------------------------
+
+    /** WhatsApp and the JSON API send no key: the two-argument form is the keyed one with no key, never a replay. */
+    @Test
+    void withoutAKeyNothingIsLookedUpAndTheDocumentIsCreatedWithNoKey() throws Exception {
+        StepVerifier.create(service.accept(PATIENT, List.of(jpeg("a.jpg")))).assertNext(d -> assertThat(d.id()).isNotNull()).verifyComplete();
+        verify(documents, never()).findByUploadKey(any(), any());
+        verify(documents).createOnce(any(), isNull());
+    }
+
+    /** A retry of the same press returns the document it already made: nothing rendered, stored, counted or processed. */
+    @Test
+    void aRetryWithTheSameKeyReturnsTheFirstDocumentAndCostsNothing() throws Exception {
+        Document first = Document.received(PATIENT, FAMILY, 2, NOW).withId(UUID.randomUUID());
+        when(documents.findByUploadKey(FAMILY, "k-7a3e9b10")).thenReturn(Mono.just(first));
+        StepVerifier.create(service.accept(PATIENT, List.of(jpeg("a.jpg"), jpeg("b.jpg")), "k-7a3e9b10"))
+                .assertNext(d -> assertThat(d.id()).isEqualTo(first.id())).verifyComplete();
+        verify(freeTier, never()).checkCanUploadDocument(any(UUID.class));
+        verify(documents, never()).createOnce(any(), any());
+        verify(storage, never()).storePage(any(), any(), any(), anyInt(), any());
+        verify(extraction, never()).process(any(), any());
+    }
+
+    /** The other direction: a new press is a new document, and it is counted. */
+    @Test
+    void aNewKeyIsANewDocumentAndIsCounted() throws Exception {
+        StepVerifier.create(service.accept(PATIENT, List.of(jpeg("a.jpg")), "k-new00001"))
+                .assertNext(d -> assertThat(d.id()).isNotNull()).verifyComplete();
+        verify(freeTier).checkCanUploadDocument(FAMILY);
+        verify(documents).createOnce(any(), eq("k-new00001"));
+        verify(storage).storePage(any(), any(), any(), eq(1), any());
+    }
+
+    @Test
+    void aKeyThatBelongsToAnotherPatientsDocumentIsAConflictNotAReplay() throws Exception {
+        when(documents.findByUploadKey(FAMILY, "k-other001")).thenReturn(Mono.just(
+                Document.received(UUID.randomUUID(), FAMILY, 1, NOW).withId(UUID.randomUUID())));
+        StepVerifier.create(service.accept(PATIENT, List.of(jpeg("a.jpg")), "k-other001"))
+                .expectErrorMatches(e -> e instanceof BaymaxException b && b.reason().equals("upload_key_reused")
+                        && b.status().value() == 409)
+                .verify();
+        verify(documents, never()).createOnce(any(), any());
+    }
+
+    /** Two presses racing: createOnce answers fresh=false exactly as DocumentUploadKeyTest proved on Postgres; the loser stores nothing. */
+    @Test
+    void theLoserOfARaceOnTheSameKeyStoresNoPagesAndStartsNoProcessing() throws Exception {
+        Document winner = Document.received(PATIENT, FAMILY, 1, NOW).withId(UUID.randomUUID());
+        // doReturn: when(...) would run setUp's answer with null arguments while stubbing
+        org.mockito.Mockito.doReturn(Mono.just(new CreatedDocument(winner, false))).when(documents).createOnce(any(), eq("k-race0001"));
+        StepVerifier.create(service.accept(PATIENT, List.of(jpeg("a.jpg")), "k-race0001"))
+                .assertNext(d -> assertThat(d.id()).isEqualTo(winner.id())).verifyComplete();
+        verify(storage, never()).storePage(any(), any(), any(), anyInt(), any());
+        verify(extraction, never()).process(any(), any());
+    }
+
+    /** No row without its pages: storage failing on page 2 removes the row, so the retry with the same key starts clean. */
+    @Test
+    void aStorageFailureLeavesNoDocumentBehind() throws Exception {
+        when(storage.storePage(any(), any(), any(), eq(2), any())).thenReturn(Mono.error(new IllegalStateException("bucket down")));
+        when(storage.deleteDocument(any(), any(), any())).thenReturn(Mono.just(new DeletionReport("p/", 1, 1)));
+        when(documents.deleteDocument(any())).thenReturn(Mono.just(1L));
+        StepVerifier.create(service.accept(PATIENT, List.of(jpeg("a.jpg"), jpeg("b.jpg")), "k-store001"))
+                .expectErrorMessage("bucket down").verify();
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(storage, documents);
+        order.verify(storage).deleteDocument(eq(FAMILY), eq(PATIENT), any());
+        order.verify(documents).deleteDocument(any());
+        verify(extraction, never()).process(any(), any());
+    }
+
+    /** The row still goes when removing the stored page fails too: an orphan object is harmless, a pageless row is not. */
+    @Test
+    void theRowGoesEvenWhenRemovingItsStoredPagesFails() throws Exception {
+        when(storage.storePage(any(), any(), any(), eq(1), any())).thenReturn(Mono.error(new IllegalStateException("bucket down")));
+        when(storage.deleteDocument(any(), any(), any())).thenReturn(Mono.error(new IllegalStateException("still down")));
+        when(documents.deleteDocument(any())).thenReturn(Mono.just(1L));
+        StepVerifier.create(service.accept(PATIENT, List.of(jpeg("a.jpg")), "k-store002"))
+                .expectErrorMessage("bucket down").verify();
+        verify(documents).deleteDocument(any());
+        verify(extraction, never()).process(any(), any());
+    }
+
+    /** "আলাদা আলাদা": one document per file, keys k:0…k:n-1, each counted. */
+    @Test
+    void separatePagesAreOneDocumentEach() throws Exception {
+        when(freeTier.checkCanUploadDocuments(FAMILY, 3)).thenReturn(Mono.empty());
+        StepVerifier.create(service.acceptEach(PATIENT, List.of(jpeg("a.jpg"), jpeg("b.jpg"), jpeg("c.jpg")), "k-sep00001").collectList())
+                .assertNext(docs -> assertThat(docs).hasSize(3).allSatisfy(d -> assertThat(d.pageCount()).isEqualTo(1))
+                        .extracting(Document::id).doesNotHaveDuplicates())
+                .verifyComplete();
+        for (int i = 0; i < 3; i++) {
+            verify(documents).createOnce(any(), eq("k-sep00001:" + i));
+        }
+        verify(extraction, times(3)).process(any(), any());
+    }
+
+    /** A retry of a separate press that half-landed: the stored ones come back, only the missing one is made and counted. */
+    @Test
+    void aRetryOfSeparatePagesMakesOnlyTheMissingOnesAndCountsOnlyThem() throws Exception {
+        Document zero = Document.received(PATIENT, FAMILY, 1, NOW).withId(UUID.randomUUID());
+        when(documents.findByUploadKey(FAMILY, "k-sep00004:0")).thenReturn(Mono.just(zero));
+        when(freeTier.checkCanUploadDocuments(FAMILY, 1)).thenReturn(Mono.empty());
+        StepVerifier.create(service.acceptEach(PATIENT, List.of(jpeg("a.jpg"), jpeg("b.jpg")), "k-sep00004").collectList())
+                .assertNext(docs -> {
+                    assertThat(docs).hasSize(2);
+                    assertThat(docs.get(0).id()).isEqualTo(zero.id());
+                    assertThat(docs.get(1).id()).isNotEqualTo(zero.id());
+                })
+                .verifyComplete();
+        verify(freeTier).checkCanUploadDocuments(FAMILY, 1);
+        verify(documents, never()).createOnce(any(), eq("k-sep00004:0"));
+        verify(documents).createOnce(any(), eq("k-sep00004:1"));
+        verify(extraction, times(1)).process(any(), any());
+    }
+
+    /** The dangerous direction: one unreadable file among separate pages refuses them all before any document exists. */
+    @Test
+    void oneUnreadableFileAmongSeparatePagesRefusesAllBeforeAnyDocumentExists() throws Exception {
+        when(freeTier.checkCanUploadDocuments(FAMILY, 3)).thenReturn(Mono.empty());
+        StepVerifier.create(service.acceptEach(PATIENT, List.of(jpeg("a.jpg"), new Upload("x.docx", TryDocuments.docx()), jpeg("c.jpg")), "k-sep00002"))
+                .expectErrorMatches(e -> e instanceof BaymaxException b && b.reason().equals("unsupported_image"))
+                .verify();
+        verify(documents, never()).createOnce(any(), any());
+        verify(storage, never()).storePage(any(), any(), any(), anyInt(), any());
+    }
+
+    @Test
+    void separatePagesAskTheAllowanceForAllOfThemAtOnce() throws Exception {
+        when(freeTier.checkCanUploadDocuments(FAMILY, 3)).thenReturn(Mono.error(
+                new FreeTierExceededException(FreeTierExceededException.DOCUMENTS, "cap")));
+        StepVerifier.create(service.acceptEach(PATIENT, List.of(jpeg("a.jpg"), jpeg("b.jpg"), jpeg("c.jpg")), "k-sep00003"))
+                .expectError(FreeTierExceededException.class).verify();
+        verify(documents, never()).createOnce(any(), any());
+        verify(freeTier, never()).checkCanUploadDocument(any(UUID.class));
+    }
+
+    @Test
+    void separatePagesWithNoFileAreRefused() {
+        StepVerifier.create(service.acceptEach(PATIENT, List.of(), "k-sep00005"))
+                .expectErrorMatches(e -> e instanceof BaymaxException b && b.reason().equals("no_file"))
+                .verify();
     }
 
     @Test

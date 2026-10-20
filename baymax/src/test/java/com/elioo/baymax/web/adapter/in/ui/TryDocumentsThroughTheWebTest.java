@@ -10,6 +10,7 @@ import com.elioo.baymax.extraction.application.service.DocumentExtractionService
 import com.elioo.baymax.extraction.application.service.DocumentIntakeService;
 import com.elioo.baymax.extraction.application.service.DocumentProcessingChain;
 import com.elioo.baymax.extraction.application.service.PageRenderer;
+import com.elioo.baymax.extraction.domain.CreatedDocument;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.family.application.service.FreeTierService;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
@@ -104,7 +105,8 @@ class TryDocumentsThroughTheWebTest {
         when(records.findPatient(ma.id())).thenReturn(Mono.just(ma));
         when(records.visiblePatient(family, ma.id())).thenReturn(Mono.just(new PatientAccess(ma, true)));
         when(documents.countInMonth(eq(family), any())).thenReturn(Mono.just(0L));
-        when(documents.create(any())).thenAnswer(i -> Mono.just(((Document) i.getArgument(0)).withId(UUID.randomUUID())));
+        when(documents.createOnce(any(), any())).thenAnswer(i -> Mono.just(new CreatedDocument(((Document) i.getArgument(0)).withId(UUID.randomUUID()), true)));
+        when(documents.findByUploadKey(any(), any())).thenReturn(Mono.empty());
         when(storage.storePage(any(), any(), any(), anyInt(), any())).thenAnswer(i -> Mono.just(new StoredObject(UUID.randomUUID(),
                 family, ma.id(), i.getArgument(2), ObjectKind.PAGE, i.getArgument(3), null, "page", "image/jpeg", 10, NOW)));
         client = new WebUiTestKit(new UploadService(timeline, records, freeTier, intake, audit, clock)).client;
@@ -149,7 +151,7 @@ class TryDocumentsThroughTheWebTest {
     void aTwoPagePdfIsOneDocumentOfTwoPages() throws IOException {
         send("t5.pdf", twoPagePdf()).expectStatus().isSeeOther();
         ArgumentCaptor<Document> created = ArgumentCaptor.forClass(Document.class);
-        verify(documents).create(created.capture());
+        verify(documents).createOnce(created.capture(), any());
         assertThat(created.getValue().pageCount()).isEqualTo(2);
         verify(storage).storePage(eq(family), eq(ma.id()), any(), eq(1), any());
         verify(storage).storePage(eq(family), eq(ma.id()), any(), eq(2), any());
@@ -166,7 +168,7 @@ class TryDocumentsThroughTheWebTest {
         assertThat(info).as("the refusal's own INFO line was captured")
                 .anyMatch(m -> m.startsWith("[baymax] web upload refused reason=unsupported_image status=400"));
         assertThat(info).noneMatch(m -> m.contains("t6-letter") || m.contains("could not read"));
-        verify(documents, never()).create(any());
+        verify(documents, never()).createOnce(any(), any());
         verify(storage, never()).storePage(any(), any(), any(), anyInt(), any());
     }
 
@@ -180,7 +182,7 @@ class TryDocumentsThroughTheWebTest {
         String html = client.post().uri("/app/add").cookie("baymax_session", "tok").body(BodyInserters.fromMultipartData(body.build()))
                 .exchange().expectStatus().isBadRequest().expectBody(String.class).returnResult().getResponseBody();
         assertThat(html).contains("একটা কাগজে সবচেয়ে বেশি ১০টি পাতা");
-        verify(documents, never()).create(any());
+        verify(documents, never()).createOnce(any(), any());
     }
 
     @Test
@@ -189,7 +191,7 @@ class TryDocumentsThroughTheWebTest {
         String html = send("t1.jpg", jpeg(1240, 1754)).expectStatus().isEqualTo(HttpStatus.PAYMENT_REQUIRED)
                 .expectBody(String.class).returnResult().getResponseBody();
         assertThat(html).contains("১ নভেম্বর ২০২৬").doesNotContain("free plan allows");
-        verify(documents, never()).create(any());
+        verify(documents, never()).createOnce(any(), any());
     }
 
     /**

@@ -168,7 +168,9 @@ public class UploadUiHandler implements WebPages {
             Map.entry("too_many_pages", "upload.err.too_many_pages"),
             Map.entry("file_too_large", "upload.err.too_large"),
             Map.entry("request_too_large", "upload.err.too_large"),
-            Map.entry("shared_patient_read_only", "add.viewonly"));
+            Map.entry("shared_patient_read_only", "add.viewonly"),
+            // D3: the same sheet sent again for someone else (Back, another patient, পাঠান); the re-drawn sheet has a new key
+            Map.entry("upload_key_reused", "upload.err.key_reused"));
 
     /** {@code POST /app/add}: the sheet's form, with or without script. The patient is the one the family chose. */
     public Mono<ServerResponse> submit(ServerRequest request) {

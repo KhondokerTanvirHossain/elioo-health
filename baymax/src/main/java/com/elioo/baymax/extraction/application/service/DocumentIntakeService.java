@@ -20,9 +20,12 @@ import reactor.core.scheduler.Schedulers;
 
 import java.time.Clock;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.IntStream;
 
 /**
  * Intake and read-back. The upload is checked against the free tier, rendered to JPEG pages, stored, and
@@ -45,18 +48,89 @@ public class DocumentIntakeService implements DocumentIntakeUseCase {
 
     @Override
     public Mono<Document> accept(UUID patientId, List<Upload> uploads) {
+        return accept(patientId, uploads, null);
+    }
+
+    @Override
+    public Mono<Document> accept(UUID patientId, List<Upload> uploads, String uploadKey) {
         if (uploads == null || uploads.isEmpty()) {
             return Mono.error(BaymaxException.badRequest("no_file", "attach at least one file"));
         }
-        return patient(patientId)
-                .flatMap(patient -> freeTier.checkCanUploadDocument(patient.familyId()).thenReturn(patient))
-                .flatMap(patient -> {
-                    List<byte[]> pages = render(uploads);
-                    return documents.create(Document.received(patient.id(), patient.familyId(),
-                                    pages.size(), clock.instant()))
-                            .flatMap(document -> storePages(document, pages).thenReturn(document))
-                            .doOnNext(document -> startProcessing(document, pages));
-                });
+        return patient(patientId).flatMap(patient -> replay(patient, uploadKey)
+                .switchIfEmpty(Mono.defer(() -> freeTier.checkCanUploadDocument(patient.familyId())
+                        .then(Mono.fromCallable(() -> render(uploads)))
+                        .flatMap(pages -> store(patient, pages, uploadKey)))));
+    }
+
+    @Override
+    public Flux<Document> acceptEach(UUID patientId, List<Upload> uploads, String uploadKey) {
+        if (uploads == null || uploads.isEmpty()) {
+            return Flux.error(BaymaxException.badRequest("no_file", "attach at least one file"));
+        }
+        return patient(patientId).flatMapMany(patient -> Flux.range(0, uploads.size())
+                .concatMap(i -> replay(patient, key(uploadKey, i)).map(Optional::of).defaultIfEmpty(Optional.empty()))
+                .collectList()
+                .flatMapMany(found -> {
+                    List<Integer> missing = IntStream.range(0, found.size()).filter(i -> found.get(i).isEmpty()).boxed().toList();
+                    Mono<Void> allowed = missing.isEmpty() ? Mono.empty()
+                            : freeTier.checkCanUploadDocuments(patient.familyId(), missing.size());
+                    // every missing file is read before the first document exists: one bad file refuses them all
+                    return allowed.then(Mono.fromCallable(() -> {
+                                Map<Integer, List<byte[]>> pages = new HashMap<>();
+                                for (int i : missing) {
+                                    pages.put(i, render(List.of(uploads.get(i))));
+                                }
+                                return pages;
+                            }))
+                            .flatMapMany(pages -> Flux.range(0, uploads.size()).concatMap(i -> found.get(i).map(Mono::just)
+                                    .orElseGet(() -> store(patient, pages.get(i), key(uploadKey, i)))));
+                }));
+    }
+
+    /**
+     * The row, then its pages, then processing — for the press that made the row only. The same press already made it
+     * (a race on the key): that press stores and processes, this one returns its document. A failed store removes the
+     * row, so nothing is left without its pages and a retry with the same key starts clean.
+     */
+    private Mono<Document> store(PatientProfile patient, List<byte[]> pages, String uploadKey) {
+        return documents.createOnce(Document.received(patient.id(), patient.familyId(), pages.size(), clock.instant()), uploadKey)
+                .flatMap(created -> !created.fresh() ? Mono.just(created.document())
+                        : storePages(created.document(), pages)
+                                .onErrorResume(e -> forget(created.document()).then(Mono.error(e)))
+                                .thenReturn(created.document())
+                                .doOnNext(document -> startProcessing(document, pages)));
+    }
+
+    /** The document an earlier press with this key made, for this patient; another patient's is a conflict, never a replay. */
+    private Mono<Document> replay(PatientProfile patient, String uploadKey) {
+        if (uploadKey == null) {
+            return Mono.empty();
+        }
+        return documents.findByUploadKey(patient.familyId(), uploadKey).flatMap(d -> d.patientId().equals(patient.id())
+                ? Mono.just(d)
+                : Mono.error(BaymaxException.conflict("upload_key_reused", "the upload key belongs to another patient's document")));
+    }
+
+    /**
+     * Objects first, then the row (TimelineService.deleteDocument's order). The row goes even when removing the objects
+     * fails: an orphan object is harmless, a pageless row is not. Never fails itself, so the store's own error is the
+     * one the caller sees.
+     */
+    private Mono<Void> forget(Document d) {
+        return storage.deleteDocument(d.familyId(), d.patientId(), d.id())
+                .doOnError(e -> log.warn("[baymax] intake could not remove stored pages documentId={} error={}",
+                        d.id(), e.getClass().getSimpleName()))
+                .onErrorResume(e -> Mono.empty())
+                .then(documents.deleteDocument(d.id()))
+                .doOnNext(rows -> log.info("[baymax] intake removed a document whose pages were not stored documentId={}", d.id()))
+                .doOnError(e -> log.error("[baymax] intake could not remove a document without pages documentId={} error={}",
+                        d.id(), e.getClass().getSimpleName()))
+                .onErrorResume(e -> Mono.empty())
+                .then();
+    }
+
+    private static String key(String uploadKey, int index) {
+        return uploadKey == null ? null : uploadKey + ":" + index;
     }
 
     /** Renders every upload to JPEG pages, in the order the caller sent them. */
