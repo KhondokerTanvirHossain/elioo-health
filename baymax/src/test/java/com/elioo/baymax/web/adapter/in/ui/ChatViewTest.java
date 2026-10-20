@@ -43,6 +43,16 @@ class ChatViewTest {
         assertThat(count(week, "class=\"btn")).isEqualTo(1);
     }
 
+    /** Each urgent card is a region named by its level's short form, so a screen reader can jump to it by name. */
+    @Test
+    void anUrgentCardIsARegionNamedByItsLevel() {
+        for (Urgency level : List.of(Urgency.NOW, Urgency.THIS_WEEK)) {
+            Dom.Element section = Dom.parse(view.card(Lang.BN, urgent(level), "আম্মা")).root.children().get(0);
+            assertThat(section.tag()).isEqualTo("section");
+            assertThat(section.attrs().get("aria-label")).as(level.name()).isEqualTo(copy.urgency(Lang.BN, level, true));
+        }
+    }
+
     /** The header is the full line, never the chip's short form: the short form is a different, shorter sentence. */
     @Test
     void theNowHeaderIsTheFullLineNotTheShortForm() {
@@ -130,14 +140,28 @@ class ChatViewTest {
         assertThat(view.composer(Lang.BN, false, MA)).doesNotContain("/app/add").contains(copy.t(Lang.BN, "chat.soon"));
     }
 
-    /** An empty stack is silence, not reassurance: no heading, no "সব ঠিক". */
+    /**
+     * An empty stack is silence, not reassurance. Asserted on the structure, not on a list of phrases someone thought of:
+     * between the greeting and the composer there is the link to the papers and nothing else — no heading, no card, no
+     * second bubble, whatever its words.
+     */
     @Test
     void nothingToAttendToShowsNoHeadingAndNoReassurance() {
         assertThat(view.stack(Lang.BN, List.of(), "আম্মা")).isEmpty();
         String html = view.page(Lang.BN, "Tanvir", "আম্মা", MA, List.of(), 3, true);
-        assertThat(html).contains(copy.t(Lang.BN, "chat.hello", "Tanvir")).contains(copy.t(Lang.BN, "chat.soon"))
-                .doesNotContain(copy.t(Lang.BN, "attn.heading", "আম্মা")).doesNotContain("attn-stack")
-                .doesNotContain("সব ঠিক").doesNotContain("চিন্তার কিছু নেই");
+        Dom dom = Dom.parse(html);
+        assertThat(dom.unclosed).isEmpty();
+        List<Dom.Element> top = dom.root.children();
+        assertThat(top).extracting(e -> e.tag() + "." + String.join(".", e.classes()))
+                .as("greeting, the papers link, the composer — nothing between").containsExactly("p.bubble", "p.", "div.composer");
+        assertThat(top.get(0).ownText()).isEqualTo(copy.t(Lang.BN, "chat.hello", "Tanvir"));
+        assertThat(top.get(1).ownText()).as("the link's paragraph carries no words of its own").isEmpty();
+        assertThat(top.get(1).children()).singleElement().satisfies(a -> {
+            assertThat(a.tag()).isEqualTo("a");
+            assertThat(a.attrs().get("href")).isEqualTo(Tab.PAPERS.path + "?patient=" + MA);
+            assertThat(a.ownText()).isEqualTo(copy.t(Lang.BN, "chat.papers", "আম্মা"));
+        });
+        assertThat(html).contains(copy.t(Lang.BN, "chat.soon"));
         // the other direction: with something to attend to, the heading and the card are there
         assertThat(view.page(Lang.BN, "Tanvir", "আম্মা", MA, List.of(urgent(Urgency.NOW)), 3, true))
                 .contains(copy.t(Lang.BN, "attn.heading", "আম্মা")).contains("class=\"attn now\"");

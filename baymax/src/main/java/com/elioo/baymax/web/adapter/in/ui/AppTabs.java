@@ -47,7 +47,7 @@ public class AppTabs implements WebPages {
     private final PageChrome chrome;
     private final NudgeDataPort nudgeData;
     private final BaymaxProperties properties;
-    /** C4: the চ্যাট attention stack (s06) and the কাগজপত্র strip, after visibility; never called for the chooser. */
+    /** C4: the চ্যাট attention stack (s06) and, its urgent part alone, the কাগজপত্র strip; after visibility, never for the chooser. */
     private final AttentionUseCase attention;
 
     @Override
@@ -160,7 +160,7 @@ public class AppTabs implements WebPages {
         UUID familyId = SessionAuthFilter.session(request).familyId();
         String list = Tab.PAPERS.path + "?patient=" + patientId;
         String name = patient.patient().name();
-        return Mono.zip(timeline.timeline(familyId, patientId, cursor, filter), attention.attention(familyId, patientId)).map(read -> {
+        return Mono.zip(timeline.timeline(familyId, patientId, cursor, filter), attention.urgent(familyId, patientId)).map(read -> {
             TimelinePage page = read.getT1();
             boolean nothingAtAll = page.entries().isEmpty() && filter == TimelineFilter.ALL && cursor == null;
             StringBuilder b = new StringBuilder("<div class=\"phead\"><div><h1>").append(copy.t(lang, "timeline.docs")).append("</h1>")
@@ -210,10 +210,10 @@ public class AppTabs implements WebPages {
 
     /**
      * "এখন যা দেখার" above the filters (AttentionCard README): the same NOW and THIS_WEEK papers the চ্যাট stack leads
-     * with, each a compact link to its paper with the stored chip. Nothing at all when nothing is urgent — no heading.
+     * with ({@link AttentionUseCase#urgent}, read alone), each a compact link to its paper with the stored chip. Nothing
+     * at all when nothing is urgent — no heading.
      */
-    private String strip(Lang lang, List<AttentionItem> stack) {
-        List<AttentionItem.Urgent> urgent = stack.stream().filter(AttentionItem.Urgent.class::isInstance).map(AttentionItem.Urgent.class::cast).toList();
+    private String strip(Lang lang, List<AttentionItem.Urgent> urgent) {
         if (urgent.isEmpty()) {
             return "";
         }

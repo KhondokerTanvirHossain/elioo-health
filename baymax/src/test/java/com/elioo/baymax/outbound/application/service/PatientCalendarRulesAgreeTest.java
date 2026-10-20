@@ -56,8 +56,12 @@ class PatientCalendarRulesAgreeTest {
     /**
      * C4: a follow-up due 2026-10-19 on a paper is on the চ্যাট stack at every instant — as the doctor's date while it is
      * today or later (the window starts on the patient's today), and as the THIS_WEEK paper once the rule calls it past
-     * due — never neither. The paper's level is what the rule says at that instant; the read model returns it as urgent
-     * exactly when that level has a line; the follow-up read honours the window it is asked for.
+     * due — never neither, as far as the two rules go. The paper's level is what the rule says at that instant; the read
+     * model returns it as urgent exactly when that level has a line; the follow-up read honours the window it is asked for.
+     * <p>What this does not cover: production reads the STORED level, which rises only when {@code UrgencySweepJob} runs
+     * (hourly, at minute 20). From Dhaka midnight until that run — about twenty minutes, longer if a run fails — a
+     * ROUTINE paper whose follow-up has just gone past due is on neither card. Accepted for C4 and stated in its PR;
+     * closing it (a window from yesterday for papers not yet urgent, or a sweep at Dhaka midnight) is a product call.</p>
      */
     @ParameterizedTest(name = "at {0} the paper is on the stack as {1}")
     @CsvSource({"2026-10-19T17:59:00Z,FollowUp",      // 23:59 on the 19th in Dhaka: due today, the doctor's date

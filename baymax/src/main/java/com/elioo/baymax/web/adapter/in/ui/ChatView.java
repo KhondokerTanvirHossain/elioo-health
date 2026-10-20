@@ -62,7 +62,8 @@ final class ChatView {
         return switch (item) {
             case AttentionItem.Urgent u -> {
                 boolean now = u.level() == Urgency.NOW;
-                yield "<section class=\"attn " + (now ? "now" : "soon") + "\"><div class=\"head\">" + Icons.svg(now ? "octagon" : "calendar", 24)
+                yield "<section class=\"attn " + (now ? "now" : "soon") + "\" aria-label=\"" + Html.esc(copy.urgency(lang, u.level(), true))
+                        + "\"><div class=\"head\">" + Icons.svg(now ? "octagon" : "calendar", 24)
                         + "<strong>" + copy.urgency(lang, u.level(), false) + "</strong></div><div class=\"body\"><span>"
                         + TimelineView.typeLabel(copy, lang, u.documentType()) + " · " + copy.date(lang, u.date())
                         + (u.dateIsFallback() ? " " + copy.t(lang, "timeline.uploaddate") : "") + "</span>"

@@ -80,6 +80,7 @@ final class WebUiTestKit {
         // a patient with no nudge row reads as "reminders on"; a test that needs a row stubs that patient
         when(nudgeData.patient(any())).thenReturn(Mono.empty());
         when(attention.attention(any(), any())).thenReturn(Mono.just(List.of()));
+        when(attention.urgent(any(), any())).thenReturn(Mono.just(List.of()));
         this.sessions = new SessionAuthFilter(auth, properties);
         this.router = buildRouter();
         this.client = WebTestClient.bindToRouterFunction(router).build();

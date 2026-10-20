@@ -9,6 +9,7 @@ import com.elioo.baymax.web.application.port.out.TimelineReadPort;
 import com.elioo.baymax.web.domain.AttentionItem;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Clock;
@@ -42,16 +43,12 @@ public class AttentionService implements AttentionUseCase {
 
     @Override
     public Mono<List<AttentionItem>> attention(UUID familyId, UUID patientId) {
-        return records.visiblePatient(familyId, patientId)
-                .switchIfEmpty(Mono.error(BaymaxException.notFound("patient_not_found", "no patient with id " + patientId)))
+        return visible(familyId, patientId)
                 .flatMap(access -> {
                     Instant since = clock.instant().minus(WINDOW);
                     LocalDate today = PatientCalendar.today(clock);
                     return Mono.zip(
-                            timeline.attention(patientId, since, URGENT_LIMIT)
-                                    .map(e -> (AttentionItem) new AttentionItem.Urgent(e.documentId(), e.urgency(), e.documentType(),
-                                            e.date(), e.dateIsFallback(), e.createdAt()))
-                                    .collectList(),
+                            urgentRows(patientId, since).map(u -> (AttentionItem) u).collectList(),
                             timeline.inFlightAndRetakes(patientId, since)
                                     .map(e -> "NEEDS_RETAKE".equals(e.status())
                                             ? (AttentionItem) new AttentionItem.Retake(e.documentId(), e.createdAt())
@@ -68,5 +65,23 @@ public class AttentionService implements AttentionUseCase {
                     all.sort(AttentionItem.ORDER);
                     return List.copyOf(all);
                 });
+    }
+
+    @Override
+    public Mono<List<AttentionItem.Urgent>> urgent(UUID familyId, UUID patientId) {
+        return visible(familyId, patientId)
+                .flatMap(access -> urgentRows(patientId, clock.instant().minus(WINDOW)).sort(AttentionItem.ORDER).collectList())
+                .map(List::copyOf);
+    }
+
+    private Mono<?> visible(UUID familyId, UUID patientId) {
+        return records.visiblePatient(familyId, patientId)
+                .switchIfEmpty(Mono.error(BaymaxException.notFound("patient_not_found", "no patient with id " + patientId)));
+    }
+
+    /** The read model's urgent rows (stored NOW / THIS_WEEK only, filtered in SQL) as cards. */
+    private Flux<AttentionItem.Urgent> urgentRows(UUID patientId, Instant since) {
+        return timeline.attention(patientId, since, URGENT_LIMIT)
+                .map(e -> new AttentionItem.Urgent(e.documentId(), e.urgency(), e.documentType(), e.date(), e.dateIsFallback(), e.createdAt()));
     }
 }

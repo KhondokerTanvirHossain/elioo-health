@@ -29,6 +29,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -94,6 +95,42 @@ class AttentionServiceTest {
             assertThat(soonest.dueDate()).isEqualTo(TODAY.plusDays(1));
             assertThat(soonest.cropKey()).isEqualTo("k1");
         }).verifyComplete();
+    }
+
+    /**
+     * The urgent rows are asked for with the stack's own limit, ten: a limit of one would hide every other NOW paper and
+     * every THIS_WEEK one behind the newest NOW (the literal here, not the constant, so a changed constant is caught).
+     */
+    @Test
+    void theUrgentPapersAreAskedForUpToTen() {
+        StepVerifier.create(service.attention(FAMILY, MA)).expectNextCount(1).verifyComplete();
+        verify(timeline).attention(MA, NOW.minus(Duration.ofDays(30)), 10);
+    }
+
+    /**
+     * The কাগজপত্র strip reads only what it draws: the urgent papers, in the stack's order, after visibility — never the
+     * papers being read or the doctor's dates, which it throws away (two queries per load, every 5 s while one is read).
+     */
+    @Test
+    void theStripReadsOnlyTheUrgentPapersInTheStacksOrder() {
+        TimelineEntry week = entry("DONE", Urgency.THIS_WEEK, Duration.ofDays(1));
+        TimelineEntry now = entry("DONE", Urgency.NOW, Duration.ofDays(5));
+        when(timeline.attention(eq(MA), eq(NOW.minus(Duration.ofDays(30))), eq(10))).thenReturn(Flux.just(week, now));
+        StepVerifier.create(service.urgent(FAMILY, MA)).assertNext(strip -> {
+            assertThat(strip).extracting(AttentionItem::documentId).containsExactly(now.documentId(), week.documentId());
+            assertThat(strip).allSatisfy(u -> assertThat(u).isInstanceOf(AttentionItem.Urgent.class));
+        }).verifyComplete();
+        verify(timeline, never()).inFlightAndRetakes(any(), any());
+        verify(nudgeData, never()).openFollowUpsOfPatient(any(), any(), any());
+    }
+
+    @Test
+    void theStripOfAPatientThisFamilyCannotSeeIs404AndNothingIsRead() {
+        UUID stranger = UUID.randomUUID();
+        when(records.visiblePatient(FAMILY, stranger)).thenReturn(Mono.empty());
+        StepVerifier.create(service.urgent(FAMILY, stranger))
+                .expectErrorMatches(e -> e instanceof BaymaxException b && b.status().value() == 404).verify();
+        verifyNoInteractions(timeline, nudgeData);
     }
 
     /**
