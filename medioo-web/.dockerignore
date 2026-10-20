@@ -1,0 +1,13 @@
+node_modules
+.next
+playwright-report
+test-results
+e2e
+**/*.test.ts
+**/*.test.tsx
+Dockerfile
+.dockerignore
+.gitignore
+# never bake an env file into the image: Node gets only JAVA_INTERNAL_URL and GIT_SHA, as -e flags (W1b)
+.env*
+*.md

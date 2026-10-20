@@ -1,0 +1,9 @@
+{
+  "_source": "Copied verbatim from baymax/src/main/resources/baymax/ui-shell_bn.properties (tab.*, tabs.label) and ui_bn.properties (landing.h1, landing.sub) for the W1a budget probe only. A DELIBERATE EXCEPTION to the no-Bangla-literal rule until W2b: it is hand-copied, not generated, and sits outside src/ only because the rule names src/ — where the file sits does not make it generated copy. probe-copy.test.ts pins every string to its .properties key. W2b deletes this file, and its Bangla-literal lint covers every directory the build imports from, not only src/.",
+  "tabs.label": "প্রধান",
+  "tab.chat": "চ্যাট",
+  "tab.papers": "কাগজপত্র",
+  "tab.family": "পরিবার",
+  "landing.h1": "পরিবারের সব রিপোর্ট মনে রাখে। সময় হলে নিজেই জানায়।",
+  "landing.sub": "প্রেসক্রিপশন বা রিপোর্টের ছবি তুলে পাঠান। Medioo সহজ বাংলায় বুঝিয়ে দেবে, গুছিয়ে রাখবে। আর ফলো-আপের সময় হলে, ওষুধ বদলালে, বা কোনো মান খারাপের দিকে গেলে আপনাকে নিজে থেকেই জানাবে।"
+}

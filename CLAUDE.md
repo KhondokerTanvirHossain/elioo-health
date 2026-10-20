@@ -28,6 +28,7 @@ docker compose up -d                          # Postgres 17 on localhost:5433 (m
 ./gradlew build                               # all 10 modules; unit tests + context test (needs the Docker Postgres)
 RUN_AWS_INTEGRATION_TESTS=true ./gradlew test # + real AWS Comprehend/Textract tests
 RUN_LLM_INTEGRATION_TESTS=true LLM_PROVIDER=groq ./gradlew :elioo-llm:test --tests '*LlmClientIntegrationTest'
+scripts/check-no-server-mutation.sh && pnpm -C medioo-web install --frozen-lockfile && for s in lint typecheck test build e2e; do pnpm -C medioo-web $s || break; done   # medioo-web, as "Build and test" runs it (Node 22)
 ```
 
 Secrets never go in the repo. Locally they live in `.env.local` (git-ignored); load with
@@ -48,7 +49,7 @@ uses R2DBC. Schema is `medscribe`. New migrations: next `V<n>__description.sql`,
 - `elioo-llm/` — provider-neutral LLM layer (`LlmClient`, prompt templates, Anthropic + OpenAI-compatible clients, `LlmAutoConfiguration`).
 - `elioo-aws-*`, `elioo-gcp-*` — thin cloud SDK wrappers with Spring auto-configuration; no business logic.
 - `docs/superpowers/{specs,plans}` — design specs and the plans that executed them; `docs/archive` — PoC history, not current.
-- `medioo-web/` (created by W1a; not yet in the tree) — the Next.js frontend beside Java (DR-40): renders Java's display model, derives no safety rule, mutates only from the browser; a path reaches it only once it is listed in `docs/infra/Caddyfile.medioo` and applied on the box.
+- `medioo-web/` — the Next.js frontend beside Java (DR-40): renders Java's display model, derives no safety rule, mutates only from the browser; a path reaches it only once it is listed in `docs/infra/Caddyfile.medioo` and applied on the box.
 - `docs/design/2026-10-21-approved/` — the PO-approved phone and desktop design, Mio and the wordmark (DR-41); it wins over a screen on look and layout only — copy comes from the `ui-*`/`messages_*` bundles and every safety rule and wording from Java; its NOW line with the name, unconditional `tel:999`, canned answers, scene bar, receipts and toasts do not ship.
 - `.github/workflows/ci-cd.yml` — build on every push; on `main` also image → GHCR → SSH deploy via `deploy.sh`.
 

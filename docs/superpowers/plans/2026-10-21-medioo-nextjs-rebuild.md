@@ -196,7 +196,7 @@ Each line is one PR. The **Waves** order work; within a wave, lanes run in paral
 
 **Wave 2 — vocabulary and contracts**
 - **W2a** The token file `medioo.tokens.json` → `tokens.css`, reconciling phone and desktop and absorbing the loose hexes. Fonts. A stylelint ban on colour literals. A built-CSS test that `--now*` is used only by now, crit and emergency components. Proof: contrast pairs computed from the token file in both themes.
-- **W2b** Copy codegen (`.properties` → typed JSON), the Bangla-literal lint (it fails if it scans zero files), and Bangla digit and date golden vectors written by a Java test and read by Vitest.
+- **W2b** Copy codegen (`.properties` → typed JSON), the Bangla-literal lint (it fails if it scans zero files, and it covers every directory the build imports from, not only `src/`; it replaces W1a's `src/no-bangla-literal.test.ts` and deletes W1a's hand-copied `medioo-web/copy/probe.bn.json`, the one deliberate exception until then), and Bangla digit and date golden vectors written by a Java test and read by Vitest.
 - **W2c–W2e** Components, in groups of 3–4, each with catalog states at `/app/catalog-test` (build flag; the smoke test asserts it returns 404 in production):
   - c: Wordmark, MioAvatar, MessageBubble (`surface` prop), StatusChip (in, out-high, out-low, crit-high, crit-low, unk);
   - d: VerdictCard, NowBanner, Toast, Sheet;
@@ -400,7 +400,7 @@ Each line is one PR. The **Waves** order work; within a wave, lanes run in paral
 - Produces: `deploy_web <tag>`, a bash function that:
   - prunes the web repository to 3 tags;
   - if `docker pull medioo-web:<tag>` fails, logs `web image <tag> not found; Java-only deploy` and returns 0;
-  - otherwise runs `medioo-web` with `--network n8n_edge`, no `-p`, `--memory=320m`, `--restart unless-stopped`, `-e JAVA_INTERNAL_URL=http://medscribe-ai:8086 -e GIT_SHA=<tag>` and no `--env-file`, so Node never gets Java's secrets;
+  - otherwise runs `medioo-web` with `--network n8n_edge`, no `-p`, `--memory=320m`, `--restart unless-stopped`, `--log-opt max-size=10m --log-opt max-file=3` (the box is shared and low on disk; Next writes a stack trace per server error), `-e JAVA_INTERNAL_URL=http://medscribe-ai:8086 -e GIT_SHA=<tag>` and no `--env-file`, so Node never gets Java's secrets;
   - waits up to 60 s for `docker exec medioo-web node -e <healthz fetch>`;
   - on timeout prints the last 50 log lines and returns 1.
 

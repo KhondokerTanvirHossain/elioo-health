@@ -13,6 +13,9 @@ jobs:
   build:
     name: Build and test
     runs-on: ubuntu-latest
+    # Read-only token: this job runs third-party actions and the repo's own scripts, and writes nothing to GitHub.
+    permissions:
+      contents: read
     services:
       postgres:
         image: postgres:17-alpine
@@ -81,14 +84,72 @@ jobs:
           GROQ_API_KEY: ci-placeholder
       # D4: the add sheet's script (baymax/ui/upload.js) — its pure rules, including exactly what one press sends.
       # The DOM wiring and the ES5 parse are covered inside the Gradle build (UploadScriptTest); this runs the rest.
+      # Node 22 for every node step: the medioo-web image runs node:22-alpine, so CI tests the runtime it ships.
+      # Third-party actions are pinned by commit sha (a tag can be moved); the trailing comment names the version.
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          package_json_file: medioo-web/package.json
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: medioo-web/pnpm-lock.yaml
       - name: Upload script tests
         run: node --test baymax/src/test/js/*.test.mjs
+      # medioo-web (DR-40, plan W1a): built and tested here, not deployed — the deploy job does not build its image yet (W1b).
+      # DR-40 A3, enforced here and in Java: no server action, no mutating route handler, Java fetched with GET/HEAD
+      # only. The check's own cases run first (both directions, and a scan of zero files fails).
+      - name: medioo-web server-mutation check
+        run: |
+          scripts/test_check_no_server_mutation.sh
+          scripts/check-no-server-mutation.sh medioo-web/src
+      - name: medioo-web install
+        working-directory: medioo-web
+        run: pnpm install --frozen-lockfile
+      - name: medioo-web lint, typecheck, unit tests, build
+        working-directory: medioo-web
+        run: |
+          pnpm run lint
+          pnpm run typecheck
+          pnpm exec vitest run
+          pnpm run build
+      # The browser download is cached per Playwright version and the install retried, so a CDN or apt-mirror hiccup
+      # does not block every merge (main is protected and every merge deploys).
+      - name: medioo-web Playwright version
+        id: playwright
+        working-directory: medioo-web
+        run: echo "version=$(node -p 'require("@playwright/test/package.json").version')" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ms-playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - name: medioo-web browser install
+        working-directory: medioo-web
+        run: |
+          for attempt in 1 2 3; do
+            pnpm exec playwright install --with-deps chromium && exit 0
+            echo "::warning::playwright install failed (attempt $attempt of 3)"
+            sleep $((attempt * 15))
+          done
+          exit 1
+      - name: medioo-web browser tests (CSP, axe, no-JS reading, budget probe)
+        working-directory: medioo-web
+        run: pnpm exec playwright test -c e2e/playwright.config.ts
+      - name: medioo-web budget numbers
+        if: always()
+        working-directory: medioo-web
+        run: |
+          node -e 'const d = require("./test-results/budget.json"); console.log(JSON.stringify({ totals: d.totals, all: d.all }, null, 2))' \
+            || echo "no budget.json (the browser tests did not reach the probe)"
+      - name: Upload medioo-web Playwright report
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: medioo-web-playwright-report
+          path: medioo-web/playwright-report
       - name: Upload test reports
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: test-reports
           path: "**/build/reports/tests/test"

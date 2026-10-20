@@ -29,6 +29,11 @@
 # ============================================
 .env
 .env.local
+# Any file matching .env*, at any depth and backups included (CLAUDE.md) — medioo-web/.env.local as much as the root's.
+# The two committed templates hold no secret and stay stageable.
+.env*
+!/.env.example
+!medscribe.env.example
 *.pem
 *.key
 *.p12
