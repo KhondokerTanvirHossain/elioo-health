@@ -5,9 +5,11 @@
 # Requires: docker, a prior `docker login ghcr.io`, and $ENV_FILE (mode 600).
 #
 # Two containers, one sha (DR-40 A2): Java (medscribe-ai) is swapped first and must be healthy; only then is
-# medioo-web (Next.js) swapped, by deploy_web. A sha with no medioo-web image (every sha before W1b) deploys Java
-# only and leaves whatever medioo-web is running alone; WEB_IMAGE_REQUIRED=1 (set by CI, which has just pushed that
-# image) turns a missing web image into a failure instead. Tested by scripts/test_deploy_sh.sh.
+# medioo-web (Next.js) swapped, by deploy_web. A sha GHCR has no medioo-web image for (every sha before W1b) deploys
+# Java only and leaves whatever medioo-web is running alone; WEB_IMAGE_REQUIRED=1 (set by CI, which has just pushed
+# that image) turns a missing web image into a failure instead. Any other web pull error fails the deploy. A web
+# swap that fails puts the previous medioo-web back. Tested by scripts/test_deploy_sh.sh (fakes) and
+# scripts/test_deploy_web_docker.sh (the real image and daemon). Needs coreutils `timeout` (the box has it).
 #
 # DEPLOY_FUNCTIONS_ONLY=1 makes `source deploy.sh` define the functions and stop (scripts/test_deploy_prune.sh,
 # scripts/test_deploy_sh.sh). It is honoured only when the file is SOURCED: executing deploy.sh with it set fails,
@@ -89,77 +91,138 @@ require_free_kb() {
 
 WEB_IMAGE="${WEB_IMAGE:-ghcr.io/khondokertanvirhossain/elioo-health/medioo-web}"
 WEB_CONTAINER_NAME="${WEB_CONTAINER_NAME:-medioo-web}"
+WEB_HEALTH_DEADLINE_S="${WEB_HEALTH_DEADLINE_S:-60}"   # the whole health wait, wall clock
+WEB_PROBE_TIMEOUT_S="${WEB_PROBE_TIMEOUT_S:-5}"        # one try: docker exec, a node start and the fetch (2 s of it)
+
+# The health probe, run inside the container as `node -e "$WEB_PROBE" <tag>`. It passes only when /app/healthz
+# answers 2xx JSON with service "medioo-web", sha == <tag> (the GIT_SHA the container was started with) AND
+# build == <tag> (the BUILD_SHA baked into the image when CI built it). <tag> is the literal deploy.sh holds, passed
+# as an argument, never read from the container's own environment: a probe that compares the container's answer
+# with the container's env agrees with itself whatever is running. The build field is what makes it a check of the
+# IMAGE: an image tagged <tag> but built from another sha fails. The fetch has its own 2 s deadline and exitCode
+# starts at 1, so a hung server, or a path that reaches neither exit, fails rather than passing or stalling.
+WEB_PROBE="process.exitCode=1;const t=process.argv[1];fetch('http://127.0.0.1:3000/app/healthz',{signal:AbortSignal.timeout(2000)}).then(r=>r.ok?r.json():Promise.reject(r.status)).then(j=>process.exit(t&&j&&j.service==='medioo-web'&&j.sha===t&&j.build===t?0:1)).catch(()=>process.exit(1))"
+
+# web_start <tag> <network>: the one place medioo-web's `docker run` arguments are written (new and put-back alike).
+# On <network> with no published port (nothing reaches it except through Caddy), no --env-file and no mounts (Node
+# never holds Java's secrets: it gets the two variables it needs), capped at 320 MB, with rotated logs (the box is
+# shared and low on disk; Next writes a stack trace per server error).
+web_start() {
+  docker run -d \
+    --name "$WEB_CONTAINER_NAME" \
+    --restart unless-stopped \
+    --memory=320m \
+    --log-opt max-size=10m --log-opt max-file=3 \
+    --network "$2" \
+    -e JAVA_INTERNAL_URL=http://medscribe-ai:8086 \
+    -e "GIT_SHA=$1" \
+    "${WEB_IMAGE}:$1" >/dev/null
+}
+
+# web_wait_healthy <tag>: 0 once WEB_PROBE passes for <tag>. Each try is bounded by WEB_PROBE_TIMEOUT_S (a hung exec
+# or node cannot stall it), the whole wait by WEB_HEALTH_DEADLINE_S of wall clock and by 30 tries.
+web_wait_healthy() {
+  local tag="$1" i=0 start=$SECONDS
+  while [ "$i" -lt 30 ] && [ $((SECONDS - start)) -lt "$WEB_HEALTH_DEADLINE_S" ]; do
+    i=$((i + 1))
+    if timeout "$WEB_PROBE_TIMEOUT_S" docker exec "$WEB_CONTAINER_NAME" node -e "$WEB_PROBE" "$tag" >/dev/null 2>&1; then
+      log "$WEB_CONTAINER_NAME healthy after $((SECONDS - start))s, try $i (sha ${tag})"
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
+}
+
+# web_restore <previous image ref> <failed tag> <network>: puts the previous medioo-web back after a failed swap. The
+# container is stateless, so unlike Java it can be restored without a person: from W1c Caddy routes paths to it, and
+# one bad web build must not leave them down until someone acts. With no previous one of ours (the first deploy),
+# the failed container is left in place to inspect.
+web_restore() {
+  local prev="$1" failed="$2" edge="$3" ptag=""
+  case "$prev" in "${WEB_IMAGE}:"*) ptag="${prev##*:}" ;; esac
+  if [ -z "$ptag" ] || [ "$ptag" = "$failed" ]; then
+    log "No previous $WEB_CONTAINER_NAME to put back${prev:+ (was $prev)}; the failed one is left in place: docker logs $WEB_CONTAINER_NAME"
+    return 0
+  fi
+  log "Putting the previous $WEB_CONTAINER_NAME ($ptag) back"
+  if docker ps -a --format '{{.Names}}' | grep -qx "$WEB_CONTAINER_NAME"; then
+    docker rm -f "$WEB_CONTAINER_NAME" >/dev/null || { log "ERROR: could not remove the failed $WEB_CONTAINER_NAME; nothing put back"; return 0; }
+  fi
+  if ! web_start "$ptag" "$edge"; then
+    log "ERROR: could not start the previous $WEB_CONTAINER_NAME ($ptag); none is running"
+    return 0
+  fi
+  if web_wait_healthy "$ptag"; then
+    log "The previous $WEB_CONTAINER_NAME ($ptag) is back and healthy"
+  else
+    log "ERROR: the previous $WEB_CONTAINER_NAME ($ptag) is back but did not answer /app/healthz either"
+  fi
+}
 
 # deploy_web <tag>: swaps the medioo-web container to <tag>. Called only once Java is healthy.
 #
 # - Prunes the web repository to 3 tags (never <tag>, never the running image).
-# - If `docker pull` fails (every sha before W1b has no web image, so a rollback to one lands here): logs, leaves
-#   the running medioo-web as it is, and returns 0; unless WEB_IMAGE_REQUIRED=1, when it returns 1. CI sets it: the
-#   same job has just pushed this image, so a failed pull there is an auth or registry fault, not a pre-W1b sha.
-# - Runs it on n8n_edge with no published port (nothing reaches it except through Caddy, and no route does until
-#   W1c), no --env-file and no mounts (Node never holds Java's secrets: it gets the two variables it needs), capped
-#   at 320 MB, with rotated logs (the box is shared and low on disk; Next writes a stack trace per server error).
-# - Waits up to 60 s for /app/healthz, fetched inside the container, to answer for THIS sha; on timeout prints the
-#   last 50 log lines and returns 1. The failed container is left in place for inspection; Java is not touched.
+# - Pulls <tag>. If the pull fails and <tag> is already on disk, uses that copy (a logged-out manual rollback to a
+#   tag the prune kept). Otherwise only GHCR's missing-tag answer ("manifest unknown" / "not found": every sha
+#   before W1b) skips the web step: it logs that, leaves the running medioo-web as it is and returns 0; unless
+#   WEB_IMAGE_REQUIRED=1 (CI, which has just pushed this image), when it returns 1. Any other pull error (denied,
+#   unauthorized, rate limit, network, no space) is a fault and returns 1 whatever WEB_IMAGE_REQUIRED says: a green
+#   run that left the web at another sha would read as a successful rollback.
+# - No edge network: returns 1 before the running medioo-web is touched. Anywhere else the new one would pass its
+#   in-container probe while neither Caddy nor it could reach the other side.
+# - Replaces the container (web_start) and waits for this tag's /app/healthz (web_wait_healthy). If the run fails or
+#   the wait times out: prints the last 50 log lines, puts the previous medioo-web back (web_restore), returns 1.
+#   Java is never touched.
 #
 # Every step checks its own status: the caller runs it as `deploy_web ... || exit 1`, where `set -e` is off.
 deploy_web() {
-  local tag="$1" err
+  local tag="$1" err line edge="${EDGE_NETWORK:-n8n_edge}" prev
   # the main body prunes both repositories before the free-space floor and records it; once per run is enough
   [ "${WEB_PRUNED_FOR:-}" = "$tag" ] || prune_repo "$WEB_IMAGE" 3 "$tag"
 
   log "Pulling ${WEB_IMAGE}:${tag}"
   if ! err="$(docker pull "${WEB_IMAGE}:${tag}" 2>&1 >/dev/null)"; then
-    err="${err%%$'\n'*}"
-    if [ "${WEB_IMAGE_REQUIRED:-}" = 1 ]; then
-      log "ERROR: web image ${tag} could not be pulled and WEB_IMAGE_REQUIRED=1 (${err}). Java is deployed and healthy; $WEB_CONTAINER_NAME is unchanged."
+    line="${err%%$'\n'*}"
+    if docker image inspect "${WEB_IMAGE}:${tag}" >/dev/null 2>&1; then
+      log "web pull failed (${line}); using the local ${tag}"
+    elif printf '%s\n' "$err" | grep -qiE 'manifest unknown|not found'; then
+      if [ "${WEB_IMAGE_REQUIRED:-}" = 1 ]; then
+        log "ERROR: web image ${tag} not found and WEB_IMAGE_REQUIRED=1 (${line}). Java is deployed and healthy; $WEB_CONTAINER_NAME is unchanged."
+        return 1
+      fi
+      log "web image ${tag} not found; Java-only deploy (${line}). $WEB_CONTAINER_NAME, if running, is unchanged."
+      return 0
+    else
+      log "ERROR: could not pull web image ${tag}: ${line}. Not a missing tag, so not skipped. Java is deployed and healthy; $WEB_CONTAINER_NAME is unchanged."
       return 1
     fi
-    log "web image ${tag} not found; Java-only deploy (${err}). $WEB_CONTAINER_NAME, if running, is unchanged."
-    return 0
   fi
 
-  local edge="${EDGE_NETWORK:-n8n_edge}" net=()
-  if docker network inspect "$edge" >/dev/null 2>&1; then
-    net=(--network "$edge")
-  else
-    log "WARNING: network $edge not found; $WEB_CONTAINER_NAME can neither reach Java nor be reached by Caddy"
+  if ! docker network inspect "$edge" >/dev/null 2>&1; then
+    log "ERROR: network $edge not found; $WEB_CONTAINER_NAME would be unreachable (Caddy could not reach it, nor it Java). Java is deployed and healthy; $WEB_CONTAINER_NAME is unchanged."
+    return 1
   fi
 
+  prev="$(docker inspect -f '{{.Config.Image}}' "$WEB_CONTAINER_NAME" 2>/dev/null || true)"
   if docker ps -a --format '{{.Names}}' | grep -qx "$WEB_CONTAINER_NAME"; then
-    log "Removing existing container $WEB_CONTAINER_NAME"
+    log "Removing existing container $WEB_CONTAINER_NAME${prev:+ ($prev)}"
     docker rm -f "$WEB_CONTAINER_NAME" >/dev/null || { log "ERROR: could not remove $WEB_CONTAINER_NAME"; return 1; }
   fi
 
   log "Starting $WEB_CONTAINER_NAME"
-  if ! docker run -d \
-      --name "$WEB_CONTAINER_NAME" \
-      --restart unless-stopped \
-      --memory=320m \
-      --log-opt max-size=10m --log-opt max-file=3 \
-      ${net[@]+"${net[@]}"} \
-      -e JAVA_INTERNAL_URL=http://medscribe-ai:8086 \
-      -e "GIT_SHA=${tag}" \
-      "${WEB_IMAGE}:${tag}" >/dev/null; then
-    log "ERROR: could not start $WEB_CONTAINER_NAME"
+  if ! web_start "$tag" "$edge"; then
+    log "ERROR: could not start $WEB_CONTAINER_NAME (sha ${tag}). Java is deployed and untouched."
+    web_restore "$prev" "$tag" "$edge"
     return 1
   fi
 
-  # The image HEALTHCHECK's fetch, stricter: the answer must be medioo-web AND carry the sha just started (the
-  # container's own GIT_SHA), so nothing but the new process can pass it.
-  local probe="fetch('http://127.0.0.1:3000/app/healthz').then(r=>r.ok?r.json():Promise.reject(r.status)).then(j=>process.exit(j.service==='medioo-web'&&j.sha===process.env.GIT_SHA?0:1)).catch(()=>process.exit(1))"
-  local i
   log "Waiting for $WEB_CONTAINER_NAME /app/healthz"
-  for i in $(seq 1 30); do
-    if docker exec "$WEB_CONTAINER_NAME" node -e "$probe" >/dev/null 2>&1; then
-      log "$WEB_CONTAINER_NAME healthy after $((i*2))s (sha ${tag})"
-      return 0
-    fi
-    sleep 2
-  done
+  if web_wait_healthy "$tag"; then return 0; fi
 
-  log "ERROR: $WEB_CONTAINER_NAME did not become healthy in 60s. Java is deployed and untouched. Last 50 log lines:"
+  log "ERROR: $WEB_CONTAINER_NAME did not become healthy in ${WEB_HEALTH_DEADLINE_S}s (sha ${tag}). Java is deployed and untouched. Last 50 log lines:"
   docker logs --tail 50 "$WEB_CONTAINER_NAME" 2>&1 || true
+  web_restore "$prev" "$tag" "$edge"
   return 1
 }
 

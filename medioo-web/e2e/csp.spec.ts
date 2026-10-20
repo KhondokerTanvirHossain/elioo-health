@@ -78,14 +78,16 @@ test.describe("CSP on Next pages", () => {
     // The sha the server was started with (playwright.config.ts sets GIT_SHA from it). W1b reads this route to
     // confirm the right image is running, so a constant or a missing sha must fail here.
     const sha = process.env.E2E_GIT_SHA;
+    const build = process.env.E2E_BUILD_SHA;
     expect(sha, "E2E_GIT_SHA: the GIT_SHA the server under test was started with").toBeTruthy();
+    expect(build, "E2E_BUILD_SHA: the BUILD_SHA the server under test was started with").toBeTruthy();
 
     await collectViolations(page);
     const response = await page.goto("/app/healthz");
     expect(response?.status()).toBe(200);
     expectExactCsp(response?.headers()["content-security-policy"], "/app/healthz");
     expect(response?.headers()["cache-control"]).toBe("no-store");
-    expect(await response?.json()).toEqual({ service: "medioo-web", sha });
+    expect(await response?.json()).toEqual({ service: "medioo-web", sha, build });
     expect(await violations(page)).toEqual([]);
   });
 

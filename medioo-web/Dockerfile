@@ -34,6 +34,12 @@ ENV NODE_ENV=production \
 COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static
 COPY --from=build --chown=node:node /app/public ./public
+# The sha this image was built from (the deploy job passes --build-arg BUILD_SHA=<sha>), baked in so /app/healthz
+# reports it as `build`, apart from the GIT_SHA deploy.sh passes at run time. deploy.sh requires both to equal the tag
+# it deployed: a container started from an image built from another sha cannot pass. After the COPYs, so a new sha
+# rebuilds only this layer. A local build without the arg reports "unknown" and deploy.sh would refuse it.
+ARG BUILD_SHA=unknown
+ENV BUILD_SHA=$BUILD_SHA
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \

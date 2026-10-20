@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+#
+# deploy.sh's deploy_web against a REAL Docker daemon and the REAL medioo-web image, built from medioo-web/Dockerfile
+# here. scripts/test_deploy_sh.sh covers the decisions against fakes; this covers what fakes cannot: that the image
+# builds, that the probe passes against the real Next server, that `docker inspect` of the running container shows the
+# settings deploy.sh claims, and that an image built from another sha is refused and the previous container put back.
+# Runs in CI's build job, so a Dockerfile or probe break fails a PR instead of the first deploy after merge.
+#
+#   bash scripts/test_deploy_web_docker.sh
+#
+# Only `docker pull` is shimmed (the image is local; it answers like GHCR: present = pulled, absent = manifest unknown).
+# Everything else is the real daemon. Names are private to this test (repository, container, network), so it never
+# touches medioo-web, n8n_edge or another repository on the machine it runs on, and cleans up after itself.
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+DEPLOY="${DEPLOY_SH:-$ROOT/deploy.sh}"
+REAL_DOCKER="$(command -v docker)" || { echo "FAIL: no docker"; exit 1; }
+WORK=$(mktemp -d)
+SUFFIX="$$-$RANDOM"
+REPO="medioo-web-deploytest"
+NAME="medioo-web-deploytest-$SUFFIX"
+NET="medioo-deploytest-edge-$SUFFIX"
+TAG="a1b2c3d$SUFFIX"   # the sha the image is built from
+OTHER="ffff000$SUFFIX" # the same image under another tag: its baked sha is not this one
+FAILED=0
+fail() { echo "FAIL: $1"; FAILED=1; }
+
+cleanup() {
+  "$REAL_DOCKER" rm -f "$NAME" >/dev/null 2>&1
+  "$REAL_DOCKER" network rm "$NET" >/dev/null 2>&1
+  "$REAL_DOCKER" rmi "$REPO:$TAG" "$REPO:$OTHER" >/dev/null 2>&1
+  rm -rf "$WORK"
+}
+trap cleanup EXIT
+
+mkdir -p "$WORK/bin"
+cat > "$WORK/bin/docker" <<SHIM
+#!/usr/bin/env bash
+if [ "\$1" = pull ]; then
+  echo "docker pull \$2" >> "$WORK/pulls.log"
+  "$REAL_DOCKER" image inspect "\$2" >/dev/null 2>&1 && exit 0
+  echo "Error response from daemon: manifest unknown" >&2; exit 1
+fi
+exec "$REAL_DOCKER" "\$@"
+SHIM
+chmod +x "$WORK/bin/docker"
+# shellcheck source=deploy_test_fakes.sh
+source "$ROOT/scripts/deploy_test_fakes.sh"
+write_timeout_if_missing "$WORK/bin"   # macOS only; the box and the CI runner have coreutils timeout
+
+echo "building medioo-web with BUILD_SHA=$TAG"
+"$REAL_DOCKER" build -q --build-arg "BUILD_SHA=$TAG" -t "$REPO:$TAG" "$ROOT/medioo-web" >/dev/null \
+  || { echo "FAIL: docker build medioo-web failed"; exit 1; }
+"$REAL_DOCKER" tag "$REPO:$TAG" "$REPO:$OTHER"
+"$REAL_DOCKER" network create "$NET" >/dev/null || { echo "FAIL: could not create $NET"; exit 1; }
+
+# run_web <tag> [env...]: deploy_web from deploy.sh, sourced, with only `docker pull` shimmed
+run_web() {
+  local tag="$1"; shift
+  env PATH="$WORK/bin:$PATH" DEPLOY_FUNCTIONS_ONLY=1 WEB_IMAGE="$REPO" WEB_CONTAINER_NAME="$NAME" EDGE_NETWORK="$NET" "$@" \
+    bash -c 'source "$1" && deploy_web "$2"' _ "$DEPLOY" "$tag"
+}
+insp() { "$REAL_DOCKER" inspect -f "$1" "$NAME" 2>&1; }
+
+# 1. the first deploy: healthy for this sha, and the running container is exactly what deploy.sh says it is
+run_web "$TAG" > "$WORK/out1.log" 2>&1 || fail "deploy_web $TAG failed: $(tail -5 "$WORK/out1.log" | tr '\n' '|')"
+grep -q "$NAME healthy after .*(sha $TAG)" "$WORK/out1.log" || fail "no healthy line for $TAG: $(tail -5 "$WORK/out1.log" | tr '\n' '|')"
+grep -qxF "docker pull $REPO:$TAG" "$WORK/pulls.log" || fail "deploy_web never pulled $REPO:$TAG"
+[ "$(insp '{{.Config.Image}}')" = "$REPO:$TAG" ] || fail "running image is $(insp '{{.Config.Image}}'), expected $REPO:$TAG"
+[ "$(insp '{{json .HostConfig.PortBindings}}')" = "{}" ] || fail "medioo-web publishes ports: $(insp '{{json .HostConfig.PortBindings}}')"
+[ "$(insp '{{.HostConfig.PublishAllPorts}}')" = "false" ] || fail "medioo-web publishes all ports"
+[ -z "$("$REAL_DOCKER" port "$NAME" 2>&1)" ] || fail "docker port prints: $("$REAL_DOCKER" port "$NAME" 2>&1)"
+[ "$(insp '{{.HostConfig.Memory}}')" = 335544320 ] || fail "memory limit is $(insp '{{.HostConfig.Memory}}'), expected 320m (335544320)"
+[ "$(insp '{{.HostConfig.RestartPolicy.Name}}')" = unless-stopped ] || fail "restart policy is $(insp '{{.HostConfig.RestartPolicy.Name}}')"
+[ "$(insp '{{index .HostConfig.LogConfig.Config "max-size"}}')" = 10m ] || fail "log max-size is $(insp '{{json .HostConfig.LogConfig}}')"
+[ "$(insp '{{index .HostConfig.LogConfig.Config "max-file"}}')" = 3 ] || fail "log max-file is $(insp '{{json .HostConfig.LogConfig}}')"
+[ "$(insp '{{len .Mounts}}')" = 0 ] || fail "medioo-web has mounts: $(insp '{{json .Mounts}}')"
+[ "$(insp '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}')" = "$NET " ] \
+  || fail "networks are [$(insp '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}')], expected only $NET"
+# the environment deploy.sh added: the container's env minus the image's own, derived, not listed by hand
+"$REAL_DOCKER" image inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$REPO:$TAG" | sed '/^$/d' | LC_ALL=C sort > "$WORK/env.image"
+insp '{{range .Config.Env}}{{println .}}{{end}}' | sed '/^$/d' | LC_ALL=C sort > "$WORK/env.container"
+[ -s "$WORK/env.image" ] || fail "the image has no env at all: the diff below would be meaningless"
+ADDED=$(LC_ALL=C comm -13 "$WORK/env.image" "$WORK/env.container" | tr '\n' ' ')
+[ "$ADDED" = "GIT_SHA=$TAG JAVA_INTERNAL_URL=http://medscribe-ai:8086 " ] \
+  || fail "deploy.sh added env [$ADDED], expected exactly GIT_SHA=$TAG and JAVA_INTERNAL_URL"
+grep -qxF "BUILD_SHA=$TAG" "$WORK/env.image" || fail "the image does not carry BUILD_SHA=$TAG: $(tr '\n' ' ' < "$WORK/env.image")"
+# the real server's answer, field by field
+HZ=$("$REAL_DOCKER" exec "$NAME" node -e "fetch('http://127.0.0.1:3000/app/healthz').then(r=>r.text()).then(t=>process.stdout.write(t))" 2>&1)
+[ "$HZ" = "{\"service\":\"medioo-web\",\"sha\":\"$TAG\",\"build\":\"$TAG\"}" ] || fail "/app/healthz answered $HZ"
+
+# 2. the same image under another tag: GIT_SHA says OTHER, the image says TAG. The probe refuses it, and the
+#    previous container (TAG) is put back and healthy
+run_web "$OTHER" WEB_HEALTH_DEADLINE_S=15 > "$WORK/out2.log" 2>&1 && fail "deploy_web $OTHER exited 0 with an image built from $TAG"
+grep -q "did not become healthy in 15s (sha $OTHER)" "$WORK/out2.log" || fail "no timeout line for $OTHER: $(tail -5 "$WORK/out2.log" | tr '\n' '|')"
+grep -q "previous $NAME ($TAG) is back and healthy" "$WORK/out2.log" || fail "the previous $TAG was not put back healthy: $(tail -5 "$WORK/out2.log" | tr '\n' '|')"
+[ "$(insp '{{.Config.Image}}')" = "$REPO:$TAG" ] || fail "after the failed swap the running image is $(insp '{{.Config.Image}}'), expected $REPO:$TAG"
+
+if [ "$FAILED" -ne 0 ]; then exit 1; fi
+echo "deploy-web-docker: 2 cases passed (real image, real daemon)"

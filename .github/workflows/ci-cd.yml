@@ -39,18 +39,26 @@ jobs:
       # it fails in seconds rather than after 30 minutes of tests.
       - name: Refuse undeclared test fixtures
         run: scripts/check-test-fixtures.sh
-      # Three scripts, seconds, no network. test_deploy_is_tip.sh: the deploy job's tip check (below), tested both
-      # ways against a throwaway repository. test_deploy_prune.sh: deploy.sh against a fake docker/curl/df — the
-      # prune (only our repository, newest 3 by time, never the tag being deployed or a running image, before
-      # the pull), the free-space floor, the function-only mode and the `docker run` arguments. test_deploy_sh.sh:
-      # the two-container deploy (DR-40 A2) — Java swapped and healthy before medioo-web is touched, a sha with no
-      # web image deploys Java only (unless WEB_IMAGE_REQUIRED=1), an unhealthy web exits 1 and leaves Java alone,
-      # no published port and no --env-file for Node, both repositories pruned. Fakes: scripts/deploy_test_fakes.sh.
+      # Three scripts, under a minute, no network. test_deploy_is_tip.sh: the deploy job's tip check (below), tested
+      # both ways against a throwaway repository. test_deploy_prune.sh: deploy.sh against a fake docker/curl/df/sleep
+      # (scripts/deploy_test_fakes.sh) — the prune (only our repository, newest 3 by time, never the tag being
+      # deployed or a running image, before the pull), the free-space floor, the function-only mode and the
+      # `docker run` arguments. test_deploy_sh.sh: the two-container deploy (DR-40 A2) against the same fakes — Java
+      # swapped and healthy before medioo-web is touched and untouched after its run, the web health probe EXECUTED
+      # (the runner's node, a stub /app/healthz) for the right sha, image and service, the pull errors told apart
+      # (missing tag = Java only, any other = red), a failed web swap puts the previous one back, no published port
+      # and no --env-file for Node, both repositories pruned without the rollback target.
       - name: Deploy script tests (tip check, prune, two containers)
         run: |
           scripts/test_deploy_is_tip.sh
           bash scripts/test_deploy_prune.sh
           bash scripts/test_deploy_sh.sh
+      # The real medioo-web image, built from its Dockerfile, and deploy_web against the runner's Docker daemon (only
+      # `docker pull` shimmed): the probe against the real Next server, `docker inspect` of what deploy.sh started
+      # (no ports, 320m, rotated logs, exactly two env vars, one network), and an image built from another sha refused
+      # with the previous container put back. A Dockerfile break fails here, on the PR, not in the deploy job on main.
+      - name: medioo-web image and deploy_web against a real daemon
+        run: bash scripts/test_deploy_web_docker.sh
       - uses: gradle/actions/setup-gradle@v4
       # Testcontainers pulls its images at test time, and a registry problem then fails the BUILD rather than
       # the pull: four acceptance tests — every one that needs MinIO — died with ContainerFetchException ->
@@ -212,6 +220,10 @@ jobs:
           context: medioo-web
           file: medioo-web/Dockerfile
           push: true
+          # baked into the image as BUILD_SHA: /app/healthz reports it as `build`, and deploy.sh requires it to equal the
+          # tag it deployed, so the health check proves which image runs (scripts/test_deploy_web_docker.sh)
+          build-args: |
+            BUILD_SHA=${{ github.sha }}
           tags: |
             ${{ env.WEB_IMAGE }}:${{ github.sha }}
             ${{ env.WEB_IMAGE }}:latest
@@ -240,10 +252,13 @@ jobs:
           envs: GHCR_TOKEN,GHCR_USER,IMAGE_TAG
           script: |
             set -e
+            # logout on EVERY exit, before the login can leave anything behind: under set -e a failing deploy.sh
+            # (Java unhealthy, web unhealthy, a web pull fault) would skip a trailing logout and leave this job's
+            # token in ~/.docker/config.json on a box shared with n8n and bddrug. deploy.sh's exit code still fails the step.
+            trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-            # this job has just pushed medioo-web:<sha>, so a failed pull of it is a fault, not a pre-W1b sha
+            # this job has just pushed medioo-web:<sha>, so a missing tag is a fault here, not a pre-W1b sha
             WEB_IMAGE_REQUIRED=1 IMAGE_TAG="$IMAGE_TAG" bash /home/ec2-user/deploy.sh
-            docker logout ghcr.io
       # Both must pass: the container on its host port, and the public https name through Caddy, which is the
       # path every user takes (a healthy :8086 behind a broken proxy or certificate is still an outage).
       # Only the HTTP status is printed, never the body: this log is public (DR-38) and the health body carries

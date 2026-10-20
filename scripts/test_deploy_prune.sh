@@ -80,9 +80,12 @@ run_prune() {
     _ "$DEPLOY" "$REPO" "$1" "${2:-}" > "$FAKE_DIR/out.log" 2>&1
 }
 
-# run_deploy <IMAGE_TAG> <env file>: the whole deploy.sh, executed as the box executes it
+# run_deploy <IMAGE_TAG> <env file>: the whole deploy.sh, executed as the box executes it. These cases are about
+# Java, so GHCR has no medioo-web image for the tag (a pre-W1b sha) and the web step is skipped: some of them run
+# with no edge network, which the web step rightly refuses (scripts/test_deploy_sh.sh covers that step).
 run_deploy() {
-  PATH="$BIN:$PATH" IMAGE_TAG="$1" ENV_FILE="$2" bash "$DEPLOY" > "$FAKE_DIR/out.log" 2>&1
+  PATH="$BIN:$PATH" IMAGE_TAG="$1" ENV_FILE="$2" FAKE_PULL_FAIL="ghcr.io/khondokertanvirhossain/elioo-health/medioo-web:$1" \
+    bash "$DEPLOY" > "$FAKE_DIR/out.log" 2>&1
 }
 
 out() { tr '\n' '|' < "$FAKE_DIR/out.log"; }

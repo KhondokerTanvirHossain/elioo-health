@@ -1,20 +1,27 @@
 #!/usr/bin/env bash
 #
 # Tests for deploy.sh's two-container deploy (DR-40 A2, plan W1b): Java first, then medioo-web, against the fake
-# `docker`, `curl`, `df` and `sleep` in scripts/deploy_test_fakes.sh. No daemon, no network, no wall-clock waits.
+# `docker`, `curl`, `df` and `sleep` in scripts/deploy_test_fakes.sh. No daemon, no network, no wall-clock waits
+# (except the two timeout cases, a few seconds each). The real image and daemon: scripts/test_deploy_web_docker.sh.
 #
 #   bash scripts/test_deploy_sh.sh                         # tests ./deploy.sh
 #   DEPLOY_SH=/path/to/copy.sh bash scripts/test_deploy_sh.sh   # replays the same cases against another copy
 #
 # The rules under test:
 # - Java is swapped and healthy BEFORE anything touches medioo-web: a web failure can never cost the Java deploy.
-# - No medioo-web image for the sha (every sha before W1b; a rollback to one): Java-only, exit 0, and the newer
-#   medioo-web already running is left alone. Unless WEB_IMAGE_REQUIRED=1, which CI sets because the same job
-#   has just pushed that image: there a failed pull is a real failure and must not pass for a pre-W1b rollback.
-# - medioo-web unhealthy after 60 s: exit 1, its last 50 log lines printed, and Java (already healthy) untouched.
-# - medioo-web gets no published port and no --env-file: Node never holds Java's secrets, and nothing reaches it
-#   except through Caddy on n8n_edge (no route sends it anything until W1c).
-# - Both repositories are pruned before the free-space floor is read; no other repository is touched.
+#   After Java's run, every docker call is read-only or about medioo-web alone (derived from calls.log, not a verb list).
+# - The web health probe RUNS (the fake exec executes it against a stub /app/healthz): it passes only for service
+#   medioo-web whose sha (the container's GIT_SHA) and build (the image's baked sha) both equal the deployed tag.
+#   Wrong sha, wrong image, wrong service, a 500, a non-JSON body: 30 tries, exit 1. A hung exec or a hung server
+#   cannot stall the wait past its deadline.
+# - The web image pull: GHCR's missing-tag answer (every sha before W1b) deploys Java only, exit 0, the running
+#   medioo-web untouched; unless WEB_IMAGE_REQUIRED=1 (CI, which has just pushed it). Any other pull error (denied,
+#   no space, network) is a fault: exit 1 whatever WEB_IMAGE_REQUIRED says. A tag already on disk is used as is.
+# - medioo-web unhealthy, or its run failing: exit 1, its last 50 log lines printed, the previous medioo-web put back.
+# - No edge network: exit 1 before the running medioo-web is touched (it would be unreachable both ways).
+# - medioo-web gets no published port and no --env-file: Node never holds Java's secrets.
+# - Both repositories are pruned before the free-space floor is read; the tag being deployed is never pruned, in
+#   either repository (a rollback must not delete the known-good web image); no other repository is touched.
 set -uo pipefail
 
 DEPLOY="${DEPLOY_SH:-$(cd "$(dirname "$0")/.." && pwd)/deploy.sh}"
@@ -30,6 +37,7 @@ WEB=ghcr.io/khondokertanvirhossain/elioo-health/medioo-web
 NEW=9e1d2c4    # the sha being deployed; on the box for neither repository yet
 J_RUN=0b7c3d9  # the Java sha running now
 W_RUN=0b7c3d9  # the medioo-web sha running now (same sha: they are built by the same job)
+OLDEST=f3a1c2e # the oldest tag of both repositories: a rollback target that the prune would otherwise remove
 
 BIN="$WORK/bin"
 # shellcheck source=deploy_test_fakes.sh
@@ -40,12 +48,12 @@ write_deploy_fakes "$BIN"
 # the newest of each running, plus a bddrug tag OLDER than all of them that must never be touched.
 write_images() {
   cat > "$1/images.txt" <<EOF
-$REPO f3a1c2e sha256:0001 2026-10-11 10:00:00 +0000 UTC
+$REPO $OLDEST sha256:0001 2026-10-11 10:00:00 +0000 UTC
 $REPO a90d4b1 sha256:0002 2026-10-12 10:00:00 +0000 UTC
 $REPO d41e7a0 sha256:0003 2026-10-13 10:00:00 +0000 UTC
 $REPO 5c2b9f3 sha256:0004 2026-10-14 10:00:00 +0000 UTC
 $REPO $J_RUN sha256:0005 2026-10-15 10:00:00 +0000 UTC
-$WEB f3a1c2e sha256:0101 2026-10-11 10:00:00 +0000 UTC
+$WEB $OLDEST sha256:0101 2026-10-11 10:00:00 +0000 UTC
 $WEB a90d4b1 sha256:0102 2026-10-12 10:00:00 +0000 UTC
 $WEB d41e7a0 sha256:0103 2026-10-13 10:00:00 +0000 UTC
 $WEB 5c2b9f3 sha256:0104 2026-10-14 10:00:00 +0000 UTC
@@ -62,14 +70,19 @@ new_case() {
   mkdir -p "$FAKE_DIR"; : > "$FAKE_DIR/calls.log"
   write_images "$FAKE_DIR"
   printf 'c1 %s sha256:0005\nc2 %s sha256:0105\n' "$REPO:$J_RUN" "$WEB:$W_RUN" > "$FAKE_DIR/running.txt"
-  printf 'medscribe-ai\nmedioo-web\n' > "$FAKE_DIR/names.txt"
+  printf 'medscribe-ai %s\nmedioo-web %s\n' "$REPO:$J_RUN" "$WEB:$W_RUN" > "$FAKE_DIR/names.txt"
+  printf 'JAVA_INTERNAL_URL=http://medscribe-ai:8086\nGIT_SHA=%s\n' "$W_RUN" > "$FAKE_DIR/container.medioo-web.env"
 }
 
 printf 'SOME_SETTING=x\nBAYMAX_ADMIN_TOKEN=java-only-secret\n' > "$WORK/env"
 
-# run_deploy [env assignments...]: the whole deploy.sh, executed as the box executes it; its exit code is returned
+# run_deploy [env assignments...]: the whole deploy.sh, executed as the box executes it; its exit code is returned.
+# IMAGE_TAG defaults to $NEW; a case can pass its own. Bounded by RUN_LIMIT seconds (default 300), so a replay
+# against a copy whose waits never end fails on the clock instead of hanging the suite.
+TIMEOUT=$(PATH="$BIN:$PATH" command -v timeout)
 run_deploy() {
-  env PATH="$BIN:$PATH" IMAGE_TAG="$NEW" ENV_FILE="$WORK/env" "$@" bash "$DEPLOY" > "$FAKE_DIR/out.log" 2>&1
+  env PATH="$BIN:$PATH" IMAGE_TAG="$NEW" ENV_FILE="$WORK/env" "$@" \
+    "$TIMEOUT" "${RUN_LIMIT:-300}" bash "$DEPLOY" > "$FAKE_DIR/out.log" 2>&1
 }
 
 out() { tail -8 "$FAKE_DIR/out.log" | tr '\n' '|'; }
@@ -78,30 +91,66 @@ out() { tail -8 "$FAKE_DIR/out.log" | tr '\n' '|'; }
 first_line() { grep -nE "$1" "$FAKE_DIR/calls.log" | head -1 | cut -d: -f1; }
 last_line()  { grep -nE "$1" "$FAKE_DIR/calls.log" | tail -1 | cut -d: -f1; }
 count()      { grep -cE "$1" "$FAKE_DIR/calls.log"; }
+# count_between <from-line> <to-line> <re>: matches strictly between the two lines (to empty = end of file)
+count_between() { awk -v a="$1" -v b="${2:-999999}" -v re="$3" 'NR > a && NR < b && $0 ~ re {n++} END {print n + 0}' "$FAKE_DIR/calls.log"; }
 
 JAVA_RUN_RE="^docker run .* $REPO:$NEW\$"
 WEB_RUN_RE="^docker run .* $WEB:$NEW\$"
-# anything that changes the web CONTAINER (pruning old web tags is not on this list: it is disk, before the pull)
-WEB_TOUCH_RE="^docker (pull $WEB:|rm -f medioo-web|run .*$WEB:|exec medioo-web|stop medioo-web)"
+WEB_ANY_RUN_RE="^docker run .* $WEB:[0-9a-f]+\$"
+WEB_RM_RE='^docker rm( -f)? medioo-web$'
+EXEC_RE='^docker exec medioo-web '
 JAVA_GONE_RE="^docker (rm|stop|kill)( -f)? medscribe-ai\$"
+READ_ONLY_RE='^docker (ps|images|inspect|logs|(image|network|container) inspect)( |$)'
 
 # arg_pair <file> <a> <b>: the recorded `docker run` has argument <a> immediately followed by argument <b>
 arg_pair() { awk -v a="$2" -v b="$3" 'prev == a && $0 == b {f = 1} {prev = $0} END {exit !f}' "$1"; }
 
+# java_untouched_after_run [<java-run-re>]: every docker call after Java's run is read-only, or names medioo-web and
+# nothing of Java's (the web run's JAVA_INTERNAL_URL value aside). Derived from what was called, so `restart`,
+# `container rm`, `update`, `exec` on medscribe-ai, or a call that names no container at all, all fail it.
+java_untouched_after_run() {
+  local re="${1:-$JAVA_RUN_RE}" run slice bad
+  run=$(first_line "$re")
+  [ -n "$run" ] || { fail "$CASE: Java was never run, so there is nothing to check after it"; return; }
+  slice=$(tail -n +"$((run + 1))" "$FAKE_DIR/calls.log" | grep '^docker ')
+  [ -n "$slice" ] || { fail "$CASE: no docker call after Java's run: the Java-untouched check would pass vacuously"; return; }
+  bad=$(printf '%s\n' "$slice" | grep -vE "$READ_ONLY_RE" \
+    | awk '{s = $0; gsub(/JAVA_INTERNAL_URL=http:\/\/medscribe-ai:8086/, "", s); if (index(s, "medscribe-ai") || !index(s, "medioo-web")) print}')
+  [ -z "$bad" ] || fail "$CASE: after Java's run (line $run), a call that is not read-only and not medioo-web's alone: $(printf '%s' "$bad" | head -1)"
+}
+
+# web_touches: line numbers of every call that mentions medioo-web other than the prune's `docker rmi` (disk, done
+# before the floor on purpose) and read-only calls. Anywhere in the log, not only after Java's pull: a web step moved
+# BEFORE Java must show up here too.
+web_touches() {
+  grep -nE 'medioo-web' "$FAKE_DIR/calls.log" | grep -vE '^[0-9]+:docker rmi ' \
+    | awk -F: -v ro="$READ_ONLY_RE" '{line = substr($0, index($0, ":") + 1); if (line !~ ro) print $1}'
+}
+
+# web_last_run_is <tag>: the last medioo-web `docker run` is for <tag>, and carries GIT_SHA=<tag>
+web_last_run_is() {
+  local last; last=$(grep -E "$WEB_ANY_RUN_RE" "$FAKE_DIR/calls.log" | tail -1)
+  [ "${last##* }" = "$WEB:$1" ] || fail "$CASE: the last medioo-web run is [${last##* }], expected $WEB:$1"
+  [[ "$last" == *" -e GIT_SHA=$1 "* ]] || fail "$CASE: the last medioo-web run does not pass GIT_SHA=$1: $last"
+}
+
 # 1. the function itself: deploy_web <tag> exists, and sourced alone deploys medioo-web and exits 0
 new_case function
-PATH="$BIN:$PATH" DEPLOY_FUNCTIONS_ONLY=1 bash -c 'source "$1" && deploy_web "$2"' _ "$DEPLOY" "$NEW" \
+FAKE_NETWORK=1 PATH="$BIN:$PATH" DEPLOY_FUNCTIONS_ONLY=1 bash -c 'source "$1" && deploy_web "$2"' _ "$DEPLOY" "$NEW" \
   > "$FAKE_DIR/out.log" 2>&1 || fail "$CASE: deploy_web $NEW failed: $(out)"
 [ -n "$(first_line "$WEB_RUN_RE")" ] || fail "$CASE: deploy_web never ran $WEB:$NEW: $(out)"
 
-# 2. (a) Java first: the Java rm and run, and its health, all come before anything touches medioo-web
+# 2. (a) Java first: the Java rm and run, and its health, all come before anything mentions medioo-web; the web
+#    probe, run for real against the stub, passes for the right service, sha and image
 new_case java-first
 run_deploy FAKE_NETWORK=1 || fail "$CASE: deploy.sh failed: $(out)"
+JAVA_PULL=$(first_line "^docker pull $REPO:$NEW\$")
 JAVA_RM=$(first_line "$JAVA_GONE_RE"); JAVA_RUN=$(first_line "$JAVA_RUN_RE")
-JAVA_HEALTH=$(last_line '^curl .*actuator/health'); WEB_FIRST=$(first_line "$WEB_TOUCH_RE")
+JAVA_HEALTH=$(last_line '^curl .*actuator/health')
+WEB_FIRST=$(web_touches | head -1)
 WEB_RUN=$(first_line "$WEB_RUN_RE")
-if [ -z "$JAVA_RM" ] || [ -z "$JAVA_RUN" ] || [ -z "$JAVA_HEALTH" ] || [ -z "$WEB_RUN" ]; then
-  fail "$CASE: missing a step (java rm '$JAVA_RM', java run '$JAVA_RUN', java health '$JAVA_HEALTH', web run '$WEB_RUN'): $(out)"
+if [ -z "$JAVA_PULL" ] || [ -z "$JAVA_RM" ] || [ -z "$JAVA_RUN" ] || [ -z "$JAVA_HEALTH" ] || [ -z "$WEB_RUN" ] || [ -z "$WEB_FIRST" ]; then
+  fail "$CASE: missing a step (java pull '$JAVA_PULL', rm '$JAVA_RM', run '$JAVA_RUN', health '$JAVA_HEALTH', web first '$WEB_FIRST', web run '$WEB_RUN'): $(out)"
 else
   [ "$JAVA_RM" -lt "$JAVA_RUN" ] || fail "$CASE: Java run (line $JAVA_RUN) before its rm (line $JAVA_RM)"
   [ "$JAVA_RUN" -lt "$JAVA_HEALTH" ] || fail "$CASE: Java health (line $JAVA_HEALTH) before its run (line $JAVA_RUN)"
@@ -117,7 +166,9 @@ elif [ -n "$WEB_RUN" ]; then
     || fail "$CASE: expected web pull ($WEB_PULL) < rm ($WEB_RM) < run ($WEB_RUN)"
 fi
 [ "$(count "$JAVA_GONE_RE")" = 1 ] || fail "$CASE: medscribe-ai removed $(count "$JAVA_GONE_RE") times, expected once"
+java_untouched_after_run
 grep -q "medioo-web healthy" "$FAKE_DIR/out.log" || fail "$CASE: no 'medioo-web healthy' line: $(out)"
+[ "$(count "$EXEC_RE")" = 1 ] || fail "$CASE: $(count "$EXEC_RE") health tries for a healthy medioo-web, expected 1"
 
 # 3. (d) the medioo-web run line: no published port, no env file, no mounts; exactly the two env vars it needs
 new_case web-args
@@ -144,77 +195,134 @@ if [ -f "$A" ]; then
 else
   fail "$CASE: medioo-web was never run: $(out)"
 fi
-# the health probe is the healthz fetch inside the container, and it checks it is THIS sha answering
-grep -E '^docker exec medioo-web node -e ' "$FAKE_DIR/calls.log" | head -1 | grep -q '127.0.0.1:3000/app/healthz' \
-  || fail "$CASE: the web health probe is not the in-container /app/healthz fetch: $(grep '^docker exec' "$FAKE_DIR/calls.log" | head -1)"
-grep -E '^docker exec medioo-web ' "$FAKE_DIR/calls.log" | head -1 | grep -q 'GIT_SHA' \
-  || fail "$CASE: the web health probe does not check that the new sha answers"
 
-# 4. no edge network: medioo-web runs without --network and with no empty argument where it would have been
+# 4. no edge network: medioo-web would be unreachable both ways (Caddy cannot reach it, it cannot reach Java), and
+#    its in-container probe would still pass. Exit 1 before the running medioo-web is touched; Java stays deployed.
 new_case no-network
-run_deploy || fail "$CASE: deploy.sh failed: $(out)"
-A="$FAKE_DIR/run.medioo-web.args"
-if [ -f "$A" ]; then
-  grep -qx -- '--network' "$A" && fail "$CASE: --network passed with no edge network"
-  grep -qx '' "$A" && fail "$CASE: docker run got an empty argument: $(tr '\n' '|' < "$A")"
-else
-  fail "$CASE: medioo-web was never run: $(out)"
-fi
-
-# 5. (b) no web image for this sha (every sha before W1b): exit 0, Java deployed, the log line, the newer
-#    medioo-web already running is left alone (not removed, not replaced)
-new_case no-web-image
-run_deploy FAKE_PULL_FAIL="$WEB:$NEW" || fail "$CASE: deploy.sh failed with no web image: $(out)"
+if run_deploy; then fail "$CASE: exited 0 with no edge network for medioo-web: $(out)"; fi
 [ -n "$(first_line "$JAVA_RUN_RE")" ] || fail "$CASE: Java was not deployed"
-grep -qF "web image $NEW not found; Java-only deploy" "$FAKE_DIR/out.log" \
-  || fail "$CASE: no 'web image $NEW not found; Java-only deploy' line: $(out)"
-grep -qE '^docker (rm|stop|kill)( -f)? medioo-web$' "$FAKE_DIR/calls.log" \
-  && fail "$CASE: the running medioo-web was removed although there was nothing to replace it with"
-[ -z "$(first_line "^docker run .*$WEB:")" ] || fail "$CASE: a medioo-web container was started"
+grep -qF 'ERROR: network n8n_edge not found; medioo-web would be unreachable' "$FAKE_DIR/out.log" \
+  || fail "$CASE: no 'ERROR: network n8n_edge not found; medioo-web would be unreachable' line: $(out)"
+[ -z "$(first_line "$WEB_RM_RE")" ] || fail "$CASE: the running medioo-web was removed with no network to start its replacement on"
+[ -z "$(first_line "$WEB_ANY_RUN_RE")" ] || fail "$CASE: a medioo-web container was started with no edge network"
 
-# 6. the same missing image when CI says the image must exist (it just pushed it): a real failure, exit 1,
-#    and Java, already healthy, stays
+# 5. (b) GHCR has no web image for this sha (every sha before W1b): exit 0, Java deployed, the log line carrying
+#    docker's own error, the newer medioo-web already running left alone (not removed, not replaced)
+new_case no-web-image
+run_deploy FAKE_NETWORK=1 FAKE_PULL_FAIL="$WEB:$NEW" || fail "$CASE: deploy.sh failed with no web image: $(out)"
+[ -n "$(first_line "$JAVA_RUN_RE")" ] || fail "$CASE: Java was not deployed"
+[ -n "$(first_line "^docker pull $WEB:$NEW\$")" ] || fail "$CASE: the web image was never pulled, so 'not found' is not docker's answer"
+grep -qF "web image $NEW not found; Java-only deploy (Error response from daemon: manifest unknown)" "$FAKE_DIR/out.log" \
+  || fail "$CASE: no 'web image $NEW not found; Java-only deploy (Error response from daemon: manifest unknown)' line: $(out)"
+[ -z "$(first_line "$WEB_RM_RE")" ] || fail "$CASE: the running medioo-web was removed although there was nothing to replace it with"
+[ -z "$(first_line "$WEB_ANY_RUN_RE")" ] || fail "$CASE: a medioo-web container was started"
+
+# 6. the same missing image when CI says the image must exist (it just pushed it): a real failure, exit 1, from
+#    the WEB_IMAGE_REQUIRED branch with docker's error, and Java, already healthy, stays
 new_case web-image-required
-if run_deploy FAKE_PULL_FAIL="$WEB:$NEW" WEB_IMAGE_REQUIRED=1; then
+if run_deploy FAKE_NETWORK=1 FAKE_PULL_FAIL="$WEB:$NEW" WEB_IMAGE_REQUIRED=1; then
   fail "$CASE: exited 0 with WEB_IMAGE_REQUIRED=1 and no web image: $(out)"
 fi
-[ -n "$(first_line "$JAVA_RUN_RE")" ] || fail "$CASE: Java was not deployed"
-JAVA_RUN=$(first_line "$JAVA_RUN_RE"); JAVA_RM_LAST=$(last_line "$JAVA_GONE_RE")
-[ -n "$JAVA_RM_LAST" ] && [ -n "$JAVA_RUN" ] && [ "$JAVA_RM_LAST" -gt "$JAVA_RUN" ] && fail "$CASE: Java removed after its run"
-grep -qE '^docker (rm|stop|kill)( -f)? medioo-web$' "$FAKE_DIR/calls.log" && fail "$CASE: the running medioo-web was removed"
-grep -q 'ERROR' "$FAKE_DIR/out.log" || fail "$CASE: no ERROR line: $(out)"
+[ -n "$(first_line "^docker pull $WEB:$NEW\$")" ] || fail "$CASE: the web image was never pulled"
+grep -qF 'WEB_IMAGE_REQUIRED=1 (Error response from daemon: manifest unknown)' "$FAKE_DIR/out.log" \
+  || fail "$CASE: no 'WEB_IMAGE_REQUIRED=1 (Error response from daemon: manifest unknown)' line: $(out)"
+java_untouched_after_run
+[ -z "$(first_line "$WEB_RM_RE")" ] || fail "$CASE: the running medioo-web was removed"
 
-# 7. (c) medioo-web never healthy: exit 1 after 60 s of tries, its last 50 log lines printed, and Java (healthy
-#    before the web step began) neither removed nor stopped after its run
+# 7-8. a pull error that is NOT a missing tag (auth on the private package, a full disk) is a fault, not a pre-W1b
+#    sha: exit 1 with docker's error even when WEB_IMAGE_REQUIRED is unset (a manual run), medioo-web untouched
+for spec in 'pull-denied:denied' 'pull-no-space:write /var/lib/docker/tmp/GetImageBlob: no space left on device'; do
+  new_case "${spec%%:*}"; ERR="${spec#*:}"
+  if run_deploy FAKE_NETWORK=1 FAKE_PULL_FAIL="$WEB:$NEW" FAKE_PULL_ERR="$ERR"; then
+    fail "$CASE: exited 0 when the web pull failed with '$ERR' (not a missing tag): $(out)"
+  fi
+  grep -qF "ERROR: could not pull web image $NEW: Error response from daemon: $ERR" "$FAKE_DIR/out.log" \
+    || fail "$CASE: no 'ERROR: could not pull web image $NEW: Error response from daemon: $ERR' line: $(out)"
+  grep -qF 'Java-only deploy' "$FAKE_DIR/out.log" && fail "$CASE: a '$ERR' pull failure was reported as a missing image"
+  [ -z "$(first_line "$WEB_RM_RE")" ] || fail "$CASE: the running medioo-web was removed"
+  [ -z "$(first_line "$WEB_ANY_RUN_RE")" ] || fail "$CASE: a medioo-web container was started"
+  java_untouched_after_run
+done
+
+# 9. the pull fails (logged out, private package) but that tag is already on disk: deploy the local copy, exit 0
+new_case pull-denied-local
+run_deploy FAKE_NETWORK=1 IMAGE_TAG=5c2b9f3 FAKE_PULL_FAIL="$WEB:5c2b9f3" FAKE_PULL_ERR=denied \
+  || fail "$CASE: deploy.sh failed although $WEB:5c2b9f3 is on disk: $(out)"
+grep -qF 'web pull failed (Error response from daemon: denied); using the local 5c2b9f3' "$FAKE_DIR/out.log" \
+  || fail "$CASE: no 'web pull failed (Error response from daemon: denied); using the local 5c2b9f3' line: $(out)"
+web_last_run_is 5c2b9f3
+
+# 10. (c) medioo-web never healthy: exit 1 after 30 tries, its last 50 log lines printed, the previous medioo-web
+#    put back (and healthy), and Java (healthy before the web step began) untouched
 new_case web-unhealthy
-if run_deploy FAKE_WEB_HEALTH=fail; then fail "$CASE: exited 0 with medioo-web unhealthy: $(out)"; fi
-JAVA_RUN=$(first_line "$JAVA_RUN_RE"); JAVA_RM_LAST=$(last_line "$JAVA_GONE_RE")
-[ -n "$JAVA_RUN" ] || fail "$CASE: Java was not deployed"
-[ -n "$JAVA_RM_LAST" ] && [ -n "$JAVA_RUN" ] && [ "$JAVA_RM_LAST" -gt "$JAVA_RUN" ] \
-  && fail "$CASE: Java removed (line $JAVA_RM_LAST) after its run (line $JAVA_RUN)"
-[ "$(count '^docker exec medioo-web ')" = 30 ] \
-  || fail "$CASE: $(count '^docker exec medioo-web ') health tries, expected 30 (60 s at 2 s)"
+if run_deploy FAKE_NETWORK=1 FAKE_WEB_BAD_REF="$WEB:$NEW"; then fail "$CASE: exited 0 with medioo-web unhealthy: $(out)"; fi
+java_untouched_after_run
+NEW_RUN=$(first_line "$WEB_RUN_RE"); RESTORE_RUN=$(first_line "^docker run .* $WEB:$W_RUN\$")
+[ -n "$NEW_RUN" ] || fail "$CASE: the new medioo-web was never run"
+[ "$(count_between "${NEW_RUN:-0}" "$RESTORE_RUN" "$EXEC_RE")" = 30 ] \
+  || fail "$CASE: $(count_between "${NEW_RUN:-0}" "$RESTORE_RUN" "$EXEC_RE") health tries, expected 30 (60 s at 2 s)"
 grep -q '^docker logs --tail 50 medioo-web$' "$FAKE_DIR/calls.log" || fail "$CASE: the last 50 log lines were not printed"
 grep -q 'fake container log line' "$FAKE_DIR/out.log" || fail "$CASE: the container's log lines did not reach the output"
 grep -q 'medioo-web did not become healthy in 60s' "$FAKE_DIR/out.log" || fail "$CASE: no timeout line: $(out)"
+[ -n "$RESTORE_RUN" ] || fail "$CASE: the previous medioo-web ($W_RUN) was not put back: $(out)"
+web_last_run_is "$W_RUN"
+grep -qF "previous medioo-web ($W_RUN) is back and healthy" "$FAKE_DIR/out.log" || fail "$CASE: the restored medioo-web was not checked healthy: $(out)"
 
-# 8. medioo-web slow to start (healthy on the third try): waits, exits 0
+# 11. medioo-web slow to start (healthy on the third try): waits, exits 0
 new_case web-slow
-run_deploy FAKE_WEB_HEALTH=2 || fail "$CASE: deploy.sh failed although medioo-web became healthy: $(out)"
-[ "$(count '^docker exec medioo-web ')" = 3 ] || fail "$CASE: $(count '^docker exec medioo-web ') health tries, expected 3"
+run_deploy FAKE_NETWORK=1 FAKE_WEB_HEALTH=2 || fail "$CASE: deploy.sh failed although medioo-web became healthy: $(out)"
+[ "$(count "$EXEC_RE")" = 3 ] || fail "$CASE: $(count "$EXEC_RE") health tries, expected 3"
 
-# 9. Java never healthy: exit 1 and medioo-web is not touched at all (no pull, no rm, no run)
+# 12-16. the probe itself, executed: /app/healthz answers, but not for this deploy. Each is 30 tries and exit 1.
+for spec in "wrong-sha:FAKE_HEALTHZ_SHA=deadbee" "wrong-image:FAKE_HEALTHZ_BUILD=$W_RUN" "wrong-service:FAKE_HEALTHZ_SERVICE=medscribe-ai" \
+            "status-500:FAKE_HEALTHZ_STATUS=500" "not-json:FAKE_HEALTHZ_BODY=<html>ok</html>"; do
+  new_case "probe-${spec%%:*}"
+  if run_deploy FAKE_NETWORK=1 "${spec#*:}"; then fail "$CASE: exited 0 though /app/healthz answered with ${spec#*:}: $(out)"; fi
+  NEW_RUN=$(first_line "$WEB_RUN_RE"); RESTORE_RUN=$(first_line "^docker run .* $WEB:$W_RUN\$")
+  [ "$(count_between "${NEW_RUN:-0}" "$RESTORE_RUN" "$EXEC_RE")" = 30 ] \
+    || fail "$CASE: $(count_between "${NEW_RUN:-0}" "$RESTORE_RUN" "$EXEC_RE") health tries for the new medioo-web with ${spec#*:}, expected 30"
+  grep -q "medioo-web healthy .*(sha $NEW)" "$FAKE_DIR/out.log" && fail "$CASE: medioo-web $NEW reported healthy with ${spec#*:}"
+done
+
+# 17. a hung `docker exec` cannot stall the deploy: each try is bounded, and the whole wait is a wall-clock deadline
+new_case exec-hangs
+START=$SECONDS
+if RUN_LIMIT=40 run_deploy FAKE_NETWORK=1 FAKE_EXEC_HANG=1 WEB_PROBE_TIMEOUT_S=1 WEB_HEALTH_DEADLINE_S=3; then
+  fail "$CASE: exited 0 with docker exec hanging: $(out)"
+fi
+[ $((SECONDS - START)) -lt 20 ] || fail "$CASE: took $((SECONDS - START))s with a 1 s try and a 3 s deadline"
+[ "$(count "$EXEC_RE")" -lt 30 ] || fail "$CASE: $(count "$EXEC_RE") tries: the wall-clock deadline did not end the wait"
+
+# 18. a server that accepts and never answers: the fetch has its own deadline, shorter than the per-try timeout
+new_case fetch-hangs
+START=$SECONDS
+if RUN_LIMIT=40 run_deploy FAKE_NETWORK=1 FAKE_HEALTHZ_STATUS=hang WEB_PROBE_TIMEOUT_S=30 WEB_HEALTH_DEADLINE_S=1; then
+  fail "$CASE: exited 0 with /app/healthz hanging: $(out)"
+fi
+[ $((SECONDS - START)) -lt 15 ] || fail "$CASE: took $((SECONDS - START))s: the probe's fetch has no deadline of its own"
+
+# 19. Java never healthy: exit 1; nothing after the Java pull mentions medioo-web at all, and nothing anywhere
+#     touches it beyond the prune (a web step moved before Java must fail here too)
 new_case java-unhealthy
-if run_deploy FAKE_CURL_FAIL=1; then fail "$CASE: exited 0 with Java unhealthy: $(out)"; fi
-[ -z "$(first_line "$WEB_TOUCH_RE")" ] \
-  || fail "$CASE: medioo-web touched although Java was not healthy: $(sed -n "$(first_line "$WEB_TOUCH_RE")p" "$FAKE_DIR/calls.log")"
+if run_deploy FAKE_NETWORK=1 FAKE_CURL_FAIL=1; then fail "$CASE: exited 0 with Java unhealthy: $(out)"; fi
+JAVA_PULL=$(first_line "^docker pull $REPO:$NEW\$")
+if [ -z "$JAVA_PULL" ]; then
+  fail "$CASE: Java was never pulled: $(out)"
+else
+  AFTER=$(tail -n +"$((JAVA_PULL + 1))" "$FAKE_DIR/calls.log")
+  [ -n "$AFTER" ] || fail "$CASE: nothing after the Java pull: the check below would pass vacuously"
+  TOUCH=$(printf '%s\n' "$AFTER" | grep -m1 'medioo-web')
+  [ -z "$TOUCH" ] || fail "$CASE: medioo-web touched although Java was not healthy: $TOUCH"
+fi
+FIRST_TOUCH=$(web_touches | head -1)
+[ -z "$FIRST_TOUCH" ] || fail "$CASE: medioo-web touched although Java never became healthy: $(sed -n "${FIRST_TOUCH}p" "$FAKE_DIR/calls.log")"
 
-# 10. both repositories pruned to the newest 3, never the running image, never bddrug's, all before the floor is
+# 20. both repositories pruned to the newest 3, never the running image, never bddrug's, all before the floor is
 #     read and before the Java pull
 new_case prune-both
-run_deploy || fail "$CASE: deploy.sh failed: $(out)"
+run_deploy FAKE_NETWORK=1 || fail "$CASE: deploy.sh failed: $(out)"
 GOT=$(awk '$2 == "rmi" {print $3}' "$FAKE_DIR/calls.log" | LC_ALL=C sort | tr '\n' ' ')
-WANT=$(printf '%s\n' "$REPO:a90d4b1" "$REPO:f3a1c2e" "$WEB:a90d4b1" "$WEB:f3a1c2e" | LC_ALL=C sort | tr '\n' ' ')
+WANT=$(printf '%s\n' "$REPO:a90d4b1" "$REPO:$OLDEST" "$WEB:a90d4b1" "$WEB:$OLDEST" | LC_ALL=C sort | tr '\n' ' ')
 [ "$GOT" = "$WANT" ] || fail "$CASE: removed [$GOT], expected [$WANT]"
 LAST_RMI=$(last_line '^docker rmi '); DF=$(first_line '^df '); JAVA_PULL=$(first_line "^docker pull $REPO:")
 if [ -n "$LAST_RMI" ] && [ -n "$DF" ] && [ -n "$JAVA_PULL" ]; then
@@ -223,6 +331,40 @@ if [ -n "$LAST_RMI" ] && [ -n "$DF" ] && [ -n "$JAVA_PULL" ]; then
 else
   fail "$CASE: missing rmi ('$LAST_RMI'), df ('$DF') or Java pull ('$JAVA_PULL')"
 fi
+
+# 21. one IMAGE_TAG rolls back both: the oldest tag, on disk in both repositories, is the target. Neither copy is
+#     pruned (a logged-out manual run could not pull it back), and medioo-web runs exactly it
+new_case rollback-both
+run_deploy FAKE_NETWORK=1 IMAGE_TAG="$OLDEST" || fail "$CASE: deploy.sh failed rolling back to $OLDEST: $(out)"
+for ref in "$REPO:$OLDEST" "$WEB:$OLDEST"; do
+  grep -qxF "docker rmi $ref" "$FAKE_DIR/calls.log" && fail "$CASE: the rollback target $ref was pruned"
+done
+web_last_run_is "$OLDEST"
+java_untouched_after_run "^docker run .* $REPO:$OLDEST\$"
+
+# 22. the first deploy (the box today): no medioo-web container and no web image yet. Nothing to remove, one run.
+new_case first-deploy
+grep -v " $WEB " "$FAKE_DIR/images.txt" > "$FAKE_DIR/images.txt.new" && mv "$FAKE_DIR/images.txt.new" "$FAKE_DIR/images.txt"
+printf 'c1 %s sha256:0005\n' "$REPO:$J_RUN" > "$FAKE_DIR/running.txt"
+printf 'medscribe-ai %s\n' "$REPO:$J_RUN" > "$FAKE_DIR/names.txt"; rm -f "$FAKE_DIR/container.medioo-web.env"
+run_deploy FAKE_NETWORK=1 || fail "$CASE: the first deploy failed: $(out)"
+[ -z "$(first_line "$WEB_RM_RE")" ] || fail "$CASE: removed a medioo-web that did not exist: $(sed -n "$(first_line "$WEB_RM_RE")p" "$FAKE_DIR/calls.log")"
+[ "$(count "$WEB_ANY_RUN_RE")" = 1 ] || fail "$CASE: $(count "$WEB_ANY_RUN_RE") medioo-web runs, expected 1"
+grep -q 'medioo-web healthy' "$FAKE_DIR/out.log" || fail "$CASE: no 'medioo-web healthy' line: $(out)"
+
+# 23. docker run of medioo-web fails (for any tag): exit 1, the line saying so, no health probe of a container
+#     that never started
+new_case web-run-fails
+if run_deploy FAKE_NETWORK=1 FAKE_RUN_FAIL="$WEB"; then fail "$CASE: exited 0 although medioo-web could not be started: $(out)"; fi
+grep -qF 'ERROR: could not start medioo-web' "$FAKE_DIR/out.log" || fail "$CASE: no 'ERROR: could not start medioo-web' line: $(out)"
+[ "$(count "$EXEC_RE")" = 0 ] || fail "$CASE: probed a medioo-web that never started ($(count "$EXEC_RE") execs)"
+java_untouched_after_run
+
+# 24. only the new tag fails to start: the previous medioo-web is put back and checked
+new_case web-run-fails-restore
+if run_deploy FAKE_NETWORK=1 FAKE_RUN_FAIL="$WEB:$NEW"; then fail "$CASE: exited 0 although medioo-web could not be started: $(out)"; fi
+web_last_run_is "$W_RUN"
+grep -qF "previous medioo-web ($W_RUN) is back and healthy" "$FAKE_DIR/out.log" || fail "$CASE: the previous medioo-web is not back and healthy: $(out)"
 
 if [ "$FAILED" -ne 0 ]; then exit 1; fi
 echo "deploy-sh: $CASES cases passed"

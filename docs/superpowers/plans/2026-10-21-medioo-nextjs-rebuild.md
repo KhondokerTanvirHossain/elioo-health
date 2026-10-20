@@ -403,6 +403,11 @@ Each line is one PR. The **Waves** order work; within a wave, lanes run in paral
   - otherwise runs `medioo-web` with `--network n8n_edge`, no `-p`, `--memory=320m`, `--restart unless-stopped`, `--log-opt max-size=10m --log-opt max-file=3` (the box is shared and low on disk; Next writes a stack trace per server error), `-e JAVA_INTERNAL_URL=http://medscribe-ai:8086 -e GIT_SHA=<tag>` and no `--env-file`, so Node never gets Java's secrets;
   - waits up to 60 s for `docker exec medioo-web node -e <healthz fetch>`;
   - on timeout prints the last 50 log lines and returns 1.
+  - *Amended in review (PR #100, DR-40 A2 amendment):* only GHCR's missing-tag answer returns 0 (any other pull error
+    returns 1; a tag already on disk is used); a missing `n8n_edge` returns 1 before the old container is touched; the
+    probe requires `sha` and the image's baked `build` to equal the tag; and a failed run or health wait **puts the
+    previous `medioo-web` back** before returning 1. That restore is a hard prerequisite of W1c (routed traffic must
+    not stay down after one bad web build) and lands here, in W1b.
 
 - [ ] **Step 1: Write the failing test** `scripts/test_deploy_sh.sh`, with the fake `docker` and `curl` from X0 extended with recorded call order. Assert:
   - (a) the Java `rm` and `run` happen before any `medioo-web` `run`;
