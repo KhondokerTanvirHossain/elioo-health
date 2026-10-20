@@ -30,9 +30,13 @@ class NameGrammarTest {
         assertThat(NameGrammar.objective(name)).isEmpty();
     }
 
-    /** F8: "কে" always attaches to a Bangla name, whatever its last letter; a Latin name keeps a hyphen. */
+    /**
+     * F8: "কে" always attaches to a Bangla name, whatever its last letter (ং and ড় included); a trailing hasanta is
+     * dropped first, as the possessive drops it ("জন্" → "জনকে", never the stacked "জন্কে"); a Latin name keeps a hyphen.
+     */
     @ParameterizedTest
-    @CsvSource({"আম্মা,আম্মাকে", "রহিম,রহিমকে", "শরৎ,শরৎকে", "Rina,Rina-কে", "John,John-কে", "নাম ২,নাম ২-কে", "'  আব্বু ',আব্বুকে"})
+    @CsvSource({"আম্মা,আম্মাকে", "রহিম,রহিমকে", "শরৎ,শরৎকে", "জন্,জনকে", "রং,রংকে", "পাহাড়,পাহাড়কে",
+            "Rina,Rina-কে", "John,John-কে", "নাম ২,নাম ২-কে", "'  আব্বু ',আব্বুকে"})
     void theObjectiveAttachesKeToABanglaNameAndHyphensAnyOther(String name, String expected) {
         assertThat(NameGrammar.objective(name)).isEqualTo(expected);
     }

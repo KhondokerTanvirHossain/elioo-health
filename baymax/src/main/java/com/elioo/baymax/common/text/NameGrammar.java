@@ -44,14 +44,18 @@ public final class NameGrammar {
     }
 
     /**
-     * The objective of the name (spec §2 F8: "কে" always attaches): "আম্মা" → "আম্মাকে", "রহিম" → "রহিমকে"; a name
-     * that does not end in a Bangla letter keeps a hyphen ("Rina-কে"); null or blank → "".
+     * The objective of the name (spec §2 F8: "কে" always attaches): "আম্মা" → "আম্মাকে", "রহিম" → "রহিমকে"; a trailing
+     * hasanta is dropped first, as in {@link #possessive} ("জন্" → "জনকে"); a name that does not end in a Bangla letter
+     * keeps a hyphen ("Rina-কে"); null or blank → "".
      */
     public static String objective(String name) {
         if (name == null || name.isBlank()) {
             return "";
         }
         String n = name.strip();
+        if (n.length() > 1 && n.charAt(n.length() - 1) == HASANTA) {
+            n = n.substring(0, n.length() - 1);
+        }
         char last = n.charAt(n.length() - 1);
         boolean banglaLetter = last >= '\u0980' && last <= '\u09FF' && !(last >= '\u09E6' && last <= '\u09EF');   // not a Bangla digit
         return n + (banglaLetter ? "" : "-") + "\u0995\u09C7";                                                   // কে
