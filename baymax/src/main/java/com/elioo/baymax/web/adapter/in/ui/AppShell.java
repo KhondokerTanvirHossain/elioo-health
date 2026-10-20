@@ -9,7 +9,8 @@ import static com.elioo.baymax.web.adapter.in.ui.Html.esc;
  * The signed-in frame (spec §3; kit §2, §3): a 56 px header with the text wordmark (never a link inside the app) and
  * whose papers are in view, the page, the disclaimer, the 64 px tab bar of three always-labelled links. No script.
  * A patient is never guessed (PatientSwitcher README): two or more and none chosen, the page body is {@link #chooser}.
- * With two or more and one in view, the header's name opens {@link #patientSheet} — a plain URL ({@code ?sheet=patient}),
+ * With two or more and one in view, the header's name opens {@link #patientSheet} — a plain URL
+ * ({@code ?patient=<id>&sheet=patient}, the patient in it so the link does not depend on the remembered choice),
  * drawn by the server over the tab it was opened from (C1).
  */
 final class AppShell {
@@ -35,12 +36,12 @@ final class AppShell {
 
     /**
      * The patient switcher (spec §3 sheets; kit §17; PatientSwitcher README) over {@code tab}: the same choices as the
-     * chooser, the one in view marked. Its close is a link back to the bare tab, which the remembered choice reopens on
-     * the same patient; it takes the focus ({@code autofocus}), so no script is needed to land inside the dialog.
+     * chooser, the one in view marked. Its close is a link back to the tab with the patient in view asked for by id, so it
+     * needs no cookie to land on the same patient; it takes the focus ({@code autofocus}), so no script is needed to land inside the dialog.
      */
     String patientSheet(Lang lang, Tab tab, FamilyOverview me, ActivePatient active) {
         return dialog(lang, copy.t(lang, "switch.title"), "<p class=\"small\">" + copy.t(lang, "switch.hint") + "</p>"
-                + choices(lang, tab, me, active), tab.path);
+                + choices(lang, tab, me, active), inView(tab, active));
     }
 
     /**
@@ -84,15 +85,21 @@ final class AppShell {
         return "<a class=\"back\" href=\"" + href + "\">" + copy.t(lang, key) + "</a>";
     }
 
+    /** {@code tab} with the patient in view asked for by id: checked again by the tab like any {@code ?patient=}. */
+    private static String inView(Tab tab, ActivePatient active) {
+        return tab.path + "?patient=" + active.patient().orElseThrow().patient().id();
+    }
+
     String header(Lang lang, Tab tab, FamilyOverview me, ActivePatient active) {
         StringBuilder b = new StringBuilder("<header class=\"appbar\">").append(Html.brand(copy.t(lang, "app.title")));
         boolean many = me.patients().size() > 1;
         if (active.patient().isPresent()) {
             String name = active.patient().get().patient().name();
             String inner = "<span class=\"pav\" aria-hidden=\"true\">" + esc(initial(name)) + "</span><span>" + esc(name) + "</span>";
-            // with two or more, the name opens the switcher sheet over this tab (C1)
+            // with two or more, the name opens the switcher sheet over this tab (C1); the patient is in the URL, so a
+            // browser that keeps no cookie still opens the sheet, and never lands on the chooser instead
             b.append(many
-                    ? "<a class=\"switcher\" href=\"" + tab.path + "?sheet=patient\" aria-haspopup=\"dialog\" aria-label=\"" + copy.t(lang, "switch.label", name) + "\">"
+                    ? "<a class=\"switcher\" href=\"" + inView(tab, active) + "&amp;sheet=patient\" aria-haspopup=\"dialog\" aria-label=\"" + copy.t(lang, "switch.label", name) + "\">"
                             + inner + Icons.svg("chevron-down", 20) + "</a>"
                     : "<span class=\"switcher\">" + inner + "</span>");
         }

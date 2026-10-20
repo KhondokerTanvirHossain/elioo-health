@@ -1,14 +1,18 @@
 package com.elioo.baymax.web.adapter.in.ui;
 
+import com.elioo.baymax.config.BaymaxProperties;
+import com.elioo.baymax.web.application.port.in.WebAuthUseCase;
 import com.elioo.baymax.web.domain.PatientSummary;
 import com.elioo.baymax.web.domain.TimelinePage;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.http.HttpHeaders;
+import org.springframework.test.web.reactive.server.EntityExchangeResult;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -159,11 +163,50 @@ class AppShellRoutesTest {
     /** WhatsApp messages and bookmarks carry the old URL; it opens কাগজপত্র with the patient chosen (profile: L5). */
     @Test
     void theOldPatientUrlOpensThePapersTab() {
+        // the family and both papers stubbed, so the old page (which read them) renders and fails on the missing
+        // redirect, not on an unstubbed mock
+        kit.familyWith(ma, baba);
+        noPapers(ma);
+        noPapers(baba);
         UUID id = ma.patient().id();
         kit.client.get().uri("/app/patients/" + id).cookie("baymax_session", "tok").exchange().expectStatus().isFound()
                 .expectHeader().valueEquals(HttpHeaders.LOCATION, "/app/timeline?patient=" + id);
         kit.client.get().uri("/app/patients/not-a-uuid").cookie("baymax_session", "tok").exchange().expectStatus().isNotFound();
-        kit.client.get().uri("/baymax/patients/" + id).exchange().expectStatus().isEqualTo(301);   // the 301 chain still starts
+        // the redirect reads nothing: the tab it lands on is where the family check happens
+        verify(kit.timeline, never()).me(any());
+        // the old host's link still starts the chain, and to this route
+        kit.client.get().uri("/baymax/patients/" + id).exchange().expectStatus().isEqualTo(301)
+                .expectHeader().valueEquals(HttpHeaders.LOCATION, "/app/patients/" + id);
+    }
+
+    /** Which wins when both are there: the URL is the family's choice just now, the cookie only the last one. */
+    @ParameterizedTest
+    @EnumSource(Tab.class)
+    void theUrlBeatsTheRememberedChoice(Tab tab) {
+        kit.familyWith(ma, baba);
+        noPapers(ma);
+        noPapers(baba);
+        EntityExchangeResult<String> r = kit.client.get().uri(tab.path + "?patient=" + baba.patient().id())
+                .cookie("baymax_session", "tok").cookie("baymax_lang", "bn").cookie("baymax_patient", ma.patient().id().toString())
+                .exchange().expectStatus().isOk().expectBody(String.class).returnResult();
+        assertThat(text(only(Dom.parse(r.getResponseBody()), "header", "appbar"))).contains("আব্বু").doesNotContain("আম্মা");
+        assertThat(r.getResponseHeaders().getFirst(HttpHeaders.SET_COOKIE)).startsWith("baymax_patient=" + baba.patient().id() + ";");
+        verify(kit.timeline, never()).timeline(any(), eq(ma.patient().id()), any());
+        if (tab == Tab.PAPERS) {
+            verify(kit.timeline).timeline(WebUiTestKit.FAMILY, baba.patient().id(), null);
+        }
+    }
+
+    /** The other direction: a remembered choice never rescues a URL naming a patient this family cannot see. */
+    @ParameterizedTest
+    @EnumSource(Tab.class)
+    void aRememberedChoiceDoesNotRescueAnUnseenPatientInTheUrl(Tab tab) {
+        kit.familyWith(ma, baba);
+        noPapers(ma);
+        noPapers(baba);
+        kit.client.get().uri(tab.path + "?patient=" + UUID.randomUUID()).cookie("baymax_session", "tok")
+                .cookie("baymax_patient", ma.patient().id().toString()).exchange().expectStatus().isNotFound();
+        verify(kit.timeline, never()).timeline(any(), any(), any());
     }
 
     /**
@@ -189,9 +232,9 @@ class AppShellRoutesTest {
         noPapers(baba);
         kit.client.get().uri("/app/timeline?patient=" + baba.patient().id()).cookie("baymax_session", "tok").exchange()
                 .expectStatus().isOk()
-                .expectHeader().value(HttpHeaders.SET_COOKIE, c -> assertThat(c)
-                        .startsWith("baymax_patient=" + baba.patient().id()).contains("Path=/app").contains("Max-Age=1800")
-                        .contains("HttpOnly").contains("SameSite=Lax"));
+                .expectHeader().value(HttpHeaders.SET_COOKIE, c -> assertThat(cookieAttributes(c))
+                        .startsWith("baymax_patient=" + baba.patient().id())
+                        .contains("Path=/app", "Max-Age=1800", "HttpOnly", "SameSite=Lax", "Secure"));
         String next = kit.client.get().uri("/app/timeline").cookie("baymax_session", "tok")
                 .cookie("baymax_patient", baba.patient().id().toString()).exchange()
                 .expectStatus().isOk().expectBody(String.class).returnResult().getResponseBody();
@@ -199,6 +242,28 @@ class AppShellRoutesTest {
         // both pages read Baba's papers, the chosen one and the remembered one, and never Ma's
         verify(kit.timeline, times(2)).timeline(WebUiTestKit.FAMILY, baba.patient().id(), null);
         verify(kit.timeline, never()).timeline(any(), eq(ma.patient().id()), any());
+    }
+
+    /** A Set-Cookie header split into its fields, so an attribute is matched whole, never as a substring of another. */
+    static List<String> cookieAttributes(String setCookie) {
+        return java.util.Arrays.stream(setCookie.split(";")).map(String::trim).toList();
+    }
+
+    /**
+     * The other direction of Secure: it comes from {@code auth.cookieSecure} (off for plain-http local runs), not from a
+     * constant — with the property off the cookie still works and is not marked Secure.
+     */
+    @Test
+    void theCookieIsSecureOnlyWhenTheSessionCookieIs() {
+        BaymaxProperties plainHttp = new BaymaxProperties();
+        plainHttp.getAuth().setCookieSecure(false);
+        WebUiTestKit local = new WebUiTestKit(org.mockito.Mockito.mock(WebAuthUseCase.class), plainHttp, true);
+        local.familyWith(ma, baba);
+        when(local.timeline.timeline(eq(WebUiTestKit.FAMILY), eq(baba.patient().id()), any())).thenReturn(Mono.just(new TimelinePage(List.of(), null)));
+        String c = local.client.get().uri("/app/timeline?patient=" + baba.patient().id()).cookie("baymax_session", "tok").exchange()
+                .expectStatus().isOk().returnResult(String.class).getResponseHeaders().getFirst(HttpHeaders.SET_COOKIE);
+        assertThat(cookieAttributes(c)).startsWith("baymax_patient=" + baba.patient().id())
+                .contains("HttpOnly", "Max-Age=1800").doesNotContain("Secure");
     }
 
     /** Sliding, on every tab: a page with a patient in view re-sets the cookie; the chooser (no one in view) sets none. */
@@ -232,21 +297,84 @@ class AppShellRoutesTest {
                 .expectStatus().isNotFound();
     }
 
-    /** Spec §3 sheets: the switcher is a URL; the page beneath is inert; the close link returns to the bare tab. */
-    @Test
-    void thePatientSheetIsAPlainUrlThatInertsThePageBeneathAndClosesBackToTheTab() {
+    /** An href as the browser follows it: the page writes {@code &} as {@code &amp;} inside an attribute. */
+    static String followed(String href) {
+        return href.replace("&amp;", "&");
+    }
+
+    /** The one {@code role="dialog"} sheet on a page, refused when there are none or several. */
+    static Dom.Element sheet(Dom dom) {
+        List<Dom.Element> found = dom.all.stream().filter(e -> e.tag().equals("section") && e.classes().contains("sheet")
+                && "dialog".equals(e.attrs().get("role"))).toList();
+        assertThat(found).as("section.sheet[role=dialog] on the page").hasSize(1);
+        return found.get(0);
+    }
+
+    static Dom.Element tag(Dom dom, String tag) {
+        List<Dom.Element> found = dom.all.stream().filter(e -> e.tag().equals(tag)).toList();
+        assertThat(found).as(tag + " on the page").hasSize(1);
+        return found.get(0);
+    }
+
+    /** The open sheet: exactly one dialog, the page beneath inert, the scrim on (has-sheet). */
+    static void assertSheetOpen(Dom dom) {
+        sheet(dom);
+        assertThat(only(dom, "div", "shell").attrs()).as("the page beneath the sheet").containsKey("inert");
+        assertThat(tag(dom, "body").classes()).as("body classes").contains("in-app", "has-sheet");
+    }
+
+    /** No sheet: no dialog, nothing inert, no scrim. */
+    static void assertNoSheet(Dom dom) {
+        assertThat(dom.all.stream().filter(e -> "dialog".equals(e.attrs().get("role"))).map(Dom.Element::describe)).as("dialogs").isEmpty();
+        assertThat(dom.all.stream().filter(e -> e.attrs().containsKey("inert")).map(Dom.Element::describe)).as("inert elements").isEmpty();
+        assertThat(tag(dom, "body").classes()).as("body classes").contains("in-app").doesNotContain("has-sheet");
+    }
+
+    /**
+     * Spec §3 sheets, on every tab, by the link the header actually draws and with no cookie at all (a browser that
+     * blocks them): tapping the name opens the sheet over the page, which is inert; the one in view is marked; the close
+     * link goes back to the tab with the same patient in view and no sheet.
+     */
+    @ParameterizedTest
+    @EnumSource(Tab.class)
+    void theHeaderNameOpensTheSheetAndItsCloseLinkReturnsToTheTab(Tab tab) {
         kit.familyWith(ma, baba);
         noPapers(ma);
-        String open = kit.page("/app/timeline?patient=" + ma.patient().id() + "&sheet=patient", "bn");
-        assertThat(open).contains("<div class=\"shell\" inert>");
-        String dialog = between(open, "role=\"dialog\"", "</section>");
-        assertThat(dialog).contains("href=\"/app/timeline\" autofocus")
-                .contains("href=\"/app/timeline?patient=" + baba.patient().id() + "\"")
-                .contains("aria-current=\"true\"");   // Ma is the chosen one
-        String closed = kit.page("/app/timeline?patient=" + ma.patient().id(), "bn");
-        assertThat(closed).contains("<div class=\"shell\">").doesNotContain("role=\"dialog\"");
-        // the header's switcher is the sheet's URL on the tab it is on
-        assertThat(between(closed, "<header class=\"appbar\"", "</header>")).contains("href=\"/app/timeline?sheet=patient\"");
+        noPapers(baba);
+        Dom closed = Dom.parse(kit.page(tab.path + "?patient=" + ma.patient().id(), "bn"));
+        assertNoSheet(closed);
+        Dom.Element switcher = only(closed, "a", "switcher");
+        assertThat(switcher.attrs()).containsEntry("aria-haspopup", "dialog");
+
+        Dom open = Dom.parse(kit.page(followed(switcher.attrs().get("href")), "bn"));
+        assertSheetOpen(open);
+        List<Dom.Element> links = subtree(sheet(open)).stream().filter(e -> e.tag().equals("a")).toList();
+        Dom.Element close = links.stream().filter(e -> e.attrs().containsKey("autofocus")).findFirst().orElseThrow();
+        // the one in view is marked by its own element — Ma's choice, and Baba's is not
+        List<Dom.Element> choices = links.stream().filter(e -> e.classes().contains("pchoice")).toList();
+        assertThat(choices).extracting(e -> e.attrs().get("href"))
+                .containsExactlyInAnyOrder(tab.path + "?patient=" + ma.patient().id(), tab.path + "?patient=" + baba.patient().id());
+        for (Dom.Element c : choices) {
+            boolean isMa = c.attrs().get("href").endsWith(ma.patient().id().toString());
+            assertThat(c.attrs().get("aria-current")).as("aria-current on " + c.attrs().get("href")).isEqualTo(isMa ? "true" : null);
+        }
+
+        Dom back = Dom.parse(kit.page(followed(close.attrs().get("href")), "bn"));
+        assertNoSheet(back);
+        assertThat(text(only(back, "header", "appbar"))).contains("আম্মা").doesNotContain("আব্বু");
+    }
+
+    /** The remembered choice alone also opens the sheet: {@code ?sheet=patient} with the cookie and no {@code ?patient=}. */
+    @Test
+    void theSheetOpensOverTheRememberedPatient() {
+        kit.familyWith(ma, baba);
+        noPapers(ma);
+        String html = kit.client.get().uri("/app/timeline?sheet=patient").cookie("baymax_session", "tok").cookie("baymax_lang", "bn")
+                .cookie("baymax_patient", ma.patient().id().toString()).exchange().expectStatus().isOk()
+                .expectBody(String.class).returnResult().getResponseBody();
+        Dom dom = Dom.parse(html);
+        assertSheetOpen(dom);
+        assertThat(text(only(dom, "header", "appbar"))).contains("আম্মা").doesNotContain("আব্বু");
     }
 
     /** The other direction of the sheet: with one patient there is nothing to switch to, so no sheet and no inert page. */
@@ -254,8 +382,44 @@ class AppShellRoutesTest {
     void withOnePatientThereIsNoSheetToOpen() {
         kit.familyWith(ma);
         noPapers(ma);
-        String html = kit.page("/app/timeline?sheet=patient", "bn");
-        assertThat(html).contains("<div class=\"shell\">").doesNotContain("role=\"dialog\"").doesNotContain(" inert");
+        assertNoSheet(Dom.parse(kit.page("/app/timeline?sheet=patient", "bn")));
+    }
+
+    /**
+     * Two patients and nobody in view: {@code ?sheet=patient} is only the chooser — no sheet over a page that has no
+     * patient, nothing inert, and no one's papers read.
+     */
+    @ParameterizedTest
+    @EnumSource(value = Tab.class, names = {"CHAT", "PAPERS"})
+    void withNobodyInViewTheSheetUrlIsTheChooser(Tab tab) {
+        kit.familyWith(ma, baba);
+        noPapers(ma);
+        noPapers(baba);
+        Dom dom = Dom.parse(kit.page(tab.path + "?sheet=patient", "bn"));
+        assertNoSheet(dom);
+        assertThat(dom.all.stream().filter(e -> e.tag().equals("h1")).map(Dom.Element::ownText)).containsExactly("কার কাগজ দেখবেন?");
+        verify(kit.timeline, never()).timeline(any(), any(), any());
+    }
+
+    /**
+     * The switcher fixtures exist so that every derived page check (touch targets, glossary, no inline code, …) reads
+     * the sheet. They are only worth that if they really draw it: each one has exactly one dialog and an inert page.
+     */
+    @Test
+    void theSwitcherFixturesReallyDrawTheSheet() {
+        Map<String, String> switchers = new java.util.TreeMap<>();
+        RenderedPages.all().forEach((key, html) -> {
+            if (key.contains(" #switcher ")) {
+                switchers.put(key, html);
+            }
+        });
+        // two tabs × two languages; fewer and the derived checks are not reading what this test says they are
+        assertThat(switchers.keySet()).as("switcher pages rendered").hasSizeGreaterThanOrEqualTo(4);
+        switchers.forEach((key, html) -> {
+            Dom dom = Dom.parse(html);
+            assertThat(dom.unclosed).as(key + " unclosed").isEmpty();
+            assertSheetOpen(dom);
+        });
     }
 
     /**
