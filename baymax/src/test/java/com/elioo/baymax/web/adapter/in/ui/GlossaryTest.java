@@ -43,8 +43,6 @@ class GlossaryTest {
             "ui:patients রোগী",
             "ui:patients.docs নথি",
             "ui:patients.none রোগী",
-            "ui:timeline.docs নথি",
-            "ui:timeline.none নথি",
             "ui:type.default নথি");
 
     @Test

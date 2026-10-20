@@ -112,7 +112,7 @@ class UiCopyTest {
     @Test
     void placeholdersAreReplacedAndArgumentsEscaped() {
         assertThat(copy.t(Lang.BN, "patients.docs", "<b>")).isEqualTo("নথি: &lt;b&gt;");
-        assertThat(copy.t(Lang.EN, "timeline.counts", 1, 2, 3)).isEqualTo("Values 1 · Medicines 2 · Follow-ups 3");
+        assertThat(copy.t(Lang.EN, "sheet.of", 1, 2, "<i>")).isEqualTo("1 · 2 · &lt;i&gt;");
     }
 
     /**

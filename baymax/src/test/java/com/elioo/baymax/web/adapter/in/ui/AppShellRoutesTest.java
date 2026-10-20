@@ -482,6 +482,101 @@ class AppShellRoutesTest {
                 .as("a form or a field on the chat placeholder").isEmpty();
     }
 
+    /** C3: the filter chosen reaches the read model; a type this build does not know reads every paper, never a 400. */
+    @Test
+    void theTypeFilterReachesTheReadModelAndAnUnknownTypeReadsEveryPaper() {
+        kit.familyWith(ma);
+        noPapers(ma);
+        String list = Tab.PAPERS.path + "?patient=" + ma.patient().id();
+        kit.page(list + "&type=rx", "bn");
+        verify(kit.timeline).timeline(WebUiTestKit.FAMILY, ma.patient().id(), null, com.elioo.baymax.web.domain.TimelineFilter.PRESCRIPTION);
+        kit.page(list + "&type=x", "bn");
+        verify(kit.timeline).timeline(WebUiTestKit.FAMILY, ma.patient().id(), null, com.elioo.baymax.web.domain.TimelineFilter.ALL);
+    }
+
+    /** The links on a page that open the add-report sheet, as written in the HTML. */
+    private static List<Dom.Element> addLinks(Dom dom) {
+        return dom.all.stream().filter(e -> e.tag().equals("a") && e.attrs().getOrDefault("href", "").startsWith(UploadUiHandler.SHEET)).toList();
+    }
+
+    /**
+     * s16 empty, both directions: no papers at all is the empty panel naming the patient; the owner is offered the one
+     * camera link (to the sheet for this patient, coming back here), a share member is offered none anywhere on the page.
+     */
+    @Test
+    void anEmptyListIsTheEmptyPanelAndOnlyTheOwnerIsOfferedTheCamera() {
+        kit.familyWith(ma);
+        noPapers(ma);
+        Dom owner = Dom.parse(kit.page(Tab.PAPERS.path + "?patient=" + ma.patient().id(), "bn"));
+        assertThat(owner.unclosed).isEmpty();
+        Dom.Element panel = only(owner, "section", "empty");
+        assertThat(subtree(panel).stream().filter(e -> e.tag().equals("h2")).map(Dom.Element::ownText))
+                .containsExactly(kit.copy.t(Lang.BN, "timeline.empty.title", "আম্মা"));
+        assertThat(text(panel)).contains(kit.copy.t(Lang.BN, "timeline.empty.body")).contains(kit.copy.t(Lang.BN, "timeline.empty.foot"));
+        List<Dom.Element> camera = addLinks(owner);
+        assertThat(camera).as("one way to add a paper on the empty page").hasSize(1);
+        assertThat(subtree(panel)).as("…and it is the panel's").contains(camera.get(0));
+        assertThat(text(camera.get(0))).contains(kit.copy.t(Lang.BN, "chat.empty.action"));
+        String back = java.net.URLEncoder.encode(Tab.PAPERS.path + "?patient=" + ma.patient().id(), java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(camera.get(0).attrs().get("href")).isEqualTo(UploadUiHandler.SHEET + "?patient=" + ma.patient().id() + "&amp;back=" + back);
+
+        PatientSummary member = kit.patient("খালা", false, 0);
+        kit.familyWith(member);
+        noPapers(member);
+        Dom shared = Dom.parse(kit.page(Tab.PAPERS.path + "?patient=" + member.patient().id(), "bn"));
+        assertThat(subtree(only(shared, "section", "empty")).stream().filter(e -> e.tag().equals("h2")).map(Dom.Element::ownText))
+                .containsExactly(kit.copy.t(Lang.BN, "timeline.empty.title", "খালা"));
+        assertThat(addLinks(shared).stream().map(Dom.Element::describe)).as("a share member cannot add a paper").isEmpty();
+    }
+
+    /**
+     * The other direction of the empty panel: a filter that matches nothing is not "no papers yet" — the filters stay,
+     * so "সব" brings everything back, and the line says only this kind is missing.
+     */
+    @Test
+    void aFilterThatMatchesNothingKeepsTheFiltersAndIsNotTheEmptyPanel() {
+        kit.familyWith(ma);
+        noPapers(ma);
+        Dom dom = Dom.parse(kit.page(Tab.PAPERS.path + "?patient=" + ma.patient().id() + "&type=rx", "bn"));
+        assertThat(dom.all.stream().filter(e -> e.classes().contains("empty")).map(Dom.Element::describe)).as("the s16 empty panel").isEmpty();
+        String words = dom.all.stream().map(Dom.Element::ownText).collect(java.util.stream.Collectors.joining(" "));
+        assertThat(words).doesNotContain(kit.copy.t(Lang.BN, "timeline.empty.title", "আম্মা"))
+                .contains(kit.copy.t(Lang.BN, "timeline.filter.none"));
+        Dom.Element nav = only(dom, "nav", "filters");
+        assertThat(subtree(nav).stream().filter(e -> e.tag().equals("a")).map(e -> e.attrs().get("href")))
+                .contains(Tab.PAPERS.path + "?patient=" + ma.patient().id());
+    }
+
+    /**
+     * A later page that comes back empty (a stale or hand-made "আরও দেখুন" link) is neither "no papers yet" — earlier
+     * pages hold papers — nor "none of this kind" under "সব": it says only that there are no more, and keeps the filters.
+     */
+    @Test
+    void anEmptyLaterPageIsNotTheEmptyPanelAndDoesNotBlameTheFilter() {
+        kit.familyWith(ma);
+        noPapers(ma);
+        Dom dom = Dom.parse(kit.page(Tab.PAPERS.path + "?patient=" + ma.patient().id() + "&cursor=c2FtcGxl", "bn"));
+        assertThat(dom.unclosed).isEmpty();
+        assertThat(dom.all.stream().filter(e -> e.classes().contains("empty")).map(Dom.Element::describe)).as("the s16 empty panel").isEmpty();
+        List<String> lines = dom.all.stream().map(Dom.Element::ownText).toList();
+        assertThat(lines).as("\"none of this kind\" under \"সব\"").doesNotContain(kit.copy.t(Lang.BN, "timeline.filter.none"));
+        assertThat(lines).as("the line under the filters").contains(kit.copy.t(Lang.BN, "timeline.end"))
+                .doesNotContain(kit.copy.t(Lang.BN, "timeline.empty.title", "আম্মা"));
+        only(dom, "nav", "filters");
+    }
+
+    /** …and a filter that matches nothing still says so, not "no more" (the two lines are not interchangeable). */
+    @Test
+    void aFilterThatMatchesNothingSaysSoEvenOnALaterPage() {
+        kit.familyWith(ma);
+        noPapers(ma);
+        for (String q : List.of("&type=lab", "&type=lab&cursor=c2FtcGxl")) {
+            List<String> lines = Dom.parse(kit.page(Tab.PAPERS.path + "?patient=" + ma.patient().id() + q, "bn")).all.stream()
+                    .map(Dom.Element::ownText).toList();
+            assertThat(lines).as(q).contains(kit.copy.t(Lang.BN, "timeline.filter.none")).doesNotContain(kit.copy.t(Lang.BN, "timeline.end"));
+        }
+    }
+
     @Test
     void initialsKeepTheirVowelSignsAndConjuncts() {
         assertThat(AppShell.initial("আম্মা")).isEqualTo("আ");
