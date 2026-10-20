@@ -6,7 +6,9 @@ import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.Upload;
 import com.elioo.baymax.web.application.port.in.UploadUseCase;
 import com.elioo.baymax.web.application.port.in.WebAuthUseCase;
+import com.elioo.baymax.web.domain.Grouping;
 import com.elioo.baymax.web.domain.UploadOptions;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpHeaders;
@@ -28,7 +30,9 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -60,12 +64,21 @@ class AddReportSubmitTest {
                 .body(BodyInserters.fromMultipartData(body.build())).exchange();
     }
 
+    /**
+     * The sheet posts through the five-argument upload only. Every {@code never()} below names that form, so a handler
+     * that switched back to the JSON API's three-argument form (no key, no grouping) must fail here, not slip past them.
+     */
+    @AfterEach
+    void theSheetNeverUsesTheKeylessForm() {
+        verify(uploads, never()).upload(any(), any(), any());
+    }
+
     @Test
     void everyChosenFileReachesIntakeInTheOrderSentAndTheFamilyLandsOnTheDocument() throws IOException {
         UUID ma = UUID.randomUUID();
         Document doc = Document.received(ma, family, 3, NOW).withId(UUID.randomUUID());
         @SuppressWarnings("unchecked") ArgumentCaptor<List<Upload>> sent = ArgumentCaptor.forClass(List.class);
-        when(uploads.upload(eq(family), eq(ma), sent.capture())).thenReturn(Mono.just(doc));
+        when(uploads.upload(eq(family), eq(ma), sent.capture(), any(), any())).thenReturn(Mono.just(List.of(doc)));
         MultipartBodyBuilder body = new MultipartBodyBuilder();
         body.part("patient", ma.toString());
         for (String name : List.of("p1.jpg", "p2.jpg", "p3.jpg")) {
@@ -89,7 +102,7 @@ class AddReportSubmitTest {
         UUID ma = UUID.randomUUID();
         Document doc = Document.received(ma, family, 1, NOW).withId(UUID.randomUUID());
         @SuppressWarnings("unchecked") ArgumentCaptor<List<Upload>> sent = ArgumentCaptor.forClass(List.class);
-        when(uploads.upload(eq(family), eq(ma), sent.capture())).thenReturn(Mono.just(doc));
+        when(uploads.upload(eq(family), eq(ma), sent.capture(), any(), any())).thenReturn(Mono.just(List.of(doc)));
 
         browserPost(ma, unusedInput(), filePart("p1.jpg", jpeg()), unusedInput()).expectStatus().isSeeOther();
         assertThat(sent.getValue()).extracting(Upload::filename).containsExactly("p1.jpg");
@@ -145,7 +158,7 @@ class AddReportSubmitTest {
         assertThat(html).contains("<p id=\"add-alert\" class=\"warn\" role=\"alert\">কার কাগজ বেছে নিন — Medioo নিজে আন্দাজ করবে না</p>");
         // s07--choose-patient draws the sentence once: the alert says it, so the fieldset's hint does not repeat it
         assertThat(html.split("কার কাগজ বেছে নিন", -1)).as("times the sentence is on the page, plus one").hasSize(2);
-        verify(uploads, never()).upload(any(), any(), any());
+        verify(uploads, never()).upload(any(), any(), any(), any(), any());
     }
 
     /** The script asks for JSON and gets the same refusal as data, unescaped, in the page's language (the form's half: aBrowsersFormPost…). */
@@ -174,7 +187,7 @@ class AddReportSubmitTest {
         body.part("file", new byte[4096]).filename("big.jpg");
         String html = post(body).expectStatus().isEqualTo(HttpStatus.PAYLOAD_TOO_LARGE).expectBody(String.class).returnResult().getResponseBody();
         assertThat(html).contains("ছবিগুলো অনেক বড়");
-        verify(uploads, never()).upload(any(), any(), any());
+        verify(uploads, never()).upload(any(), any(), any(), any(), any());
     }
 
     /**
@@ -200,7 +213,7 @@ class AddReportSubmitTest {
         var ma = AddReportSheetPageTest.patient("আম্মা", 64, true);
         var abbu = AddReportSheetPageTest.patient("আব্বু", 72, true);
         when(uploads.uploadOptions(family)).thenReturn(Mono.just(new UploadOptions(List.of(ma, abbu), List.of(), AddReportSheetPageTest.used(0))));
-        when(uploads.upload(eq(family), eq(abbu.patient().id()), any())).thenReturn(Mono.error(
+        when(uploads.upload(eq(family), eq(abbu.patient().id()), any(), any(), any())).thenReturn(Mono.error(
                 com.elioo.baymax.common.error.BaymaxException.badRequest("unsupported_image", "could not read t6-letter.docx; send a JPEG, PNG or PDF")));
         MultipartBodyBuilder body = new MultipartBodyBuilder();
         body.part("patient", abbu.patient().id().toString());
@@ -249,7 +262,7 @@ class AddReportSubmitTest {
     void theScriptGetsTheDocumentsAddressAsJson() throws IOException {
         UUID ma = UUID.randomUUID();
         Document doc = Document.received(ma, family, 1, NOW).withId(UUID.randomUUID());
-        when(uploads.upload(eq(family), eq(ma), any())).thenReturn(Mono.just(doc));
+        when(uploads.upload(eq(family), eq(ma), any(), any(), any())).thenReturn(Mono.just(List.of(doc)));
         MultipartBodyBuilder body = new MultipartBodyBuilder();
         body.part("patient", ma.toString());
         body.part("file", jpeg()).filename("p1.jpg");
@@ -263,7 +276,7 @@ class AddReportSubmitTest {
     void theScriptGetsTheCapAsJsonWithTheResetDate() throws IOException {
         var ma = AddReportSheetPageTest.patient("আম্মা", 64, true);
         when(uploads.uploadOptions(family)).thenReturn(Mono.just(new UploadOptions(List.of(ma), List.of(), AddReportSheetPageTest.used(3))));
-        when(uploads.upload(eq(family), eq(ma.patient().id()), any())).thenReturn(Mono.error(new FreeTierExceededException(
+        when(uploads.upload(eq(family), eq(ma.patient().id()), any(), any(), any())).thenReturn(Mono.error(new FreeTierExceededException(
                 FreeTierExceededException.DOCUMENTS, "free plan allows 3 document(s) per calendar month")));
         MultipartBodyBuilder body = new MultipartBodyBuilder();
         body.part("patient", ma.patient().id().toString());
@@ -289,7 +302,7 @@ class AddReportSubmitTest {
         browserPost(MediaType.APPLICATION_JSON, UUID.randomUUID(), filePart("big.jpg", new byte[4096]))
                 .expectStatus().isEqualTo(HttpStatus.PAYLOAD_TOO_LARGE)
                 .expectBody().jsonPath("$.reason").isEqualTo("request_too_large");
-        verify(uploads, never()).upload(any(), any(), any());
+        verify(uploads, never()).upload(any(), any(), any(), any(), any());
     }
 
     /**
@@ -307,7 +320,7 @@ class AddReportSubmitTest {
                 List.of(AddReportSheetPageTest.patient("আম্মা", 64, true)), List.of(), AddReportSheetPageTest.used(0))));
         // intake would accept: without the summed cap the request goes through, and the status says so
         Document doc = Document.received(UUID.randomUUID(), family, 2, NOW).withId(UUID.randomUUID());
-        when(uploads.upload(any(), any(), any())).thenReturn(Mono.just(doc));
+        when(uploads.upload(any(), any(), any(), any(), any())).thenReturn(Mono.just(List.of(doc)));
         MultipartBodyBuilder body = new MultipartBodyBuilder();
         body.part("patient", UUID.randomUUID().toString());
         body.part("file", new byte[4000]).filename("p1.jpg");
@@ -315,6 +328,108 @@ class AddReportSubmitTest {
         var result = post(body, MediaType.APPLICATION_JSON).expectStatus().isEqualTo(HttpStatus.PAYLOAD_TOO_LARGE)
                 .expectBody().jsonPath("$.reason").isEqualTo("request_too_large").returnResult();
         assertThat(result.getRequestHeaders().getContentLength()).as("the request declared no length").isEqualTo(-1L);
-        verify(uploads, never()).upload(any(), any(), any());
+        verify(uploads, never()).upload(any(), any(), any(), any(), any());
+    }
+
+    // --- D3: the key and the grouping ------------------------------------------------------------------------------
+
+    /** Several documents from one press land on the patient's papers; the key and the grouping reach intake as posted. */
+    @Test
+    void theKeyAndTheGroupingReachIntakeAndSeveralDocumentsLandOnThePatientsPapers() throws IOException {
+        UUID ma = UUID.randomUUID();
+        List<Document> two = List.of(Document.received(ma, family, 1, NOW).withId(UUID.randomUUID()),
+                Document.received(ma, family, 1, NOW).withId(UUID.randomUUID()));
+        // stubbed for any grouping and key, so a handler that drops them still answers and fails on where it lands
+        when(uploads.upload(eq(family), eq(ma), anyList(), any(), any())).thenReturn(Mono.just(two));
+        MultipartBodyBuilder body = new MultipartBodyBuilder();
+        body.part("patient", ma.toString());
+        body.part("group", "separate");
+        body.part("upload_key", "1b4e28ba-2fa1-11d2-883f-0016d3cca427");
+        body.part("file", jpeg()).filename("a.jpg");
+        body.part("file", jpeg()).filename("b.jpg");
+        post(body).expectStatus().isSeeOther().expectHeader().valueEquals(HttpHeaders.LOCATION, "/app/timeline?patient=" + ma);
+        post(body, MediaType.APPLICATION_JSON).expectStatus().isOk().expectBody().jsonPath("$.next").isEqualTo("/app/timeline?patient=" + ma);
+        verify(uploads, org.mockito.Mockito.times(2)).upload(eq(family), eq(ma), anyList(), eq(Grouping.SEPARATE), eq("1b4e28ba-2fa1-11d2-883f-0016d3cca427"));
+    }
+
+    /** The other direction: one document from a press with the key still lands on that document. */
+    @Test
+    void oneDocumentFromAKeyedPressStillLandsOnTheDocument() throws IOException {
+        UUID ma = UUID.randomUUID();
+        Document doc = Document.received(ma, family, 2, NOW).withId(UUID.randomUUID());
+        when(uploads.upload(eq(family), eq(ma), anyList(), any(), any())).thenReturn(Mono.just(List.of(doc)));
+        MultipartBodyBuilder body = new MultipartBodyBuilder();
+        body.part("patient", ma.toString());
+        body.part("group", "one");
+        body.part("upload_key", "7c9e6679-7425-40de-944b-e07fc1f90ae7");
+        body.part("file", jpeg()).filename("a.jpg");
+        body.part("file", jpeg()).filename("b.jpg");
+        post(body).expectStatus().isSeeOther().expectHeader().valueEquals(HttpHeaders.LOCATION, "/app/documents/" + doc.id());
+        verify(uploads).upload(eq(family), eq(ma), anyList(), eq(Grouping.ONE), eq("7c9e6679-7425-40de-944b-e07fc1f90ae7"));
+    }
+
+    /** A key that is not our shape (and any group that is not "separate") is ignored, never stored. */
+    @Test
+    void aKeyThatIsNotOurShapeIsIgnoredNotStored() throws IOException {
+        UUID ma = UUID.randomUUID();
+        // stubbed for any grouping and key, so a handler that passes the raw value still answers 303 and fails on the verify
+        when(uploads.upload(eq(family), eq(ma), anyList(), any(), any()))
+                .thenReturn(Mono.just(List.of(Document.received(ma, family, 1, NOW).withId(UUID.randomUUID()))));
+        MultipartBodyBuilder body = new MultipartBodyBuilder();
+        body.part("patient", ma.toString());
+        body.part("group", "<b>");
+        body.part("upload_key", "<script>x</script>");
+        body.part("file", jpeg()).filename("a.jpg");
+        post(body).expectStatus().isSeeOther();
+        verify(uploads).upload(eq(family), eq(ma), anyList(), eq(Grouping.ONE), isNull());
+    }
+
+    /**
+     * The same sheet sent again for someone else (Back, another patient, পাঠান) is refused in Bangla, and the sheet it
+     * draws carries a NEW key — or the family could never send from it.
+     */
+    @Test
+    void aKeyAlreadyUsedForAnotherPatientIsRefusedOnASheetWithANewKeyAndTheirChoiceKept() throws IOException {
+        var ma = AddReportSheetPageTest.patient("আম্মা", 64, true);
+        var abbu = AddReportSheetPageTest.patient("আব্বু", 72, true);
+        when(uploads.uploadOptions(family)).thenReturn(Mono.just(new UploadOptions(List.of(ma, abbu), List.of(), AddReportSheetPageTest.used(0))));
+        String used = "0f8e2c1a-5d1b-4c7e-9a3f-2b6d8e4c1a70";
+        when(uploads.upload(eq(family), eq(abbu.patient().id()), anyList(), any(), any())).thenReturn(Mono.error(
+                com.elioo.baymax.common.error.BaymaxException.conflict("upload_key_reused", "the upload key belongs to another patient's document")));
+        MultipartBodyBuilder body = new MultipartBodyBuilder();
+        body.part("patient", abbu.patient().id().toString());
+        body.part("group", "separate");
+        body.part("upload_key", used);
+        body.part("file", jpeg()).filename("a.jpg");
+        String html = post(body).expectStatus().isEqualTo(HttpStatus.CONFLICT).expectBody(String.class).returnResult().getResponseBody();
+        assertThat(html).contains("এই ফর্মটি আগেই একবার পাঠানো হয়েছে").doesNotContain("belongs to another");
+        java.util.regex.Matcher key = java.util.regex.Pattern.compile("name=\"upload_key\" value=\"([0-9a-f-]{36})\"").matcher(html);
+        assertThat(key.find()).as("the re-drawn sheet carries a key").isTrue();
+        assertThat(key.group(1)).isNotEqualTo(used);
+        assertThat(html).contains("name=\"group\" value=\"separate\" checked>").contains("name=\"group\" value=\"one\">");
+        verify(uploads).upload(eq(family), eq(abbu.patient().id()), anyList(), eq(Grouping.SEPARATE), eq(used));
+    }
+
+    /**
+     * "আলাদা আলাদা" asks for a slot per file: with one free slot left, two separate pages are refused, and the sheet says
+     * how many remain — never "this month's papers have been read", which would be false — and still offers the form.
+     */
+    @Test
+    void separatePagesOverTheSlotsLeftAreRefusedWithTheTrueCountNotTheCap() throws IOException {
+        var ma = AddReportSheetPageTest.patient("আম্মা", 64, true);
+        when(uploads.uploadOptions(family)).thenReturn(Mono.just(new UploadOptions(List.of(ma), List.of(), AddReportSheetPageTest.used(2))));
+        when(uploads.upload(eq(family), eq(ma.patient().id()), anyList(), eq(Grouping.SEPARATE), any())).thenReturn(Mono.error(
+                new FreeTierExceededException(FreeTierExceededException.DOCUMENTS, "free plan allows 3 document(s) per calendar month")));
+        MultipartBodyBuilder body = new MultipartBodyBuilder();
+        body.part("patient", ma.patient().id().toString());
+        body.part("group", "separate");
+        body.part("file", jpeg()).filename("a.jpg");
+        body.part("file", jpeg()).filename("b.jpg");
+        String html = post(body).expectStatus().isEqualTo(HttpStatus.PAYMENT_REQUIRED).expectBody(String.class).returnResult().getResponseBody();
+        String said = "এ মাসে বিনা খরচে আরও ১টি কাগজ পড়াতে পারবেন — আলাদা আলাদা করে এতগুলো পাঠানো যাবে না। কম পাতা দিন, বা একটা রিপোর্ট হিসেবে পাঠান।";
+        assertThat(html).contains("<p id=\"add-alert\" class=\"warn\" role=\"alert\">" + said + "</p>")
+                .doesNotContain("পড়া হয়ে গেছে").contains("<form id=\"add\"");
+        post(body, MediaType.APPLICATION_JSON).expectStatus().isEqualTo(HttpStatus.PAYMENT_REQUIRED)
+                .expectBody().jsonPath("$.reason").isEqualTo(FreeTierExceededException.DOCUMENTS).jsonPath("$.text").isEqualTo(said);
     }
 }

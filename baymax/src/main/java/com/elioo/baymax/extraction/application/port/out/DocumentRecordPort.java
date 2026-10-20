@@ -1,5 +1,6 @@
 package com.elioo.baymax.extraction.application.port.out;
 
+import com.elioo.baymax.extraction.domain.CreatedDocument;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.VerifiedItems;
 import reactor.core.publisher.Flux;
@@ -19,6 +20,17 @@ import java.util.UUID;
 public interface DocumentRecordPort {
 
     Mono<Document> create(Document document);
+
+    /**
+     * D3 (V21): creates the document for one press of "পাঠান", at most once per family and key. A retry, a double tap
+     * or the loser of a race with the same key gets the row the first call made, with {@code fresh = false}; the
+     * database's partial unique index {@code document_upload_key_uq} decides, not a read before the write. A null key is
+     * {@link #create} with {@code fresh = true}. The only writer of {@code upload_key}.
+     */
+    Mono<CreatedDocument> createOnce(Document document, String uploadKey);
+
+    /** The family's document made by the press with this key; empty when none. */
+    Mono<Document> findByUploadKey(UUID familyId, String uploadKey);
 
     Mono<Document> find(UUID documentId);
 

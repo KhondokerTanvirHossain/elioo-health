@@ -642,13 +642,13 @@ final class PageFixtures {
         }
 
         static void acceptsUpload(WebUiTestKit k) {
-            when(k.uploads.upload(eq(WebUiTestKit.FAMILY), eq(WebUiTestKit.MA_ID), anyList())).thenReturn(Mono.just(
-                    Document.received(WebUiTestKit.MA_ID, WebUiTestKit.FAMILY, 1, WebUiTestKit.NOW).withId(WebUiTestKit.DOC_ID)));
+            when(k.uploads.upload(eq(WebUiTestKit.FAMILY), eq(WebUiTestKit.MA_ID), anyList(), any(), any())).thenReturn(Mono.just(List.of(
+                    Document.received(WebUiTestKit.MA_ID, WebUiTestKit.FAMILY, 1, WebUiTestKit.NOW).withId(WebUiTestKit.DOC_ID))));
         }
 
         static void refusesUpload(WebUiTestKit k) {
             sheetForMa(k);
-            when(k.uploads.upload(eq(WebUiTestKit.FAMILY), eq(WebUiTestKit.MA_ID), anyList())).thenReturn(Mono.error(
+            when(k.uploads.upload(eq(WebUiTestKit.FAMILY), eq(WebUiTestKit.MA_ID), anyList(), any(), any())).thenReturn(Mono.error(
                     com.elioo.baymax.common.error.BaymaxException.badRequest("unsupported_image", "could not read page-1.jpg; send a JPEG, PNG or PDF")));
         }
 

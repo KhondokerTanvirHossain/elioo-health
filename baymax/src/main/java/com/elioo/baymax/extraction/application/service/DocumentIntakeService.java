@@ -4,6 +4,7 @@ import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.extraction.application.port.in.DocumentIntakeUseCase;
 import com.elioo.baymax.extraction.application.port.out.DocumentRecordPort;
+import com.elioo.baymax.extraction.domain.CreatedDocument;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.DocumentView;
 import com.elioo.baymax.extraction.domain.Upload;
@@ -20,9 +21,12 @@ import reactor.core.scheduler.Schedulers;
 
 import java.time.Clock;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.IntStream;
 
 /**
  * Intake and read-back. The upload is checked against the free tier, rendered to JPEG pages, stored, and
@@ -45,18 +49,130 @@ public class DocumentIntakeService implements DocumentIntakeUseCase {
 
     @Override
     public Mono<Document> accept(UUID patientId, List<Upload> uploads) {
+        return accept(patientId, uploads, null).map(CreatedDocument::document);
+    }
+
+    @Override
+    public Mono<CreatedDocument> accept(UUID patientId, List<Upload> uploads, String uploadKey) {
         if (uploads == null || uploads.isEmpty()) {
             return Mono.error(BaymaxException.badRequest("no_file", "attach at least one file"));
         }
-        return patient(patientId)
-                .flatMap(patient -> freeTier.checkCanUploadDocument(patient.familyId()).thenReturn(patient))
-                .flatMap(patient -> {
-                    List<byte[]> pages = render(uploads);
-                    return documents.create(Document.received(patient.id(), patient.familyId(),
-                                    pages.size(), clock.instant()))
-                            .flatMap(document -> storePages(document, pages).thenReturn(document))
-                            .doOnNext(document -> startProcessing(document, pages));
-                });
+        String press = pressKey(uploadKey, uploads);
+        return patient(patientId).flatMap(patient -> replay(patient, press)
+                .switchIfEmpty(Mono.defer(() -> freeTier.checkCanUploadDocument(patient.familyId())
+                        .then(Mono.fromCallable(() -> render(uploads)))
+                        .flatMap(pages -> store(patient, pages, press)))));
+    }
+
+    @Override
+    public Flux<CreatedDocument> acceptEach(UUID patientId, List<Upload> uploads, String uploadKey) {
+        if (uploads == null || uploads.isEmpty()) {
+            return Flux.error(BaymaxException.badRequest("no_file", "attach at least one file"));
+        }
+        String press = pressKey(uploadKey, uploads);
+        return patient(patientId).flatMapMany(patient -> Flux.range(0, uploads.size())
+                .concatMap(i -> replay(patient, key(press, i)).map(Optional::of).defaultIfEmpty(Optional.empty()))
+                .collectList()
+                .flatMapMany(found -> {
+                    List<Integer> missing = IntStream.range(0, found.size()).filter(i -> found.get(i).isEmpty()).boxed().toList();
+                    Mono<Void> allowed = missing.isEmpty() ? Mono.empty()
+                            : freeTier.checkCanUploadDocuments(patient.familyId(), missing.size());
+                    // every missing file is read before the first document exists: one bad file refuses them all
+                    return allowed.then(Mono.fromCallable(() -> {
+                                Map<Integer, List<byte[]>> pages = new HashMap<>();
+                                for (int i : missing) {
+                                    pages.put(i, render(List.of(uploads.get(i))));
+                                }
+                                return pages;
+                            }))
+                            .flatMapMany(pages -> Flux.range(0, uploads.size()).concatMap(i -> found.get(i).map(Mono::just)
+                                    .orElseGet(() -> store(patient, pages.get(i), key(press, i)))));
+                }));
+    }
+
+    /**
+     * The row, then its pages, then processing — for the press that made the row only. The same press already made it
+     * (a race on the key): that press stores and processes, this one returns its document — if it is this patient's
+     * ({@link #samePatient}). A failed store removes the row, so nothing is left without its pages and a retry with the
+     * same key starts clean. A row that vanished between the loser's insert and its read (the winner's store failed) is
+     * a refusal, never an empty answer: the sheet is drawn again with a new key.
+     */
+    private Mono<CreatedDocument> store(PatientProfile patient, List<byte[]> pages, String uploadKey) {
+        return documents.createOnce(Document.received(patient.id(), patient.familyId(), pages.size(), clock.instant()), uploadKey)
+                .switchIfEmpty(Mono.error(() -> BaymaxException.conflict("upload_key_reused",
+                        "the document this upload key made went away before it could be read back")))
+                .flatMap(created -> !created.fresh() ? samePatient(patient, created.document()).thenReturn(created)
+                        : storePages(created.document(), pages)
+                                .onErrorResume(e -> forget(created.document()).then(Mono.error(e)))
+                                .thenReturn(created)
+                                .doOnNext(made -> startProcessing(made.document(), pages)));
+    }
+
+    /** The document an earlier press with this key made, for this patient; another patient's is a conflict, never a replay. */
+    private Mono<CreatedDocument> replay(PatientProfile patient, String uploadKey) {
+        if (uploadKey == null) {
+            return Mono.empty();
+        }
+        return documents.findByUploadKey(patient.familyId(), uploadKey)
+                .flatMap(d -> samePatient(patient, d).thenReturn(new CreatedDocument(d, false)));
+    }
+
+    /**
+     * The one place the patient rule is asserted, on both paths that hand an existing document back (a replay, and the
+     * loser of a race): only to the press for the same patient. Another patient's is 409, never a document to land on.
+     */
+    private static Mono<Void> samePatient(PatientProfile patient, Document d) {
+        return d.patientId().equals(patient.id()) ? Mono.empty()
+                : Mono.error(BaymaxException.conflict("upload_key_reused", "the upload key belongs to another patient's document"));
+    }
+
+    /**
+     * The key a press is stored under: the sheet's key AND what was sent with it. A double tap, a resend or a script's
+     * retry sends the same files and is the same press; a sheet restored by Back keeps its key, and the family choosing
+     * another paper on it (or adding a page) is a new press — read and counted, never the old document handed back. The
+     * digest is SHA-256 over every file, its length then its bytes, in order, cut to {@value #DIGEST_HEX} hex characters:
+     * the sheet's key (at most 64), ':', the digest and ':' plus the file's index stay inside V21's 80-character CHECK.
+     */
+    static String pressKey(String uploadKey, List<Upload> uploads) {
+        if (uploadKey == null) {
+            return null;
+        }
+        java.security.MessageDigest sha;
+        try {
+            sha = java.security.MessageDigest.getInstance("SHA-256");
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is part of every JDK", e);
+        }
+        for (Upload upload : uploads) {
+            byte[] bytes = upload.bytes() == null ? new byte[0] : upload.bytes();
+            sha.update(java.nio.ByteBuffer.allocate(Long.BYTES).putLong(bytes.length).array());
+            sha.update(bytes);
+        }
+        return uploadKey + ":" + java.util.HexFormat.of().formatHex(sha.digest()).substring(0, DIGEST_HEX);
+    }
+
+    private static final int DIGEST_HEX = 10;
+
+    /**
+     * Objects first, then the row (TimelineService.deleteDocument's order). The row goes even when removing the objects
+     * fails: an orphan object is harmless, a pageless row is not. Never fails itself, so the store's own error is the
+     * one the caller sees.
+     */
+    private Mono<Void> forget(Document d) {
+        return storage.deleteDocument(d.familyId(), d.patientId(), d.id())
+                .doOnError(e -> log.warn("[baymax] intake could not remove stored pages documentId={} error={}",
+                        d.id(), e.getClass().getSimpleName()))
+                .onErrorResume(e -> Mono.empty())
+                .then(documents.deleteDocument(d.id()))
+                .doOnNext(rows -> log.info("[baymax] intake removed a document whose pages were not stored documentId={}", d.id()))
+                .doOnError(e -> log.error("[baymax] intake could not remove a document without pages documentId={} error={}",
+                        d.id(), e.getClass().getSimpleName()))
+                .onErrorResume(e -> Mono.empty())
+                .then();
+    }
+
+    private static String key(String uploadKey, int index) {
+        return uploadKey == null ? null : uploadKey + ":" + index;
     }
 
     /** Renders every upload to JPEG pages, in the order the caller sent them. */

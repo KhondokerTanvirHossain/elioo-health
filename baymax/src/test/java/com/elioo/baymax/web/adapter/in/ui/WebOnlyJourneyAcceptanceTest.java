@@ -704,17 +704,31 @@ class WebOnlyJourneyAcceptanceTest {
         return documentPath;
     }
 
-    /** The sheet for this patient, then the multipart post; returns the new document's path once its page answers. */
+    /**
+     * The sheet for this patient, then the multipart post with the sheet's own key; returns the new document's path once
+     * its page answers. The same form is then sent again, as a double tap sends it, or Back to the sheet with the same file (D3):
+     * it lands on the same document, and the database holds no second one.
+     */
     private String upload(WebTestClient web, String session, PatientProfile ma) throws Exception {
-        assertThat(get(web, session, "/app/add?patient=" + ma.id()))
-                .containsPattern("name=\"patient\" value=\"" + ma.id() + "\" required checked>");
+        String sheet = get(web, session, "/app/add?patient=" + ma.id());
+        assertThat(sheet).containsPattern("name=\"patient\" value=\"" + ma.id() + "\" required checked>");
+        java.util.regex.Matcher key = java.util.regex.Pattern.compile("name=\"upload_key\" value=\"([0-9a-f-]{36})\"").matcher(sheet);
+        assertThat(key.find()).as("the sheet carries its press's key").isTrue();
         MultipartBodyBuilder body = new MultipartBodyBuilder();
         body.part("patient", ma.id().toString());
+        body.part("upload_key", key.group(1));
         body.part("file", paintedPage()).filename("page-1.jpg").contentType(MediaType.IMAGE_JPEG);
         String documentPath = web.post().uri("/app/add").cookie("baymax_session", session)
                 .body(BodyInserters.fromMultipartData(body.build())).exchange()
                 .expectStatus().isSeeOther().returnResult(Void.class).getResponseHeaders().getFirst(HttpHeaders.LOCATION);
         assertThat(documentPath).matches("/app/documents/[0-9a-f-]{36}");
+        String papers = "select count(*) from baymax.document where patient_id = '" + ma.id() + "'";
+        String before = scalar(papers);
+        String resent = web.post().uri("/app/add").cookie("baymax_session", session)
+                .body(BodyInserters.fromMultipartData(body.build())).exchange()
+                .expectStatus().isSeeOther().returnResult(Void.class).getResponseHeaders().getFirst(HttpHeaders.LOCATION);
+        assertThat(resent).as("the same press, sent again, opens the same paper").isEqualTo(documentPath);
+        assertThat(scalar(papers)).as("and makes no second one").isEqualTo(before);
         String first = get(web, session, documentPath);
         // still reading, or already read: as a result, or as a retake (B5)
         assertThat(first).containsAnyOf("id=\"progress\"", "id=\"urgency\"", "id=\"retake\"");

@@ -7,6 +7,7 @@ import com.elioo.baymax.extraction.domain.Upload;
 import com.elioo.baymax.healthrecord.domain.DocumentAllowance;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.application.port.in.UploadUseCase;
+import com.elioo.baymax.web.domain.Grouping;
 import com.elioo.baymax.web.domain.PatientSummary;
 import com.elioo.baymax.web.domain.UploadOptions;
 import com.elioo.baymax.web.domain.WebSession;
@@ -40,7 +41,7 @@ import static com.elioo.baymax.web.adapter.in.ui.PageChrome.BASE;
 /**
  * The add-report sheet (spec 4.7, s07), the one way a family adds a paper on the web, and the legacy form post. The
  * sheet's form posts as it is, with no script, to {@code POST /app/add} ({@code /assets/upload.js}, D4, only enhances
- * it), and lands on the document's page; a refusal comes back on the sheet in the family's language. Never guesses the patient: preselected only when the viewer may send for exactly one, or when the link names one
+ * it), and lands on the document's page — or, for several papers ("আলাদা আলাদা", D3), on the patient's papers; a refusal comes back on the sheet in the family's language. Never guesses the patient: preselected only when the viewer may send for exactly one, or when the link names one
  * of those the viewer may send for; an id it may not send for is ignored, never trusted. The free allowance is stated
  * before any upload, from the same value intake refuses by ({@link DocumentAllowance}).
  *
@@ -80,10 +81,16 @@ public class UploadUiHandler implements WebPages {
         String back = back(request);
         Optional<String> asked = request.queryParam("patient");
         return uploads.uploadOptions(session.familyId()).flatMap(options -> Html.html(HttpStatus.OK,
-                new AppShell(copy).sheet(lang, Tab.of(back), "add.title", sheetBody(lang, options, asked, back, null))));
+                new AppShell(copy).sheet(lang, Tab.of(back), "add.title", sheetBody(lang, options, asked, back, null, Grouping.ONE))));
     }
 
-    String sheetBody(Lang lang, UploadOptions o, Optional<String> asked, String back, String alert) {
+    /**
+     * The sheet. Its form carries a fresh {@code upload_key} each time it is drawn (D3): a double tap or a browser
+     * resubmit of this form with the same files is the same press and makes one document (other files are a new press:
+     * intake keys the press by the key and the files); a re-drawn sheet, a refusal's included, is a new
+     * press. {@code grouping} is the family's answer to s08's question, kept when a refusal draws the sheet again.
+     */
+    String sheetBody(Lang lang, UploadOptions o, Optional<String> asked, String back, String alert, Grouping grouping) {
         StringBuilder b = new StringBuilder("<section class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sheet-title\">");
         b.append("<div class=\"sheet-h\"><h1 id=\"sheet-title\">").append(copy.t(lang, "add.title")).append("</h1>")
                 .append("<a class=\"icon-btn\" href=\"").append(esc(back)).append("\" aria-label=\"").append(copy.t(lang, "sheet.close"))
@@ -98,6 +105,7 @@ public class UploadUiHandler implements WebPages {
         }
         Optional<UUID> chosen = chosen(o, asked);
         b.append("<form id=\"add\" class=\"add\" method=\"post\" enctype=\"multipart/form-data\" action=\"").append(SHEET).append("\">")
+                .append("<input type=\"hidden\" name=\"upload_key\" value=\"").append(UUID.randomUUID()).append("\">")
                 .append("<input type=\"hidden\" name=\"back\" value=\"").append(esc(back)).append("\">");
         b.append("<fieldset class=\"pick\"><legend>").append(copy.t(lang, "add.who")).append("</legend><div class=\"chips\">");
         for (PatientSummary p : o.canSend()) {
@@ -119,6 +127,11 @@ public class UploadUiHandler implements WebPages {
                 .append(row(lang, "gallery", "accept=\"image/*\" multiple", "papers"))
                 .append(row(lang, "pdf", "accept=\"application/pdf,image/*\"", "page"))
                 .append("</div>");
+        boolean separate = grouping == Grouping.SEPARATE;
+        // s08's question, asked on the sheet itself so it works with no script: the family chooses, Medioo never matches pages
+        b.append("<fieldset id=\"group\" class=\"group\"><legend>").append(copy.t(lang, "add.group.q")).append("</legend><div class=\"opts\">")
+                .append(option(lang, "one", !separate)).append(option(lang, "separate", separate))
+                .append("</div><p class=\"hint\">").append(copy.t(lang, "add.group.hint")).append("</p></fieldset>");
         b.append("<button type=\"submit\" class=\"btn primary nojs\">").append(copy.t(lang, "add.send")).append("</button>");
         b.append("<section class=\"tips\" aria-labelledby=\"tips-title\"><h2 id=\"tips-title\">").append(copy.t(lang, "add.tips"))
                 .append("</h2><ul>").append(tip(lang, "flat")).append(tip(lang, "light")).append(tip(lang, "frame")).append("</ul></section>");
@@ -141,6 +154,11 @@ public class UploadUiHandler implements WebPages {
         return "<label class=\"src-row\"><span class=\"src-i\" aria-hidden=\"true\">" + Icons.svg(icon, 24) + "</span>"
                 + "<span class=\"src-t\"><strong>" + copy.t(lang, "add." + src) + "</strong><span>" + copy.t(lang, "add." + src + ".sub")
                 + "</span></span><input type=\"file\" name=\"file\" " + attrs + " data-src=\"" + src + "\"></label>";
+    }
+
+    private String option(Lang lang, String value, boolean checked) {
+        return "<label class=\"opt\"><input type=\"radio\" name=\"group\" value=\"" + value + "\"" + (checked ? " checked" : "") + ">"
+                + "<span>" + copy.t(lang, "add.group." + value) + "</span></label>";
     }
 
     private String tip(Lang lang, String which) {
@@ -168,7 +186,9 @@ public class UploadUiHandler implements WebPages {
             Map.entry("too_many_pages", "upload.err.too_many_pages"),
             Map.entry("file_too_large", "upload.err.too_large"),
             Map.entry("request_too_large", "upload.err.too_large"),
-            Map.entry("shared_patient_read_only", "add.viewonly"));
+            Map.entry("shared_patient_read_only", "add.viewonly"),
+            // D3: the same sheet sent again for someone else (Back, another patient, পাঠান); the re-drawn sheet has a new key
+            Map.entry("upload_key_reused", "upload.err.key_reused"));
 
     /** {@code POST /app/add}: the sheet's form, with or without script. The patient is the one the family chose. */
     public Mono<ServerResponse> submit(ServerRequest request) {
@@ -184,14 +204,16 @@ public class UploadUiHandler implements WebPages {
         WebSession session = SessionAuthFilter.session(request);
         if (request.headers().contentLength().orElse(-1L) > properties.getUpload().getMaxRequestBytes()) {
             return refuse(request, tooLarge("request_too_large"), Optional.ofNullable(pathPatient).map(UUID::toString),
-                    backOf(request, null, pathPatient));
+                    backOf(request, null, pathPatient), Grouping.ONE);
         }
         return request.multipartData().flatMap(parts -> {
             UUID patientId = pathPatient != null ? pathPatient : uuidOrNull(field(parts, "patient"));
             String back = backOf(request, field(parts, "back"), pathPatient);
             if (patientId == null) {
-                return refuse(request, BaymaxException.badRequest("choose_patient", "no patient chosen"), Optional.empty(), back);
+                return refuse(request, BaymaxException.badRequest("choose_patient", "no patient chosen"), Optional.empty(), back, grouping(parts));
             }
+            Grouping grouping = grouping(parts);
+            String key = uploadKey(parts);
             List<FilePart> files = parts.getOrDefault("file", List.of()).stream()
                     .filter(FilePart.class::isInstance).map(FilePart.class::cast).toList();
             return Flux.fromIterable(files).concatMap(this::readBytes)
@@ -206,16 +228,19 @@ public class UploadUiHandler implements WebPages {
                         if (total > properties.getUpload().getMaxRequestBytes()) {
                             return Mono.error(tooLarge("request_too_large"));
                         }
-                        return uploads.upload(session.familyId(), patientId, pages)
-                                .doOnNext(d -> log.info("[baymax] web upload documentId={} files={} bytes={}", d.id(), pages.size(), total))
-                                .map(d -> BASE + "/documents/" + d.id());
+                        return uploads.upload(session.familyId(), patientId, pages, grouping, key)
+                                .doOnNext(docs -> docs.forEach(d -> log.info("[baymax] web upload documentId={} files={} bytes={} documents={}",
+                                        d.id(), pages.size(), total, docs.size())))
+                                // one document opens; several land on the patient's papers, where each one is
+                                .map(docs -> docs.size() == 1 ? BASE + "/documents/" + docs.get(0).id()
+                                        : Tab.PAPERS.path + "?patient=" + patientId);
                     })
                     .flatMap(next -> wantsJson(request)
                             ? ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValue(Map.of("next", next))
                             : Html.redirect(next))
-                    .onErrorResume(BaymaxException.class, e -> refuse(request, e, Optional.of(patientId.toString()), back));
+                    .onErrorResume(BaymaxException.class, e -> refuse(request, e, Optional.of(patientId.toString()), back, grouping));
         }).onErrorResume(BaymaxException.class, e -> refuse(request, e, Optional.ofNullable(pathPatient).map(UUID::toString),
-                backOf(request, null, pathPatient)));
+                backOf(request, null, pathPatient), Grouping.ONE));
     }
 
     private Mono<Upload> readBytes(FilePart part) {
@@ -240,7 +265,7 @@ public class UploadUiHandler implements WebPages {
      * exception's message (developer English, which may carry a filename) and never a filename. A 404 or a missing
      * session goes on to the router's own page.
      */
-    private Mono<ServerResponse> refuse(ServerRequest request, BaymaxException e, Optional<String> chosen, String back) {
+    private Mono<ServerResponse> refuse(ServerRequest request, BaymaxException e, Optional<String> chosen, String back, Grouping grouping) {
         if (e.status() == HttpStatus.NOT_FOUND || e.status() == HttpStatus.UNAUTHORIZED) {
             return Mono.error(e);
         }
@@ -249,17 +274,22 @@ public class UploadUiHandler implements WebPages {
         log.info("[baymax] web upload refused reason={} status={}", e.reason(), e.status().value());
         return uploads.uploadOptions(familyId).flatMap(o -> {
             boolean cap = e instanceof FreeTierExceededException;
+            // D3: "আলাদা আলাদা" takes a slot per file, so it can be refused while slots remain; saying the month is used up
+            // would be false, so the line says how many are left
+            boolean tooFew = cap && grouping == Grouping.SEPARATE && o.allowance().allows(1);
             String key = REFUSALS.getOrDefault(e.reason(), "app.err.generic");
             int maxPages = properties.getExtract().getMaxPages();
             if (wantsJson(request)) {
-                String text = cap ? copy.plain(lang, "add.cap", o.allowance().max(), copy.dateText(lang, o.allowance().resetsOn()))
+                String text = tooFew ? copy.plain(lang, "add.cap.separate", o.allowance().remaining())
+                        : cap ? copy.plain(lang, "add.cap", o.allowance().max(), copy.dateText(lang, o.allowance().resetsOn()))
                         : copy.plain(lang, key, maxPages);
                 return ServerResponse.status(e.status()).contentType(MediaType.APPLICATION_JSON)
                         .bodyValue(Map.of("reason", e.reason(), "text", text));
             }
             // at the cap the sheet itself already says so, with the reset date; the alert does not say it twice
-            String alert = cap ? (o.allowance().allows(1) ? capText(lang, o.allowance()) : null) : copy.t(lang, key, maxPages);
-            return Html.html(e.status(), new AppShell(copy).sheet(lang, Tab.of(back), "add.title", sheetBody(lang, o, chosen, back, alert)));
+            String alert = tooFew ? copy.t(lang, "add.cap.separate", o.allowance().remaining())
+                    : cap ? (o.allowance().allows(1) ? capText(lang, o.allowance()) : null) : copy.t(lang, key, maxPages);
+            return Html.html(e.status(), new AppShell(copy).sheet(lang, Tab.of(back), "add.title", sheetBody(lang, o, chosen, back, alert, grouping)));
         });
     }
 
@@ -278,6 +308,19 @@ public class UploadUiHandler implements WebPages {
         String fallback = pathPatient != null ? Tab.PAPERS.path + "?patient=" + pathPatient : back(request);
         return LocalPath.or(posted, fallback);
     }
+
+    /** "আলাদা আলাদা" only when the family said so; anything else, or nothing (the legacy form), is one report. */
+    private static Grouping grouping(MultiValueMap<String, Part> parts) {
+        return "separate".equals(field(parts, "group")) ? Grouping.SEPARATE : Grouping.ONE;
+    }
+
+    /** The sheet's key, or null for a value that is not our shape (the legacy form sends none): ignored, never stored. */
+    private static String uploadKey(MultiValueMap<String, Part> parts) {
+        return Optional.ofNullable(field(parts, "upload_key")).filter(k -> UPLOAD_KEY.matcher(k).matches()).orElse(null);
+    }
+
+    /** What the sheet writes (a UUID) and a little room; intake appends the files' digest and ":i", within V21's 80-character CHECK. */
+    private static final java.util.regex.Pattern UPLOAD_KEY = java.util.regex.Pattern.compile("[A-Za-z0-9-]{8,64}");
 
     private static String field(MultiValueMap<String, Part> parts, String name) {
         Part part = parts.getFirst(name);

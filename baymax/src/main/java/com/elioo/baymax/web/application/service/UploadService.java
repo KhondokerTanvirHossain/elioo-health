@@ -2,6 +2,7 @@ package com.elioo.baymax.web.application.service;
 
 import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.extraction.application.port.in.DocumentIntakeUseCase;
+import com.elioo.baymax.extraction.domain.CreatedDocument;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.Upload;
 import com.elioo.baymax.family.application.port.in.FreeTierUseCase;
@@ -10,10 +11,12 @@ import com.elioo.baymax.web.application.port.in.TimelineUseCase;
 import com.elioo.baymax.web.application.port.in.UploadUseCase;
 import com.elioo.baymax.web.application.port.out.AuditPort;
 import com.elioo.baymax.web.domain.AuditEvent;
+import com.elioo.baymax.web.domain.Grouping;
 import com.elioo.baymax.web.domain.PatientSummary;
 import com.elioo.baymax.web.domain.UploadOptions;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Clock;
@@ -43,15 +46,24 @@ public class UploadService implements UploadUseCase {
                 allowance)));
     }
 
+    /** The JSON API's upload: one document of every file, no key, so never a replay. */
     @Override
     public Mono<Document> upload(UUID familyId, UUID patientId, List<Upload> uploads) {
+        return upload(familyId, patientId, uploads, Grouping.ONE, null).map(documents -> documents.get(0));
+    }
+
+    @Override
+    public Mono<List<Document>> upload(UUID familyId, UUID patientId, List<Upload> uploads, Grouping grouping, String uploadKey) {
         return records.visiblePatient(familyId, patientId)
                 .switchIfEmpty(Mono.error(BaymaxException.notFound("patient_not_found", "no patient with id " + patientId)))
-                .flatMap(access -> access.owner()
-                        ? intake.accept(patientId, uploads)
-                        : Mono.error(BaymaxException.forbidden("shared_patient_read_only",
-                                "a shared patient's records can be seen but not added to")))
-                .flatMap(d -> audit.record(AuditEvent.family(AuditEvent.Kind.DOCUMENT_UPLOAD, familyId, patientId, d.id(), clock.instant()))
-                        .thenReturn(d));
+                .flatMap(access -> access.owner() ? Mono.just(access) : Mono.error(BaymaxException.forbidden("shared_patient_read_only",
+                        "a shared patient's records can be seen but not added to")))
+                .flatMap(access -> grouping == Grouping.SEPARATE
+                        ? intake.acceptEach(patientId, uploads, uploadKey).collectList()
+                        : intake.accept(patientId, uploads, uploadKey).map(List::of))
+                // only what this press made is an upload: a replay or a race's loser made nothing, so it records nothing
+                .flatMap(created -> Flux.fromIterable(created).filter(CreatedDocument::fresh)
+                        .concatMap(c -> audit.record(AuditEvent.family(AuditEvent.Kind.DOCUMENT_UPLOAD, familyId, patientId, c.document().id(), clock.instant())))
+                        .then(Mono.just(created.stream().map(CreatedDocument::document).toList())));
     }
 }
