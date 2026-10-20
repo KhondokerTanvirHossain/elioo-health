@@ -1,6 +1,7 @@
 package com.elioo.baymax.web.adapter.in.ui;
 
 import com.elioo.baymax.common.error.BaymaxException;
+import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.nudge.application.port.out.NudgeDataPort;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
@@ -9,7 +10,9 @@ import com.elioo.baymax.web.domain.PatientSummary;
 import com.elioo.baymax.web.domain.TimelineEntry;
 import com.elioo.baymax.web.domain.WebSession;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.server.HandlerFilterFunction;
 import org.springframework.web.reactive.function.server.RouterFunction;
@@ -19,7 +22,6 @@ import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Mono;
 
 import java.util.UUID;
-import java.util.function.Function;
 
 import static com.elioo.baymax.web.adapter.in.ui.Html.esc;
 import static com.elioo.baymax.web.adapter.in.ui.PageChrome.BASE;
@@ -27,7 +29,10 @@ import static com.elioo.baymax.web.adapter.in.ui.PageChrome.BASE;
 /**
  * The three tabs (spec §3): চ্যাট {@code /app/home}, কাগজপত্র {@code /app/timeline}, পরিবার {@code /app/family}, each in
  * the {@link AppShell}. Whose papers are in view is {@link ActivePatient}: never guessed between two, so with two or
- * more and no {@code ?patient=} the চ্যাট and কাগজপত্র tabs show the chooser and read no one's papers.
+ * more, no {@code ?patient=} and no remembered choice, the চ্যাট and কাগজপত্র tabs show the chooser and read no one's
+ * papers. Every tab with a patient in view re-sets the remembered choice (a sliding cookie); with two or more,
+ * {@code ?sheet=patient} draws the switcher sheet over the tab. The pre-tab {@code /app/patients/{id}} is a 302 to
+ * কাগজপত্র with that patient asked for, where it is checked like any {@code ?patient=}.
  */
 @Component
 @RequiredArgsConstructor
@@ -37,6 +42,7 @@ public class AppTabs implements WebPages {
     private final UiCopy copy;
     private final PageChrome chrome;
     private final NudgeDataPort nudgeData;
+    private final BaymaxProperties properties;
 
     @Override
     public int order() {
@@ -49,7 +55,7 @@ public class AppTabs implements WebPages {
                 .GET(Tab.CHAT.path, this::chat)
                 .GET(Tab.PAPERS.path, this::papers)
                 .GET(Tab.FAMILY.path, this::family)
-                .GET(BASE + "/patients/{id}", this::timelinePage)
+                .GET(BASE + "/patients/{id}", request -> movedToTab(request, Tab.PAPERS))
                 .filter(requireSession)
                 .build();
     }
@@ -66,37 +72,49 @@ public class AppTabs implements WebPages {
     }
 
     public Mono<ServerResponse> chat(ServerRequest request) {
-        return tab(request, Tab.CHAT, this::chatBody, me -> ActivePatient.resolve(request, me));
+        return tab(request, Tab.CHAT, this::chatBody);
     }
 
     public Mono<ServerResponse> papers(ServerRequest request) {
-        return tab(request, Tab.PAPERS, this::papersBody, me -> ActivePatient.resolve(request, me));
+        return tab(request, Tab.PAPERS, this::papersBody);
     }
 
     public Mono<ServerResponse> family(ServerRequest request) {
-        return tab(request, Tab.FAMILY, this::familyBody, me -> ActivePatient.resolve(request, me));
+        return tab(request, Tab.FAMILY, this::familyBody);
     }
 
     /**
-     * The old {@code /app/patients/{id}} link (bookmarks, the legacy upload redirect): that patient's কাগজপত্র tab, the
-     * patient taken from the path and checked against this family as {@code ?patient=} is. C1 turns it into a redirect.
+     * A patient URL from before the tabs (WhatsApp links, bookmarks): 302 to its tab with the patient asked for. Nothing
+     * is read here; the tab checks the id against this family as it checks any {@code ?patient=} (a 404 for one it
+     * cannot see), so the redirect says nothing about whether the patient exists. Not an id at all: a 404 at once.
      */
-    public Mono<ServerResponse> timelinePage(ServerRequest request) {
-        String id = request.pathVariable("id");
-        return tab(request, Tab.PAPERS, this::papersBody, me -> new ActivePatient(java.util.Optional.of(ActivePatient.find(me, id)
-                .orElseThrow(() -> BaymaxException.notFound("patient_not_found", "no such patient")))));
+    static Mono<ServerResponse> movedToTab(ServerRequest request, Tab tab) {
+        UUID id;
+        try {
+            id = UUID.fromString(request.pathVariable("id"));
+        } catch (IllegalArgumentException e) {
+            return Mono.error(BaymaxException.notFound("not_found", "no such page"));
+        }
+        return ServerResponse.status(HttpStatus.FOUND).header(HttpHeaders.LOCATION, tab.path + "?patient=" + id).build();
     }
 
-    private Mono<ServerResponse> tab(ServerRequest request, Tab tab, Renderer renderer, Function<FamilyOverview, ActivePatient> resolve) {
+    private Mono<ServerResponse> tab(ServerRequest request, Tab tab, Renderer renderer) {
         WebSession session = SessionAuthFilter.session(request);
         Lang lang = Lang.of(request);
         AppShell shell = new AppShell(copy);
         return timeline.me(session.familyId()).flatMap(me -> {
-            ActivePatient active = resolve.apply(me);
+            ActivePatient active = ActivePatient.resolve(request, me);
             Mono<Body> body = active.patient().isEmpty() && tab != Tab.FAMILY
                     ? Mono.just(Body.of(me.patients().isEmpty() ? shell.noPatients(lang, tab) : shell.chooser(lang, tab, me, active), head(lang, tab)))
                     : renderer.render(request, lang, me, active);
-            return body.flatMap(b -> Html.html(HttpStatus.OK, shell.page(lang, tab, me, active, b.html(), b.head(), b.bodyClass())));
+            // the switcher: only with someone in view and someone else to switch to (with none in view the page is the chooser)
+            String sheet = "patient".equals(request.queryParam("sheet").orElse("")) && me.patients().size() > 1 && active.patient().isPresent()
+                    ? shell.patientSheet(lang, tab, me, active) : "";
+            return body.flatMap(b -> {
+                ServerResponse.BodyBuilder response = ServerResponse.ok().contentType(MediaType.TEXT_HTML);
+                active.cookie(properties.getAuth().isCookieSecure()).ifPresent(response::cookie);
+                return response.bodyValue(shell.page(lang, tab, me, active, b.html(), b.head(), b.bodyClass(), sheet));
+            });
         });
     }
 
