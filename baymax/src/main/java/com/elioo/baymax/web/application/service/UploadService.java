@@ -2,6 +2,7 @@ package com.elioo.baymax.web.application.service;
 
 import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.extraction.application.port.in.DocumentIntakeUseCase;
+import com.elioo.baymax.extraction.domain.CreatedDocument;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.Upload;
 import com.elioo.baymax.family.application.port.in.FreeTierUseCase;
@@ -60,8 +61,9 @@ public class UploadService implements UploadUseCase {
                 .flatMap(access -> grouping == Grouping.SEPARATE
                         ? intake.acceptEach(patientId, uploads, uploadKey).collectList()
                         : intake.accept(patientId, uploads, uploadKey).map(List::of))
-                .flatMap(documents -> Flux.fromIterable(documents)
-                        .concatMap(d -> audit.record(AuditEvent.family(AuditEvent.Kind.DOCUMENT_UPLOAD, familyId, patientId, d.id(), clock.instant())))
-                        .then(Mono.just(documents)));
+                // only what this press made is an upload: a replay or a race's loser made nothing, so it records nothing
+                .flatMap(created -> Flux.fromIterable(created).filter(CreatedDocument::fresh)
+                        .concatMap(c -> audit.record(AuditEvent.family(AuditEvent.Kind.DOCUMENT_UPLOAD, familyId, patientId, c.document().id(), clock.instant())))
+                        .then(Mono.just(created.stream().map(CreatedDocument::document).toList())));
     }
 }

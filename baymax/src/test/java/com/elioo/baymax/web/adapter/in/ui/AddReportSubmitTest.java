@@ -426,7 +426,7 @@ class AddReportSubmitTest {
         body.part("file", jpeg()).filename("a.jpg");
         body.part("file", jpeg()).filename("b.jpg");
         String html = post(body).expectStatus().isEqualTo(HttpStatus.PAYMENT_REQUIRED).expectBody(String.class).returnResult().getResponseBody();
-        String said = "এ মাসে বিনা খরচে আর ১টি কাগজ পড়ানো যাবে — আলাদা আলাদা করে এতগুলো পাঠানো যাবে না। কম পাতা দিন, বা একটা রিপোর্ট হিসেবে পাঠান।";
+        String said = "এ মাসে বিনা খরচে আরও ১টি কাগজ পড়াতে পারবেন — আলাদা আলাদা করে এতগুলো পাঠানো যাবে না। কম পাতা দিন, বা একটা রিপোর্ট হিসেবে পাঠান।";
         assertThat(html).contains("<p id=\"add-alert\" class=\"warn\" role=\"alert\">" + said + "</p>")
                 .doesNotContain("পড়া হয়ে গেছে").contains("<form id=\"add\"");
         post(body, MediaType.APPLICATION_JSON).expectStatus().isEqualTo(HttpStatus.PAYMENT_REQUIRED)

@@ -86,7 +86,8 @@ public class UploadUiHandler implements WebPages {
 
     /**
      * The sheet. Its form carries a fresh {@code upload_key} each time it is drawn (D3): a double tap or a browser
-     * resubmit of this form is the same press and makes one document; a re-drawn sheet, a refusal's included, is a new
+     * resubmit of this form with the same files is the same press and makes one document (other files are a new press:
+     * intake keys the press by the key and the files); a re-drawn sheet, a refusal's included, is a new
      * press. {@code grouping} is the family's answer to s08's question, kept when a refusal draws the sheet again.
      */
     String sheetBody(Lang lang, UploadOptions o, Optional<String> asked, String back, String alert, Grouping grouping) {
@@ -318,7 +319,7 @@ public class UploadUiHandler implements WebPages {
         return Optional.ofNullable(field(parts, "upload_key")).filter(k -> UPLOAD_KEY.matcher(k).matches()).orElse(null);
     }
 
-    /** What the sheet writes (a UUID) and a little room; intake appends ":i" per file, within V21's 80-character CHECK. */
+    /** What the sheet writes (a UUID) and a little room; intake appends the files' digest and ":i", within V21's 80-character CHECK. */
     private static final java.util.regex.Pattern UPLOAD_KEY = java.util.regex.Pattern.compile("[A-Za-z0-9-]{8,64}");
 
     private static String field(MultiValueMap<String, Part> parts, String name) {

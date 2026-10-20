@@ -2,6 +2,7 @@ package com.elioo.baymax.web.application.service;
 
 import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.extraction.application.port.in.DocumentIntakeUseCase;
+import com.elioo.baymax.extraction.domain.CreatedDocument;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.Upload;
 import com.elioo.baymax.family.application.port.in.FreeTierUseCase;
@@ -115,7 +116,7 @@ class UploadServiceTest {
         List<Upload> pages = List.of(new Upload("a.jpg", new byte[]{1}));
         Document received = Document.received(ma.id(), FAMILY, 1, NOW).withId(UUID.randomUUID());
         when(records.visiblePatient(FAMILY, ma.id())).thenReturn(Mono.just(new PatientAccess(ma, true)));
-        when(intake.accept(ma.id(), pages, null)).thenReturn(Mono.just(received));
+        when(intake.accept(ma.id(), pages, null)).thenReturn(Mono.just(new CreatedDocument(received, true)));
         StepVerifier.create(service.upload(FAMILY, ma.id(), pages)).expectNext(received).verifyComplete();
         verify(intake).accept(ma.id(), pages, null);   // no key: the JSON API is never a replay
         verify(audit).record(argThat(e -> e.kind() == AuditEvent.Kind.DOCUMENT_UPLOAD && received.id().equals(e.documentId())));
@@ -131,9 +132,9 @@ class UploadServiceTest {
         Document one = Document.received(ma.id(), FAMILY, 1, NOW).withId(UUID.randomUUID());
         Document two = Document.received(ma.id(), FAMILY, 1, NOW).withId(UUID.randomUUID());
         when(records.visiblePatient(FAMILY, ma.id())).thenReturn(Mono.just(new PatientAccess(ma, true)));
-        when(intake.acceptEach(ma.id(), pages, "k-sep00010")).thenReturn(Flux.just(one, two));
+        when(intake.acceptEach(ma.id(), pages, "k-sep00010")).thenReturn(Flux.just(new CreatedDocument(one, true), new CreatedDocument(two, true)));
         // the wrong path answers too, so taking it fails on what comes back rather than on a mock's null
-        when(intake.accept(any(), any(), any())).thenReturn(Mono.just(Document.received(ma.id(), FAMILY, 2, NOW).withId(UUID.randomUUID())));
+        when(intake.accept(any(), any(), any())).thenReturn(Mono.just(new CreatedDocument(Document.received(ma.id(), FAMILY, 2, NOW).withId(UUID.randomUUID()), true)));
         StepVerifier.create(service.upload(FAMILY, ma.id(), pages, Grouping.SEPARATE, "k-sep00010"))
                 .expectNext(List.of(one, two)).verifyComplete();
         verify(intake, never()).accept(any(), any(), any());
@@ -148,13 +149,42 @@ class UploadServiceTest {
         List<Upload> pages = List.of(new Upload("a.jpg", new byte[]{1}), new Upload("b.jpg", new byte[]{2}));
         Document both = Document.received(ma.id(), FAMILY, 2, NOW).withId(UUID.randomUUID());
         when(records.visiblePatient(FAMILY, ma.id())).thenReturn(Mono.just(new PatientAccess(ma, true)));
-        when(intake.accept(eq(ma.id()), eq(pages), isNull())).thenReturn(Mono.just(Document.received(ma.id(), FAMILY, 2, NOW).withId(UUID.randomUUID())));
-        when(intake.acceptEach(any(), any(), any())).thenReturn(Flux.just(both, both));
-        when(intake.accept(ma.id(), pages, "k-one00010")).thenReturn(Mono.just(both));
+        when(intake.accept(eq(ma.id()), eq(pages), isNull())).thenReturn(Mono.just(new CreatedDocument(Document.received(ma.id(), FAMILY, 2, NOW).withId(UUID.randomUUID()), true)));
+        when(intake.acceptEach(any(), any(), any())).thenReturn(Flux.just(new CreatedDocument(both, true), new CreatedDocument(both, true)));
+        when(intake.accept(ma.id(), pages, "k-one00010")).thenReturn(Mono.just(new CreatedDocument(both, true)));
         StepVerifier.create(service.upload(FAMILY, ma.id(), pages, Grouping.ONE, "k-one00010"))
                 .expectNext(List.of(both)).verifyComplete();
         verify(intake, never()).acceptEach(any(), any(), any());
         verify(audit, times(1)).record(any());
+    }
+
+    /**
+     * The audit says an upload happened only when one did: a replay of the same press (a double tap, a resend) made
+     * nothing, so it records nothing — the family still lands on the document.
+     */
+    @Test
+    void aReplayOfTheSamePressIsNotRecordedAsAnUpload() {
+        PatientProfile ma = summary("আম্মা", true).patient();
+        List<Upload> pages = List.of(new Upload("a.jpg", new byte[]{1}));
+        Document earlier = Document.received(ma.id(), FAMILY, 1, NOW).withId(UUID.randomUUID());
+        when(records.visiblePatient(FAMILY, ma.id())).thenReturn(Mono.just(new PatientAccess(ma, true)));
+        when(intake.accept(ma.id(), pages, "k-replay01")).thenReturn(Mono.just(new CreatedDocument(earlier, false)));
+        StepVerifier.create(service.upload(FAMILY, ma.id(), pages, Grouping.ONE, "k-replay01")).expectNext(List.of(earlier)).verifyComplete();
+        verify(audit, never()).record(any());
+    }
+
+    /** Both directions in one press: of separate papers, only the ones this press made are recorded, each once. */
+    @Test
+    void separatePagesRecordOnlyThePapersThisPressMade() {
+        PatientProfile ma = summary("আম্মা", true).patient();
+        List<Upload> pages = List.of(new Upload("a.jpg", new byte[]{1}), new Upload("b.jpg", new byte[]{2}));
+        Document landed = Document.received(ma.id(), FAMILY, 1, NOW).withId(UUID.randomUUID());
+        Document made = Document.received(ma.id(), FAMILY, 1, NOW).withId(UUID.randomUUID());
+        when(records.visiblePatient(FAMILY, ma.id())).thenReturn(Mono.just(new PatientAccess(ma, true)));
+        when(intake.acceptEach(ma.id(), pages, "k-replay02")).thenReturn(Flux.just(new CreatedDocument(landed, false), new CreatedDocument(made, true)));
+        StepVerifier.create(service.upload(FAMILY, ma.id(), pages, Grouping.SEPARATE, "k-replay02")).expectNext(List.of(landed, made)).verifyComplete();
+        verify(audit, times(1)).record(argThat(e -> e.kind() == AuditEvent.Kind.DOCUMENT_UPLOAD && made.id().equals(e.documentId())));
+        verify(audit, never()).record(argThat(e -> landed.id().equals(e.documentId())));
     }
 
     @Test

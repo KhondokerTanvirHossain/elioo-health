@@ -706,7 +706,7 @@ class WebOnlyJourneyAcceptanceTest {
 
     /**
      * The sheet for this patient, then the multipart post with the sheet's own key; returns the new document's path once
-     * its page answers. The same form is then sent again, as a double tap or "Confirm form resubmission" sends it (D3):
+     * its page answers. The same form is then sent again, as a double tap sends it, or Back to the sheet with the same file (D3):
      * it lands on the same document, and the database holds no second one.
      */
     private String upload(WebTestClient web, String session, PatientProfile ma) throws Exception {

@@ -1,6 +1,13 @@
 package com.elioo.baymax.extraction.adapter.out.persistence;
 
+import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.config.BaymaxSchema;
+import com.elioo.baymax.extraction.application.service.DocumentExtractionService;
+import com.elioo.baymax.extraction.application.service.DocumentIntakeService;
+import com.elioo.baymax.extraction.application.service.DocumentProcessingChain;
+import com.elioo.baymax.extraction.application.service.PageRenderer;
+import com.elioo.baymax.extraction.domain.Upload;
+import com.elioo.baymax.family.application.port.in.FreeTierUseCase;
 import com.elioo.baymax.extraction.application.port.out.DocumentRecordPort;
 import com.elioo.baymax.extraction.domain.CreatedDocument;
 import com.elioo.baymax.extraction.domain.Document;
@@ -8,6 +15,10 @@ import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.nudge.adapter.out.persistence.PostgresNudgeAdapterTest;
+import com.elioo.baymax.nudge.application.port.in.NudgeUseCase;
+import com.elioo.baymax.outbound.application.port.in.DocumentUrgencyUseCase;
+import com.elioo.baymax.outbound.application.port.in.ExplainDocumentUseCase;
+import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ReactiveWebApplicationContextRunner;
 import org.springframework.context.ApplicationContext;
@@ -16,22 +27,37 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
+
+import javax.imageio.ImageIO;
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * D3's retry rule on real Postgres (V21). A mock ledger cannot fail the way the database does (CLAUDE.md, DR-22): a
  * second insert with the same key comes back as "already there", the database refuses a duplicate from any writer, and
- * two presses racing on separate connections make one row.
+ * a press that waits on another's uncommitted row gets that row back rather than a second one.
  */
 @Testcontainers
 class DocumentUploadKeyTest {
@@ -118,19 +144,116 @@ class DocumentUploadKeyTest {
         });
     }
 
-    /** Two presses racing on separate connections: exactly one is fresh, both answer the same id, one row exists. */
+    /**
+     * The race, made deterministic: the winner's row is inserted on its own connection and held uncommitted, the loser's
+     * {@code createOnce} is started and seen waiting on that row's lock, then the winner commits. The loser must come
+     * back with the winner's row and {@code fresh = false}, and one row exists. A read-then-insert {@code createOnce}
+     * fails here every time (its read cannot see the uncommitted row, so its insert hits {@code document_upload_key_uq});
+     * two presses fired together only overlap when the scheduler happens to let them.
+     */
     @Test
-    void twoConcurrentPressesWithOneKeyMakeOneDocument() {
+    void theLoserWaitsOnTheWinnersUncommittedRowAndGetsItBack() {
         runner().run(context -> {
-            PatientProfile p = patient(context, "+8801700000724");
+            PatientProfile p = patient(context, "+8801700000729");
             DocumentRecordPort documents = context.getBean(DocumentRecordPort.class);
-            Mono<CreatedDocument> press = Mono.defer(() -> documents.createOnce(Document.received(p.id(), p.familyId(), 1, T), "k-race-0001"))
-                    .subscribeOn(Schedulers.boundedElastic());
-            var both = Mono.zip(press, press).block();
-            assertThat(List.of(both.getT1().fresh(), both.getT2().fresh())).containsExactlyInAnyOrder(true, false);
-            assertThat(both.getT1().document().id()).isEqualTo(both.getT2().document().id());
-            assertThat(scalar("SELECT count(*) FROM " + BaymaxSchema.NAME + ".document WHERE upload_key = 'k-race-0001'")).isEqualTo("1");
+            String url = POSTGRES.getJdbcUrl() + "&sslmode=disable";
+            try (Connection winner = DriverManager.getConnection(url, POSTGRES.getUsername(), POSTGRES.getPassword());
+                 Connection watch = DriverManager.getConnection(url, POSTGRES.getUsername(), POSTGRES.getPassword())) {
+                winner.setAutoCommit(false);
+                UUID winnerId;
+                try (PreparedStatement insert = winner.prepareStatement("INSERT INTO " + BaymaxSchema.NAME
+                        + ".document (patient_id, family_id, upload_key) VALUES (?, ?, 'k-held-0001') RETURNING id")) {
+                    insert.setObject(1, p.id());
+                    insert.setObject(2, p.familyId());
+                    try (ResultSet rs = insert.executeQuery()) {
+                        rs.next();
+                        winnerId = rs.getObject(1, UUID.class);
+                    }
+                }
+                CompletableFuture<CreatedDocument> loser =
+                        documents.createOnce(Document.received(p.id(), p.familyId(), 1, T), "k-held-0001").toFuture();
+                long deadline = System.currentTimeMillis() + 10_000;
+                while (!loser.isDone() && !waitingOnALock(watch)) {
+                    assertThat(System.currentTimeMillis()).as("the loser waits on the winner's row").isLessThan(deadline);
+                    Thread.sleep(20);
+                }
+                winner.commit();
+                CreatedDocument got = loser.get(10, TimeUnit.SECONDS);
+                assertThat(got.fresh()).as("the loser made nothing").isFalse();
+                assertThat(got.document().id()).as("the loser gets the winner's row").isEqualTo(winnerId);
+                assertThat(scalar("SELECT count(*) FROM " + BaymaxSchema.NAME + ".document WHERE upload_key = 'k-held-0001'")).isEqualTo("1");
+            }
         });
+    }
+
+    /**
+     * The restored sheet, end to end on Postgres through the real intake: Back brings the sheet back with its key. The
+     * same paper sent again is the same document; another paper chosen on it is a new one, never the old one handed
+     * back. Rows are counted on the table.
+     */
+    @Test
+    void onTheRealDatabaseTheSamePaperUnderAKeyIsOneDocumentAndAnotherPaperIsItsOwn() {
+        runner().run(context -> {
+            PatientProfile p = patient(context, "+8801700000726");
+            DocumentIntakeService intake = intakeOn(context);
+            Upload red = page(0xFF0000);
+            Upload blue = page(0x0000FF);
+
+            CreatedDocument first = intake.accept(p.id(), List.of(red), "k-restored-01").block();
+            CreatedDocument resent = intake.accept(p.id(), List.of(red), "k-restored-01").block();
+            CreatedDocument another = intake.accept(p.id(), List.of(blue), "k-restored-01").block();
+
+            assertThat(first.fresh()).isTrue();
+            assertThat(resent.fresh()).as("the same paper again made nothing").isFalse();
+            assertThat(resent.document().id()).isEqualTo(first.document().id());
+            assertThat(another.fresh()).as("another paper is read").isTrue();
+            assertThat(another.document().id()).as("another paper is its own document").isNotEqualTo(first.document().id());
+            assertThat(scalar("SELECT count(*) FROM " + BaymaxSchema.NAME + ".document WHERE patient_id = '" + p.id() + "'")).isEqualTo("2");
+            assertThat(scalar("SELECT count(*) FROM " + BaymaxSchema.NAME + ".document WHERE patient_id = '" + p.id()
+                    + "' AND upload_key LIKE 'k-restored-01:%'")).as("both rows carry the press's key").isEqualTo("2");
+        });
+    }
+
+    /** The real intake on this database; storage, the allowance and the models answer nothing, as intake tests have them. */
+    private static DocumentIntakeService intakeOn(ApplicationContext context) {
+        DocumentRecordPort documents = context.getBean(DocumentRecordPort.class);
+        FreeTierUseCase freeTier = mock(FreeTierUseCase.class);
+        when(freeTier.checkCanUploadDocument(any(UUID.class))).thenReturn(Mono.empty());
+        when(freeTier.checkCanUploadDocuments(any(UUID.class), anyInt())).thenReturn(Mono.empty());
+        DocumentStorageUseCase storage = mock(DocumentStorageUseCase.class);
+        when(storage.storePage(any(), any(), any(), anyInt(), any())).thenReturn(Mono.empty());
+        DocumentExtractionService extraction = mock(DocumentExtractionService.class);
+        when(extraction.process(any(), any())).thenReturn(Mono.empty());
+        ExplainDocumentUseCase explainer = mock(ExplainDocumentUseCase.class);
+        when(explainer.explain(any())).thenReturn(Mono.empty());
+        NudgeUseCase nudges = mock(NudgeUseCase.class);
+        when(nudges.onDocumentDone(any())).thenReturn(Mono.empty());
+        DocumentUrgencyUseCase urgency = mock(DocumentUrgencyUseCase.class);
+        when(urgency.assessAndStore(any())).thenReturn(Mono.empty());
+        Clock clock = Clock.fixed(T, ZoneOffset.UTC);
+        return new DocumentIntakeService(context.getBean(HealthRecordPort.class), documents, freeTier, storage, new PageRenderer(),
+                new BaymaxProperties(), clock, new DocumentProcessingChain(extraction, explainer, nudges, documents, clock, urgency));
+    }
+
+    /** A photo of a page painted one colour: another colour is another paper. */
+    private static Upload page(int rgb) throws Exception {
+        BufferedImage image = new BufferedImage(200, 100, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = image.createGraphics();
+        g.setColor(new Color(rgb));
+        g.fillRect(0, 0, 200, 100);
+        g.dispose();
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ImageIO.write(image, "jpg", out);
+        return new Upload("page.jpg", out.toByteArray());
+    }
+
+    /** True while some statement on the document table waits on a lock: the loser's insert, behind the winner's row. */
+    private static boolean waitingOnALock(Connection watch) throws Exception {
+        try (Statement st = watch.createStatement(); ResultSet rs = st.executeQuery("SELECT count(*) FROM pg_stat_activity "
+                + "WHERE wait_event_type = 'Lock' AND query ILIKE 'INSERT INTO%document%'")) {
+            rs.next();
+            return rs.getInt(1) > 0;
+        }
     }
 
     private static String scalar(String query) throws Exception {
