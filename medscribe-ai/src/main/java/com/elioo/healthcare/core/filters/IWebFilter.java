@@ -142,8 +142,26 @@ public class IWebFilter implements WebFilter {
         return safe;
     }
 
+    /**
+     * Medioo's browser JSON namespace ({@code /app/api/**}, Baymax's {@code AppApiGuard}) writes its own access line —
+     * method, matched route pattern, status, duration — and nothing else. This filter writes no request or response
+     * block for it: the URI, the decoded query parameters and the headers (a Referer can carry another page's query)
+     * would put whatever a client sent, a patient's name or a family's number, into the INFO log, which only
+     * credential names are redacted from. The MDC {@code Uri} for it is the namespace alone, for the same reason.
+     * Checked on the raw and the decoded path, since the router matches {@code /app/%61pi/...} as {@code /app/api/...}.
+     */
+    static boolean isAppApi(ServerHttpRequest request) {
+        return isAppApi(request.getPath().pathWithinApplication().value()) || isAppApi(request.getURI().getPath());
+    }
+
+    private static boolean isAppApi(String path) {
+        return path != null && (path.equals(APP_API) || path.startsWith(APP_API + "/"));
+    }
+
+    private static final String APP_API = "/app/api";
+
     private void logRequest(ServerHttpRequest request) {
-        if (request.getURI().getPath().contains("actuator") || request.getURI().getPath().contains("swagger")) {
+        if (request.getURI().getPath().contains("actuator") || request.getURI().getPath().contains("swagger") || isAppApi(request)) {
             return;
         }
         log.info("""
@@ -168,7 +186,8 @@ public class IWebFilter implements WebFilter {
 
     private void logResponse(ServerWebExchange serverWebExchange) {
         if (serverWebExchange.getRequest().getURI().getPath().contains("actuator") || serverWebExchange.getRequest().getURI().getPath().contains("swagger")
-        || serverWebExchange.getRequest().getURI().getPath().contains("medical-report/query/status/")) {
+        || serverWebExchange.getRequest().getURI().getPath().contains("medical-report/query/status/")
+        || isAppApi(serverWebExchange.getRequest())) {
             return;
         }
         serverWebExchange.getResponse().beforeCommit(() -> {
@@ -236,7 +255,7 @@ public class IWebFilter implements WebFilter {
 
     private void setMdcAttributeForLogBack(ServerWebExchange serverWebExchange) {
         MDC.put("Method", Objects.requireNonNull(serverWebExchange.getRequest().getMethod()).name());
-        MDC.put("Uri", serverWebExchange.getRequest().getPath().value());
+        MDC.put("Uri", isAppApi(serverWebExchange.getRequest()) ? APP_API : serverWebExchange.getRequest().getPath().value());
         final String traceId;
         final String spanId;
         if (tracer.currentSpan() != null) {

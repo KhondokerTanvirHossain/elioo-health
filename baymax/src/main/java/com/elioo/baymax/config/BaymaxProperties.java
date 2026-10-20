@@ -31,6 +31,7 @@ public class BaymaxProperties {
     private Upload upload = new Upload();
     private Extract extract = new Extract();
     private Auth auth = new Auth();
+    private Web web = new Web();
     private Wa wa = new Wa();
     private Outbound outbound = new Outbound();
     private Nudge nudge = new Nudge();
@@ -136,6 +137,68 @@ public class BaymaxProperties {
         private String cookieName = "baymax_session";
         /** Secure attribute on the cookie. Browsers exempt http://localhost, so this stays true in dev too. */
         private boolean cookieSecure = true;
+    }
+
+    /** The browser JSON namespace {@code /app/api/**} that the Next.js frontend calls (rebuild plan, B1). */
+    @Data
+    public static class Web {
+        /**
+         * The one origin a mutating {@code /app/api} request may come from whenever it sends an {@code Origin} header
+         * (scheme + host [+ port], no trailing slash). Blank refuses every request that sends one, which is fail-closed
+         * and is reported with a WARN at startup: a present-but-empty {@code BAYMAX_WEB_PUBLIC_ORIGIN=} line resolves to
+         * "" rather than the default, and every browser mutation then fails. A laptop sets
+         * {@code BAYMAX_WEB_PUBLIC_ORIGIN=http://localhost:8086}. There is no CORS configuration, ever.
+         */
+        private String publicOrigin = "https://medioo.eliooo.org";
+        /**
+         * Families that see the Next.js twins of routes not yet flipped ({@code me.preview}), from
+         * {@code BAYMAX_WEB_PREVIEW_FAMILIES} (comma-separated family ids). Decided here only, never by a cookie.
+         *
+         * <p>Bound as text, never as {@code List<UUID>}: one bad entry in a {@code List<UUID>} refuses startup, and
+         * {@code deploy.sh} has already removed the running container by then, so a typo would take MedScribe and
+         * Medioo down together. Read it through {@link #previewFamilies()}.
+         */
+        private List<String> previewFamilyIds = new ArrayList<>();
+
+        /**
+         * The allowlisted family ids. Each entry is stripped of whitespace and of the quotes {@code docker --env-file}
+         * keeps; one that is still not a UUID is skipped (that family is not previewed: fail closed), counted by
+         * {@link #rejectedPreviewEntries()} for the startup WARN, and never refuses boot.
+         */
+        public java.util.Set<java.util.UUID> previewFamilies() {
+            java.util.Set<java.util.UUID> ids = new java.util.LinkedHashSet<>();
+            for (String entry : previewFamilyIds) {
+                parsePreviewEntry(entry).ifPresent(ids::add);
+            }
+            return ids;
+        }
+
+        /** Non-blank entries of {@link #previewFamilyIds} that are not a family id once quotes and spaces are gone. */
+        public int rejectedPreviewEntries() {
+            int rejected = 0;
+            for (String entry : previewFamilyIds) {
+                if (!bare(entry).isEmpty() && parsePreviewEntry(entry).isEmpty()) {
+                    rejected++;
+                }
+            }
+            return rejected;
+        }
+
+        private static java.util.Optional<java.util.UUID> parsePreviewEntry(String entry) {
+            String id = bare(entry);
+            if (id.length() != 36) {
+                return java.util.Optional.empty();   // UUID.fromString accepts short groups ("1-2-3-4-5"); a family id is never short
+            }
+            try {
+                return java.util.Optional.of(java.util.UUID.fromString(id));
+            } catch (IllegalArgumentException notAnId) {
+                return java.util.Optional.empty();
+            }
+        }
+
+        private static String bare(String entry) {
+            return entry == null ? "" : entry.strip().replaceAll("^[\"']+|[\"']+$", "").strip();
+        }
     }
 
     /**
