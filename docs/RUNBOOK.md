@@ -17,9 +17,71 @@ and this file should be fixed.
 | Object storage | AWS S3 `elioo-baymax-prod` (ap-south-1, private, SSE-S3) via the EC2 instance role (DR-5) |
 | Deploy | push to `main` → GitHub Actions → GHCR → SSH → `deploy.sh`. Manually: `IMAGE_TAG=<git sha> bash ~/deploy.sh` |
 
-`deploy.sh` pulls the tag, removes the old container, starts the new one with `--env-file` and the GCP
-credentials mounted read-only, then polls `/actuator/health` for 90 seconds. It exits non-zero and prints
-the last 50 log lines if the container never becomes healthy, so a failed deploy is loud.
+`deploy.sh` first prunes old local tags of its own image (see [Disk](#disk) below), then refuses to go on if
+`/` has less than the free-space floor, then pulls the tag, removes the old container, starts the new one with
+`--env-file` and the GCP credentials mounted read-only, then polls `/actuator/health` for 90 seconds. It exits
+non-zero and prints the last 50 log lines if the container never becomes healthy, so a failed deploy is loud.
+After the deploy job, CI's smoke test checks both `http://<EC2 host>:8086/actuator/health` and
+`https://medioo.eliooo.org/actuator/health`; both must pass, because a healthy container behind a broken Caddy
+or certificate is still an outage. It prints only the HTTP status, never the health body, because the Actions
+log is public (DR-38) and the body carries disk, path and database details.
+
+**Known exposure until plan W1c:** the `:8086` check works only because host port 8086 is open to the
+internet, which serves the whole app (login and admin routes included) over plain HTTP, bypassing Caddy and
+TLS. The PR that binds Java to `127.0.0.1` (W1c) must remove the `:8086` check from the smoke step in the same
+change, or every deploy after it turns `main` red.
+
+`DEPLOY_FUNCTIONS_ONLY=1` is for `scripts/test_deploy_prune.sh`, which sources `deploy.sh` for its functions.
+Executing `deploy.sh` with it set fails on purpose rather than exiting 0 having deployed nothing.
+
+## Disk
+
+The root volume is 20 GB and shared with n8n and bddrug. Each `medscribe-ai` image is about 460 MB (456 MB on
+2026-10-21; tags share layers where they can), and one lands on every merge to `main`. Check it with:
+
+```bash
+df -h /
+docker images ghcr.io/khondokertanvirhossain/elioo-health/medscribe-ai --format '{{.Tag}} {{.CreatedAt}} {{.ID}}'
+```
+
+**The pruning rule** (`prune_repo` in `deploy.sh`, tested by `scripts/test_deploy_prune.sh`): before every
+pull, remove local tags of exactly `ghcr.io/khondokertanvirhossain/elioo-health/medscribe-ai`, keep the newest 3
+by creation time (date and time of day; the tags are git shas, so name order means nothing), never remove the
+tag being deployed, and never remove the image of a running container, whatever its age. Removal is by
+`repo:tag`, never by image id, and never touches another repository: n8n's and bddrug's images belong to
+their own deploys. A removal the daemon refuses is logged and skipped, so pruning cannot fail a deploy. Older
+tags stay in GHCR, so a rollback to one of them is still `IMAGE_TAG=<sha> bash ~/deploy.sh`; if that sha is
+still on the box it is kept and not pulled again from scratch, so a GHCR or network problem during an incident
+cannot take the known-good image away.
+
+**Steady state to plan disk against:** the prune runs before the pull, so after a deploy the box holds **up to
+4** `medscribe-ai` tags (the 3 kept plus the new one), about 1.8 GB at 456 MB each, plus one more if a running
+image older than those is protected, or if a rollback target is.
+
+**The free-space floor:** after the prune and before the pull, `deploy.sh` reads the free KB on `/`
+(`df -Pk /`) and **refuses to pull below 1.5 GB (1572864 KB, about 3x the image)**, or when the figure cannot
+be read. It logs `ERROR: only N KB free on / ... refusing to pull` and exits 1: the deploy job goes red and the
+old container keeps serving. Why: the disk is shared, and a pull that takes `/` to zero does not hurt our
+container (the pull comes before `docker rm -f`) but can corrupt or stop bddrug's Postgres, n8n and Caddy's
+ACME/certificate storage. Pruning only keeps *our* repository in check; whatever else fills the disk, the floor
+stops this deploy from finishing the job. To clear it, free space (start with `docker images` and the other
+repositories' owners), then rerun the deploy. `MIN_FREE_KB=<n> IMAGE_TAG=<sha> bash ~/deploy.sh` overrides the
+floor for one manual run; use it only knowing what else lives on `/`.
+
+**Dangling images are no longer pruned by anything.** The old global `docker image prune -f` after each deploy
+removed dangling (`<none>`) images of every repository on the box, n8n's and bddrug's included; it is gone, and
+`prune_repo` skips `<none>`, so dangling `medscribe-ai` layers now accumulate too. Check during any disk look
+with `docker images -f dangling=true` (and `docker system df`). Cleanup is a manual step for whoever is on the
+box doing the disk check, today Tanvir: `docker image prune -f` removes only images no tag and no container
+refers to, but it does so for every repository, so say so in the build report when you run it.
+
+Why it runs before the pull and not after: the old `docker image prune -f` after a healthy start removed only
+*dangling* images, and a tagged image is never dangling, so it never removed one of ours. Tags piled up until
+**2026-10-21, when the box had 233 MB free** with 40 `medscribe-ai` tags on it; the next pull would have run out
+of disk part-way through a deploy. That day, on the PO's instruction, 37 old tags were removed by hand, keeping
+the running sha and the newest 2: free space went from **233 MB to 5.2 GB**. Nothing outside `medscribe-ai` was
+touched. Most of the image tags left on the box are bddrug's (three repositories, 18 tags each, on
+2026-10-21); those are bddrug's to prune, not this deploy's.
 
 ## Editing the server environment
 

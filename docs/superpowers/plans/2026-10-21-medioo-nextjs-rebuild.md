@@ -406,7 +406,7 @@ Each line is one PR. The **Waves** order work; within a wave, lanes run in paral
 - [ ] **Step 2:** Run `bash scripts/test_deploy_sh.sh`. Expected: FAIL (`deploy_web: command not found`).
 - [ ] **Step 3:** Implement `deploy_web` and call it after the Java health wait succeeds.
 - [ ] **Step 4:** Run `bash scripts/test_deploy_sh.sh && bash scripts/test_deploy_prune.sh && bash scripts/test_deploy_is_tip.sh`. Expected: all PASS.
-- [ ] **Step 5: CI.** Add a `docker/build-push-action` step (context `medioo-web`, tags `:<sha>` and `:latest`, gha cache scope `web`). Add `scripts/test_deploy_sh.sh` to the "Deploy tip check tests" step.
+- [ ] **Step 5: CI.** Add a `docker/build-push-action` step (context `medioo-web`, tags `:<sha>` and `:latest`, gha cache scope `web`). Add `scripts/test_deploy_sh.sh` to the "Deploy script tests (tip check, prune)" step (named "Deploy tip check tests" before X0).
 - [ ] **Step 6: Commit.**
   ```bash
   git add deploy.sh scripts/test_deploy_sh.sh .github/workflows/ci-cd.yml docs/RUNBOOK.md
