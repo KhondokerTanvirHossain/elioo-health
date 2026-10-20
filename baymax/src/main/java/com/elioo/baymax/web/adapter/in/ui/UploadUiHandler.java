@@ -106,7 +106,9 @@ public class UploadUiHandler implements WebPages {
                     .append("\" required").append(checked ? " checked" : "").append(">")
                     .append(copy.t(lang, "add.patient", p.patient().name(), p.patient().age())).append("</label>");
         }
-        String hint = copy.t(lang, o.preselected().isPresent() ? "add.onlyone" : "add.choose");
+        String hint = o.preselected().map(p -> p.patient().name())
+                .map(only -> copy.t(lang, "add.onlyone", copy.poss(lang, only), copy.obj(lang, only)))
+                .orElseGet(() -> copy.t(lang, "add.choose"));
         b.append("</div>");
         if (!hint.equals(alert)) {   // refused for no patient: the alert already says it, and s07 says it once
             b.append("<p class=\"hint\">").append(hint).append("</p>");

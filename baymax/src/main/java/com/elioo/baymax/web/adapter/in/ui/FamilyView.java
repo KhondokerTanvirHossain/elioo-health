@@ -51,7 +51,7 @@ final class FamilyView {
         PatientProfile profile = p.patient();
         String name = profile.name();
         PatientProfile.Sex sex = profile.sex() == null ? PatientProfile.Sex.UNKNOWN : profile.sex();
-        b.append("<h2>").append(copy.t(lang, "family.info.title", name)).append("</h2>");
+        b.append("<h2>").append(copy.t(lang, "family.info.title", copy.poss(lang, name))).append("</h2>");
         if (!p.owner()) {
             b.append("<p><span class=\"tag\">").append(copy.t(lang, "patients.shared")).append("</span></p>");
         }
@@ -67,10 +67,10 @@ final class FamilyView {
         }
 
         b.append("<h2>").append(copy.t(lang, "profile.nudges")).append("</h2><div class=\"card\"><p>")
-                .append(copy.t(lang, optedOut ? "profile.nudges.off" : "profile.nudges.on", name)).append("</p>");
+                .append(copy.t(lang, optedOut ? "profile.nudges.off" : "profile.nudges.on", copy.poss(lang, name))).append("</p>");
         if (!optedOut && p.owner()) {
             b.append("<form method=\"post\" action=\"").append(BASE).append("/patients/").append(profile.id()).append("/nudges/opt-out\">")
-                    .append("<button type=\"submit\" class=\"quiet\">").append(copy.t(lang, "profile.nudges.stop", name)).append("</button></form>");
+                    .append("<button type=\"submit\" class=\"quiet\">").append(copy.t(lang, "profile.nudges.stop", copy.poss(lang, name))).append("</button></form>");
         }
         b.append("</div>");
     }

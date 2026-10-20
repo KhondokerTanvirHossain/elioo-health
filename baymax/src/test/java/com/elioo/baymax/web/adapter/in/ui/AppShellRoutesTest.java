@@ -519,8 +519,9 @@ class AppShellRoutesTest {
         Dom owner = Dom.parse(kit.page(Tab.PAPERS.path + "?patient=" + ma.patient().id(), "bn"));
         assertThat(owner.unclosed).isEmpty();
         Dom.Element panel = only(owner, "section", "empty");
+        assertThat(only(owner, "p", "psub").ownText()).as("s16, F8").isEqualTo("আম্মার সব কাগজ, তারিখ ধরে");
         assertThat(subtree(panel).stream().filter(e -> e.tag().equals("h2")).map(Dom.Element::ownText))
-                .containsExactly(kit.copy.t(Lang.BN, "timeline.empty.title", "আম্মা"));
+                .containsExactly("আম্মার কোনো কাগজ এখনো নেই");
         assertThat(text(panel)).contains(kit.copy.t(Lang.BN, "timeline.empty.body")).contains(kit.copy.t(Lang.BN, "timeline.empty.foot"));
         List<Dom.Element> camera = addLinks(owner);
         assertThat(camera).as("one way to add a paper on the empty page").hasSize(1);
@@ -534,7 +535,7 @@ class AppShellRoutesTest {
         noPapers(member);
         Dom shared = Dom.parse(kit.page(Tab.PAPERS.path + "?patient=" + member.patient().id(), "bn"));
         assertThat(subtree(only(shared, "section", "empty")).stream().filter(e -> e.tag().equals("h2")).map(Dom.Element::ownText))
-                .containsExactly(kit.copy.t(Lang.BN, "timeline.empty.title", "খালা"));
+                .containsExactly("খালার কোনো কাগজ এখনো নেই");
         assertThat(addLinks(shared).stream().map(Dom.Element::describe)).as("a share member cannot add a paper").isEmpty();
     }
 
@@ -549,7 +550,7 @@ class AppShellRoutesTest {
         Dom dom = Dom.parse(kit.page(Tab.PAPERS.path + "?patient=" + ma.patient().id() + "&type=rx", "bn"));
         assertThat(dom.all.stream().filter(e -> e.classes().contains("empty")).map(Dom.Element::describe)).as("the s16 empty panel").isEmpty();
         String words = dom.all.stream().map(Dom.Element::ownText).collect(java.util.stream.Collectors.joining(" "));
-        assertThat(words).doesNotContain(kit.copy.t(Lang.BN, "timeline.empty.title", "আম্মা"))
+        assertThat(words).doesNotContain("আম্মার কোনো কাগজ এখনো নেই")
                 .contains(kit.copy.t(Lang.BN, "timeline.filter.none"));
         Dom.Element nav = only(dom, "nav", "filters");
         assertThat(subtree(nav).stream().filter(e -> e.tag().equals("a")).map(e -> e.attrs().get("href")))
@@ -570,7 +571,7 @@ class AppShellRoutesTest {
         List<String> lines = dom.all.stream().map(Dom.Element::ownText).toList();
         assertThat(lines).as("\"none of this kind\" under \"সব\"").doesNotContain(kit.copy.t(Lang.BN, "timeline.filter.none"));
         assertThat(lines).as("the line under the filters").contains(kit.copy.t(Lang.BN, "timeline.end"))
-                .doesNotContain(kit.copy.t(Lang.BN, "timeline.empty.title", "আম্মা"));
+                .doesNotContain("আম্মার কোনো কাগজ এখনো নেই");
         only(dom, "nav", "filters");
     }
 
@@ -627,7 +628,7 @@ class AppShellRoutesTest {
         assertThat(subtree(soon).stream().filter(e -> e.tag().equals("a")).map(e -> e.attrs().get("href")))
                 .containsExactly("/app/documents/" + WEEK_DOC);
         assertThat(dom.all.stream().filter(e -> e.tag().equals("h2")).map(Dom.Element::ownText))
-                .contains(kit.copy.t(Lang.BN, "attn.heading", "আম্মা"));
+                .contains("আম্মার জন্য এখন যা দেখার");   // s06, F8
         assertThat(dom.all.indexOf(now)).as("NOW above THIS_WEEK").isLessThan(dom.all.indexOf(soon));
     }
 
@@ -658,7 +659,7 @@ class AppShellRoutesTest {
         Dom dom = Dom.parse(kit.page(Tab.CHAT.path, "bn"));
         assertThat(dom.all.stream().filter(e -> e.tag().equals("p") && e.classes().contains("bubble")).map(Dom.Element::ownText))
                 .as("the greeting, then the intro, each a Medioo bubble").contains(kit.copy.t(Lang.BN, "chat.intro"));
-        assertThat(text(only(dom, "section", "empty"))).contains(kit.copy.t(Lang.BN, "timeline.empty.title", "আম্মা"));
+        assertThat(text(only(dom, "section", "empty"))).contains("আম্মার কোনো কাগজ এখনো নেই");
         assertThat(dom.all.stream().filter(e -> e.tag().equals("a") && e.attrs().getOrDefault("href", "").startsWith(UploadUiHandler.SHEET)))
                 .hasSize(1);
     }

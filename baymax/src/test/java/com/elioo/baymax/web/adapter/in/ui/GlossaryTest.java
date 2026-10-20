@@ -13,8 +13,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Spec §7.4 glossary, over every bundle part. The patient by name, never "রোগী"; কাগজ, never "নথি"; "রিপোর্টে লেখা
  * সীমা", never "স্বাভাবিক সীমা"; the tab is "কাগজপত্র"; never "বন্ধ করুন" (a forbidden phrase,
- * BaymaxProperties.Outbound#forbiddenPhrases). A ratchet: KNOWN lists what main had on 2026-10-19 and may only shrink
- * (D2 empties it).
+ * BaymaxProperties.Outbound#forbiddenPhrases). A ratchet: KNOWN listed what main had on 2026-10-19, only shrank, and D2
+ * emptied it. A name is never glued to a case ending in a bundle: the possessive is built in code (NameGrammar, F8).
  */
 class GlossaryTest {
 
@@ -26,24 +26,11 @@ class GlossaryTest {
     /** messages_bn exemptions, each with its owner: the D35 claim wording is the PO's (Phase 0 PR 2). */
     static final Map<String, String> MESSAGE_EXEMPT = Map.of("explanation.routine", "স্বাভাবিক সীমা");
 
-    /** "<lang-part>:<key> <word>" for every violation on main when this test was written. Paste the first red here. */
-    static final Set<String> KNOWN = Set.of(
-            "messages:line.value_outside_range স্বাভাবিক সীমা",
-            "ui:app.home.title নথি",
-            "ui:doc.delete নথি",
-            "ui:doc.delete.q নথি",
-            "ui:doc.delete.warn নথি",
-            "ui:doc.deleted নথি",
-            "ui:landing.c.ref স্বাভাবিক সীমা",
-            "ui:optout.done.patient রোগী",
-            "ui:optout.family বন্ধ করুন",
-            "ui:optout.patient বন্ধ করুন",
-            "ui:optout.patient রোগী",
-            "ui:optout.title বন্ধ করুন",
-            "ui:patients রোগী",
-            "ui:patients.docs নথি",
-            "ui:patients.none রোগী",
-            "ui:type.default নথি");
+    /**
+     * "<lang-part>:<key> <word>" for every violation main still has. Emptied by D2 (2026-10-20): a new violation is red
+     * at once, and nothing may be added here again — fix the copy instead.
+     */
+    static final Set<String> KNOWN = Set.of();
 
     @Test
     void noBundleStringUsesARetiredTermExceptTheKnownOnesAndTheKnownOnesStillDo() throws Exception {

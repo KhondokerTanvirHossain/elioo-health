@@ -359,7 +359,7 @@ class WebOnlyJourneyAcceptanceTest {
             assertThat(saved).contains(copy.t(Lang.BN, "profile.saved")).contains("value=\"diabetes\" checked");
 
             String optOut = "action=\"/app/patients/" + ma.id() + "/nudges/opt-out\"";
-            assertThat(saved).contains(copy.t(Lang.BN, "profile.nudges.on", "Rokeya")).contains(optOut);
+            assertThat(saved).contains("Rokeya-র রিমাইন্ডার চালু আছে").contains(optOut);
             assertThat(scalar("select count(*) from baymax.patient_profile where id = '" + ma.id() + "' and nudges_opted_out_at is null"))
                     .as("reminders on before the family stops them").isEqualTo("1");
             web.post().uri("/app/patients/" + ma.id() + "/nudges/opt-out").cookie("baymax_session", session).exchange()
@@ -367,7 +367,7 @@ class WebOnlyJourneyAcceptanceTest {
             assertThat(scalar("select count(*) from baymax.patient_profile where id = '" + ma.id() + "' and nudges_opted_out_at is not null"))
                     .as("the stop is stored on the patient").isEqualTo("1");
             assertThat(get(web, session, "/app/family?patient=" + ma.id()))
-                    .contains(copy.t(Lang.BN, "profile.nudges.off", "Rokeya")).doesNotContain(optOut);
+                    .contains("Rokeya-র রিমাইন্ডার বন্ধ আছে।").doesNotContain(optOut);
 
             // 7. delete the paper: the confirmation, then gone — the rows, the ledger and the objects in the bucket
             List<String> keys = column("select storage_key from baymax.stored_object where document_id = '" + documentId

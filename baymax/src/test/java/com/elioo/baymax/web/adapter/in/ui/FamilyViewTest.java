@@ -72,7 +72,7 @@ class FamilyViewTest {
         assertThat(html).contains("action=\"/app/patients/" + ma.patient().id() + "/profile\"")
                 .contains("<button type=\"submit\">সেভ করুন</button>")
                 .contains("action=\"/app/patients/" + ma.patient().id() + "/nudges/opt-out\"")
-                .contains("রিমাইন্ডার চাই না — আম্মা").contains("আম্মা: রিমাইন্ডার চালু আছে");
+                .contains("আম্মার রিমাইন্ডার চাই না").contains("আম্মার রিমাইন্ডার চালু আছে");
         assertThat(html).contains("৬৪ বছর · ১২টি কাগজ");   // Bangla digits for UI counts (rule 13)
         // the owner's inputs are live: the other direction of the share member's disabled form
         assertThat(flagInputs(html, ma.patient().id())).allSatisfy(i -> assertThat(i).doesNotContain("disabled"));
@@ -93,8 +93,25 @@ class FamilyViewTest {
     void remindersOffSaysSoAndOffersNoSwitch() {
         PatientSummary ma = kit.patient("আম্মা", true, 0);
         String html = family(ma, true);
-        assertThat(html).contains("আম্মা: রিমাইন্ডার বন্ধ আছে।").doesNotContain("রিমাইন্ডার চালু আছে")
+        assertThat(html).contains("আম্মার রিমাইন্ডার বন্ধ আছে।").doesNotContain("রিমাইন্ডার চালু আছে")
                 .doesNotContain("/nudges/opt-out").doesNotContain("রিমাইন্ডার চাই না");
+    }
+
+    /**
+     * F8, the other ending and the other language: a name ending in a consonant takes ের (রহিমের), never "রহিম:" or a
+     * glued "-এর"; the English page writes the apostrophe ("Ma's reminders are on", escaped as {@code &#39;}).
+     */
+    @Test
+    void theNameTakesItsPossessiveOnTheFamilyTabForEitherEndingAndInEnglish() {
+        String bn = family(kit.patient("রহিম", true, 3), false);
+        assertThat(bn).contains("<h2>রহিমের তথ্য</h2>").contains("রহিমের রিমাইন্ডার চালু আছে").contains("রহিমের রিমাইন্ডার চাই না")
+                .doesNotContain("রহিম:").doesNotContain("রহিম-এর").doesNotContain("— রহিম");
+
+        PatientSummary ma = kit.patient("Ma", true, 3);
+        family(ma, false);
+        String en = kit.page("/app/family", "en");
+        assertThat(en).contains("<h2>Ma&#39;s details</h2>").contains("Ma&#39;s reminders are on").contains("Turn off Ma&#39;s reminders")
+                .doesNotContain("Ma:");
     }
 
     /** What the family ticked comes back ticked, and what they wrote comes back written: the next save keeps both. */

@@ -37,7 +37,7 @@ final class ChatView {
         }
         b.append(stack(lang, stack, patientName))
                 .append("<p><a class=\"btn quiet\" href=\"").append(Tab.PAPERS.path).append("?patient=").append(patientId).append("\">")
-                .append(copy.t(lang, "chat.papers", patientName)).append("</a></p>");
+                .append(copy.t(lang, "chat.papers", copy.poss(lang, patientName))).append("</a></p>");
         return b.append(composer(lang, owner, patientId)).toString();
     }
 
@@ -52,7 +52,7 @@ final class ChatView {
         if (items.isEmpty()) {
             return "";
         }
-        StringBuilder b = new StringBuilder("<h2>").append(copy.t(lang, "attn.heading", patientName)).append("</h2><div class=\"attn-stack\">");
+        StringBuilder b = new StringBuilder("<h2>").append(copy.t(lang, "attn.heading", copy.poss(lang, patientName))).append("</h2><div class=\"attn-stack\">");
         items.forEach(item -> b.append(card(lang, item, patientName)));
         return b.append("</div>").toString();
     }
@@ -95,7 +95,7 @@ final class ChatView {
     /** s06 empty: whose papers, why send one, and — for the owner only — the one camera to the sheet for this patient. */
     private String empty(Lang lang, String patientName, UUID patientId, boolean owner) {
         StringBuilder b = new StringBuilder("<section class=\"empty\"><span class=\"disc\" aria-hidden=\"true\">").append(Icons.svg("papers", 32))
-                .append("</span><h2>").append(copy.t(lang, "timeline.empty.title", patientName)).append("</h2><p>")
+                .append("</span><h2>").append(copy.t(lang, "timeline.empty.title", copy.poss(lang, patientName))).append("</h2><p>")
                 .append(copy.t(lang, "timeline.empty.body")).append("</p>");
         if (owner) {
             b.append("<a class=\"btn primary\" href=\"").append(addHref(patientId)).append("\">").append(Icons.svg("camera", 24))

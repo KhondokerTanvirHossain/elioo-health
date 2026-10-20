@@ -57,6 +57,9 @@ class AddReportSheetPageTest {
         assertThat(html).contains("<form id=\"add\" class=\"add\" method=\"post\" enctype=\"multipart/form-data\" action=\"/app/add\"");
         assertThat(html).containsPattern("<input type=\"radio\" name=\"patient\" value=\"" + ma.patient().id() + "\" required checked>");
         assertThat(html).contains("আম্মা · ৬৪");   // the age in Bangla digits (rule 13); the relation joins when the profile has one
+        assertThat(classed(Dom.parse(html), "hint")).singleElement().extracting(Dom.Element::ownText)
+                .as("s07 as drawn, F8: the possessive and the objective of the name")
+                .isEqualTo("শুধু আম্মার ফাইল আছে, তাই আম্মাকেই বেছে রাখা হয়েছে");
         // three ways in, each a real input the browser posts on its own
         assertThat(html).contains("name=\"file\" accept=\"image/*\" capture=\"environment\"")
                 .contains("name=\"file\" accept=\"image/*\" multiple")
@@ -189,7 +192,8 @@ class AddReportSheetPageTest {
         assertThat(classed(Dom.parse(sheet()), "quota")).isEmpty();
         String en = kit.client.get().uri("/app/add").cookie("baymax_session", "tok").cookie("baymax_lang", "en").exchange()
                 .expectStatus().isOk().expectBody(String.class).returnResult().getResponseBody();
-        assertThat(en).startsWith("<!doctype html><html lang=\"en\">").contains("Whose paper?").doesNotContain("কার কাগজ");
+        assertThat(en).startsWith("<!doctype html><html lang=\"en\">").contains("Whose paper?").doesNotContain("কার কাগজ")
+                .contains("Only Ma&#39;s file is here, so Ma is chosen");
     }
 
     @Test

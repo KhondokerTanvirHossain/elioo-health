@@ -122,7 +122,7 @@ class ChatViewTest {
         AttentionItem.Urgent now = urgent(Urgency.NOW);
         AttentionItem.Urgent week = urgent(Urgency.THIS_WEEK);
         String stack = view.stack(Lang.BN, List.of(now, week, new AttentionItem.Reading(UUID.randomUUID(), T)), "আম্মা");
-        assertThat(stack).startsWith("<h2>" + copy.t(Lang.BN, "attn.heading", "আম্মা") + "</h2><div class=\"attn-stack\">");
+        assertThat(stack).startsWith("<h2>" + "আম্মার জন্য এখন যা দেখার" + "</h2><div class=\"attn-stack\">");
         assertThat(stack.indexOf(now.documentId().toString())).isLessThan(stack.indexOf(week.documentId().toString()));
         assertThat(stack.indexOf("attn soon")).isLessThan(stack.indexOf("attn reading"));
     }
@@ -159,18 +159,18 @@ class ChatViewTest {
         assertThat(top.get(1).children()).singleElement().satisfies(a -> {
             assertThat(a.tag()).isEqualTo("a");
             assertThat(a.attrs().get("href")).isEqualTo(Tab.PAPERS.path + "?patient=" + MA);
-            assertThat(a.ownText()).isEqualTo(copy.t(Lang.BN, "chat.papers", "আম্মা"));
+            assertThat(a.ownText()).isEqualTo("আম্মার কাগজপত্র দেখুন");   // F8: the possessive, built in code
         });
         assertThat(html).contains(copy.t(Lang.BN, "chat.soon"));
         // the other direction: with something to attend to, the heading and the card are there
         assertThat(view.page(Lang.BN, "Tanvir", "আম্মা", MA, List.of(urgent(Urgency.NOW)), 3, true))
-                .contains(copy.t(Lang.BN, "attn.heading", "আম্মা")).contains("class=\"attn now\"");
+                .contains("আম্মার জন্য এখন যা দেখার").contains("class=\"attn now\"");
     }
 
     @Test
     void aPatientWithNoPapersGetsTheIntroAndOneAction() {
         String html = view.page(Lang.BN, "Tanvir", "আম্মা", MA, List.of(), 0, true);
-        assertThat(html).contains(copy.t(Lang.BN, "chat.intro")).contains(copy.t(Lang.BN, "timeline.empty.title", "আম্মা"));
+        assertThat(html).contains(copy.t(Lang.BN, "chat.intro")).contains("আম্মার কোনো কাগজ এখনো নেই");
         assertThat(count(html, "class=\"btn primary")).isEqualTo(1);
         assertThat(count(html, "href=\"/app/add?")).as("one way to add the first paper").isEqualTo(1);
         // a share member cannot add a paper: the same page without any way to

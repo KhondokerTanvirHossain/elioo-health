@@ -1,5 +1,6 @@
 package com.elioo.baymax.web.adapter.in.ui;
 
+import com.elioo.baymax.common.text.NameGrammar;
 import com.elioo.baymax.common.time.PatientCalendar;
 import com.elioo.baymax.outbound.application.service.BanglaDate;
 import com.elioo.baymax.outbound.domain.Urgency;
@@ -187,6 +188,27 @@ public class UiCopy {
             out = out.replace("{" + i + "}", String.valueOf(arg));
         }
         return out;
+    }
+
+    /**
+     * The possessive of a name the family entered, as this page writes it (spec §2 F8): "আম্মার", "রহিমের" on a Bangla
+     * page ({@link NameGrammar}), "Ma's" on an English one. Not escaped — pass it to {@link #t}, which escapes every
+     * argument exactly once. No bundle glues a case ending to a name (GlossaryTest's GLUED_CASE holds that).
+     */
+    public String poss(Lang lang, String name) {
+        if (lang == Lang.BN) {
+            return NameGrammar.possessive(name);
+        }
+        String n = name == null ? "" : name.strip();
+        return n.isEmpty() ? "" : n + (n.endsWith("s") ? "'" : "'s");
+    }
+
+    /** The objective of the name (F8): "আম্মাকে" on a Bangla page, the name itself on an English one. Not escaped, as {@link #poss}. */
+    public String obj(Lang lang, String name) {
+        if (lang == Lang.BN) {
+            return NameGrammar.objective(name);
+        }
+        return name == null ? "" : name.strip();
     }
 
     /** The string if the key exists, else null — for labels keyed by a value from a document. */
