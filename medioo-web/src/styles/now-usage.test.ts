@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { TokenFile } from "./build-tokens";
 import json from "./medioo.tokens.json";
-import { NOW_ALLOWED, WEEK_ALLOWED, nowUsageViolations, roleUsageViolations, tokenUsageViolations } from "./now-usage";
+import {
+  NOW_ALLOWED,
+  WEEK_ALLOWED,
+  fillBoundaryViolations,
+  nowUsageViolations,
+  roleUsageViolations,
+  tokenUsageViolations,
+} from "./now-usage";
 
 // The NOW red is painted only by the components that show a stored NOW (plan W2a): the checker below runs over the
 // built CSS in built/now-usage.built.test.ts. These are its own tests, in both directions.
@@ -166,5 +173,72 @@ describe("roleUsageViolations", () => {
     // A surface as a background, a separator as a border and a checked fill as a ring are where they belong.
     expect(roleUsageViolations(".card { background: var(--bg3); border-top: 1px solid var(--sep) }", tokens)).toEqual([]);
     expect(roleUsageViolations(".btn { border-color: var(--tint); outline: 3px solid var(--tint) }", tokens)).toEqual([]);
+    // Q1 (A): the control's wash is a surface, so it cannot be the control's border either; the boundary token is.
+    expect(roleUsageViolations(".field { border: 1px solid var(--fill) }", tokens)).toEqual([".field draws an indicator with surface --fill"]);
+    expect(roleUsageViolations(".field { background: var(--fill); border: 1px solid var(--boundary) }", tokens)).toEqual([]);
+  });
+});
+
+// Q1 (A), PR #120: fill is a wash of about 1.15:1, so a field or a segmented track shown by it alone has no boundary
+// anyone can see. Every selector that paints --fill also carries --boundary (3:1 on bg, bg2, bg3) in a border, an
+// outline or a box-shadow ring. Both directions are tested here; built/now-usage.built.test.ts runs it on the build.
+describe("fillBoundaryViolations", () => {
+  it("aFieldStyledWithFillAloneIsReported", () => {
+    expect(fillBoundaryViolations(".field { background: var(--fill) }")).toEqual([".field paints --fill and carries no --boundary"]);
+    expect(fillBoundaryViolations(".segmented__track { background-color: var(--fill); border-radius: var(--radius-md) }")).toEqual([
+      ".segmented__track paints --fill and carries no --boundary",
+    ]);
+    // A border in another colour is not the boundary: sep is decorative and exempt from any contrast.
+    expect(fillBoundaryViolations("input { background: var(--fill); border: 1px solid var(--sep) }")).toEqual([
+      "input paints --fill and carries no --boundary",
+    ]);
+  });
+
+  it("aFieldCarryingTheBoundaryPasses", () => {
+    expect(fillBoundaryViolations(".field { background: var(--fill); border: 1px solid var(--boundary) }")).toEqual([]);
+    expect(fillBoundaryViolations(".segmented__track { background: var(--fill); box-shadow: inset 0 0 0 1px var(--boundary) }")).toEqual([]);
+    expect(fillBoundaryViolations("textarea { background: var(--fill); outline: 1px solid var(--boundary) }")).toEqual([]);
+    expect(fillBoundaryViolations(".field { background: var(--fill) } .field { border-color: var(--boundary) }")).toEqual([]);
+    // A state of a field that carries the boundary is still that field: its hover or invalid wash needs no second one.
+    expect(
+      fillBoundaryViolations('.field { border: 1px solid var(--boundary) } .field:hover, .field[aria-invalid="true"] { background: var(--fill) }'),
+    ).toEqual([]);
+    // Only --fill is a control's wash; a card on bg3 is not a field.
+    expect(fillBoundaryViolations(".card { background: var(--bg3) }")).toEqual([]);
+  });
+
+  it("aSelectorListIsJudgedPerSelector", () => {
+    expect(
+      fillBoundaryViolations(".field, .segmented__track { background: var(--fill) } .field { border: 1px solid var(--boundary) }"),
+    ).toEqual([".segmented__track paints --fill and carries no --boundary"]);
+  });
+
+  it("aFillOrABoundaryUnderAnotherNameIsTheToken", () => {
+    expect(fillBoundaryViolations(".seg { --track: var(--fill) } .seg__track { background: var(--track) }")).toEqual([
+      ".seg__track paints --fill (via --track) and carries no --boundary",
+    ]);
+    expect(
+      fillBoundaryViolations(".seg { --edge: var(--boundary) } .seg__track { background: var(--fill); border: 1px solid var(--edge) }"),
+    ).toEqual([]);
+  });
+
+  it("aBoundaryThatIsRemovedOrOnlyConditionalIsReported", () => {
+    // A later rule that takes the border away leaves the wash alone again.
+    expect(fillBoundaryViolations(".field { background: var(--fill); border: 1px solid var(--boundary) } .field { border: none }")).toEqual([
+      ".field removes its --boundary (border: none)",
+    ]);
+    expect(
+      fillBoundaryViolations(
+        ".field { background: var(--fill); border: 1px solid var(--boundary) } @media (min-width: 900px) { .field { border-width: 0 } }",
+      ),
+    ).toEqual([".field removes its --boundary (border-width: 0)"]);
+    // A boundary only under a media query is not there below it.
+    expect(
+      fillBoundaryViolations(".field { background: var(--fill) } @media (min-width: 900px) { .field { border: 1px solid var(--boundary) } }"),
+    ).toEqual([".field paints --fill and carries no --boundary"]);
+    // Inside the same media query it is there wherever the fill is.
+    expect(
+      fillBoundaryViolations("@media (min-width: 900px) { .field { background: var(--fill); border: 1px solid var(--boundary) } }"),
+    ).toEqual([]);
   });
 });

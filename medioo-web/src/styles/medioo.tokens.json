@@ -2,7 +2,7 @@
   "_meta": {
     "source": "docs/design/2026-10-21-approved/{phone,desktop}.html, reconciled (plan W2a)",
     "rendered_by": "src/styles/build-tokens.ts into src/styles/tokens.css (committed, byte-compared by tokens.test.ts)",
-    "surfaces": "\"every-surface\" in an on-list stands for every role: surface token that has no notEverySurface, derived when the check runs (contrast.ts), so a surface added later is checked against every ink without an edit here. paper opts out on the token. fill is named beside it where text sits on a control's fill, because fill is non-text, not a surface."
+    "surfaces": "\"every-surface\" in an on-list stands for every role: surface token that has no notEverySurface, derived when the check runs (contrast.ts), so a surface added later is checked against every ink without an edit here. paper opts out on the token. fill, a control's wash, is a surface (Q1 (A)), so every-surface includes it; the inks that sit on a control still name it beside every-surface, so the pair is visible where it is read."
   },
   "color": {
     "bg": { "light": "#ffffff", "dark": "#000000", "desktop": { "dark": "#1c1c1e" }, "role": "surface" },
@@ -45,9 +45,14 @@
     },
     "fill": {
       "light": "rgba(120, 120, 128, 0.12)", "dark": "rgba(120, 120, 128, 0.24)",
+      "role": "surface",
+      "note": "a control's wash (a field, a segmented control's track), a surface like the other washes: every ink on every-surface is checked on it, composited over every opaque surface. Q1 (A), PO 2026-10-21 on PR #120: the wash is about 1.15:1 on white, so it is never a control's boundary; every selector that paints fill carries boundary too (fillBoundaryViolations, run on the built CSS)."
+    },
+    "boundary": {
+      "light": { "ref": "label3" }, "dark": { "ref": "label3" },
       "role": "non-text",
       "on": ["bg", "bg2", "bg3"],
-      "note": "a control's fill (a field, a segmented control's track): non-text on bg, bg2 and bg3, as the plan's table says. The prototypes' 12% / 24% grey is about 1.1:1 on white, under WCAG 1.4.11's 3:1, so a control shown only by this wash has no checked boundary. The text painted on a fill is checked separately (label, label2, tint-ink, now-ink and week name fill in their on-lists). Q1 asks the PO to choose: a 3:1 boundary token every field and track must carry, or a ruling that fields need none."
+      "note": "the visible edge of a field or a segmented control's track, in a border, an outline or an inset box-shadow ring; every selector that paints fill carries it (fillBoundaryViolations). Q1 (A), PO 2026-10-21 on PR #120: non-text at 3:1 on bg, bg2 and bg3, derived from label3 so it follows it."
     },
     "recv": {
       "light": "#e9e9eb", "dark": "#26252a", "role": "surface",

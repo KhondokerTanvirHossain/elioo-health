@@ -5,7 +5,14 @@ import postcss from "postcss";
 import { describe, expect, it } from "vitest";
 import type { TokenFile } from "../build-tokens";
 import json from "../medioo.tokens.json";
-import { NOW_ALLOWED, WEEK_ALLOWED, nowUsageViolations, roleUsageViolations, tokenUsageViolations } from "../now-usage";
+import {
+  NOW_ALLOWED,
+  WEEK_ALLOWED,
+  fillBoundaryViolations,
+  nowUsageViolations,
+  roleUsageViolations,
+  tokenUsageViolations,
+} from "../now-usage";
 
 // Runs on the build (pnpm build && pnpm run test:built): what is judged is the CSS that ships, after Next has bundled
 // every component's stylesheet, so a use the source scans cannot attribute is still seen here.
@@ -42,5 +49,19 @@ describe("the built CSS", () => {
     expect(nowUsageViolations(css, NOW_ALLOWED)).toEqual([]);
     expect(tokenUsageViolations(css, "week", WEEK_ALLOWED)).toEqual([]);
     expect(roleUsageViolations(css, json as unknown as TokenFile)).toEqual([]);
+  });
+
+  it("everyControlPaintedWithFillCarriesTheBoundary", () => {
+    const css = builtCss();
+    // Guard: the wash and its boundary are both shipped, so a field can carry what the check asks for.
+    const rootProps = new Set<string>();
+    postcss.parse(css).walkDecls((decl) => {
+      const parent = decl.parent;
+      if (parent?.type === "rule" && /^:root(?![\w-])/.test((parent as postcss.Rule).selector)) rootProps.add(decl.prop);
+    });
+    expect(rootProps.has("--fill"), "the built CSS defines --fill in :root").toBe(true);
+    expect(rootProps.has("--boundary"), "the built CSS defines --boundary in :root").toBe(true);
+    // Q1 (A), PR #120: no input or segmented track relies on the fill wash alone.
+    expect(fillBoundaryViolations(css)).toEqual([]);
   });
 });

@@ -2,7 +2,7 @@
  * The token renderer (plan W2a). `medioo.tokens.json` is the one source of every colour, font and size the web app
  * paints with; this module resolves it and writes `tokens.css`, the only stylesheet allowed to hold a colour literal
  * (stylelint). TypeScript outside src/styles/ and outside test files is scanned by src/lint/colour-literal.test.ts;
- * src/styles/ itself (this renderer, the checkers, the JSON) and the tests hold literals on purpose. Derived values (`mix`, `alpha`) are resolved here and written as literals, so the CSS never needs color-mix().
+ * src/styles/ itself (this renderer, the checkers, the JSON) and the tests hold literals on purpose. Derived values (`mix`, `alpha`, `ref`) are resolved here and written as literals, so the CSS never needs color-mix().
  *
  * tokens.test.ts renders the CSS on every run and byte-compares it with the committed file.
  */
@@ -12,8 +12,11 @@ export const LAYOUTS = ["phone", "desktop"] as const;
 export type Theme = (typeof THEMES)[number];
 export type Layout = (typeof LAYOUTS)[number];
 
-/** A hex `#rrggbb`, an `rgba(r, g, b, a)`, a mix toward a hex (sRGB interpolation), or a token at an alpha. */
-export type ColourValue = string | { mix: [string, string, number] } | { alpha: [string, number] };
+/**
+ * A hex `#rrggbb`, an `rgba(r, g, b, a)`, a mix toward a hex (sRGB interpolation), a token at an alpha, or another
+ * token's value as it is, translucent or not (`ref`: `boundary` is `label3`, so it follows it).
+ */
+export type ColourValue = string | { mix: [string, string, number] } | { alpha: [string, number] } | { ref: string };
 
 export type Role = "surface" | "text" | "non-text" | "fill";
 
@@ -112,6 +115,7 @@ function resolveColour(src: TokenFile, name: string, theme: Theme, layout: Layou
   const value = valueFor(token, theme, layout);
   if (typeof value === "string") return value;
   const next = [...stack, name];
+  if ("ref" in value) return resolveColour(src, value.ref, theme, layout, next);
   if ("mix" in value) {
     const [ref, toward, amount] = value.mix;
     const from = parseColour(resolveColour(src, ref, theme, layout, next));

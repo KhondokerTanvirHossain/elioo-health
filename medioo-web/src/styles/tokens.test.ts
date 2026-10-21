@@ -225,6 +225,10 @@ describe("medioo.tokens.json and tokens.css", () => {
     const desktopOnly = copy();
     desktopOnly.color.crit = { light: { alpha: ["now", 0.5] }, dark: { alpha: ["now", 0.5] }, desktop: { light: "#d12c24" }, role: "fill" };
     expect(huedOutside(desktopOnly, inRedBand, ["now"])).toEqual(["crit"]);
+    // A ref is the red itself under another name, which is exactly a second red (it would dodge NOW_ALLOWED).
+    const alias = copy();
+    alias.color.danger = { light: { ref: "now" }, dark: { ref: "now" }, role: "fill" };
+    expect(huedOutside(alias, inRedBand, ["now"])).toEqual(["danger"]);
     // THIS_WEEK's amber is not a red.
     expect(huedOutside(src, inRedBand, ["now"])).not.toContain("week");
     const resolved = resolveTokens(src);

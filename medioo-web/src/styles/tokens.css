@@ -16,6 +16,7 @@
   --hover: rgba(120, 120, 128, 0.1);
   --selbg: rgba(6, 120, 138, 0.13);
   --fill: rgba(120, 120, 128, 0.12);
+  --boundary: rgba(60, 60, 67, 0.6);
   --recv: #e9e9eb;
   --recv-ink: #000000;
   --sent: #06788a;
@@ -89,6 +90,7 @@
     --hover: rgba(120, 120, 128, 0.18);
     --selbg: rgba(92, 200, 214, 0.18);
     --fill: rgba(120, 120, 128, 0.24);
+    --boundary: rgba(235, 235, 245, 0.5);
     --recv: #26252a;
     --recv-ink: #ffffff;
     --sent: #06788a;
@@ -138,6 +140,7 @@
   --hover: rgba(120, 120, 128, 0.18);
   --selbg: rgba(92, 200, 214, 0.18);
   --fill: rgba(120, 120, 128, 0.24);
+  --boundary: rgba(235, 235, 245, 0.5);
   --recv: #26252a;
   --recv-ink: #ffffff;
   --sent: #06788a;

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import type { Role, TokenFile } from "./build-tokens";
+import { LAYOUTS, THEMES, resolveTokens, type Role, type TokenFile } from "./build-tokens";
 import { contrastChecks, contrastRatio, coverageProblems, everySurface } from "./contrast";
 import json from "./medioo.tokens.json";
 
@@ -76,6 +76,10 @@ describe("contrast of the declared pairs", () => {
       "dark/phone label3 on bg3",
       "light/desktop focus on bg2",
       "dark/desktop focus on bg3",
+      "light/phone boundary on bg",
+      "light/desktop boundary on bg2",
+      "dark/phone boundary on bg3",
+      "dark/desktop boundary on bg3",
     ]) {
       expect(pairs.some((p) => p.startsWith(`${pair} = `)), pair).toBe(true);
     }
@@ -112,13 +116,39 @@ describe("contrast of the declared pairs", () => {
     const roles = planRoles(readFileSync(PLAN, "utf8"));
     // The parse read the table it claims to: the roles the checks hinge on.
     expect(roles.size).toBeGreaterThanOrEqual(30);
-    for (const name of ["label3", "green", "fill"]) expect(roles.get(name), name).toBe("non-text");
+    for (const name of ["label3", "green", "boundary"]) expect(roles.get(name), name).toBe("non-text");
+    // Q1 (A): fill is the control's wash, a surface like the other washes; its boundary is the boundary token.
+    expect(roles.get("fill"), "fill").toBe("surface");
     for (const name of ["now", "tint", "sent"]) expect(roles.get(name), name).toBe("fill");
     expect(roleMismatches(src, roles)).toEqual([]);
     // Relabelling a token is how a check is switched off; it is refused unless the plan's row changes too.
     const relabelled = copy();
     relabelled.color.green!.role = "surface";
     expect(roleMismatches(relabelled, roles)).toEqual(["green: role surface, the plan says non-text"]);
+  });
+
+  it("theFieldBoundaryIsLabel3OnBgBg2Bg3AtThreeToOne", () => {
+    // Q1 (A), PR #120: every input and segmented track carries this boundary (fillBoundaryViolations), because its
+    // fill is a wash of about 1.15:1. Checked as non-text at 3:1 on the surfaces a field sits on.
+    const boundary = src.color.boundary!;
+    expect(boundary.role).toBe("non-text");
+    expect(boundary.on).toEqual(["bg", "bg2", "bg3"]);
+    expect(boundary.exempt).toBeUndefined();
+    const resolved = resolveTokens(src);
+    for (const theme of THEMES) {
+      for (const layout of LAYOUTS) {
+        expect(resolved[theme][layout].boundary, `${theme}/${layout} boundary is label3`).toBe(resolved[theme][layout].label3);
+      }
+    }
+    // Derived, so it follows label3: lower label3 and the boundary goes with it, and the check reports both.
+    const paler = copy();
+    paler.color.label3!.light = "rgba(60, 60, 67, 0.3)";
+    expect(resolveTokens(paler).light.phone.boundary).toBe("rgba(60, 60, 67, 0.3)");
+    expect(contrastChecks(paler, "non-text", 3).failures).toContainEqual(expect.stringMatching(/^light\/phone boundary on bg = /));
+    // A boundary that is the wash itself is no boundary.
+    const wash = copy();
+    wash.color.boundary!.light = "rgba(120, 120, 128, 0.12)";
+    expect(contrastChecks(wash, "non-text", 3).failures).toContain("light/phone boundary on bg = 1.15");
   });
 
   it("everySurfaceMeansEverySurfaceTokenIncludingOnesAddedLater", () => {

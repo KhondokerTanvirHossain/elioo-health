@@ -194,3 +194,95 @@ export function roleUsageViolations(css: string, tokens: TokenFile): string[] {
   });
   return [...out];
 }
+
+/** A control's wash, and the edge every control painted with it carries (Q1 (A), PR #120). */
+export const CONTROL_WASH = "fill";
+export const CONTROL_BOUNDARY = "boundary";
+
+const WASH_PROP = /^background(-color|-image)?$/i;
+const SIDES = "(-(top|right|bottom|left|block|inline)(-(start|end))?)?";
+// Where a boundary is carried: a border, an outline or a box-shadow ring (the usual inset 0 0 0 1px).
+const CARRIER_PROP = new RegExp(`^(border${SIDES}(-color)?|outline(-color)?|box-shadow)$`, "i");
+// What takes a carried boundary away again: a border, outline or shadow set to none, hidden or a zero width.
+const REMOVER_PROP = new RegExp(`^(border${SIDES}(-(width|style))?|outline(-(width|style))?|box-shadow)$`, "i");
+const REMOVED = /^(none|hidden|0[a-z%]*)$/i;
+const familyOf = (prop: string) => (/^border/i.test(prop) ? "border" : /^outline/i.test(prop) ? "outline" : "box-shadow");
+
+/** The at-rules a declaration sits inside (`@media (min-width: 900px)`), outermost first; "" at the top level. */
+function contextOf(node: postcss.Node): string {
+  const chain: string[] = [];
+  for (let p = node.parent; p && p.type !== "root"; p = p.parent as postcss.Container) {
+    if (p.type === "atrule") chain.unshift(`@${(p as AtRule).name} ${(p as AtRule).params.trim()}`);
+  }
+  return chain.join(" ");
+}
+
+/** The selector without the pseudo-classes and attribute selectors at its end: `.field:hover` → `.field`. */
+function baseOf(selector: string): string {
+  let s = selector.trim();
+  for (;;) {
+    const next = s.replace(/(?<!:)(:[\w-]+(\((?:[^()]|\([^()]*\))*\))?|\[[^\]]*\])$/, "").trim();
+    if (next === s || next === "" || /[\s>+~]$/.test(next)) return s;
+    s = next;
+  }
+}
+
+/**
+ * Every selector that paints a control's wash (`--fill` in a background) and carries no `--boundary` in a border, an
+ * outline or a box-shadow, on itself or on the selector it is a state of (`.field:hover` is `.field`), at the top level
+ * or inside the same at-rule; and every declaration on such a selector that takes a carried boundary away again
+ * (`border: none`, `border-width: 0`) when nothing else carries it. A forwarding custom property is the token it
+ * forwards. A later rule that recolours the border is not judged here.
+ */
+export function fillBoundaryViolations(css: string): string[] {
+  const out = new Set<string>();
+  const root = postcss.parse(css);
+  const aliases = aliasesIn(root);
+  const names = (value: string, token: string): string[] =>
+    varsIn(value).filter((v) => v === token || aliases(v).has(token));
+  const key = (context: string, selector: string) => `${context}\u0000${selector}`;
+  const uses: { selector: string; context: string; via: string | null }[] = [];
+  const carriers = new Map<string, Set<string>>();
+  const removals = new Map<string, { family: string; text: string }[]>();
+  root.walkDecls((decl) => {
+    if (decl.prop.startsWith("--") || decl.parent?.type !== "rule" || isKeyframes(decl.parent.parent)) return;
+    const selectors = (decl.parent as Rule).selectors.map((s) => s.trim());
+    const context = contextOf(decl);
+    const prop = decl.prop.toLowerCase();
+    if (WASH_PROP.test(prop)) {
+      for (const used of names(decl.value, CONTROL_WASH)) {
+        for (const selector of selectors) uses.push({ selector, context, via: used === CONTROL_WASH ? null : used });
+      }
+    }
+    if (CARRIER_PROP.test(prop) && names(decl.value, CONTROL_BOUNDARY).length > 0) {
+      for (const selector of selectors) {
+        const set = carriers.get(key(context, selector)) ?? new Set<string>();
+        set.add(familyOf(prop));
+        carriers.set(key(context, selector), set);
+      }
+    }
+    if (REMOVER_PROP.test(prop) && REMOVED.test(decl.value.trim())) {
+      for (const selector of selectors) {
+        const list = removals.get(selector) ?? [];
+        list.push({ family: familyOf(prop), text: `${decl.prop}: ${decl.value.trim()}` });
+        removals.set(selector, list);
+      }
+    }
+  });
+  for (const { selector, context, via } of uses) {
+    const own = [...new Set([selector, baseOf(selector)])];
+    const carried = new Set<string>();
+    for (const s of own) {
+      for (const c of new Set([context, ""])) for (const f of carriers.get(key(c, s)) ?? []) carried.add(f);
+    }
+    if (carried.size === 0) {
+      out.add(`${selector} paints --${CONTROL_WASH}${via ? ` (via --${via})` : ""} and carries no --${CONTROL_BOUNDARY}`);
+      continue;
+    }
+    const removed = own.flatMap((s) => removals.get(s) ?? []).filter((r) => carried.has(r.family));
+    if ([...carried].every((f) => removed.some((r) => r.family === f))) {
+      for (const r of removed) out.add(`${selector} removes its --${CONTROL_BOUNDARY} (${r.text})`);
+    }
+  }
+  return [...out];
+}
