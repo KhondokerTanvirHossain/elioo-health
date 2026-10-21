@@ -158,10 +158,15 @@ public class PostgresOutboundMessageAdapter implements OutboundMessagePort {
                 instant(row, "decided_at"), instant(row, "sent_at"), instant(row, "created_at"));
     }
 
+    /**
+     * Retakes since the family's last non-retake message. A failure notice (V23) is our fault, not a readable
+     * document, and must not reset the escalation.
+     */
     @Override
     public Mono<Long> consecutiveRetakes(UUID familyId) {
         return db.sql("SELECT count(*) FROM " + T + " WHERE family_id = :f AND kind = 'retake' AND created_at > "
-                        + "COALESCE((SELECT max(created_at) FROM " + T + " WHERE family_id = :f AND kind <> 'retake'), 'epoch'::timestamptz)")
+                        + "COALESCE((SELECT max(created_at) FROM " + T + " WHERE family_id = :f AND kind NOT IN ('retake', 'failure')), "
+                        + "'epoch'::timestamptz)")
                 .bind("f", familyId).map((row, meta) -> row.get(0, Long.class)).one();
     }
 }
