@@ -2,30 +2,84 @@
 // plain Node script, so `playwright test` never collects it; ImageProbeAcceptanceTest (baymax, RUN_BROWSER_PROBE=true)
 // starts the Java app on a real port, signs a family in and runs this against it.
 //
-//   node medioo-web/e2e/d4/image-probe.mjs --base http://127.0.0.1:<port> --cookie <session token> --doc <document id> \
-//        --out build/d4/image-probe.json [--paths /app/home,/app/add]
+//   PROBE_SESSION=<session token> node medioo-web/e2e/d4/image-probe.mjs --base http://127.0.0.1:<port> \
+//        --doc <document id> --out build/d4/image-probe.json
 //
-// For each page (the paper, its /all, then any --paths): every <img> — src, currentSrc, complete, natural size, and,
+// The session comes from PROBE_SESSION (or stdin with --session-stdin), never argv, so it stays out of `ps` and shell
+// history; --cookie is kept only as a last-resort fallback. The probe refuses any --base that is not this machine
+// (localhost, 127.0.0.1, *.localhost): production is P4, a manual desktop-Chrome step, never this script with a real
+// family's cookie. It refuses any --out that git does not ignore, so a report (which holds key paths) never lands in a
+// tracked file.
+//
+// For each page (the paper, then its /all): every <img> — src, currentSrc, complete, natural size, and,
 // drawn to a canvas, a 5×5 grid of its pixels (or "tainted" when the browser refuses, which a cross-origin image is) —
 // with the chain of responses its URL went through: each hop's status, origin and path, the origin of each Location,
 // and the final status, content-type and body length. Also every CSP violation, console error and failed request.
 // Signed query strings are never written: a hop is its origin and path, so the output holds no credential.
 import { chromium } from "@playwright/test";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
 const GRID = [0.1, 0.3, 0.5, 0.7, 0.9];
 
+const FLAGS = new Set(["session-stdin"]);
+
 function args(argv) {
   const out = {};
-  for (let i = 2; i < argv.length; i += 2) {
+  for (let i = 2; i < argv.length; i++) {
     if (!argv[i].startsWith("--")) throw new Error(`unexpected argument ${argv[i]}`);
-    out[argv[i].slice(2)] = argv[i + 1];
+    const name = argv[i].slice(2);
+    if (FLAGS.has(name)) {
+      out[name] = true;
+    } else {
+      out[name] = argv[++i];
+    }
   }
-  for (const required of ["base", "cookie", "doc", "out"]) {
+  for (const required of ["base", "doc", "out"]) {
     if (!out[required]) throw new Error(`--${required} is required`);
   }
   return out;
+}
+
+/** Only this machine: a probe aimed elsewhere would carry a real family's session. */
+function localBase(raw) {
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error("refusing --base: not a URL");
+  }
+  const host = url.hostname;
+  if (host === "localhost" || host === "127.0.0.1" || host.endsWith(".localhost")) return url.origin;
+  throw new Error(`refusing --base ${url.origin}: the probe runs only against an app on this machine; production is P4, a manual desktop-Chrome step`);
+}
+
+/** Inside this repo and ignored by git, so a report holding key paths can never be committed. */
+function ignoredOut(raw) {
+  const out = resolve(raw);
+  const rel = relative(REPO, out);
+  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) throw new Error(`refusing --out ${out}: not inside the repository`);
+  try {
+    execFileSync("git", ["check-ignore", "-q", rel], { cwd: REPO, stdio: "ignore" });
+  } catch {
+    throw new Error(`refusing --out ${rel}: git does not ignore it; write under build/d4/ (repo root) or <module>/build/`);
+  }
+  return out;
+}
+
+/** PROBE_SESSION, then stdin when asked, then --cookie; never echoed. */
+function sessionToken(a) {
+  if (process.env.PROBE_SESSION) return process.env.PROBE_SESSION;
+  if (a["session-stdin"]) {
+    const token = readFileSync(0, "utf8").trim();
+    if (token) return token;
+  }
+  if (a.cookie) return a.cookie;
+  throw new Error("no session: set PROBE_SESSION (or pass --session-stdin)");
 }
 
 /** origin + path: never the query, which on a signed URL is a credential. */
@@ -175,13 +229,15 @@ async function probePage(context, base, path) {
 
 async function main() {
   const a = args(process.argv);
-  const base = a.base.replace(/\/$/, "");
-  const paths = [`/app/documents/${a.doc}`, `/app/documents/${a.doc}/all`, ...(a.paths ? a.paths.split(",").filter(Boolean) : [])];
+  const base = localBase(a.base);
+  const outFile = ignoredOut(a.out);
+  const token = sessionToken(a);
+  const paths = [`/app/documents/${a.doc}`, `/app/documents/${a.doc}/all`];
   const browser = await chromium.launch();
   try {
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     // Path=/app, as the app sets it: the cookie reaches /app/** and nothing else
-    await context.addCookies([{ name: "baymax_session", value: a.cookie, domain: new URL(base).hostname, path: "/app", httpOnly: true }]);
+    await context.addCookies([{ name: "baymax_session", value: token, domain: new URL(base).hostname, path: "/app", httpOnly: true }]);
     await context.addInitScript(() => {
       window.__cspViolations = [];
       document.addEventListener("securitypolicyviolation", (e) => {
@@ -201,8 +257,8 @@ async function main() {
     const pages = [];
     for (const path of paths) pages.push(await probePage(context, base, path));
     const report = { base, doc: a.doc, pages };
-    mkdirSync(dirname(a.out), { recursive: true });
-    writeFileSync(a.out, JSON.stringify(report, null, 2) + "\n");
+    mkdirSync(dirname(outFile), { recursive: true });
+    writeFileSync(outFile, JSON.stringify(report, null, 2) + "\n");
   } finally {
     await browser.close();
   }

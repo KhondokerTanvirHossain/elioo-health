@@ -68,7 +68,7 @@ import static org.mockito.Mockito.when;
 @Testcontainers
 public class ExtractionPipelineAcceptanceTest {
 
-    static final String BUCKET = "baymax";
+    public static final String BUCKET = "baymax";
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");

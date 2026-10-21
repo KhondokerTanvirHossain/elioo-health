@@ -36,8 +36,8 @@ public final class PaintedPaper {
     /** How long the WhatsApp port must stay silent before a journey counts its calls: longer than any retry or follow-up. */
     public static final Duration SETTLE = Duration.ofSeconds(3);
 
-    public static final int PAGE_W = 400;
-    public static final int PAGE_H = 200;
+    private static final int PAGE_W = 400;
+    private static final int PAGE_H = 200;
     public static final Color WORDS = new Color(255, 140, 0);
     public static final Color PAPER = new Color(0, 40, 200);
 
@@ -46,16 +46,11 @@ public final class PaintedPaper {
 
     /** The page the family photographs: the words' quarter {@link #WORDS}, the paper {@link #PAPER}. */
     public static byte[] paintedPage() {
-        return paintedPage(WORDS, PAPER);
-    }
-
-    /** The same layout in other colours, so two papers' crops cannot match byte for byte by chance. */
-    public static byte[] paintedPage(Color words, Color paper) {
         BufferedImage image = new BufferedImage(PAGE_W, PAGE_H, BufferedImage.TYPE_INT_RGB);
         Graphics2D g = image.createGraphics();
-        g.setColor(paper);
+        g.setColor(PAPER);
         g.fillRect(0, 0, PAGE_W, PAGE_H);
-        g.setColor(words);
+        g.setColor(WORDS);
         g.fillRect(0, 0, PAGE_W / 2, PAGE_H / 2);
         g.dispose();
         ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -73,7 +68,7 @@ public final class PaintedPaper {
     }
 
     /** {@link #WORDS}, {@link #PAPER}, or the colour itself when it is near neither. */
-    public static Color named(Color c) {
+    private static Color named(Color c) {
         if (near(c, WORDS)) {
             return WORDS;
         }
