@@ -21,7 +21,7 @@ class ChatViewTest {
     private final ChatView view = new ChatView(copy);
 
     private static AttentionItem.Urgent urgent(Urgency level) {
-        return new AttentionItem.Urgent(UUID.randomUUID(), level, "lab_report", LocalDate.parse("2026-10-12"), false, T);
+        return new AttentionItem.Urgent(UUID.randomUUID(), level, "lab_report", LocalDate.parse("2026-10-12"), false, T, false);
     }
 
     private static long count(String html, String needle) {
@@ -65,7 +65,7 @@ class ChatViewTest {
     /** A paper with no printed date says its date is the upload day, never presents it as the visit's. */
     @Test
     void anUrgentPaperWithoutAPrintedDateMarksTheUploadDay() {
-        String card = view.card(Lang.BN, new AttentionItem.Urgent(UUID.randomUUID(), Urgency.NOW, null, LocalDate.parse("2026-10-12"), true, T), "আম্মা");
+        String card = view.card(Lang.BN, new AttentionItem.Urgent(UUID.randomUUID(), Urgency.NOW, null, LocalDate.parse("2026-10-12"), true, T, false), "আম্মা");
         assertThat(card).contains(copy.t(Lang.BN, "timeline.uploaddate")).contains(copy.t(Lang.BN, "timeline.paper"));
         assertThat(view.card(Lang.BN, urgent(Urgency.NOW), "আম্মা")).doesNotContain(copy.t(Lang.BN, "timeline.uploaddate"));
     }

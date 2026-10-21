@@ -31,9 +31,13 @@ public sealed interface AttentionItem {
     Comparator<AttentionItem> ORDER = Comparator.comparingInt(AttentionItem::rank)
             .thenComparingLong(AttentionItem::sortKey).thenComparingLong(AttentionItem::tieKey);
 
-    /** A finished paper whose stored F1 level is NOW or THIS_WEEK. ROUTINE has no card, no line and no chip (D27). */
-    record Urgent(UUID documentId, Urgency level, String documentType, LocalDate date, boolean dateIsFallback, Instant receivedAt)
-            implements AttentionItem {
+    /**
+     * A finished paper whose stored F1 level is NOW or THIS_WEEK. ROUTINE has no card, no line and no chip (D27).
+     * {@code dateUncertain} is the read model's {@code timeline_date_uncertain} (D2, Q6): the model marked the printed
+     * date the card is dated by; never true on an upload day.
+     */
+    record Urgent(UUID documentId, Urgency level, String documentType, LocalDate date, boolean dateIsFallback, Instant receivedAt,
+                  boolean dateUncertain) implements AttentionItem {
         public Urgent {
             Objects.requireNonNull(date, "date");
             Objects.requireNonNull(receivedAt, "receivedAt");

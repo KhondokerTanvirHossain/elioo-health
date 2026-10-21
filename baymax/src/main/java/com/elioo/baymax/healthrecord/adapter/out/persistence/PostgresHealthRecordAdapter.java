@@ -139,8 +139,14 @@ public class PostgresHealthRecordAdapter implements HealthRecordPort {
         // commits before this lock is granted — and is swept below — or waits and is refused once the row is gone.
         // Without it an insert landing between its table's DELETE and the family_account DELETE failed the whole
         // delete on the foreign key and rolled it back: delete-on-request failing at random.
+        // Then its patients' rows (plan B3): a share member's দেখেছি references their OWN family_account, plus this family's
+        // patient and paper, so it never waited on the family lock and could commit between the now_ack DELETE and the
+        // document DELETE. Its foreign key takes a key-share lock on the patient row, so with the row locked it waits and
+        // is refused once the patient is gone, instead of failing this delete.
         return db.sql("SELECT id FROM " + S + ".family_account WHERE id = :family FOR UPDATE").bind("family", familyId)
                 .fetch().all().then()
+                .then(db.sql("SELECT id FROM " + S + ".patient_profile WHERE family_id = :family FOR UPDATE").bind("family", familyId)
+                        .fetch().all().then())
                 .then(detachCostRows(documentIds))
                 .then(count("audit_event", "DELETE FROM " + S + ".audit_event WHERE family_id = :family", "family", familyId))
                 .flatMap(c -> add(c, "share_member", "DELETE FROM " + S + ".share_member WHERE patient_id IN " + patientsOf, "family", familyId))
@@ -155,6 +161,11 @@ public class PostgresHealthRecordAdapter implements HealthRecordPort {
                 .flatMap(c -> add(c, "inbound_message", "DELETE FROM " + S + ".inbound_message WHERE family_id = :family"
                         + " OR patient_id IN " + patientsOf, "family", familyId))
                 .flatMap(c -> add(c, "stored_object", "DELETE FROM " + S + ".stored_object WHERE family_id = :family", "family", familyId))
+                // now_ack (plan B3): every দেখেছি this account holder made, on any patient it sees (a share member's own taps on
+                // another family's paper included), and every one anyone made on this family's patients' papers; before
+                // document and family_account (no cascade, so a forgotten row fails the delete loudly)
+                .flatMap(c -> add(c, "now_ack", "DELETE FROM " + S + ".now_ack WHERE family_id = :family"
+                        + " OR patient_id IN " + patientsOf, "family", familyId))
                 .flatMap(c -> add(c, "document", "DELETE FROM " + S + ".document WHERE family_id = :family", "family", familyId))
                 .flatMap(c -> add(c, "web_session", "DELETE FROM " + S + ".web_session WHERE family_id = :family", "family", familyId))
                 .flatMap(c -> add(c, "otp_code", "DELETE FROM " + S + ".otp_code WHERE family_id = :family", "family", familyId))
@@ -168,7 +179,12 @@ public class PostgresHealthRecordAdapter implements HealthRecordPort {
     @Override
     @Transactional
     public Mono<DeletionCounts> deletePatient(UUID patientId, Collection<UUID> documentIds) {
-        return detachCostRows(documentIds)
+        // Lock the patient row first, deleteFamily's rule for one patient: a writer that references it (a দেখেছি tap, a
+        // share member's included) takes a key-share lock through its foreign key, so it either commits before this lock
+        // and is swept below, or waits and is refused once the row is gone, never failing this delete on now_ack's key.
+        return db.sql("SELECT id FROM " + S + ".patient_profile WHERE id = :patient FOR UPDATE").bind("patient", patientId)
+                .fetch().all().then()
+                .then(detachCostRows(documentIds))
                 .then(count("audit_event", "DELETE FROM " + S + ".audit_event WHERE patient_id = :patient", "patient", patientId))
                 .flatMap(c -> add(c, "share_member", "DELETE FROM " + S + ".share_member WHERE patient_id = :patient", "patient", patientId))
                 .flatMap(c -> add(c, "observation", "DELETE FROM " + S + ".observation WHERE patient_id = :patient", "patient", patientId))
@@ -179,6 +195,8 @@ public class PostgresHealthRecordAdapter implements HealthRecordPort {
                 // V22: the photos and files filed under this patient; a family-level text (patient_id NULL) stays with the family
                 .flatMap(c -> add(c, "inbound_message", "DELETE FROM " + S + ".inbound_message WHERE patient_id = :patient", "patient", patientId))
                 .flatMap(c -> add(c, "stored_object", "DELETE FROM " + S + ".stored_object WHERE patient_id = :patient", "patient", patientId))
+                // now_ack (plan B3): every দেখেছি on this patient's papers, whoever tapped; the family's own taps elsewhere stay
+                .flatMap(c -> add(c, "now_ack", "DELETE FROM " + S + ".now_ack WHERE patient_id = :patient", "patient", patientId))
                 .flatMap(c -> add(c, "document", "DELETE FROM " + S + ".document WHERE patient_id = :patient", "patient", patientId))
                 .flatMap(c -> add(c, "patient_profile", "DELETE FROM " + S + ".patient_profile WHERE id = :patient", "patient", patientId));
     }

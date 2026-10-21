@@ -188,6 +188,12 @@ class PaperDeleteApiTest {
             seedNudge(f, "trend", "trend:kalium:" + ids.observation, "held", "{\"marker\":\"" + value + "\",\"values\":\"4.2\"}", null);
             UUID gated = seedNudgeMessage(f, medicine + " changed");
             seedNudge(f, "medicine_changed", "document:" + f.document, "gated", "{\"changes\":\"" + medicine + "\"}", gated);
+            // plan B3, now_ack: the owner's দেখেছি on the paper. now_ack names the paper by document_id with no cascade, so
+            // the delete must remove it first; the sweep below finds the table from the schema and its guard fails
+            // until a row is here
+            exec("insert into baymax.now_ack (family_id, patient_id, document_id, urgency, reasons_digest, release_state) "
+                    + "values (?, ?, ?, 'now', encode(sha256(convert_to('[]', 'UTF8')), 'hex'), 'none')",
+                    f.patient.familyId(), f.patient.id(), f.document);
 
             List<String> needles = needles(f.document, ids);
             try (Connection c = connect()) {
@@ -201,7 +207,22 @@ class PaperDeleteApiTest {
             assertThat(f.keysInBucket()).as("the page and the crops in the bucket before the delete").hasSizeGreaterThanOrEqualTo(2);
 
             String token = deleteToken(f.client, f.session, f.document);
-            delete(f.client, f.session, f.document, token).expectStatus().isOk()
+            // the guard logs a 5xx's class at ERROR and its cause only at DEBUG: read here, so a red names the constraint
+            ListAppender<ILoggingEvent> guard = new ListAppender<>();
+            guard.start();
+            Logger guardLog = (Logger) LoggerFactory.getLogger(AppApiGuard.class);
+            ch.qos.logback.classic.Level guardLevel = guardLog.getLevel();
+            guardLog.addAppender(guard);
+            guardLog.setLevel(ch.qos.logback.classic.Level.DEBUG);
+            WebTestClient.ResponseSpec deleted;
+            try {
+                deleted = delete(f.client, f.session, f.document, token);
+            } finally {
+                guardLog.detachAppender(guard);
+                guardLog.setLevel(guardLevel);
+            }
+            deleted.expectStatus().value(status -> assertThat(status).as("the delete; the guard's cause: %s", guard.list.stream()
+                            .map(com.elioo.baymax.testsupport.LoggedText::of).toList()).isEqualTo(200))
                     .expectBody()
                     .jsonPath("$.objects_deleted").value(n -> assertThat(((Number) n).intValue()).isGreaterThanOrEqualTo(2))
                     .jsonPath("$.rows_deleted").value(n -> assertThat(((Number) n).intValue()).isPositive());

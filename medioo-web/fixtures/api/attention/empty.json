@@ -1,0 +1,10 @@
+{
+  "_meta": {
+    "generated_by": "baymax AttentionApiContractTest",
+    "source": "GET /app/api/patients/{id}/attention over the case empty"
+  },
+  "body": {
+    "items": [ ]
+  },
+  "status": 200
+}

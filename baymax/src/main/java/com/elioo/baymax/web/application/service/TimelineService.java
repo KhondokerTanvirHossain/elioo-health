@@ -14,7 +14,11 @@ import com.elioo.baymax.storage.domain.StorageKeys;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
 import com.elioo.baymax.web.application.port.out.AuditPort;
 import com.elioo.baymax.web.application.port.out.TimelineReadPort;
+import com.elioo.baymax.common.time.PatientCalendar;
+import com.elioo.baymax.nudge.application.port.out.NudgeDataPort;
+import com.elioo.baymax.web.domain.AttentionItem;
 import com.elioo.baymax.web.domain.AuditEvent;
+import com.elioo.baymax.web.domain.CalendarMonth;
 import com.elioo.baymax.web.domain.FamilyOverview;
 import com.elioo.baymax.web.domain.PaperDeletion;
 import com.elioo.baymax.web.domain.PatientSummary;
@@ -32,6 +36,8 @@ import reactor.core.publisher.Mono;
 import java.net.URI;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -60,6 +66,23 @@ public class TimelineService implements TimelineUseCase {
     private final DocumentUrgencyUseCase urgency;
     /** C2: the one owner of the timeline's order, cursor, stored chip and counts; read only, after visibility. */
     private final TimelineReadPort timelineRead;
+    /** Plan B3: the doctor's follow-up dates for the calendar, the same read the চ্যাট stack uses. */
+    private final NudgeDataPort nudgeData;
+
+    @Override
+    public Mono<CalendarMonth> calendar(UUID familyId, UUID patientId, YearMonth month) {
+        YearMonth shown = month != null ? month : YearMonth.from(PatientCalendar.today(clock));
+        LocalDate first = shown.atDay(1);
+        LocalDate last = shown.atEndOfMonth();
+        return visiblePatient(familyId, patientId)
+                .flatMap(access -> audit.record(AuditEvent.family(AuditEvent.Kind.TIMELINE_VIEW, familyId, patientId, null, clock.instant()))
+                        .then(Mono.zip(
+                                timelineRead.month(patientId, first, last).collectList(),
+                                nudgeData.openFollowUpsOfPatient(patientId, first, last)
+                                        .map(f -> new AttentionItem.FollowUp(f.documentId(), f.instruction(), f.dueDate(), f.cropKey()))
+                                        .collectList())))
+                .map(t -> new CalendarMonth(shown, t.getT1(), t.getT2()));
+    }
 
     @Override
     public Mono<FamilyOverview> me(UUID familyId) {

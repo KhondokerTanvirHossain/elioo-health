@@ -806,6 +806,9 @@ plan's Global Constraints, now also a dated line in `direction-contract.md`:
      existing document (`routine`/`this_week` → `now`, or a NULL first assessment), the A11 sweep gives NOW to an
      older upload whose `explain()` threw, up to an hour later, and the review gate releases a held NOW paper later.
      In each of those the paper is not new, and it is the one most at risk of being missed.
+     - *Amendment, plan B3 (for PO sight): the key is `(document_id, urgency, reasons digest, release state)`;
+       `urgency_assessed_at` is restamped by every no-op re-assessment, see the engineering note below and replay (a2)
+       in PR #123.*
    - **Per account holder, never per family.** The acknowledgement belongs to the member who tapped (member id) and is
      stored on the server, so it holds across that person's devices. A per-family acknowledgement would let one
      account holder's tap hide the global NOW banner from every other member of the family, including members who
@@ -821,6 +824,13 @@ plan's Global Constraints, now also a dated line in `direction-contract.md`:
      the banner; and stored urgency, the NOW block and WhatsApp delivery are unchanged by any ack.
      - *Amendment, 2026-10-21: the member-B test is the default's (DR-45 item 6). It is inverted, not deleted, only if
        the PO confirms the owning-family reading of "per family"; meaning pending confirmation.*
+   - **Engineering notes (plan B3, for PO sight):** member id = the viewer's own `family_account`
+     (`WebSession.familyId()`); there is no member table, and a share member signs in as their own account, so a share
+     member is a separate account holder from the owner (`now_ack.family_id`). The key is
+     `(document_id, urgency, reasons digest, release state)`, not `urgency_assessed_at`: every re-assessment restamps
+     that column (`ExplanationService.detail`, `composeChecked`, `RecropHandler`, the hourly sweep) whether or not
+     anything changed, so keying on it would bring the banner back for nothing new. The digest is the sha256 of the
+     stored `urgency_reasons`, which a raise or a new reason changes and a no-op re-assessment does not.
 
 **Why:** the PO judged the earlier web UI toy-like and chose a grammar every family already reads fluently; WhatsApp
 and Messages are the quality bar the contract names. Mio and the wordmark are the PO's own work and the brand, so the
@@ -1104,7 +1114,11 @@ DR-41 recommended per account holder. Under (b), member A's tap also hides the b
 B who never saw it.
 
 What limits that is unchanged and still binding. The acknowledgement covers only the exact set of NOW documents visible
-at the tap, as `(document_id, urgency_assessed_at, release state)`. So the banner shows again **for every member** after:
+at the tap, as `(document_id, urgency_assessed_at, release state)`.
+*Amendment, plan B3 (for PO sight): the key is `(document_id, urgency, reasons digest, release state)`;
+`urgency_assessed_at` is restamped by every no-op re-assessment, see the engineering note under DR-41 item 5 and replay
+(a2) in PR #123.*
+So the banner shows again **for every member** after:
 - a new NOW upload;
 - a `this_week` → `now` raise;
 - an A11 sweep assessment;

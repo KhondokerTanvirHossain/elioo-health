@@ -217,11 +217,44 @@ class AttentionServiceTest {
         verifyNoInteractions(timeline, nudgeData);
     }
 
+    /**
+     * Plan B3, the স্বাস্থ্য follow-ups list: the open ones the doctor wrote, due from thirty days back to a year ahead on
+     * the patient's calendar (the literals here, so a changed window is caught), soonest first whatever order they arrive in.
+     */
+    @Test
+    void followUpsAreOpenFromThirtyDaysBackToAYearAheadSoonestFirst() {
+        UUID rx = UUID.randomUUID();
+        when(nudgeData.openFollowUpsOfPatient(MA, LocalDate.parse("2026-09-19"), LocalDate.parse("2027-10-19"))).thenReturn(Flux.just(
+                new NudgeDataPort.FollowUpRow(UUID.randomUUID(), MA, FAMILY, rx, "Eye check", TODAY.plusDays(200), "k2"),
+                new NudgeDataPort.FollowUpRow(UUID.randomUUID(), MA, FAMILY, rx, "CBC again", TODAY.minusDays(2), "k1")));
+        StepVerifier.create(service.followUps(FAMILY, MA)).assertNext(items -> {
+            assertThat(items).extracting(AttentionItem.FollowUp::instruction).containsExactly("CBC again", "Eye check");
+            assertThat(items.get(0).cropKey()).isEqualTo("k1");
+        }).verifyComplete();
+        verify(nudgeData).openFollowUpsOfPatient(MA, LocalDate.parse("2026-09-19"), LocalDate.parse("2027-10-19"));
+    }
+
+    /** The window's today is Dhaka's: at 00:30 on the 20th there (the 19th in UTC) it runs 20 September to 20 October 2027. */
+    @Test
+    void theFollowUpsWindowIsOnThePatientsCalendar() {
+        StepVerifier.create(at(Instant.parse("2026-10-19T18:30:00Z")).followUps(FAMILY, MA)).expectNextCount(1).verifyComplete();
+        verify(nudgeData).openFollowUpsOfPatient(MA, LocalDate.parse("2026-09-20"), LocalDate.parse("2027-10-20"));
+    }
+
+    @Test
+    void theFollowUpsOfAPatientThisFamilyCannotSeeAre404AndNothingIsRead() {
+        UUID stranger = UUID.randomUUID();
+        when(records.visiblePatient(FAMILY, stranger)).thenReturn(Mono.empty());
+        StepVerifier.create(service.followUps(FAMILY, stranger))
+                .expectErrorMatches(e -> e instanceof BaymaxException b && b.status().value() == 404).verify();
+        verifyNoInteractions(timeline, nudgeData);
+    }
+
     /** D27 in the domain: an urgent card is NOW or THIS_WEEK; asking for one at ROUTINE or unassessed is loud. */
     @Test
     void anUrgentCardRefusesALevelThatHasNoLine() {
         for (Urgency none : new Urgency[]{Urgency.ROUTINE, null}) {
-            assertThatThrownBy(() -> new AttentionItem.Urgent(UUID.randomUUID(), none, "lab_report", TODAY, false, NOW))
+            assertThatThrownBy(() -> new AttentionItem.Urgent(UUID.randomUUID(), none, "lab_report", TODAY, false, NOW, false))
                     .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("NOW or THIS_WEEK");
         }
     }

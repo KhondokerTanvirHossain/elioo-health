@@ -458,8 +458,9 @@ public class WaIntakeService {
                         .filter(s -> s.level().isAtLeast(Urgency.THIS_WEEK))
                         .map(s -> {
                             Paper p = paperOf(newest);   // the date and its upload-day mark from one read of the row
+                            // the WhatsApp card shows no date mark, so it carries none (stated here, not defaulted)
                             return new AttentionItem.Urgent(newest.id(), s.level(), newest.documentType(), p.date(), p.uploadDay(),
-                                    newest.createdAt());
+                                    newest.createdAt(), false);
                         })
                         .flux()
                 : Flux.empty();

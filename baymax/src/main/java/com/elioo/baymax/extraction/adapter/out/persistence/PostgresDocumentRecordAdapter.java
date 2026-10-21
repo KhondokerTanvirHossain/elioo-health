@@ -439,6 +439,8 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
                 .flatMap(n -> rows("DELETE FROM " + S + ".observation WHERE document_id = :d", documentId).map(m -> n + m))
                 .flatMap(n -> rows("DELETE FROM " + S + ".medication_event WHERE document_id = :d", documentId).map(m -> n + m))
                 .flatMap(n -> rows("DELETE FROM " + S + ".follow_up WHERE document_id = :d", documentId).map(m -> n + m))
+                // now_ack (plan B3): every দেখেছি on the paper, whoever tapped (no cascade: a forgotten row fails the delete)
+                .flatMap(n -> rows("DELETE FROM " + S + ".now_ack WHERE document_id = :d", documentId).map(m -> n + m))
                 .flatMap(n -> rows("DELETE FROM " + S + ".document WHERE id = :d", documentId).map(m -> n + m));
     }
 

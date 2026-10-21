@@ -25,6 +25,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
+import java.time.YearMonth;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -61,6 +64,8 @@ class AppApiLogSafetyTest {
 
     private static final String NUMBER = "+8801700000123";
     private static final String NAME = "রোকেয়া পরীক্ষা";
+    /** Plan B3: what the doctor wrote, a fictional follow-up instruction the calendar and follow-ups answers carry. */
+    private static final String FOLLOW_UP = "Return-for-review-6613";
     /** An iPhone photo named for the patient (Review Focus 3): never logged, never returned. */
     private static final String FILENAME = NAME + ".jpg";
     /** Plan B6: a medicine as written and a value's printed name, which the health reads return and must never log. */
@@ -105,6 +110,7 @@ class AppApiLogSafetyTest {
         out.add(new Needle("the patient's name, query-encoded", UriUtils.encodeQueryParam(NAME, StandardCharsets.UTF_8)));
         out.add(new Needle("the filename", FILENAME));
         out.add(new Needle("the filename, form-encoded", URLEncoder.encode(FILENAME, StandardCharsets.UTF_8)));
+        out.add(new Needle("the doctor's follow-up instruction (plan B3)", FOLLOW_UP));
         out.add(new Needle("the shown number's prefix", "+880 1700"));
         out.add(new Needle("the owner's name", OWNER));
         out.add(new Needle("the other family's owner's name", OTHER_OWNER));
@@ -158,6 +164,11 @@ class AppApiLogSafetyTest {
             PatientProfile karim = AppApiContext.patient(context, family.id(), OTHER_OWNER);
             UUID paper = AppApiContext.paper(context, POSTGRES, rokeya, "now");
             AppApiContext.value(POSTGRES, rokeya, paper, NAME, "6.9");
+            // the doctor's date on the patient's today, so the calendar's month and the follow-ups list both carry it
+            LocalDate dhakaToday = LocalDate.now(ZoneId.of("Asia/Dhaka"));
+            AppApiContext.sql(POSTGRES, "INSERT INTO baymax.follow_up (patient_id, document_id, instruction, due_date, status, crop_key) VALUES ('"
+                    + rokeya.id() + "','" + paper + "','" + FOLLOW_UP + "','" + dhakaToday + "','open','"
+                    + rokeya.familyId() + "/" + rokeya.id() + "/" + paper + "/crop-f1.jpg')");
             // the paper's page in the bucket and the ledger, so the owner's delete below empties a real prefix
             context.getBean(DocumentStorageUseCase.class).storePage(rokeya.familyId(), rokeya.id(), paper, 1, PaintedPaper.paintedPage()).block();
             String token = AppApiContext.session(context, family.id());
@@ -194,6 +205,57 @@ class AppApiLogSafetyTest {
                         .bodyValue(Map.of("patient_id", NAME)).exchange().expectStatus().isForbidden();
                 c.put().uri("/app/api/active-patient").cookie("baymax_session", t).contentType(MediaType.APPLICATION_JSON)
                         .bodyValue(Map.of("patient_id", NAME)).exchange().expectStatus().isForbidden();
+            });
+            // plan B3: the banner, its ack with a real seen set, and the patient's stack, timeline, calendar and follow-ups,
+            // each answer provably carrying what must not be logged (the name, the doctor's instruction)
+            exercise.put("GET /app/api/now-banner", (c, t) -> {
+                c.get().uri("/app/api/now-banner").cookie("baymax_session", t).exchange().expectStatus().isOk()
+                        .expectBody().jsonPath("$.show").isEqualTo(true);
+                c.get().uri(b -> b.path("/app/api/now-banner").queryParam("n", NUMBER).build()).cookie("baymax_session", otherToken)
+                        .exchange().expectStatus().isOk();
+                c.get().uri("/app/api/now-banner").exchange().expectStatus().isUnauthorized();
+            });
+            exercise.put("PUT /app/api/now-banner/ack", (c, t) -> {
+                Map<?, ?> drawn = c.get().uri("/app/api/now-banner").cookie("baymax_session", t).exchange().expectStatus().isOk()
+                        .expectBody(Map.class).returnResult().getResponseBody();
+                assertThat((List<?>) drawn.get("seen")).as("a real seen set").isNotEmpty();
+                c.put().uri("/app/api/now-banner/ack").cookie("baymax_session", t).header("X-Medioo", "1").header("Origin", AppApiContext.ORIGIN)
+                        .contentType(MediaType.APPLICATION_JSON).bodyValue(Map.of("seen", drawn.get("seen"))).exchange().expectStatus().isOk()
+                        .expectBody().jsonPath("$.show").isEqualTo(false);
+                c.put().uri("/app/api/now-banner/ack").cookie("baymax_session", t).header("X-Medioo", "1").header("Origin", AppApiContext.ORIGIN)
+                        .contentType(MediaType.APPLICATION_JSON).bodyValue(Map.of("seen", NAME)).exchange().expectStatus().isBadRequest();
+            });
+            exercise.put("GET /app/api/patients/{id}/attention", (c, t) -> {
+                c.get().uri("/app/api/patients/" + rokeya.id() + "/attention").cookie("baymax_session", t).exchange().expectStatus().isOk()
+                        .expectBody().jsonPath("$.items[0].kind").isEqualTo("urgent");
+                c.get().uri("/app/api/patients/" + rokeya.id() + "/attention").cookie("baymax_session", otherToken)
+                        .exchange().expectStatus().isNotFound();
+                c.get().uri(b -> b.path("/app/api/patients/{id}/attention").build(NAME)).cookie("baymax_session", t)
+                        .exchange().expectStatus().isNotFound();
+            });
+            exercise.put("GET /app/api/patients/{id}/timeline", (c, t) -> {
+                c.get().uri("/app/api/patients/" + rokeya.id() + "/timeline").cookie("baymax_session", t).exchange().expectStatus().isOk()
+                        // B6's two routine papers below are filed later and sort first; what matters is that the name's paper is in the answer
+                        .expectBody().jsonPath("$.entries[?(@.document_id == '" + paper + "')]").exists();
+                c.get().uri(b -> b.path("/app/api/patients/" + rokeya.id() + "/timeline").queryParam("cursor", NAME).build())
+                        .cookie("baymax_session", t).exchange().expectStatus().isBadRequest();
+                c.get().uri("/app/api/patients/" + rokeya.id() + "/timeline").cookie("baymax_session", otherToken)
+                        .exchange().expectStatus().isNotFound();
+            });
+            exercise.put("GET /app/api/patients/{id}/calendar", (c, t) -> {
+                c.get().uri("/app/api/patients/" + rokeya.id() + "/calendar?month=" + YearMonth.from(dhakaToday)).cookie("baymax_session", t)
+                        .exchange().expectStatus().isOk()
+                        .expectBody().jsonPath("$.days[?(@.date == '" + dhakaToday + "')].follow_ups[0].instruction").isEqualTo(FOLLOW_UP);
+                c.get().uri(b -> b.path("/app/api/patients/" + rokeya.id() + "/calendar").queryParam("month", NAME).build())
+                        .cookie("baymax_session", t).exchange().expectStatus().isBadRequest();
+                c.get().uri("/app/api/patients/" + rokeya.id() + "/calendar").cookie("baymax_session", otherToken)
+                        .exchange().expectStatus().isNotFound();
+            });
+            exercise.put("GET /app/api/patients/{id}/follow-ups", (c, t) -> {
+                c.get().uri("/app/api/patients/" + rokeya.id() + "/follow-ups").cookie("baymax_session", t).exchange().expectStatus().isOk()
+                        .expectBody().jsonPath("$.items[0].instruction").isEqualTo(FOLLOW_UP);
+                c.get().uri("/app/api/patients/" + rokeya.id() + "/follow-ups").cookie("baymax_session", otherToken)
+                        .exchange().expectStatus().isNotFound();
             });
             exercise.put("GET /app/api/documents/{id}", (c, t) -> {
                 // the owner's GET carries the patient's name and a value named after her; another family's and a

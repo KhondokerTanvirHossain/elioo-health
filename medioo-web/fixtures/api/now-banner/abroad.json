@@ -1,0 +1,31 @@
+{
+  "_meta": {
+    "generated_by": "baymax NowBannerApiContractTest",
+    "source": "GET /app/api/now-banner over the case abroad"
+  },
+  "body": {
+    "call_999": false,
+    "documents": [
+      {
+        "acked": false,
+        "date": "2026-10-19",
+        "date_is_upload_day": false,
+        "date_uncertain": false,
+        "document_id": "fb087bfd-6a3f-3460-95b1-563615f0b329",
+        "document_type": "lab_report",
+        "patient_id": "0c30f702-f768-32df-90c9-ab0d89034a92"
+      }
+    ],
+    "line_key": "urgency.now",
+    "seen": [
+      {
+        "document_id": "fb087bfd-6a3f-3460-95b1-563615f0b329",
+        "reasons_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "release_state": "none",
+        "urgency": "now"
+      }
+    ],
+    "show": true
+  },
+  "status": 200
+}

@@ -1,0 +1,22 @@
+{
+  "_meta": {
+    "generated_by": "baymax AttentionApiContractTest",
+    "source": "GET /app/api/patients/{id}/attention over the case now-only"
+  },
+  "body": {
+    "items": [
+      {
+        "action_key": "attn.open",
+        "date": "2026-10-19",
+        "date_is_upload_day": false,
+        "date_uncertain": false,
+        "document_id": "e6ac22dc-fc3b-37cc-b018-f388b72b8165",
+        "document_type": "lab_report",
+        "kind": "urgent",
+        "level": "now",
+        "received_at": "2026-10-20T06:00:00Z"
+      }
+    ]
+  },
+  "status": 200
+}

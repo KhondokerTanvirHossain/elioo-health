@@ -230,6 +230,95 @@ class PostgresHealthRecordAdapterTest {
         });
     }
 
+    /**
+     * Plan B3: a share member's দেখেছি references only their own family_account, plus the owner's patient and paper, so
+     * the family-row lock alone never made it wait. Sequence: the delete has run {@code DELETE now_ack} and is about to
+     * delete {@code document}; the member's tap commits in between; the document delete then failed on
+     * {@code now_ack_document_id_patient_id_fkey} and the whole delete rolled back. Deterministic: another transaction
+     * holds a NO KEY UPDATE lock on the paper (which a tap's KEY SHARE does not wait for, and a DELETE does), so the
+     * delete is parked exactly between the two statements while the tap is attempted. Both deletes, both answers.
+     */
+    @Test
+    void aShareMembersTapDuringTheFamilyDeleteNeverFailsIt() {
+        runner().run(context -> {
+            HealthRecordPort port = context.getBean(HealthRecordPort.class);
+            Seeded s = seedTapRace(port, "861", "862");
+            assertTapDuringDeleteLeavesTheDeleteWhole(s, () -> port.deleteFamily(s.family(), List.of(s.document())).toFuture());
+            assertThat(scalar("select count(*) from baymax.family_account where id = '" + s.family() + "'")).isEqualTo("0");
+        });
+    }
+
+    @Test
+    void aShareMembersTapDuringThePatientDeleteNeverFailsIt() {
+        runner().run(context -> {
+            HealthRecordPort port = context.getBean(HealthRecordPort.class);
+            Seeded s = seedTapRace(port, "863", "864");
+            assertTapDuringDeleteLeavesTheDeleteWhole(s, () -> port.deletePatient(s.patient(), List.of(s.document())).toFuture());
+            assertThat(scalar("select count(*) from baymax.patient_profile where id = '" + s.patient() + "'")).isEqualTo("0");
+        });
+    }
+
+    private record Seeded(UUID family, UUID patient, UUID document, UUID member) {
+    }
+
+    private static Seeded seedTapRace(HealthRecordPort port, String owner, String member) throws Exception {
+        Instant t = Instant.parse("2026-10-21T08:00:00Z");
+        FamilyAccount f = port.createFamily(new FamilyAccount(null, "+8801700000" + owner, "Owner", FamilyAccount.Plan.FAMILY, t, t)).block();
+        FamilyAccount m = port.createFamily(new FamilyAccount(null, "+8801700000" + member, "Sister", FamilyAccount.Plan.FAMILY, t, t)).block();
+        PatientProfile ma = port.createPatient(new PatientProfile(null, f.id(), "Ma", 70, PatientProfile.Sex.FEMALE, List.of(), t, t)).block();
+        UUID doc = UUID.randomUUID();
+        seedDocument(f.id(), ma.id(), doc, "2026-10-21T08:00:00Z");
+        sql("insert into baymax.share_member (patient_id, whatsapp_number) values ('" + ma.id() + "', '+8801700000" + member + "')");
+        return new Seeded(f.id(), ma.id(), doc, m.id());
+    }
+
+    private static void assertTapDuringDeleteLeavesTheDeleteWhole(
+            Seeded s, java.util.function.Supplier<java.util.concurrent.CompletableFuture<?>> deleting) throws Exception {
+        try (Connection parker = connect()) {
+            parker.setAutoCommit(false);
+            try (Statement st = parker.createStatement()) {
+                st.execute("select id from baymax.document where id = '" + s.document() + "' for no key update");
+            }
+            java.util.concurrent.CompletableFuture<?> delete = deleting.get();
+            waitForLockWaiters(1, delete);   // the delete is parked on DELETE document, its now_ack delete already run
+
+            java.util.concurrent.CompletableFuture<Void> tap = java.util.concurrent.CompletableFuture.runAsync(() -> {
+                try {
+                    sql("insert into baymax.now_ack (family_id, patient_id, document_id, urgency, reasons_digest, release_state) values ('"
+                            + s.member() + "','" + s.patient() + "','" + s.document() + "','now','" + "b".repeat(64) + "','none')");
+                } catch (Exception e) {
+                    throw new java.util.concurrent.CompletionException(e);
+                }
+            });
+            // the tap either commits at once (no lock stops it) or waits on the delete's lock on the patient row
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
+            while (!tap.isDone() && lockWaiters() < 2) {
+                assertThat(System.nanoTime()).as("the tap either committed or waits on the delete").isLessThan(deadline);
+                Thread.sleep(25);
+            }
+            parker.commit();
+            org.assertj.core.api.Assertions.assertThatCode(() -> delete.get(20, java.util.concurrent.TimeUnit.SECONDS))
+                    .as("delete-on-request succeeds although a share member tapped দেখেছি while it ran").doesNotThrowAnyException();
+            assertThatThrownBy(() -> tap.get(20, java.util.concurrent.TimeUnit.SECONDS))
+                    .as("the tap on a paper deleted under it is the one refused").hasMessageContaining("violates foreign key constraint");
+        }
+        assertThat(scalar("select count(*) from baymax.document where id = '" + s.document() + "'")).isEqualTo("0");
+        assertThat(scalar("select count(*) from baymax.now_ack where document_id = '" + s.document() + "'")).isEqualTo("0");
+    }
+
+    private static int lockWaiters() throws Exception {
+        return Integer.parseInt(scalar("select count(*) from pg_stat_activity where wait_event_type = 'Lock' and datname = current_database()"));
+    }
+
+    private static void waitForLockWaiters(int n, java.util.concurrent.CompletableFuture<?> delete) throws Exception {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
+        while (lockWaiters() < n) {
+            assertThat(System.nanoTime()).as("the delete reached the parked paper's lock").isLessThan(deadline);
+            assertThat(delete).as("the delete waits for the parked paper").isNotDone();
+            Thread.sleep(25);
+        }
+    }
+
     private static void seedDocumentWithStatus(UUID family, UUID patient, UUID doc, String createdAt, String status) throws Exception {
         // V20: a retake carries its reason code, as every retake path writes one
         String code = "NEEDS_RETAKE".equals(status) ? "'low_overall'" : "NULL";
