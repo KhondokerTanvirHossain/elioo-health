@@ -119,7 +119,12 @@ class PreferencesApiTest {
                     "\"dark\"",
                     "null",
                     "{\"theme\":",
-                    "");
+                    "",
+                    // a duplicate key: a lenient parser keeps the last value and the object still has one field
+                    "{\"theme\":\"blue\",\"theme\":\"dark\"}",
+                    // a second JSON value, or trailing text, after a valid one: a lenient decoder reads the first and stops
+                    "{\"theme\":\"dark\"}{\"theme\":\"blue\"}",
+                    "{\"theme\":\"dark\"} trailing");
             List<String> wrong = new ArrayList<>();
             for (String body : bodies) {
                 EntityExchangeResult<byte[]> r = put(client, token, body).expectBody().returnResult();
