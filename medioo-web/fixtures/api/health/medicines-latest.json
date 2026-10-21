@@ -1,0 +1,35 @@
+{
+  "_meta": {
+    "generated_by": "baymax HealthApiContractTest",
+    "source": "GET /app/api/patients/{id}/medicines over the case medicines-latest"
+  },
+  "body": {
+    "date": "2026-10-12",
+    "date_is_upload_day": false,
+    "date_uncertain": true,
+    "document_id": "b6b6b6b6-0000-4000-8000-0000000000d4",
+    "heading_key": "health.medicines.as_written",
+    "medicines": [
+      {
+        "crop": {
+          "src": "/app/documents/b6b6b6b6-0000-4000-8000-0000000000d4/image?key=f%2Fp%2Fb6b6b6b6-0000-4000-8000-0000000000d4%2Fcrop-m1.jpg"
+        },
+        "dose_text": "50 mg",
+        "duration_text": "30 days",
+        "frequency_text": "1+0+1",
+        "name": "Tab. Demoprol",
+        "timing_text": "after food"
+      },
+      {
+        "crop": {
+          "src": "/app/documents/b6b6b6b6-0000-4000-8000-0000000000d4/image?key=f%2Fp%2Fb6b6b6b6-0000-4000-8000-0000000000d4%2Fcrop-m2.jpg"
+        },
+        "dose_text": "25 mg",
+        "name": "Tab. Fictazide"
+      }
+    ],
+    "newer_document_id": null,
+    "newer_prescription_not_read": false
+  },
+  "status": 200
+}

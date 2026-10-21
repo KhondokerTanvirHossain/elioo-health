@@ -1,0 +1,13 @@
+{
+  "_meta": {
+    "generated_by": "baymax HealthApiContractTest",
+    "source": "GET /app/api/patients/{id}/labs over the case labs-none"
+  },
+  "body": {
+    "bp": {
+      "points": [ ]
+    },
+    "series": [ ]
+  },
+  "status": 200
+}

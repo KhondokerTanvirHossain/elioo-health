@@ -63,6 +63,9 @@ class AppApiLogSafetyTest {
     private static final String NAME = "রোকেয়া পরীক্ষা";
     /** An iPhone photo named for the patient (Review Focus 3): never logged, never returned. */
     private static final String FILENAME = NAME + ".jpg";
+    /** Plan B6: a medicine as written and a value's printed name, which the health reads return and must never log. */
+    private static final String MEDICINE = "Zorvalex-7731";
+    private static final String MARKER = "Kalium-8843";
     private static final String OWNER = "Tanvir";
     /** The other family's number and owner: their requests are the 404 branch of every route. */
     private static final String OTHER_NUMBER = "+8801700000124";
@@ -106,6 +109,8 @@ class AppApiLogSafetyTest {
         out.add(new Needle("the owner's name", OWNER));
         out.add(new Needle("the other family's owner's name", OTHER_OWNER));
         out.add(new Needle("the share member's name", MEMBER_OWNER));
+        out.add(new Needle("a medicine as written", MEDICINE));
+        out.add(new Needle("a value's printed name", MARKER));
         FAMILIES.forEach((number, whose) -> {
             String digits = number.substring(1);
             String national = "0" + digits.substring(3);
@@ -208,6 +213,31 @@ class AppApiLogSafetyTest {
                 c.get().uri("/app/api/documents/" + paper + "/status").cookie("baymax_session", otherToken).exchange().expectStatus().isNotFound();
                 c.get().uri(b -> b.path("/app/api/documents/{id}/status").build(NAME)).cookie("baymax_session", t)
                         .exchange().expectStatus().isNotFound();
+            });
+            // plan B6: a lab paper with a value named MARKER (with a canonical name, so it is a lab point) and a DONE
+            // prescription whose medicine is MEDICINE; both reach the answers below, so the sweep reads lines written
+            // while they were in hand
+            UUID lab = AppApiContext.paper(context, POSTGRES, rokeya, "routine");
+            AppApiContext.sql(POSTGRES, "INSERT INTO baymax.observation (patient_id, document_id, name, canonical_name, value, unit, crop_key,"
+                    + " observed_at) VALUES ('" + rokeya.id() + "','" + lab + "','" + MARKER + "','potassium','6.9','mmol/L','"
+                    + rokeya.familyId() + "/" + rokeya.id() + "/" + lab + "/crop-v1.jpg',now())");
+            UUID prescription = AppApiContext.paper(context, POSTGRES, rokeya, "routine");
+            AppApiContext.sql(POSTGRES, "UPDATE baymax.document SET document_type = 'prescription' WHERE id = '" + prescription + "'");
+            AppApiContext.sql(POSTGRES, "INSERT INTO baymax.medication_event (patient_id, document_id, name, dose_text, crop_key, at) VALUES ('"
+                    + rokeya.id() + "','" + prescription + "','" + MEDICINE + "','50 mg','" + rokeya.familyId() + "/" + rokeya.id() + "/"
+                    + prescription + "/crop-m1.jpg',now())");
+            exercise.put("GET /app/api/patients/{id}/labs", (c, t) -> {
+                c.get().uri("/app/api/patients/" + rokeya.id() + "/labs").cookie("baymax_session", t).exchange().expectStatus().isOk()
+                        .expectBody().jsonPath("$.series[?(@.canonical_name == 'potassium')].name").isEqualTo(List.of(MARKER));
+                c.get().uri("/app/api/patients/" + rokeya.id() + "/labs").cookie("baymax_session", otherToken).exchange().expectStatus().isNotFound();
+                c.get().uri(b -> b.path("/app/api/patients/{id}/labs").build(NAME)).cookie("baymax_session", t).exchange().expectStatus().isNotFound();
+                c.get().uri("/app/api/patients/" + rokeya.id() + "/labs").exchange().expectStatus().isUnauthorized();
+            });
+            exercise.put("GET /app/api/patients/{id}/medicines", (c, t) -> {
+                c.get().uri("/app/api/patients/" + rokeya.id() + "/medicines").cookie("baymax_session", t).exchange().expectStatus().isOk()
+                        .expectBody().jsonPath("$.medicines[0].name").isEqualTo(MEDICINE);
+                c.get().uri("/app/api/patients/" + rokeya.id() + "/medicines").cookie("baymax_session", otherToken).exchange().expectStatus().isNotFound();
+                c.get().uri(b -> b.path("/app/api/patients/{id}/medicines").build(NUMBER)).cookie("baymax_session", t).exchange().expectStatus().isNotFound();
             });
             exercise.put("GET /app/api/documents/{id}/delete-token", (c, t) -> {
                 c.get().uri("/app/api/documents/" + paper + "/delete-token").cookie("baymax_session", t).exchange().expectStatus().isOk();

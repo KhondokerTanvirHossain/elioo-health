@@ -31,6 +31,7 @@ public class AppApiRouter {
     public RouterFunction<ServerResponse> mediooAppApiRoutes(MeApiHandler me, SignInApiHandler signIn, PaperApiHandler papers,
                                                              UploadApiHandler uploads, PaperStatusApiHandler status,
                                                              PaperDeleteApiHandler deletes, FamilyApiHandler family,
+                                                             HealthApiHandler health,
                                                              AppApiGuard guard) {
         return RouterFunctions.route()
                 .GET(BASE + "/me", me::me)
@@ -50,6 +51,8 @@ public class AppApiRouter {
                 .PUT(BASE + "/patients/{id}/flags", family::setFlags)
                 .PUT(BASE + "/patients/{id}/reminders", family::patientReminders)
                 .PUT(BASE + "/language", family::language)
+                .GET(BASE + "/patients/{id}/labs", health::labs)
+                .GET(BASE + "/patients/{id}/medicines", health::medicines)
                 .route(RequestPredicates.path(BASE + "/**"), request -> ApiReason.NOT_FOUND.respond())
                 .filter(guard)
                 .build();

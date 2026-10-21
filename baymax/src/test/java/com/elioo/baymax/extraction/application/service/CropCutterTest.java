@@ -82,6 +82,46 @@ class CropCutterTest {
         assertThat(cutter.cutValue(new ExtractionResult.SourceSpan(1, 0, 20), "HbA1c", "80", pages).bytes()).isEmpty();
     }
 
+    /**
+     * Plan B6: the OCR line a value was cut from is what pairs a blood-pressure reading. The systolic is found by its
+     * text and the diastolic on its named line (two different paths through cutValue) and both name the one line, as
+     * {@code <page>:<start>-<end>} of that line in the page text; a value on the next line names another.
+     */
+    @Test
+    void theSystolicAndDiastolicOfOneLineShareItsLine() throws Exception {
+        Map<Integer, PageOcr> pages = Map.of(1, page());
+        String text = SpanLocatorTest.PAGE.text();
+        int bpStart = text.indexOf("BP : 130 / 80 mmHg");
+        String bpLine = "1:" + bpStart + "-" + (bpStart + "BP : 130 / 80 mmHg".length());
+
+        CropCutter.Cut systolic = cutter.cutValue(new ExtractionResult.SourceSpan(1, 0, 20), "BP", "130", pages);
+        CropCutter.Cut diastolic = cutter.cutValue(new ExtractionResult.SourceSpan(1, 0, 20), "BP", "80", pages);
+        assertThat(systolic.bytes()).isPresent();
+        assertThat(diastolic.bytes()).isPresent();
+        assertThat(systolic.line()).contains(bpLine);
+        assertThat(diastolic.line()).contains(bpLine);
+
+        // the claimed span path: offsets that are right name the same line
+        int at = text.indexOf("130");
+        CropCutter.Cut claimed = cutter.cutValue(new ExtractionResult.SourceSpan(1, bpStart, at + 3), "BP", "130", pages);
+        assertThat(claimed.outcome()).isEqualTo(CropCutter.Outcome.CLAIMED_SPAN);
+        assertThat(claimed.line()).contains(bpLine);
+
+        CropCutter.Cut nextLine = cutter.cutValue(new ExtractionResult.SourceSpan(1, 0, 20), "Demoprol", "50", pages);
+        assertThat(nextLine.bytes()).isPresent();
+        assertThat(nextLine.line()).isPresent();
+        assertThat(nextLine.line()).isNotEqualTo(systolic.line());
+    }
+
+    /** A cut that failed, or one cut from a region of the image, names no OCR line. */
+    @Test
+    void aFailedCutNamesNoLine() throws Exception {
+        Map<Integer, PageOcr> pages = Map.of(1, page());
+        assertThat(cutter.cutValue(new ExtractionResult.SourceSpan(1, 0, 20), "HbA1c", "80", pages).line()).isEmpty();
+        assertThat(cutter.cut(new ExtractionResult.SourceSpan(1, 10, 30), "Tab. Zorbaflex", pages).line()).isEmpty();
+        assertThat(cutter.cutRegion(new ExtractionResult.SourceRegion(1, 0.1, 0.1, 0.3, 0.2), pages).line()).isEmpty();
+    }
+
     /** Safety: never widen a crop to the page. */
     @Test
     void aRunOfWordsCoveringMostOfThePageIsRefused() throws Exception {

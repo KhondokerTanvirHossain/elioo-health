@@ -59,8 +59,28 @@ public class CropCutter {
         REGION_TOO_LARGE
     }
 
-    /** A crop plus how it was found, for callers that want the reason (the replay harness, the log). */
-    public record Cut(Outcome outcome, Optional<byte[]> bytes) {
+    /**
+     * A crop plus how it was found, for callers that want the reason (the replay harness, the log), and (plan B6) the OCR
+     * line it was cut from: {@code <page>:<start>-<end>}, the character offsets of {@link SpanLocator#lineAround} on that
+     * page's text around the range the crop was cut from. Every OCR path that cut a crop names it (the claimed span, the
+     * relocated text, the value on its named line); a region cut from the page image and every failure name none. Two
+     * values cut from one line of one document are one printed reading ({@code BP 130 / 80}); nothing else pairs values.
+     */
+    public record Cut(Outcome outcome, Optional<byte[]> bytes, Optional<String> line) {
+
+        /** A cut with no OCR line: a failure, or a region of the image. */
+        public Cut(Outcome outcome, Optional<byte[]> bytes) {
+            this(outcome, bytes, Optional.empty());
+        }
+
+        /** An OCR cut: the line is named only when a crop was actually cut. */
+        static Cut fromLine(Outcome outcome, Optional<byte[]> bytes, PageOcr page, SpanLocator.Range cutFrom) {
+            if (bytes.isEmpty()) {
+                return new Cut(outcome, bytes);
+            }
+            SpanLocator.Range line = SpanLocator.lineAround(page, cutFrom);
+            return new Cut(outcome, bytes, Optional.of(page.pageNo() + ":" + line.start() + "-" + line.end()));
+        }
     }
 
     /** Height above which a "crop" is really the page: never widen to that (BMX-5b safety). */
@@ -107,7 +127,7 @@ public class CropCutter {
             return direct;
         }
         Optional<byte[]> bytes = cutWords(page, words);
-        return new Cut(bytes.isPresent() ? Outcome.RELOCATED : Outcome.UNCROPPABLE, bytes);
+        return Cut.fromLine(bytes.isPresent() ? Outcome.RELOCATED : Outcome.UNCROPPABLE, bytes, page, line.get());
     }
 
     public Cut cut(ExtractionResult.SourceSpan span, String anchor, Map<Integer, PageOcr> pagesByNumber) {
@@ -123,7 +143,7 @@ public class CropCutter {
         List<PageOcr.PositionedWord> boxed = claimed.stream().filter(w -> w.left() >= 0).toList();
 
         if (!boxed.isEmpty() && (anchor == null || SpanLocator.contains(boxed, anchor))) {
-            return new Cut(Outcome.CLAIMED_SPAN, cutWords(page, boxed));
+            return Cut.fromLine(Outcome.CLAIMED_SPAN, cutWords(page, boxed), page, rangeOf(boxed));
         }
         if (anchor == null) {
             return new Cut(claimed.isEmpty() ? (span.start() >= page.text().length() ? Outcome.BEYOND_TEXT : Outcome.NO_GEOMETRY)
@@ -142,7 +162,13 @@ public class CropCutter {
             return new Cut(located.isEmpty() ? Outcome.NO_GEOMETRY : Outcome.UNCROPPABLE, Optional.empty());
         }
         Optional<byte[]> bytes = cutWords(page, located);
-        return new Cut(bytes.isPresent() ? Outcome.RELOCATED : Outcome.UNCROPPABLE, bytes);
+        return Cut.fromLine(bytes.isPresent() ? Outcome.RELOCATED : Outcome.UNCROPPABLE, bytes, page, line);
+    }
+
+    /** The character range of the page text the words cover, first word's start to last word's end. */
+    private static SpanLocator.Range rangeOf(List<PageOcr.PositionedWord> words) {
+        return new SpanLocator.Range(words.stream().mapToInt(PageOcr.PositionedWord::start).min().orElse(0),
+                words.stream().mapToInt(PageOcr.PositionedWord::end).max().orElse(0));
     }
 
     /**

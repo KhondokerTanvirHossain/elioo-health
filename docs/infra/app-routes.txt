@@ -12,6 +12,8 @@ GET /app/api/documents/{id}/delete-token
 GET /app/api/documents/{id}/status
 GET /app/api/family
 GET /app/api/me
+GET /app/api/patients/{id}/labs
+GET /app/api/patients/{id}/medicines
 GET /app/api/upload-options
 GET /app/documents/{id}
 GET /app/documents/{id}/all

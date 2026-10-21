@@ -61,7 +61,12 @@ public record VerifiedItems(
             String refHigh,
             String flag,
             String cropKey,
-            Instant observedAt
+            Instant observedAt,
+            /*
+             * Plan B6: the OCR line the value was read from, {@code <page>:<start>-<end>} (CropCutter.Cut#line); null for a
+             * value recovered from the page image. Two values on one line of one document are one printed reading.
+             */
+            String sourceLine
     ) {
     }
 

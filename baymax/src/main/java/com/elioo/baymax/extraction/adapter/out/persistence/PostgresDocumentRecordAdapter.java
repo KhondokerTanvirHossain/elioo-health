@@ -164,16 +164,16 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
                 .concatMap(o -> db.sql("""
                                 INSERT INTO %s.observation
                                     (patient_id, document_id, name, canonical_name, value, unit,
-                                     ref_low, ref_high, flag, crop_key, observed_at)
+                                     ref_low, ref_high, flag, crop_key, observed_at, source_line)
                                 VALUES (:patient, :document, :name, :canonical, :value, :unit,
-                                        :refLow, :refHigh, :flag, :crop, :observedAt)
+                                        :refLow, :refHigh, :flag, :crop, :observedAt, :sourceLine)
                                 """.formatted(S))
                         .bind("patient", o.patientId()).bind("document", documentId)
                         .bind("name", o.name()).bind("value", o.value()).bind("crop", o.cropKey())
                         .bind("observedAt", OffsetDateTime.ofInstant(o.observedAt(), ZoneOffset.UTC))
                         .bind("canonical", nullable(o.canonicalName())).bind("unit", nullable(o.unit()))
                         .bind("refLow", nullable(o.refLow())).bind("refHigh", nullable(o.refHigh()))
-                        .bind("flag", nullable(o.flag()))
+                        .bind("flag", nullable(o.flag())).bind("sourceLine", nullable(o.sourceLine()))
                         .fetch().rowsUpdated())
                 .then();
     }
