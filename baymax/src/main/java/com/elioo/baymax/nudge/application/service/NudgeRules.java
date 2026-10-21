@@ -210,15 +210,13 @@ public class NudgeRules {
         return kept;
     }
 
-    /** Units compare folded, never converted: "mg/dL" and "µmol/L" are two units and stay two. */
+    /**
+     * Units compare folded, never converted: "mg/dL" and "µmol/L" are two units and stay two. The fold is the module's one
+     * ({@link com.elioo.baymax.outbound.domain.MarkerThreshold#foldUnit}), so this trend and the স্বাস্থ্য trend group units
+     * the same way ({@code MarkerThresholdTest.theUnitFoldIsWrittenOnlyInMarkerThreshold}).
+     */
     private static String unitKey(String unit) {
-        if (unit == null) {
-            return "";
-        }
-        return java.text.Normalizer.normalize(unit, java.text.Normalizer.Form.NFKC)
-                .replace('\u03bc', 'u')
-                .replaceAll("\\s+", "")
-                .toLowerCase(java.util.Locale.ROOT);
+        return com.elioo.baymax.outbound.domain.MarkerThreshold.foldUnit(unit);
     }
 
     /** The current monotonic run at the end of the series; a candidate when it is long enough and in the wrong direction. */

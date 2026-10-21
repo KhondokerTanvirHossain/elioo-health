@@ -110,6 +110,7 @@ class AppApiGuardTest {
                 new PaperDeleteApiHandler(timeline, new DeleteConfirmation(properties, Clock.systemUTC())),
                 new FamilyApiHandler(mock(TimelineUseCase.class), mock(NudgeDataPort.class), mock(NudgeOptOutUseCase.class),
                         new UiCopy(), properties),
+                new HealthApiHandler(org.mockito.Mockito.mock(com.elioo.baymax.web.application.port.in.HealthUseCase.class)),
                 guard))).build();
     }
 
@@ -125,6 +126,17 @@ class AppApiGuardTest {
                 .expectHeader().valueEquals("Cache-Control", "no-store")
                 .expectBody().json("{\"reason\":\"UNAUTHENTICATED\"}", true);
         verifyNoInteractions(timeline);
+    }
+
+    /** Plan B6: the health reads are behind the guard like every other route: no session, a 401 with the reason. */
+    @Test
+    void theHealthReadsWithoutASessionAre401() {
+        for (String route : List.of("labs", "medicines")) {
+            client.get().uri("/app/api/patients/" + MA + "/" + route).exchange()
+                    .expectStatus().isUnauthorized()
+                    .expectHeader().doesNotExist("Location")
+                    .expectBody().json("{\"reason\":\"UNAUTHENTICATED\"}", true);
+        }
     }
 
     @Test

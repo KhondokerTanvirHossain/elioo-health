@@ -59,8 +59,56 @@ public class CropCutter {
         REGION_TOO_LARGE
     }
 
-    /** A crop plus how it was found, for callers that want the reason (the replay harness, the log). */
-    public record Cut(Outcome outcome, Optional<byte[]> bytes) {
+    /**
+     * A crop plus how it was found, for callers that want the reason (the replay harness, the log), and (plan B6) the OCR
+     * line the item's own text was read from: {@code <page>:<start>-<end>}, exactly one newline-delimited line of that
+     * page's text ({@link SpanLocator#lines}), never widened to the range the crop was cut from. Model offsets drift
+     * (DR-12): a claimed span that starts on the line above or runs into the next still names the one line whose words
+     * carry the text, so both halves of {@code BP 130 / 80} name the same line whichever path cut them. Every OCR path that
+     * cut a crop names it (the claimed span, the relocated text, the value on its named line) when exactly one line
+     * carries the text; a region cut from the page image, every failure, and text that no single line carries name none.
+     * Two values on one line of one document are one printed reading; nothing else pairs values.
+     */
+    public record Cut(Outcome outcome, Optional<byte[]> bytes, Optional<String> line) {
+
+        /** A cut with no OCR line: a failure, or a region of the image. */
+        public Cut(Outcome outcome, Optional<byte[]> bytes) {
+            this(outcome, bytes, Optional.empty());
+        }
+
+        /**
+         * An OCR cut: the line is named only when a crop was actually cut and exactly one line of {@code words} carries the
+         * item's text, tried in order: the whole anchor ({@code BP 130}), then the value alone (a name printed in another
+         * Vision block than its value).
+         */
+        static Cut fromLine(Outcome outcome, Optional<byte[]> bytes, PageOcr page, List<PageOcr.PositionedWord> words, String... texts) {
+            if (bytes.isEmpty()) {
+                return new Cut(outcome, bytes);
+            }
+            for (String text : texts) {
+                Optional<SpanLocator.Range> line = lineHolding(page, words, text);
+                if (line.isPresent()) {
+                    return new Cut(outcome, bytes, Optional.of(page.pageNo() + ":" + line.get().start() + "-" + line.get().end()));
+                }
+            }
+            return new Cut(outcome, bytes);
+        }
+    }
+
+    /**
+     * The one OCR line whose words (among {@code words}) carry {@code text}, as that line's exact range; empty when no
+     * line or more than one does. Never the first word's line and never the span's extent: a drifted span touches words of
+     * lines that do not hold the value.
+     */
+    static Optional<SpanLocator.Range> lineHolding(PageOcr page, List<PageOcr.PositionedWord> words, String text) {
+        if (text == null || text.isBlank() || page.text() == null) {
+            return Optional.empty();
+        }
+        List<SpanLocator.Range> holding = SpanLocator.lines(page.text()).stream()
+                .filter(line -> SpanLocator.contains(
+                        words.stream().filter(w -> w.overlaps(line.start(), line.end())).toList(), text))
+                .toList();
+        return holding.size() == 1 ? Optional.of(holding.get(0)) : Optional.empty();
     }
 
     /** Height above which a "crop" is really the page: never widen to that (BMX-5b safety). */
@@ -89,7 +137,7 @@ public class CropCutter {
      */
     public Cut cutValue(ExtractionResult.SourceSpan span, String name, String value, Map<Integer, PageOcr> pagesByNumber) {
         String joined = (name == null ? "" : name + " ") + (value == null ? "" : value);
-        Cut direct = cut(span, joined, pagesByNumber);
+        Cut direct = cut(span, joined, value, pagesByNumber);
         if (direct.bytes().isPresent() || value == null || value.isBlank()) {
             return direct;
         }
@@ -107,10 +155,15 @@ public class CropCutter {
             return direct;
         }
         Optional<byte[]> bytes = cutWords(page, words);
-        return new Cut(bytes.isPresent() ? Outcome.RELOCATED : Outcome.UNCROPPABLE, bytes);
+        return Cut.fromLine(bytes.isPresent() ? Outcome.RELOCATED : Outcome.UNCROPPABLE, bytes, page, words, value);
     }
 
     public Cut cut(ExtractionResult.SourceSpan span, String anchor, Map<Integer, PageOcr> pagesByNumber) {
+        return cut(span, anchor, null, pagesByNumber);
+    }
+
+    /** {@link #cut(ExtractionResult.SourceSpan, String, Map)}, naming the line that holds {@code anchor}, else {@code value}. */
+    private Cut cut(ExtractionResult.SourceSpan span, String anchor, String value, Map<Integer, PageOcr> pagesByNumber) {
         if (span == null || span.page() < 1) {
             return new Cut(Outcome.PAGE_MISSING, Optional.empty());
         }
@@ -123,7 +176,7 @@ public class CropCutter {
         List<PageOcr.PositionedWord> boxed = claimed.stream().filter(w -> w.left() >= 0).toList();
 
         if (!boxed.isEmpty() && (anchor == null || SpanLocator.contains(boxed, anchor))) {
-            return new Cut(Outcome.CLAIMED_SPAN, cutWords(page, boxed));
+            return Cut.fromLine(Outcome.CLAIMED_SPAN, cutWords(page, boxed), page, boxed, anchor, value);
         }
         if (anchor == null) {
             return new Cut(claimed.isEmpty() ? (span.start() >= page.text().length() ? Outcome.BEYOND_TEXT : Outcome.NO_GEOMETRY)
@@ -142,7 +195,7 @@ public class CropCutter {
             return new Cut(located.isEmpty() ? Outcome.NO_GEOMETRY : Outcome.UNCROPPABLE, Optional.empty());
         }
         Optional<byte[]> bytes = cutWords(page, located);
-        return new Cut(bytes.isPresent() ? Outcome.RELOCATED : Outcome.UNCROPPABLE, bytes);
+        return Cut.fromLine(bytes.isPresent() ? Outcome.RELOCATED : Outcome.UNCROPPABLE, bytes, page, located, anchor, value);
     }
 
     /**

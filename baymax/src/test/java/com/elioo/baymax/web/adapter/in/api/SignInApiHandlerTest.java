@@ -99,6 +99,7 @@ class SignInApiHandlerTest {
                 new PaperDeleteApiHandler(timeline, new DeleteConfirmation(properties, java.time.Clock.systemUTC())),
                 new FamilyApiHandler(mock(TimelineUseCase.class), mock(NudgeDataPort.class), mock(NudgeOptOutUseCase.class),
                         new UiCopy(), properties),
+                new HealthApiHandler(org.mockito.Mockito.mock(com.elioo.baymax.web.application.port.in.HealthUseCase.class)),
                 guard)).build();
     }
 

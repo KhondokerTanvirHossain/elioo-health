@@ -433,11 +433,11 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
 
         Flux<Void> values = Flux.fromIterable(result.valuesOrEmpty())
                 .concatMap(value -> cropForValue(document, value, byPage, itemId("v", observations.size()))
-                        .doOnNext(key -> observations.add(new VerifiedItems.Observation(
+                        .doOnNext(crop -> observations.add(new VerifiedItems.Observation(
                                 document.patientId(), value.name(),
                                 markers.canonicalFor(value.name(), value.canonicalName(), value.specimen()).orElse(null),
                                 value.value(), value.unit(), value.refLow(), value.refHigh(), value.flag(),
-                                key, observedAt)))
+                                crop.key(), observedAt, crop.line().orElse(null))))
                         .switchIfEmpty(Mono.fromRunnable(() -> droppedValues[0]++))
                         .then());
 
@@ -506,11 +506,11 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
      * never produced the text at all, and there the model's box is the only claim available — so it is
      * verified before it is stored, never on the strength of the same model that proposed it (DR-12).</p>
      */
-    private Mono<String> cropForValue(Document document, ExtractionResult.Value value,
-                                      Map<Integer, PageOcr> byPage, String itemId) {
+    private Mono<ValueCrop> cropForValue(Document document, ExtractionResult.Value value,
+                                         Map<Integer, PageOcr> byPage, String itemId) {
         CropCutter.Cut located = cropCutter.cutValue(value.sourceSpan(), value.name(), value.value(), byPage);
         if (located.bytes().isPresent()) {
-            return store(document, located, itemId);
+            return store(document, located, itemId).map(key -> new ValueCrop(key, located.line()));
         }
         if (!properties.getExtract().isRecoverCropsFromImage()) {
             return Mono.empty();
@@ -528,8 +528,17 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
                     }
                     log.info("[baymax] value recovered from the page image documentId={} item={} readBy={}",
                             document.id(), itemId, outcome.readBy());
-                    return store(document, region, itemId);
+                    // a region of the image has no OCR line, so a recovered value is never paired by one (plan B6)
+                    return store(document, region, itemId).map(key -> new ValueCrop(key, Optional.<String>empty()));
                 });
+    }
+
+    /**
+     * A value's stored crop key and the OCR line it was cut from ({@link CropCutter.Cut#line}), which the observation
+     * stores as {@code source_line}: what pairs a blood-pressure reading's two halves (plan B6). Empty for a value
+     * recovered from a region of the page image.
+     */
+    private record ValueCrop(String key, Optional<String> line) {
     }
 
     private Mono<String> crop(Document document, ExtractionResult.SourceSpan span, String anchor,

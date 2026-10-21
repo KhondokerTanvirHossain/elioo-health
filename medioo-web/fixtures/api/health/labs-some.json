@@ -1,0 +1,105 @@
+{
+  "_meta": {
+    "generated_by": "baymax HealthApiContractTest",
+    "source": "GET /app/api/patients/{id}/labs over the case labs-some"
+  },
+  "body": {
+    "bp": {
+      "points": [ ]
+    },
+    "series": [
+      {
+        "canonical_name": "creatinine",
+        "name": "S. Creatinine",
+        "points": [
+          {
+            "chip_key": "value.chip.outside.high",
+            "crop": {
+              "src": "/app/documents/b6b6b6b6-0000-4000-8000-0000000000d1/image?key=f%2Fp%2Fb6b6b6b6-0000-4000-8000-0000000000d1%2Fcrop-v11.jpg"
+            },
+            "date": "2026-10-12",
+            "date_is_upload_day": false,
+            "date_uncertain": true,
+            "document_id": "b6b6b6b6-0000-4000-8000-0000000000d1",
+            "kind": "outside",
+            "observation_id": "b6b6b6b6-0000-4000-8000-000000000111",
+            "side": "high",
+            "value": "132"
+          },
+          {
+            "chip_key": "value.chip.inside",
+            "crop": {
+              "src": "/app/documents/b6b6b6b6-0000-4000-8000-0000000000d2/image?key=f%2Fp%2Fb6b6b6b6-0000-4000-8000-0000000000d2%2Fcrop-v22.jpg"
+            },
+            "date": "2026-08-03",
+            "date_is_upload_day": false,
+            "date_uncertain": false,
+            "document_id": "b6b6b6b6-0000-4000-8000-0000000000d2",
+            "kind": "inside",
+            "observation_id": "b6b6b6b6-0000-4000-8000-000000000122",
+            "side": null,
+            "value": "98"
+          },
+          {
+            "chip_key": "value.chip.inside",
+            "crop": {
+              "src": "/app/documents/b6b6b6b6-0000-4000-8000-0000000000d3/image?key=f%2Fp%2Fb6b6b6b6-0000-4000-8000-0000000000d3%2Fcrop-v31.jpg"
+            },
+            "date": "2026-06-20",
+            "date_is_upload_day": true,
+            "date_uncertain": false,
+            "document_id": "b6b6b6b6-0000-4000-8000-0000000000d3",
+            "kind": "inside",
+            "observation_id": "b6b6b6b6-0000-4000-8000-000000000131",
+            "side": null,
+            "value": "90"
+          }
+        ],
+        "unit": "µmol/L"
+      },
+      {
+        "canonical_name": "potassium",
+        "name": "Potassium",
+        "points": [
+          {
+            "chip_key": "value.chip.outside.high",
+            "crop": {
+              "src": "/app/documents/b6b6b6b6-0000-4000-8000-0000000000d1/image?key=f%2Fp%2Fb6b6b6b6-0000-4000-8000-0000000000d1%2Fcrop-v12.jpg"
+            },
+            "date": "2026-10-12",
+            "date_is_upload_day": false,
+            "date_uncertain": true,
+            "document_id": "b6b6b6b6-0000-4000-8000-0000000000d1",
+            "kind": "outside",
+            "observation_id": "b6b6b6b6-0000-4000-8000-000000000112",
+            "side": "high",
+            "value": "5.9"
+          }
+        ],
+        "unit": "mmol/L"
+      },
+      {
+        "canonical_name": "total_cholesterol",
+        "name": "Total Cholesterol",
+        "points": [
+          {
+            "chip_key": "value.chip.unknown",
+            "crop": {
+              "src": "/app/documents/b6b6b6b6-0000-4000-8000-0000000000d2/image?key=f%2Fp%2Fb6b6b6b6-0000-4000-8000-0000000000d2%2Fcrop-v21.jpg"
+            },
+            "date": "2026-08-03",
+            "date_is_upload_day": false,
+            "date_uncertain": false,
+            "document_id": "b6b6b6b6-0000-4000-8000-0000000000d2",
+            "kind": "unknown",
+            "observation_id": "b6b6b6b6-0000-4000-8000-000000000121",
+            "side": null,
+            "value": "180"
+          }
+        ],
+        "unit": "mg/dL"
+      }
+    ]
+  },
+  "status": 200
+}

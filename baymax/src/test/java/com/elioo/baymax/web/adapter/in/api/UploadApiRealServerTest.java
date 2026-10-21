@@ -108,6 +108,7 @@ class UploadApiRealServerTest {
                 new PaperDeleteApiHandler(mock(TimelineUseCase.class), new DeleteConfirmation(properties, java.time.Clock.systemUTC())),
                 new FamilyApiHandler(mock(TimelineUseCase.class), mock(NudgeDataPort.class), mock(NudgeOptOutUseCase.class),
                         new UiCopy(), properties),
+                new HealthApiHandler(org.mockito.Mockito.mock(com.elioo.baymax.web.application.port.in.HealthUseCase.class)),
                 guard);
         HttpHandler app = RouterFunctions.toHttpHandler(router);
         // what the application pulled off the socket, counted below the exchange: the server's own side of the cap

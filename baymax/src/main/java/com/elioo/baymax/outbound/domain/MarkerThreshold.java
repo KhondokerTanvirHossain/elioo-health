@@ -78,14 +78,21 @@ public record MarkerThreshold(
      * unit; "mg/dL" and "µmol/L" are two, and a marker stated in one never answers for the other.
      */
     public static boolean sameUnit(String a, String b) {
-        return fold(a).equals(fold(b));
+        return foldUnit(a).equals(foldUnit(b));
     }
 
     private static boolean sameToken(String a, String b) {
         return a != null && b != null && a.trim().equalsIgnoreCase(b.trim());
     }
 
-    private static String fold(String s) {
+    /**
+     * The one unit fold of the module (plan B6): what {@link #sameUnit} compares, the unit half of the health series key
+     * ({@code HealthService}) and the nudge trend's unit key ({@code NudgeRules}), so a series never joins two printed
+     * units a threshold would keep apart, nor splits two it would join. Null folds to the empty string, which is "no
+     * unit", not a unit: a threshold never matches it, and the health series puts each such row in a series of its own.
+     * {@code MarkerThresholdTest} fails on any other copy of this fold in the module.
+     */
+    public static String foldUnit(String s) {
         if (s == null) {
             return "";
         }

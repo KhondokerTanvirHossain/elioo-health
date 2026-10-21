@@ -1,0 +1,48 @@
+{
+  "_meta": {
+    "generated_by": "baymax HealthApiContractTest",
+    "source": "GET /app/api/patients/{id}/labs over the case bp"
+  },
+  "body": {
+    "bp": {
+      "points": [
+        {
+          "date": "2026-10-12",
+          "date_is_upload_day": false,
+          "date_uncertain": false,
+          "diastolic": {
+            "chip_key": "value.chip.unknown",
+            "crop": {
+              "src": "/app/documents/b6b6b6b6-0000-4000-8000-0000000000d1/image?key=f%2Fp%2Fb6b6b6b6-0000-4000-8000-0000000000d1%2Fcrop-v42.jpg"
+            },
+            "date": "2026-10-12",
+            "date_is_upload_day": false,
+            "date_uncertain": false,
+            "document_id": "b6b6b6b6-0000-4000-8000-0000000000d1",
+            "kind": "unknown",
+            "observation_id": "b6b6b6b6-0000-4000-8000-000000000142",
+            "side": null,
+            "value": "80"
+          },
+          "document_id": "b6b6b6b6-0000-4000-8000-0000000000d1",
+          "systolic": {
+            "chip_key": "value.chip.unknown",
+            "crop": {
+              "src": "/app/documents/b6b6b6b6-0000-4000-8000-0000000000d1/image?key=f%2Fp%2Fb6b6b6b6-0000-4000-8000-0000000000d1%2Fcrop-v41.jpg"
+            },
+            "date": "2026-10-12",
+            "date_is_upload_day": false,
+            "date_uncertain": false,
+            "document_id": "b6b6b6b6-0000-4000-8000-0000000000d1",
+            "kind": "unknown",
+            "observation_id": "b6b6b6b6-0000-4000-8000-000000000141",
+            "side": null,
+            "value": "130"
+          }
+        }
+      ]
+    },
+    "series": [ ]
+  },
+  "status": 200
+}
