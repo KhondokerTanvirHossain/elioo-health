@@ -111,6 +111,7 @@ class HealthApiContractTest {
                 new FamilyApiHandler(mock(TimelineUseCase.class), mock(NudgeDataPort.class), mock(NudgeOptOutUseCase.class),
                         copy, properties),
                 new HealthApiHandler(health),
+                B3Handlers.nowBanner(), B3Handlers.attention(), B3Handlers.timeline(),
                 guard)).build();
     }
 
