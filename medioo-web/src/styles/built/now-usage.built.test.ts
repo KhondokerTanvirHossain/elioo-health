@@ -8,7 +8,10 @@ import json from "../medioo.tokens.json";
 import {
   NOW_ALLOWED,
   WEEK_ALLOWED,
+  controlBoundaryViolations,
+  controlSelectors,
   fillBoundaryViolations,
+  fillPainters,
   nowUsageViolations,
   roleUsageViolations,
   tokenUsageViolations,
@@ -51,7 +54,7 @@ describe("the built CSS", () => {
     expect(roleUsageViolations(css, json as unknown as TokenFile)).toEqual([]);
   });
 
-  it("everyControlPaintedWithFillCarriesTheBoundary", () => {
+  it("everyFillPainterAndEveryControlCarriesADrawnBoundary", () => {
     const css = builtCss();
     // Guard: the wash and its boundary are both shipped, so a field can carry what the check asks for.
     const rootProps = new Set<string>();
@@ -61,7 +64,19 @@ describe("the built CSS", () => {
     });
     expect(rootProps.has("--fill"), "the built CSS defines --fill in :root").toBe(true);
     expect(rootProps.has("--boundary"), "the built CSS defines --boundary in :root").toBe(true);
-    // Q1 (A), PR #120: no input or segmented track relies on the fill wash alone.
+    // Q1 (A), PR #120: no input or segmented track relies on the fill wash alone, and every control carries a drawn
+    // boundary whatever its background.
     expect(fillBoundaryViolations(css)).toEqual([]);
+    expect(controlBoundaryViolations(css)).toEqual([]);
+    // What the two checks judged. W2a ships no field and no track, so both lists are empty and both checks above
+    // are vacuous today. This pin says so instead of letting a green run read as coverage: W2e-a, the first PR that
+    // ships a field, replaces it with its non-empty guard (the field and track classes are among the painters and
+    // the controls) and adds the rendered computed-style check (plan W2e-a Step 3).
+    const painters = fillPainters(css);
+    const controls = controlSelectors(css);
+    console.info(`--fill painters in the built CSS (${painters.length}): ${painters.join(", ") || "none"}`);
+    console.info(`controls in the built CSS (${controls.length}): ${controls.join(", ") || "none"}`);
+    expect(painters, "W2a ships no field or track; W2e-a replaces this pin with its non-empty guard").toEqual([]);
+    expect(controls, "W2a ships no field or track; W2e-a replaces this pin with its non-empty guard").toEqual([]);
   });
 });

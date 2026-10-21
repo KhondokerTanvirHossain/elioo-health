@@ -4,7 +4,10 @@ import json from "./medioo.tokens.json";
 import {
   NOW_ALLOWED,
   WEEK_ALLOWED,
+  controlBoundaryViolations,
+  controlSelectors,
   fillBoundaryViolations,
+  fillPainters,
   nowUsageViolations,
   roleUsageViolations,
   tokenUsageViolations,
@@ -194,11 +197,53 @@ describe("fillBoundaryViolations", () => {
     ]);
   });
 
+  it("aBoundaryThatIsNamedButNeverDrawnIsReported", () => {
+    // A colour with no width and no style draws nothing: a <div> track has border-style none and outline-style none.
+    expect(fillBoundaryViolations(".seg__track { background: var(--fill) } .seg__track { border-color: var(--boundary) }")).toEqual([
+      ".seg__track paints --fill and carries no --boundary",
+    ]);
+    expect(fillBoundaryViolations(".field { background: var(--fill); outline-color: var(--boundary) }")).toEqual([
+      ".field paints --fill and carries no --boundary",
+    ]);
+    // A shorthand with a zero width, or with no style, draws nothing either.
+    expect(fillBoundaryViolations(".field { background: var(--fill); border: 0 solid var(--boundary) }")).toEqual([
+      ".field paints --fill and carries no --boundary",
+    ]);
+    expect(fillBoundaryViolations(".field { background: var(--fill); border: 1px var(--boundary) }")).toEqual([
+      ".field paints --fill and carries no --boundary",
+    ]);
+    // A shadow is a ring only with zero offsets, zero blur and a spread of at least 1px.
+    expect(fillBoundaryViolations(".field { background: var(--fill); box-shadow: 0 0 0 0 var(--boundary) }")).toEqual([
+      ".field paints --fill and carries no --boundary",
+    ]);
+    expect(fillBoundaryViolations(".field { background: var(--fill); box-shadow: 0 4px 12px var(--boundary) }")).toEqual([
+      ".field paints --fill and carries no --boundary",
+    ]);
+    expect(fillBoundaryViolations(".field { background: var(--fill); box-shadow: inset 0 0 1px var(--boundary) }")).toEqual([
+      ".field paints --fill and carries no --boundary",
+    ]);
+  });
+
   it("aFieldCarryingTheBoundaryPasses", () => {
     expect(fillBoundaryViolations(".field { background: var(--fill); border: 1px solid var(--boundary) }")).toEqual([]);
     expect(fillBoundaryViolations(".segmented__track { background: var(--fill); box-shadow: inset 0 0 0 1px var(--boundary) }")).toEqual([]);
     expect(fillBoundaryViolations("textarea { background: var(--fill); outline: 1px solid var(--boundary) }")).toEqual([]);
-    expect(fillBoundaryViolations(".field { background: var(--fill) } .field { border-color: var(--boundary) }")).toEqual([]);
+    // A colour longhand counts when the same selector (or the one it is a state of) gives that edge a width and a style.
+    expect(
+      fillBoundaryViolations(".field { background: var(--fill); border: 1px solid var(--sep) } .field { border-color: var(--boundary) }"),
+    ).toEqual([]);
+    expect(
+      fillBoundaryViolations(".field { background: var(--fill); border-width: 1px; border-style: solid; border-color: var(--boundary) }"),
+    ).toEqual([]);
+    expect(
+      fillBoundaryViolations(".field { background: var(--fill); outline: 1px solid var(--sep); outline-color: var(--boundary) }"),
+    ).toEqual([]);
+    // One drawn edge is a boundary: an underlined field.
+    expect(fillBoundaryViolations(".field { background: var(--fill); border-bottom: 1px solid var(--boundary) }")).toEqual([]);
+    // A ring among other shadows is still a ring.
+    expect(
+      fillBoundaryViolations(".field { background: var(--fill); box-shadow: 0 1px 2px var(--sep), inset 0 0 0 1px var(--boundary) }"),
+    ).toEqual([]);
     // A state of a field that carries the boundary is still that field: its hover or invalid wash needs no second one.
     expect(
       fillBoundaryViolations('.field { border: 1px solid var(--boundary) } .field:hover, .field[aria-invalid="true"] { background: var(--fill) }'),
@@ -211,6 +256,69 @@ describe("fillBoundaryViolations", () => {
     expect(
       fillBoundaryViolations(".field, .segmented__track { background: var(--fill) } .field { border: 1px solid var(--boundary) }"),
     ).toEqual([".segmented__track paints --fill and carries no --boundary"]);
+  });
+
+  it("aDescendantOfABorderedAncestorIsNotItsState", () => {
+    // The ancestor's border is around the form, not around the input inside it: a descendant made only of a
+    // pseudo-class or an attribute is another element, never a state of the selector before the space.
+    expect(
+      fillBoundaryViolations(".form { border: 1px solid var(--boundary) } .form :is(input, textarea) { background: var(--fill) }"),
+    ).toEqual([".form :is(input, textarea) paints --fill and carries no --boundary"]);
+    expect(fillBoundaryViolations(".form { border: 1px solid var(--boundary) } .form :is(input) { background: var(--fill) }")).toEqual([
+      ".form :is(input) paints --fill and carries no --boundary",
+    ]);
+    expect(
+      fillBoundaryViolations('.seg { border: 1px solid var(--boundary) } .seg [aria-pressed="true"] { background: var(--fill) }'),
+    ).toEqual(['.seg [aria-pressed="true"] paints --fill and carries no --boundary']);
+    expect(fillBoundaryViolations(".seg { border: 1px solid var(--boundary) } .seg :where(*) { background: var(--fill) }")).toEqual([
+      ".seg :where(*) paints --fill and carries no --boundary",
+    ]);
+    expect(fillBoundaryViolations(".seg { border: 1px solid var(--boundary) } .seg > :hover { background: var(--fill) }")).toEqual([
+      ".seg > :hover paints --fill and carries no --boundary",
+    ]);
+    // A field inside a form still carries its own boundary wherever it sits.
+    expect(fillBoundaryViolations(".field { border: 1px solid var(--boundary) } .form .field { background: var(--fill) }")).toEqual([]);
+  });
+
+  it("aBoundaryRemovedInAStateIsReported", () => {
+    // The field relies on fill alone while hovered or focused: that state is the one reported.
+    expect(
+      fillBoundaryViolations(".field { background: var(--fill); border: 1px solid var(--boundary) } .field:hover { border: none }"),
+    ).toEqual([".field:hover removes its --boundary (border: none)"]);
+    expect(
+      fillBoundaryViolations(".field { background: var(--fill); box-shadow: inset 0 0 0 1px var(--boundary) } .field:focus { box-shadow: none }"),
+    ).toEqual([".field:focus removes its --boundary (box-shadow: none)"]);
+    // A compound or a descendant override reaches the same element.
+    expect(
+      fillBoundaryViolations(".field { background: var(--fill); border: 1px solid var(--boundary) } .field.bare { border: 0 }"),
+    ).toEqual([".field.bare removes its --boundary (border: 0)"]);
+    expect(
+      fillBoundaryViolations(".field { background: var(--fill); border: 1px solid var(--boundary) } .form .field { border: none }"),
+    ).toEqual([".form .field removes its --boundary (border: none)"]);
+    // A state that keeps another drawn edge, a pseudo-element and another element are not the field losing its edge.
+    expect(
+      fillBoundaryViolations(
+        ".field { background: var(--fill); border: 1px solid var(--boundary) } .field:hover { border: none; box-shadow: inset 0 0 0 1px var(--boundary) }",
+      ),
+    ).toEqual([]);
+    expect(
+      fillBoundaryViolations(
+        ".field { background: var(--fill); border: 1px solid var(--boundary) } .field::placeholder { border: none } .field__icon { border: none }",
+      ),
+    ).toEqual([]);
+  });
+
+  it("removalsAreJudgedPerEdgeAndBySpecificity", () => {
+    // An underlined field keeps only its bottom edge: removing that edge in a state leaves the wash alone.
+    const underlined = ".field { background: var(--fill); border-style: solid; border-color: var(--boundary); border-width: 0 0 1px }";
+    expect(fillBoundaryViolations(underlined)).toEqual([]);
+    expect(fillBoundaryViolations(`${underlined} .field:focus { border-bottom: none }`)).toEqual([
+      ".field:focus removes its --boundary (border-bottom: none)",
+    ]);
+    // Removing an edge it never drew is not removing its boundary.
+    expect(fillBoundaryViolations(`${underlined} .field:focus { border-top: none }`)).toEqual([]);
+    // A reset less specific than the field's own rule does not win against it.
+    expect(fillBoundaryViolations("* { border: 0 } .field { background: var(--fill); border: 1px solid var(--boundary) }")).toEqual([]);
   });
 
   it("aFillOrABoundaryUnderAnotherNameIsTheToken", () => {
@@ -240,5 +348,72 @@ describe("fillBoundaryViolations", () => {
     expect(
       fillBoundaryViolations("@media (min-width: 900px) { .field { background: var(--fill); border: 1px solid var(--boundary) } }"),
     ).toEqual([]);
+  });
+});
+
+// Q1 (A) is about inputs and segmented tracks, not about one variable name: a field painted bg3 with a sep border, or
+// a transparent one, has no 3:1 edge either. A selector whose subject is a control carries --boundary whatever its
+// background. Both directions are tested; built/now-usage.built.test.ts runs it on the build.
+describe("controlBoundaryViolations", () => {
+  it("aControlWithoutTheBoundaryIsReportedWhateverItsBackground", () => {
+    expect(controlBoundaryViolations("input { background: var(--bg3); border: 1px solid var(--sep) }")).toEqual([
+      "input is a control and carries no --boundary",
+    ]);
+    expect(controlBoundaryViolations(".phone-field__input { background: none; border: 0 }")).toEqual([
+      ".phone-field__input is a control and carries no --boundary",
+    ]);
+    expect(controlBoundaryViolations("textarea, select { font: inherit }")).toEqual([
+      "textarea is a control and carries no --boundary",
+      "select is a control and carries no --boundary",
+    ]);
+    expect(controlBoundaryViolations('[role="radiogroup"] { display: flex; background: var(--bg2) }')).toEqual([
+      '[role="radiogroup"] is a control and carries no --boundary',
+    ]);
+    expect(controlBoundaryViolations(".segmented { display: flex } .otp-input { letter-spacing: 0.5em }")).toEqual([
+      ".segmented is a control and carries no --boundary",
+      ".otp-input is a control and carries no --boundary",
+    ]);
+    // A boundary only in a state is not there at rest; a colour with no width is not drawn.
+    expect(controlBoundaryViolations("input { font: inherit } input:focus { border: 1px solid var(--boundary) }")).toEqual([
+      "input is a control and carries no --boundary",
+    ]);
+    expect(controlBoundaryViolations(".segmented__track { border-color: var(--boundary) }")).toEqual([
+      ".segmented__track is a control and carries no --boundary",
+    ]);
+    // A state that takes it away is reported as the fill check reports it.
+    expect(controlBoundaryViolations("input { border: 1px solid var(--boundary) } input:focus { border: none }")).toEqual([
+      "input:focus removes its --boundary (border: none)",
+    ]);
+  });
+
+  it("aBoundedControlPasses", () => {
+    expect(controlBoundaryViolations("input { background: var(--fill); border: 1px solid var(--boundary) }")).toEqual([]);
+    expect(
+      controlBoundaryViolations(
+        ".phone-field__input { border: 1px solid var(--boundary) } .phone-field__input:focus-visible { outline: 2px solid var(--focus) }",
+      ),
+    ).toEqual([]);
+    expect(controlBoundaryViolations(".segmented__track { box-shadow: inset 0 0 0 1px var(--boundary) }")).toEqual([]);
+    // A descendant selector of a bounded control is that control.
+    expect(controlBoundaryViolations("input { border: 1px solid var(--boundary) } .form input { margin: 0 }")).toEqual([]);
+    // The parts around a control are not controls: its label, hint and error, its placeholder, a modifier class (the
+    // element also has the block class), a checkbox or radio (the platform draws its edge), and a button.
+    expect(
+      controlBoundaryViolations(
+        ".phone-field { display: grid } .phone-field__label, .phone-field__hint { color: var(--label2) } .phone-field__input::placeholder { color: var(--label2) } .otp-input--error { outline-offset: 2px } input[type=\"checkbox\"] { accent-color: var(--tint) } button { font: inherit }",
+      ),
+    ).toEqual([]);
+  });
+
+  it("theSelectorsJudgedAreListed", () => {
+    // What the built test prints, so an empty list is visible as empty.
+    const css =
+      ".field { background: var(--fill) } .seg { --track: var(--fill) } .seg__track { background: var(--track) } .card { background: var(--bg3) }";
+    expect(fillPainters(css)).toEqual([".field", ".seg__track (via --track)"]);
+    expect(controlSelectors("input, .phone-field__input:focus { font: inherit } .phone-field__label { color: var(--label2) }")).toEqual([
+      "input",
+      ".phone-field__input:focus",
+    ]);
+    expect(fillPainters(".card { background: var(--bg3) }")).toEqual([]);
   });
 });

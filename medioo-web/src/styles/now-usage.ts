@@ -195,18 +195,397 @@ export function roleUsageViolations(css: string, tokens: TokenFile): string[] {
   return [...out];
 }
 
-/** A control's wash, and the edge every control painted with it carries (Q1 (A), PR #120). */
+/** A control's wash, and the edge every control carries (Q1 (A), PR #120). */
 export const CONTROL_WASH = "fill";
 export const CONTROL_BOUNDARY = "boundary";
 
 const WASH_PROP = /^background(-color|-image)?$/i;
-const SIDES = "(-(top|right|bottom|left|block|inline)(-(start|end))?)?";
-// Where a boundary is carried: a border, an outline or a box-shadow ring (the usual inset 0 0 0 1px).
-const CARRIER_PROP = new RegExp(`^(border${SIDES}(-color)?|outline(-color)?|box-shadow)$`, "i");
-// What takes a carried boundary away again: a border, outline or shadow set to none, hidden or a zero width.
-const REMOVER_PROP = new RegExp(`^(border${SIDES}(-(width|style))?|outline(-(width|style))?|box-shadow)$`, "i");
-const REMOVED = /^(none|hidden|0[a-z%]*)$/i;
-const familyOf = (prop: string) => (/^border/i.test(prop) ? "border" : /^outline/i.test(prop) ? "outline" : "box-shadow");
+
+// ---- Selectors: which rules reach the element a selector paints --------------------------------------------------
+
+type Parsed = {
+  text: string;
+  /** Everything before the subject compound, combinators normalised ("" when the selector is one compound). */
+  ancestors: string;
+  /** The subject compound's simple selectors (`.field`, `input`, `[role=radiogroup]`, `:hover`); `*` is left out. */
+  subject: Set<string>;
+  pseudoElement: boolean;
+  specificity: number;
+};
+
+/** Split a selector into compounds at its top-level combinators, keeping `:is(a, b)` and `[x~="y z"]` whole. */
+function compoundsOf(selector: string): { compounds: string[]; combinators: string[] } {
+  const compounds: string[] = [];
+  const combinators: string[] = [];
+  let current = "";
+  let depth = 0;
+  let quote: string | null = null;
+  let pending: string | null = null;
+  const flush = () => {
+    if (current === "") return;
+    if (compounds.length > 0) combinators.push(pending ?? " ");
+    compounds.push(current);
+    current = "";
+    pending = null;
+  };
+  for (const ch of selector.trim()) {
+    if (quote) {
+      current += ch;
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") quote = ch;
+    else if (ch === "(" || ch === "[") depth++;
+    else if (ch === ")" || ch === "]") depth--;
+    if (depth === 0 && (ch === ">" || ch === "+" || ch === "~") && !quote) {
+      // `~=` inside an attribute is depth 1, so a `~` here is always the combinator.
+      flush();
+      pending = ch;
+      continue;
+    }
+    if (depth === 0 && /\s/.test(ch)) {
+      flush();
+      continue;
+    }
+    current += ch;
+  }
+  flush();
+  return { compounds, combinators };
+}
+
+const SIMPLE = /\.[\w-]+|#[\w-]+|\[[^\]]*\]|::?[\w-]+(?:\((?:[^()]|\([^()]*\))*\))?|\*|[a-zA-Z][\w-]*/g;
+const LEGACY_PSEUDO_ELEMENT = /^:(before|after|first-line|first-letter)$/i;
+
+function simplesOf(compound: string): string[] {
+  return [...compound.matchAll(SIMPLE)]
+    .map((m) => m[0])
+    .filter((s) => s !== "*")
+    .map((s) => (s.startsWith("[") ? s.replace(/["'\s]/g, "").toLowerCase() : /^[a-zA-Z]/.test(s) ? s.toLowerCase() : s));
+}
+
+/** Specificity as one number (ids, then classes, attributes and pseudo-classes, then types and pseudo-elements). */
+function specificityOf(compounds: string[]): number {
+  let a = 0;
+  let b = 0;
+  let c = 0;
+  for (const simple of compounds.flatMap(simplesOf)) {
+    if (simple.startsWith("#")) a++;
+    else if (simple.startsWith("::") || LEGACY_PSEUDO_ELEMENT.test(simple)) c++;
+    else if (/^:where\(/i.test(simple)) continue;
+    else if (/^[.[:]/.test(simple)) b++;
+    else c++;
+  }
+  return a * 10000 + b * 100 + c;
+}
+
+function parse(selector: string): Parsed {
+  const { compounds, combinators } = compoundsOf(selector);
+  const last = compounds[compounds.length - 1] ?? "";
+  const subject = simplesOf(last);
+  let ancestors = "";
+  for (let i = 0; i < compounds.length - 1; i++) ancestors += `${compounds[i]}${combinators[i] === " " ? " " : ` ${combinators[i]} `}`;
+  return {
+    text: selector.trim(),
+    ancestors: ancestors.trim(),
+    subject: new Set(subject),
+    pseudoElement: subject.some((s) => s.startsWith("::") || LEGACY_PSEUDO_ELEMENT.test(s)),
+    specificity: specificityOf(compounds),
+  };
+}
+
+const subset = (a: Set<string>, b: Set<string>) => [...a].every((x) => b.has(x));
+const isStateSimple = (s: string) => s.startsWith(":") || s.startsWith("[");
+
+/**
+ * Every element `u` matches is matched by `s` too, so `s`'s declarations reach it: `s`'s subject is a subset of `u`'s
+ * and `s` has no ancestors or the same ones. `.field` reaches `.field:hover` and `.form .field`; `.form` never
+ * reaches `.form :is(input)`, which is another element.
+ */
+function reaches(s: Parsed, u: Parsed): boolean {
+  if (s.pseudoElement || u.pseudoElement) return s.text === u.text;
+  return (s.ancestors === "" || s.ancestors === u.ancestors) && subset(s.subject, u.subject);
+}
+
+/**
+ * `r` may match an element `u` paints: its subject has every class, id and type of `u`'s subject (its pseudo-classes
+ * and attributes are states, `.field:hover`, or variants, `.field.bare`), whatever its ancestors (`.form .field`).
+ * A `u` whose subject is only states (`.seg :where(*)`) is matched on all of it.
+ */
+function mayMatch(r: Parsed, u: Parsed): boolean {
+  if (r.pseudoElement || u.pseudoElement) return false;
+  const identity = new Set([...u.subject].filter((s) => !isStateSimple(s)));
+  return subset(identity.size > 0 ? identity : u.subject, r.subject);
+}
+
+// ---- Edges: what a declaration draws, and what it takes away ------------------------------------------------------
+
+type Unit = "border-top" | "border-right" | "border-bottom" | "border-left" | "outline" | "box-shadow";
+const BORDER_PROP = /^border(?:-(top|right|bottom|left|block|inline)(?:-(start|end))?)?(?:-(width|style|color))?$/i;
+const OUTLINE_PROP = /^outline(?:-(width|style|color))?$/i;
+const STYLES_DRAWN = /^(dotted|dashed|solid|double|groove|ridge|inset|outset|auto)$/i;
+const STYLES_NONE = /^(none|hidden)$/i;
+const WIDTH_WORD = /^(thin|medium|thick)$/i;
+const LENGTH = /^([+-]?(?:\d+\.?\d*|\.\d+))([a-z%]*)$/i;
+
+/** The value's top-level words (`var(--x, 1px)` is one word), and its top-level comma-separated parts. */
+function wordsOf(value: string): string[] {
+  return compoundsOf(value.replace(/,/g, " , ")).compounds.filter((w) => w !== ",");
+}
+function partsOf(value: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let current = "";
+  for (const ch of value) {
+    if (ch === "(") depth++;
+    if (ch === ")") depth--;
+    if (ch === "," && depth === 0) {
+      parts.push(current);
+      current = "";
+    } else current += ch;
+  }
+  parts.push(current);
+  return parts.map((p) => p.trim()).filter((p) => p !== "");
+}
+
+const isZero = (word: string) => {
+  const m = LENGTH.exec(word);
+  return m !== null && Number(m[1]) === 0;
+};
+const isLength = (word: string) => LENGTH.test(word);
+/** At least one CSS pixel. */
+const atLeastOnePx = (word: string) => {
+  const m = LENGTH.exec(word);
+  if (!m) return false;
+  const n = Number(m[1]);
+  const unit = m[2]!.toLowerCase();
+  if (unit === "px") return n >= 1;
+  if (unit === "rem" || unit === "em") return n * 16 >= 1;
+  return n > 0;
+};
+
+const SIDE_ORDER = ["border-top", "border-right", "border-bottom", "border-left"] as const;
+
+/** The border edges a property addresses, in the order its 1–4 longhand values map onto them. */
+function bordersOf(side: string | undefined, end: string | undefined): Unit[] {
+  if (!side) return [...SIDE_ORDER];
+  if (side === "block") return end === "start" ? ["border-top"] : end === "end" ? ["border-bottom"] : ["border-top", "border-bottom"];
+  if (side === "inline") return end === "start" ? ["border-left"] : end === "end" ? ["border-right"] : ["border-left", "border-right"];
+  return [`border-${side}` as Unit];
+}
+
+/** Spread 1–4 values over the edges (`0 0 1px` → top 0, right 0, bottom 1px, left 0). */
+function perEdge(units: Unit[], words: string[]): Map<Unit, string> {
+  const out = new Map<Unit, string>();
+  if (units.length === 4) {
+    const [t, r = t, b = t, l = r] = words;
+    out.set("border-top", t!).set("border-right", r!).set("border-bottom", b!).set("border-left", l!);
+  } else units.forEach((u, i) => out.set(u, words[Math.min(i, words.length - 1)]!));
+  return out;
+}
+
+type Effect = { unit: Unit; colour?: boolean; width?: boolean; style?: boolean; removes?: boolean };
+
+/**
+ * What one declaration does to each edge: names the boundary in its colour, gives it a non-zero width, gives it a
+ * visible style, or takes it away (a zero width, `none` or `hidden`, a shorthand with no style, `box-shadow: none`).
+ * A box-shadow carries the boundary only as a ring: zero offsets, zero blur, a spread of at least 1px.
+ */
+function effectsOf(prop: string, value: string, namesBoundary: (v: string) => boolean): Effect[] {
+  const border = BORDER_PROP.exec(prop);
+  const outline = OUTLINE_PROP.exec(prop);
+  if (border || outline) {
+    const units: Unit[] = border ? bordersOf(border[1]?.toLowerCase(), border[2]?.toLowerCase()) : ["outline"];
+    const part = (border ? border[3] : outline![1])?.toLowerCase();
+    const words = wordsOf(value);
+    if (part === undefined) {
+      // A shorthand: one width, one style, one colour, the same for every edge it addresses.
+      const style = words.find((w) => STYLES_DRAWN.test(w) || STYLES_NONE.test(w));
+      const width = words.find((w) => WIDTH_WORD.test(w) || isLength(w));
+      const colour = words.some((w) => w !== style && w !== width && namesBoundary(w));
+      const drawnStyle = style !== undefined && STYLES_DRAWN.test(style);
+      const drawnWidth = width !== undefined && !isZero(width);
+      return units.map((unit) => ({
+        unit,
+        colour,
+        width: drawnWidth,
+        style: drawnStyle,
+        removes: !drawnStyle || (width !== undefined && isZero(width)),
+      }));
+    }
+    const each = outline ? new Map<Unit, string>([["outline", words[0] ?? ""]]) : perEdge(units, words);
+    return [...each].map(([unit, word]) =>
+      part === "color"
+        ? { unit, colour: namesBoundary(word) }
+        : part === "width"
+          ? { unit, width: !isZero(word) && (WIDTH_WORD.test(word) || isLength(word)), removes: isZero(word) }
+          : { unit, style: STYLES_DRAWN.test(word), removes: STYLES_NONE.test(word) },
+    );
+  }
+  if (prop === "box-shadow") {
+    if (/^none$/i.test(value.trim())) return [{ unit: "box-shadow", removes: true }];
+    const ring = partsOf(value).some((shadow) => {
+      const words = wordsOf(shadow).filter((w) => !/^inset$/i.test(w));
+      if (!words.some(namesBoundary)) return false;
+      const lengths = words.filter(isLength);
+      return lengths.length === 4 && isZero(lengths[0]!) && isZero(lengths[1]!) && isZero(lengths[2]!) && atLeastOnePx(lengths[3]!);
+    });
+    return ring ? [{ unit: "box-shadow", colour: true, width: true, style: true }] : [];
+  }
+  return [];
+}
+
+// ---- Controls: the elements Q1 (A) is about -----------------------------------------------------------------------
+
+/** Inputs whose edge the platform draws, or that are buttons: not a text field. */
+const NOT_A_FIELD = /^\[type=(checkbox|radio|hidden|range|color|file|submit|button|reset|image)\]$/;
+/** The class a control's own element carries: `.field`, `.segmented`, `.otp-input`, `.phone-field__input`, `.seg__track`. */
+export const CONTROL_CLASS = /^\.(field|segmented|[\w-]+-(input|segmented)|[\w-]+__(input|field|track|control))$/;
+const CONTROL_SIMPLE = /^(input|textarea|select|\[role=(radiogroup|tablist)\])$/;
+
+function isControl(p: Parsed): boolean {
+  if (p.pseudoElement || [...p.subject].some((s) => NOT_A_FIELD.test(s))) return false;
+  return [...p.subject].some((s) => CONTROL_SIMPLE.test(s) || CONTROL_CLASS.test(s));
+}
+
+// ---- The check ----------------------------------------------------------------------------------------------------
+
+type Edge = { colour: boolean; width: boolean; style: boolean; specificity: number };
+type Removal = { selector: Parsed; units: Set<Unit>; text: string };
+type Judged = { selector: Parsed; context: string; reason: string };
+
+function edgesIn(css: string) {
+  const root = postcss.parse(css);
+  const aliases = aliasesIn(root);
+  const names = (value: string, token: string): string[] =>
+    varsIn(value).filter((v) => v === token || aliases(v).has(token));
+  const painters: Judged[] = [];
+  const controls: Judged[] = [];
+  // context → selector text → (parsed, edge → what is drawn there)
+  const carriers = new Map<string, Map<string, { selector: Parsed; edges: Map<Unit, Edge> }>>();
+  const removals: Removal[] = [];
+  const parsed = new Map<string, Parsed>();
+  const parseOnce = (s: string) => parsed.get(s) ?? parsed.set(s, parse(s)).get(s)!;
+  const seenControl = new Set<string>();
+  root.walkDecls((decl) => {
+    if (decl.prop.startsWith("--") || decl.parent?.type !== "rule" || isKeyframes(decl.parent.parent)) return;
+    const selectors = (decl.parent as Rule).selectors.map((s) => s.trim()).filter((s) => !isRoot(s));
+    const context = contextOf(decl);
+    const prop = decl.prop.toLowerCase();
+    for (const text of selectors) {
+      const selector = parseOnce(text);
+      if (isControl(selector) && !seenControl.has(`${context}\u0000${text}`)) {
+        seenControl.add(`${context}\u0000${text}`);
+        controls.push({ selector, context, reason: "is a control" });
+      }
+    }
+    if (WASH_PROP.test(prop)) {
+      for (const used of names(decl.value, CONTROL_WASH)) {
+        const via = used === CONTROL_WASH ? "" : ` (via --${used})`;
+        for (const text of selectors) painters.push({ selector: parseOnce(text), context, reason: `paints --${CONTROL_WASH}${via}` });
+      }
+    }
+    const effects = effectsOf(prop, decl.value, (word) => names(word, CONTROL_BOUNDARY).length > 0);
+    if (effects.length === 0) return;
+    for (const text of selectors) {
+      const selector = parseOnce(text);
+      const byContext = carriers.get(context) ?? carriers.set(context, new Map()).get(context)!;
+      const entry = byContext.get(text) ?? byContext.set(text, { selector, edges: new Map() }).get(text)!;
+      for (const e of effects) {
+        const edge = entry.edges.get(e.unit) ?? { colour: false, width: false, style: false, specificity: selector.specificity };
+        edge.colour ||= e.colour ?? false;
+        edge.width ||= e.width ?? false;
+        edge.style ||= e.style ?? false;
+        entry.edges.set(e.unit, edge);
+      }
+      const removed = new Set(effects.filter((e) => e.removes).map((e) => e.unit));
+      if (removed.size > 0) removals.push({ selector, units: removed, text: `${decl.prop}: ${decl.value.trim()}` });
+    }
+  });
+
+  /** The edges drawn in the boundary on the elements `u` matches, by the rules that reach them, and how specific. */
+  const drawnOn = (targets: Parsed[], contexts: string[]): Map<Unit, number> => {
+    const merged = new Map<Unit, Edge>();
+    for (const context of new Set(contexts)) {
+      for (const { selector, edges } of carriers.get(context)?.values() ?? []) {
+        if (!targets.some((t) => reaches(selector, t))) continue;
+        for (const [unit, edge] of edges) {
+          const m = merged.get(unit) ?? { colour: false, width: false, style: false, specificity: 0 };
+          m.colour ||= edge.colour;
+          m.width ||= edge.width;
+          m.style ||= edge.style;
+          if (edge.colour) m.specificity = Math.max(m.specificity, edge.specificity);
+          merged.set(unit, m);
+        }
+      }
+    }
+    return new Map([...merged].filter(([, e]) => e.colour && e.width && e.style).map(([u, e]) => [u, e.specificity]));
+  };
+
+  const judge = (items: Judged[], skipRemover: (r: Parsed) => boolean): string[] => {
+    const out = new Set<string>();
+    for (const { selector: u, context, reason } of items) {
+      const atRest = drawnOn([u], [context, ""]);
+      if (atRest.size === 0) {
+        out.add(`${u.text} ${reason} and carries no --${CONTROL_BOUNDARY}`);
+        continue;
+      }
+      const restRemovals = removals.filter((r) => reaches(r.selector, u));
+      const candidates = removals.filter((r) => !skipRemover(r.selector) && (reaches(r.selector, u) || mayMatch(r.selector, u)));
+      for (const r of candidates) {
+        // In the state (or variant, or descendant) r selects, the edges drawn are those at rest plus r's own; each is
+        // taken away by an at-least-as-specific removal at rest or in r.
+        const drawn = drawnOn([u, r.selector], [context, ""]);
+        const against = [...restRemovals, ...removals.filter((x) => x.selector.text === r.selector.text)];
+        const left = [...drawn].filter(([unit, specificity]) => !against.some((x) => x.units.has(unit) && x.selector.specificity >= specificity));
+        if (left.length === 0 && [...r.units].some((unit) => drawn.has(unit))) {
+          out.add(`${r.selector.text} removes its --${CONTROL_BOUNDARY} (${r.text})`);
+        }
+      }
+    }
+    return [...out];
+  };
+
+  return { painters, controls, judge };
+}
+
+/**
+ * Every selector that paints a control's wash (`--fill` in a background), directly or through a forwarding custom
+ * property, and carries no `--boundary` drawn as an edge. An edge counts only when it is drawn: a border or outline
+ * shorthand with a non-zero width and a visible style, a colour longhand together with a width and a style for the
+ * same edge, or a box-shadow ring (offsets and blur 0, spread ≥ 1px). It counts from every rule that reaches the
+ * element (`.field` reaches `.field:hover` and `.form .field`, never `.form :is(input)`), at the top level or inside
+ * the same at-rule. Any rule that may match the same element, a state (`.field:hover`), a variant (`.field.bare`) or a
+ * descendant use (`.form .field`), and takes every drawn edge away there (`border: none`, `border-width: 0`,
+ * `box-shadow: none`), at least as specific as what drew it, is `<selector> removes its --boundary (<declaration>)`.
+ * Not judged: source order, a later rule that recolours an edge, and a class that only markup puts on the element.
+ */
+export function fillBoundaryViolations(css: string): string[] {
+  const { painters, judge } = edgesIn(css);
+  return judge(painters, () => false);
+}
+
+/**
+ * Every selector whose subject is a control (`input` other than a checkbox, radio or button type, `textarea`,
+ * `select`, `[role=radiogroup]`, `[role=tablist]`, or a class matching CONTROL_CLASS) and carries no drawn
+ * `--boundary`, whatever its background: Q1 (A) is about the control, not about one variable name. Removals are
+ * judged as in fillBoundaryViolations.
+ */
+export function controlBoundaryViolations(css: string): string[] {
+  const { controls, judge } = edgesIn(css);
+  return judge(controls, (r) => [...r.subject].some((s) => NOT_A_FIELD.test(s)));
+}
+
+/** The selectors that paint `--fill` in a background, as fillBoundaryViolations judges them (the built test prints it). */
+export function fillPainters(css: string): string[] {
+  const { painters } = edgesIn(css);
+  return [...new Set(painters.map((p) => `${p.selector.text}${p.reason.slice(`paints --${CONTROL_WASH}`.length)}`))];
+}
+
+/** The selectors controlBoundaryViolations judges as controls (the built test prints it). */
+export function controlSelectors(css: string): string[] {
+  const { controls } = edgesIn(css);
+  return [...new Set(controls.map((c) => c.selector.text))];
+}
 
 /** The at-rules a declaration sits inside (`@media (min-width: 900px)`), outermost first; "" at the top level. */
 function contextOf(node: postcss.Node): string {
@@ -215,74 +594,4 @@ function contextOf(node: postcss.Node): string {
     if (p.type === "atrule") chain.unshift(`@${(p as AtRule).name} ${(p as AtRule).params.trim()}`);
   }
   return chain.join(" ");
-}
-
-/** The selector without the pseudo-classes and attribute selectors at its end: `.field:hover` → `.field`. */
-function baseOf(selector: string): string {
-  let s = selector.trim();
-  for (;;) {
-    const next = s.replace(/(?<!:)(:[\w-]+(\((?:[^()]|\([^()]*\))*\))?|\[[^\]]*\])$/, "").trim();
-    if (next === s || next === "" || /[\s>+~]$/.test(next)) return s;
-    s = next;
-  }
-}
-
-/**
- * Every selector that paints a control's wash (`--fill` in a background) and carries no `--boundary` in a border, an
- * outline or a box-shadow, on itself or on the selector it is a state of (`.field:hover` is `.field`), at the top level
- * or inside the same at-rule; and every declaration on such a selector that takes a carried boundary away again
- * (`border: none`, `border-width: 0`) when nothing else carries it. A forwarding custom property is the token it
- * forwards. A later rule that recolours the border is not judged here.
- */
-export function fillBoundaryViolations(css: string): string[] {
-  const out = new Set<string>();
-  const root = postcss.parse(css);
-  const aliases = aliasesIn(root);
-  const names = (value: string, token: string): string[] =>
-    varsIn(value).filter((v) => v === token || aliases(v).has(token));
-  const key = (context: string, selector: string) => `${context}\u0000${selector}`;
-  const uses: { selector: string; context: string; via: string | null }[] = [];
-  const carriers = new Map<string, Set<string>>();
-  const removals = new Map<string, { family: string; text: string }[]>();
-  root.walkDecls((decl) => {
-    if (decl.prop.startsWith("--") || decl.parent?.type !== "rule" || isKeyframes(decl.parent.parent)) return;
-    const selectors = (decl.parent as Rule).selectors.map((s) => s.trim());
-    const context = contextOf(decl);
-    const prop = decl.prop.toLowerCase();
-    if (WASH_PROP.test(prop)) {
-      for (const used of names(decl.value, CONTROL_WASH)) {
-        for (const selector of selectors) uses.push({ selector, context, via: used === CONTROL_WASH ? null : used });
-      }
-    }
-    if (CARRIER_PROP.test(prop) && names(decl.value, CONTROL_BOUNDARY).length > 0) {
-      for (const selector of selectors) {
-        const set = carriers.get(key(context, selector)) ?? new Set<string>();
-        set.add(familyOf(prop));
-        carriers.set(key(context, selector), set);
-      }
-    }
-    if (REMOVER_PROP.test(prop) && REMOVED.test(decl.value.trim())) {
-      for (const selector of selectors) {
-        const list = removals.get(selector) ?? [];
-        list.push({ family: familyOf(prop), text: `${decl.prop}: ${decl.value.trim()}` });
-        removals.set(selector, list);
-      }
-    }
-  });
-  for (const { selector, context, via } of uses) {
-    const own = [...new Set([selector, baseOf(selector)])];
-    const carried = new Set<string>();
-    for (const s of own) {
-      for (const c of new Set([context, ""])) for (const f of carriers.get(key(c, s)) ?? []) carried.add(f);
-    }
-    if (carried.size === 0) {
-      out.add(`${selector} paints --${CONTROL_WASH}${via ? ` (via --${via})` : ""} and carries no --${CONTROL_BOUNDARY}`);
-      continue;
-    }
-    const removed = own.flatMap((s) => removals.get(s) ?? []).filter((r) => carried.has(r.family));
-    if ([...carried].every((f) => removed.some((r) => r.family === f))) {
-      for (const r of removed) out.add(`${selector} removes its --${CONTROL_BOUNDARY} (${r.text})`);
-    }
-  }
-  return [...out];
 }
