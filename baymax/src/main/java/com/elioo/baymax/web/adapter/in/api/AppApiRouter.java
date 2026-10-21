@@ -58,6 +58,8 @@ public class AppApiRouter {
                 .POST(BASE + "/sign-out", signIn::signOut)
                 .GET(BASE + "/documents/{id}/status", status::status)
                 .GET(BASE + "/documents/{id}/delete-token", deletes::token)
+                // plan W6-api: one value's sheet, the earlier readings each with its own crop
+                .GET(BASE + "/documents/{id}/values/{obs}", papers::valueSheet)
                 .GET(BASE + "/documents/{id}", papers::paper)
                 .DELETE(BASE + "/documents/{id}", deletes::delete)
                 .GET(BASE + "/upload-options", uploads::options)

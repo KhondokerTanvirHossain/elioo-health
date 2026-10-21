@@ -1,0 +1,10 @@
+{
+  "_meta": {
+    "generated_by": "baymax ValueSheetApiContractTest",
+    "source": "GET /app/api/documents/{id}/values/{obs} over the case not-found"
+  },
+  "body": {
+    "reason": "NOT_FOUND"
+  },
+  "status": 404
+}

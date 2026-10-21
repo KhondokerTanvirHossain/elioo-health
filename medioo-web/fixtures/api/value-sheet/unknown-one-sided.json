@@ -1,0 +1,41 @@
+{
+  "_meta": {
+    "generated_by": "baymax ValueSheetApiContractTest",
+    "source": "GET /app/api/documents/{id}/values/{obs} over the case unknown-one-sided"
+  },
+  "body": {
+    "earlier": [ ],
+    "earlier_line_key": "sheet.earlier.none",
+    "paper": {
+      "date": "2026-10-12",
+      "date_is_upload_day": false,
+      "date_uncertain": false,
+      "document_type": "lab_report",
+      "id": "5e9edf6d-0a2a-4913-8675-9d07a4100003",
+      "patient": {
+        "id": "5e9edf6d-0a2a-4913-8675-9d07a4100002",
+        "name": "Ma",
+        "name_possessive": "Ma-র"
+      }
+    },
+    "value": {
+      "chip_key": "value.chip.unknown",
+      "crop": {
+        "height": 31,
+        "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-LDL.jpg",
+        "width": 130
+      },
+      "display_kind": "unknown",
+      "id": "4cb575e6-bdf6-36eb-acb9-8693f27a4198",
+      "in_now_block": false,
+      "name": "LDL",
+      "pin": null,
+      "ref_high": "100",
+      "ref_low": null,
+      "side": null,
+      "unit": "mg/dL",
+      "value": "90"
+    }
+  },
+  "status": 200
+}

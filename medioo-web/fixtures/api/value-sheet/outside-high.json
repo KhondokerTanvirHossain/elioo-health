@@ -1,0 +1,55 @@
+{
+  "_meta": {
+    "generated_by": "baymax ValueSheetApiContractTest",
+    "source": "GET /app/api/documents/{id}/values/{obs} over the case outside-high"
+  },
+  "body": {
+    "earlier": [
+      {
+        "crop": {
+          "height": 41,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100071/image?key=f%2Fp%2F5e9edf6d-0a2a-4913-8675-9d07a4100071%2Fcrop-1.jpg",
+          "width": 307
+        },
+        "date": "2026-07-11",
+        "date_is_upload_day": false,
+        "document_id": "5e9edf6d-0a2a-4913-8675-9d07a4100071",
+        "observation_id": "5e9edf6d-0a2a-4913-8675-9d07a4100082",
+        "unit": "mg/dL",
+        "value": "1.1"
+      }
+    ],
+    "earlier_line_key": "sheet.earlier",
+    "paper": {
+      "date": "2026-10-12",
+      "date_is_upload_day": false,
+      "date_uncertain": false,
+      "document_type": "lab_report",
+      "id": "5e9edf6d-0a2a-4913-8675-9d07a4100003",
+      "patient": {
+        "id": "5e9edf6d-0a2a-4913-8675-9d07a4100002",
+        "name": "Ma",
+        "name_possessive": "Ma-র"
+      }
+    },
+    "value": {
+      "chip_key": "value.chip.outside.high",
+      "crop": {
+        "height": 30,
+        "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Creatinine.jpg",
+        "width": 120
+      },
+      "display_kind": "outside",
+      "id": "2f358788-6815-3979-ada5-ca559d0ae165",
+      "in_now_block": false,
+      "name": "Creatinine",
+      "pin": 98.0,
+      "ref_high": "1.2",
+      "ref_low": "0.6",
+      "side": "high",
+      "unit": "mg/dL",
+      "value": "1.6"
+    }
+  },
+  "status": 200
+}

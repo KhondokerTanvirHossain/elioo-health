@@ -1,5 +1,6 @@
 package com.elioo.baymax.web.adapter.in.api;
 
+import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.extraction.domain.DocumentView;
 import com.elioo.baymax.extraction.domain.FiledDay;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
@@ -8,6 +9,7 @@ import com.elioo.baymax.outbound.domain.UrgencyReason;
 import com.elioo.baymax.outbound.domain.ValueVerdict;
 import com.elioo.baymax.storage.domain.ImageDimensions;
 import com.elioo.baymax.web.adapter.in.ImageRefs;
+import com.elioo.baymax.web.domain.EarlierReading;
 import com.elioo.baymax.web.domain.GateState;
 import com.elioo.baymax.web.domain.PaperDisplay;
 import com.elioo.baymax.web.domain.ReadingView;
@@ -87,8 +89,7 @@ public final class PaperJson {
         // the paper's items only for DONE, as summaryBody draws them: a read the system rejected (NEEDS_RETAKE, FAILED)
         // shows none of whatever rows it holds, so the JSON never sends a chip or a pin the page withholds
         boolean shown = r.done();
-        Set<ValueVerdict.Kind> above = PaperDisplay.shownAbove(level, r.urgencyReasons());
-        m.put("values", !shown ? List.of() : values.stream().filter(PaperJson::hasCrop).map(row -> value(row, above, crop)).toList());
+        m.put("values", !shown ? List.of() : values.stream().filter(PaperJson::hasCrop).map(row -> valueRow(r, row, sizes)).toList());
         m.put("medicines", !shown ? List.of() : rows(v.medicines()).stream().filter(PaperJson::hasCrop).map(row -> medicine(row, crop)).toList());
         m.put("follow_up", !shown ? List.of() : rows(v.followUp()).stream().filter(PaperJson::hasCrop).map(row -> followUp(row, crop)).toList());
         m.put("doctor", !shown ? Map.of() : doctor(v.clinicalContext(), crop));
@@ -99,6 +100,60 @@ public final class PaperJson {
             m.put("retake", ordered("reason_key", retakeKey.apply(v.reasonCode()), "ordinal", r.retakeOrdinal(),
                     "replaced", r.retakeReplaced()));
         }
+        return m;
+    }
+
+    /**
+     * One stored value of a DONE paper as the paper sends it in {@code values[]}: its verdict as drawn, the chip, the pin,
+     * whether the NOW block above already shows its kind, and its crop with the stored size. The paper ({@link #of}) and
+     * the value sheet ({@link #valueSheet}) both call this, so the sheet's row is the paper's row by construction.
+     */
+    public static Map<String, Object> valueRow(ResultView r, Map<String, Object> row, Map<String, ImageDimensions> sizes) {
+        UUID documentId = UUID.fromString(r.document().documentId());
+        return value(row, PaperDisplay.shownAbove(r.urgency(), r.urgencyReasons()),
+                v -> crop(documentId, String.valueOf(v.get("crop_key")), sizes));
+    }
+
+    /**
+     * {@code /app/api/documents/{id}/values/{obs}} (plan W6-api): one value's sheet, as the HTML sheet (s13) draws it. The
+     * paper's head ({@code paper}: its id, type, filed day and patient with the possessive form), the value as the paper
+     * sends it ({@link #valueRow}), and the earlier readings, each beside its OWN paper's crop with that paper's stored
+     * size ({@code earlierSizes}, by document then storage key). {@code earlier_line_key} is the heading line the HTML
+     * draws: null for a value whose name did not canonicalise (Medioo has no history of it, so the sheet claims neither
+     * earlier readings nor a first time), {@code sheet.earlier.none} for a known marker with none, otherwise the heading
+     * with or without the unit. 404 for an observation that is not one of this paper's shown values; the caller has
+     * already proved that before the view was recorded, so this is defensive.
+     */
+    public static Map<String, Object> valueSheet(ResultView r, UUID observationId, List<EarlierReading> earlier,
+                                                 Map<String, ImageDimensions> sizes, Map<UUID, Map<String, ImageDimensions>> earlierSizes,
+                                                 String possessive) {
+        DocumentView v = r.document();
+        Map<String, Object> row = (v.values() == null ? List.<Map<String, Object>>of() : v.values()).stream()
+                .filter(PaperJson::hasCrop)
+                .filter(o -> observationId.toString().equals(String.valueOf(o.get("id"))))
+                .findFirst()
+                .orElseThrow(() -> BaymaxException.notFound("observation_not_found", "no such value on document"));
+        Map<String, Object> paper = new LinkedHashMap<>();
+        paper.put("id", v.documentId());
+        paper.put("document_type", v.documentType());
+        paper.put("date", r.date().date().toString());
+        paper.put("date_is_upload_day", r.date().uploadDay());
+        paper.put("date_uncertain", r.date().uncertain());
+        paper.put("patient", ordered("id", r.patient().id().toString(), "name", r.patient().name(), "name_possessive", possessive));
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("paper", paper);
+        m.put("value", valueRow(r, row, sizes));
+        m.put("earlier", earlier.stream().map(e -> ordered(
+                "document_id", e.documentId().toString(),
+                "observation_id", e.observationId().toString(),
+                "value", e.value(),
+                "unit", e.unit(),
+                "crop", crop(e.documentId(), e.cropKey(), earlierSizes.getOrDefault(e.documentId(), Map.of())),
+                "date", e.date() == null ? null : e.date().toString(),
+                "date_is_upload_day", e.dateIsFallback())).toList());
+        m.put("earlier_line_key", row.get("canonical_name") == null ? null
+                : earlier.isEmpty() ? "sheet.earlier.none"
+                : row.get("unit") == null ? "sheet.earlier.nounit" : "sheet.earlier");
         return m;
     }
 

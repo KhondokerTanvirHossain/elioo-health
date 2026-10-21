@@ -11,6 +11,7 @@ import com.elioo.baymax.web.adapter.in.ui.DocumentPages;
 import com.elioo.baymax.web.adapter.in.ui.Lang;
 import com.elioo.baymax.web.adapter.in.ui.UiCopy;
 import com.elioo.baymax.web.application.port.in.ResultUseCase;
+import com.elioo.baymax.web.domain.EarlierReading;
 import com.elioo.baymax.web.domain.ReadingView;
 import com.elioo.baymax.web.domain.ResultView;
 import com.elioo.baymax.web.domain.WebSession;
@@ -20,8 +21,10 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -75,6 +78,50 @@ public class PaperApiHandler {
         @SuppressWarnings("unchecked")
         String name = (String) ((Map<String, Object>) body.get("patient")).get("name");
         return PaperJson.withNames(body, copy.poss(lang, name), copy.obj(lang, name));
+    }
+
+    /**
+     * {@code GET /app/api/documents/{id}/values/{obs}} (plan W6-api): one value's sheet ({@link PaperJson#valueSheet}), read
+     * in the HTML sheet's order ({@code DocumentPages.valueSheetPage}). The earlier readings first, which records nothing
+     * and is 404 for another family and for an observation that is not one of THIS paper's values, so a probe records no
+     * view; then the status, which records nothing either, so a row stored on a read the system rejected (NEEDS_RETAKE,
+     * FAILED), which the paper's JSON never shows, opens no sheet; then the result, the one DOCUMENT_VIEW. Then the
+     * stored crop sizes: this paper's, and each earlier paper's for its own crop (they are the same patient's, proved by
+     * the earlier read), each bounded and never failing the answer after the view was recorded.
+     */
+    public Mono<ServerResponse> valueSheet(ServerRequest request) {
+        WebSession session = SessionAuthFilter.session(request);
+        Lang lang = Lang.of(request);
+        UUID documentId = uuid(request.pathVariable("id"));
+        UUID observationId = uuid(request.pathVariable("obs"));
+        UUID family = session.familyId();
+        return results.earlierReadings(family, documentId, observationId).collectList()
+                .flatMap(earlier -> results.status(family, documentId)
+                        .flatMap(status -> status != Document.Status.DONE ? Mono.<ResultView>error(notFound())
+                                : results.result(family, documentId))
+                        .flatMap(r -> !r.done() ? Mono.error(notFound())
+                                : Mono.zip(sizes(r, documentId), earlierSizes(earlier))
+                                        .map(s -> PaperJson.valueSheet(r, observationId, earlier, s.getT1(), s.getT2(),
+                                                copy.poss(lang, r.patient().name())))))
+                .flatMap(body -> ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValue(body));
+    }
+
+    /** Each earlier paper's stored crop sizes, by document; a paper whose sizes cannot be read is sent without them. */
+    private Mono<Map<UUID, Map<String, ImageDimensions>>> earlierSizes(List<EarlierReading> earlier) {
+        return Flux.fromIterable(earlier.stream().map(EarlierReading::documentId).distinct().toList())
+                .flatMap(d -> storage.measuredObjectsOf(d, ObjectKind.CROP)
+                        .filter(o -> o.dimensions().isPresent())
+                        .collectMap(StoredObject::storageKey, o -> o.dimensions().orElseThrow())
+                        .onErrorResume(e -> {
+                            log.warn("[baymax] earlier sizes unavailable documentId={} ({})", d, e.getClass().getSimpleName());
+                            return Mono.just(Map.of());
+                        })
+                        .map(sizes -> Map.entry(d, sizes)))
+                .collectMap(Map.Entry::getKey, Map.Entry::getValue);
+    }
+
+    private static BaymaxException notFound() {
+        return BaymaxException.notFound("observation_not_found", "no such value on document");
     }
 
     /**
