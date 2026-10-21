@@ -27,7 +27,7 @@
 - "আমি ডাক্তার নই" appears on every page that shows a result. The NOW page carries `now.notdoctor` itself, not only the footer.
 - The NOW banner is global. "দেখেছি" (PO-approved 2026-10-21) hides the banner only. Stored urgency, the paper's NOW block and WhatsApp delivery are unchanged. The patient keeps a red mark.
   - The acknowledgement is keyed to the exact set of NOW documents the viewer saw at the tap: `(document_id, urgency_assessed_at, release state)`. The banner shows again whenever a visible NOW document is not in that set: a new upload, a `routine`/`this_week` → `now` raise or NULL first assessment on an existing paper (V18), an A11 sweep assessment, or a later gate release (DR-41 item 5).
-  - It is per family, stored on the server (PO, Part B decision 8, DR-45 item 6): one member's tap hides the banner for every member of the family that owns the patient (owner and share members), on every device. The keyed-set rule above is what brings it back for every member when what was seen changes; the trade-off is recorded in DR-45, and the meaning of "per family" is confirmed with the PO before B3 merges.
+  - It is stored per family on the server (PO, Part B decision 8, DR-45 item 6). Which family is meant is pending the PO's confirmation. **Default until ruled:** the viewer's own `family_account`, held across that account's devices. Under the default, one account's tap never hides the banner from another account that did not tap (DR-41 item 5). B3 is built and tested on the default. Its other test set, for the patient's owning family, is named in the wave 2b–3 plan's B3 task. B3 merges only with the PO's ruling quoted, on the test set that ruling selects.
 - The prototypes win on look and layout only. Their NOW line with the name (Part B decision 3), unconditional `tel:999` (A5), canned answers, scene bar, receipts and toasts do not ship (DR-41).
 - All copy comes from `ui-*_{bn,en}.properties` and `messages_{bn,en}.properties`. No Bangla literal (U+0980–U+09FF) and no English UI prose may appear in `medioo-web/src` outside generated copy. New keys go through the copy owner and the PO.
 
@@ -67,7 +67,7 @@
 **Links, data and logging**
 - URLs already sent over WhatsApp keep working forever: `/app`, `/app/documents/{id}`, `/app/documents/{id}/all`, `/app/documents/{id}/values/{obs}`, `/app/patients/{id}`, `/app/nudges/opt-out?p=&t=`, and the `/baymax/**` 301s.
 - Migrations are numbered at merge time, as the next free `V<n>` on `origin/main` after rebase. Never pre-assign numbers. V22 and V23 belong to Phase 0 PRs 8 and 9.
-- Logs never carry patient text, phone numbers, OTP codes or wamids above DEBUG. This holds in Java, in Next server logs and in browser `console` output.
+- Logs never carry patient text, phone numbers, OTP codes or wamids above DEBUG. This holds in Java, in Next server logs and in browser `console` output. Voice transcripts and audio are stricter: they appear in no log at any level, and Medioo never stores them (DR-43 item 4).
 - No real patient data in the repo. Fixtures, Playwright baselines and screenshot boards are fictional. Production-preview screenshots are private artifacts only, never git.
 
 ## Review Focus
@@ -106,7 +106,7 @@
 - a NOW result;
 - the opt-out confirmation.
 
-Every mutation needs JavaScript: sign-in, upload, delete, settings and দেখেছি. This changes spec principle 14 for Next pages; the PO accepted it on 2026-10-21 as DR-42 (Part B, decision 1), so W3 goes ahead. Caddy keeps `/app/`, `/app/login` and `/app/verify` on Java until W3's routes flip, like any other route.
+Every mutation needs JavaScript: sign-in, upload, delete, settings and দেখেছি. This changes spec principle 14 for Next pages; the PO accepted it on 2026-10-21 as DR-42 (Part B, decision 1), so W3 goes ahead. DR-42 makes one exception: stopping reminders from a message link stays a plain, token-authorised form POST straight to Java. It needs no session, no cookie and no JavaScript. DR-42 also records that a no-JS browser whose session has expired cannot use a JS-only sign-in, and W3 keeps a Java no-JS sign-in fallback until the PO rules. Caddy keeps `/app/`, `/app/login` and `/app/verify` on Java until W3's routes flip, like any other route.
 
 **A5. Display model.** Java owns `DisplayKind`. `ValueRows.kindOf` moves from `web/adapter/in/ui` into the application layer, and the following move with it:
 - the order of NOW reasons;
@@ -143,22 +143,30 @@ The ledger is generated, not hand-written. `scripts/ui-test-ledger.sh` lists eve
 
 ---
 
-## Part B — Decisions put to the PO (all answered 2026-10-21; DR-42 to DR-45)
+## Part B — Decisions put to the PO (answered 2026-10-21; decision 8's meaning to confirm; DR-42 to DR-45)
 
-Every decision below was answered by the PO on 2026-10-21. The answers are recorded in `docs/DECISIONS.md` as DR-42 (decision 1), DR-43 (decision 2), DR-44 (decision 10) and DR-45 (decisions 3–9). Where an answer and the recommendation differ, the answer binds. The "Released" column names the PRs each answer used to block; D3 still also waits for its clinical ruling.
+The PO answered every decision below on 2026-10-21. The answers are recorded in `docs/DECISIONS.md`:
+- DR-42: decision 1;
+- DR-43: decision 2;
+- DR-44: decision 10;
+- DR-45: decisions 3–9.
+
+Where an answer and the recommendation differ, the answer binds.
+
+The "Released" column names what each answer frees, and what is still held. D3 still waits for its clinical ruling. B3 waits for the PO to confirm which "family" decision 8 means (DR-45 item 6).
 
 | # | Decision | Recommendation | PO answer (2026-10-21) | Released |
 |---|---|---|---|---|
-| 1 | **Budget and no-JS (DR-42).** "JS ≤ 40 KB, works without JS" cannot hold for React. The fonts alone are 98 KB on the wire. | W1a measures a real Next page over the wire. Then: SSR and no-JS reading for timeline, paper and NOW; mutations need JS; first-load wire budget = the measured hello page + 60 KB, per route. | **Accepted (DR-42).** Reading pages (timeline, paper, NOW result, opt-out confirmation) work without JavaScript; every mutation needs JavaScript. First-load wire budget ≤ **265,409 B** per routed page (probe 203,969 B + 60 KB); framework probe ceiling **214,167 B** (+5%). Both ceilings in one committed file read by the budget tests. | W3 (sign-in); every W budget test |
-| 2 | **Voice privacy (DR-43).** Chrome's Web Speech sends audio to Google. | Typed commands ship first (W11a). Voice uses server speech-to-text through our GCP bn-BD key, with no logging and an explicit first-use consent, in W11b. | **Typed commands first (DR-43).** Voice later, the provider chosen by a measured bake-off of ElevenLabs, Soniox and GCP bn-BD speech-to-text on Bangla health phrases: accuracy, latency, cost; no audio retention, consent on first use, no transcript in logs. | W11a now; W11b after the bake-off is recorded in DR-43 |
+| 1 | **Budget and no-JS (DR-42).** "JS ≤ 40 KB, works without JS" cannot hold for React. The fonts alone are 98 KB on the wire. | W1a measures a real Next page over the wire. Then: SSR and no-JS reading for timeline, paper and NOW; mutations need JS; first-load wire budget = the measured hello page + 60 KB, per route. | **Accepted (DR-42).** Reading pages (timeline, paper, NOW result, opt-out confirmation) work without JavaScript; every mutation needs JavaScript. First-load wire budget ≤ **265,409 B** per routed page (probe 203,969 B + 60 KB); framework probe ceiling **214,167 B** (+5%). Both ceilings in one committed file read by the budget tests (`medioo-web/e2e/budget-ceilings.json`, created by W1d). The opt-out POST from a message link stays the one no-JS mutation. | W3 (sign-in), after W1d; every W budget test, enforcing from W1d |
+| 2 | **Voice privacy (DR-43).** Chrome's Web Speech sends audio to Google. | Typed commands ship first (W11a). Voice uses server speech-to-text through our GCP bn-BD key, with no logging and an explicit first-use consent, in W11b. | **Typed commands first (DR-43).** Voice later, the provider chosen by a measured bake-off of ElevenLabs, Soniox and GCP bn-BD speech-to-text on Bangla health phrases: accuracy, latency, cost; no audio retention, consent on first use, no transcript in logs. | W11b, once the bake-off result is recorded in DR-43 |
 | 3 | **NOW line.** The prototype adds the name ("এখনই আম্মাকে…"); the shipped `urgency.now` has no name and is read verbatim. | Keep the shipped line. Show the name in the band's title, not inside the safety sentence. | **As recommended (DR-45 item 1).** The shipped `urgency.now` sentence stays verbatim; the patient's name goes in the card title. | W5, W6 |
-| 4 | **Old stale THIS_WEEK rows.** V18 forbids lowering urgency; rows already raised by past follow-ups exist. | Fix the cause going forward (D3) and leave existing rows raised, with a one-time "আগের কাগজ" tag. | **As recommended (DR-45 item 2).** Fix the cause going forward; tag already-raised rows "আগের কাগজ"; never lower urgency. | D3 (with its clinical ruling) |
+| 4 | **Old stale THIS_WEEK rows.** V18 forbids lowering urgency; rows already raised by past follow-ups exist. | Fix the cause going forward (D3) and leave existing rows raised, with a one-time "আগের কাগজ" tag. | **As recommended (DR-45 item 2).** Fix the cause going forward; tag already-raised rows "আগের কাগজ"; never lower urgency. | Still held: D3 on its clinical ruling |
 | 5 | **The same paper sent twice** (image hash). | Warn ("এই কাগজটা আগেও পাঠিয়েছেন") and let the family choose. Never merge silently. | **As recommended (DR-45 item 3).** An exact duplicate warns "এই কাগজটা আগেও পাঠিয়েছেন"; the family keeps or drops it; never a silent merge. | D5 |
 | 6 | **Landing page.** | Keep it in Java until W-del; port last (W13). | **As recommended (DR-45 item 4).** Ported last, after the app screens. | W13 |
 | 7 | **The one NOW red.** | `#d12c24` light and `#d93229` dark (both meet ≥4.5:1 with white). | **As recommended (DR-45 item 5).** `#d12c24` light, `#d93229` dark. | W2a (and W2c–W2e) |
-| 8 | **দেখেছি scope.** | Per account holder (member id), stored on the server so it holds across that person's devices. Not per family: one member's tap would hide the NOW banner from every other member, including ones who never saw it. | **Per family, stored on the server (DR-45 item 6).** Departs from the recommendation; the trade-off is recorded in DR-45, and the ack stays keyed to the exact set of NOW documents seen, so any change shows the banner again for every member. The meaning of "family" in this schema (the patient's owning family, or the viewer's own `family_account`) is confirmed with the PO before B3 merges. | B3 (after that confirmation) |
+| 8 | **দেখেছি scope.** | Per account holder (member id), stored on the server so it holds across that person's devices. Not per family: one member's tap would hide the NOW banner from every other member, including ones who never saw it. If per family is chosen, record that trade-off in DR-41 before B3 merges. | **"দেখেছি is stored per family on the server" (DR-45 item 6).** Which family is meant is to be confirmed. (a) The viewer's own `family_account` is the default until ruled, and it matches the recommendation. (b) The patient's owning family departs from it; its trade-off is recorded in DR-45, not in DR-41, with an amendment line under DR-41 item 5 pointing there. | Still held: B3 on the per-family confirmation |
 | 9 | **"Current medicines".** | Show "প্রেসক্রিপশনে যেমন লেখা — সর্বশেষ, তারিখসহ" only. No active or stopped state. | **As recommended (DR-45 item 7).** Shown "as written on the latest prescription", dated, never "current". | B6, W9 |
-| 10 | **New scope (DR-44):** voice, sounds, the স্বাস্থ্য tab, keepmd-parity later. | Record as approved MVP scope. Each keepmd feature gets its own BMX ticket later. | **As recommended (DR-44).** Voice, sounds and the স্বাস্থ্য tab are MVP scope; keepmd-parity features (reminders, devices, emergency card, doctor summary PDF, FHIR) get their own tickets later. | W9, W11, W12 |
+| 10 | **New scope (DR-44):** voice, sounds, the স্বাস্থ্য tab, keepmd-parity later. | Record as approved MVP scope. Each keepmd feature gets its own BMX ticket later. | **As recommended (DR-44).** Voice, sounds and the স্বাস্থ্য tab are MVP scope; keepmd-parity features (reminders, devices, emergency card, doctor summary PDF, FHIR) get their own tickets later. Each means the keepmd-style feature. PRODUCT §5.4 item 9 (the pre-visit one-page summary) and the companion spec's `emergency-card` template are unaffected. | W9, W11, W12 |
 
 ---
 
@@ -193,11 +201,21 @@ Each line is one PR. The **Waves** order work; within a wave, lanes run in paral
 - **W1a** `medioo-web` skeleton: nonce CSP, `/app/healthz`, the budget probe, CI steps. Not deployed. Produces the DR-42 measurement. *Detailed below.*
 - **W1b** Second container deployed with no traffic: Java-first order, the missing-image skip, pruning both repos. *Detailed below.*
 - **W1c** Caddy per-path routing (`/app/healthz` only), the https upstream smoke table, Java bound to 127.0.0.1. *Detailed below.*
+- **W1d** Budget ceilings enforced (DR-42 items 2–4). It may run any time after W1a and must merge before W3.
+  - **The ceilings file.** Creates `medioo-web/e2e/budget-ceilings.json`, holding `probe: 214167`, `route: 265409` and the routed pages to measure. `budget.spec.ts` asserts the probe ≤ `probe` and every routed page ≤ `route`, read from that file. Its failure message names which ceiling failed, the route, and the measured and allowed bytes.
+  - **The route list is derived.** Every page in the build's `.next/app-path-routes-manifest.json` must have an entry, with each dynamic segment filled from a named fixture. A manifest page with no entry fails.
+  - **The enforcing run.** Adds a CI step that runs the built standalone image behind a Caddy replica of `docs/infra/Caddyfile.medioo` (only the address and the upstream changed), then runs the budget spec with `E2E_BASE_URL` pointing at that Caddy. The existing `next start` run keeps the same assertions.
+  - Proof:
+    - the spec fails if the ceilings file is missing, if its route list is empty, or if the manifest yields no page;
+    - the Caddy run fails if the document response lacks `Strict-Transport-Security`, so a run that bypassed Caddy cannot pass;
+    - replay: the probe ceiling set 1 B under the measured probe fails, with a message naming the probe ceiling;
+    - replay: a page padded above 265,409 B fails, with a message naming the route ceiling and the route;
+    - both replays are quoted in the PR body.
 - **B1** The `/app/api` router: CSRF guard, `{reason}` codes, `/me`, active patient, the preview allowlist, and a route-contract snapshot derived from the Java routers. *Detailed below.*
 - P8, then P9, then P7 (lane A, after P10 or alongside it).
 
 **Wave 2 — vocabulary and contracts**
-- **W2a** The token file `medioo.tokens.json` → `tokens.css`, reconciling phone and desktop and absorbing the loose hexes. Fonts. A stylelint ban on colour literals. A built-CSS test that `--now*` is used only by now, crit and emergency components. Proof: contrast pairs computed from the token file in both themes.
+- **W2a** The token file `medioo.tokens.json` → `tokens.css`, reconciling phone and desktop and absorbing the loose hexes. Fonts. A stylelint ban on colour literals. A built-CSS test that `--now*` is used only by now, crit and emergency components. Proof: contrast pairs computed from the token file in both themes, including DR-45 item 5's pairs: `on-now` on `now` at ≥4.5:1, `now` at ≥3:1 as non-text on every ground it is declared on, and red text only as `now-ink`, at ≥4.5:1.
 - **W2b** Copy codegen (`.properties` → typed JSON), the Bangla-literal lint (it fails if it scans zero files, and it covers every directory the build imports from, not only `src/`; it replaces W1a's `src/no-bangla-literal.test.ts` and deletes W1a's hand-copied `medioo-web/copy/probe.bn.json`, the one deliberate exception until then), and Bangla digit and date golden vectors written by a Java test and read by Vitest.
 - **W2c–W2e** Components, in groups of 3–4, each with catalog states at `/app/catalog-test` (build flag; the smoke test asserts it returns 404 in production):
   - c: Wordmark, MioAvatar, MessageBubble (`surface` prop), StatusChip (in, out-high, out-low, crit-high, crit-low, unk);
@@ -214,10 +232,17 @@ Each line is one PR. The **Waves** order work; within a wave, lanes run in paral
 - **D4** Images root cause: a real-browser network check of the 302 to S3 first, then stored width and height (migration) and a stable same-origin image route. Proof: a content check that a decoded real crop is non-empty and its size matches the stored size.
 
 **Wave 3 — screens (one PR per screen; each flips its routes after the on-device step)**
-- **W3** Sign-in (decision 1 answered: DR-42). Flips `/app/`, `/app/login`, `/app/verify`. Board: welcome, number, error, code sent, code not sent (wa.me), wrong code, done.
+- **W3** Sign-in (decision 1 answered: DR-42; merges after W1d). Flips `/app/`, `/app/login`, `/app/verify`. Board: welcome, number, error, code sent, code not sent (wa.me), wrong code, done.
+  - **No-JS fallback (DR-42 Consequences), the default until the PO rules.** The Next sign-in page carries a `<noscript>` link to Java's form, at a Java path that Caddy leaves on Java. W3 names that path and keeps the form's POST targets on Java.
+  - Proof: a no-JS e2e case, with JavaScript disabled, in which an expired session opens a reading page. With the fallback, a sign-in works. If the PO accepts the gap, the case asserts instead that the page says in copy that JavaScript is needed.
 - **W4** Shell: tabs and three columns, the patient switcher, never guessing the patient (the chooser), the 401 → sign-in `next=` flow. Board: layouts at 390/1024/1440 × 0/1/2 patients.
 - **B3** Attention stack, timeline by month, follow-ups, NOW ack (migration with `family_id` and `patient_id` NOT NULL, FK, in the delete order). Proof:
-  - two-direction ack tests, written first: it hides the banner for exactly the documents acked; it never changes stored urgency, the NOW block or WhatsApp; a new NOW upload, a `this_week` → `now` raise, a sweep assessment and a later gate release on an existing paper after the ack each show the banner again, for every member; after the owner acks, a share member of the same patient has the banner hidden for exactly the documents the owner acked, and the other way round (per family, DR-45 item 6);
+  - two-direction ack tests, written first: it hides the banner for exactly the documents acked; it never changes stored urgency, the NOW block or WhatsApp; a new NOW upload, a `this_week` → `now` raise, a sweep assessment and a later gate release on an existing paper after the ack each show the banner again;
+  - the member-B pair. The meaning of "per family" (DR-45 item 6) is pending, and B3 is built on the default.
+    - Default, the viewer's own `family_account`: after member A acks, member B still gets the banner, and the other way round.
+    - If the PO selects the patient's owning family: the pair is inverted, together with that reading's `acked_by` column and its lost-access rule.
+    - Both sets are named in the wave 2b–3 plan's B3 task. B3 merges only with the PO's ruling quoted, on the set that ruling selects.
+  - under either reading, a tapper who is a share member of one family and the owner of another: the stored row's `family_id` is checked by column, and the other family's banner is unchanged;
   - Testcontainers deletion with a real ack row.
 - **W5** Chat thread (read-only: documents, outbound messages, nudges), the NOW banner with দেখেছি, the honest composer. Flips `/app/home`. Board: default, NOW, retake, first run.
 - **W6** Paper detail: the stored page image with DR-12 crops, zoom, every gate state, NOW and NOW-abroad, retake, failed, multi-page, delete; Review Focus 2 and 5. Flips `/app/documents/{id}`, `/all`, `/values/{obs}`. Proof:
@@ -240,12 +265,21 @@ Each line is one PR. The **Waves** order work; within a wave, lanes run in paral
 
 **Wave 4 — voice, motion, cut-over**
 - **W11a** Typed command palette (⌥/Alt tap, ⌘K) with the patient lexicon built from `/me` names and NameGrammar forms. Navigation-only intents; "ask" intents answer "এখনো উত্তর দিতে পারি না" until D11. Proof: grammar tests with names not in the prototype.
-- **W11b** Voice: hold Alt, hold the mic, speech-to-text from the provider DR-43's bake-off picks (ElevenLabs, Soniox or GCP bn-BD; after the result is recorded in DR-43). Proof: no transcript in any log, in either runtime; no audio sent before first-use consent; the provider's no-retention setting on every request.
+- **W11b** Voice: hold Alt, hold the mic, speech-to-text from the provider DR-43's bake-off picks (ElevenLabs, Soniox or GCP bn-BD; after the result is recorded in DR-43). Proof:
+  - **No transcript or audio in any log, at any level** (DR-43 item 4). Java runs with every logger at TRACE, the Next server at debug, and the browser console captured, `console.debug` included. A voice command carrying a fictional phrase is resolved. The test asserts the phrase is absent from every captured event's message, arguments and MDC fields, matched by field rather than across a joined log text. Guard: the capture saw at least one DEBUG-or-lower event from the voice path.
+  - **Medioo keeps neither audio nor transcript.** A schema snapshot before and after the command shows no table gained a row holding the phrase, no object was stored, and the browser's storage holds neither.
+  - No audio is sent before first-use consent.
+  - Every request carries the provider's no-retention setting, as recorded in DR-43 before the bake-off.
 - **W12** The sound bank (synthesized, PO's pick, default off until the first tap unlocks WebAudio), Mio states, the sheet spring. Proof: with reduced motion there are no animations and the computed `animation-name` is `none`.
-- **W13** Landing page and opt-out page port (decision 6). Proof: an opt-out link from a real nudge fixture works end to end.
+- **W13** Landing page and opt-out page port (decision 6). The opt-out form still posts straight to Java's token-authorised `POST /app/nudges/opt-out`, which Caddy keeps on Java. It is the one no-JS mutation (DR-42 item 1). Proof:
+  - an opt-out link from a real nudge fixture works end to end;
+  - a no-JS e2e test: with JavaScript disabled, the same link stores the stop, read back from the database by column.
 - **W-del-n** One PR per flipped route: delete its Java pages and tests, with ledger successors resolving, and keep image signing, `LocalPath` and `Lang`, and the classes `/app/api` shares from `web.adapter.in` (`ActivePatient`, `PatientJson`; moved out of `ui` in B1 for this reason). The last one removes the HTML test harness and updates `MEDIOO.md` and the RUNBOOK.
 - **D3** Stop past follow-ups raising prescriptions to THIS_WEEK, and tag the rows already raised "আগের কাগজ" without lowering them (decision 4 answered: DR-45 item 2; still after a clinical ruling). Proof: both directions first; an urgency replay script, read-only, with its own two-direction guard, run as an explicit Supabase step reported in the build report.
-- **D5** Duplicate paper warning (decision 5 answered: DR-45 item 3). Proof: both directions (the same bytes warn; a re-photographed different paper with the same date does not).
+- **D5** Duplicate paper warning (decision 5 answered: DR-45 item 3). The comparison covers only documents of the patient being uploaded to that the uploader can see. "Drop" goes through B4c's owner-only, confirm-token delete. The warning's words are a `ui-*` key. Proof:
+  - both directions: the same bytes warn, and a re-photographed different paper with the same date does not;
+  - the same bytes in another family do not warn;
+  - the hash's table is keyed by `document_id`, and the derived deletion sweep covers it, with a fixture row.
 
 ---
 
@@ -254,8 +288,8 @@ Each line is one PR. The **Waves** order work; within a wave, lanes run in paral
 **Lanes (parallel worktrees; merges serialised because every merge deploys):**
 - **A (WhatsApp):** P10 → P8 → P9, with P7 alongside.
 - **B (API):** B1 → {B2, B4a, B4b, B4c} → {B3, B5, B6}.
-- **C (web):** W1a → W1b → W1c → W2a → {W2b, W2c} → {W2d, W2e} → W3…W10, each against MSW fixtures, rebased once its B PR merges.
-- **D (data):** D4 now; D1 and D2 after P9; D3 and D5 after their decisions.
+- **C (web):** W1a → W1b → W1c → W2a (W1d any time after W1a, before W3) → {W2b, W2c} → {W2d, W2e} → W3…W10, each against MSW fixtures, rebased once its B PR merges.
+- **D (data):** D4 now; D1 and D2 after P9; D3 after its clinical ruling (decision 4 answered, DR-45 item 2); D5 released (DR-45 item 3).
 - **X:** X0 and X1 immediately.
 
 **Per-PR pipeline (one Workflow per PR, or per wave with a pipeline over PRs):**
