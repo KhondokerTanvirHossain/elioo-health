@@ -1,5 +1,6 @@
 package com.elioo.baymax.web.adapter.in.api;
 
+import com.elioo.baymax.extraction.ExtractionPipelineAcceptanceTest;
 import com.elioo.baymax.extraction.application.port.out.DocumentRecordPort;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
@@ -7,13 +8,16 @@ import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.healthrecord.domain.ShareMember;
 import com.elioo.baymax.nudge.adapter.out.persistence.PostgresNudgeAdapterTest;
+import com.elioo.baymax.testsupport.PaintedPaper;
 import com.elioo.baymax.web.application.port.out.SessionStorePort;
 import com.elioo.baymax.web.application.service.PhoneHasher;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.web.reactive.WebFluxAutoConfiguration;
 import org.springframework.boot.test.context.runner.ReactiveWebApplicationContextRunner;
 import org.springframework.context.ApplicationContext;
+import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
+import software.amazon.awssdk.services.s3.model.BucketAlreadyOwnedByYouException;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -38,6 +42,25 @@ final class AppApiContext {
 
     static ReactiveWebApplicationContextRunner runner(PostgreSQLContainer<?> postgres) {
         return PostgresNudgeAdapterTest.runnerFor(postgres)
+                .withConfiguration(AutoConfigurations.of(WebFluxAutoConfiguration.class))
+                .withPropertyValues("baymax.wa.enabled=false", "baymax.nudge.enabled=false", "baymax.web.public-origin=" + ORIGIN);
+    }
+
+    /**
+     * The same context with object storage: MinIO behind the {@code baymax.storage.*} properties and the pipeline's OCR
+     * and model stubbed ({@link ExtractionPipelineAcceptanceTest#runnerFor}), so an upload, an own image or a delete
+     * reaches its success path and the lines it writes there. Without storage every such request ends in a 5xx before
+     * them ("Object storage is not configured"), and a log sweep over it could not fail for the reason it exists.
+     * Creates the bucket once per container.
+     */
+    static ReactiveWebApplicationContextRunner runner(PostgreSQLContainer<?> postgres, MinIOContainer minio) {
+        try {
+            ExtractionPipelineAcceptanceTest.createBucket(minio);
+        } catch (BucketAlreadyOwnedByYouException e) {
+            // an earlier runner over this container made it
+        }
+        return ExtractionPipelineAcceptanceTest.runnerFor(postgres, minio, new ExtractionPipelineAcceptanceTest.StubReply(
+                        PaintedPaper.NOW_REPLY, List.of("Potassium", "11.0"), List.of()))
                 .withConfiguration(AutoConfigurations.of(WebFluxAutoConfiguration.class))
                 .withPropertyValues("baymax.wa.enabled=false", "baymax.nudge.enabled=false", "baymax.web.public-origin=" + ORIGIN);
     }

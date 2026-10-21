@@ -14,6 +14,7 @@ import com.elioo.baymax.web.adapter.in.ui.UiCopy;
 import com.elioo.baymax.web.application.port.in.AttentionUseCase;
 import com.elioo.baymax.web.application.port.in.ResultUseCase;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
+import com.elioo.baymax.web.application.port.in.UploadUseCase;
 import com.elioo.baymax.web.application.port.in.WebAuthUseCase;
 import com.elioo.baymax.web.domain.FamilyOverview;
 import com.elioo.baymax.web.domain.PatientSummary;
@@ -98,7 +99,8 @@ class AppApiGuardTest {
                 .build();
         return WebTestClient.bindToRouterFunction(probes.and(new AppApiRouter().mediooAppApiRoutes(
                 new MeApiHandler(timeline, attention, properties), new SignInApiHandler(auth, sessions, properties),
-                new PaperApiHandler(mock(ResultUseCase.class), new UiCopy()), guard))).build();
+                new PaperApiHandler(mock(ResultUseCase.class), new UiCopy()),
+                new UploadApiHandler(mock(UploadUseCase.class), properties, new com.elioo.baymax.web.adapter.in.ui.UiCopy()), guard))).build();
     }
 
     private WebTestClient.RequestBodySpec mutation(WebTestClient c, String uri) {

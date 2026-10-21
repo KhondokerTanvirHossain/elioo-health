@@ -8,6 +8,7 @@ GET /app/
 GET /app/add
 GET /app/api/documents/{id}
 GET /app/api/me
+GET /app/api/upload-options
 GET /app/documents/{id}
 GET /app/documents/{id}/all
 GET /app/documents/{id}/delete
@@ -27,6 +28,7 @@ GET /baymax/{*rest}
 POST /app/add
 POST /app/api/sign-in/request
 POST /app/api/sign-in/verify
+POST /app/api/uploads
 POST /app/documents/{id}/delete
 POST /app/login
 POST /app/logout

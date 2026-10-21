@@ -24,6 +24,7 @@ import com.elioo.baymax.storage.domain.ObjectKind;
 import com.elioo.baymax.storage.domain.StoredObject;
 import com.elioo.baymax.testsupport.LoggedText;
 import com.elioo.baymax.testsupport.TryDocuments;
+import com.elioo.baymax.testsupport.UploadRefusalSweep;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
 import com.elioo.baymax.web.application.port.out.AuditPort;
 import com.elioo.baymax.web.application.service.UploadService;
@@ -43,17 +44,12 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Set;
-import java.util.TreeSet;
 import java.util.UUID;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import static com.elioo.baymax.testsupport.TryDocuments.docx;
 import static com.elioo.baymax.testsupport.TryDocuments.jpeg;
@@ -196,30 +192,20 @@ class TryDocumentsThroughTheWebTest {
 
     /**
      * Every refusal intake or the handler can throw has its own copy: derived from the sources, not a list from memory.
-     * The files are found, not named: the whole extraction/application tree (intake, the renderer, anything added
-     * there later) and every web file that calls or implements UploadUseCase.
+     * The files are {@link UploadRefusalSweep#sources}: the whole extraction/application tree (intake, the renderer,
+     * anything added there later), the web files that refuse an upload by name, and every web file that calls or
+     * implements UploadUseCase. The size refusals live in MultipartUploads, which mentions no UploadUseCase: they must be
+     * found by name, or this guard would pass with both missing.
      */
     @Test
     void everyReasonAnUploadCanBeRefusedForHasItsOwnCopy() throws IOException {
-        Pattern thrown = Pattern.compile("(?:badRequest|forbidden|conflict|tooLarge)\\(\\s*\"([a-z_]+)\"|PAYLOAD_TOO_LARGE,\\s*\"([a-z_]+)\"");
-        Path main = Path.of("src/main/java/com/elioo/baymax");
-        List<Path> sources = new java.util.ArrayList<>(javaFiles(main.resolve("extraction/application")));
-        for (Path p : javaFiles(main.resolve("web"))) {
-            if (Files.readString(p).contains("UploadUseCase")) {
-                sources.add(p);
-            }
-        }
-        assertThat(sources).extracting(p -> p.getFileName().toString())
-                .as("the upload path's files were found").contains("PageRenderer.java", "DocumentIntakeService.java", "UploadUiHandler.java", "UploadService.java");
-        Set<String> reasons = new TreeSet<>();
-        for (Path f : sources) {
-            Matcher m = thrown.matcher(Files.readString(f));
-            while (m.find()) {
-                reasons.add(m.group(1) != null ? m.group(1) : m.group(2));
-            }
-        }
-        // shared_patient_read_only is thrown by UploadService; file_too_large and request_too_large by the handler's tooLarge
+        assertThat(UploadRefusalSweep.sources()).extracting(p -> p.getFileName().toString())
+                .as("the upload path's files were found").contains("PageRenderer.java", "DocumentIntakeService.java", "UploadUiHandler.java", "UploadService.java",
+                        "MultipartUploads.java", "UploadApiHandler.java");
+        Set<String> reasons = UploadRefusalSweep.reasonsWithStatus().keySet();
+        // shared_patient_read_only is thrown by UploadService; file_too_large and request_too_large by MultipartUploads.tooLarge (swept by name, UploadRefusalSweep.NAMED)
         assertThat(reasons).as("the sweep found the refusals; an empty set would pass vacuously").hasSizeGreaterThanOrEqualTo(10);
+        assertThat(reasons).as("the size refusals were swept").contains("file_too_large", "request_too_large");
         assertThat(reasons).allSatisfy(r -> assertThat(UploadUiHandler.REFUSALS).as(r).containsKey(r));
     }
 
@@ -234,12 +220,6 @@ class TryDocumentsThroughTheWebTest {
         for (Lang lang : Lang.values()) {
             UploadUiHandler.REFUSALS.forEach((reason, key) -> assertThat(copy.maybe(lang, key)).as(lang + " " + reason + " → " + key).isNotBlank());
             UploadUiHandler.REFUSALS.forEach((reason, key) -> assertThat(copy.t(lang, key, 10)).as(lang + " " + reason).doesNotContain("{"));
-        }
-    }
-
-    private static List<Path> javaFiles(Path root) throws IOException {
-        try (java.util.stream.Stream<Path> walk = Files.walk(root)) {
-            return walk.filter(p -> p.toString().endsWith(".java")).toList();
         }
     }
 }

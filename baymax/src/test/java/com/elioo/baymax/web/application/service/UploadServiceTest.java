@@ -88,6 +88,32 @@ class UploadServiceTest {
                 DocumentAllowance.unlimited(YearMonth.of(2026, 10))).preselected()).isEmpty();
     }
 
+    /**
+     * Admission, asked before a press's files are read into memory: the patient rule of {@code upload}, and nothing
+     * else. The free allowance is deliberately not asked here: a retry of a press that used the last free paper must
+     * still be answered with its document, and only intake can tell a replay from a new press.
+     */
+    @Test
+    void admissionIsThePatientRuleAndNothingElse() {
+        PatientProfile ma = summary("আম্মা", true).patient();
+        PatientProfile shared = summary("খালা", false).patient();
+        UUID nobody = UUID.nameUUIDFromBytes("nobody".getBytes());
+        when(records.visiblePatient(FAMILY, ma.id())).thenReturn(Mono.just(new PatientAccess(ma, true)));
+        when(records.visiblePatient(FAMILY, shared.id())).thenReturn(Mono.just(new PatientAccess(shared, false)));
+        when(records.visiblePatient(FAMILY, nobody)).thenReturn(Mono.empty());
+
+        StepVerifier.create(service.admit(FAMILY, ma.id())).verifyComplete();
+        StepVerifier.create(service.admit(FAMILY, shared.id()))
+                .expectErrorMatches(e -> e instanceof BaymaxException b && b.status().value() == 403
+                        && "shared_patient_read_only".equals(b.reason())).verify();
+        StepVerifier.create(service.admit(FAMILY, nobody))
+                .expectErrorMatches(e -> e instanceof BaymaxException b && b.status().value() == 404
+                        && "patient_not_found".equals(b.reason())).verify();
+        org.mockito.Mockito.verifyNoInteractions(freeTier);
+        verify(intake, never()).accept(any(), any(), any());
+        verify(intake, never()).acceptEach(any(), any(), any());
+    }
+
     /** Moved from TimelineServiceTest: a shared patient can be seen but not added to; nothing reaches intake. */
     @Test
     void aShareMemberCannotUploadAndIntakeIsNeverCalled() {

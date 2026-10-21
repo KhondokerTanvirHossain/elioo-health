@@ -29,6 +29,7 @@ public class AppApiRouter {
     @Bean
     @Order(Ordered.HIGHEST_PRECEDENCE)
     public RouterFunction<ServerResponse> mediooAppApiRoutes(MeApiHandler me, SignInApiHandler signIn, PaperApiHandler papers,
+                                                             UploadApiHandler uploads,
                                                              AppApiGuard guard) {
         return RouterFunctions.route()
                 .GET(BASE + "/me", me::me)
@@ -37,6 +38,8 @@ public class AppApiRouter {
                 .POST(BASE + "/sign-in/request", signIn::request)
                 .POST(BASE + "/sign-in/verify", signIn::verify)
                 .GET(BASE + "/documents/{id}", papers::paper)
+                .GET(BASE + "/upload-options", uploads::options)
+                .POST(BASE + "/uploads", uploads::upload)
                 .route(RequestPredicates.path(BASE + "/**"), request -> ApiReason.NOT_FOUND.respond())
                 .filter(guard)
                 .build();

@@ -68,7 +68,13 @@ final class WebUiTestKit {
 
     /** A real auth service (SignInIsFreeAcceptanceTest) and its properties; {@code stubSession=false} leaves auth alone. */
     WebUiTestKit(WebAuthUseCase auth, BaymaxProperties properties, boolean stubSession) {
-        this(auth, properties, stubSession, mock(UploadUseCase.class));
+        this(auth, properties, stubSession, admitting(mock(UploadUseCase.class)));
+    }
+
+    /** The kit's own mock lets the viewer send for anyone; a test that means otherwise stubs {@code admit} itself. */
+    private static UploadUseCase admitting(UploadUseCase uploads) {
+        when(uploads.admit(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(Mono.empty());
+        return uploads;
     }
 
     private WebUiTestKit(WebAuthUseCase auth, BaymaxProperties properties, boolean stubSession, UploadUseCase uploads) {

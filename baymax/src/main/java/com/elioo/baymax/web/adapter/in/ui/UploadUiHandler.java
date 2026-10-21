@@ -3,9 +3,9 @@ package com.elioo.baymax.web.adapter.in.ui;
 import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.common.error.FreeTierExceededException;
 import com.elioo.baymax.config.BaymaxProperties;
-import com.elioo.baymax.extraction.domain.Upload;
 import com.elioo.baymax.healthrecord.domain.DocumentAllowance;
 import com.elioo.baymax.outbound.application.service.BanglaDate;
+import com.elioo.baymax.web.adapter.in.MultipartUploads;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.application.port.in.UploadUseCase;
 import com.elioo.baymax.web.domain.Grouping;
@@ -14,12 +14,8 @@ import com.elioo.baymax.web.domain.UploadOptions;
 import com.elioo.baymax.web.domain.WebSession;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.io.buffer.DataBufferLimitException;
-import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.http.codec.multipart.FilePart;
-import org.springframework.http.codec.multipart.FormFieldPart;
 import org.springframework.http.codec.multipart.Part;
 import org.springframework.stereotype.Component;
 import org.springframework.util.MultiValueMap;
@@ -28,7 +24,6 @@ import org.springframework.web.reactive.function.server.RouterFunction;
 import org.springframework.web.reactive.function.server.RouterFunctions;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -301,6 +296,7 @@ public class UploadUiHandler implements WebPages {
             Map.entry("empty_pdf", "upload.err.pdf"),
             Map.entry("unreadable_pdf", "upload.err.pdf"),
             Map.entry("too_many_pages", "upload.err.too_many_pages"),
+            Map.entry("too_many_files", "upload.err.too_many_files"),
             Map.entry("file_too_large", "upload.err.too_large"),
             Map.entry("request_too_large", "upload.err.too_large"),
             Map.entry("shared_patient_read_only", "add.viewonly"),
@@ -317,34 +313,28 @@ public class UploadUiHandler implements WebPages {
         return Mono.defer(() -> receive(request, PageChrome.uuid(request.pathVariable("id"))));
     }
 
+    /** The caps and what counts as a file are {@link MultipartUploads}', shared with {@code POST /app/api/uploads}. */
     private Mono<ServerResponse> receive(ServerRequest request, UUID pathPatient) {
         WebSession session = SessionAuthFilter.session(request);
-        if (request.headers().contentLength().orElse(-1L) > properties.getUpload().getMaxRequestBytes()) {
-            return refuse(request, tooLarge("request_too_large"), Optional.ofNullable(pathPatient).map(UUID::toString),
+        BaymaxProperties.Upload caps = properties.getUpload();
+        Optional<BaymaxException> declared = MultipartUploads.declaredTooLarge(request, caps);
+        if (declared.isPresent()) {
+            return refuse(request, declared.get(), Optional.ofNullable(pathPatient).map(UUID::toString),
                     backOf(request, null, pathPatient), Grouping.ONE);
         }
-        return request.multipartData().flatMap(parts -> {
-            UUID patientId = pathPatient != null ? pathPatient : uuidOrNull(field(parts, "patient"));
-            String back = backOf(request, field(parts, "back"), pathPatient);
+        return MultipartUploads.withParts(request, properties, parts -> {
+            UUID patientId = pathPatient != null ? pathPatient : MultipartUploads.uuidOrNull(MultipartUploads.field(parts, "patient"));
+            String back = backOf(request, MultipartUploads.field(parts, "back"), pathPatient);
             if (patientId == null) {
                 return refuse(request, BaymaxException.badRequest("choose_patient", "no patient chosen"), Optional.empty(), back, grouping(parts));
             }
             Grouping grouping = grouping(parts);
-            String key = uploadKey(parts);
-            List<FilePart> files = parts.getOrDefault("file", List.of()).stream()
-                    .filter(FilePart.class::isInstance).map(FilePart.class::cast).toList();
-            return Flux.fromIterable(files).concatMap(this::readBytes)
-                    // an input the family did not use posts filename="" and nothing; a chosen empty file keeps its name
-                    .filter(u -> !(u.bytes().length == 0 && (u.filename() == null || u.filename().isBlank())))
-                    .collectList()
+            String key = MultipartUploads.uploadKey(parts);
+            // who may send for this patient is asked before a file is joined into memory
+            return uploads.admit(session.familyId(), patientId)
+                    .then(MultipartUploads.files(parts, properties, grouping))
                     .flatMap(pages -> {
                         long total = pages.stream().mapToLong(u -> u.bytes().length).sum();
-                        if (pages.isEmpty()) {
-                            return Mono.error(BaymaxException.badRequest("no_file", "attach at least one file"));
-                        }
-                        if (total > properties.getUpload().getMaxRequestBytes()) {
-                            return Mono.error(tooLarge("request_too_large"));
-                        }
                         return uploads.upload(session.familyId(), patientId, pages, grouping, key)
                                 .doOnNext(docs -> docs.forEach(d -> log.info("[baymax] web upload documentId={} files={} bytes={} documents={}",
                                         d.id(), pages.size(), total, docs.size())))
@@ -358,23 +348,6 @@ public class UploadUiHandler implements WebPages {
                     .onErrorResume(BaymaxException.class, e -> refuse(request, e, Optional.of(patientId.toString()), back, grouping));
         }).onErrorResume(BaymaxException.class, e -> refuse(request, e, Optional.ofNullable(pathPatient).map(UUID::toString),
                 backOf(request, null, pathPatient), Grouping.ONE));
-    }
-
-    private Mono<Upload> readBytes(FilePart part) {
-        int max = Math.toIntExact(Math.min(Integer.MAX_VALUE, properties.getUpload().getMaxFileBytes()));
-        return DataBufferUtils.join(part.content(), max)
-                .map(buffer -> {
-                    byte[] bytes = new byte[buffer.readableByteCount()];
-                    buffer.read(bytes);
-                    DataBufferUtils.release(buffer);
-                    return new Upload(part.filename(), bytes);
-                })
-                .defaultIfEmpty(new Upload(part.filename(), new byte[0]))
-                .onErrorMap(DataBufferLimitException.class, e -> tooLarge("file_too_large"));
-    }
-
-    private static BaymaxException tooLarge(String reason) {
-        return new BaymaxException(HttpStatus.PAYLOAD_TOO_LARGE, reason, "upload over the size limit");
     }
 
     /**
@@ -426,32 +399,13 @@ public class UploadUiHandler implements WebPages {
         return LocalPath.or(posted, fallback);
     }
 
-    /** "আলাদা আলাদা" only when the family said so; anything else, or nothing (the legacy form), is one report. */
+    /**
+     * "আলাদা আলাদা" only when the family said so; anything else, or nothing (the legacy form), is one report. Lenient on
+     * purpose, unlike {@code POST /app/api/uploads}, which refuses a value it does not know: this form's values are the
+     * radio buttons the sheet itself draws, so the only other value it can receive is none at all (a page still cached
+     * with the pre-D3 form), and refusing that would turn an old page's paper away.
+     */
     private static Grouping grouping(MultiValueMap<String, Part> parts) {
-        return "separate".equals(field(parts, "group")) ? Grouping.SEPARATE : Grouping.ONE;
-    }
-
-    /** The sheet's key, or null for a value that is not our shape (the legacy form sends none): ignored, never stored. */
-    private static String uploadKey(MultiValueMap<String, Part> parts) {
-        return Optional.ofNullable(field(parts, "upload_key")).filter(k -> UPLOAD_KEY.matcher(k).matches()).orElse(null);
-    }
-
-    /** What the sheet writes (a UUID) and a little room; intake appends the files' digest and ":i", within V21's 80-character CHECK. */
-    private static final java.util.regex.Pattern UPLOAD_KEY = java.util.regex.Pattern.compile("[A-Za-z0-9-]{8,64}");
-
-    private static String field(MultiValueMap<String, Part> parts, String name) {
-        Part part = parts.getFirst(name);
-        return part instanceof FormFieldPart f && !f.value().isBlank() ? f.value().trim() : null;
-    }
-
-    private static UUID uuidOrNull(String raw) {
-        if (raw == null) {
-            return null;
-        }
-        try {
-            return UUID.fromString(raw);
-        } catch (IllegalArgumentException e) {
-            return null;
-        }
+        return "separate".equals(MultipartUploads.field(parts, "group")) ? Grouping.SEPARATE : Grouping.ONE;
     }
 }
