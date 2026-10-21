@@ -54,12 +54,15 @@ subprojects {
     // bytecode both ways on review of #111: every Reactor/Netty/Micrometer member 6.2.19 references exists in those versions, and every
     // Framework member Boot 3.4.2 and Spring Data 3.4.2 reference exists in 6.2.19 (only the unused netty5 adapters had
     // gaps). Upstream never tested this pairing. Reactor is not bumped here: one moving part per rollback unit.
-    // ShippedSpringFrameworkVersionTest pins reactor-core at 3.7.2, so moving it is a conscious change.
+    // The checked versions are one table, ShippedSpringFrameworkVersionTest.LINKAGE_CHECKED, held while this is set,
+    // so moving any of them is a conscious change.
     //
     // Set as a project property, not as a bomProperty on the import below: medscribe-ai applies the Boot plugin,
     // which imports spring-boot-dependencies a second time and honours only the project property, so a bomProperty
-    // here left the bootJar on 6.2.2. Checked on the artefact, not a classpath: ShippedSpringFrameworkVersionTest reads
-    // the bootJar's BOOT-INF/lib, and the Dockerfile runs scripts/check-framework-jars.sh on the lib the image ships.
+    // here left the bootJar on 6.2.2. Checked on jars, not on a classpath, twice: the shipped-artefact guard is
+    // scripts/check-framework-jars.sh, run by the Dockerfile on the lib the image ships (CI's build job runs that
+    // builder stage on every PR); the early one is ShippedSpringFrameworkVersionTest, on CI's own bootJar, a sibling
+    // built from the same inputs by the wrapper's Gradle.
     //
     // Remove this line once the Boot BOM's own spring-framework.version is >= 6.2.19 (the next Boot upgrade); until
     // then ShippedSpringFrameworkVersionTest fails if Boot moves off 3.4.2 while it is set, so an upgrade must decide.

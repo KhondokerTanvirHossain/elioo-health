@@ -102,9 +102,7 @@ over the `n8n_edge` Docker network.
 - No authentication; no stalled-job recovery or cancellation; chat history not persisted; Textract path is behind Vision on Bangla.
 - Mixed BOM: Framework 6.2.19 runs on Boot 3.4.2's Reactor (reactor-core 3.7.2, reactor-netty 1.2.2), Netty
   4.1.117.Final and Micrometer 1.14.3, though 6.2.19 was built against reactor-core 3.7.19. Linkage-checked, not
-  tested upstream. Removed by the next Boot upgrade, which also deletes the `spring-framework.version` override once
-  Boot's own BOM brings 6.2.19 or later (`ShippedSpringFrameworkVersionTest` fails if Boot moves while it is set).
-- Boot 3.4.x is past OSS support, and its BOM keeps Netty 4.1.117.Final and reactor-netty 1.2.2 in production
-  behind Caddy, which predate published fixes (Netty's HTTP/1.1 chunk-extension request smuggling, CVE-2025-58056,
-  fixed in 4.1.125; reactor-netty's redirect credential leak, CVE-2025-22227). A known, tracked choice (#115): move to a
-  supported Boot line, or as an interim override `netty.version` and `reactor-bom.version` with their own replay.
+  tested upstream; `ShippedSpringFrameworkVersionTest.LINKAGE_CHECKED` holds those versions while the override is set.
+  Removed by the next Boot upgrade, which also deletes the `spring-framework.version` override once Boot's own BOM
+  brings 6.2.19 or later (`ShippedSpringFrameworkVersionTest` fails if Boot moves while it is set).
+- Boot 3.4.x is past OSS support; Netty/reactor-netty upgrades tracked in #115.
