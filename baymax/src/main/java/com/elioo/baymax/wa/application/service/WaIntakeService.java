@@ -107,8 +107,10 @@ public class WaIntakeService {
     /**
      * Step 0 (F9a, spec §7.1): record the message under HMAC(provider id) before the webhook answers Meta. Emits the
      * message when THIS call recorded it, so the caller goes on to {@link #handle} it; empty when it was already recorded
-     * (a re-delivery, to be acknowledged and ignored); an error when nothing could be recorded (the webhook answers 503
-     * and Meta retries, which the claim makes harmless). Sends nothing.
+     * (a re-delivery, to be acknowledged and ignored); an error when nothing could be recorded for a reason a retry can
+     * fix (the webhook answers 503 and Meta retries, which the claim makes harmless). A message the database refuses as
+     * DATA (SQLSTATE class 22 or 23: a NUL in the text, an over-long id) would be refused on every retry for a week, so it
+     * is emitted unclaimed, like a message with no provider id: answered now, without idempotency. Sends nothing.
      */
     public Mono<WaInbound> claim(WaInbound in) {
         if (!keyed(in)) {
@@ -125,7 +127,27 @@ public class WaIntakeService {
                             in.type().name().toLowerCase(Locale.ROOT), in.text(), in.mediaId(), in.timestamp()),
                             instance.startedAt()))
                     .map(row -> in);
+        }).onErrorResume(WaIntakeService::refusedAsData, e -> {
+            log.warn("[baymax] wa inbound unrecordable ref={} error={}: processed without idempotency",
+                    Redact.id(in.providerMessageId()), e.getClass().getSimpleName());
+            return Mono.just(in);
         });
+    }
+
+    /**
+     * The database refused the row itself (SQLSTATE class 22 data exception or 23 integrity violation), anywhere in the
+     * cause chain: the same bytes fail the same way on every retry. Everything else (unreachable, timed out, a missing
+     * table, the HMAC secret) is a reason to let Meta retry.
+     */
+    static boolean refusedAsData(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause() == t ? null : t.getCause()) {
+            String state = t instanceof io.r2dbc.spi.R2dbcException r ? r.getSqlState()
+                    : t instanceof java.sql.SQLException s ? s.getSQLState() : null;
+            if (state != null && (state.startsWith("22") || state.startsWith("23"))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

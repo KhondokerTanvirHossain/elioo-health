@@ -69,10 +69,12 @@ public class WaWebhookHandler {
     /**
      * Inbound callbacks (F9a). 200 once every message in the callback is <b>claimed</b> — recorded under HMAC(wamid) in
      * {@code inbound_message} — and dispatched; a message already claimed (Meta re-delivering it) is acknowledged and
-     * ignored, so the family hears one reply. If a claim fails (database down, HMAC secret missing) the answer is 503:
-     * nothing was recorded, so nothing is acknowledged, Meta retries for up to a week, and the claim makes that retry
-     * harmless. A signed body that is not JSON is still 200, because a retry will never parse either. Unsigned or
-     * mismatched is 403 and nothing is parsed.
+     * ignored, so the family hears one reply. If a claim fails for a reason a retry can fix (database unreachable, HMAC
+     * secret missing) the answer is 503: the messages claimed before it are answered, the rest are not acknowledged, Meta
+     * retries for up to a week, and the claim makes that retry harmless. A message the database refuses as data (it would
+     * refuse it on every retry) is answered unkeyed by the intake, never a 503 loop. A signed body that is not JSON, or
+     * that cannot be walked, is still 200, because a retry reads the same bytes. Unsigned or mismatched is 403 and nothing
+     * is parsed.
      */
     public Mono<ServerResponse> receive(ServerRequest request) {
         String signature = request.headers().firstHeader("X-Hub-Signature-256");
@@ -84,11 +86,12 @@ public class WaWebhookHandler {
                                 body.length, signature != null);
                         return ServerResponse.status(403).bodyValue("forbidden");
                     }
-                    return handle(body)
+                    // defer: a throw while the callback is walked reaches the handler below, never the 500 error filter
+                    return Mono.defer(() -> handle(body))
                             .then(Mono.defer(() -> ServerResponse.ok().bodyValue("ok")))
                             .onErrorResume(e -> {
-                                // nothing was recorded, so nothing is acknowledged: Meta retries, and the claim makes that
-                                // safe. Class name only: a driver's message can quote the row it failed to write.
+                                // the claims that committed were dispatched; the rest are not acknowledged: Meta retries,
+                                // and the claim makes that safe. Class name only: a driver's message can quote the row.
                                 log.error("[baymax] wa webhook: inbound could not be recorded, asking Meta to retry error={}",
                                         e.getClass().getSimpleName());
                                 return ServerResponse.status(503).bodyValue("retry");
@@ -104,6 +107,12 @@ public class WaWebhookHandler {
      * handling then runs detached: Meta retries anything that is not a prompt 200, and a download plus extraction is far
      * slower than its timeout; the family hears back over WhatsApp, not over this response. No type is dropped here;
      * the intake answers every one (Phase 0).
+     *
+     * <p><b>A committed claim is always followed by its dispatch.</b> The INSERT is durable the moment Postgres runs it;
+     * if Meta hangs up before its answer comes back, Reactor Netty cancels this request, and a dispatch chained on the
+     * request's subscription would never run, while Meta's re-delivery found the row and was ignored as a duplicate: a
+     * message nobody answered. So claim-plus-dispatch runs on its own subscription ({@code suppressCancel}), which the
+     * exchange can wait for but never cancel. (A restart in that gap is the claim's reclaim: see InboundMessagePort.)
      */
     private Mono<Void> handle(byte[] body) {
         JsonNode root;
@@ -117,20 +126,33 @@ public class WaWebhookHandler {
         if (root == null) {
             return Mono.empty();
         }
-        logCallback(root);
         List<WaInbound> messages = new ArrayList<>();
-        for (JsonNode entry : root.path("entry")) {
-            for (JsonNode change : entry.path("changes")) {
-                for (JsonNode m : change.path("value").path("messages")) {
-                    messages.add(parse(m));
+        try {
+            logCallback(root);
+            for (JsonNode entry : root.path("entry")) {
+                for (JsonNode change : entry.path("changes")) {
+                    for (JsonNode m : change.path("value").path("messages")) {
+                        messages.add(parse(m));
+                    }
                 }
             }
+        } catch (RuntimeException e) {
+            // the same bytes walk the same way on every retry: a 503 or a 500 here would be retried for a week
+            log.error("[baymax] wa webhook: signed callback could not be walked error={}", e.getClass().getSimpleName());
+            return Mono.empty();
         }
         return Flux.fromIterable(messages)
-                .concatMap(in -> Mono.defer(() -> intake.claim(in))
-                        .doOnNext(claimed -> subscribe(claimed))
+                .concatMap(this::claimAndDispatch)
+                .then();
+    }
+
+    /** One message: claimed, then dispatched, on a subscription the HTTP exchange cannot cancel (see {@link #handle}). */
+    private Mono<Void> claimAndDispatch(WaInbound in) {
+        return Mono.fromFuture(() -> Mono.defer(() -> intake.claim(in))
+                        .doOnNext(this::subscribe)
                         .switchIfEmpty(Mono.fromRunnable(() -> log.info(
-                                "[baymax] wa inbound duplicate ref={} ignored (already claimed)", Redact.id(in.providerMessageId())))))
+                                "[baymax] wa inbound duplicate ref={} ignored (already claimed)", Redact.id(in.providerMessageId()))))
+                        .toFuture(), true)
                 .then();
     }
 
@@ -150,9 +172,24 @@ public class WaWebhookHandler {
             default -> "";
         };
         JsonNode media = m.path(meta);   // image | document | audio | video | sticker carry {id, mime_type}
-        long ts = m.path("timestamp").asLong(0);   // Meta sends epoch seconds as a string; PR 8 stores it
         return new WaInbound(m.path("id").asText(""), m.path("from").asText(""), type, text,
-                media.path("id").asText(""), media.path("mime_type").asText(""), ts == 0 ? null : Instant.ofEpochSecond(ts));
+                media.path("id").asText(""), media.path("mime_type").asText(""), timestamp(m.path("timestamp")));
+    }
+
+    /**
+     * Meta sends epoch seconds as a string. Missing, zero, unparseable or beyond {@link Instant}'s range is "no
+     * timestamp": the message is still answered (the window record falls back to receipt time).
+     */
+    static Instant timestamp(JsonNode node) {
+        long ts = node.asLong(0);
+        if (ts == 0) {
+            return null;
+        }
+        try {
+            return Instant.ofEpochSecond(ts);
+        } catch (java.time.DateTimeException outOfRange) {
+            return null;
+        }
     }
 
     /** The claimed message's handling, detached from the HTTP response. */

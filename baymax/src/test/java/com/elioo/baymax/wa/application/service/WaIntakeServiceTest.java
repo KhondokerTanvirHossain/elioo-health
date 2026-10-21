@@ -193,6 +193,44 @@ class WaIntakeServiceTest {
         verify(inbound, never()).linkDocument(anyString(), any(), any());
     }
 
+    /**
+     * handle()'s OWN error branch: onInbound itself errors (the family lookup fails, and withFamily has no fallback), so
+     * the FAILED stamp can only come from handle. The download-404 test above reaches FAILED through onImage's mapping
+     * instead, and would stay green with handle's onErrorResume deleted: same verdict, different rule.
+     */
+    @Test
+    void anErrorOutOfOnInboundItselfIsTheFailedOutcomeAndIsStamped() {
+        when(records.findFamilyByWhatsapp(E164)).thenReturn(Mono.error(new IllegalStateException("lookup failed")));
+        WaInbound in = new WaInbound(WAMID, FROM, WaInbound.Type.TEXT, "ধন্যবাদ", "", "");
+        StepVerifier.create(service.onInbound(in)).as("the precondition: onInbound itself errors")
+                .expectError(IllegalStateException.class).verify();
+
+        // the stamp first, the error swallowed: a replay without handle's onErrorResume fails ON the missing stamp
+        WaIntakeService.Outcome outcome = service.handle(in).onErrorResume(e -> Mono.empty()).block();
+        verify(inbound).markHandled(hasher.providerId(WAMID), "FAILED");
+        assertThat(outcome).isEqualTo(WaIntakeService.Outcome.FAILED);
+    }
+
+    /**
+     * A row the database refuses as data (SQLSTATE 22xxx / 23xxx) would be refused on every retry for a week: the claim
+     * passes the message through unclaimed, so it is answered. Anything else stays an error, the 503 that lets Meta retry.
+     */
+    @Test
+    void aClaimRefusedAsDataIsPassedThroughUnclaimedAndAnythingElseIsStillAnError() {
+        when(inbound.claim(any(), any())).thenReturn(Mono.error(new org.springframework.dao.DataIntegrityViolationException("x",
+                new io.r2dbc.spi.R2dbcDataIntegrityViolationException("invalid byte sequence", "22021"))));
+        WaInbound in = new WaInbound(WAMID, FROM, WaInbound.Type.TEXT, "hi", "", "");
+        assertThat(service.claim(in).block()).as("22021: answered unkeyed").isSameAs(in);
+
+        when(inbound.claim(any(), any())).thenReturn(Mono.error(new org.springframework.dao.DataAccessResourceFailureException("x",
+                new io.r2dbc.spi.R2dbcNonTransientResourceException("connection refused", "08001"))));
+        StepVerifier.create(service.claim(in)).as("08001: a retry can help").expectError().verify();
+
+        when(inbound.claim(any(), any())).thenReturn(Mono.error(new org.springframework.r2dbc.BadSqlGrammarException("x", "sql",
+                new io.r2dbc.spi.R2dbcBadGrammarException("relation does not exist", "42P01"))));
+        StepVerifier.create(service.claim(in)).as("42P01: the table is missing for every message; Meta holds them").expectError().verify();
+    }
+
     /** The answer already went; a stamp that cannot be written shows as unhandled at the next restart, not as an error. */
     @Test
     void aLostOutcomeStampDoesNotTurnAnAnsweredMessageIntoAnError() {
