@@ -71,7 +71,8 @@ class NowAckAdapterTest {
             UUID b = NowPapers.nowPaper(context, POSTGRES, ma);
             UUID c = NowPapers.nowPaper(context, POSTGRES, ma);
             sql("UPDATE baymax.document SET urgency_reasons = '[\"" + REASON + "\"]' WHERE id IN ('" + a + "', '" + b + "')");
-            sql("UPDATE baymax.document SET urgency_reasons = '[\"" + REASON + "\", \"text_emergency_phrase\"]' WHERE id = '" + c + "'");
+            // stored as RAISE stores them: distinct and sorted ("text_…" sorts before "value_…")
+            sql("UPDATE baymax.document SET urgency_reasons = '[\"text_emergency_phrase\", \"" + REASON + "\"]' WHERE id = '" + c + "'");
 
             Map<UUID, NowSeen> seen = seen(context, a, b, c);
             assertThat(seen.get(a).reasonsDigest()).as("the same reasons, the same digest").isEqualTo(seen.get(b).reasonsDigest());
@@ -80,14 +81,57 @@ class NowAckAdapterTest {
                     .isEqualTo(sha256(scalar("SELECT urgency_reasons::text FROM baymax.document WHERE id = '" + a + "'")))
                     .matches("[0-9a-f]{64}");
 
-            // a re-assessment through the RAISE: same level, no new reason (what detail, compose, re-crop and the sweep do)
-            String assessedBefore = scalar("SELECT urgency_assessed_at::text FROM baymax.document WHERE id = '" + a + "'");
-            context.getBean(DocumentUrgencyPort.class)
-                    .raise(a, new UrgencyAssessment(Urgency.NOW, List.of()), Instant.now().plus(Duration.ofMinutes(5))).block();
-            String assessedAfter = scalar("SELECT urgency_assessed_at::text FROM baymax.document WHERE id = '" + a + "'");
-            assertThat(assessedAfter).as("the restamp really happened").isNotEqualTo(assessedBefore);
-            assertThat(seen(context, a).get(a).reasonsDigest()).as("the digest after a re-assessment that changed nothing")
-                    .isEqualTo(seen.get(a).reasonsDigest());
+            // re-assessments through the RAISE that change nothing, as a real sweep on a real NOW paper makes them: the same
+            // level re-deriving the reasons already stored. b with none (the empty case), a with its one reason again, c
+            // with its two in the other order. Each restamps urgency_assessed_at; none may move the digest, which holds only
+            // while RAISE merges the reasons distinct and sorted.
+            DocumentUrgencyPort port = context.getBean(DocumentUrgencyPort.class);
+            Instant later = Instant.now().plus(Duration.ofMinutes(5));
+            Map<UUID, List<String>> rederived = Map.of(
+                    a, List.of(REASON),
+                    b, List.of(),
+                    c, List.of(REASON, "text_emergency_phrase"));
+            for (Map.Entry<UUID, List<String>> e : rederived.entrySet()) {
+                UUID paper = e.getKey();
+                String assessedBefore = scalar("SELECT urgency_assessed_at::text FROM baymax.document WHERE id = '" + paper + "'");
+                port.raise(paper, new UrgencyAssessment(Urgency.NOW, e.getValue()), later).block();
+                assertThat(scalar("SELECT urgency_assessed_at::text FROM baymax.document WHERE id = '" + paper + "'"))
+                        .as("the guard: the restamp of " + e.getValue() + " really happened").isNotEqualTo(assessedBefore);
+                assertThat(seen(context, paper).get(paper).reasonsDigest())
+                        .as("the digest after re-deriving " + e.getValue() + ", which changed nothing")
+                        .isEqualTo(seen.get(paper).reasonsDigest());
+            }
+        });
+    }
+
+    /**
+     * The paper went between the banner read and the tap (deleted on request, or by its owner): the tap records nothing
+     * and fails nothing. Without the guard the insert hit {@code now_ack_document_id_patient_id_fkey} and the ack was a 500.
+     */
+    @Test
+    void aTapOnAPaperDeletedMeanwhileRecordsNothing() {
+        PostgresNudgeAdapterTest.runnerFor(POSTGRES).run(context -> {
+            PatientProfile ma = patient(context);
+            UUID paper = NowPapers.nowPaper(context, POSTGRES, ma);
+            NowSeen shown = seen(context, paper).get(paper);
+            sql("DELETE FROM baymax.document WHERE id = '" + paper + "'");
+
+            assertThat(context.getBean(NowAckPort.class).record(ma.familyId(), List.of(shown), Instant.now()).block())
+                    .as("rows recorded for a paper that is gone").isZero();
+            assertThat(scalar("SELECT count(*) FROM baymax.now_ack WHERE document_id = '" + paper + "'")).isEqualTo("0");
+        });
+    }
+
+    /** The other direction: only "the paper is gone" is nothing recorded; a row the table refuses for any other reason still fails. */
+    @Test
+    void aTapTheTableRefusesForAnotherReasonStillFails() {
+        PostgresNudgeAdapterTest.runnerFor(POSTGRES).run(context -> {
+            PatientProfile ma = patient(context);
+            UUID paper = NowPapers.nowPaper(context, POSTGRES, ma);
+            NowSeen shown = seen(context, paper).get(paper);
+            NowSeen bad = new NowSeen(paper, ma.id(), shown.urgency(), shown.reasonsDigest(), "approved");
+            assertThatThrownBy(() -> context.getBean(NowAckPort.class).record(ma.familyId(), List.of(bad), Instant.now()).block())
+                    .as("a release state the CHECK refuses").hasMessageContaining("now_ack_release_state_check");
         });
     }
 

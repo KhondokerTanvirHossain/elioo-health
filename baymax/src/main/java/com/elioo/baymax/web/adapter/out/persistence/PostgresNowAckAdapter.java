@@ -3,6 +3,7 @@ package com.elioo.baymax.web.adapter.out.persistence;
 import com.elioo.baymax.config.BaymaxSchema;
 import com.elioo.baymax.web.application.port.out.NowAckPort;
 import com.elioo.baymax.web.domain.NowSeen;
+import io.r2dbc.spi.R2dbcException;
 import io.r2dbc.spi.Readable;
 import lombok.RequiredArgsConstructor;
 import org.springframework.r2dbc.core.DatabaseClient;
@@ -44,11 +45,21 @@ public class PostgresNowAckAdapter implements NowAckPort {
             FROM %1$s.now_ack WHERE family_id = :viewer AND document_id = ANY(:ids)
             """.formatted(S);
 
+    /**
+     * Only while the paper is still there: a paper deleted between the banner read and the tap records nothing, instead of
+     * failing the ack on {@code now_ack_document_id_patient_id_fkey}. A delete that has not committed yet still passes the
+     * EXISTS, and its commit then fails the insert on that key, which {@link #record} also reads as "gone".
+     */
     private static final String RECORD = """
             INSERT INTO %1$s.now_ack (family_id, patient_id, document_id, urgency, reasons_digest, release_state, acked_at)
-            VALUES (:viewer, :patient, :document, :urgency, :digest, :state, :at)
+            SELECT CAST(:viewer AS uuid), CAST(:patient AS uuid), CAST(:document AS uuid), CAST(:urgency AS varchar),
+                   CAST(:digest AS char(64)), CAST(:state AS varchar), CAST(:at AS timestamptz)
+            WHERE EXISTS (SELECT 1 FROM %1$s.document WHERE id = :document AND patient_id = :patient)
             ON CONFLICT DO NOTHING
             """.formatted(S);
+
+    /** Postgres's foreign_key_violation: the only refusal that means "the paper (or its patient) is gone". */
+    private static final String FOREIGN_KEY_VIOLATION = "23503";
 
     private final DatabaseClient db;
 
@@ -77,8 +88,18 @@ public class PostgresNowAckAdapter implements NowAckPort {
                         .bind("viewer", viewerFamilyId).bind("patient", s.patientId()).bind("document", s.documentId())
                         .bind("urgency", s.urgency()).bind("digest", s.reasonsDigest()).bind("state", s.releaseState())
                         .bind("at", when)
-                        .fetch().rowsUpdated())
+                        .fetch().rowsUpdated()
+                        .onErrorResume(PostgresNowAckAdapter::paperGone, e -> Mono.just(0L)))
                 .reduce(0L, Long::sum);
+    }
+
+    private static boolean paperGone(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof R2dbcException r && FOREIGN_KEY_VIOLATION.equals(r.getSqlState())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static NowSeen seen(Readable row) {

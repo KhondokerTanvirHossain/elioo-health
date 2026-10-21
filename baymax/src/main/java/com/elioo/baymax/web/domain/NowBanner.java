@@ -16,8 +16,12 @@ public record NowBanner(List<Item> documents, boolean call999) {
         documents = List.copyOf(documents);
     }
 
-    /** One NOW paper on the banner: what was shown, its type and filed day (D2), and this account holder's ack. */
-    public record Item(NowSeen seen, String documentType, LocalDate date, boolean dateIsUploadDay, boolean acked) {
+    /**
+     * One NOW paper on the banner: what was shown, its type and filed day (D2) with the stack card's uncertain mark
+     * ({@code dateUncertain}, the read model's {@code timeline_date_uncertain}, never true on an upload day), and this
+     * account holder's ack.
+     */
+    public record Item(NowSeen seen, String documentType, LocalDate date, boolean dateIsUploadDay, boolean dateUncertain, boolean acked) {
     }
 
     /** Any paper not acknowledged: the banner shows. None at all: nothing to show. */

@@ -73,7 +73,7 @@ public class NowBannerService implements NowBannerUseCase {
                 continue;   // deleted between the two reads: nothing to show
             }
             boolean done = acked.stream().anyMatch(shown::sameShownAs);
-            items.add(new NowBanner.Item(shown, card.documentType(), card.date(), card.dateIsFallback(), done));
+            items.add(new NowBanner.Item(shown, card.documentType(), card.date(), card.dateIsFallback(), card.dateUncertain(), done));
         }
         return List.copyOf(items);
     }

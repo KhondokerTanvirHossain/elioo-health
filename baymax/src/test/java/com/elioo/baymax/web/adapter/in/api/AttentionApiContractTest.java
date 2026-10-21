@@ -40,7 +40,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Plan B3 Step 5: {@code GET /app/api/patients/{id}/attention}, the চ্যাট stack, over the real router, guard, services and
  * Postgres under a fixed clock. The kinds come in {@code AttentionUseCase}'s order; ROUTINE has no card; another family's
- * patient is 404 and records nothing; every {@code *_key} resolves in both languages. The three cases React's MSW
+ * patient is 404; every {@code *_key} in every committed fixture area resolves in both languages. The three cases React's MSW
  * handlers serve are written here, with fixed ids, and compared byte for byte with the committed
  * {@code medioo-web/fixtures/api/attention/*.json}.
  */
@@ -179,13 +179,11 @@ class AttentionApiContractTest {
             WebTestClient client = WebTestClient.bindToApplicationContext(context).build();
             Seeded theirs = seed(context, "theirs", "now-only");
             Seeded mine = family(context, "mine");
-            String audits = "SELECT count(*) FROM baymax.audit_event WHERE patient_id = '" + theirs.patient().id() + "'";
-            long before = FixedPapers.count(POSTGRES, audits);
-
+            // the attention route writes no audit row on any path, so "the 404 records nothing" is asserted where it can
+            // fail: PatientTimelineApiContractTest.theCalendarRecordsOneTimelineViewForTheOwnerAndNoneFor404
             EntityExchangeResult<byte[]> r = get(client, mine.session(), theirs.patient().id());
             assertThat(r.getStatus().value()).isEqualTo(404);
             assertThat(JSON.readTree(r.getResponseBody())).isEqualTo(JSON.readTree("{\"reason\":\"NOT_FOUND\"}"));
-            assertThat(FixedPapers.count(POSTGRES, audits)).as("audit rows for the other family's patient").isEqualTo(before);
             assertThat(get(client, mine.session(), UUID.randomUUID()).getStatus().value()).as("a patient that does not exist").isEqualTo(404);
         });
     }
@@ -222,7 +220,7 @@ class AttentionApiContractTest {
         urgency.removeIf(k -> !k.startsWith("urgency."));
         List<String> seen = new ArrayList<>();
         List<String> unresolved = new ArrayList<>();
-        for (String area : List.of("attention", "timeline", "now-banner")) {
+        for (String area : areas()) {
             Path dir = COMMITTED.resolveSibling(area);
             for (String file : committed(dir)) {
                 JsonNode tree = JSON.readTree(Files.readString(dir.resolve(file), StandardCharsets.UTF_8));
@@ -253,6 +251,21 @@ class AttentionApiContractTest {
         String file = name + ".json";
         Snapshot.matches(committed.resolve(file), written.resolve(file), Snapshot.json(envelope),
                 "cp baymax/" + written.resolve(file) + " medioo-web/fixtures/api/" + area + "/" + file);
+    }
+
+    /**
+     * Every fixture area, derived: each subdirectory of {@code medioo-web/fixtures/api}, so an area added later (or a
+     * {@code *_key} added to one) is walked without anyone remembering to list it. Guarded against emptiness and with a
+     * floor: a wrong path or a deleted area fails here instead of the walks passing over nothing.
+     */
+    static List<String> areas() throws IOException {
+        List<String> areas;
+        try (Stream<Path> list = Files.list(COMMITTED.getParent())) {
+            areas = list.filter(Files::isDirectory).map(p -> p.getFileName().toString()).sorted().toList();
+        }
+        assertThat(areas).as("the fixture areas under " + COMMITTED.getParent().toAbsolutePath())
+                .isNotEmpty().contains("attention", "timeline", "now-banner", "calendar", "follow-ups");
+        return areas;
     }
 
     static List<String> committed(Path dir) throws IOException {

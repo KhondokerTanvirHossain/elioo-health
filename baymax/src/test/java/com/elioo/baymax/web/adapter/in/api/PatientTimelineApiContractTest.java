@@ -216,6 +216,58 @@ class PatientTimelineApiContractTest {
         });
     }
 
+    /**
+     * No {@code month} is the patient's current month in Dhaka, never a UTC one: at 18:30 UTC on 31 October it is already
+     * 00:30 on 1 November in Dhaka, so the calendar opens on November and holds the paper filed on the 1st.
+     */
+    @Test
+    void noMonthIsTheDhakaCurrentMonth() {
+        Instant dhakaNovemberFirst = Instant.parse("2026-10-31T18:30:00Z");
+        FixedPapers.runnerAt(POSTGRES, dhakaNovemberFirst).run(context -> {
+            WebTestClient client = WebTestClient.bindToApplicationContext(context).build();
+            String k = "calendar-default";
+            Seeded s = family(context, k, dhakaNovemberFirst);
+            FixedPapers.paper(POSTGRES, FixedPapers.id(k, "nov1"), s.patient(), "lab_report", "DONE", "2026-11-01",
+                    Instant.parse("2026-10-31T18:20:00Z"), "routine");
+            FixedPapers.paper(POSTGRES, FixedPapers.id(k, "oct30"), s.patient(), "lab_report", "DONE", "2026-10-30",
+                    Instant.parse("2026-10-30T04:00:00Z"), "routine");
+
+            JsonNode body = ok(client, s.session(), "/app/api/patients/" + s.patient().id() + "/calendar");
+            assertThat(body.get("month").asText()).as("$.month with no month asked for").isEqualTo("2026-11");
+            assertThat(field(body.get("days"), "date")).as("$.days[*].date").containsExactly("2026-11-01");
+            assertThat(body.get("days").get(0).get("papers").get(0).get("document_id").asText())
+                    .isEqualTo(FixedPapers.id(k, "nov1").toString());
+        });
+    }
+
+    /**
+     * The calendar records a {@code timeline_view}, as the timeline does, and only for a patient this family can see:
+     * the owner's GET adds exactly one row naming the family and the patient; another family's GET is 404 and adds none.
+     */
+    @Test
+    void theCalendarRecordsOneTimelineViewForTheOwnerAndNoneFor404() {
+        FixedPapers.runnerAt(POSTGRES, NOW).run(context -> {
+            WebTestClient client = WebTestClient.bindToApplicationContext(context).build();
+            Seeded theirs = seedBusyMonth(context, "calendar-audit-theirs");
+            Seeded mine = family(context, "calendar-audit-mine", NOW);
+            String uri = "/app/api/patients/" + theirs.patient().id() + "/calendar?month=2026-10";
+            String rows = "SELECT count(*) FROM baymax.audit_event WHERE patient_id = '" + theirs.patient().id() + "'";
+            assertThat(FixedPapers.count(POSTGRES, rows)).as("audit rows before any calendar read").isZero();
+
+            EntityExchangeResult<byte[]> other = get(client, mine.session(), uri);
+            assertThat(other.getStatus().value()).as("another family's patient").isEqualTo(404);
+            assertThat(JSON.readTree(other.getResponseBody())).isEqualTo(JSON.readTree("{\"reason\":\"NOT_FOUND\"}"));
+            assertThat(FixedPapers.count(POSTGRES, rows)).as("audit rows for the other family's patient after its 404").isZero();
+
+            ok(client, theirs.session(), uri);
+            List<List<String>> audit = FixedPapers.rows(POSTGRES,
+                    "SELECT kind, family_id::text, patient_id::text, coalesce(document_id::text, '-') FROM baymax.audit_event"
+                            + " WHERE patient_id = '" + theirs.patient().id() + "'");
+            assertThat(audit).as("audit_event (kind, family_id, patient_id, document_id) after the owner's calendar read")
+                    .containsExactly(List.of("timeline_view", theirs.patient().familyId().toString(), theirs.patient().id().toString(), "-"));
+        });
+    }
+
     // ---- the follow-ups -------------------------------------------------------------------------------------------
 
     @Test
@@ -237,7 +289,7 @@ class PatientTimelineApiContractTest {
     void noConfidenceModelOrDeveloperProseAnywhere() throws IOException {
         List<String> offenders = new ArrayList<>();
         int walked = 0;
-        for (String area : List.of("timeline", "calendar", "follow-ups", "attention", "now-banner")) {
+        for (String area : AttentionApiContractTest.areas()) {
             Path dir = FIXTURES.resolve(area);
             for (String file : AttentionApiContractTest.committed(dir)) {
                 walked++;

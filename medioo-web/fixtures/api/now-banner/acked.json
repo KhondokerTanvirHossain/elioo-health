@@ -10,6 +10,7 @@
         "acked": true,
         "date": "2026-10-19",
         "date_is_upload_day": false,
+        "date_uncertain": false,
         "document_id": "068dcb20-1be4-30bc-9228-b7f9afc73a9b",
         "document_type": "lab_report",
         "patient_id": "2ebb33dd-96f8-3026-b36f-e80ff02c1fef"

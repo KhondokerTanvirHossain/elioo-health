@@ -46,11 +46,6 @@ public sealed interface AttentionItem {
             }
         }
 
-        /** A card whose date carries no uncertain mark (the WhatsApp reply's card, which shows no date mark). */
-        public Urgent(UUID documentId, Urgency level, String documentType, LocalDate date, boolean dateIsFallback, Instant receivedAt) {
-            this(documentId, level, documentType, date, dateIsFallback, receivedAt, false);
-        }
-
         public int rank() {
             return level == Urgency.NOW ? 0 : 1;
         }

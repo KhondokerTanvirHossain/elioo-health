@@ -27,7 +27,6 @@ import org.springframework.test.web.reactive.server.WebTestClient;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import reactor.core.publisher.Mono;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -202,7 +201,9 @@ class NowBannerApiTest {
 
     /**
      * The restamp direction: ExplanationService.detail and the hourly sweep both restamp {@code urgency_assessed_at} on a
-     * paper whose level and reasons do not change. That is not something new to see, so the banner stays hidden.
+     * paper whose level and reasons do not change. That is not something new to see, so the banner stays hidden. Each
+     * restamper is checked on its own: the restamp is asserted, and the banner read, after detail and again after the
+     * sweep, so neither can stand in for the other.
      */
     @Test
     void aReassessmentThatChangesNothingKeepsTheBannerHidden() {
@@ -212,17 +213,48 @@ class NowBannerApiTest {
             UUID paper = NowPapers.nowPaper(context, POSTGRES, a.ma());
             // inside its printed range and with no verdict yet: NEEDING_ASSESSMENT picks it, and its assessment adds no reason
             NowPapers.value(POSTGRES, a.ma(), paper, "Kalium-B3-inside", "4.2");
-            String assessedBefore = scalar("SELECT urgency_assessed_at::text FROM baymax.document WHERE id = '" + paper + "'");
+            String assessed = "SELECT urgency_assessed_at::text FROM baymax.document WHERE id = '" + paper + "'";
+            String assessedBefore = scalar(assessed);
 
             ack(client, a.session(), banner(client, a.session()).get("seen"));
-            // a WhatsApp detail request: it re-assesses first; whatever the stubbed model makes of the composition, nothing is sent
-            context.getBean(ExplainDocumentUseCase.class).detail(paper).onErrorResume(e -> Mono.empty()).block(Duration.ofSeconds(30));
-            context.getBean(DocumentUrgencyUseCase.class).sweep().block(Duration.ofSeconds(60));
 
-            assertThat(scalar("SELECT urgency_assessed_at::text FROM baymax.document WHERE id = '" + paper + "'"))
-                    .as("the guard: the restamp really happened").isNotEqualTo(assessedBefore);
+            // 1. a WhatsApp detail request: it re-assesses first (assessAndStore), then composes; no error is swallowed, so a
+            //    detail that never reached the re-assessment fails here
+            context.getBean(ExplainDocumentUseCase.class).detail(paper).block(Duration.ofSeconds(30));
+            String afterDetail = scalar(assessed);
+            assertThat(afterDetail).as("the guard: detail restamped urgency_assessed_at").isNotEqualTo(assessedBefore);
             assertThat(scalar("SELECT urgency FROM baymax.document WHERE id = '" + paper + "'")).isEqualTo("now");
-            assertThat(banner(client, a.session()).get("show").asBoolean()).as("$.show after a re-assessment that changed nothing").isFalse();
+            assertThat(banner(client, a.session()).get("show").asBoolean()).as("$.show after detail's re-assessment").isFalse();
+
+            // 2. the hourly sweep: detail gave the first value its verdict, so a second value with none (a re-crop's, F2's
+            //    backfill) is what puts the paper back on the sweep's queue; it too is inside its range and adds no reason
+            NowPapers.value(POSTGRES, a.ma(), paper, "Kalium-B3-inside-2", "4.3");
+            context.getBean(DocumentUrgencyUseCase.class).sweep().block(Duration.ofSeconds(60));
+            assertThat(scalar(assessed)).as("the guard: the sweep restamped urgency_assessed_at again").isNotEqualTo(afterDetail);
+            assertThat(scalar("SELECT urgency FROM baymax.document WHERE id = '" + paper + "'")).isEqualTo("now");
+            assertThat(banner(client, a.session()).get("show").asBoolean()).as("$.show after the sweep's re-assessment").isFalse();
+        });
+    }
+
+    /**
+     * D2 (Q6, spec §4.18): a printed date the model marked uncertain is marked wherever it is shown, the banner included;
+     * an upload day is certain and never marked. Read from the stack's card, never re-derived.
+     */
+    @Test
+    void theBannerCarriesTheUncertainMarkOnlyWhereTheModelSetIt() {
+        runner().run(context -> {
+            WebTestClient client = WebTestClient.bindToApplicationContext(context).build();
+            Holder a = owner(context);
+            UUID printed = NowPapers.nowPaper(context, POSTGRES, a.ma());
+            exec("UPDATE baymax.document SET doc_date = DATE '2026-07-11', doc_date_uncertain = true WHERE id = ?", printed);
+            UUID uploadDay = NowPapers.nowPaper(context, POSTGRES, a.ma());
+
+            JsonNode banner = banner(client, a.session());
+            assertThat(document(banner, printed).get("date").asText()).as("the printed date the card is dated by").isEqualTo("2026-07-11");
+            assertThat(document(banner, printed).path("date_uncertain").asBoolean()).as("$.documents[printed].date_uncertain").isTrue();
+            assertThat(document(banner, uploadDay).get("date_is_upload_day").asBoolean()).isTrue();
+            assertThat(document(banner, uploadDay).path("date_uncertain").isBoolean()).as("the field is always there").isTrue();
+            assertThat(document(banner, uploadDay).path("date_uncertain").asBoolean()).as("$.documents[upload day].date_uncertain").isFalse();
         });
     }
 

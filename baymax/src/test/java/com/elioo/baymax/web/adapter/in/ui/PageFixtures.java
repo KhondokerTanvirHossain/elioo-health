@@ -287,17 +287,17 @@ final class PageFixtures {
             familyOfMa(k);
             java.time.Instant sent = WebUiTestKit.NOW;
             when(k.attention.attention(WebUiTestKit.FAMILY, WebUiTestKit.MA_ID)).thenReturn(Mono.just(List.of(
-                    new com.elioo.baymax.web.domain.AttentionItem.Urgent(DONE_DOC, Urgency.NOW, "lab_report", LocalDate.parse("2026-10-12"), false, sent),
+                    new com.elioo.baymax.web.domain.AttentionItem.Urgent(DONE_DOC, Urgency.NOW, "lab_report", LocalDate.parse("2026-10-12"), false, sent, false),
                     new com.elioo.baymax.web.domain.AttentionItem.Urgent(UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100031"), Urgency.THIS_WEEK,
-                            null, LocalDate.parse("2026-10-15"), true, sent),
+                            null, LocalDate.parse("2026-10-15"), true, sent, false),
                     new com.elioo.baymax.web.domain.AttentionItem.Retake(UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100032"), java.time.LocalDate.parse("2026-10-20"), true, sent),
                     new com.elioo.baymax.web.domain.AttentionItem.FollowUp(EARLIER_DOC, "Next visit: 20/10/26", LocalDate.parse("2026-10-20"),
                             "f/p/" + EARLIER_DOC + "/crop-f.jpg"),
                     new com.elioo.baymax.web.domain.AttentionItem.Reading(PROCESSING_DOC, java.time.LocalDate.parse("2026-10-20"), true, sent))));
             when(k.attention.urgent(WebUiTestKit.FAMILY, WebUiTestKit.MA_ID)).thenReturn(Mono.just(List.of(
-                    new com.elioo.baymax.web.domain.AttentionItem.Urgent(DONE_DOC, Urgency.NOW, "lab_report", LocalDate.parse("2026-10-12"), false, sent),
+                    new com.elioo.baymax.web.domain.AttentionItem.Urgent(DONE_DOC, Urgency.NOW, "lab_report", LocalDate.parse("2026-10-12"), false, sent, false),
                     new com.elioo.baymax.web.domain.AttentionItem.Urgent(UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100031"), Urgency.THIS_WEEK,
-                            null, LocalDate.parse("2026-10-15"), true, sent))));
+                            null, LocalDate.parse("2026-10-15"), true, sent, false))));
         }
 
         /** C4: Ma before her first paper — the empty চ্যাট (the intro and the one camera). */
@@ -339,7 +339,7 @@ final class PageFixtures {
                 urgent.add(new com.elioo.baymax.web.domain.AttentionItem.Urgent(
                         UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a41002%02d".formatted(i)), i < 5 ? Urgency.NOW : Urgency.THIS_WEEK,
                         i % 2 == 0 ? "lab_report" : "prescription", LocalDate.parse("2026-10-18").minusDays(i), i % 3 == 0,
-                        WebUiTestKit.NOW.minusSeconds(3600L * i)));
+                        WebUiTestKit.NOW.minusSeconds(3600L * i), false));
             }
             return List.copyOf(urgent);
         }

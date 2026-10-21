@@ -95,6 +95,7 @@ public class NowBannerApiHandler {
             d.put("document_type", item.documentType());
             d.put("date", item.date().toString());
             d.put("date_is_upload_day", item.dateIsUploadDay());
+            d.put("date_uncertain", item.dateUncertain());
             d.put("acked", item.acked());
             documents.add(d);
             Map<String, Object> s = new LinkedHashMap<>();

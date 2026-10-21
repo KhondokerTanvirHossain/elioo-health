@@ -1140,7 +1140,7 @@ class WaIntakeServiceTest {
                 new com.elioo.baymax.outbound.domain.StoredUrgency(d.id(), level, List.of(), d.createdAt())));
         if (level.isAtLeast(Urgency.THIS_WEEK)) {
             java.util.List<AttentionItem.Urgent> rows = urgentRows.computeIfAbsent(d.patientId(), k -> new java.util.ArrayList<>());
-            rows.add(new AttentionItem.Urgent(d.id(), level, d.documentType(), d.filed().date(), d.filed().uploadDay(), d.createdAt()));
+            rows.add(new AttentionItem.Urgent(d.id(), level, d.documentType(), d.filed().date(), d.filed().uploadDay(), d.createdAt(), false));
             rows.sort(AttentionItem.ORDER);
             when(attention.urgent(FAMILY, d.patientId())).thenReturn(Mono.just(List.copyOf(rows)));
         }

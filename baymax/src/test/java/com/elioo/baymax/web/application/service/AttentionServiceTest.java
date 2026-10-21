@@ -254,7 +254,7 @@ class AttentionServiceTest {
     @Test
     void anUrgentCardRefusesALevelThatHasNoLine() {
         for (Urgency none : new Urgency[]{Urgency.ROUTINE, null}) {
-            assertThatThrownBy(() -> new AttentionItem.Urgent(UUID.randomUUID(), none, "lab_report", TODAY, false, NOW))
+            assertThatThrownBy(() -> new AttentionItem.Urgent(UUID.randomUUID(), none, "lab_report", TODAY, false, NOW, false))
                     .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("NOW or THIS_WEEK");
         }
     }

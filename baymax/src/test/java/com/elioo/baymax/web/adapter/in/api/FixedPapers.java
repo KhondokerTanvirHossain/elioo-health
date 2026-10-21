@@ -105,6 +105,23 @@ final class FixedPapers {
         }
     }
 
+    /** Every row the query answers, each as its columns read as text, in the query's order. */
+    static List<List<String>> rows(PostgreSQLContainer<?> postgres, String query) throws Exception {
+        List<List<String>> out = new java.util.ArrayList<>();
+        try (Connection c = DriverManager.getConnection(postgres.getJdbcUrl() + "&sslmode=disable", postgres.getUsername(), postgres.getPassword());
+             java.sql.Statement s = c.createStatement(); java.sql.ResultSet rs = s.executeQuery(query)) {
+            int columns = rs.getMetaData().getColumnCount();
+            while (rs.next()) {
+                List<String> row = new java.util.ArrayList<>();
+                for (int i = 1; i <= columns; i++) {
+                    row.add(rs.getString(i));
+                }
+                out.add(row);
+            }
+        }
+        return out;
+    }
+
     /** The single number a {@code select count(*) …} answers. */
     static long count(PostgreSQLContainer<?> postgres, String query) throws Exception {
         return AppApiContext.count(postgres, query);

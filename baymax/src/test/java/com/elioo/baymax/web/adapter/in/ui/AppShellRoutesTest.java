@@ -599,7 +599,7 @@ class AppShellRoutesTest {
 
     private static com.elioo.baymax.web.domain.AttentionItem.Urgent urgentPaper(com.elioo.baymax.outbound.domain.Urgency level, String doc) {
         return new com.elioo.baymax.web.domain.AttentionItem.Urgent(UUID.fromString(doc), level, "lab_report",
-                java.time.LocalDate.parse("2026-10-12"), false, WebUiTestKit.NOW);
+                java.time.LocalDate.parse("2026-10-12"), false, WebUiTestKit.NOW, false);
     }
 
     private void attentionOfMa(com.elioo.baymax.web.domain.AttentionItem... items) {
