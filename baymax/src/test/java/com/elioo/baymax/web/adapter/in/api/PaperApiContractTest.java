@@ -29,12 +29,8 @@ import com.elioo.baymax.web.domain.ReadingView;
 import com.elioo.baymax.web.domain.ResultView;
 import com.elioo.baymax.web.domain.ViewerLocale;
 import com.elioo.baymax.web.domain.WebSession;
-import com.fasterxml.jackson.core.util.DefaultIndenter;
-import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
-import com.fasterxml.jackson.core.util.Separators;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -179,25 +175,13 @@ class PaperApiContractTest {
         serve(cases().get(name).get());
         EntityExchangeResult<byte[]> r = exchange(Lang.BN);
         Map<String, Object> envelope = new LinkedHashMap<>();
-        envelope.put("_meta", Map.of("generated_by", "baymax PaperApiContractTest",
-                "source", "GET /app/api/documents/{id} over the PaperFixtures case " + name));
+        // the one envelope and pretty-printer every Java-generated file for medioo-web uses (W2b's Snapshot)
+        envelope.put("_meta", Snapshot.meta(PaperApiContractTest.class, "GET /app/api/documents/{id} over the PaperFixtures case " + name));
         envelope.put("status", r.getStatus().value());
         envelope.put("body", json.readValue(r.getResponseBody(), Object.class));
         String file = name + ".json";
-        Snapshot.matches(COMMITTED.resolve(file), WRITTEN.resolve(file), fixtureText(envelope),
+        Snapshot.matches(COMMITTED.resolve(file), WRITTEN.resolve(file), Snapshot.json(envelope),
                 "cp baymax/" + WRITTEN.resolve(file) + " medioo-web/fixtures/api/documents/" + file);
-    }
-
-    /** Keys sorted, two-space indent, arrays one element a line, a trailing newline: a byte comparison that is stable. */
-    private static String fixtureText(Object envelope) throws IOException {
-        DefaultIndenter indent = new DefaultIndenter("  ", "\n");
-        DefaultPrettyPrinter printer = new DefaultPrettyPrinter()
-                .withSeparators(Separators.createDefaultInstance().withObjectFieldValueSpacing(Separators.Spacing.AFTER)
-                        .withObjectEmptySeparator("").withArrayEmptySeparator(""));
-        printer.indentArraysWith(indent);
-        printer.indentObjectsWith(indent);
-        ObjectMapper sorted = new ObjectMapper().configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true);
-        return sorted.writer(printer).writeValueAsString(envelope) + "\n";
     }
 
     // ---- the contract ---------------------------------------------------------------------------------------
