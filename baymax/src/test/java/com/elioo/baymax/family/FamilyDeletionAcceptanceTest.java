@@ -220,8 +220,8 @@ class FamilyDeletionAcceptanceTest {
         InboundMessagePort inbound = context.getBean(InboundMessagePort.class);
         String textKey = hexKey(f, 1);
         String photoKey = hexKey(f, 2);
-        inbound.claim(InboundMessage.received(textKey, f, "text", "বিস্তারিত", null, Instant.now())).block();
-        inbound.claim(InboundMessage.received(photoKey, f, "image", null, "MEDIA-1", Instant.now())).block();
+        inbound.claim(InboundMessage.received(textKey, f, "text", "বিস্তারিত", null, Instant.now()), null).block();
+        inbound.claim(InboundMessage.received(photoKey, f, "image", null, "MEDIA-1", Instant.now()), null).block();
         inbound.linkDocument(photoKey, p, docA).block();
 
         List<UUID> shares = new ArrayList<>();

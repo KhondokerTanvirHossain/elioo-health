@@ -28,10 +28,40 @@ class InboundMessageTest {
         assertThat(InboundMessage.received(KEY, FAMILY, "text", typed, null, null).body()).isNull();
     }
 
+    /**
+     * The rule protects the code, not the one form first tested: a code with a word in front of it, or the whole
+     * wa.login_code message forwarded or quoted back, carries the same live code.
+     */
     @ParameterizedTest
-    @ValueSource(strings = {"আম্মার বয়স ৬৮", "HbA1c 6.5", "4839201", "48392", "কোড"})
+    @ValueSource(strings = {"কোড 483920", "code: ৪৮৩৯২০", "483920 এটা কি ঠিক?", "কোড:৪৮৩৯২০।"})
+    void textCarryingAStandaloneSixDigitRunIsNeverStored(String typed) {
+        assertThat(InboundMessage.received(KEY, FAMILY, "text", typed, null, null).body()).as(typed).isNull();
+    }
+
+    @Test
+    void theLoginCodeMessageForwardedBackIsNeverStored() {
+        String rendered = new com.elioo.baymax.outbound.application.service.Copy()
+                .bn("wa.login_code", java.util.Map.of("code", "483920", "minutes", "10"));
+        assertThat(rendered).as("the fixture really is the login-code message with a code in it").contains("483920");
+        assertThat(InboundMessage.received(KEY, FAMILY, "text", rendered, null, null).body()).isNull();
+        assertThat(InboundMessage.received(KEY, FAMILY, "text", "> " + rendered.replace("\n", "\n> "), null, null).body())
+                .as("quoted").isNull();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"আম্মার বয়স ৬৮", "HbA1c 6.5", "4839201", "48392", "কোড", "কোড 4839201", "১২৩৪৫ ও ৬৭৮৯০"})
     void textThatIsNotASixDigitCodeIsKept(String typed) {
         assertThat(InboundMessage.received(KEY, FAMILY, "text", typed, null, null).body()).isEqualTo(typed);
+    }
+
+    /**
+     * A media id is a handle on that person's photo at Meta for as long as Meta keeps it. A row with no family can never
+     * be deleted on request, so it keeps no handle either; a family's is kept (it is deleted with the family).
+     */
+    @Test
+    void aKnownFamilysMediaIdIsKeptAndAnUnknownSendersIsNot() {
+        assertThat(InboundMessage.received(KEY, FAMILY, "image", null, "MEDIA-1", null).mediaId()).isEqualTo("MEDIA-1");
+        assertThat(InboundMessage.received(KEY, null, "image", null, "MEDIA-1", null).mediaId()).isNull();
     }
 
     @Test

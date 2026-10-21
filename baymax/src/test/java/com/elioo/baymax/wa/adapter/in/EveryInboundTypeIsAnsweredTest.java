@@ -108,7 +108,7 @@ class EveryInboundTypeIsAnsweredTest {
         java.util.Set<String> claimed = java.util.concurrent.ConcurrentHashMap.newKeySet();
         com.elioo.baymax.wa.application.port.out.InboundMessagePort inbound = new com.elioo.baymax.wa.application.port.out.InboundMessagePort() {
             @Override
-            public Mono<com.elioo.baymax.wa.domain.InboundMessage> claim(com.elioo.baymax.wa.domain.InboundMessage m) {
+            public Mono<com.elioo.baymax.wa.domain.InboundMessage> claim(com.elioo.baymax.wa.domain.InboundMessage m, Instant reclaimBefore) {
                 return Mono.fromCallable(() -> claimed.add(m.providerKey()) ? m : null);
             }
 
@@ -123,14 +123,19 @@ class EveryInboundTypeIsAnsweredTest {
             }
 
             @Override
-            public Mono<Long> countUnhandledBefore(Instant before) {
+            public Mono<Long> closeUnhandledBefore(Instant before) {
+                return Mono.just(0L);
+            }
+
+            @Override
+            public Mono<Long> purgeUnknownSendersBefore(Instant before) {
                 return Mono.just(0L);
             }
         };
         WaIntakeService service = new WaIntakeService(records, documents, explainer, intake, graph, copy, props, auth,
                 java.time.Clock.systemUTC(), freeTier, com.elioo.baymax.wa.WaFixtures.noUrgentPapers(),
                 com.elioo.baymax.wa.WaFixtures.nothingStored(), inbound,
-                new com.elioo.baymax.web.application.service.PhoneHasher(props)) {
+                new com.elioo.baymax.web.application.service.PhoneHasher(props), new com.elioo.baymax.wa.application.service.WaInstance(java.time.Clock.systemUTC())) {
             @Override
             public Mono<Outcome> onInbound(WaInbound in) {
                 return super.onInbound(in).doFinally(signal -> finished.incrementAndGet());

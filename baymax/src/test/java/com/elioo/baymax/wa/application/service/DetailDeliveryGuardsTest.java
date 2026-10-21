@@ -121,7 +121,7 @@ class DetailDeliveryGuardsTest {
                 mock(com.elioo.baymax.web.application.port.in.WebAuthUseCase.class), clock, freeTier,
                 WaFixtures.noUrgentPapers(), storedUrgency,
                 mock(com.elioo.baymax.wa.application.port.out.InboundMessagePort.class),
-                new com.elioo.baymax.web.application.service.PhoneHasher(props));
+                new com.elioo.baymax.web.application.service.PhoneHasher(props), new WaInstance(clock));
 
         when(graph.sendText(anyString(), anyString())).thenAnswer(i -> Mono.just(WaFixtures.wamid(FROM, wamids.incrementAndGet())));
         when(metered.using(any())).thenReturn(metered);

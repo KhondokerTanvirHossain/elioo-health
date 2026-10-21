@@ -81,6 +81,8 @@ public class WaIntakeService {
     private final InboundMessagePort inbound;
     /** The inbound key is HMAC(wamid): a wamid is base64 of the sender's number, so it is never stored itself. */
     private final PhoneHasher hasher;
+    /** This instance's start: a claim older than it, never answered, died with an earlier instance and may be reclaimed. */
+    private final WaInstance instance;
 
     /** Why an inbound image did not become a document; each carries the reply the family receives. */
     public enum Outcome {
@@ -120,7 +122,8 @@ public class WaIntakeService {
                     .map(family -> java.util.Optional.of(family.id()))
                     .defaultIfEmpty(java.util.Optional.empty())
                     .flatMap(family -> inbound.claim(InboundMessage.received(key, family.orElse(null),
-                            in.type().name().toLowerCase(Locale.ROOT), in.text(), in.mediaId(), in.timestamp())))
+                            in.type().name().toLowerCase(Locale.ROOT), in.text(), in.mediaId(), in.timestamp()),
+                            instance.startedAt()))
                     .map(row -> in);
         });
     }

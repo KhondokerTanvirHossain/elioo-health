@@ -110,7 +110,7 @@ class WaIntakeServiceTest {
         when(inbound.markHandled(anyString(), anyString())).thenReturn(Mono.empty());
         when(inbound.linkDocument(anyString(), any(), any())).thenReturn(Mono.empty());
         service = new WaIntakeService(records, documents, explainer, intake, graph, new Copy(), props, auth,
-                clock, freeTier, attention, urgency, inbound, hasher);
+                clock, freeTier, attention, urgency, inbound, hasher, new WaInstance(clock));
     }
 
     // ---- F9a: claim before the webhook answers, then handle once and record the outcome ----
@@ -120,13 +120,13 @@ class WaIntakeServiceTest {
     @Test
     void aKnownFamilysTextIsClaimedUnderTheHmacWithItsFamilyAndBodyAndNeverTheRawId() {
         familyWith(patient("মা"));
-        when(inbound.claim(any())).thenAnswer(i -> Mono.just(i.getArgument(0)));
+        when(inbound.claim(any(), any())).thenAnswer(i -> Mono.just(i.getArgument(0)));
         WaInbound in = new WaInbound(WAMID, FROM, WaInbound.Type.TEXT, "বিস্তারিত", "", "", Instant.parse("2026-10-17T05:59:00Z"));
 
         assertThat(service.claim(in).block()).isSameAs(in);
 
         ArgumentCaptor<com.elioo.baymax.wa.domain.InboundMessage> row = ArgumentCaptor.forClass(com.elioo.baymax.wa.domain.InboundMessage.class);
-        verify(inbound).claim(row.capture());
+        verify(inbound).claim(row.capture(), eq(clock.instant()));
         assertThat(row.getValue().providerKey()).isEqualTo(hasher.providerId(WAMID)).doesNotContain(WAMID).matches("[0-9a-f]{64}");
         assertThat(row.getValue().familyId()).isEqualTo(FAMILY);
         assertThat(row.getValue().type()).isEqualTo("text");
@@ -138,17 +138,17 @@ class WaIntakeServiceTest {
     @Test
     void anUnknownSendersTextIsClaimedWithoutItsText() {
         when(records.findFamilyByWhatsapp(E164)).thenReturn(Mono.empty());
-        when(inbound.claim(any())).thenAnswer(i -> Mono.just(i.getArgument(0)));
+        when(inbound.claim(any(), any())).thenAnswer(i -> Mono.just(i.getArgument(0)));
         service.claim(new WaInbound(WAMID, FROM, WaInbound.Type.TEXT, "আম্মার রিপোর্ট", "", "")).block();
         ArgumentCaptor<com.elioo.baymax.wa.domain.InboundMessage> row = ArgumentCaptor.forClass(com.elioo.baymax.wa.domain.InboundMessage.class);
-        verify(inbound).claim(row.capture());
+        verify(inbound).claim(row.capture(), any());
         assertThat(row.getValue().familyId()).isNull();
         assertThat(row.getValue().body()).isNull();
     }
 
     @Test
     void aMessageAlreadyClaimedIsEmptyNotAnError() {
-        when(inbound.claim(any())).thenReturn(Mono.empty());
+        when(inbound.claim(any(), any())).thenReturn(Mono.empty());
         StepVerifier.create(service.claim(new WaInbound(WAMID, FROM, WaInbound.Type.TEXT, "hi", "", ""))).verifyComplete();
     }
 
@@ -158,14 +158,14 @@ class WaIntakeServiceTest {
         props.getAuth().setHmacSecret("");
         Mono<WaInbound> claim = service.claim(new WaInbound(WAMID, FROM, WaInbound.Type.TEXT, "hi", "", ""));
         StepVerifier.create(claim).expectError(com.elioo.baymax.common.error.BaymaxException.class).verify();
-        verify(inbound, never()).claim(any());
+        verify(inbound, never()).claim(any(), any());
     }
 
     @Test
     void aMessageWithNoProviderIdIsPassedThroughWithoutAClaim() {
         WaInbound in = new WaInbound("", FROM, WaInbound.Type.TEXT, "hi", "", "");
         assertThat(service.claim(in).block()).isSameAs(in);
-        verify(inbound, never()).claim(any());
+        verify(inbound, never()).claim(any(), any());
     }
 
     @Test

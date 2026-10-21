@@ -5,6 +5,7 @@ import com.elioo.baymax.wa.application.port.out.InboundMessagePort;
 import com.elioo.baymax.wa.domain.InboundMessage;
 import io.r2dbc.spi.Row;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
@@ -19,6 +20,7 @@ import java.util.UUID;
  * Postgres decides which of two simultaneous deliveries inserted the row, and the loser gets no row back — empty, not a
  * unique-constraint error — so a re-delivery is acknowledged and never answered twice.
  */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class PostgresInboundMessageAdapter implements InboundMessagePort {
@@ -30,7 +32,7 @@ public class PostgresInboundMessageAdapter implements InboundMessagePort {
     private final DatabaseClient db;
 
     @Override
-    public Mono<InboundMessage> claim(InboundMessage m) {
+    public Mono<InboundMessage> claim(InboundMessage m, Instant reclaimBefore) {
         DatabaseClient.GenericExecuteSpec spec = db.sql("INSERT INTO " + T
                         + " (provider_key, family_id, type, body, media_id, provider_timestamp)"
                         + " VALUES (:key, :family, :type, :body, :media, :sent)"
@@ -43,7 +45,26 @@ public class PostgresInboundMessageAdapter implements InboundMessagePort {
         spec = m.mediaId() == null ? spec.bindNull("media", String.class) : spec.bind("media", m.mediaId());
         spec = m.providerTimestamp() == null ? spec.bindNull("sent", OffsetDateTime.class)
                 : spec.bind("sent", at(m.providerTimestamp()));
-        return spec.map((row, meta) -> from(row)).one();
+        return spec.map((row, meta) -> from(row)).one()
+                .switchIfEmpty(Mono.defer(() -> reclaim(m.providerKey(), reclaimBefore)));
+    }
+
+    /**
+     * The key is there: take it back only when an earlier instance claimed it and never answered. Row-locked by the
+     * UPDATE, and the WHERE is re-read after any concurrent reclaim commits (received_at is then this instance's), so two
+     * simultaneous re-deliveries reclaim it once. A message in flight here was received after {@code before}: never taken.
+     */
+    private Mono<InboundMessage> reclaim(String providerKey, Instant before) {
+        if (before == null) {
+            return Mono.empty();
+        }
+        return db.sql("UPDATE " + T + " SET received_at = now(), handled_at = NULL, outcome = NULL"
+                        + " WHERE provider_key = :key AND received_at < :before"
+                        + " AND (handled_at IS NULL OR outcome = '" + InboundMessage.CUT_OFF + "')"
+                        + " RETURNING " + COLUMNS)
+                .bind("key", providerKey).bind("before", at(before))
+                .map((row, meta) -> from(row)).one()
+                .doOnNext(row -> log.info("[baymax] wa inbound reclaimed: an earlier instance claimed it and never answered"));
     }
 
     @Override
@@ -56,18 +77,29 @@ public class PostgresInboundMessageAdapter implements InboundMessagePort {
 
     @Override
     public Mono<Void> linkDocument(String providerKey, UUID patientId, UUID documentId) {
-        return db.sql("UPDATE " + T + " SET patient_id = :patient, document_id = :document WHERE provider_key = :key")
+        // the family too, when the claim did not know it (registered between the claim and this photo's handling): a row
+        // holding a patient but no family would be missed by the family delete and block its patient_profile delete
+        return db.sql("UPDATE " + T + " SET patient_id = :patient, document_id = :document,"
+                        + " family_id = COALESCE(family_id, (SELECT family_id FROM " + BaymaxSchema.NAME
+                        + ".patient_profile WHERE id = :patient)) WHERE provider_key = :key")
                 .bind("patient", patientId).bind("document", documentId).bind("key", providerKey)
                 .then();
     }
 
     @Override
-    public Mono<Long> countUnhandledBefore(Instant before) {
-        return db.sql("SELECT count(*) FROM " + T + " WHERE handled_at IS NULL AND received_at < :before")
+    public Mono<Long> closeUnhandledBefore(Instant before) {
+        // one statement: the rows it closes are exactly the rows it counts, and a second startup finds them closed
+        return db.sql("UPDATE " + T + " SET handled_at = now(), outcome = '" + InboundMessage.CUT_OFF + "'"
+                        + " WHERE handled_at IS NULL AND received_at < :before")
                 .bind("before", at(before))
-                .map((row, meta) -> row.get(0, Long.class))
-                .one()
-                .defaultIfEmpty(0L);
+                .fetch().rowsUpdated();
+    }
+
+    @Override
+    public Mono<Long> purgeUnknownSendersBefore(Instant before) {
+        return db.sql("DELETE FROM " + T + " WHERE family_id IS NULL AND received_at < :before")
+                .bind("before", at(before))
+                .fetch().rowsUpdated();
     }
 
     private static InboundMessage from(Row row) {
