@@ -36,8 +36,8 @@ public final class PaintedPaper {
     /** How long the WhatsApp port must stay silent before a journey counts its calls: longer than any retry or follow-up. */
     public static final Duration SETTLE = Duration.ofSeconds(3);
 
-    private static final int PAGE_W = 400;
-    private static final int PAGE_H = 200;
+    public static final int PAGE_W = 400;
+    public static final int PAGE_H = 200;
     public static final Color WORDS = new Color(255, 140, 0);
     public static final Color PAPER = new Color(0, 40, 200);
 

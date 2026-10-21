@@ -8,11 +8,15 @@ import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.testsupport.LoggedText;
 import com.elioo.baymax.web.adapter.in.PhoneDisplay;
+import com.elioo.baymax.testsupport.PaintedPaper;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.test.web.reactive.server.WebTestClient;
+import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.util.UriUtils;
+import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -48,16 +52,22 @@ class AppApiLogSafetyTest {
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
+    /** Object storage, so an upload reaches its success path and its success line is among the lines swept (B4b). */
+    @Container
+    static final MinIOContainer MINIO = com.elioo.baymax.storage.TestImages.minioContainer();
 
     private static final String NUMBER = "+8801700000123";
     private static final String NAME = "রোকেয়া পরীক্ষা";
+    /** An iPhone photo named for the patient (Review Focus 3): never logged, never returned. */
+    private static final String FILENAME = NAME + ".jpg";
     /**
      * Each needle raw and as it appears in a logged URI: a path or query is logged percent-encoded, so the raw Bangla
      * and the raw {@code +880…} alone would miss a name in a path ({@code %E0%A6%B0…}) or a number ({@code %2B880…}).
      */
     private static final List<String> NEEDLES = List.of("8801700000123", "01700000123", "%2B8801700000123", NAME,
             URLEncoder.encode(NAME, StandardCharsets.UTF_8), UriUtils.encodePathSegment(NAME, StandardCharsets.UTF_8),
-            UriUtils.encodeQueryParam(NAME, StandardCharsets.UTF_8), PhoneDisplay.full(NUMBER), "+880 1700");
+            UriUtils.encodeQueryParam(NAME, StandardCharsets.UTF_8), PhoneDisplay.full(NUMBER), "+880 1700",
+            FILENAME, URLEncoder.encode(FILENAME, StandardCharsets.UTF_8));
     /** Where the minted sign-in code is written, at DEBUG only (DR-39): the second appender reads it from here. */
     private static final String DELIVERY_LOGGER = "com.elioo.baymax.web.adapter.out.delivery";
     private static final Pattern MINTED = Pattern.compile("otp fallback .*code=([0-9]{6})");
@@ -72,7 +82,7 @@ class AppApiLogSafetyTest {
 
     @Test
     void noApiRouteLogsTheOwnersNumberOrThePatientsNameAtInfoOrAbove() {
-        AppApiContext.runner(POSTGRES).withPropertyValues("baymax.auth.web-mints-code=true", "baymax.auth.hmac-secret=log-safety-secret").run(context -> {
+        AppApiContext.runner(POSTGRES, MINIO).withPropertyValues("baymax.auth.web-mints-code=true", "baymax.auth.hmac-secret=log-safety-secret").run(context -> {
             FamilyAccount family = AppApiContext.family(context, NUMBER, "Tanvir");
             PatientProfile rokeya = AppApiContext.patient(context, family.id(), NAME);
             AppApiContext.patient(context, family.id(), "Karim");
@@ -152,6 +162,34 @@ class AppApiLogSafetyTest {
                 verifyCode(c, login.get(), wrong).expectStatus().isBadRequest().expectBody().json("{\"reason\":\"CODE_WRONG\"}", true);
                 verifyCode(c, login.get(), code).expectStatus().isOk();
             });
+            exercise.put("GET /app/api/upload-options", (c, t) -> c.get().uri("/app/api/upload-options").cookie("baymax_session", t)
+                    .exchange().expectStatus().isOk());
+            // the success path first: the photo is named for the patient, and the line intake and the handler write once
+            // it is stored is what must not carry the name (Review Focus 3)
+            AtomicReference<String> uploaded = new AtomicReference<>();
+            exercise.put("POST /app/api/uploads", (c, t) -> {
+                MultipartBodyBuilder ok = new MultipartBodyBuilder();
+                ok.part("patient", rokeya.id().toString());
+                ok.part("upload_key", "5c0d8e3a-2f41-4b6a-9e7d-8a1b2c3d4e5f");
+                ok.part("file", PaintedPaper.paintedPage()).filename(FILENAME).contentType(MediaType.IMAGE_JPEG);
+                String body = new String(upload(c, t, ok).expectStatus().isOk().expectBody().returnResult().getResponseBody(),
+                        StandardCharsets.UTF_8);
+                assertThat(body).as("the upload's answer").doesNotContain(NAME);
+                Matcher id = Pattern.compile("\"documents\":\\[\\{\"id\":\"([0-9a-f-]{36})\"").matcher(body);
+                assertThat(id.find()).as("documents[0].id in the answer").isTrue();
+                uploaded.set(id.group(1));
+
+                MultipartBodyBuilder nobody = new MultipartBodyBuilder();
+                nobody.part("upload_key", "5c0d8e3a-2f41-4b6a-9e7d-8a1b2c3d4e60");
+                nobody.part("file", PaintedPaper.paintedPage()).filename(FILENAME).contentType(MediaType.IMAGE_JPEG);
+                upload(c, t, nobody).expectStatus().isBadRequest().expectBody().json("{\"reason\":\"CHOOSE_PATIENT\"}", true);
+
+                MultipartBodyBuilder large = new MultipartBodyBuilder();
+                large.part("patient", rokeya.id().toString());
+                large.part("upload_key", "5c0d8e3a-2f41-4b6a-9e7d-8a1b2c3d4e61");
+                large.part("file", new byte[26 * 1024 * 1024]).filename(FILENAME).contentType(MediaType.IMAGE_JPEG);
+                upload(c, t, large).expectStatus().isEqualTo(413).expectBody().json("{\"reason\":\"TOO_LARGE\"}", true);
+            });
 
             List<String> apiRoutes = AppApiRouteContractTest.routes(context).stream()
                     .filter(r -> r.pattern().startsWith(AppApiRouter.BASE + "/")).map(RouteWalk.Route::line).sorted().toList();
@@ -190,6 +228,10 @@ class AppApiLogSafetyTest {
             List<ILoggingEvent> events = appender.list.stream().filter(e -> e.getLevel().isGreaterOrEqual(Level.INFO)).toList();
             assertThat(events.stream().map(ILoggingEvent::getFormattedMessage).filter(m -> m.startsWith("[baymax-api]")))
                     .as("the requests logged their access lines, so the sweep below reads something").isNotEmpty();
+            // the success path was swept, not only refusals: its line names the id the answer returned, as a field
+            assertThat(events.stream().map(ILoggingEvent::getFormattedMessage)
+                    .filter(m -> Pattern.compile("(^|\\s)documentId=" + uploaded.get() + "(\\s|$)").matcher(m).find()))
+                    .as("the upload's success line, by the id it returned").isNotEmpty();
             List<String> leaks = new ArrayList<>();
             for (ILoggingEvent e : events) {
                 check(leaks, e, "message", e.getFormattedMessage(), codeTokens);
@@ -222,6 +264,11 @@ class AppApiLogSafetyTest {
         return out;
     }
 
+
+    private static WebTestClient.ResponseSpec upload(WebTestClient c, String token, MultipartBodyBuilder body) {
+        return c.post().uri("/app/api/uploads").cookie("baymax_session", token).header("X-Medioo", "1")
+                .header("Origin", AppApiContext.ORIGIN).body(BodyInserters.fromMultipartData(body.build())).exchange();
+    }
     private static void check(List<String> leaks, ILoggingEvent e, String field, String value, List<Pattern> codeTokens) {
         if (value == null) {
             return;
