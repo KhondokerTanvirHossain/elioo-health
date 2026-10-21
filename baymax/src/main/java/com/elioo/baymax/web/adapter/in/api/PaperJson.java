@@ -9,6 +9,7 @@ import com.elioo.baymax.outbound.domain.UrgencyReason;
 import com.elioo.baymax.outbound.domain.ValueVerdict;
 import com.elioo.baymax.storage.domain.ImageDimensions;
 import com.elioo.baymax.web.adapter.in.ImageRefs;
+import com.elioo.baymax.web.domain.EarlierHistory;
 import com.elioo.baymax.web.domain.EarlierReading;
 import com.elioo.baymax.web.domain.GateState;
 import com.elioo.baymax.web.domain.PaperDisplay;
@@ -120,13 +121,15 @@ public final class PaperJson {
      * sends it ({@link #valueRow}), and the earlier readings, each beside its OWN paper's crop with that paper's stored
      * size ({@code earlierSizes}, by document then storage key). {@code earlier_line_key} is the heading line the HTML
      * draws: null for a value whose name did not canonicalise (Medioo has no history of it, so the sheet claims neither
-     * earlier readings nor a first time), {@code sheet.earlier.none} for a known marker with none, otherwise the heading
-     * with or without the unit. 404 for an observation that is not one of this paper's shown values; the caller has
+     * earlier readings nor a first time), null too for a marker read before only in another unit ({@link
+     * EarlierHistory#readInAnotherUnit}: "the first time" would be false), {@code sheet.earlier.none} only for a known
+     * marker never read before in any unit, otherwise the heading with or without the unit. 404 for an observation that is not one of this paper's shown values; the caller has
      * already proved that before the view was recorded, so this is defensive.
      */
-    public static Map<String, Object> valueSheet(ResultView r, UUID observationId, List<EarlierReading> earlier,
+    public static Map<String, Object> valueSheet(ResultView r, UUID observationId, EarlierHistory history,
                                                  Map<String, ImageDimensions> sizes, Map<UUID, Map<String, ImageDimensions>> earlierSizes,
                                                  String possessive) {
+        List<EarlierReading> earlier = history.sameUnit();
         DocumentView v = r.document();
         Map<String, Object> row = (v.values() == null ? List.<Map<String, Object>>of() : v.values()).stream()
                 .filter(PaperJson::hasCrop)
@@ -152,6 +155,8 @@ public final class PaperJson {
                 "date", e.date() == null ? null : e.date().toString(),
                 "date_is_upload_day", e.dateIsFallback())).toList());
         m.put("earlier_line_key", row.get("canonical_name") == null ? null
+                // read before only in another unit: "the first time" would be false, so no line, as for an unknown marker
+                : earlier.isEmpty() && history.readInAnotherUnit() ? null
                 : earlier.isEmpty() ? "sheet.earlier.none"
                 : row.get("unit") == null ? "sheet.earlier.nounit" : "sheet.earlier");
         return m;

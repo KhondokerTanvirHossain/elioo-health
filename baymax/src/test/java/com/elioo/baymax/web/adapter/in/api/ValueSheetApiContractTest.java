@@ -26,6 +26,7 @@ import com.elioo.baymax.web.application.port.in.TimelineUseCase;
 import com.elioo.baymax.web.application.port.in.UploadUseCase;
 import com.elioo.baymax.web.application.port.in.WebAuthUseCase;
 import com.elioo.baymax.web.domain.AuditEvent;
+import com.elioo.baymax.web.domain.EarlierHistory;
 import com.elioo.baymax.web.domain.EarlierReading;
 import com.elioo.baymax.web.domain.GateState;
 import com.elioo.baymax.web.domain.PaperDisplay;
@@ -36,6 +37,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.test.web.reactive.server.EntityExchangeResult;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -117,6 +119,7 @@ class ValueSheetApiContractTest {
         Instant now = PaperFixtures.NOW;
         when(auth.authenticate(anyString())).thenReturn(Mono.empty());
         when(storage.measuredObjectsOf(any(), any())).thenReturn(Flux.empty());
+        when(storage.objectsOf(any())).thenReturn(Flux.empty());
         when(auth.authenticate("tok")).thenReturn(Mono.just(new WebSession(UUID.randomUUID(), FAMILY, now, now, now.plusSeconds(600))));
         properties.getWeb().setPublicOrigin(AppApiGuardTest.ORIGIN);
         AppApiGuard guard = new AppApiGuard(sessions, properties);
@@ -136,10 +139,18 @@ class ValueSheetApiContractTest {
 
     // ---- the cases ------------------------------------------------------------------------------------------
 
-    /** One sheet as the mocked read serves it: the paper, the observation asked for, its earlier readings; or a 404. */
-    record Case(ResultView paper, UUID observation, List<EarlierReading> earlier, boolean notFound) {
+    /**
+     * One sheet as the mocked read serves it: the paper, the observation asked for, its earlier readings in this unit and
+     * whether the marker was also read in another unit; or a 404.
+     */
+    record Case(ResultView paper, UUID observation, List<EarlierReading> earlier, boolean readInAnotherUnit, boolean notFound) {
         static Case of(ResultView paper, Map<String, Object> row, List<EarlierReading> earlier) {
-            return new Case(paper, (UUID) row.get("id"), earlier, false);
+            return new Case(paper, (UUID) row.get("id"), earlier, false, false);
+        }
+
+        /** The same sheet, the marker also read before in a unit that does not fold to this one. */
+        Case alsoReadInAnotherUnit() {
+            return new Case(paper, observation, earlier, true, notFound);
         }
     }
 
@@ -192,8 +203,10 @@ class ValueSheetApiContractTest {
                 earlier(EARLIER_3, 5, "4.8", "mmol/L", LocalDate.of(2026, 4, 3), true))));
         cases.put("earlier-none", () -> Case.of(PaperFixtures.routineReleased(), PaperFixtures.haemoglobinInside(), List.of()));
         cases.put("no-history", () -> Case.of(routineUncanonical(), uncanonical(), List.of()));
+        // creatinine in mg/dL here, read before only in µmol/L: no earlier reading in this unit, and not the first time
+        cases.put("earlier-other-unit", () -> Case.of(thisWeekCreatinine(), creatinineHigh(), List.of()).alsoReadInAnotherUnit());
         cases.put("not-found", () -> new Case(PaperFixtures.routineReleased(), UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100099"),
-                List.of(), true));
+                List.of(), false, true));
         return cases;
     }
 
@@ -218,12 +231,13 @@ class ValueSheetApiContractTest {
         when(results.result(FAMILY, DOC)).thenReturn(Mono.just(r));
         when(storage.measuredObjectsOf(DOC, ObjectKind.CROP)).thenReturn(Flux.fromIterable(
                 PaperApiContractTest.ledgerOf(r.document()).stream().filter(o -> o.kind() == ObjectKind.CROP).toList()));
+        // an earlier paper's sizes are read from its ledger as stored (objectsOf), never measured (measuredObjectsOf)
         for (UUID d : List.of(EARLIER_1, EARLIER_2, EARLIER_3)) {
-            when(storage.measuredObjectsOf(d, ObjectKind.CROP)).thenReturn(Flux.fromIterable(earlierLedger(d)));
+            when(storage.objectsOf(d)).thenReturn(Flux.fromIterable(earlierLedger(d)));
         }
-        when(results.earlierReadings(FAMILY, DOC, c.observation())).thenReturn(c.notFound()
-                ? Flux.error(BaymaxException.notFound("observation_not_found", "no such value on document"))
-                : Flux.fromIterable(c.earlier()));
+        when(results.earlierHistory(FAMILY, DOC, c.observation())).thenReturn(c.notFound()
+                ? Mono.error(BaymaxException.notFound("observation_not_found", "no such value on document"))
+                : Mono.just(new EarlierHistory(c.earlier(), c.readInAnotherUnit())));
     }
 
     private EntityExchangeResult<byte[]> exchange(String uri) {
@@ -352,7 +366,59 @@ class ValueSheetApiContractTest {
                 assertThat(e.path("crop").path("height").asInt()).as("$.earlier[" + i + "].crop.height").isEqualTo(ledger.heightPx());
             }
         }
-        assertThat(documents).as("three different earlier papers").hasSize(3).doesNotContain(DOC.toString());
+        // the readings are the mock's own, so "none of them is this paper" could not fail here; that rule lives in SQL
+        // (readingsOf's "< me" tuple) and is asserted over Postgres in oneSheetReadIsOneView
+        assertThat(documents).as("three different earlier papers").hasSize(3);
+    }
+
+    /**
+     * An earlier paper's crop sizes are the ones its ledger already holds: never measured from here (measuring fetches
+     * every never-tried crop on that paper, under the process-wide fetch gate, for a paper the family did not open). Only
+     * this paper's crops are measured, as its own JSON measures them. EARLIER_3's crop was never measured, and stays so.
+     */
+    @Test
+    void earlierPapersAreReadFromTheLedgerAndNeverMeasured() throws IOException {
+        Case c = cases().get("earlier-three").get();
+        serve(c);
+        JsonNode earlier = sheet(c).path("earlier");
+        assertThat(earlier.size()).as("$.earlier").isEqualTo(3);
+        for (UUID d : List.of(EARLIER_1, EARLIER_2, EARLIER_3)) {
+            verify(storage, never()).measuredObjectsOf(d, ObjectKind.CROP);
+        }
+        verify(storage).measuredObjectsOf(DOC, ObjectKind.CROP);
+        assertThat(earlier.get(0).path("crop").path("width").asInt()).as("EARLIER_1's stored size, from its ledger")
+                .isEqualTo(earlierLedger(EARLIER_1).get(0).widthPx());
+        assertThat(earlier.get(2).path("crop").path("width").isNull()).as("EARLIER_3's never-measured crop goes out unsized").isTrue();
+    }
+
+    /**
+     * Sizes are best effort: once the view is recorded a failed size read never fails the answer. One earlier paper's
+     * failed ledger read blanks that paper's sizes only; this paper's failed read blanks this paper's only.
+     */
+    @Test
+    void aFailedSizeReadSendsTheSheetWithoutSizes() throws IOException {
+        Case c = cases().get("earlier-three").get();
+        serve(c);
+        when(storage.objectsOf(EARLIER_2)).thenReturn(Flux.error(new IllegalStateException("connection refused")));
+        JsonNode one = sheet(c);
+        assertThat(one.path("earlier").get(1).path("document_id").asText()).isEqualTo(EARLIER_2.toString());
+        assertThat(one.path("earlier").get(1).path("crop").path("width").isNull()).as("$.earlier[1].crop.width").isTrue();
+        assertThat(one.path("earlier").get(1).path("crop").path("height").isNull()).as("$.earlier[1].crop.height").isTrue();
+        assertThat(one.path("earlier").get(1).path("crop").path("src").asText()).as("the crop itself is still sent")
+                .isEqualTo(ImageRefs.crop(EARLIER_2, earlierCrop(EARLIER_2)));
+        assertThat(one.path("earlier").get(0).path("crop").path("width").asInt()).as("EARLIER_1's size survives EARLIER_2's failure")
+                .isEqualTo(earlierLedger(EARLIER_1).get(0).widthPx());
+
+        // this paper's failure, on a case whose value crop IS sized when the read works (so the null below is the failure's)
+        Case sized = cases().get("outside-high").get();
+        serve(sized);
+        assertThat(sheet(sized).path("value").path("crop").path("width").isNumber()).as("outside-high's value crop is sized").isTrue();
+        when(storage.measuredObjectsOf(DOC, ObjectKind.CROP)).thenReturn(Flux.error(new IllegalStateException("connection refused")));
+        JsonNode two = sheet(sized);
+        assertThat(two.path("value").path("crop").path("width").isNull()).as("$.value.crop.width").isTrue();
+        assertThat(two.path("value").path("crop").path("height").isNull()).as("$.value.crop.height").isTrue();
+        assertThat(two.path("earlier").get(0).path("crop").path("width").asInt()).as("the earlier sizes survive this paper's failure")
+                .isEqualTo(earlierLedger(EARLIER_1).get(0).widthPx());
     }
 
     /** A printed range with one bound and a stored INSIDE the code cannot prove: UNKNOWN here as on the paper. */
@@ -384,6 +450,9 @@ class ValueSheetApiContractTest {
         Map<String, String> expected = new LinkedHashMap<>();
         expected.put("no-history", null);
         expected.put("earlier-none", "sheet.earlier.none");
+        // the dangerous direction: no reading in this unit, but the marker WAS read before (in another unit), so "the
+        // first time" would be false; no line at all, as for a marker Medioo does not know
+        expected.put("earlier-other-unit", null);
         expected.put("earlier-three", "sheet.earlier");
         for (Map.Entry<String, String> e : expected.entrySet()) {
             Case c = cases().get(e.getKey()).get();
@@ -400,16 +469,26 @@ class ValueSheetApiContractTest {
                 "ESR is above the printed range.", PaperFixtures.BD), unitless, List.of(earlier(EARLIER_1, 6, "25", null, LocalDate.of(2026, 7, 11), false)));
         serve(c);
         assertThat(sheet(c).path("earlier_line_key").asText()).as("a unitless value's heading").isEqualTo("sheet.earlier.nounit");
+
+        // readings in this unit AND in another: the heading names this unit, as it does with none in another
+        Case both = cases().get("earlier-three").get().alsoReadInAnotherUnit();
+        serve(both);
+        assertThat(sheet(both).path("earlier_line_key").asText()).as("earlier-three, also read in another unit").isEqualTo("sheet.earlier");
     }
 
-    /** A read the system rejected shows none of its rows on the paper (PaperJson), so none opens a sheet either. */
-    @Test
-    void aRejectedPapersRowOpensNoSheet() throws IOException {
-        ResultView rejected = PaperFixtures.rejectedWithRows("NEEDS_RETAKE", "low_overall");
+    /**
+     * A paper that is not DONE shows none of its rows (PaperJson), so none opens a sheet either and no view is recorded:
+     * a read the system rejected (NEEDS_RETAKE, FAILED) and a paper still being read (PROCESSING) holding stored rows.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"NEEDS_RETAKE", "FAILED", "PROCESSING"})
+    void aRejectedPapersRowOpensNoSheet(String status) throws IOException {
+        ResultView rejected = PaperFixtures.rejectedWithRows(status, "PROCESSING".equals(status) ? null : "low_overall");
+        assertThat(rejected.document().values()).as("the " + status + " paper holds a stored row").isNotEmpty();
         Case c = Case.of(rejected, rejected.document().values().get(0), List.of());
         serve(c);
         EntityExchangeResult<byte[]> r = exchange(sheetUri(DOC, c.observation()));
-        assertThat(r.getStatus().value()).as("a NEEDS_RETAKE paper's stored row").isEqualTo(404);
+        assertThat(r.getStatus().value()).as("a " + status + " paper's stored row").isEqualTo(404);
         assertThat(json.readTree(r.getResponseBody())).isEqualTo(json.readTree("{\"reason\":\"NOT_FOUND\"}"));
         verify(results, never()).result(any(), any());
     }
@@ -435,18 +514,20 @@ class ValueSheetApiContractTest {
         AppApiContext.sql(POSTGRES, "UPDATE baymax.document SET doc_date = '2026-07-11' WHERE id = '" + older + "'");
         UUID newer = AppApiContext.paper(context, POSTGRES, ma, "routine");
         AppApiContext.sql(POSTGRES, "UPDATE baymax.document SET doc_date = '2026-10-12' WHERE id = '" + newer + "'");
-        UUID olderObservation = potassium(ma, older, "5.4");
-        UUID newerObservation = potassium(ma, newer, "6.9");
+        UUID olderObservation = potassium(ma, older, "5.4", 1);
+        UUID newerObservation = potassium(ma, newer, "6.9", 1);
+        // a second potassium on the newer paper itself: same patient, marker and unit, so only "earlier" keeps it out
+        potassium(ma, newer, "6.7", 2);
         FamilyAccount stranger = AppApiContext.family(context, strangerNumber, "Karim");
         return new Papers(AppApiContext.session(context, owner.id()), AppApiContext.session(context, stranger.id()),
                 older, newer, olderObservation, newerObservation);
     }
 
-    private static UUID potassium(PatientProfile patient, UUID document, String value) throws Exception {
-        AppApiContext.sql(POSTGRES, "INSERT INTO baymax.observation (patient_id, document_id, name, canonical_name, value, unit, ref_low, ref_high,"
+    /** One potassium row on the paper, under its own crop ({@code crop-<n>}); the id the database gave it. */
+    private static UUID potassium(PatientProfile patient, UUID document, String value, int n) throws Exception {
+        return UUID.fromString(scalar("INSERT INTO baymax.observation (patient_id, document_id, name, canonical_name, value, unit, ref_low, ref_high,"
                 + " crop_key, observed_at) VALUES ('" + patient.id() + "','" + document + "','Potassium','potassium','" + value
-                + "','mmol/L','3.5','5.1','" + patient.familyId() + "/" + patient.id() + "/" + document + "/crop-1.jpg',now())");
-        return UUID.fromString(scalar("SELECT id FROM baymax.observation WHERE document_id = '" + document + "'"));
+                + "','mmol/L','3.5','5.1','" + patient.familyId() + "/" + patient.id() + "/" + document + "/crop-" + n + ".jpg',now()) RETURNING id"));
     }
 
     @Test
@@ -488,8 +569,12 @@ class ValueSheetApiContractTest {
             assertThat(views() - before).as("DOCUMENT_VIEW rows after one sheet read").isEqualTo(1);
             assertThat(views(p.newer()) - beforeOnPaper).as("the view is the sheet's own paper's").isEqualTo(1);
 
-            // the earlier reading is the older paper's, beside the older paper's own crop
+            // the earlier reading is the older paper's, beside the older paper's own crop; never a row of the viewed paper
+            // (its second potassium is the same patient, marker and unit, so only readingsOf's "< me" keeps it out)
             JsonNode earlier = body.path("earlier");
+            for (JsonNode e : earlier) {
+                assertThat(e.path("document_id").asText()).as("an earlier reading on the viewed paper itself").isNotEqualTo(p.newer().toString());
+            }
             assertThat(earlier.size()).as("$.earlier over real rows").isEqualTo(1);
             assertThat(earlier.get(0).path("document_id").asText()).isEqualTo(p.older().toString());
             assertThat(earlier.get(0).path("observation_id").asText()).isEqualTo(p.olderObservation().toString());

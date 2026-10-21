@@ -8,6 +8,7 @@ import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.nudge.adapter.out.persistence.PostgresNudgeAdapterTest;
 import com.elioo.baymax.web.application.port.in.ResultUseCase;
+import com.elioo.baymax.web.domain.EarlierHistory;
 import com.elioo.baymax.web.domain.EarlierReading;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ReactiveWebApplicationContextRunner;
@@ -98,6 +99,38 @@ class EarlierReadingsTest {
             assertThat(rows).extracting(EarlierReading::date).as("no printed date: the upload day in Dhaka")
                     .containsExactly(LocalDate.of(2026, 10, 20));
             assertThat(rows).extracting(EarlierReading::dateIsFallback).containsExactly(true);
+        });
+    }
+
+    /**
+     * Plan W6-api's "first time" rule, both directions over the real history: a marker read before only in another unit
+     * (µmol/L, asked about in mg/dL) has no reading in this unit and IS known to have been read, so the sheet must not
+     * say "the first time"; a marker never read for this patient (only Baba's, in another unit) is not known to
+     * have been read; and readings in this unit beside one in another keep both facts.
+     */
+    @Test
+    void earlierHistoryKnowsTheMarkerWasReadInAnotherUnit() {
+        runner().run(context -> {
+            Fixture f = fixture(context, "+8801700000719");
+            ResultUseCase results = context.getBean(ResultUseCase.class);
+            f.printed(f.doneWith(f.ma(), T, "creatinine", "Creatinine", "140", "µmol/L"), LocalDate.of(2026, 7, 1));
+            UUID mgdl = f.printed(f.doneWith(f.ma(), T.plusSeconds(60), "creatinine", "Creatinine", "1.6", "mg/dL"), LocalDate.of(2026, 8, 1));
+            UUID later = f.printed(f.doneWith(f.ma(), T.plusSeconds(120), "creatinine", "Creatinine", "1.4", "mg/dL"), LocalDate.of(2026, 9, 1));
+
+            EarlierHistory onlyOther = results.earlierHistory(f.familyId(), mgdl, f.observationIn(mgdl)).block();
+            assertThat(onlyOther.sameUnit()).as("no earlier creatinine in mg/dL").isEmpty();
+            assertThat(onlyOther.readInAnotherUnit()).as("creatinine was read before, in µmol/L").isTrue();
+
+            EarlierHistory both = results.earlierHistory(f.familyId(), later, f.observationIn(later)).block();
+            assertThat(both.sameUnit()).extracting(EarlierReading::documentId).containsExactly(mgdl);
+            assertThat(both.readInAnotherUnit()).isTrue();
+
+            // the other direction: Baba's urea in mmol/L is not Ma's history, so Ma's first urea (mg/dL) is her first
+            f.doneWith(f.baba(), T, "urea", "Urea", "7.1", "mmol/L");
+            UUID first = f.doneWith(f.ma(), T.plusSeconds(180), "urea", "Urea", "40", "mg/dL");
+            EarlierHistory none = results.earlierHistory(f.familyId(), first, f.observationIn(first)).block();
+            assertThat(none.sameUnit()).isEmpty();
+            assertThat(none.readInAnotherUnit()).as("another patient's reading in another unit is not this patient's history").isFalse();
         });
     }
 

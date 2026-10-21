@@ -16,6 +16,7 @@ import com.elioo.baymax.outbound.domain.StoredUrgency;
 import com.elioo.baymax.web.application.port.in.ResultUseCase;
 import com.elioo.baymax.web.application.port.out.AuditPort;
 import com.elioo.baymax.web.domain.AuditEvent;
+import com.elioo.baymax.web.domain.EarlierHistory;
 import com.elioo.baymax.web.domain.EarlierReading;
 import com.elioo.baymax.web.domain.GateState;
 import com.elioo.baymax.web.domain.ReadingView;
@@ -158,18 +159,29 @@ public class ResultService implements ResultUseCase {
      */
     @Override
     public Flux<EarlierReading> earlierReadings(UUID familyId, UUID documentId, UUID observationId) {
+        return earlierHistory(familyId, documentId, observationId).flatMapIterable(EarlierHistory::sameUnit);
+    }
+
+    /**
+     * {@link #earlierReadings}' read, keeping the one fact its unit filter drops: whether any earlier reading of the marker
+     * (this patient, finished papers before this one) is in a unit that does not fold to this one. One scan of the history
+     * ({@code DocumentReadPort.readingsOf}) answers both, so the two halves cannot disagree about which rows they saw.
+     */
+    @Override
+    public Mono<EarlierHistory> earlierHistory(UUID familyId, UUID documentId, UUID observationId) {
         return visibleDocument(familyId, documentId)
                 .flatMap(d -> intake.view(documentId).map(v -> observationOf(v.values(), observationId)).map(o -> Map.entry(d, o)))
-                .flatMapMany(found -> {
+                .flatMap(found -> {
                     Object canonical = found.getValue().get("canonical_name");
                     if (canonical == null) {
-                        return Flux.empty();
+                        return Mono.just(EarlierHistory.NONE);
                     }
                     String unit = found.getValue().get("unit") == null ? null : String.valueOf(found.getValue().get("unit"));
-                    return reads.readingsOf(found.getKey().patientId(), String.valueOf(canonical), documentId)
-                            .filter(row -> MarkerThreshold.sameUnit(unit, (String) row.get("unit")))
-                            .take(EARLIER_READINGS)
-                            .map(ResultService::earlierReading);
+                    return reads.readingsOf(found.getKey().patientId(), String.valueOf(canonical), documentId).collectList()
+                            .map(rows -> new EarlierHistory(
+                                    rows.stream().filter(row -> MarkerThreshold.sameUnit(unit, (String) row.get("unit")))
+                                            .limit(EARLIER_READINGS).map(ResultService::earlierReading).toList(),
+                                    rows.stream().anyMatch(row -> !MarkerThreshold.sameUnit(unit, (String) row.get("unit")))));
                 });
     }
 
