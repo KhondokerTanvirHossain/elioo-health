@@ -24,6 +24,13 @@ const SHIPPED: string[] = [
   "OtpInput/error",
   "PhoneField/empty",
   "PhoneField/error",
+  // W2d-b: the NOW banner over each of B3's generated fixtures (acked.json is the hidden one), and the two long names.
+  "NowBanner/one-patient",
+  "NowBanner/two-patients",
+  "NowBanner/abroad",
+  "NowBanner/hidden",
+  "NowBanner/long-name",
+  "NowBanner/long-unbroken",
 ];
 
 const ids = () => STATES.map(({ component, state }) => `${component}/${state}`);
@@ -31,6 +38,12 @@ const ids = () => STATES.map(({ component, state }) => `${component}/${state}`);
 describe("catalog states", () => {
   it("theRegistryHoldsExactlyTheShippedStates", () => {
     expect(ids()).toEqual(SHIPPED);
+  });
+
+  it("onlyTheHiddenBannerIsEmpty", () => {
+    // catalog.spec.ts holds an empty state to painting nothing and excuses it from rendering something, so marking any
+    // other state empty would hide a state that renders nothing.
+    expect(STATES.filter((s) => s.empty).map(({ component, state }) => `${component}/${state}`)).toEqual(["NowBanner/hidden"]);
   });
 
   it("noStateIsRegisteredTwice", () => {

@@ -204,6 +204,7 @@
   "next.followup": "Next visit, as written on the paper: {0}",
   "next.title": "Next step",
   "next.unverified": "{0} line(s) could not be read — see the original paper",
+  "now.banner.seen": "Seen",
   "now.bring": "Take with you: the original of this report, and the last prescription",
   "now.bring.remote": "Ask them to take: the original of this report, and the last prescription",
   "now.call999": "Call 999",
