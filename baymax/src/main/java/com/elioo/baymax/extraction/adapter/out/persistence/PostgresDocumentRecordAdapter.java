@@ -342,19 +342,89 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
                 .one();
     }
 
+    /**
+     * The nudges that quote this paper. A nudge names its source only through {@code trigger_key} (NudgeRules) and
+     * copies the source's words into {@code vars_json}, so it is matched by what it QUOTES, not only by its key:
+     * <ul>
+     *   <li>the paper itself ({@code document:<id>}), one of its follow-ups ({@code follow_up:<id>}) or one of its
+     *       medicines ({@code medication:<id>});</li>
+     *   <li>every {@code trend} of the patient on a marker one of this paper's values has. A trend is keyed to the run's
+     *       FIRST reading ({@code trend:<marker>:<observation id>}) but quotes every reading up to the LATEST, which is
+     *       normally the paper just uploaded — the one a family deletes as "wrong paper" — so the key alone misses the
+     *       usual case. The marker is {@code observation.canonical_name}, the same value {@code markersOf} reads;</li>
+     *   <li>every {@code medicine_changed} of the patient keyed to a prescription dated on or after this paper, when
+     *       this paper has medicines: such a nudge is keyed {@code document:<newer>} and quotes the OLDER prescription's
+     *       medicines verbatim as its "before" side.</li>
+     * </ul>
+     * Wider than exact on purpose: withdrawing an unsent nudge is the safe direction. A trend is re-evaluated on every
+     * run from the data that is left; a medicine_changed that did not quote this paper is lost (its rule runs only when
+     * a prescription finishes), which is the price of never sending one that did. Read while the paper's rows still
+     * exist, so it must run before they are deleted.
+     */
+    private static final String NUDGES_OF_THE_PAPER = "(n.trigger_key = 'document:' || CAST(:d AS text)"
+            + " OR n.trigger_key IN (SELECT 'follow_up:' || f.id FROM " + S + ".follow_up f WHERE f.document_id = :d)"
+            + " OR n.trigger_key IN (SELECT 'medication:' || m.id FROM " + S + ".medication_event m WHERE m.document_id = :d)"
+            + " OR (n.rule = 'trend' AND EXISTS (SELECT 1 FROM " + S + ".observation o WHERE o.document_id = :d"
+            + " AND o.patient_id = n.patient_id AND (n.trigger_key LIKE 'trend:%:' || o.id"
+            + " OR (o.canonical_name IS NOT NULL AND starts_with(n.trigger_key, 'trend:' || o.canonical_name || ':')))))"
+            + " OR (n.rule = 'medicine_changed' AND EXISTS (SELECT 1 FROM " + S + ".medication_event m WHERE m.document_id = :d)"
+            + " AND n.trigger_key IN (SELECT 'document:' || x.id FROM " + S + ".document x JOIN " + S + ".document me ON me.id = :d"
+            + " WHERE x.patient_id = me.patient_id AND n.patient_id = me.patient_id AND x.id <> me.id"
+            + " AND COALESCE(x.doc_date, x.created_at::date) >= COALESCE(me.doc_date, me.created_at::date))))";
+
+    /**
+     * Not delivered: the nudge row says it was not sent AND its message, if any, was never accepted by the provider.
+     * {@code nudge.status} alone is not enough — a gated nudge keeps {@code 'gated'} after the reviewer approves it and
+     * WhatsApp accepts it (approve updates only the message), and that row is the cap ledger ({@code countedSince}).
+     */
+    private static final String UNDELIVERED_NUDGE = "n.status <> 'sent' AND NOT EXISTS (SELECT 1 FROM " + S
+            + ".outbound_message dm WHERE dm.id = n.message_id AND dm.sent_at IS NOT NULL)";
+
+    /**
+     * One transaction: everything the paper wrote, then the paper. Its ai_call_log rows keep their numbers and lose the
+     * id. Its {@code stored_object} ledger rows go here too, as {@code deleteFamily} does for a family, so that if the
+     * bucket cannot be emptied afterwards only bucket objects survive, and those are what {@code orphaned_objects} names.
+     *
+     * <p>The paper's row is locked first ({@code FOR UPDATE}). A message about the paper is only ever stored under a
+     * {@code FOR KEY SHARE} lock on the same row ({@code PostgresOutboundMessageAdapter.save}), so a message composed
+     * while this runs is either stored before it and withdrawn by it, or refused after it: none survives a delete.
+     *
+     * <p><b>Every message and nudge made from the paper that has not reached the family is withdrawn</b>, whatever its
+     * state: a {@code pending} explanation stays approvable (approve never re-reads the document) and a HELD nudge is
+     * composed from its {@code vars_json} alone (releaseHeld never re-reads the source rows), so either would still send
+     * WhatsApp text about a paper the family deleted. Unsent means {@code sent_at IS NULL} (V14: the provider accepted it)
+     * — pending, approved but never delivered, rejected, failed_safety — and a nudge that quotes the paper
+     * ({@link #NUDGES_OF_THE_PAPER}) and was not delivered ({@link #UNDELIVERED_NUDGE}), with the unsent message of a
+     * gated nudge, which carries no document_id. Delivered history ({@code sent_at} set, a {@code sent} nudge, a gated
+     * nudge whose message was accepted) is kept, pending PO decision P1 (first raised by A13, #76).
+     *
+     * @return every row deleted, across all tables
+     */
     @Override
     @org.springframework.transaction.annotation.Transactional
     public Mono<Long> deleteDocument(UUID documentId) {
-        // V22: the WhatsApp message the paper arrived in keeps its key (a Meta re-delivery must still be a duplicate) and
-        // its family, and loses the patient, the document and Meta's media id, a handle that fetches the photo again
-        // while Meta keeps it. Same transaction; the FK's SET NULL alone would leave the media id.
-        return db.sql("UPDATE " + S + ".inbound_message SET media_id = NULL, patient_id = NULL, document_id = NULL"
-                        + " WHERE document_id = :d").bind("d", documentId).then()
+        return db.sql("SELECT id FROM " + S + ".document WHERE id = :d FOR UPDATE").bind("d", documentId).fetch().all().then()
+                // V22: the WhatsApp message the paper arrived in keeps its key (a Meta re-delivery must still be a duplicate)
+                // and its family, and loses the patient, the document and Meta's media id, a handle that fetches the photo
+                // again while Meta keeps it. Same transaction; the FK's SET NULL alone would leave the media id.
+                .then(db.sql("UPDATE " + S + ".inbound_message SET media_id = NULL, patient_id = NULL, document_id = NULL"
+                        + " WHERE document_id = :d").bind("d", documentId).then())
                 .then(db.sql("UPDATE " + S + ".ai_call_log SET document_id = NULL WHERE document_id = :d").bind("d", documentId).then())
-                .then(db.sql("DELETE FROM " + S + ".observation WHERE document_id = :d").bind("d", documentId).then())
-                .then(db.sql("DELETE FROM " + S + ".medication_event WHERE document_id = :d").bind("d", documentId).then())
-                .then(db.sql("DELETE FROM " + S + ".follow_up WHERE document_id = :d").bind("d", documentId).then())
-                .then(db.sql("DELETE FROM " + S + ".document WHERE id = :d").bind("d", documentId).fetch().rowsUpdated());
+                .then(rows("DELETE FROM " + S + ".outbound_message WHERE document_id = :d AND sent_at IS NULL", documentId))
+                .flatMap(n -> rows("DELETE FROM " + S + ".outbound_message WHERE sent_at IS NULL AND id IN (SELECT n.message_id FROM "
+                        + S + ".nudge n WHERE n.message_id IS NOT NULL AND " + UNDELIVERED_NUDGE + " AND " + NUDGES_OF_THE_PAPER + ")",
+                        documentId).map(m -> n + m))
+                .flatMap(n -> rows("DELETE FROM " + S + ".nudge n WHERE " + UNDELIVERED_NUDGE + " AND " + NUDGES_OF_THE_PAPER, documentId)
+                        .map(m -> n + m))
+                .flatMap(n -> rows("DELETE FROM " + S + ".stored_object WHERE document_id = :d", documentId).map(m -> n + m))
+                .flatMap(n -> rows("DELETE FROM " + S + ".observation WHERE document_id = :d", documentId).map(m -> n + m))
+                .flatMap(n -> rows("DELETE FROM " + S + ".medication_event WHERE document_id = :d", documentId).map(m -> n + m))
+                .flatMap(n -> rows("DELETE FROM " + S + ".follow_up WHERE document_id = :d", documentId).map(m -> n + m))
+                .flatMap(n -> rows("DELETE FROM " + S + ".document WHERE id = :d", documentId).map(m -> n + m));
+    }
+
+    private Mono<Long> rows(String sql, UUID documentId) {
+        return db.sql(sql).bind("d", documentId).fetch().rowsUpdated();
     }
 
     @Override

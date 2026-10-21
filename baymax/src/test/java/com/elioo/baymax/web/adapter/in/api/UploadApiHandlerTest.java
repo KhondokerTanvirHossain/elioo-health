@@ -79,7 +79,10 @@ class UploadApiHandlerTest {
                 new MeApiHandler(mock(TimelineUseCase.class), mock(AttentionUseCase.class), properties),
                 new SignInApiHandler(auth, new SessionAuthFilter(auth, properties), properties),
                 new PaperApiHandler(mock(ResultUseCase.class), new UiCopy()),
-                new UploadApiHandler(uploads, properties, new UiCopy()), guard)).build();
+                new UploadApiHandler(uploads, properties, new UiCopy()),
+                new PaperStatusApiHandler(mock(ResultUseCase.class)),
+                new PaperDeleteApiHandler(mock(TimelineUseCase.class), new DeleteConfirmation(properties, java.time.Clock.systemUTC())),
+                guard)).build();
     }
 
     private WebTestClient.ResponseSpec post(MultipartBodyBuilder body) {

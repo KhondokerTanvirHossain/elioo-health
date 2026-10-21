@@ -70,7 +70,9 @@ class DocumentIntakeServiceTest {
     void setUp() {
         service = new DocumentIntakeService(records, documents, freeTier, storage, new PageRenderer(),
                 properties, Clock.fixed(NOW, ZoneOffset.UTC),
-                new DocumentProcessingChain(extraction, explainer, nudges, documents, Clock.fixed(NOW, ZoneOffset.UTC), urgency));
+                new DocumentProcessingChain(extraction, explainer, nudges, documents, Clock.fixed(NOW, ZoneOffset.UTC), urgency, storage));
+        // the chain asks whether a paper still exists when its extraction ends (a delete mid-read): every paper here does
+        when(documents.find(any())).thenAnswer(i -> Mono.just(Document.received(PATIENT, FAMILY, 1, NOW).withId(i.getArgument(0))));
         when(explainer.explain(any())).thenReturn(Mono.empty());
         when(urgency.assessAndStore(any())).thenReturn(Mono.empty());
         when(nudges.onDocumentDone(any())).thenReturn(Mono.empty());

@@ -1,8 +1,9 @@
 package com.elioo.baymax.web.application.port.in;
 
+import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.DocumentView;
-import com.elioo.baymax.storage.domain.DeletionReport;
 import com.elioo.baymax.web.domain.FamilyOverview;
+import com.elioo.baymax.web.domain.PaperDeletion;
 import com.elioo.baymax.web.domain.TimelineFilter;
 import com.elioo.baymax.web.domain.TimelinePage;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
@@ -31,8 +32,15 @@ public interface TimelineUseCase {
 
     Mono<DocumentView> document(UUID familyId, UUID documentId);
 
-    /** Owner only; a share member gets 403. */
-    Mono<DeletionReport> deleteDocument(UUID familyId, UUID documentId);
+    /**
+     * The paper, when this family may delete it: 404 {@code document_not_found} when it cannot see it (the same as one
+     * that does not exist), 403 {@code shared_patient_read_only} when it sees it as a share member. The one ownership
+     * rule every delete path asks — {@link #deleteDocument} itself and the {@code /app/api} confirm-token route.
+     */
+    Mono<Document> deletableDocument(UUID familyId, UUID documentId);
+
+    /** Owner only ({@link #deletableDocument}); rows first and committed, then the bucket. */
+    Mono<PaperDeletion> deleteDocument(UUID familyId, UUID documentId);
 
     /**
      * A fresh signed URL for a page or crop of a document the family may see. Signed at call time, so an

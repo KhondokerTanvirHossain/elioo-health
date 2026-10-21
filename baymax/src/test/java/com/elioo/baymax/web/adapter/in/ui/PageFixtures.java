@@ -5,7 +5,7 @@ import com.elioo.baymax.extraction.domain.DocumentView;
 import com.elioo.baymax.healthrecord.domain.DocumentAllowance;
 import com.elioo.baymax.nudge.application.port.out.NudgeDataPort;
 import com.elioo.baymax.outbound.domain.Urgency;
-import com.elioo.baymax.storage.domain.DeletionReport;
+import com.elioo.baymax.web.domain.PaperDeletion;
 import com.elioo.baymax.web.application.port.in.CodeRejectedException;
 import com.elioo.baymax.web.domain.CodeIssue;
 import com.elioo.baymax.web.domain.CodeRequest;
@@ -654,7 +654,7 @@ final class PageFixtures {
 
         static void deletes(WebUiTestKit k) {
             when(k.timeline.deleteDocument(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID))
-                    .thenReturn(Mono.just(new DeletionReport("f/p/" + WebUiTestKit.DOC_ID + "/", 4, 1)));
+                    .thenReturn(Mono.just(new PaperDeletion("f/p/" + WebUiTestKit.DOC_ID + "/", 4, 1, 9)));
         }
     }
 }

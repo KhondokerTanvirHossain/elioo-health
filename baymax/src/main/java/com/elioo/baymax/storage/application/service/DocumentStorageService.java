@@ -109,20 +109,43 @@ public class DocumentStorageService implements DocumentStorageUseCase {
         return deleteByPrefix(StorageKeys.familyPrefix(familyId));
     }
 
-    /** Objects first, then ledger rows: if the bucket delete fails, the ledger still says what is out there. */
+    /**
+     * The bucket half of a paper's delete when its rows went first. The caller has already removed the ledger rows in
+     * the row transaction ({@code DocumentRecordPort.deleteDocument}) and says how many there were; the drift check
+     * compares the objects removed against that count (plus any ledger row written since, by a pipeline still storing a
+     * crop, which is removed here too), so a normal delete is balanced and only real drift warns.
+     */
+    @Override
+    public Mono<DeletionReport> deleteDocumentObjects(UUID familyId, UUID patientId, UUID documentId, long ledgerRowsDeleted) {
+        String prefix = StorageKeys.documentPrefix(familyId, patientId, documentId);
+        return storagePort()
+                .flatMap(port -> port.deleteByPrefix(prefix))
+                .flatMap(objects -> ledger.deleteByKeyPrefix(prefix)
+                        .map(late -> new DeletionReport(prefix, objects, ledgerRowsDeleted + late)))
+                .doOnNext(DocumentStorageService::logged);
+    }
+
+    /**
+     * Objects first, then ledger rows: if the bucket delete fails, the ledger still says what is out there. The order for
+     * a caller that keeps the ledger rows until now (a patient, a family, the crops of a re-crop); a paper's delete takes
+     * the other order ({@link #deleteDocumentObjects}).
+     */
     private Mono<DeletionReport> deleteByPrefix(String prefix) {
         return storagePort()
                 .flatMap(port -> port.deleteByPrefix(prefix))
                 .flatMap(objects -> ledger.deleteByKeyPrefix(prefix)
                         .map(rows -> new DeletionReport(prefix, objects, rows)))
-                .doOnNext(report -> {
-                    if (report.objectsDeleted() != report.ledgerRowsDeleted()) {
-                        log.warn("[baymax] delete prefix={} removed {} objects but {} ledger rows (drift)",
-                                prefix, report.objectsDeleted(), report.ledgerRowsDeleted());
-                    } else {
-                        log.info("[baymax] deleted prefix={} objects={} ", prefix, report.objectsDeleted());
-                    }
-                });
+                .doOnNext(DocumentStorageService::logged);
+    }
+
+    /** A mismatch between the objects removed and the ledger rows that recorded them is drift, worth a WARN. */
+    private static void logged(DeletionReport report) {
+        if (report.objectsDeleted() != report.ledgerRowsDeleted()) {
+            log.warn("[baymax] delete prefix={} removed {} objects but {} ledger rows (drift)",
+                    report.prefix(), report.objectsDeleted(), report.ledgerRowsDeleted());
+        } else {
+            log.info("[baymax] deleted prefix={} objects={} ", report.prefix(), report.objectsDeleted());
+        }
     }
 
     private Mono<StoragePort> storagePort() {

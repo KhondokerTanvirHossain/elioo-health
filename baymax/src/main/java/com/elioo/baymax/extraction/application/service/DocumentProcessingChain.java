@@ -5,6 +5,8 @@ import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.nudge.application.port.in.NudgeUseCase;
 import com.elioo.baymax.outbound.application.port.in.DocumentUrgencyUseCase;
 import com.elioo.baymax.outbound.application.port.in.ExplainDocumentUseCase;
+import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
+import com.elioo.baymax.storage.domain.StorageKeys;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -31,6 +33,7 @@ public class DocumentProcessingChain {
     private final DocumentRecordPort documents;
     private final Clock clock;
     private final DocumentUrgencyUseCase urgency;
+    private final DocumentStorageUseCase storage;
 
     /**
      * Extract → explain → nudges. Not subscribed and not scheduled: the caller decides where it runs. Extraction
@@ -39,7 +42,42 @@ public class DocumentProcessingChain {
      */
     public Mono<Document> run(Document document, List<byte[]> pages) {
         return extraction.process(document, pages)
+                // a paper deleted while it was being read: never urgency, never an explanation, never a nudge
+                .flatMap(done -> exists(done).flatMap(there -> there ? Mono.just(done) : Mono.<Document>empty()))
+                .onErrorResume(e -> exists(document).flatMap(there -> there ? Mono.<Document>error(e) : Mono.empty()))
+                .switchIfEmpty(Mono.defer(() -> forgetIfDeleted(document)))
                 .flatMap(this::explainOnly);
+    }
+
+    private Mono<Boolean> exists(Document document) {
+        return documents.find(document.id()).hasElement();
+    }
+
+    /**
+     * The family deleted the paper while the model was reading it (Review Focus 4 of the Wave 2 plan). The delete
+     * removed what existed then; the pipeline kept writing after it — crops into the bucket and their ledger rows (which
+     * have no foreign key), and the model call's ai_call_log row with the id. Both deletes run again, over whatever the
+     * pipeline left: the rows (idempotent — it detaches the call log, removes the ledger rows and any unsent message),
+     * then the objects under the paper's prefix, checked for drift against the late ledger rows counted first. Only when
+     * the row is really gone: an extraction that answered nothing for a paper that still exists is not a deletion, and
+     * its pages are never touched here.
+     *
+     * <p>Nothing after this point can explain the paper either way: a message naming a paper that no longer exists is
+     * refused where every writer stores it ({@code OutboundMessagePort.save}), so a delete landing later than this
+     * check — during the EXPLAIN call — is covered there, not here.
+     */
+    private Mono<Document> forgetIfDeleted(Document document) {
+        String prefix = StorageKeys.documentPrefix(document.familyId(), document.patientId(), document.id());
+        return exists(document).flatMap(there -> there ? Mono.<Document>empty() : storage.objectsOf(document.id()).count()
+                .flatMap(late -> documents.deleteDocument(document.id())
+                        .then(storage.deleteDocumentObjects(document.familyId(), document.patientId(), document.id(), late)
+                                .doOnError(e -> log.error("[baymax] orphaned_objects scope=document id={} prefix={} objects={} — a "
+                                        + "paper deleted while being read left objects the sweep could not remove error={}",
+                                        document.id(), prefix, late, e.getClass().getSimpleName()))
+                                .onErrorResume(e -> Mono.empty())))
+                .then(Mono.fromRunnable(() -> log.info("[baymax] document deleted while being read documentId={}; "
+                        + "its late crops and rows were removed and nothing was explained", document.id())))
+                .then(Mono.<Document>empty()));
     }
 
     /**

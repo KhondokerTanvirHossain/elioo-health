@@ -73,6 +73,18 @@ class DetailCacheAcceptanceTest {
                         "baymax.flyway.password=" + POSTGRES.getPassword());
     }
 
+    /**
+     * A paper of this family that exists: a message naming a document is stored only while the document does
+     * ({@code OutboundMessagePort.save}), so a random id here would be refused, not cached.
+     */
+    private static UUID paper(org.springframework.context.ApplicationContext context, UUID family) {
+        Instant now = Instant.now();
+        var patient = context.getBean(HealthRecordPort.class).createPatient(new com.elioo.baymax.healthrecord.domain.PatientProfile(
+                null, family, "Ma", 64, com.elioo.baymax.healthrecord.domain.PatientProfile.Sex.FEMALE, List.of(), now, now)).block();
+        return context.getBean(com.elioo.baymax.extraction.application.port.out.DocumentRecordPort.class)
+                .create(Document.received(patient.id(), family, 1, now)).block().id();
+    }
+
     private static OutboundMessage row(UUID family, UUID document, OutboundMessage.Kind kind, String body, Instant at) {
         return new OutboundMessage(null, family, null, document, kind, Urgency.ROUTINE, List.of(), body,
                 OutboundMessage.GateStatus.RELEASED, null, null, null, null, at);
@@ -86,7 +98,7 @@ class DetailCacheAcceptanceTest {
             Instant t = Instant.parse("2026-10-20T09:00:00Z");
             FamilyAccount family = records.createFamily(new FamilyAccount(
                     null, "+8801700000801", "Rahim", FamilyAccount.Plan.FREE, t, t)).block();
-            UUID doc = UUID.randomUUID(), other = UUID.randomUUID();
+            UUID doc = paper(context, family.id()), other = paper(context, family.id());
 
             messages.save(row(family.id(), doc, OutboundMessage.Kind.DETAIL, "পুরনো বিস্তারিত", t)).block();
             OutboundMessage newer = messages.save(row(family.id(), doc, OutboundMessage.Kind.DETAIL, "নতুন বিস্তারিত", t.plusSeconds(60))).block();
@@ -112,7 +124,7 @@ class DetailCacheAcceptanceTest {
             Instant t = Instant.parse("2026-10-20T09:30:00Z");
             FamilyAccount family = records.createFamily(new FamilyAccount(
                     null, "+8801700000802", "Karim", FamilyAccount.Plan.FREE, t, t)).block();
-            OutboundMessage stored = messages.save(row(family.id(), UUID.randomUUID(), OutboundMessage.Kind.DETAIL, "বিস্তারিত", t)).block();
+            OutboundMessage stored = messages.save(row(family.id(), paper(context, family.id()), OutboundMessage.Kind.DETAIL, "বিস্তারিত", t)).block();
             assertThat(column(stored.id(), "sent_at")).as("stored, not delivered").isNull();
             assertThat(column(stored.id(), "delivery_status")).isNull();
 
@@ -206,7 +218,7 @@ class DetailCacheAcceptanceTest {
                     null, "+8801700000804", "Nasrin", FamilyAccount.Plan.FREE, t, t)).block();
             Map<String, Object> value = new HashMap<>(Map.of(
                     "name", "Cholesterol, Total", "value", "450", "ref_low", "0", "ref_high", "200"));
-            Document document = new Document(UUID.randomUUID(), UUID.randomUUID(), family.id(), "lab_report", null, null,
+            Document document = new Document(paper(context, family.id()), UUID.randomUUID(), family.id(), "lab_report", null, null,
                     "{}", 0.9, Document.Status.DONE, null, null, null, 1, t, t);
             UrgencyAssessment assessed = new UrgencyService(new BaymaxProperties(), Clock.fixed(t, ZoneOffset.UTC))
                     .assess(new DocumentFacts(document, "Ma", List.of(value), List.of(), Map.of(), "https://x/y"));
@@ -250,7 +262,7 @@ class DetailCacheAcceptanceTest {
             Instant t = Instant.parse("2026-10-20T12:00:00Z");
             FamilyAccount family = records.createFamily(new FamilyAccount(
                     null, "+8801700000806", "Shirin", FamilyAccount.Plan.FREE, t, t)).block();
-            OutboundMessage stored = messages.save(row(family.id(), UUID.randomUUID(), OutboundMessage.Kind.DETAIL, "বিস্তারিত", t)).block();
+            OutboundMessage stored = messages.save(row(family.id(), paper(context, family.id()), OutboundMessage.Kind.DETAIL, "বিস্তারিত", t)).block();
 
             List<OutboundMessage> won = Flux.range(0, 16)
                     .flatMap(i -> messages.claimDelivery(stored.id()).subscribeOn(Schedulers.parallel()), 16)
@@ -270,7 +282,7 @@ class DetailCacheAcceptanceTest {
             Instant t = Instant.parse("2026-10-20T12:30:00Z");
             FamilyAccount family = records.createFamily(new FamilyAccount(
                     null, "+8801700000807", "Laila", FamilyAccount.Plan.FREE, t, t)).block();
-            OutboundMessage stored = messages.save(row(family.id(), UUID.randomUUID(), OutboundMessage.Kind.DETAIL, "বিস্তারিত", t)).block();
+            OutboundMessage stored = messages.save(row(family.id(), paper(context, family.id()), OutboundMessage.Kind.DETAIL, "বিস্তারিত", t)).block();
 
             assertThat(messages.claimDelivery(stored.id()).blockOptional()).isPresent();
             assertThat(messages.claimDelivery(stored.id()).blockOptional()).as("pending: someone holds it").isEmpty();
@@ -290,10 +302,10 @@ class DetailCacheAcceptanceTest {
             Instant t = Instant.parse("2026-10-20T12:45:00Z");
             FamilyAccount family = records.createFamily(new FamilyAccount(
                     null, "+8801700000810", "Parveen", FamilyAccount.Plan.FREE, t, t)).block();
-            OutboundMessage pending = messages.save(new OutboundMessage(null, family.id(), null, UUID.randomUUID(),
+            OutboundMessage pending = messages.save(new OutboundMessage(null, family.id(), null, paper(context, family.id()),
                     OutboundMessage.Kind.DETAIL, Urgency.NOW, List.of(), "অপরীক্ষিত", OutboundMessage.GateStatus.PENDING,
                     null, null, null, null, t)).block();
-            OutboundMessage failed = messages.save(new OutboundMessage(null, family.id(), null, UUID.randomUUID(),
+            OutboundMessage failed = messages.save(new OutboundMessage(null, family.id(), null, paper(context, family.id()),
                     OutboundMessage.Kind.DETAIL, Urgency.NOW, List.of(), null, OutboundMessage.GateStatus.FAILED_SAFETY,
                     null, null, null, null, t)).block();
 
@@ -313,7 +325,7 @@ class DetailCacheAcceptanceTest {
             Instant t = Instant.parse("2026-10-20T13:00:00Z");
             FamilyAccount family = records.createFamily(new FamilyAccount(
                     null, "+8801700000808", "Hasina", FamilyAccount.Plan.FREE, t, t)).block();
-            OutboundMessage stored = messages.save(row(family.id(), UUID.randomUUID(), OutboundMessage.Kind.DETAIL, "বিস্তারিত", t)).block();
+            OutboundMessage stored = messages.save(row(family.id(), paper(context, family.id()), OutboundMessage.Kind.DETAIL, "বিস্তারিত", t)).block();
 
             messages.claimDelivery(stored.id()).block();
             messages.markSent(stored.id(), t.plusSeconds(1)).block();
@@ -335,7 +347,7 @@ class DetailCacheAcceptanceTest {
             Instant t = Instant.parse("2026-10-20T13:15:00Z");
             FamilyAccount family = records.createFamily(new FamilyAccount(
                     null, "+8801700000811", "Ayesha", FamilyAccount.Plan.FREE, t, t)).block();
-            OutboundMessage logged = messages.save(row(family.id(), UUID.randomUUID(), OutboundMessage.Kind.DETAIL, "বিস্তারিত", t)).block();
+            OutboundMessage logged = messages.save(row(family.id(), paper(context, family.id()), OutboundMessage.Kind.DETAIL, "বিস্তারিত", t)).block();
             messages.claimDelivery(logged.id()).block();
             messages.markSent(logged.id(), t.plusSeconds(1)).block();
             UUID legacy = UUID.randomUUID();
@@ -366,7 +378,7 @@ class DetailCacheAcceptanceTest {
             Instant t = Instant.parse("2026-10-20T13:30:00Z");
             FamilyAccount family = records.createFamily(new FamilyAccount(
                     null, "+8801700000809", "Momena", FamilyAccount.Plan.FREE, t, t)).block();
-            OutboundMessage stored = messages.save(row(family.id(), UUID.randomUUID(), OutboundMessage.Kind.DETAIL, "বিস্তারিত", t)).block();
+            OutboundMessage stored = messages.save(row(family.id(), paper(context, family.id()), OutboundMessage.Kind.DETAIL, "বিস্তারিত", t)).block();
 
             Flux.range(0, 2)
                     .flatMap(i -> explainer.deliver(stored).subscribeOn(Schedulers.parallel()), 2)

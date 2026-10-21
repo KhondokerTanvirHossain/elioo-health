@@ -23,6 +23,7 @@ import com.elioo.baymax.outbound.domain.StoredUrgency;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.storage.application.port.out.StoragePort;
 import com.elioo.baymax.storage.domain.StorageKeys;
+import com.elioo.baymax.testsupport.DeletionSweep;
 import com.elioo.baymax.testsupport.PaintedPaper;
 import com.elioo.baymax.testsupport.PaintedPaper.Hold;
 import com.elioo.baymax.wa.WaFixtures;
@@ -138,15 +139,6 @@ class WebOnlyJourneyAcceptanceTest {
             Map.entry("POST /app/patients/{id}/upload", "the legacy upload for cached pages; AddReportSubmitTest"),
             Map.entry("GET /app/patients/{id}", "a 302 for old links; AppShellRoutesTest"),
             Map.entry("GET /app/patients/{id}/profile", "the pre-tab profile URL; redirects to /app/family (A6)"));
-
-    /**
-     * Tables that keep a deleted document's id, each with why. Everything else carrying a {@code document_id} column
-     * (asked of information_schema) must hold nothing for it after the delete.
-     */
-    static final Map<String, String> KEEP_DOCUMENT_ID = Map.of(
-            "audit_event", "the audit of the view and of the delete itself; ids only, no text (V8)",
-            "outbound_message", "the message as composed for the family; OPEN — named in A13's PR body for the PO, "
-                    + "not changed here: deleting a paper leaves its explanation's body in this table");
 
     /** Every request the journey made, as "METHOD /raw/path", recorded by the client itself (not labelled by hand). */
     private final List<String> requests = Collections.synchronizedList(new ArrayList<>());
@@ -382,6 +374,16 @@ class WebOnlyJourneyAcceptanceTest {
             String inboundKey = "f".repeat(32) + documentId.toString().replace("-", "");
             sql("insert into baymax.inbound_message (provider_key, family_id, patient_id, document_id, type, media_id) values ('"
                     + inboundKey + "','" + ma.familyId() + "','" + ma.id() + "','" + documentId + "','image','MEDIA-JOURNEY')");
+            // one unsent explanation of this paper, seeded: the journey's own explanation was delivered (sent_at set, a
+            // survivor until PO decision P1), so without this row the sent_at-is-null half of the shared sweep — the
+            // rows a reviewer could still approve and send about a deleted paper — would never be exercised here
+            try (Connection c = connect(); Statement s = c.createStatement()) {
+                s.execute("insert into baymax.outbound_message (family_id, patient_id, document_id, kind, urgency, body, gate_status) "
+                        + "values ('" + ma.familyId() + "', '" + ma.id() + "', '" + documentId + "', 'explanation', 'now', "
+                        + "'a pending explanation of the paper', 'pending')");
+            }
+            assertThat(scalar("select count(*) from baymax.outbound_message where document_id = '" + documentId + "' and sent_at is null"))
+                    .as("the seeded unsent explanation, before the delete").isEqualTo("1");
             assertThat(get(web, session, documentPath + "/delete"))
                     .contains("method=\"post\"").contains("action=\"" + documentPath + "/delete\"");
             assertThat(web.post().uri(documentPath + "/delete").cookie("baymax_session", session).exchange()
@@ -761,30 +763,14 @@ class WebOnlyJourneyAcceptanceTest {
     }
 
     /**
-     * Asks information_schema which baymax tables carry a {@code document_id} column, adds {@code document} itself, and
-     * returns {@code table=count} for every one still holding this document (those in {@link #KEEP_DOCUMENT_ID} aside).
+     * The shared schema-derived sweep ({@link DeletionSweep}): {@code table=count} for every table still holding this
+     * document outside {@link DeletionSweep#SURVIVES}, so this journey and the {@code /app/api} delete tests read one
+     * list of survivors.
      */
     private static List<String> tablesStillHolding(UUID documentId) throws Exception {
-        List<String> tables = column("select table_name from information_schema.columns where table_schema = 'baymax' "
-                + "and column_name = 'document_id' order by table_name");
-        assertThat(tables).as("information_schema returned no document_id columns — the sweep would pass vacuously")
-                .contains("observation", "stored_object");
-        assertThat(KEEP_DOCUMENT_ID.keySet()).as("a kept table that no longer carries document_id").allSatisfy(t -> assertThat(tables).contains(t));
-        List<String> offenders = new ArrayList<>();
-        String left = scalar("select count(*) from baymax.document where id = '" + documentId + "'");
-        if (!"0".equals(left)) {
-            offenders.add("document=" + left);
+        try (Connection c = connect()) {
+            return DeletionSweep.tablesStillHolding(c, documentId);
         }
-        for (String table : tables) {
-            if (KEEP_DOCUMENT_ID.containsKey(table)) {
-                continue;
-            }
-            String n = scalar("select count(*) from baymax." + table + " where document_id = '" + documentId + "'");
-            if (!"0".equals(n)) {
-                offenders.add(table + "=" + n);
-            }
-        }
-        return offenders;
     }
 
     private static String scalar(String query) throws Exception {

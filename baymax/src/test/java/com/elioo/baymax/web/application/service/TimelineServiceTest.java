@@ -13,6 +13,7 @@ import com.elioo.baymax.outbound.domain.StoredUrgency;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
 import com.elioo.baymax.storage.domain.DeletionReport;
+import com.elioo.baymax.storage.domain.StoredObject;
 import com.elioo.baymax.web.application.port.out.AuditPort;
 import com.elioo.baymax.web.application.port.out.TimelineReadPort;
 import com.elioo.baymax.web.domain.AuditEvent;
@@ -38,6 +39,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -89,7 +91,8 @@ class TimelineServiceTest {
         StepVerifier.create(service.deleteDocument(FAMILY_A, DOC_B))
                 .expectErrorMatches(e -> ((BaymaxException) e).status().value() == 404).verify();
         verify(intake, never()).view(any());
-        verify(storage, never()).deleteDocument(any(), any(), any());
+        verify(storage, never()).deleteDocumentObjects(any(), any(), any(), anyLong());
+        verify(documents, never()).deleteDocument(any());
         verify(urgency, never()).currentOrAssess(any());   // a document the family cannot see is never assessed for it
     }
 
@@ -231,7 +234,8 @@ class TimelineServiceTest {
 
         StepVerifier.create(service.deleteDocument(FAMILY_A, DOC_B))
                 .expectErrorMatches(e -> ((BaymaxException) e).status().value() == 403).verify();
-        verify(storage, never()).deleteDocument(any(), any(), any());
+        verify(storage, never()).deleteDocumentObjects(any(), any(), any(), anyLong());
+        verify(documents, never()).deleteDocument(any());
     }
 
     /**
@@ -259,15 +263,50 @@ class TimelineServiceTest {
         verify(records).updateChronicFlags(PATIENT_B, List.of("diabetes", "asthma"));
     }
 
+    /**
+     * Was {@code theOwnerDeletesObjectsThenRows}: its name stated the order that left a paper claiming images already
+     * gone when its rows could not be deleted (plan B4c). Rows first, then the bucket, as deleteFamily does; the ledger
+     * count is read before the rows go, and the report carries every row deleted.
+     */
     @Test
-    void theOwnerDeletesObjectsThenRows() {
+    void theOwnerDeletesRowsThenObjects() {
         when(documents.findVisible(FAMILY_B, DOC_B)).thenReturn(Mono.just(DOCUMENT));
         when(records.visiblePatient(FAMILY_B, PATIENT_B)).thenReturn(Mono.just(new PatientAccess(PATIENT, true)));
-        when(storage.deleteDocument(FAMILY_B, PATIENT_B, DOC_B)).thenReturn(Mono.just(new DeletionReport("p/", 4, 4)));
-        when(documents.deleteDocument(DOC_B)).thenReturn(Mono.just(1L));
+        when(storage.objectsOf(DOC_B)).thenReturn(Flux.just(mock(StoredObject.class), mock(StoredObject.class),
+                mock(StoredObject.class), mock(StoredObject.class)));
+        when(storage.deleteDocumentObjects(FAMILY_B, PATIENT_B, DOC_B, 4L)).thenReturn(Mono.just(new DeletionReport("p/", 4, 4)));
+        when(documents.deleteDocument(DOC_B)).thenReturn(Mono.just(9L));
         StepVerifier.create(service.deleteDocument(FAMILY_B, DOC_B))
-                .assertNext(r -> assertThat(r.objectsDeleted()).isEqualTo(4)).verifyComplete();
-        verify(documents).deleteDocument(DOC_B);
+                .assertNext(r -> {
+                    assertThat(r.objectsDeleted()).isEqualTo(4);
+                    assertThat(r.ledgerRowsDeleted()).as("the ledger rows, counted before they went with the rows").isEqualTo(4);
+                    assertThat(r.rowsDeleted()).isEqualTo(9);
+                }).verifyComplete();
+        // the bucket is told how many ledger rows went with the rows, so its drift check compares like with like
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(documents, storage, audit);
+        order.verify(documents).deleteDocument(DOC_B);
+        order.verify(storage).deleteDocumentObjects(FAMILY_B, PATIENT_B, DOC_B, 4L);
+        order.verify(audit).record(argThat(e -> e.kind() == AuditEvent.Kind.DOCUMENT_DELETE));
+        verify(storage, never()).deleteDocument(any(), any(), any());
+    }
+
+    /**
+     * An audit write that fails after the rows have committed (a transient database error) still fails the request,
+     * but it can no longer skip the bucket: the objects are removed before the audit row is written, so they are never
+     * orphaned without a line.
+     */
+    @Test
+    void anAuditFailureAfterTheRowsHaveGoneStillEmptiesTheBucket() {
+        when(documents.findVisible(FAMILY_B, DOC_B)).thenReturn(Mono.just(DOCUMENT));
+        when(records.visiblePatient(FAMILY_B, PATIENT_B)).thenReturn(Mono.just(new PatientAccess(PATIENT, true)));
+        when(storage.objectsOf(DOC_B)).thenReturn(Flux.just(mock(StoredObject.class)));
+        when(storage.deleteDocumentObjects(FAMILY_B, PATIENT_B, DOC_B, 1L)).thenReturn(Mono.just(new DeletionReport("p/", 1, 1)));
+        when(documents.deleteDocument(DOC_B)).thenReturn(Mono.just(3L));
+        when(audit.record(any())).thenReturn(Mono.error(new IllegalStateException("connection reset")));
+
+        StepVerifier.create(service.deleteDocument(FAMILY_B, DOC_B)).verifyError(IllegalStateException.class);
+
+        verify(storage).deleteDocumentObjects(FAMILY_B, PATIENT_B, DOC_B, 1L);
     }
 
     @Test

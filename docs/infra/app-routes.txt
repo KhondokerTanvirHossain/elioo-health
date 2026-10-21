@@ -3,10 +3,13 @@
 # router of the deployable serves a path under /app or /baymax is asserted by medscribe-ai AppApiDeployableTest.
 # URLs sent over WhatsApp depend on these. A change here needs PO sign-off in the PR.
 * /app/api/**
+DELETE /app/api/documents/{id}
 GET /app
 GET /app/
 GET /app/add
 GET /app/api/documents/{id}
+GET /app/api/documents/{id}/delete-token
+GET /app/api/documents/{id}/status
 GET /app/api/me
 GET /app/api/upload-options
 GET /app/documents/{id}

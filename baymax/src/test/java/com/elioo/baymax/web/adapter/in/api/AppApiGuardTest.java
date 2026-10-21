@@ -32,6 +32,7 @@ import org.springframework.web.reactive.function.server.RouterFunctions;
 import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Mono;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -65,6 +66,7 @@ class AppApiGuardTest {
     private final WebAuthUseCase auth = mock(WebAuthUseCase.class);
     private final TimelineUseCase timeline = mock(TimelineUseCase.class);
     private final AttentionUseCase attention = mock(AttentionUseCase.class);
+    private final ResultUseCase results = mock(ResultUseCase.class);
     /** How many times the probe route's handler ran: the guard must refuse before it, never after. */
     private final AtomicInteger probed = new AtomicInteger();
     private final WebTestClient client;
@@ -100,7 +102,10 @@ class AppApiGuardTest {
         return WebTestClient.bindToRouterFunction(probes.and(new AppApiRouter().mediooAppApiRoutes(
                 new MeApiHandler(timeline, attention, properties), new SignInApiHandler(auth, sessions, properties),
                 new PaperApiHandler(mock(ResultUseCase.class), new UiCopy()),
-                new UploadApiHandler(mock(UploadUseCase.class), properties, new com.elioo.baymax.web.adapter.in.ui.UiCopy()), guard))).build();
+                new UploadApiHandler(mock(UploadUseCase.class), properties, new UiCopy()),
+                new PaperStatusApiHandler(results),
+                new PaperDeleteApiHandler(timeline, new DeleteConfirmation(properties, Clock.systemUTC())),
+                guard))).build();
     }
 
     private WebTestClient.RequestBodySpec mutation(WebTestClient c, String uri) {

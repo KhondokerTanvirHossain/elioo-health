@@ -38,6 +38,8 @@ class AiCallLogPersistenceAdapterTest {
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
 
     private static final Instant T0 = Instant.parse("2026-09-06T10:00:00Z");
+    /** Far outside the export window the first test reads, so the two tests share the container without meeting. */
+    private static final Instant OUTSIDE = T0.minusSeconds(400L * 86400);
 
     private ReactiveWebApplicationContextRunner runner() {
         return new ReactiveWebApplicationContextRunner()
@@ -65,6 +67,9 @@ class AiCallLogPersistenceAdapterTest {
         UUID docB = UUID.randomUUID();
         runner().run(context -> {
             AiCallLogPort port = context.getBean(AiCallLogPort.class);
+            // the papers exist: a call for a paper that no longer exists loses its id (see the test below)
+            papers("+8801700000497", docA, docB);
+            int base = countRows();
 
             AiCallRecord ocr = port.save(new AiCallRecord(null, docA, AiCallPurpose.OCR, "gcp",
                     "vision-document-text-detection", 0, 0, new BigDecimal("0.0015"), 1200L, 0.9, T0)).block();
@@ -81,7 +86,7 @@ class AiCallLogPersistenceAdapterTest {
                     999, 999, new BigDecimal("1"), 1L, null, T0.plusSeconds(30L * 86400))).block();
 
             assertThat(ocr.id()).isNotNull();
-            assertThat(countRows()).isEqualTo(6);
+            assertThat(countRows()).isEqualTo(base + 6);
             assertThat(sqlScalar("select purpose from baymax.ai_call_log where id = '" + ocr.id() + "'")).isEqualTo("ocr");
 
             List<DocumentAiCost> rows = port.perDocument(T0.minusSeconds(1), T0.plusSeconds(3600)).collectList().block();
@@ -113,6 +118,50 @@ class AiCallLogPersistenceAdapterTest {
             // several random UUIDs (documents, and families in the # views block) and one in fifty contains "999"
             assertThat(csv).doesNotContain(",999,");
         });
+    }
+
+    /**
+     * A paper deleted while its call was running (an EXPLAIN takes seconds) must not be named by the call's row after
+     * the delete: the row keeps its numbers, as the delete keeps them for earlier calls, and loses the id. The other
+     * direction: a call for a paper that still exists keeps it.
+     */
+    @Test
+    void aCallForAPaperThatNoLongerExistsKeepsItsNumbersAndLosesTheId() {
+        UUID gone = UUID.randomUUID();
+        UUID there = UUID.randomUUID();
+        runner().run(context -> {
+            AiCallLogPort port = context.getBean(AiCallLogPort.class);
+            papers("+8801700000498", there);
+
+            AiCallRecord late = port.save(new AiCallRecord(null, gone, AiCallPurpose.EXPLAIN, "groq", "openai/gpt-oss-120b",
+                    300, 120, new BigDecimal("0.0002"), 900L, null, OUTSIDE)).block();
+            AiCallRecord kept = port.save(new AiCallRecord(null, there, AiCallPurpose.EXPLAIN, "groq", "openai/gpt-oss-120b",
+                    300, 120, new BigDecimal("0.0002"), 900L, null, OUTSIDE)).block();
+
+            assertThat(sqlScalar("select count(*) from baymax.ai_call_log where document_id = '" + gone + "'"))
+                    .as("rows naming the paper that no longer exists").isEqualTo("0");
+            assertThat(sqlScalar("select input_tokens || '/' || cost_usd from baymax.ai_call_log where id = '" + late.id() + "'"))
+                    .as("the late call's numbers, kept").isEqualTo("300/0.00020000");
+            assertThat(late.documentId()).as("the late call as saved").isNull();
+            assertThat(sqlScalar("select document_id from baymax.ai_call_log where id = '" + kept.id() + "'"))
+                    .as("a call for a paper that still exists keeps its id").isEqualTo(there.toString());
+        });
+    }
+
+    /** One family and patient owning these papers (fictional number), so a call's document_id names a real row. */
+    private static void papers(String number, UUID... documents) throws Exception {
+        UUID family = UUID.randomUUID();
+        UUID patient = UUID.randomUUID();
+        try (Connection c = DriverManager.getConnection(jdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement s = c.createStatement()) {
+            s.execute("insert into baymax.family_account (id, whatsapp_number, owner_name, terms_accepted_at) values ('"
+                    + family + "', '" + number + "', 'Rahim', now())");
+            s.execute("insert into baymax.patient_profile (id, family_id, name, age, sex, proxy_consent_at) values ('"
+                    + patient + "', '" + family + "', 'Ma', 64, 'female', now())");
+            for (UUID d : documents) {
+                s.execute("insert into baymax.document (id, patient_id, family_id) values ('" + d + "', '" + patient + "', '" + family + "')");
+            }
+        }
     }
 
     private static int countRows() throws Exception {

@@ -5,6 +5,7 @@ import com.elioo.baymax.config.BaymaxAutoConfiguration;
 import com.elioo.baymax.extraction.application.port.out.DocumentRecordPort;
 import com.elioo.baymax.extraction.application.service.DocumentExtractionService;
 import com.elioo.baymax.extraction.domain.Document;
+import com.elioo.baymax.testsupport.PaintedPaper;
 import com.elioo.baymax.storage.application.port.out.StoragePort;
 import com.elioo.healthcare.gcp.vision.model.TextBlock;
 import com.elioo.healthcare.gcp.vision.model.TextGeometry;
@@ -48,6 +49,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -157,7 +159,7 @@ public class ExtractionPipelineAcceptanceTest {
 
         @Bean
         @Primary
-        LlmClient stubModel(ObjectProvider<StubReply> stub) {
+        LlmClient stubModel(ObjectProvider<StubReply> stub, ObjectProvider<PaintedPaper.Hold> holds) {
             StubReply given = stub.getIfAvailable();
             LlmClient client = mock(LlmClient.class);
             when(client.providerName()).thenReturn("groq");
@@ -166,12 +168,35 @@ public class ExtractionPipelineAcceptanceTest {
                 when(client.invoke(any())).thenReturn(Mono.just(answer(REPLY)));
             } else {
                 java.util.concurrent.atomic.AtomicInteger nonExplainCalls = new java.util.concurrent.atomic.AtomicInteger();
+                PaintedPaper.Hold hold = holds.getIfAvailable();
                 when(client.invoke(any())).thenAnswer(i -> {
                     String prompt = ((com.elioo.healthcare.llm.model.LlmRequest) i.getArgument(0)).userPrompt();
                     if (prompt != null && prompt.startsWith("SKELETON:\n") && prompt.contains("\n\nURGENCY LINE:")) {
-                        return Mono.just(answer(prompt.substring("SKELETON:\n".length(), prompt.indexOf("\n\nURGENCY LINE:"))));
+                        String phrased = prompt.substring("SKELETON:\n".length(), prompt.indexOf("\n\nURGENCY LINE:"));
+                        if (hold != null && hold.holdsTheExplanation) {
+                            // the EXPLAIN reply waits for the test (a paper DONE, its explanation still being written)
+                            hold.asked.countDown();
+                            return hold.modelReleased.asMono().timeout(Duration.ofSeconds(60), Mono.empty())
+                                    .then(Mono.fromSupplier(() -> answer(phrased)))
+                                    .doOnSuccess(r -> hold.replied.countDown());
+                        }
+                        return Mono.just(answer(phrased));
                     }
-                    return Mono.just(answer(given.replyTo(nonExplainCalls.getAndIncrement())));
+                    if (prompt != null && prompt.startsWith("SKELETON:\n")) {
+                        // a nudge (NudgeComposer): its skeleton is already correct, so the model changes nothing either
+                        String skeleton = prompt.substring("SKELETON:\n".length());
+                        int retry = skeleton.indexOf("\n\nYour previous attempt");
+                        return Mono.just(answer(retry < 0 ? skeleton : skeleton.substring(0, retry)));
+                    }
+                    String reply = given.replyTo(nonExplainCalls.getAndIncrement());
+                    if (hold != null && hold.holdsTheModel) {
+                        // the extraction reply waits for the test (a paper caught PROCESSING); then the latch says it went
+                        hold.asked.countDown();
+                        return hold.modelReleased.asMono().timeout(Duration.ofSeconds(60), Mono.empty())
+                                .then(Mono.fromSupplier(() -> answer(reply)))
+                                .doOnSuccess(r -> hold.replied.countDown());
+                    }
+                    return Mono.just(answer(reply));
                 });
             }
             return client;

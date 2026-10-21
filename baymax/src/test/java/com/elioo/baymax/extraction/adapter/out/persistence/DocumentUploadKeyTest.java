@@ -232,7 +232,7 @@ class DocumentUploadKeyTest {
         when(urgency.assessAndStore(any())).thenReturn(Mono.empty());
         Clock clock = Clock.fixed(T, ZoneOffset.UTC);
         return new DocumentIntakeService(context.getBean(HealthRecordPort.class), documents, freeTier, storage, new PageRenderer(),
-                new BaymaxProperties(), clock, new DocumentProcessingChain(extraction, explainer, nudges, documents, clock, urgency));
+                new BaymaxProperties(), clock, new DocumentProcessingChain(extraction, explainer, nudges, documents, clock, urgency, storage));
     }
 
     /** A photo of a page painted one colour: another colour is another paper. */

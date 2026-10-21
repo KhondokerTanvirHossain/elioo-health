@@ -16,9 +16,9 @@ import java.util.Optional;
 /**
  * Why an {@code /app/api} request was refused. A refusal with a name has the body {@code {"reason":"<NAME>"}} and nothing
  * else: no developer message (it can carry a filename or a medicine), no status echo. React maps the name to copy; Java
- * never sends prose. A status with no name yet (a 403 owner-only, the patients free tier, any 5xx) is answered bodiless,
- * with the bare status; the PR that first raises one on this namespace adds its name here. Additive only (rebuild plan
- * A2): a name, once shipped, keeps its meaning and its status.
+ * never sends prose. A status with no name yet (a 403 without a {@link #BY_REASON} entry, the patients free tier, any
+ * 5xx) is answered bodiless, with the bare status; the PR that first raises one on this namespace adds its name here.
+ * Additive only (rebuild plan A2): a name, once shipped, keeps its meaning and its status.
  *
  * <p>A refusal the application throws by its own reason ({@link BaymaxException#reason()}) is named by that reason first
  * ({@link #BY_REASON}): each of the upload path's refusals has its own name, where the status alone would call most of
@@ -69,12 +69,14 @@ public enum ApiReason {
      * the reader's memory limit.
      */
     TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE),
-    /** A patient this viewer may see but not change (a share member, D30): upload, and later delete. */
+    /** A patient this viewer may see but not change (a share member, D30): upload and delete ({@code shared_patient_read_only}). */
     VIEW_ONLY(HttpStatus.FORBIDDEN),
     /** Upload: the press's key already made another patient's paper (D3); the client draws a new key. */
     UPLOAD_KEY_REUSED(HttpStatus.CONFLICT),
     /** Upload: this month's free papers are used up ({@code allowance} of the upload options says until when). */
-    FREE_TIER_DOCUMENTS(HttpStatus.PAYMENT_REQUIRED);
+    FREE_TIER_DOCUMENTS(HttpStatus.PAYMENT_REQUIRED),
+    /** A paper delete without a valid confirm token: missing, another paper's, another session's, tampered or expired. */
+    CONFIRM_REQUIRED(HttpStatus.BAD_REQUEST);
 
     /**
      * The application's own reasons ({@link BaymaxException#reason()}) that have a name. Each maps to a name whose status
@@ -94,7 +96,8 @@ public enum ApiReason {
             Map.entry("request_too_large", TOO_LARGE),
             Map.entry("shared_patient_read_only", VIEW_ONLY),
             Map.entry("upload_key_reused", UPLOAD_KEY_REUSED),
-            Map.entry(FreeTierExceededException.DOCUMENTS, FREE_TIER_DOCUMENTS));
+            Map.entry(FreeTierExceededException.DOCUMENTS, FREE_TIER_DOCUMENTS),
+            Map.entry("confirm_required", CONFIRM_REQUIRED));
 
     private final HttpStatus status;
 
@@ -114,7 +117,8 @@ public enum ApiReason {
      * The reason for an error a handler raised: a {@link BaymaxException}'s own reason when it has a name
      * ({@link #BY_REASON}), else by its status, a 401 / 404 / 400 / 415; or
      * input the request itself got wrong (a body the decoder could not read, a binding failure). Empty for anything
-     * else (a 403 or a 402 whose reason has no name yet), which the guard answers with the bare status and no body.
+     * else (a 403 or a 402 without a {@link #BY_REASON} entry, a 5xx), which the guard answers with the bare status
+     * and no body.
      *
      * <p>A bare {@link IllegalArgumentException} is deliberately NOT {@code INVALID}: thrown from deep in a service (an
      * unknown stored enum value, a precondition, {@code UUID.fromString} on stored data) it is a server fault, and
@@ -123,6 +127,7 @@ public enum ApiReason {
      */
     static Optional<ApiReason> of(Throwable e) {
         if (e instanceof BaymaxException be) {
+            // Map.of(...).get(null) throws: a BaymaxException without a reason is looked up by its status alone
             ApiReason named = be.reason() == null ? null : BY_REASON.get(be.reason());
             return named != null ? Optional.of(named) : byStatus(be.status().value());
         }

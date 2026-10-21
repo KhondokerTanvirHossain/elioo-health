@@ -92,8 +92,17 @@ public interface DocumentRecordPort {
     Mono<int[]> sectionCounts(UUID documentId);
 
     /**
-     * Hard-deletes one document's rows: items, then the document. ai_call_log rows keep their numbers and
-     * lose the document_id, as for family deletion (BMX-4). Objects are the storage module's job.
+     * Hard-deletes one document's rows, in ONE transaction, the document last. With it go its items (observations,
+     * medicines, follow-ups), its {@code stored_object} ledger rows (the bucket objects stay, for the storage module to
+     * remove once this has committed), and everything about it that has not reached the family: every unsent
+     * {@code outbound_message} naming it, every nudge that quotes it and was not delivered — by trigger key, and the
+     * cross-paper trend and medicine_changed nudges that quote its readings or medicines — and the unsent message of a
+     * gated one. Kept, pending PO decision P1: delivered history (a message with {@code sent_at}, a {@code sent} nudge,
+     * a gated nudge whose message was accepted) and the audit. ai_call_log rows keep their numbers and lose the
+     * document_id, as for family deletion (BMX-4); the WhatsApp message it arrived in loses its media id (V22). After
+     * this, a message naming the document can no longer be stored ({@code OutboundMessagePort.save}).
+     *
+     * @return every row deleted, across all tables (not 0 or 1)
      */
     Mono<Long> deleteDocument(UUID documentId);
 

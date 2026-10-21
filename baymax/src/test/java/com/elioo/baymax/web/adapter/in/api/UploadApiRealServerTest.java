@@ -100,7 +100,10 @@ class UploadApiRealServerTest {
                 new MeApiHandler(mock(TimelineUseCase.class), mock(AttentionUseCase.class), properties),
                 new SignInApiHandler(auth, new SessionAuthFilter(auth, properties), properties),
                 new PaperApiHandler(mock(ResultUseCase.class), new UiCopy()),
-                new UploadApiHandler(new RecordingUploads(), properties, new com.elioo.baymax.web.adapter.in.ui.UiCopy()), guard);
+                new UploadApiHandler(new RecordingUploads(), properties, new com.elioo.baymax.web.adapter.in.ui.UiCopy()),
+                new PaperStatusApiHandler(mock(ResultUseCase.class)),
+                new PaperDeleteApiHandler(mock(TimelineUseCase.class), new DeleteConfirmation(properties, java.time.Clock.systemUTC())),
+                guard);
         HttpHandler app = RouterFunctions.toHttpHandler(router);
         // what the application pulled off the socket, counted below the exchange: the server's own side of the cap
         HttpHandler counted = (request, response) -> app.handle(new ServerHttpRequestDecorator(request) {

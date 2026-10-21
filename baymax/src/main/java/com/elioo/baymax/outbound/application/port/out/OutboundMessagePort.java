@@ -10,6 +10,11 @@ import java.util.UUID;
 
 public interface OutboundMessagePort {
 
+    /**
+     * Stores the message and emits it — or, for a message naming a document that no longer exists (the family deleted
+     * the paper while the message was being composed), stores nothing and completes empty. Every writer of a paper's
+     * message meets this, so none can deliver, or park for the reviewer, a message about a deleted paper.
+     */
     Mono<OutboundMessage> save(OutboundMessage message);
 
     Mono<OutboundMessage> find(UUID messageId);

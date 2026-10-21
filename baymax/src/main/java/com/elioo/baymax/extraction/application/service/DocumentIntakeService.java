@@ -154,9 +154,11 @@ public class DocumentIntakeService implements DocumentIntakeUseCase {
     private static final int DIGEST_HEX = 10;
 
     /**
-     * Objects first, then the row (TimelineService.deleteDocument's order). The row goes even when removing the objects
-     * fails: an orphan object is harmless, a pageless row is not. Never fails itself, so the store's own error is the
-     * one the caller sees.
+     * Objects first, then the row — deliberately the reverse of {@code TimelineService.deleteDocument} (rows first, then
+     * objects). That order protects a paper whose rows cannot be deleted from losing its images; here there is no such
+     * paper: the row is deleted even when removing the objects fails, so no row is ever left pointing at nothing, and an
+     * object left behind is an orphan nobody can see. Never fails itself, so the store's own error is the one the caller
+     * sees.
      */
     private Mono<Void> forget(Document d) {
         return storage.deleteDocument(d.familyId(), d.patientId(), d.id())
