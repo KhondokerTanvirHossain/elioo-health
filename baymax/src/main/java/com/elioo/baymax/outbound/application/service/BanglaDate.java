@@ -2,6 +2,7 @@ package com.elioo.baymax.outbound.application.service;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.List;
 
 /**
  * Dates a family reads (PO ruling 2026-09-19, standing for every outbound message): "১ জুন", never 2026-06-01.
@@ -15,7 +16,14 @@ public final class BanglaDate {
             "জানুয়ারি", "ফেব্রুয়ারি", "মার্চ", "এপ্রিল", "মে", "জুন",
             "জুলাই", "আগস্ট", "সেপ্টেম্বর", "অক্টোবর", "নভেম্বর", "ডিসেম্বর"};
 
+    private static final List<String> MONTH_LIST = List.of(MONTHS);
+
     private BanglaDate() {
+    }
+
+    /** The twelve month names, January first, as every Bangla date writes them; unmodifiable (medioo-web's calendar). */
+    public static List<String> months() {
+        return MONTH_LIST;
     }
 
     /** ISO text to Bangla day-and-month; unparseable text unchanged. */
