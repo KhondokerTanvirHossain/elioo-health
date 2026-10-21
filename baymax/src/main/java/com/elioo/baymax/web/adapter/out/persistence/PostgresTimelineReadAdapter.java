@@ -37,7 +37,7 @@ public class PostgresTimelineReadAdapter implements TimelineReadPort {
             SELECT d.id, d.family_id, d.patient_id, d.document_type, d.facility, d.status, d.status_reason_code,
                    d.timeline_date, d.created_at, d.urgency,
                    d.unverified_values + d.unverified_medicines + d.unverified_follow_up + d.unverified_clinical_context AS unverified,
-                   d.timeline_date_is_upload_day AS date_is_fallback, d.doc_date_uncertain,
+                   d.timeline_date_is_upload_day AS date_is_fallback, d.timeline_date_uncertain AS date_uncertain,
                    (SELECT count(*) FROM %1$s.observation o WHERE o.document_id = d.id) AS values_n,
                    (SELECT count(*) FROM %1$s.observation o WHERE o.document_id = d.id AND o.verdict IN ('outside', 'critical')) AS outside_n,
                    (SELECT count(*) FROM %1$s.medication_event m WHERE m.document_id = d.id) AS medicines_n,
@@ -111,7 +111,7 @@ public class PostgresTimelineReadAdapter implements TimelineReadPort {
                 urgency == null ? null : Urgency.fromDbValue(urgency), count(row, "outside_n"),
                 row.get("review_state", String.class),
                 "NEEDS_RETAKE".equals(status) ? row.get("status_reason_code", String.class) : null,
-                Boolean.TRUE.equals(row.get("doc_date_uncertain", Boolean.class)));
+                Boolean.TRUE.equals(row.get("date_uncertain", Boolean.class)));
     }
 
     private static int count(Readable row, String column) {

@@ -12,6 +12,7 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -65,10 +66,34 @@ class FiledDayMigrationTest {
         // 18:30 UTC on 31 October is 00:30 on 1 November in Dhaka
         ROWS.put("retake", insert("NEEDS_RETAKE", "{\"document_date\":\"2021-03-04\"}", "2021-03-04", "2026-10-31T18:30:00Z"));
         ROWS.put("done-across-midnight", done("{\"document_date\":\"2026-09-30\"}", "2026-09-30", "2026-10-31T18:30:00Z"));
+        // a retake whose page the model marked uncertain: the flag is backfilled, but its upload day is never marked
+        ROWS.put("uncertain-retake", insert("NEEDS_RETAKE", "{\"document_date\":\"2021-03-04\",\"document_date_uncertain\":true}",
+                "2021-03-04", "2026-10-20T04:00:00Z"));
         assertThat(scalar("SELECT timeline_date FROM baymax.document WHERE id = '" + ROWS.get("retake") + "'"))
                 .as("before D2 the retake sits under the date misread off it (V20)").isEqualTo("2021-03-04");
 
+        OBJECTS_BEFORE.addAll(objectsOnDocument());
         flyway(null).migrate();
+    }
+
+    /** Every index, constraint, extended statistic and user trigger on baymax.document just before D2's migration. */
+    private static final java.util.Set<String> OBJECTS_BEFORE = new java.util.TreeSet<>();
+
+    /**
+     * The objects on document, each with its definition, from the catalogue itself, never a list of names: an
+     * {@code ALTER TABLE … DROP COLUMN} silently drops every index, constraint and statistic that names the column, and
+     * a migration merged later with a lower number could have added one on timeline_date.
+     */
+    private static java.util.Set<String> objectsOnDocument() throws Exception {
+        java.util.Set<String> out = new java.util.TreeSet<>();
+        for (String q : List.of(
+                "SELECT 'index ' || indexname || ': ' || indexdef FROM pg_indexes WHERE schemaname = 'baymax' AND tablename = 'document'",
+                "SELECT 'constraint ' || conname || ': ' || pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid = 'baymax.document'::regclass",
+                "SELECT 'statistics ' || stxname || ': ' || pg_get_statisticsobjdef(oid) FROM pg_statistic_ext WHERE stxrelid = 'baymax.document'::regclass",
+                "SELECT 'trigger ' || tgname || ': ' || pg_get_triggerdef(oid) FROM pg_trigger WHERE tgrelid = 'baymax.document'::regclass AND NOT tgisinternal")) {
+            out.addAll(rows(q));
+        }
+        return out;
     }
 
     /** The version of the migration just before the one described {@code description}, from Flyway's own list. */
@@ -115,6 +140,30 @@ class FiledDayMigrationTest {
         assertThat(column("timeline_date_is_upload_day", "done-across-midnight")).isEqualTo("f");
     }
 
+    /** Q6 on rows written before D2: the backfilled flag marks a printed date, never a retake's upload day. */
+    @Test
+    void theBackfilledMarkNeverLandsOnAnUploadDay() throws Exception {
+        assertThat(column("timeline_date_uncertain", "true")).as("a DONE paper's printed date the model marked").isEqualTo("t");
+        assertThat(column("timeline_date_uncertain", "false")).isEqualTo("f");
+        assertThat(column("doc_date_uncertain", "uncertain-retake")).as("the model's flag, backfilled on the retake").isEqualTo("t");
+        assertThat(column("timeline_date_uncertain", "uncertain-retake")).as("but its upload day is not marked").isEqualTo("f");
+        assertThat(column("timeline_date_is_upload_day", "uncertain-retake")).isEqualTo("t");
+    }
+
+    /**
+     * Nothing on document is lost to the drop and re-add of timeline_date, read from the catalogue before and after
+     * (indexes, constraints, extended statistics, triggers, each with its definition). "Still there" rather than
+     * "identical": a later migration may add objects; none may have been dropped or changed. Guarded against a vacuous
+     * pass: the snapshot holds V20's timeline index and at least one constraint.
+     */
+    @Test
+    void everyObjectOnDocumentSurvivesTheRebuild() throws Exception {
+        assertThat(OBJECTS_BEFORE).as("the snapshot before D2 is not empty")
+                .anyMatch(o -> o.startsWith("index document_patient_timeline_idx:"))
+                .anyMatch(o -> o.startsWith("constraint "));
+        assertThat(objectsOnDocument()).as("objects on baymax.document after D2").containsAll(OBJECTS_BEFORE);
+    }
+
     /** V20's index, exactly: the timeline's order and cursor read it. */
     @Test
     void theTimelineIndexIsBack() throws Exception {
@@ -142,6 +191,16 @@ class FiledDayMigrationTest {
             assertThat(rs.next()).as("a row for " + query).isTrue();
             return rs.getString(1);
         }
+    }
+
+    private static List<String> rows(String query) throws Exception {
+        List<String> out = new java.util.ArrayList<>();
+        try (Connection c = connect(); Statement s = c.createStatement(); ResultSet rs = s.executeQuery(query)) {
+            while (rs.next()) {
+                out.add(rs.getString(1));
+            }
+        }
+        return out;
     }
 
     private static Connection connect() throws Exception {

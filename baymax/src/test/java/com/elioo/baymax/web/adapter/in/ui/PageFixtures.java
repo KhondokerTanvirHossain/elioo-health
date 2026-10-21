@@ -276,10 +276,10 @@ final class PageFixtures {
                             // C2: a stored NOW, one value outside and a pending review, so every derived page check
                             // (touch targets, contrast, inline code, Bangla digits) sees the chip and the review chip
                             14, 2, 1, 3, "f/p/" + DONE_DOC + "/page-1.jpg", WebUiTestKit.NOW,
-                            com.elioo.baymax.outbound.domain.Urgency.NOW, 1, "pending", null),
+                            com.elioo.baymax.outbound.domain.Urgency.NOW, 1, "pending", null, false),
                     new TimelineEntry(PROCESSING_DOC, LocalDate.parse("2026-10-18"), true, null, null, "PROCESSING",
                             // still being read: not assessed, nothing counted, no review yet, no retake code
-                            0, 0, 0, 0, "f/p/" + PROCESSING_DOC + "/page-1.jpg", WebUiTestKit.NOW, null, 0, null, null)), null)));
+                            0, 0, 0, 0, "f/p/" + PROCESSING_DOC + "/page-1.jpg", WebUiTestKit.NOW, null, 0, null, null, false)), null)));
         }
 
         /** C4: one card of each kind on Ma's চ্যাট stack, in the service's order (the follow-up carries its crop), and its urgent two for the strip. */
@@ -326,7 +326,7 @@ final class PageFixtures {
                 UUID id = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a41001%02d".formatted(i));
                 entries.add(new TimelineEntry(id, LocalDate.parse("2026-10-18").minusDays(4L * i), false, lab ? "lab_report" : "prescription",
                         lab ? "Shapla Diagnostics" : null, "DONE", lab ? 14 : 0, lab ? 0 : 3, 1, 0, "f/p/" + id + "/page-1.jpg",
-                        WebUiTestKit.NOW, level, lab ? 2 : 0, "released", null));
+                        WebUiTestKit.NOW, level, lab ? 2 : 0, "released", null, false));
             }
             when(k.timeline.timeline(eq(WebUiTestKit.FAMILY), eq(WebUiTestKit.MA_ID), any(), any()))
                     .thenReturn(Mono.just(new TimelinePage(List.copyOf(entries), "v1.next-page")));
@@ -468,15 +468,15 @@ final class PageFixtures {
             java.time.Instant sent = WebUiTestKit.NOW;
             when(k.timeline.timeline(eq(WebUiTestKit.FAMILY), eq(WebUiTestKit.MA_ID), any(), any())).thenReturn(Mono.just(new TimelinePage(List.of(
                     new TimelineEntry(UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100031"), LocalDate.parse("2026-10-15"), false, "lab_report",
-                            "Shapla Diagnostics", "DONE", 9, 0, 0, 0, "k", sent, com.elioo.baymax.outbound.domain.Urgency.THIS_WEEK, 2, "released", null),
+                            "Shapla Diagnostics", "DONE", 9, 0, 0, 0, "k", sent, com.elioo.baymax.outbound.domain.Urgency.THIS_WEEK, 2, "released", null, false),
                     new TimelineEntry(UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100032"), LocalDate.parse("2026-10-10"), true, null,
-                            null, "NEEDS_RETAKE", 0, 0, 0, 0, "k", sent, null, 0, null, "expected_section_empty:values"),
+                            null, "NEEDS_RETAKE", 0, 0, 0, 0, "k", sent, null, 0, null, "expected_section_empty:values", false),
                     new TimelineEntry(UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100033"), LocalDate.parse("2026-10-09"), true, null,
-                            null, "FAILED", 0, 0, 0, 0, "k", sent, null, 0, null, null),
+                            null, "FAILED", 0, 0, 0, 0, "k", sent, null, 0, null, null, false),
                     new TimelineEntry(UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100034"), LocalDate.parse("2026-10-08"), true, null,
-                            null, "RECEIVED", 0, 0, 0, 0, "k", sent, null, 0, null, null),
+                            null, "RECEIVED", 0, 0, 0, 0, "k", sent, null, 0, null, null, false),
                     new TimelineEntry(UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100035"), LocalDate.parse("2026-09-21"), true, "prescription",
-                            null, "DONE", 0, 2, 0, 0, "k", sent, com.elioo.baymax.outbound.domain.Urgency.ROUTINE, 0, "released", null)),
+                            null, "DONE", 0, 2, 0, 0, "k", sent, com.elioo.baymax.outbound.domain.Urgency.ROUTINE, 0, "released", null, false)),
                     "v1.next-page")));
         }
 

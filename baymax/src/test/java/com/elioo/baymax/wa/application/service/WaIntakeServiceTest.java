@@ -1116,7 +1116,8 @@ class WaIntakeServiceTest {
     private Document doneDocument(PatientProfile p, LocalDate docDate, Instant uploadedAt) {
         return new Document(UUID.randomUUID(), p.id(), FAMILY, "lab_report", docDate, "Shapla Diagnostics", "{}", 0.93,
                 Document.Status.DONE, null, "anthropic/claude-sonnet-5", null, 1, uploadedAt, uploadedAt,
-                com.elioo.baymax.extraction.domain.VerifiedItems.Unverified.none(), null, null, false, docDate, false);
+                com.elioo.baymax.extraction.domain.VerifiedItems.Unverified.none(), null, null, false,
+                new com.elioo.baymax.extraction.domain.FiledDay(docDate, false, false));
     }
 
     /** A paper uploaded on the morning of its own date. */
@@ -1139,14 +1140,14 @@ class WaIntakeServiceTest {
                 new com.elioo.baymax.outbound.domain.StoredUrgency(d.id(), level, List.of(), d.createdAt())));
         if (level.isAtLeast(Urgency.THIS_WEEK)) {
             java.util.List<AttentionItem.Urgent> rows = urgentRows.computeIfAbsent(d.patientId(), k -> new java.util.ArrayList<>());
-            rows.add(new AttentionItem.Urgent(d.id(), level, d.documentType(), d.timelineDate(), d.timelineDateIsUploadDay(), d.createdAt()));
+            rows.add(new AttentionItem.Urgent(d.id(), level, d.documentType(), d.filed().date(), d.filed().uploadDay(), d.createdAt()));
             rows.sort(AttentionItem.ORDER);
             when(attention.urgent(FAMILY, d.patientId())).thenReturn(Mono.just(List.copyOf(rows)));
         }
     }
 
     private Map<String, String> paper(Document d) {
-        return paper(d, d.timelineDate());
+        return paper(d, d.filed().date());
     }
 
     /** The paper's name for the family, dated {@code date}. */
@@ -1157,7 +1158,7 @@ class WaIntakeServiceTest {
 
     /** Nothing stands: the opener, the intro and the latest paper with its link. No "মনে করিয়ে দিই", no urgency line. */
     private String greetingNaming(Document d) {
-        return greetingNaming(d, d.timelineDate());
+        return greetingNaming(d, d.filed().date());
     }
 
     private String greetingNaming(Document d, LocalDate date) {
@@ -1180,22 +1181,25 @@ class WaIntakeServiceTest {
     }
 
     /**
-     * D2: a paper is named by the day it is filed under, as Postgres generated it (document.timeline_date), never by a
-     * date read off the page. A retake read back from its row carries its Dhaka upload day there; the misread printed
-     * date stays in doc_date and must never reach the family. Asserted on the whole message the paper's name is built
-     * into, against the one built from each date, not on a substring.
+     * D2, defensive only, not a guard over a live defect. Production never hands the greeting a retake:
+     * {@code latestDoneDocument} is {@code DocumentRepository.latestDone}, {@code ... AND status = 'DONE' ...}, and
+     * {@code FilingDayOnPostgresTest.theLatestDonePaperIsNeverARetake} holds that on real Postgres. For a DONE paper the
+     * filed day equals the old {@code coalesce(docDate, upload day)}, so switching {@code paperOf} to the filed day
+     * changed no message production could send. This pins {@code paperOf} to the row's filed day in case that query
+     * ever widens: a record whose printed date was misread is named by the day it is filed under, never by that date.
      */
     @Test
-    void aRetakeIsNeverDescribedByItsMisreadDate() {
+    void ifTheLatestReadEverReturnedARetakeItWouldBeNamedByItsFiledDay() {
         PatientProfile ma = patient("মা");
         familyWith(ma);
         Instant uploaded = Instant.parse("2026-10-20T04:00:00Z");
         LocalDate misread = LocalDate.parse("2021-03-04");
         LocalDate uploadDay = LocalDate.parse("2026-10-20");
-        // as the row reads back: the printed date kept, the filing day the upload day, and the fallback flag set
+        // as the row would read back: the printed date kept, the filed day the upload day, and marked so
         Document retake = new Document(UUID.randomUUID(), ma.id(), FAMILY, "lab_report", misread, null, "{}", 0.4,
                 Document.Status.NEEDS_RETAKE, "developer prose", "anthropic/claude-sonnet-5", null, 1, uploaded, uploaded,
-                com.elioo.baymax.extraction.domain.VerifiedItems.Unverified.none(), null, "low_overall", false, uploadDay, true);
+                com.elioo.baymax.extraction.domain.VerifiedItems.Unverified.none(), null, "low_overall", false,
+                new com.elioo.baymax.extraction.domain.FiledDay(uploadDay, true, false));
         latestIs(retake);
 
         service.onText(FROM, "Hi").block();
@@ -1203,6 +1207,35 @@ class WaIntakeServiceTest {
         assertThat(sentBodies()).as("the paper is named by the day it was uploaded")
                 .containsExactly(greetingNaming(retake, uploadDay))
                 .doesNotContain(greetingNaming(retake, misread));
+    }
+
+    /**
+     * D2 (review): a record whose filed day was never read back ({@code filed()} null: written in Java, or a mapping that
+     * lost the generated columns) is never named. Naming it "today", unmarked, is the invented date D2 removes. The
+     * greeting fails over to the plain hello its read-failure path already sends, which names no paper and no date.
+     * Both ways a paper reaches the greeting: as the latest DONE paper, and as the newest paper's own standing level
+     * (the Urgent card built in {@code standing}, whose upload-day mark came from the same unread record).
+     */
+    @org.junit.jupiter.params.ParameterizedTest(name = "standing {0}")
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"none", "this_week"})
+    void aPaperWhoseFiledDayWasNeverReadIsNeverNamed(String standing) {
+        PatientProfile ma = patient("মা");
+        familyWith(ma);
+        Instant uploaded = TODAY.atTime(8, 0).toInstant(java.time.ZoneOffset.UTC);
+        Document unread = new Document(UUID.randomUUID(), ma.id(), FAMILY, "lab_report", LocalDate.parse("2026-10-12"), null, "{}",
+                0.93, Document.Status.DONE, null, "anthropic/claude-sonnet-5", null, 1, uploaded, uploaded,
+                com.elioo.baymax.extraction.domain.VerifiedItems.Unverified.none(), null, null, false);
+        assertThat(unread.filed()).as("the record carries no filed day").isNull();
+        latestIs(unread);
+        if (!"none".equals(standing)) {
+            when(urgency.currentOrAssess(unread.id())).thenReturn(Mono.just(
+                    new com.elioo.baymax.outbound.domain.StoredUrgency(unread.id(), Urgency.THIS_WEEK, List.of(), uploaded)));
+        }
+
+        service.onText(FROM, "Hi").block();
+
+        assertThat(sentBodies()).as("no paper named, no date invented")
+                .containsExactly(String.join("\n", bn("wa.greeting.hello"), bn("wa.greeting.intro")) + "\n" + bn("safety.red_flag_line"));
     }
 
     /**

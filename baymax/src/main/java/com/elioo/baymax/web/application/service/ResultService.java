@@ -5,6 +5,7 @@ import com.elioo.baymax.extraction.application.port.in.DocumentIntakeUseCase;
 import com.elioo.baymax.extraction.application.port.out.DocumentReadPort;
 import com.elioo.baymax.extraction.application.port.out.DocumentRecordPort;
 import com.elioo.baymax.extraction.domain.Document;
+import com.elioo.baymax.extraction.domain.FiledDay;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.outbound.application.port.in.DocumentUrgencyUseCase;
@@ -18,7 +19,6 @@ import com.elioo.baymax.web.domain.AuditEvent;
 import com.elioo.baymax.web.domain.EarlierReading;
 import com.elioo.baymax.web.domain.GateState;
 import com.elioo.baymax.web.domain.ReadingView;
-import com.elioo.baymax.web.domain.PaperDate;
 import com.elioo.baymax.web.domain.ResultView;
 import com.elioo.baymax.web.domain.ViewerLocale;
 import lombok.RequiredArgsConstructor;
@@ -81,12 +81,22 @@ public class ResultService implements ResultUseCase {
                         records.visiblePatient(familyId, d.patientId())
                                 .switchIfEmpty(Mono.error(BaymaxException.notFound("patient_not_found", "no patient with id " + d.patientId()))),
                         viewer(familyId),
-                        intake.view(documentId),
+                        intake.read(documentId),
                         gate(d), retakeOrdinal(d))
-                .map(t -> new ResultView(t.getT3(), t.getT1().patient(), t.getT1().owner(), t.getT2(),
+                // D2: the filed day comes from the row the view was built from, never from the earlier visibility read:
+                // a paper that finished in between would otherwise be dated as it stood before it was read
+                .map(t -> new ResultView(t.getT3().view(), t.getT1().patient(), t.getT1().owner(), t.getT2(),
                         level.map(StoredUrgency::level).orElse(null), level.map(StoredUrgency::reasons).orElse(List.of()),
                         t.getT4().state(), t.getT4().wording(), t.getT5(), properties.getOutbound().getReviewTypicalHours(),
-                        d.createdAt(), clock.instant(), PaperDate.of(d)))));
+                        d.createdAt(), clock.instant(), filedDayOf(t.getT3().document())))));
+    }
+
+    /** The row's generated filed day; a row read back always has one, so its absence is a mapping defect, said loudly. */
+    private static FiledDay filedDayOf(Document read) {
+        if (read.filed() == null) {
+            throw new IllegalStateException("D2: document " + read.id() + " was read without its filed day (timeline_date)");
+        }
+        return read.filed();
     }
 
     /** How many earlier readings the value sheet lists (s13 draws two; ten is a page, not a trend). */

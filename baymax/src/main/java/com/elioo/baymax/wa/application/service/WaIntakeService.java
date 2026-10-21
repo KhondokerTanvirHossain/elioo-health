@@ -5,6 +5,7 @@ import com.elioo.baymax.common.error.FreeTierExceededException;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.extraction.application.port.in.DocumentIntakeUseCase;
 import com.elioo.baymax.extraction.domain.Document;
+import com.elioo.baymax.extraction.domain.FiledDay;
 import com.elioo.baymax.extraction.domain.Upload;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
@@ -425,10 +426,6 @@ public class WaIntakeService {
     private static final Duration STANDING = Duration.ofDays(30);
     private static final ZoneId DHAKA = ZoneId.of("Asia/Dhaka");
 
-    /** A paper as the family is told of it: its id (for the link), its type and its date. */
-    private record Paper(UUID id, String documentType, LocalDate date) {
-    }
-
     /** The paper a greeting or a thanks names, and the level standing on it: NOW or THIS_WEEK, or null when none. */
     private record Latest(Paper paper, Urgency standing) {
     }
@@ -448,7 +445,8 @@ public class WaIntakeService {
         Instant cutoff = clock.instant().minus(STANDING);
         return documents.latestDoneDocument(family.id())
                 .flatMap(newest -> standing(family, newest, cutoff)
-                        .defaultIfEmpty(new Latest(paperOf(newest), null)));
+                        // lazily: the paper is named (and its filed day required) only when nothing stands
+                        .switchIfEmpty(Mono.fromSupplier(() -> new Latest(paperOf(newest), null))));
     }
 
     private Mono<Latest> standing(FamilyAccount family, Document newest, Instant cutoff) {
@@ -458,8 +456,11 @@ public class WaIntakeService {
         Flux<AttentionItem.Urgent> newestStored = withinWindow(newest.createdAt(), cutoff)
                 ? urgency.currentOrAssess(newest.id())
                         .filter(s -> s.level().isAtLeast(Urgency.THIS_WEEK))
-                        .map(s -> new AttentionItem.Urgent(newest.id(), s.level(), newest.documentType(), paperOf(newest).date(),
-                                newest.timelineDateIsUploadDay(), newest.createdAt()))
+                        .map(s -> {
+                            Paper p = paperOf(newest);   // the date and its upload-day mark from one read of the row
+                            return new AttentionItem.Urgent(newest.id(), s.level(), newest.documentType(), p.date(), p.uploadDay(),
+                                    newest.createdAt());
+                        })
                         .flux()
                 : Flux.empty();
         return Flux.concat(stored, newestStored)
@@ -468,7 +469,7 @@ public class WaIntakeService {
                 // highest first, then the newer paper: the attention stack's own order, so WhatsApp and the web agree
                 .sort(AttentionItem.ORDER)
                 .next()
-                .map(u -> new Latest(new Paper(u.documentId(), u.documentType(), u.date()), u.level()));
+                .map(u -> new Latest(new Paper(u.documentId(), u.documentType(), u.date(), u.dateIsFallback()), u.level()));
     }
 
     /** Uploaded at or after the cutoff: the read model's "at or after since". */
@@ -478,12 +479,21 @@ public class WaIntakeService {
 
     /**
      * D2: a paper is named by the day it is filed under, {@code document.timeline_date}, read from its row and never
-     * re-derived here: a retake by its upload day, never by a date misread off the page it could not read. Today, in
-     * Dhaka, stands in only for a record that was never read back (no row, so no filing day to read).
+     * re-derived here. {@code latestDoneDocument} reads DONE rows only, so for every paper this names the filed day is the
+     * printed date, or the Dhaka upload day when none was printed. A record without its filed day (never read back, or a
+     * mapping that lost the columns) is a defect, said loudly: naming it "today", unmarked, would be an invented date. The
+     * greeting's error path then sends the plain hello, which names no paper.
      */
     private Paper paperOf(Document d) {
-        LocalDate date = d.timelineDate() != null ? d.timelineDate() : LocalDate.now(clock.withZone(DHAKA));
-        return new Paper(d.id(), d.documentType(), date);
+        FiledDay filed = d.filed();
+        if (filed == null) {
+            throw new IllegalStateException("D2: a paper is named by its filed day, read from its row; document " + d.id() + " has none");
+        }
+        return new Paper(d.id(), d.documentType(), filed.date(), filed.uploadDay());
+    }
+
+    /** A paper as the family is told of it: its id (for the link), its type, its filed day and whether that is its upload day. */
+    private record Paper(UUID id, String documentType, LocalDate date, boolean uploadDay) {
     }
 
     /** The paper's name for the family: its type, its date in Bangla, and the link to what it says. */

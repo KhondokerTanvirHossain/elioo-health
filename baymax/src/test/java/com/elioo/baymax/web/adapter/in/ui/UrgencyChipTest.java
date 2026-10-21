@@ -20,7 +20,7 @@ class UrgencyChipTest {
 
     private static TimelineEntry entry(Urgency level) {
         return new TimelineEntry(UUID.randomUUID(), LocalDate.parse("2026-10-12"), false, "lab_report", "Shapla Diagnostics", "DONE",
-                14, 0, 0, 0, "k", Instant.parse("2026-10-12T08:00:00Z"), level, 0, null, null);
+                14, 0, 0, 0, "k", Instant.parse("2026-10-12T08:00:00Z"), level, 0, null, null, false);
     }
 
     @ParameterizedTest

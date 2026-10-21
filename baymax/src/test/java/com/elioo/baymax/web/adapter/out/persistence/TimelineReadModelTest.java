@@ -256,6 +256,30 @@ class TimelineReadModelTest {
         });
     }
 
+    /**
+     * Q6's other direction: the mark is on a printed date the paper is filed under, never on an upload day. The model may
+     * mark the date of a page it could not read (a retake), or mark a date it then returned as null; either paper is
+     * filed under its upload day, which is certain, so it is not marked and a trend keeps its direction for it.
+     */
+    @Test
+    void anUncertainMarkNeverLandsOnAnUploadDay() {
+        runner().run(context -> {
+            UUID p = patient(context);
+            UUID retake = doc(context, p, "2026-10-20T04:00:00Z", "2021-03-04", "lab_report", "NEEDS_RETAKE");
+            UUID undated = doc(context, p, "2026-10-19T04:00:00Z", null, "lab_report", "DONE");
+            sql("UPDATE baymax.document SET doc_date_uncertain = true WHERE id IN ('" + retake + "', '" + undated + "')");
+            List<TimelineEntry> rows = context.getBean(TimelineReadPort.class).page(p, TimelineCursor.FIRST, TimelineFilter.ALL, 10)
+                    .collectList().block();
+            assertThat(rows).extracting(TimelineEntry::documentId).containsExactly(retake, undated);
+            assertThat(rows).allSatisfy(e -> {
+                assertThat(e.dateIsFallback()).as("filed under its upload day").isTrue();
+                assertThat(e.dateUncertain()).as("an upload day is never marked uncertain").isFalse();
+            });
+            assertThat(scalar("SELECT count(*) FROM baymax.document WHERE patient_id = '" + p + "' AND doc_date_uncertain"))
+                    .as("the model's own flag is still stored on both").isEqualTo("2");
+        });
+    }
+
     @Test
     void anEntryCarriesItsStoredUrgencyOutsideCountAndReviewState() {
         runner().run(context -> {

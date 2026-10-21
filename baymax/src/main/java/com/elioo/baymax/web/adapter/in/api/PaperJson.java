@@ -1,6 +1,7 @@
 package com.elioo.baymax.web.adapter.in.api;
 
 import com.elioo.baymax.extraction.domain.DocumentView;
+import com.elioo.baymax.extraction.domain.FiledDay;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.outbound.domain.UrgencyReason;
@@ -8,7 +9,6 @@ import com.elioo.baymax.outbound.domain.ValueVerdict;
 import com.elioo.baymax.storage.domain.ImageDimensions;
 import com.elioo.baymax.web.adapter.in.ImageRefs;
 import com.elioo.baymax.web.domain.GateState;
-import com.elioo.baymax.web.domain.PaperDate;
 import com.elioo.baymax.web.domain.PaperDisplay;
 import com.elioo.baymax.web.domain.ReadingView;
 import com.elioo.baymax.web.domain.ResultView;
@@ -140,11 +140,12 @@ public final class PaperJson {
      * D2: the paper's date is the day it is filed under, {@code document.timeline_date}, read and never re-derived here.
      * When that is its upload day (a retake, whose printed date is the least trustworthy read there is, or a paper that
      * printed none) {@code printed_date} is null, never absent, and {@code date_is_upload_day} says so; otherwise the
-     * printed date is sent as printed beside it. {@code date_uncertain} is the model's mark on a printed date (Q6).
+     * printed date is sent as printed beside it. {@code date_uncertain} is {@code timeline_date_uncertain}: the model's
+     * mark on the printed date the paper is filed under (Q6), never on an upload day.
      */
-    private static void dates(Map<String, Object> m, String printed, PaperDate filed) {
+    private static void dates(Map<String, Object> m, String printed, FiledDay filed) {
         m.put("printed_date", filed.uploadDay() || blank(printed) ? null : printed);
-        m.put("date", filed.date() == null ? null : filed.date().toString());
+        m.put("date", filed.date().toString());
         m.put("date_is_upload_day", filed.uploadDay());
         m.put("date_uncertain", filed.uncertain());
     }

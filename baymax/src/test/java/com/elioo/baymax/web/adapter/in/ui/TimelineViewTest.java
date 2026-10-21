@@ -40,7 +40,7 @@ class TimelineViewTest {
 
     private static TimelineEntry entry(String status, Urgency level, boolean fallback, String type, String review, String retakeCode) {
         return new TimelineEntry(UUID.randomUUID(), OCT_12, fallback, type, "Diagnostic Centre, Mirpur", status,
-                14, 3, 0, 0, "k", Instant.parse("2026-10-12T08:00:00Z"), level, 0, review, retakeCode);
+                14, 3, 0, 0, "k", Instant.parse("2026-10-12T08:00:00Z"), level, 0, review, retakeCode, false);
     }
 
     private static List<String> chips(String html) {
@@ -153,7 +153,7 @@ class TimelineViewTest {
     void eachMonthHasOneHeaderInOrderAndTheListIsWellFormed() {
         TimelineEntry oct = entry("DONE", Urgency.ROUTINE, false);
         TimelineEntry sep = new TimelineEntry(UUID.randomUUID(), LocalDate.parse("2026-09-21"), true, "prescription", null, "DONE",
-                0, 2, 0, 0, "k", Instant.parse("2026-09-21T08:00:00Z"), null, 0, null, null);
+                0, 2, 0, 0, "k", Instant.parse("2026-09-21T08:00:00Z"), null, 0, null, null, false);
         String html = view.items(Lang.BN, List.of(oct, oct, sep), "আম্মা");
         Dom dom = Dom.parse(html);
         assertThat(dom.unclosed).isEmpty();
@@ -171,14 +171,14 @@ class TimelineViewTest {
     void theMonthHeaderIsThePapersOwnDateNotItsUploadDay() {
         Instant uploadedToday = Instant.parse("2026-10-12T08:00:00Z");
         TimelineEntry old = new TimelineEntry(UUID.randomUUID(), LocalDate.parse("2019-03-12"), false, "lab_report", null, "DONE",
-                3, 0, 0, 0, "k", uploadedToday, null, 0, null, null);
+                3, 0, 0, 0, "k", uploadedToday, null, 0, null, null, false);
         Dom dom = Dom.parse(view.items(Lang.BN, List.of(old), "আম্মা"));
         assertThat(dom.all.stream().filter(e -> e.tag().equals("h2")).map(Dom.Element::ownText)).containsExactly("মার্চ ২০১৯");
         assertThat(dom.all.stream().map(Dom.Element::ownText)).noneMatch(t -> t.contains("অক্টোবর"));
         assertThat(dom.all.stream().filter(e -> e.classes().contains("meta")).map(Dom.Element::ownText)).contains("১২ মার্চ");
 
         TimelineEntry undated = new TimelineEntry(UUID.randomUUID(), LocalDate.parse("2026-10-12"), true, "lab_report", null, "DONE",
-                3, 0, 0, 0, "k", uploadedToday, null, 0, null, null);
+                3, 0, 0, 0, "k", uploadedToday, null, 0, null, null, false);
         assertThat(Dom.parse(view.items(Lang.BN, List.of(undated, old), "আম্মা")).all.stream().filter(e -> e.tag().equals("h2"))
                 .map(Dom.Element::ownText)).containsExactly("অক্টোবর ২০২৬", "মার্চ ২০১৯");
         assertThat(Dom.parse(view.items(Lang.EN, List.of(old), "Ma")).all.stream().filter(e -> e.tag().equals("h2"))

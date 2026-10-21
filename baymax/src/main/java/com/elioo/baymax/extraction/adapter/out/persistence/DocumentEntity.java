@@ -2,6 +2,7 @@ package com.elioo.baymax.extraction.adapter.out.persistence;
 
 import com.elioo.baymax.config.BaymaxSchema;
 import com.elioo.baymax.extraction.domain.Document;
+import com.elioo.baymax.extraction.domain.FiledDay;
 import com.elioo.baymax.extraction.domain.VerifiedItems;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -80,6 +81,10 @@ public class DocumentEntity {
     @Column("timeline_date_is_upload_day")
     @ReadOnlyProperty
     private Boolean timelineDateIsUploadDay;
+    /** D2: generated with {@code timeline_date}: the model's mark, only where the paper is filed under its printed date. */
+    @Column("timeline_date_uncertain")
+    @ReadOnlyProperty
+    private Boolean timelineDateUncertain;
 
     static DocumentEntity from(Document d) {
         return new DocumentEntity(d.id(), d.patientId(), d.familyId(), d.documentType(), d.docDate(),
@@ -87,7 +92,16 @@ public class DocumentEntity {
                 d.modelFinal(), d.costUsd(), d.pageCount(), d.createdAt(), d.updatedAt(),
                 d.unverified().values(), d.unverified().medicines(), d.unverified().followUp(),
                 d.unverified().clinicalContext(), d.clinicalContextJson(), d.statusReasonCode(), null,
-                d.docDateUncertain(), null, null);
+                d.docDateUncertain(), null, null, null);
+    }
+
+    /**
+     * The generated filing columns as one {@link FiledDay}, or null when this entity was not read from a row (an insert's
+     * return carries only what Java sent). A row always has {@code timeline_date}, since {@code created_at} is NOT NULL.
+     */
+    private FiledDay filed() {
+        return timelineDate == null ? null
+                : new FiledDay(timelineDate, Boolean.TRUE.equals(timelineDateIsUploadDay), Boolean.TRUE.equals(timelineDateUncertain));
     }
 
     Document toRecord() {
@@ -96,7 +110,6 @@ public class DocumentEntity {
                 pageCount, createdAt, updatedAt,
                 new VerifiedItems.Unverified(unverifiedValues, unverifiedMedicines, unverifiedFollowUp,
                         unverifiedClinicalContext),
-                clinicalContext, statusReasonCode, docDateUncertain, timelineDate,
-                Boolean.TRUE.equals(timelineDateIsUploadDay));
+                clinicalContext, statusReasonCode, docDateUncertain, filed());
     }
 }

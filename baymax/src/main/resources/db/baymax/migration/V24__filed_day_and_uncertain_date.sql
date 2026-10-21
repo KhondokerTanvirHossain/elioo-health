@@ -28,7 +28,13 @@ ALTER TABLE ${flyway:defaultSchema}.document
         CASE WHEN status = 'NEEDS_RETAKE' OR doc_date IS NULL
              THEN (created_at AT TIME ZONE 'Asia/Dhaka')::date
              ELSE doc_date END) STORED,
-    ADD COLUMN timeline_date_is_upload_day boolean GENERATED ALWAYS AS (status = 'NEEDS_RETAKE' OR doc_date IS NULL) STORED;
+    ADD COLUMN timeline_date_is_upload_day boolean GENERATED ALWAYS AS (status = 'NEEDS_RETAKE' OR doc_date IS NULL) STORED,
+    -- Q6's mark, only where the paper is filed under its printed date: the model may mark the date of a page it could
+    -- not read, or mark a date it then returned as null, and an upload day is never uncertain. doc_date_uncertain stays
+    -- the model's output as stored; this is the mark every display reads. (A generated column cannot name another, so the
+    -- upload-day condition is written out again here, in the one statement that defines both.)
+    ADD COLUMN timeline_date_uncertain boolean GENERATED ALWAYS AS (
+        doc_date_uncertain AND NOT (status = 'NEEDS_RETAKE' OR doc_date IS NULL)) STORED;
 -- exactly as V20 made it
 CREATE INDEX document_patient_timeline_idx
     ON ${flyway:defaultSchema}.document (patient_id, timeline_date DESC, created_at DESC, id DESC);
@@ -37,5 +43,7 @@ COMMENT ON COLUMN ${flyway:defaultSchema}.document.timeline_date IS
     'D2: the only definition of a paper''s date: the printed date, else (a retake, or nothing printed) the Asia/Dhaka day of created_at; every reader reads it, nothing re-derives it';
 COMMENT ON COLUMN ${flyway:defaultSchema}.document.timeline_date_is_upload_day IS
     'D2: true when timeline_date is the Asia/Dhaka upload day rather than the printed date; the only definition of that flag';
+COMMENT ON COLUMN ${flyway:defaultSchema}.document.timeline_date_uncertain IS
+    'D2: true when timeline_date is a printed date the model marked uncertain; never true on an upload day; the only definition of the mark every display shows';
 COMMENT ON COLUMN ${flyway:defaultSchema}.document.doc_date_uncertain IS
-    'D2: the model marked the printed date uncertain (document_date_uncertain); the paper is still filed under it, and marked';
+    'D2: the model''s document_date_uncertain as it said it; not displayed: displays read timeline_date_uncertain';

@@ -1,10 +1,10 @@
 package com.elioo.baymax.testsupport;
 
 import com.elioo.baymax.extraction.domain.DocumentView;
+import com.elioo.baymax.extraction.domain.FiledDay;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.web.domain.GateState;
-import com.elioo.baymax.web.domain.PaperDate;
 import com.elioo.baymax.web.domain.ReadingView;
 import com.elioo.baymax.web.domain.ResultView;
 import com.elioo.baymax.web.domain.ViewerLocale;
@@ -152,27 +152,25 @@ public final class PaperFixtures {
     // ---- result and reading views -----------------------------------------------------------------------
 
     /**
-     * D2: the filing day the document row would read back for this view, as V24's generated columns define it: a retake
-     * or a paper with no printed date under its upload day in Dhaka, every other paper under its printed date. Test
-     * support only — it stands in for the row a mocked read never touches; main code reads the columns and never this.
-     * A printed date Postgres could not hold as a date has no filing day here.
+     * D2: the filed day the document row would read back for this view, as V24's generated columns define it: a retake
+     * or a paper with no printed date under its upload day in Dhaka, every other paper under its printed date, never
+     * marked uncertain. Test support only — it stands in for the row a mocked read never touches; main code reads the
+     * columns and never this. A copy of V24's rule, so {@code FilingDayOnPostgresTest.theFixturesFileAsPostgresDoes}
+     * holds it equal to the generated columns on real rows: if V24 changes, that test fails before any fixture lies.
      */
-    public static PaperDate filedAsStored(DocumentView view, Instant receivedAt) {
+    public static FiledDay filedAsStored(DocumentView view, Instant receivedAt) {
         String printed = view.documentDate();
         if ("NEEDS_RETAKE".equals(view.status()) || printed == null || printed.isBlank()) {
-            return new PaperDate(receivedAt == null ? null : com.elioo.baymax.common.time.PatientCalendar.dayOf(receivedAt), true, false);
+            return new FiledDay(com.elioo.baymax.common.time.PatientCalendar.dayOf(receivedAt), true, false);
         }
-        try {
-            return new PaperDate(java.time.LocalDate.parse(printed), false, false);
-        } catch (java.time.format.DateTimeParseException e) {
-            return new PaperDate(null, false, false);
-        }
+        // doc_date is a DATE column and the view prints it with LocalDate.toString(), so a stored printed date is ISO
+        return new FiledDay(java.time.LocalDate.parse(printed), false, false);
     }
 
-    /** The same view, its printed date marked uncertain by the model (Q6). */
+    /** The same view, its printed date marked uncertain by the model (Q6); a view filed under its upload day cannot be. */
     public static ResultView uncertain(ResultView r) {
         return new ResultView(r.document(), r.patient(), r.owner(), r.viewer(), r.urgency(), r.urgencyReasons(), r.gate(), r.wording(),
-                r.retakeOrdinal(), r.reviewHours(), r.receivedAt(), r.now(), new PaperDate(r.date().date(), r.date().uploadDay(), true));
+                r.retakeOrdinal(), r.reviewHours(), r.receivedAt(), r.now(), new FiledDay(r.date().date(), r.date().uploadDay(), true));
     }
 
     public static ResultView result(DocumentView view, Urgency urgency, List<String> reasons, GateState gate, String wording, ViewerLocale viewer) {

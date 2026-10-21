@@ -19,7 +19,7 @@ class TimelineSummaryTest {
 
     private static TimelineEntry entry(String type, int values, int outside, int medicines, boolean undated) {
         return new TimelineEntry(UUID.randomUUID(), LocalDate.parse("2026-10-12"), undated, type, null, "DONE",
-                values, medicines, 0, 0, "k", Instant.parse("2026-10-12T08:00:00Z"), null, outside, null, null);
+                values, medicines, 0, 0, "k", Instant.parse("2026-10-12T08:00:00Z"), null, outside, null, null, false);
     }
 
     private static TimelineEntry lab(int values, int outside) {

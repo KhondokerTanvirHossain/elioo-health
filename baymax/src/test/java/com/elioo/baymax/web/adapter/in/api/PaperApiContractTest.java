@@ -817,18 +817,9 @@ class PaperApiContractTest {
         assertThat(get(Lang.BN).path("date_uncertain").asBoolean(true)).isFalse();
     }
 
-    @Test
-    void aPrintedDateThatIsNotIsoIsShownAsPrintedNeverAsTheUploadDay() throws IOException {
-        DocumentView printed = PaperFixtures.paper("12/10/2026", List.of(PaperFixtures.haemoglobinInside()), List.of(), List.of(), Map.of(), null);
-        serve(PaperFixtures.result(printed, Urgency.ROUTINE, List.of(), GateState.NONE, null, PaperFixtures.BD));
-        JsonNode body = get(Lang.BN);
-        // the dangerous direction first: a printed paper is never dated by the day it was sent
-        assertThat(body.path("date_is_upload_day").isBoolean()).isTrue();
-        assertThat(body.path("date_is_upload_day").asBoolean()).as("$.date_is_upload_day").isFalse();
-        assertThat(body.path("printed_date").asText()).isEqualTo("12/10/2026");
-        assertThat(body.has("date")).isTrue();
-        assertThat(body.path("date").isNull()).as("$.date of a printed date that is not ISO").isTrue();
-    }
+    // D2 removed aPrintedDateThatIsNotIsoIsShownAsPrintedNeverAsTheUploadDay: doc_date is a DATE column and the view
+    // prints it with LocalDate.toString(), so a non-ISO printed date cannot reach a paper's JSON; its date is the row's
+    // timeline_date, which is never null (PaperApiHandlerTest reads it off real rows).
 
     @ParameterizedTest
     @EnumSource(value = Document.Status.class, names = {"RECEIVED", "PROCESSING"})

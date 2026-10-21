@@ -224,7 +224,7 @@ class AddReportSheetPageTest {
     /** A paper on the list, so the page is the list and not the s16 empty panel. */
     private static com.elioo.baymax.web.domain.TimelineEntry aPaper() {
         return new com.elioo.baymax.web.domain.TimelineEntry(UUID.randomUUID(), java.time.LocalDate.parse("2026-10-12"), false,
-                "prescription", null, "DONE", 0, 2, 0, 0, "k", Instant.parse("2026-10-12T08:00:00Z"), null, 0, null, null);
+                "prescription", null, "DONE", 0, 2, 0, 0, "k", Instant.parse("2026-10-12T08:00:00Z"), null, 0, null, null, false);
     }
 
     /** The links on a page that open the add-report sheet, each element read on its own. */

@@ -38,4 +38,7 @@ public interface DocumentIntakeUseCase {
 
     /** Status, plus the extracted items once the document is DONE. */
     Mono<DocumentView> view(UUID documentId);
+
+    /** D2: {@link #view} together with the document row it was built from (one read, one snapshot). */
+    Mono<DocumentView.Read> read(UUID documentId);
 }

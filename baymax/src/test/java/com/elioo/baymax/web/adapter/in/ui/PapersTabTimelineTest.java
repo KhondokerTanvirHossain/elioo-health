@@ -39,7 +39,7 @@ class PapersTabTimelineTest {
 
     private static TimelineEntry done(UUID id, Urgency level, int values, int outside, String review) {
         return new TimelineEntry(id, LocalDate.parse("2026-10-12"), false, "lab_report", null, "DONE", values, 0, 0, 0,
-                "f/p/" + id + "/page-1.jpg", T, level, outside, review, null);
+                "f/p/" + id + "/page-1.jpg", T, level, outside, review, null, false);
     }
 
     private void papers(String nextCursor) {

@@ -86,8 +86,38 @@ class NoProseInTheJsonApiTest {
             DocumentExtractionService.REASON_SECTION_EMPTY.substring(0, DocumentExtractionService.REASON_SECTION_EMPTY.indexOf('%')),
             DocumentExtractionService.REASON_LOW_SECTION);
 
+    /** The date the model read off a page it could not read, kept in doc_date on a retake (and on a FAILED row here). */
+    private static final String MISREAD = "2021-03-04";
+
     private final ObjectMapper json = new ObjectMapper();
     private WebTestClient client;
+
+    /**
+     * D2 (review finding 15): a paper that is not DONE keeps the date read off it in doc_date, and only intake's
+     * status-only view for anything not DONE keeps it out of every body: the legacy {@code /documents/{id}} has no
+     * {@code document_date} (admin and family alike), and the paper JSON's {@code printed_date} is null beside its
+     * upload day. Asserted by field over the whole tree, never a substring.
+     */
+    @ParameterizedTest
+    @MethodSource("storedDocuments")
+    void aNotDoneDocumentsMisreadDateReachesNoJson(String status, String prose, String code) throws Exception {
+        wire(status, prose, code);
+        for (String uri : List.of("/documents/" + DOC, "/documents/" + DOC + "?as=family")) {
+            JsonNode body = get(uri);
+            assertThat(body.has("document_date")).as(uri + " $.document_date").isFalse();
+            List<String> carrying = new java.util.ArrayList<>();
+            com.elioo.baymax.testsupport.Json.walk(body, (path, node) -> {
+                if (node.isTextual() && node.asText().equals(MISREAD)) {
+                    carrying.add(path);
+                }
+            });
+            assertThat(carrying).as(uri + " fields carrying the misread date").isEmpty();
+        }
+        JsonNode paper = get(AppApiRouter.BASE + "/documents/" + DOC);
+        assertThat(paper.has("printed_date")).as("$.printed_date is present").isTrue();
+        assertThat(paper.path("printed_date").isNull()).as("$.printed_date of a " + status + " paper").isTrue();
+        assertThat(paper.path("date").asText()).as("$.date: the filed upload day").isEqualTo("2026-10-19");
+    }
 
     /** status | stored prose | stored code: every prose a retake path writes, and FAILED's developer error. */
     static Stream<Arguments> storedDocuments() {
@@ -101,8 +131,11 @@ class NoProseInTheJsonApiTest {
     }
 
     private void wire(String status, String prose, String code) {
-        Document retake = new Document(DOC, PATIENT, FAMILY, null, null, null, null, 0.4, Document.Status.valueOf(status),
-                prose, null, null, 1, T, T, null, null, code);
+        // D2: finish keeps the date it read even off a page it could not read; no JSON may show it (MISREAD)
+        Document retake = new Document(DOC, PATIENT, FAMILY, null, LocalDate.parse(MISREAD), null, null, 0.4, Document.Status.valueOf(status),
+                prose, null, null, 1, T, T, null, null, code, false,
+                // as the row reads back: a paper that is not DONE (or printed nothing) is filed under its upload day (V24)
+                new com.elioo.baymax.extraction.domain.FiledDay(LocalDate.parse("2026-10-19"), true, false));
         DocumentRecordPort documents = mock(DocumentRecordPort.class);
         when(documents.find(DOC)).thenReturn(Mono.just(retake));
         when(documents.findVisible(FAMILY, DOC)).thenReturn(Mono.just(retake));
@@ -110,7 +143,7 @@ class NoProseInTheJsonApiTest {
         TimelineReadPort timelineRead = mock(TimelineReadPort.class);
         when(timelineRead.page(eq(PATIENT), any(), any(), anyInt())).thenReturn(Flux.just(new TimelineEntry(DOC,
                 LocalDate.parse("2026-10-19"), true, null, null, status, 0, 0, 0, 0, "k/" + DOC + "/page-1.jpg", T,
-                null, 0, null, "NEEDS_RETAKE".equals(status) ? code : null)));
+                null, 0, null, "NEEDS_RETAKE".equals(status) ? code : null, false)));
         HealthRecordPort records = mock(HealthRecordPort.class);
         when(records.visiblePatient(FAMILY, PATIENT)).thenReturn(Mono.just(new PatientAccess(
                 new PatientProfile(PATIENT, FAMILY, "Ma", 68, PatientProfile.Sex.FEMALE, List.of(), T, T), true)));

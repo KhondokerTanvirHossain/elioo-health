@@ -215,12 +215,22 @@ public class DocumentIntakeService implements DocumentIntakeUseCase {
 
     @Override
     public Mono<DocumentView> view(UUID documentId) {
+        return read(documentId).map(DocumentView.Read::view);
+    }
+
+    /**
+     * Only a DONE paper's view carries its items and its printed date; every other status, a retake included, gets the
+     * status-only view ({@link DocumentView#pending}), so a date misread off a page the model could not read never
+     * leaves here (D2; {@code FilingDayOnPostgresTest} holds it on a real row).
+     */
+    @Override
+    public Mono<DocumentView.Read> read(UUID documentId) {
         return documents.find(documentId)
                 .switchIfEmpty(Mono.error(BaymaxException.notFound("document_not_found",
                         "no document with id " + documentId)))
-                .flatMap(document -> document.status() == Document.Status.DONE
+                .flatMap(document -> (document.status() == Document.Status.DONE
                         ? withItems(document)
-                        : Mono.just(DocumentView.pending(document)));
+                        : Mono.just(DocumentView.pending(document))).map(v -> new DocumentView.Read(document, v)));
     }
 
     private Mono<DocumentView> withItems(Document document) {

@@ -56,7 +56,30 @@ class TimelineApiJsonTest {
         when(timeline.imageUrl(eq(FAMILY), eq(DOC), any())).thenReturn(Mono.just(URI.create("https://storage.invalid/p.jpg")));
         when(timeline.timeline(eq(FAMILY), eq(PATIENT), any(), any())).thenReturn(Mono.just(new TimelinePage(List.of(
                 new TimelineEntry(DOC, LocalDate.parse("2026-10-18"), false, "lab_report", null, "DONE", 14, 0, 0, 0,
-                        "k/" + DOC + "/page-1.jpg", T, Urgency.NOW, 2, "pending", null)), "v1.next")));
+                        "k/" + DOC + "/page-1.jpg", T, Urgency.NOW, 2, "pending", null, false)), "v1.next")));
+    }
+
+    /**
+     * D2: the legacy JSON carries the read model's uncertain mark by value, on each entry: one marked, one not, so a key
+     * dropped, a constant written, or the wrong field wired fails on one of the two.
+     */
+    @Test
+    void eachEntryCarriesItsOwnUncertainMark() throws Exception {
+        UUID marked = UUID.randomUUID();
+        UUID plain = UUID.randomUUID();
+        when(timeline.timeline(eq(FAMILY), eq(PATIENT), any(), any())).thenReturn(Mono.just(new TimelinePage(List.of(
+                new TimelineEntry(marked, LocalDate.parse("2026-07-11"), false, "lab_report", null, "DONE", 1, 0, 0, 0,
+                        "k/" + marked + "/page-1.jpg", T, null, 0, null, null, true),
+                new TimelineEntry(plain, LocalDate.parse("2026-07-10"), false, "lab_report", null, "DONE", 1, 0, 0, 0,
+                        "k/" + plain + "/page-1.jpg", T, null, 0, null, null, false)), null)));
+        when(timeline.imageUrl(eq(FAMILY), any(), any())).thenReturn(Mono.just(URI.create("https://storage.invalid/p.jpg")));
+        JsonNode documents = get("/patients/" + PATIENT + "/timeline").path("documents");
+        assertThat(documents.get(0).path("id").asText()).isEqualTo(marked.toString());
+        assertThat(documents.get(0).path("doc_date_uncertain").isBoolean()).as("$.documents[0].doc_date_uncertain is a boolean").isTrue();
+        assertThat(documents.get(0).path("doc_date_uncertain").booleanValue()).as("$.documents[0].doc_date_uncertain").isTrue();
+        assertThat(documents.get(1).path("id").asText()).isEqualTo(plain.toString());
+        assertThat(documents.get(1).path("doc_date_uncertain").isBoolean()).as("$.documents[1].doc_date_uncertain is a boolean").isTrue();
+        assertThat(documents.get(1).path("doc_date_uncertain").booleanValue()).as("$.documents[1].doc_date_uncertain").isFalse();
     }
 
     @Test
