@@ -21,8 +21,10 @@ import one from "../../fixtures/api/now-banner/one.json";
 import twoPatients from "../../fixtures/api/now-banner/two-patients.json";
 // B3's generated calendar months and B6's generated labs bodies (plan W2e-b).
 import busy from "../../fixtures/api/calendar/busy.json";
+import crowded from "../../fixtures/api/calendar/crowded.json";
 import empty from "../../fixtures/api/calendar/empty.json";
 import bp from "../../fixtures/api/health/bp.json";
+import labsNonNumeric from "../../fixtures/api/health/labs-non-numeric.json";
 import labsNone from "../../fixtures/api/health/labs-none.json";
 import labsSome from "../../fixtures/api/health/labs-some.json";
 import labsWithUnknown from "../../fixtures/api/health/labs-with-unknown.json";
@@ -34,8 +36,13 @@ import {
   READING_STATUSES,
   SIDES,
   URGENCIES,
+  type BpPointJson,
+  type CalendarDayJson,
+  type CalendarFollowUpJson,
   type CalendarJson,
+  type CalendarPaperJson,
   type Json,
+  type LabSeriesJson,
   type LabsJson,
   type NowBannerDocumentJson,
   type NowBannerJson,
@@ -240,12 +247,16 @@ describe("the /app/api types", () => {
 
 const fixtures = join(__dirname, "..", "..", "fixtures", "api");
 
-const CALENDAR_KEYS = ["days", "month"];
-const DAY_KEYS = ["date", "follow_ups", "papers"];
-const PAPER_KEYS = ["chip", "document_id", "document_type"];
-const FOLLOW_KEYS = ["crop", "document_id", "instruction"];
-const LABS_KEYS = ["bp", "series"];
-const SERIES_KEYS = ["canonical_name", "name", "points", "unit"];
+// Each list is held to its type by the compiler, as the banner's are above (a key missing from a list, or one the type
+// does not have, fails `pnpm typecheck`); the test then holds every fixture's objects to the list, so a field Java adds,
+// drops or renames anywhere in a body fails one of the two. A JSON import is not a fresh literal, so assigning a fixture
+// to its type alone cannot see an extra field: only this runtime walk does.
+const CALENDAR_KEYS = ["days", "month"] as const;
+const DAY_KEYS = ["date", "follow_ups", "papers"] as const;
+const PAPER_KEYS = ["chip", "document_id", "document_type"] as const;
+const FOLLOW_KEYS = ["crop", "document_id", "instruction"] as const;
+const LABS_KEYS = ["bp", "series"] as const;
+const SERIES_KEYS = ["canonical_name", "name", "points", "unit"] as const;
 const POINT_KEYS = [
   "chip_key",
   "crop",
@@ -257,31 +268,45 @@ const POINT_KEYS = [
   "observation_id",
   "side",
   "value",
-];
-const PAIR_KEYS = ["date", "date_is_upload_day", "date_uncertain", "diastolic", "document_id", "systolic"];
+] as const;
+const PAIR_KEYS = ["date", "date_is_upload_day", "date_uncertain", "diastolic", "document_id", "systolic"] as const;
+const keyListsAreTheTypes: [
+  Equal<(typeof CALENDAR_KEYS)[number], keyof CalendarJson>,
+  Equal<(typeof DAY_KEYS)[number], keyof CalendarDayJson>,
+  Equal<(typeof PAPER_KEYS)[number], keyof CalendarPaperJson>,
+  Equal<(typeof FOLLOW_KEYS)[number], keyof CalendarFollowUpJson>,
+  Equal<(typeof LABS_KEYS)[number], keyof LabsJson>,
+  Equal<(typeof SERIES_KEYS)[number], keyof LabSeriesJson>,
+  Equal<(typeof POINT_KEYS)[number], keyof TrendPointJson>,
+  Equal<(typeof PAIR_KEYS)[number], keyof BpPointJson>,
+] = [true, true, true, true, true, true, true, true];
 
 const keys = (o: object) => Object.keys(o).sort();
 
 describe("the API types are the generated fixtures", () => {
   it("everyCalendarFixtureIsACalendarJson", () => {
+    expect(keyListsAreTheTypes.every(Boolean)).toBe(true);
     const calendars: Array<[string, CalendarJson]> = [
       ["busy", busy.body],
+      ["crowded", crowded.body],
       ["empty", empty.body],
     ];
     // Every committed calendar fixture is assigned above, so a new case cannot go unchecked.
-    expect(readdirSync(join(fixtures, "calendar")).filter((f) => f.endsWith(".json")).sort()).toEqual(["busy.json", "empty.json"]);
+    expect(readdirSync(join(fixtures, "calendar")).filter((f) => f.endsWith(".json")).sort()).toEqual(
+      calendars.map(([name]) => `${name}.json`).sort(),
+    );
     let papers = 0;
     let follows = 0;
     for (const [name, c] of calendars) {
-      expect(keys(c), name).toEqual(CALENDAR_KEYS);
+      expect(keys(c), name).toEqual([...CALENDAR_KEYS]);
       for (const day of c.days) {
-        expect(keys(day), `${name} ${day.date}`).toEqual(DAY_KEYS);
+        expect(keys(day), `${name} ${day.date}`).toEqual([...DAY_KEYS]);
         for (const p of day.papers) {
-          expect(keys(p), `${name} ${day.date} paper`).toEqual(PAPER_KEYS);
+          expect(keys(p), `${name} ${day.date} paper`).toEqual([...PAPER_KEYS]);
           papers++;
         }
         for (const f of day.follow_ups) {
-          expect(keys(f), `${name} ${day.date} follow-up`).toEqual(FOLLOW_KEYS);
+          expect(keys(f), `${name} ${day.date} follow-up`).toEqual([...FOLLOW_KEYS]);
           follows++;
         }
       }
@@ -296,28 +321,30 @@ describe("the API types are the generated fixtures", () => {
       ["labs-some", labsSome.body],
       ["labs-none", labsNone.body],
       ["labs-with-unknown", labsWithUnknown.body],
+      ["labs-non-numeric", labsNonNumeric.body],
       ["bp", bp.body],
     ];
+    // Every committed labs fixture is assigned above, so a case B6 or W9 adds fails here until it is listed.
     expect(
       readdirSync(join(fixtures, "health"))
         .filter((f) => f.startsWith("labs-") || f === "bp.json")
         .sort(),
-    ).toEqual(["bp.json", "labs-none.json", "labs-some.json", "labs-with-unknown.json"]);
+    ).toEqual(labs.map(([name]) => `${name}.json`).sort());
     const points: TrendPointJson[] = [];
     let pairs = 0;
     for (const [name, l] of labs) {
-      expect(keys(l), name).toEqual(LABS_KEYS);
+      expect(keys(l), name).toEqual([...LABS_KEYS]);
       for (const s of l.series) {
-        expect(keys(s), `${name} ${s.canonical_name}`).toEqual(SERIES_KEYS);
+        expect(keys(s), `${name} ${s.canonical_name}`).toEqual([...SERIES_KEYS]);
         points.push(...s.points);
       }
       for (const pair of l.bp.points) {
-        expect(keys(pair), `${name} bp`).toEqual(PAIR_KEYS);
+        expect(keys(pair), `${name} bp`).toEqual([...PAIR_KEYS]);
         points.push(pair.systolic, pair.diastolic);
         pairs++;
       }
     }
-    for (const p of points) expect(keys(p), p.observation_id).toEqual(POINT_KEYS);
+    for (const p of points) expect(keys(p), p.observation_id).toEqual([...POINT_KEYS]);
     expect(points.length, "points walked").toBeGreaterThan(0);
     expect(pairs, "blood-pressure pairs walked").toBeGreaterThan(0);
   });

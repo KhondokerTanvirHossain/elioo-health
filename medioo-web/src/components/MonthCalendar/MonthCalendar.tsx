@@ -1,6 +1,6 @@
 import { banglaDigits, formatDate, t, type CopyKey, type Lang } from "@/copy";
 import type { CalendarDayJson } from "@/api/types";
-import { CHIP_SHAPE, ChipShape } from "@/components/StatusChip/StatusChip";
+import { ChipShape } from "@/components/StatusChip/StatusChip";
 import "./MonthCalendar.css";
 
 /**
@@ -17,14 +17,34 @@ export const WEEK: readonly { key: CopyKey; day: number; fri: boolean }[] = [
   { key: "calendar.weekday.fri", day: 5, fri: true },
 ];
 
-/** The NOW mark is the critical chip's shape, never a colour alone; its word is the legend's. */
-const NOW_SHAPE = CHIP_SHAPE["crit-high"];
+/** A day's urgency: the highest chip among its papers. Java's chip is "now", "this_week" or null; anything else is none. */
+export type DayUrgency = "now" | "week" | null;
 
-/** The calendar's own two marks: a paper is a dot, a doctor's date a ring. */
+export function dayUrgency(day: CalendarDayJson | undefined): DayUrgency {
+  const chips = day?.papers.map((p) => p.chip) ?? [];
+  if (chips.includes("now")) return "now";
+  if (chips.includes("this_week")) return "week";
+  return null;
+}
+
+/** The sentence a screen reader hears for a day, one bundle key per urgency, so the urgency is never joined on here. */
+const STATUS_KEY: Record<"now" | "week" | "none", CopyKey> = {
+  now: "calendar.day.status.now",
+  week: "calendar.day.status.week",
+  none: "calendar.day.status",
+};
+
+/** The urgency's shape and word: the NOW octagon and the this-week calendar the paper's band draws, never a direction. */
+const URGENCY: Record<"now" | "week", { shape: "octagon" | "calendar-week"; cell: CopyKey; legend: CopyKey }> = {
+  now: { shape: "octagon", cell: "calendar.day.now", legend: "calendar.legend.now" },
+  week: { shape: "calendar-week", cell: "calendar.day.week", legend: "calendar.legend.week" },
+};
+
+/** The calendar's paper mark, a dot; and the legend's ring, the ring a doctor's date draws round its day's numeral. */
 function Mark({ shape }: { shape: "dot" | "ring" }) {
   return (
     <svg className={`month-calendar__mark month-calendar__mark--${shape}`} viewBox="0 0 24 24" aria-hidden="true" focusable="false" data-shape={shape}>
-      <circle cx="12" cy="12" r={shape === "dot" ? 6 : 7.5} />
+      <circle cx="12" cy="12" r={shape === "dot" ? 6 : 8} />
     </svg>
   );
 }
@@ -48,14 +68,17 @@ function monthDays(month: string): { dates: string[]; firstColumn: number } {
 /**
  * One month of a patient's papers and doctor's dates (plan W2e-b), the body of B3's
  * `GET /app/api/patients/{id}/calendar`: a table whose caption is the only patient name (the screen passes the name and
- * the month), weekday headers Saturday → Friday, and on every day cell the status a screen reader hears, built from
- * `calendar.day.status` (on a NOW day followed by the NOW word, which the cell also shows beside the crit shape). The
- * days Java did not send hold nothing, and are drawn empty.
+ * the month), weekday headers Saturday → Friday, the day's numeral large, a dot for its papers, a ring round the numeral
+ * for a doctor's date, and the day's highest urgency as its shape and word (the NOW octagon, the this-week calendar).
+ *
+ * What a screen reader hears for a day is text in the cell, visually hidden (`calendar.day.status*`, one key per
+ * urgency), and everything drawn is aria-hidden: an author name on a static table cell is not reliably announced (NVDA
+ * and JAWS browse mode, TalkBack read the cell's content), so the status is the content. The days Java did not send
+ * hold nothing, and are drawn empty.
  */
 export function MonthCalendar({ month, days, caption, lang }: { month: string; days: CalendarDayJson[]; caption: string; lang: Lang }) {
   const { dates, firstColumn } = monthDays(month);
   const byDate = new Map(days.map((d) => [d.date, d]));
-  const nowWord = t(lang, "calendar.legend.now");
 
   const cells: Array<string | null> = [...Array<null>(firstColumn).fill(null), ...dates];
   while (cells.length % 7 !== 0) cells.push(null);
@@ -64,9 +87,7 @@ export function MonthCalendar({ month, days, caption, lang }: { month: string; d
   return (
     <div className="month-calendar">
       {/* A table, not role="grid": a grid promises arrow-key navigation between cells, which a month that only shows
-          its days does not offer, and axe holds a gridcell's label to its visible text (label-content-name-mismatch),
-          which the day number alone ("1" beside "2026-10-01: …") cannot meet. The screen that makes a day selectable
-          puts a button in its cell. */}
+          its days does not offer. The screen that makes a day selectable puts a button in its cell. */}
       <table className="month-calendar__grid">
         <caption className="month-calendar__caption">{caption}</caption>
         <thead>
@@ -87,23 +108,26 @@ export function MonthCalendar({ month, days, caption, lang }: { month: string; d
                 const day = byDate.get(date);
                 const papers = day?.papers.length ?? 0;
                 const follows = day?.follow_ups.length ?? 0;
-                const now = day?.papers.some((p) => p.chip === "now") ?? false;
-                const status = t(lang, "calendar.day.status", formatDate(lang, date), papers, follows);
+                const urgency = dayUrgency(day);
+                const status = t(lang, STATUS_KEY[urgency ?? "none"], formatDate(lang, date), papers, follows);
                 const dayNumber = String(Number(date.slice(8)));
-                const classes = ["month-calendar__day", fri && "month-calendar__day--fri", follows > 0 && "month-calendar__day--follow"];
                 return (
-                  <td key={column} className={classes.filter(Boolean).join(" ")} data-date={date} aria-label={now ? `${status}, ${nowWord}` : status}>
-                    <span className="month-calendar__n" aria-hidden="true">
+                  <td key={column} className={fri ? "month-calendar__day month-calendar__day--fri" : "month-calendar__day"} data-date={date}>
+                    <span className="month-calendar__status">{status}</span>
+                    <span
+                      className={follows > 0 ? "month-calendar__n month-calendar__n--follow" : "month-calendar__n"}
+                      aria-hidden="true"
+                      {...(follows > 0 ? { "data-shape": "ring" } : {})}
+                    >
                       {lang === "bn" ? banglaDigits(dayNumber) : dayNumber}
                     </span>
                     <span className="month-calendar__marks" aria-hidden="true">
                       {papers > 0 && <Mark shape="dot" />}
-                      {follows > 0 && <Mark shape="ring" />}
                     </span>
-                    {now && (
-                      <span className="month-calendar__alert" aria-hidden="true">
-                        <ChipShape shape={NOW_SHAPE} className="month-calendar__mark month-calendar__mark--crit" />
-                        <span className="month-calendar__alert-word">{nowWord}</span>
+                    {urgency && (
+                      <span className="month-calendar__alert" data-urgency={urgency} aria-hidden="true">
+                        <ChipShape shape={URGENCY[urgency].shape} className="month-calendar__mark month-calendar__mark--urgency" />
+                        <span className="month-calendar__alert-word">{t(lang, URGENCY[urgency].cell)}</span>
                       </span>
                     )}
                   </td>
@@ -119,12 +143,16 @@ export function MonthCalendar({ month, days, caption, lang }: { month: string; d
           {t(lang, "calendar.legend.paper")}
         </li>
         <li>
-          <Mark shape="ring" />
-          {t(lang, "calendar.legend.follow")}
+          <ChipShape shape={URGENCY.week.shape} className="month-calendar__mark month-calendar__mark--urgency" />
+          {t(lang, URGENCY.week.legend)}
         </li>
         <li>
-          <ChipShape shape={NOW_SHAPE} className="month-calendar__mark month-calendar__mark--crit" />
-          {nowWord}
+          <ChipShape shape={URGENCY.now.shape} className="month-calendar__mark month-calendar__mark--urgency" />
+          {t(lang, URGENCY.now.legend)}
+        </li>
+        <li>
+          <Mark shape="ring" />
+          {t(lang, "calendar.legend.follow")}
         </li>
       </ul>
     </div>

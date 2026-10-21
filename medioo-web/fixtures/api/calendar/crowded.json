@@ -1,0 +1,63 @@
+{
+  "_meta": {
+    "generated_by": "baymax PatientTimelineApiContractTest",
+    "source": "GET /app/api/patients/{id}/calendar?month=2026-10 over the case crowded"
+  },
+  "body": {
+    "days": [
+      {
+        "date": "2026-10-08",
+        "follow_ups": [
+          {
+            "crop": {
+              "src": "/app/documents/78c1aaf8-613b-3686-82e3-1223fe31cd18/image?key=01d1ed53-a5cf-3cbd-bd7b-f1e28c65a13f%2Fb7f014db-8096-303c-88ff-8b105a7749d6%2F78c1aaf8-613b-3686-82e3-1223fe31cd18%2Fcrop-f062cd54e.jpg"
+            },
+            "document_id": "78c1aaf8-613b-3686-82e3-1223fe31cd18",
+            "instruction": "Fasting sugar on the same day"
+          }
+        ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "78c1aaf8-613b-3686-82e3-1223fe31cd18",
+            "document_type": "prescription"
+          },
+          {
+            "chip": "now",
+            "document_id": "ee4cb600-692c-3dc1-bd7b-76df8941eb87",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-10-14",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": "this_week",
+            "document_id": "8c620861-ad0a-3c72-b48e-9791f3838847",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-10-22",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": "now",
+            "document_id": "b63087bc-b4ac-3cc2-97af-2481679fd18d",
+            "document_type": "lab_report"
+          },
+          {
+            "chip": "this_week",
+            "document_id": "315ce0be-f6c8-3f6f-aa2d-67ccc678f6cd",
+            "document_type": "lab_report"
+          }
+        ]
+      }
+    ],
+    "month": "2026-10"
+  },
+  "status": 200
+}

@@ -55,9 +55,11 @@ const W2E_B: string[] = [
   "MonthCalendar/busy-month",
   "MonthCalendar/long-name",
   "MonthCalendar/long-unbroken",
+  "MonthCalendar/crowded-month",
   "TrendChart/one-point",
   "TrendChart/rising",
   "TrendChart/with-unknown",
+  "TrendChart/critical-low",
 ];
 
 const ids = () => STATES.map(({ component, state }) => `${component}/${state}`);

@@ -20,7 +20,20 @@ export const CHIP_KEY: Record<ChipKind, CopyKey> = {
   unk: "value.chip.unknown",
 };
 
-export type Shape = "circle" | "arrow-up" | "arrow-down" | "double-arrow-up" | "double-arrow-down" | "question";
+/**
+ * Every shape a status is drawn with: the six chip kinds', and the two urgency shapes a paper's band and the NOW banner
+ * draw (`octagon` for NOW, `calendar-week` for this week), for a mark that shows a paper's urgency rather than a value's
+ * kind (MonthCalendar's day). An urgency is never a direction: a NOW paper can be NOW for a critically low value.
+ */
+export type Shape =
+  | "circle"
+  | "arrow-up"
+  | "arrow-down"
+  | "double-arrow-up"
+  | "double-arrow-down"
+  | "question"
+  | "octagon"
+  | "calendar-week";
 
 /** The shape, so a status is never colour alone (legibility floor): six kinds, six shapes. */
 export const CHIP_SHAPE: Record<ChipKind, Shape> = {
@@ -40,6 +53,20 @@ const DRAWN: Record<Shape, ReactNode> = {
   "double-arrow-up": <path d="M7 12l5-5 5 5M7 18l5-5 5 5" />,
   "double-arrow-down": <path d="M7 6l5 5 5-5M7 12l5 5 5-5" />,
   question: <path d="M9.2 9.3a2.9 2.9 0 1 1 4.1 2.6c-.8.4-1.3 1-1.3 1.9v.6M12 17.6v.01" />,
+  // NowBanner's and VerdictCard's NOW octagon, and VerdictCard's this-week calendar, path for path (MonthCalendar.test
+  // compares the drawn markup with theirs, so the three cannot drift apart).
+  octagon: (
+    <>
+      <path d="M8.2 3h7.6L21 8.2v7.6L15.8 21H8.2L3 15.8V8.2z" />
+      <path d="M12 7.5v5.5M12 16.2v.01" />
+    </>
+  ),
+  "calendar-week": (
+    <>
+      <rect x="3.5" y="5" width="17" height="15" rx="2.5" />
+      <path d="M3.5 10h17M8 3v4M16 3v4M12 13v3" />
+    </>
+  ),
 };
 
 /**

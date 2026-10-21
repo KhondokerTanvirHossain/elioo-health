@@ -21,12 +21,42 @@ const SCHEMES = ["light", "dark"] as const;
 // The registry's floor, derived as states.test.tsx derives the list: W2c's 13 states (Wordmark 1, MioAvatar 3,
 // MessageBubble 3, StatusChip 6), W2e-a's 5 (OtpInput 3, PhoneField 2), W2d-b's 6 (NowBanner), then W2d-a's one
 // VerdictCard state per paper fixture (every 200 body B2's contract test wrote), Toast/default and Sheet/open, and
-// W2e-b's 7 (MonthCalendar 4, TrendChart 3). Later PRs raise it.
+// W2e-b's 9 (MonthCalendar 5, TrendChart 4). Later PRs raise it.
 const documentsDir = join(__dirname, "..", "fixtures", "api", "documents");
 const PAPER_FIXTURES = readdirSync(documentsDir)
   .filter((f) => f.endsWith(".json"))
   .filter((f) => (JSON.parse(readFileSync(join(documentsDir, f), "utf8")) as { status: number }).status === 200);
-const MIN_STATES = 13 + 5 + 6 + PAPER_FIXTURES.length + 2 + 7;
+const MIN_STATES = 13 + 5 + 6 + PAPER_FIXTURES.length + 2 + 9;
+
+/**
+ * Every text node of every state with the size it is painted at. getComputedStyle reports an SVG <text>'s font-size in
+ * user units, before the viewBox is scaled to the box it is drawn in, so for text inside an SVG the size is multiplied
+ * by the element's screen transform: a 12 px label in a 320-unit viewBox drawn 296 px wide is painted at 11.1 px.
+ */
+async function smallText(page: Page) {
+  return page.evaluate(() => {
+    const small: string[] = [];
+    let texts = 0;
+    let svgTexts = 0;
+    for (const section of document.querySelectorAll<HTMLElement>("[data-catalog-state]")) {
+      const walker = document.createTreeWalker(section, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if (!node.textContent?.trim()) continue;
+        texts++;
+        const parent = node.parentElement!;
+        let size = parseFloat(getComputedStyle(parent).fontSize);
+        if (parent instanceof SVGGraphicsElement) {
+          svgTexts++;
+          const ctm = parent.getScreenCTM();
+          if (ctm) size *= Math.hypot(ctm.a, ctm.b);
+        }
+        // 1e-3 absorbs float error in the transform only; a 12 px floor is not loosened by it.
+        if (size < 12 - 1e-3) small.push(`${section.dataset.catalogState}: "${node.textContent.trim().slice(0, 20)}" ${size.toFixed(2)}px`);
+      }
+    }
+    return { small, texts, svgTexts };
+  });
+}
 
 /** Every open modal dialog closed (the Sheet/open states), so a whole-page check is not judging a page made inert. */
 async function closeSheets(page: Page) {
@@ -441,20 +471,7 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
 
       test("noTextUnderTwelvePixels", async ({ page }) => {
         await open(page);
-        const result = await page.evaluate(() => {
-          const small: string[] = [];
-          let texts = 0;
-          for (const section of document.querySelectorAll<HTMLElement>("[data-catalog-state]")) {
-            const walker = document.createTreeWalker(section, NodeFilter.SHOW_TEXT);
-            for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-              if (!node.textContent?.trim()) continue;
-              texts++;
-              const size = parseFloat(getComputedStyle(node.parentElement!).fontSize);
-              if (size < 12) small.push(`${section.dataset.catalogState}: "${node.textContent.trim().slice(0, 20)}" ${size}px`);
-            }
-          }
-          return { small, texts };
-        });
+        const result = await smallText(page);
         expect(result.small).toEqual([]);
         expect(result.texts, "text nodes measured").toBeGreaterThan(0);
       });
@@ -642,3 +659,44 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
     });
   }
 }
+
+// The narrowest box a component gets: a 320 CSS px phone less the 16 px side gutters, 288 px. The catalog draws each
+// state edge to edge, so the viewport is that box: anything scaled to its box, such as an SVG drawn at 100%, is
+// smallest here. The 390 px phone run above cannot see it (plan W2e-b).
+test.describe("narrowest box 288", () => {
+  test.use({ viewport: { width: 288, height: 640 }, colorScheme: "light" });
+
+  test("noTextUnderTwelvePixelsAtTheNarrowestPhone", async ({ page }) => {
+    await open(page);
+    const result = await smallText(page);
+    expect(result.small).toEqual([]);
+    expect(result.texts, "text nodes measured").toBeGreaterThan(0);
+    // Guard: the charts were on the page and measured, so their words were judged at this width.
+    const charts = await page.locator('[data-catalog-state^="TrendChart/"] .trend-chart__reading').count();
+    expect(charts, "trend readings at 288 px").toBeGreaterThan(0);
+  });
+
+  test("noElementOverflowsItsBoxAtTheNarrowestPhone", async ({ page }) => {
+    await open(page);
+    // The component's own elements only: the section's <h2> is the catalog's identifier ("MonthCalendar/crowded-month
+    // (bn)"), scaffolding no family sees, and at 288 px it is wider than the page while every component fits.
+    const over = await page.evaluate(() => {
+      const out: string[] = [];
+      let measured = 0;
+      for (const section of document.querySelectorAll<HTMLElement>('[data-catalog-state^="TrendChart/"], [data-catalog-state^="MonthCalendar/"]')) {
+        const rendered = [...section.children].filter((c) => c.tagName !== "H2");
+        for (const root of rendered) {
+          for (const el of [root, ...root.querySelectorAll("*")]) {
+            measured++;
+            if (el.scrollWidth > el.clientWidth + 1) {
+              out.push(`${section.dataset.catalogState} <${el.tagName.toLowerCase()} class="${el.getAttribute("class") ?? ""}"> ${el.scrollWidth} > ${el.clientWidth}`);
+            }
+          }
+        }
+      }
+      return { out, measured };
+    });
+    expect(over.out).toEqual([]);
+    expect(over.measured, "component elements measured at 288 px").toBeGreaterThan(0);
+  });
+});

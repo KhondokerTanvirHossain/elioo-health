@@ -53,9 +53,72 @@
             "observation_id": "b6b6b6b6-0000-4000-8000-000000000153",
             "side": null,
             "value": "6.1"
+          },
+          {
+            "chip_key": "value.chip.outside.low",
+            "crop": {
+              "src": "/app/documents/b6b6b6b6-0000-4000-8000-0000000000d6/image?key=f%2Fp%2Fb6b6b6b6-0000-4000-8000-0000000000d6%2Fcrop-v54.jpg"
+            },
+            "date": "2026-03-02",
+            "date_is_upload_day": false,
+            "date_uncertain": false,
+            "document_id": "b6b6b6b6-0000-4000-8000-0000000000d6",
+            "kind": "outside",
+            "observation_id": "b6b6b6b6-0000-4000-8000-000000000154",
+            "side": "low",
+            "value": "3.6"
+          },
+          {
+            "chip_key": "value.chip.critical.high",
+            "crop": {
+              "src": "/app/documents/b6b6b6b6-0000-4000-8000-0000000000d7/image?key=f%2Fp%2Fb6b6b6b6-0000-4000-8000-0000000000d7%2Fcrop-v55.jpg"
+            },
+            "date": "2025-12-01",
+            "date_is_upload_day": false,
+            "date_uncertain": false,
+            "document_id": "b6b6b6b6-0000-4000-8000-0000000000d7",
+            "kind": "critical",
+            "observation_id": "b6b6b6b6-0000-4000-8000-000000000155",
+            "side": "high",
+            "value": "9.8"
           }
         ],
         "unit": "%"
+      },
+      {
+        "canonical_name": "potassium",
+        "name": "Potassium",
+        "points": [
+          {
+            "chip_key": "value.chip.inside",
+            "crop": {
+              "src": "/app/documents/b6b6b6b6-0000-4000-8000-0000000000d1/image?key=f%2Fp%2Fb6b6b6b6-0000-4000-8000-0000000000d1%2Fcrop-v56.jpg"
+            },
+            "date": "2026-10-12",
+            "date_is_upload_day": false,
+            "date_uncertain": false,
+            "document_id": "b6b6b6b6-0000-4000-8000-0000000000d1",
+            "kind": "inside",
+            "observation_id": "b6b6b6b6-0000-4000-8000-000000000156",
+            "side": null,
+            "value": "4.1"
+          },
+          {
+            "chip_key": "value.chip.critical.low",
+            "crop": {
+              "src": "/app/documents/b6b6b6b6-0000-4000-8000-0000000000d2/image?key=f%2Fp%2Fb6b6b6b6-0000-4000-8000-0000000000d2%2Fcrop-v57.jpg"
+            },
+            "date": "2026-08-03",
+            "date_is_upload_day": false,
+            "date_uncertain": false,
+            "document_id": "b6b6b6b6-0000-4000-8000-0000000000d2",
+            "kind": "critical",
+            "observation_id": "b6b6b6b6-0000-4000-8000-000000000157",
+            "side": "low",
+            "value": "2.4"
+          }
+        ],
+        "unit": "mmol/L"
       }
     ]
   },

@@ -1,5 +1,5 @@
 import type { JSX } from "react";
-import type { Json, LabsJson, NowBannerJson, PaperJson, TrendPointJson } from "@/api/types";
+import type { CalendarJson, Json, LabSeriesJson, LabsJson, NowBannerJson, PaperJson } from "@/api/types";
 import { banglaDigits, formatMonthYear, t, type Lang } from "@/copy";
 import { MessageBubble } from "@/components/MessageBubble/MessageBubble";
 import { MioAvatar } from "@/components/MioAvatar/MioAvatar";
@@ -29,6 +29,7 @@ import thisWeekPending from "../../fixtures/api/documents/this-week-pending.json
 import unassessed from "../../fixtures/api/documents/unassessed.json";
 // B3's and B6's generated calendar and labs bodies (plan W2e-b): a state shows what the API sends, never a hand fixture.
 import busyCalendar from "../../fixtures/api/calendar/busy.json";
+import crowdedCalendar from "../../fixtures/api/calendar/crowded.json";
 import emptyCalendar from "../../fixtures/api/calendar/empty.json";
 import labsSome from "../../fixtures/api/health/labs-some.json";
 import labsWithUnknown from "../../fixtures/api/health/labs-with-unknown.json";
@@ -66,14 +67,14 @@ const nameFor = (lang: Lang) => (lang === "bn" ? names.short : names.english);
 const monthCaption = (name: string, lang: Lang, month: string) => `${name} · ${formatMonthYear(lang, `${month}-01`)}`;
 
 /** One series of a generated labs body, chosen by its canonical name. */
-function seriesOf(labs: LabsJson, canonical: string): TrendPointJson[] {
+function seriesOf(labs: LabsJson, canonical: string): LabSeriesJson {
   const series = labs.series.find((s) => s.canonical_name === canonical);
   if (!series) throw new Error(`catalog: no series ${canonical} in the labs fixture`);
-  return series.points;
+  return series;
 }
 
 /** A month of the calendar from a generated body, captioned with `name` and the month. */
-const calendar = (body: { month: string; days: typeof busyCalendar.body.days }, name: string, lang: Lang) => (
+const calendar = (body: CalendarJson, name: string, lang: Lang) => (
   <MonthCalendar month={body.month} days={body.days} caption={monthCaption(name, lang, body.month)} lang={lang} />
 );
 
@@ -217,18 +218,26 @@ export const STATES: CatalogState[] = [
   // wrap inside the grid's width, never widen it (plan Review Focus 3).
   { component: "MonthCalendar", state: "long-name", render: (lang) => calendar(busyCalendar.body, names.long, lang) },
   { component: "MonthCalendar", state: "long-unbroken", render: (lang) => calendar(busyCalendar.body, names.long_unbroken, lang) },
+  // Two papers and a doctor's date on one day, a this-week day alone, and a day where NOW outranks this week.
+  { component: "MonthCalendar", state: "crowded-month", render: (lang) => calendar(crowdedCalendar.body, nameFor(lang), lang) },
 
   // One reading is no chart (it is a sentence on the health screen, W9): this state renders nothing, on purpose.
   {
     component: "TrendChart",
     state: "one-point",
-    render: (lang) => <TrendChart points={seriesOf(labsSome.body, "potassium")} lang={lang} />,
+    render: (lang) => <TrendChart series={seriesOf(labsSome.body, "potassium")} lang={lang} />,
     empty: true,
   },
-  { component: "TrendChart", state: "rising", render: (lang) => <TrendChart points={seriesOf(labsSome.body, "creatinine")} lang={lang} /> },
+  { component: "TrendChart", state: "rising", render: (lang) => <TrendChart series={seriesOf(labsSome.body, "creatinine")} lang={lang} /> },
+  // Every chip kind but critical low, over two calendar years: critical high, outside low, unknown, outside high, inside.
   {
     component: "TrendChart",
     state: "with-unknown",
-    render: (lang) => <TrendChart points={seriesOf(labsWithUnknown.body, "hba1c")} lang={lang} />,
+    render: (lang) => <TrendChart series={seriesOf(labsWithUnknown.body, "hba1c")} lang={lang} />,
+  },
+  {
+    component: "TrendChart",
+    state: "critical-low",
+    render: (lang) => <TrendChart series={seriesOf(labsWithUnknown.body, "potassium")} lang={lang} />,
   },
 ];
