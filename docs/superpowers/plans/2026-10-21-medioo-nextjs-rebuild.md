@@ -204,6 +204,7 @@ Each line is one PR. The **Waves** order work; within a wave, lanes run in paral
 - **W1c** Caddy per-path routing (`/app/healthz` only), the https upstream smoke table, Java bound to 127.0.0.1. *Detailed below.*
 - **W1d** Budget ceilings enforced (DR-42 items 2–4). It may run any time after W1a and must merge before W3.
   - **The ceilings file.** Creates `medioo-web/e2e/budget-ceilings.json`, holding `probe: 214167`, `route: 265409` and the routed pages to measure. `budget.spec.ts` asserts the probe ≤ `probe` and every routed page ≤ `route`, read from that file. Its failure message names which ceiling failed, the route, and the measured and allowed bytes.
+    *Amended by S9 (PO 2026-10-22): the file holds the two ceilings only; the route list is `NEXT_PAGES`, held equal to the build's manifest by `routes.built.test.ts`; the non-empty guard lands with W3's first page.*
   - **The route list is derived.** Every page in the build's `.next/app-path-routes-manifest.json` must have an entry, with each dynamic segment filled from a named fixture. A manifest page with no entry fails.
   - **The enforcing run.** Adds a CI step that runs the built standalone image behind a Caddy replica of `docs/infra/Caddyfile.medioo` (only the address and the upstream changed), then runs the budget spec with `E2E_BASE_URL` pointing at that Caddy. The existing `next start` run keeps the same assertions.
   - Proof:

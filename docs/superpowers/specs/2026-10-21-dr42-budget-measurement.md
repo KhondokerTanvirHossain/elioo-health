@@ -7,6 +7,13 @@
 - **Added by DR-42:** the opt-out POST stays the one no-JS mutation. The file is `medioo-web/e2e/budget-ceilings.json`,
   written by W1d. The enforcing run is this file's reference setup, the image behind a Caddy replica, which W1d adds to CI.
 - **Moot:** the interim proposal (record without enforcing).
+- **Enforced (W1d, 2026-10-22):** `budget.spec.ts` asserts the probe against `probe` and every page of `NEXT_PAGES`
+  (`medioo-web/src/routing/paths.ts`, held equal to the build's pages) against `route`, both read from
+  `medioo-web/e2e/budget-ceilings.json`, with Java's crop and page images left out of a page's total (S9). Every
+  measured load, not only the probe, must carry both Noto subsets (fetched as the worst case even on a page that lays
+  out no Bangla), on the Pixel 7 390×844 profile, asserted before a ceiling is compared. CI runs it
+  against `next start` and, as the defining run, against the image behind the Caddy replica
+  (`scripts/budget-behind-caddy.sh`, `E2E_VIA_CADDY=1`, HSTS required on every measured document).
 
 The measurement below is left as it was taken.
 
