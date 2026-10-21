@@ -1,0 +1,47 @@
+{
+  "_meta": {
+    "generated_by": "baymax PatientTimelineApiContractTest",
+    "source": "GET /app/api/patients/{id}/calendar?month=2026-10 over the case busy"
+  },
+  "body": {
+    "days": [
+      {
+        "date": "2026-10-01",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": "now",
+            "document_id": "3db8f958-a29e-387c-a32f-a44804ddfcb4",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-10-15",
+        "follow_ups": [
+          {
+            "crop": {
+              "src": "/app/documents/8a2d3bfa-3a80-3505-ad40-e3f1e1f4c970/image?key=72841c41-53ee-39e1-8867-37acb833f682%2F2cd6cdf0-4b5d-3982-8255-7459142cff09%2F8a2d3bfa-3a80-3505-ad40-e3f1e1f4c970%2Fcrop-fb03f3b37.jpg"
+            },
+            "document_id": "8a2d3bfa-3a80-3505-ad40-e3f1e1f4c970",
+            "instruction": "Bring the sugar chart"
+          }
+        ],
+        "papers": [ ]
+      },
+      {
+        "date": "2026-10-31",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "8a2d3bfa-3a80-3505-ad40-e3f1e1f4c970",
+            "document_type": "prescription"
+          }
+        ]
+      }
+    ],
+    "month": "2026-10"
+  },
+  "status": 200
+}

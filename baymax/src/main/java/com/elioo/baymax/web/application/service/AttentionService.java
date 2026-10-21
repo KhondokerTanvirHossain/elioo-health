@@ -35,6 +35,10 @@ public class AttentionService implements AttentionUseCase {
     /** A follow-up the doctor wrote due within seven days of the patient's today (both days included). */
     static final int FOLLOW_UP_DAYS = 7;
     public static final int URGENT_LIMIT = 10;
+    /** Plan B3's follow-ups list: from thirty days before the patient's today, so a missed visit stays in sight… */
+    static final int FOLLOW_UPS_BACK_DAYS = 30;
+    /** …to a year after it. */
+    static final int FOLLOW_UPS_AHEAD_DAYS = 365;
 
     private final HealthRecordPort records;
     private final TimelineReadPort timeline;
@@ -74,6 +78,19 @@ public class AttentionService implements AttentionUseCase {
                 .map(List::copyOf);
     }
 
+    @Override
+    public Mono<List<AttentionItem.FollowUp>> followUps(UUID familyId, UUID patientId) {
+        return visible(familyId, patientId)
+                .flatMap(access -> {
+                    LocalDate today = PatientCalendar.today(clock);
+                    return nudgeData.openFollowUpsOfPatient(patientId, today.minusDays(FOLLOW_UPS_BACK_DAYS), today.plusDays(FOLLOW_UPS_AHEAD_DAYS))
+                            .map(f -> new AttentionItem.FollowUp(f.documentId(), f.instruction(), f.dueDate(), f.cropKey()))
+                            .sort(AttentionItem.ORDER)
+                            .collectList();
+                })
+                .map(List::copyOf);
+    }
+
     private Mono<?> visible(UUID familyId, UUID patientId) {
         return records.visiblePatient(familyId, patientId)
                 .switchIfEmpty(Mono.error(BaymaxException.notFound("patient_not_found", "no patient with id " + patientId)));
@@ -82,6 +99,7 @@ public class AttentionService implements AttentionUseCase {
     /** The read model's urgent rows (stored NOW / THIS_WEEK only, filtered in SQL) as cards. */
     private Flux<AttentionItem.Urgent> urgentRows(UUID patientId, Instant since) {
         return timeline.attention(patientId, since, URGENT_LIMIT)
-                .map(e -> new AttentionItem.Urgent(e.documentId(), e.urgency(), e.documentType(), e.date(), e.dateIsFallback(), e.createdAt()));
+                .map(e -> new AttentionItem.Urgent(e.documentId(), e.urgency(), e.documentType(), e.date(), e.dateIsFallback(), e.createdAt(),
+                        e.dateUncertain()));
     }
 }

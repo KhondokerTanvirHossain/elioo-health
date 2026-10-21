@@ -2,6 +2,7 @@ package com.elioo.baymax.web.application.port.in;
 
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.DocumentView;
+import com.elioo.baymax.web.domain.CalendarMonth;
 import com.elioo.baymax.web.domain.FamilyOverview;
 import com.elioo.baymax.web.domain.PaperDeletion;
 import com.elioo.baymax.web.domain.TimelineFilter;
@@ -10,6 +11,7 @@ import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import reactor.core.publisher.Mono;
 
 import java.net.URI;
+import java.time.YearMonth;
 import java.util.List;
 import java.util.UUID;
 
@@ -29,6 +31,13 @@ public interface TimelineUseCase {
      * a {@code verify(never())} name the form no caller uses and pass for that reason.
      */
     Mono<TimelinePage> timeline(UUID familyId, UUID patientId, String cursor, TimelineFilter filter);
+
+    /**
+     * Plan B3: one month of a patient's papers (by their filing day) and the open follow-ups due inside it.
+     * {@code month} null is the patient's current month. Records a TIMELINE_VIEW, as {@link #timeline} does; a patient
+     * this family cannot see is a 404 and records nothing.
+     */
+    Mono<CalendarMonth> calendar(UUID familyId, UUID patientId, YearMonth month);
 
     Mono<DocumentView> document(UUID familyId, UUID documentId);
 

@@ -20,4 +20,10 @@ public interface AttentionUseCase {
      * follow-up query). A patient this family cannot see is a 404.
      */
     Mono<List<AttentionItem.Urgent>> urgent(UUID familyId, UUID patientId);
+
+    /**
+     * Plan B3, the follow-ups list: the open follow-ups the doctor wrote on finished papers, due from thirty days before
+     * the patient's today to a year after it (both included), soonest first. A patient this family cannot see is a 404.
+     */
+    Mono<List<AttentionItem.FollowUp>> followUps(UUID familyId, UUID patientId);
 }

@@ -1,0 +1,38 @@
+{
+  "_meta": {
+    "generated_by": "baymax PatientTimelineApiContractTest",
+    "source": "GET /app/api/patients/{id}/follow-ups over the case some"
+  },
+  "body": {
+    "items": [
+      {
+        "crop": {
+          "src": "/app/documents/2adc8195-2dee-3982-82e0-a94ff2b61f91/image?key=9d68575f-9580-38ec-b1b1-9ba236284212%2Fff47ff48-ec58-38dc-93f6-ce084d4762da%2F2adc8195-2dee-3982-82e0-a94ff2b61f91%2Fcrop-fcb74be42.jpg"
+        },
+        "document_id": "2adc8195-2dee-3982-82e0-a94ff2b61f91",
+        "due_date": "2026-10-21",
+        "instruction": "Come back with the CBC report",
+        "overdue": true
+      },
+      {
+        "crop": {
+          "src": "/app/documents/2adc8195-2dee-3982-82e0-a94ff2b61f91/image?key=9d68575f-9580-38ec-b1b1-9ba236284212%2Fff47ff48-ec58-38dc-93f6-ce084d4762da%2F2adc8195-2dee-3982-82e0-a94ff2b61f91%2Fcrop-f681bc178.jpg"
+        },
+        "document_id": "2adc8195-2dee-3982-82e0-a94ff2b61f91",
+        "due_date": "2026-10-22",
+        "instruction": "Fasting sugar test",
+        "overdue": false
+      },
+      {
+        "crop": {
+          "src": "/app/documents/2adc8195-2dee-3982-82e0-a94ff2b61f91/image?key=9d68575f-9580-38ec-b1b1-9ba236284212%2Fff47ff48-ec58-38dc-93f6-ce084d4762da%2F2adc8195-2dee-3982-82e0-a94ff2b61f91%2Fcrop-f5fcd86f5.jpg"
+        },
+        "document_id": "2adc8195-2dee-3982-82e0-a94ff2b61f91",
+        "due_date": "2027-06-01",
+        "instruction": "Eye check in June",
+        "overdue": false
+      }
+    ]
+  },
+  "status": 200
+}

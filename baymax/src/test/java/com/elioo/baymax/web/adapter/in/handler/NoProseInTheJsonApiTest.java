@@ -159,7 +159,7 @@ class NoProseInTheJsonApiTest {
 
         DocumentIntakeService intake = new DocumentIntakeService(records, documents, mock(FreeTierUseCase.class), storage,
                 new PageRenderer(), new BaymaxProperties(), clock, mock(DocumentProcessingChain.class));
-        TimelineService timeline = new TimelineService(records, documents, intake, storage, audit, clock, urgency, timelineRead);
+        TimelineService timeline = new TimelineService(records, documents, intake, storage, audit, clock, urgency, timelineRead, org.mockito.Mockito.mock(com.elioo.baymax.nudge.application.port.out.NudgeDataPort.class));
         DocumentHandler documentApi = new DocumentHandler(intake, timeline, mock(ExplainDocumentUseCase.class), mock(UploadUseCase.class));
         TimelineApiHandler timelineApi = new TimelineApiHandler(timeline);
         // the paper's display model (rebuild plan B2), over the real result service and the same intake view

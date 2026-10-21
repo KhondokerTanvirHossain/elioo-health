@@ -74,7 +74,7 @@ class TimelineServiceTest {
 
     @BeforeEach
     void wire() {
-        service = new TimelineService(records, documents, intake, storage, audit, Clock.fixed(NOW, ZoneOffset.UTC), urgency, timelineRead);
+        service = new TimelineService(records, documents, intake, storage, audit, Clock.fixed(NOW, ZoneOffset.UTC), urgency, timelineRead, org.mockito.Mockito.mock(com.elioo.baymax.nudge.application.port.out.NudgeDataPort.class));
         when(audit.record(any())).thenReturn(Mono.empty());
         // stubbed for every test, so a path that asks for urgency fails on verify(never()), not on a null Mono
         when(urgency.currentOrAssess(any())).thenReturn(Mono.empty());

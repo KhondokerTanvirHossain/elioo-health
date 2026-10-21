@@ -6,6 +6,7 @@ import com.elioo.baymax.web.domain.TimelineFilter;
 import reactor.core.publisher.Flux;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 /**
@@ -17,6 +18,12 @@ public interface TimelineReadPort {
 
     /** One patient's papers after {@code after}: newest timeline_date, then upload, then id; at most {@code limit}. */
     Flux<TimelineEntry> page(UUID patientId, TimelineCursor after, TimelineFilter filter, int limit);
+
+    /**
+     * Plan B3, the calendar: one patient's papers filed from {@code first} to {@code last} (both included, by
+     * {@code timeline_date}, D2's filing day), every status, in {@link #page}'s order.
+     */
+    Flux<TimelineEntry> month(UUID patientId, LocalDate first, LocalDate last);
 
     /** DONE papers uploaded at or after {@code since} with a stored NOW or THIS_WEEK, in any review state; NOW first, then newest. */
     Flux<TimelineEntry> attention(UUID patientId, Instant since, int limit);

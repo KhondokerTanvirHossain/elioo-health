@@ -12,8 +12,13 @@ GET /app/api/documents/{id}/delete-token
 GET /app/api/documents/{id}/status
 GET /app/api/family
 GET /app/api/me
+GET /app/api/now-banner
+GET /app/api/patients/{id}/attention
+GET /app/api/patients/{id}/calendar
+GET /app/api/patients/{id}/follow-ups
 GET /app/api/patients/{id}/labs
 GET /app/api/patients/{id}/medicines
+GET /app/api/patients/{id}/timeline
 GET /app/api/upload-options
 GET /app/documents/{id}
 GET /app/documents/{id}/all
@@ -46,5 +51,6 @@ POST /app/verify
 PUT /app/api/active-patient
 PUT /app/api/family/reminders
 PUT /app/api/language
+PUT /app/api/now-banner/ack
 PUT /app/api/patients/{id}/flags
 PUT /app/api/patients/{id}/reminders

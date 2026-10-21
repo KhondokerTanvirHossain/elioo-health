@@ -821,6 +821,13 @@ plan's Global Constraints, now also a dated line in `direction-contract.md`:
      the banner; and stored urgency, the NOW block and WhatsApp delivery are unchanged by any ack.
      - *Amendment, 2026-10-21: the member-B test is the default's (DR-45 item 6). It is inverted, not deleted, only if
        the PO confirms the owning-family reading of "per family"; meaning pending confirmation.*
+   - **Engineering notes (plan B3, for PO sight):** member id = the viewer's own `family_account`
+     (`WebSession.familyId()`); there is no member table, and a share member signs in as their own account, so a share
+     member is a separate account holder from the owner (`now_ack.family_id`). The key is
+     `(document_id, urgency, reasons digest, release state)`, not `urgency_assessed_at`: every re-assessment restamps
+     that column (`ExplanationService.detail`, `composeChecked`, `RecropHandler`, the hourly sweep) whether or not
+     anything changed, so keying on it would bring the banner back for nothing new. The digest is the sha256 of the
+     stored `urgency_reasons`, which a raise or a new reason changes and a no-op re-assessment does not.
 
 **Why:** the PO judged the earlier web UI toy-like and chose a grammar every family already reads fluently; WhatsApp
 and Messages are the quality bar the contract names. Mio and the wordmark are the PO's own work and the brand, so the

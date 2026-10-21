@@ -535,6 +535,30 @@ class TimelineReadModelTest {
         });
     }
 
+    /**
+     * Plan B3, the calendar's month: exactly the papers filed inside it (by {@code timeline_date}, D2's filing day), both
+     * edges included, in the page's order, whatever their status. A retake uploaded after Dhaka midnight on 31 October
+     * is November's, a paper printed 1 November is not October's, and another patient's never appears.
+     */
+    @Test
+    void aMonthHoldsThePapersFiledInsideItInTheTimelinesOrder() {
+        runner().run(context -> {
+            UUID p = patient(context);
+            UUID other = patient(context);
+            UUID first = doc(context, p, "2026-10-02T04:00:00Z", "2026-10-01", "lab_report", "DONE");          // in: the first day
+            UUID last = doc(context, p, "2026-10-31T04:00:00Z", "2026-10-31", "prescription", "DONE");         // in: the last day
+            UUID retake = doc(context, p, "2026-10-31T17:59:59Z", "2026-03-04", "lab_report", "NEEDS_RETAKE"); // in: Dhaka 31st
+            doc(context, p, "2026-10-31T18:30:00Z", "2026-10-12", "lab_report", "NEEDS_RETAKE");               // out: Dhaka 1 Nov
+            doc(context, p, "2026-10-20T04:00:00Z", "2026-11-01", "lab_report", "DONE");                       // out: printed November
+            doc(context, p, "2026-10-20T04:00:00Z", "2026-09-30", "lab_report", "DONE");                       // out: printed September
+            doc(context, other, "2026-10-15T04:00:00Z", "2026-10-15", "lab_report", "DONE");                   // out: not this patient
+            List<TimelineEntry> rows = context.getBean(TimelineReadPort.class)
+                    .month(p, LocalDate.parse("2026-10-01"), LocalDate.parse("2026-10-31")).collectList().block();
+            assertThat(rows).extracting(TimelineEntry::documentId).containsExactly(retake, last, first);
+            assertThat(rows).extracting(TimelineEntry::date).allSatisfy(d -> assertThat(YearMonth.from(d)).isEqualTo(YearMonth.parse("2026-10")));
+        });
+    }
+
     /** The patient's one paper, through the timeline read port. */
     private static TimelineEntry only(ApplicationContext context, UUID patient) {
         List<TimelineEntry> rows = context.getBean(TimelineReadPort.class).page(patient, TimelineCursor.FIRST, TimelineFilter.ALL, 10)

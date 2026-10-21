@@ -155,6 +155,11 @@ public class PostgresHealthRecordAdapter implements HealthRecordPort {
                 .flatMap(c -> add(c, "inbound_message", "DELETE FROM " + S + ".inbound_message WHERE family_id = :family"
                         + " OR patient_id IN " + patientsOf, "family", familyId))
                 .flatMap(c -> add(c, "stored_object", "DELETE FROM " + S + ".stored_object WHERE family_id = :family", "family", familyId))
+                // now_ack (plan B3): every দেখেছি this account holder made, on any patient it sees (a share member's own taps on
+                // another family's paper included), and every one anyone made on this family's patients' papers; before
+                // document and family_account (no cascade, so a forgotten row fails the delete loudly)
+                .flatMap(c -> add(c, "now_ack", "DELETE FROM " + S + ".now_ack WHERE family_id = :family"
+                        + " OR patient_id IN " + patientsOf, "family", familyId))
                 .flatMap(c -> add(c, "document", "DELETE FROM " + S + ".document WHERE family_id = :family", "family", familyId))
                 .flatMap(c -> add(c, "web_session", "DELETE FROM " + S + ".web_session WHERE family_id = :family", "family", familyId))
                 .flatMap(c -> add(c, "otp_code", "DELETE FROM " + S + ".otp_code WHERE family_id = :family", "family", familyId))
@@ -179,6 +184,8 @@ public class PostgresHealthRecordAdapter implements HealthRecordPort {
                 // V22: the photos and files filed under this patient; a family-level text (patient_id NULL) stays with the family
                 .flatMap(c -> add(c, "inbound_message", "DELETE FROM " + S + ".inbound_message WHERE patient_id = :patient", "patient", patientId))
                 .flatMap(c -> add(c, "stored_object", "DELETE FROM " + S + ".stored_object WHERE patient_id = :patient", "patient", patientId))
+                // now_ack (plan B3): every দেখেছি on this patient's papers, whoever tapped; the family's own taps elsewhere stay
+                .flatMap(c -> add(c, "now_ack", "DELETE FROM " + S + ".now_ack WHERE patient_id = :patient", "patient", patientId))
                 .flatMap(c -> add(c, "document", "DELETE FROM " + S + ".document WHERE patient_id = :patient", "patient", patientId))
                 .flatMap(c -> add(c, "patient_profile", "DELETE FROM " + S + ".patient_profile WHERE id = :patient", "patient", patientId));
     }

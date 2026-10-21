@@ -32,10 +32,19 @@ public class AppApiRouter {
                                                              UploadApiHandler uploads, PaperStatusApiHandler status,
                                                              PaperDeleteApiHandler deletes, FamilyApiHandler family,
                                                              HealthApiHandler health,
+                                                             NowBannerApiHandler nowBanner,
+                                                             AttentionApiHandler attention, PatientTimelineApiHandler timeline,
                                                              AppApiGuard guard) {
         return RouterFunctions.route()
                 .GET(BASE + "/me", me::me)
                 .PUT(BASE + "/active-patient", me::setActivePatient)
+                // plan B3: the global NOW banner and its দেখেছি, per account holder (DR-41 item 5)
+                .GET(BASE + "/now-banner", nowBanner::banner)
+                .PUT(BASE + "/now-banner/ack", nowBanner::acknowledge)
+                .GET(BASE + "/patients/{id}/attention", attention::attention)
+                .GET(BASE + "/patients/{id}/timeline", timeline::timeline)
+                .GET(BASE + "/patients/{id}/calendar", timeline::calendar)
+                .GET(BASE + "/patients/{id}/follow-ups", timeline::followUps)
                 // the two routes that need no session (AppApiGuard.OPEN); CSRF still applies, Origin required
                 .POST(BASE + "/sign-in/request", signIn::request)
                 .POST(BASE + "/sign-in/verify", signIn::verify)

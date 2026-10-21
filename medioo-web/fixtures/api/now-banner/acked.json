@@ -1,0 +1,30 @@
+{
+  "_meta": {
+    "generated_by": "baymax NowBannerApiContractTest",
+    "source": "GET /app/api/now-banner over the case acked"
+  },
+  "body": {
+    "call_999": true,
+    "documents": [
+      {
+        "acked": true,
+        "date": "2026-10-19",
+        "date_is_upload_day": false,
+        "document_id": "068dcb20-1be4-30bc-9228-b7f9afc73a9b",
+        "document_type": "lab_report",
+        "patient_id": "2ebb33dd-96f8-3026-b36f-e80ff02c1fef"
+      }
+    ],
+    "line_key": "urgency.now",
+    "seen": [
+      {
+        "document_id": "068dcb20-1be4-30bc-9228-b7f9afc73a9b",
+        "reasons_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "release_state": "none",
+        "urgency": "now"
+      }
+    ],
+    "show": false
+  },
+  "status": 200
+}

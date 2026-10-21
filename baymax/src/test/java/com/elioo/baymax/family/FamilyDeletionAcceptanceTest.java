@@ -7,6 +7,11 @@ import com.elioo.baymax.aicall.adapter.in.router.AdminAuthFilter;
 import com.elioo.baymax.config.BaymaxAutoConfiguration;
 import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
 import com.elioo.baymax.storage.application.port.out.StoragePort;
+import com.elioo.baymax.testsupport.FamilySweep;
+import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
+import com.elioo.baymax.healthrecord.domain.FamilyAccount;
+import com.elioo.baymax.healthrecord.domain.PatientProfile;
+import reactor.core.publisher.Mono;
 import com.elioo.baymax.wa.application.port.out.InboundMessagePort;
 import com.elioo.baymax.wa.domain.InboundMessage;
 import com.elioo.healthcare.llm.config.LlmAutoConfiguration;
@@ -70,9 +75,6 @@ class FamilyDeletionAcceptanceTest {
     static final String BUCKET = "baymax";
     static final String TOKEN = "admin-test-token";
     static final byte[] JPEG = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 0, 0x10, 'J', 'F', 'I', 'F', 0, 1};
-    /** The tables that hold family data with no foreign key at all: only the column-name lookup can find them. */
-    static final List<String> FK_LESS = List.of("audit_event.family_id", "audit_event.patient_id",
-            "stored_object.family_id", "stored_object.patient_id");
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
@@ -148,7 +150,11 @@ class FamilyDeletionAcceptanceTest {
     }
 
     /** A family's whole graph, with a row in every table the schema says can hold its data. */
-    private record Fixture(UUID family, UUID patient, UUID docA, UUID docB, List<UUID> shareMembers, UUID costRow) {
+    private record Fixture(UUID family, UUID patient, UUID docA, UUID docB, List<UUID> shareMembers, UUID costRow,
+                           FamilySweep.Ids other, UUID otherDoc) {
+        FamilySweep.Ids ids() {
+            return new FamilySweep.Ids(family, patient, shareMembers);
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -237,11 +243,39 @@ class FamilyDeletionAcceptanceTest {
         // (the claim and the handling each look the family up). Written by SQL: linkDocument now fills the family in.
         sql("insert into baymax.inbound_message (provider_key, patient_id, type) values ('" + hexKey(f, 3) + "','" + p + "','image')");
 
+        // Plan B3 (now_ack), each a দেখেছি by a real account holder: the family on its own paper; the share member,
+        // made a family_account here, on the same paper (the number the admin share above used); and the cross-family
+        // case, the only one the family_id clause exists for: F is a share member of another family G's patient and
+        // acked G's NOW paper, which no document or patient of F's covers.
+        HealthRecordPort records = context.getBean(HealthRecordPort.class);
+        String memberNumber = "+8801811111111";
+        UUID member = records.findFamilyByWhatsapp(memberNumber)
+                .switchIfEmpty(Mono.defer(() -> records.createFamily(new FamilyAccount(null, memberNumber, "Sister", FamilyAccount.Plan.FREE,
+                        Instant.now(), Instant.now()))))
+                .block().id();
+        FamilyAccount g = records.createFamily(new FamilyAccount(null, "+880181111" + number.substring(number.length() - 4), "Karim",
+                FamilyAccount.Plan.FREE, Instant.now(), Instant.now())).block();
+        UUID gp = records.createPatient(new PatientProfile(null, g.id(), "Nana", 81, PatientProfile.Sex.MALE, List.of(), Instant.now(),
+                Instant.now())).block().id();
+        UUID gDoc = UUID.randomUUID();
+        sql("insert into baymax.document (id, patient_id, family_id, document_type, doc_date, status, page_count, urgency, urgency_reasons, "
+                + "urgency_assessed_at) values ('" + gDoc + "','" + gp + "','" + g.id() + "','lab_report','2026-09-01','DONE',1,'now','[]',now())");
+        sql("insert into baymax.share_member (patient_id, whatsapp_number) values ('" + gp + "','" + number + "')");
+        nowAck(f, p, docA);
+        nowAck(member, p, docA);
+        nowAck(f, gp, gDoc);
+
         List<UUID> shares = new ArrayList<>();
         for (String id : column("select id from baymax.share_member where patient_id = '" + p + "'")) {
             shares.add(UUID.fromString(id));
         }
-        return new Fixture(f, p, docA, docB, shares, costRow);
+        return new Fixture(f, p, docA, docB, shares, costRow, new FamilySweep.Ids(g.id(), gp, List.of()), gDoc);
+    }
+
+    /** One দেখেছি row, as PostgresNowAckAdapter.record writes it (the digest of "[]"). */
+    private static void nowAck(UUID viewer, UUID patient, UUID document) throws Exception {
+        sql("insert into baymax.now_ack (family_id, patient_id, document_id, urgency, reasons_digest, release_state) values ('"
+                + viewer + "','" + patient + "','" + document + "','now',encode(sha256(convert_to('[]', 'UTF8')), 'hex'),'none')");
     }
 
     /** An HMAC-shaped key, unique per family, so two fixtures in one database never collide. */
@@ -259,9 +293,15 @@ class FamilyDeletionAcceptanceTest {
             UUID otherFamily = UUID.randomUUID();
             context.getBean(DocumentStorageUseCase.class).storePage(otherFamily, UUID.randomUUID(), UUID.randomUUID(), 1, JPEG).block();
 
-            List<Target> targets = targets();
+            List<FamilySweep.Target> targets = targets();
             assertThat(emptyBefore(targets, fx, t -> true))
                     .as("the fixture left these empty; the sweep would pass for them without testing anything").isEmpty();
+            Map<String, Long> otherBefore;
+            try (Connection c = connect()) {
+                otherBefore = FamilySweep.rowsByColumn(c, targets, fx.other());
+            }
+            assertThat(otherBefore).as("the other family's ack on its own paper, by F, before the delete")
+                    .containsEntry("now_ack.patient_id", 1L);
 
             // admin storage self-test against the same bucket
             api.get().uri("/api/v1/baymax/admin/storage/selftest").header(AdminAuthFilter.HEADER, TOKEN)
@@ -287,6 +327,17 @@ class FamilyDeletionAcceptanceTest {
                     .jsonPath("$.deleted_at").isNotEmpty();
 
             assertThat(stillHolding(targets, fx, t -> true)).as("tables still holding rows for the deleted family").isEmpty();
+            assertThat(scalar("select count(*) from baymax.now_ack where document_id = '" + fx.otherDoc() + "'"))
+                    .as("F's ack on the other family's paper").isEqualTo("0");
+            Map<String, Long> otherAfter;
+            try (Connection c = connect()) {
+                otherAfter = FamilySweep.rowsByColumn(c, targets, fx.other());
+            }
+            Map<String, Long> expected = new LinkedHashMap<>(otherBefore);
+            expected.put("now_ack.patient_id", 0L);
+            assertThat(otherAfter).as("the other family, its patient, its paper and its other rows are intact").isEqualTo(expected);
+            assertThat(otherAfter).containsEntry("family_account.id", 1L).containsEntry("patient_profile.id", 1L)
+                    .containsEntry("document.patient_id", 1L);
             assertThat(scalar("select count(*) from baymax.ai_call_log where document_id = '" + fx.docA() + "'")).isEqualTo("0");
             assertThat(scalar("select (document_id is null)::text from baymax.ai_call_log where id = '" + fx.costRow() + "'"))
                     .as("the fixture's cost row survives, detached from the deleted document").isEqualTo("true");
@@ -304,8 +355,8 @@ class FamilyDeletionAcceptanceTest {
             WebTestClient api = api(context);
             Fixture fx = seed(context, api, "+8801700000003");
 
-            List<Target> targets = targets();
-            java.util.function.Predicate<Target> patientScoped = t -> "patient_profile".equals(t.target());
+            List<FamilySweep.Target> targets = targets();
+            java.util.function.Predicate<FamilySweep.Target> patientScoped = t -> "patient_profile".equals(t.target());
             assertThat(targets.stream().filter(patientScoped).toList())
                     .as("the patient-scoped sweep derived from the schema is not empty").isNotEmpty();
             assertThat(emptyBefore(targets, fx, patientScoped))
@@ -327,102 +378,27 @@ class FamilyDeletionAcceptanceTest {
         });
     }
 
-    /** One swept column, and what it points at: family_account, patient_profile or share_member. */
-    private record Target(String table, String column, String target) {
-        String name() {
-            return table + "." + column;
+    /** The swept columns, derived from the schema twice and united ({@link FamilySweep#targets}). */
+    private static List<FamilySweep.Target> targets() throws Exception {
+        try (Connection c = connect()) {
+            return FamilySweep.targets(c);
         }
-    }
-
-    /**
-     * Every column that can hold a family's data, derived twice and united: (a) every foreign key in schema baymax that
-     * points at family_account, patient_profile or share_member, whatever the column is called (a later viewer_id or a
-     * sibling link); (b) every column named family_id or patient_id, which finds the tables that carry the ids with no
-     * foreign key at all. Guarded against emptiness and against either derivation going blind.
-     */
-    private static List<Target> targets() throws Exception {
-        Map<String, Target> byName = new LinkedHashMap<>();
-        List<String> fkNames = new ArrayList<>();
-        try (Connection c = connect(); Statement s = c.createStatement()) {
-            try (ResultSet rs = s.executeQuery("""
-                    SELECT cl.relname AS tbl, a.attname AS col, ref.relname AS target
-                    FROM pg_constraint c
-                    JOIN pg_class cl ON cl.oid = c.conrelid
-                    JOIN pg_namespace n ON n.oid = cl.relnamespace
-                    JOIN pg_class ref ON ref.oid = c.confrelid
-                    JOIN LATERAL unnest(c.conkey) AS k(attnum) ON true
-                    JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
-                    WHERE c.contype = 'f' AND n.nspname = 'baymax'
-                      AND ref.relname IN ('family_account', 'patient_profile', 'share_member')
-                    ORDER BY 1, 2""")) {
-                while (rs.next()) {
-                    Target t = new Target(rs.getString(1), rs.getString(2), rs.getString(3));
-                    byName.put(t.name(), t);
-                    fkNames.add(t.name());
-                }
-            }
-            List<String> byColumnName = new ArrayList<>();
-            try (ResultSet rs = s.executeQuery(
-                    "SELECT table_name, column_name FROM information_schema.columns "
-                            + "WHERE table_schema = 'baymax' AND column_name IN ('family_id','patient_id') "
-                            + "ORDER BY table_name, column_name")) {
-                while (rs.next()) {
-                    Target t = new Target(rs.getString(1), rs.getString(2),
-                            "family_id".equals(rs.getString(2)) ? "family_account" : "patient_profile");
-                    byName.putIfAbsent(t.name(), t);
-                    byColumnName.add(t.name());
-                }
-            }
-            assertThat(fkNames).as("pg_constraint returned no foreign keys to a family or patient — the sweep would "
-                    + "vacuously pass, which is the failure mode this helper exists to prevent")
-                    .contains("document.family_id", "inbound_message.family_id");
-            assertThat(byColumnName).as("the column-name lookup no longer sees the tables that hold family data "
-                    + "without a foreign key").containsAll(FK_LESS);
-        }
-        return List.copyOf(byName.values());
-    }
-
-    /** The ids a column must be checked against for this fixture. */
-    private static List<String> idsFor(Target t, Fixture fx) {
-        return switch (t.target()) {
-            case "family_account" -> List.of(fx.family().toString());
-            case "patient_profile" -> List.of(fx.patient().toString());
-            case "share_member" -> fx.shareMembers().stream().map(UUID::toString).toList();
-            default -> throw new IllegalStateException("unexpected target " + t.target());
-        };
-    }
-
-    private static long rows(Target t, List<String> ids) throws Exception {
-        if (ids.isEmpty()) {
-            return 0;
-        }
-        String in = ids.stream().map(id -> "'" + id + "'").collect(Collectors.joining(","));
-        return Long.parseLong(scalar("SELECT count(*) FROM baymax." + t.table() + " WHERE " + t.column() + " IN (" + in + ")"));
     }
 
     /** The guard on the guard: the swept columns that hold nothing for this fixture before the delete. */
-    private static List<String> emptyBefore(List<Target> targets, Fixture fx,
-                                            java.util.function.Predicate<Target> scope) throws Exception {
-        List<String> empty = new ArrayList<>();
-        for (Target t : targets) {
-            if (scope.test(t) && rows(t, idsFor(t, fx)) == 0) {
-                empty.add(t.name());
-            }
+    private static List<String> emptyBefore(List<FamilySweep.Target> targets, Fixture fx,
+                                            java.util.function.Predicate<FamilySweep.Target> scope) throws Exception {
+        try (Connection c = connect()) {
+            return FamilySweep.emptyBefore(c, targets, fx.ids(), scope);
         }
-        return empty;
     }
 
     /** {@code table.column=count} for every swept column that still holds this fixture's rows. */
-    private static List<String> stillHolding(List<Target> targets, Fixture fx,
-                                             java.util.function.Predicate<Target> scope) throws Exception {
-        List<String> offenders = new ArrayList<>();
-        for (Target t : targets) {
-            long n = scope.test(t) ? rows(t, idsFor(t, fx)) : 0;
-            if (n > 0) {
-                offenders.add(t.name() + "=" + n);
-            }
+    private static List<String> stillHolding(List<FamilySweep.Target> targets, Fixture fx,
+                                             java.util.function.Predicate<FamilySweep.Target> scope) throws Exception {
+        try (Connection c = connect()) {
+            return FamilySweep.stillHolding(c, targets, fx.ids(), scope);
         }
-        return offenders;
     }
 
     private static void sql(String statement) throws Exception {

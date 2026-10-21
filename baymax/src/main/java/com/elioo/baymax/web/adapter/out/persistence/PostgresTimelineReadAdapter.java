@@ -55,6 +55,12 @@ public class PostgresTimelineReadAdapter implements TimelineReadPort {
             LIMIT :limit
             """;
 
+    /** Plan B3: the calendar's month, by the filing day, in the page's order. */
+    private static final String MONTH = COLUMNS + """
+            WHERE d.patient_id = :patient AND d.timeline_date BETWEEN :first AND :last
+            ORDER BY d.timeline_date DESC, d.created_at DESC, d.id DESC
+            """;
+
     private static final String ATTENTION = COLUMNS + """
             WHERE d.patient_id = :patient AND d.status = 'DONE' AND d.urgency IN ('now', 'this_week') AND d.created_at >= :since
             ORDER BY CASE d.urgency WHEN 'now' THEN 0 ELSE 1 END, d.timeline_date DESC, d.created_at DESC, d.id DESC
@@ -84,6 +90,15 @@ public class PostgresTimelineReadAdapter implements TimelineReadPort {
                 .bind("created", OffsetDateTime.ofInstant(after.createdAt(), ZoneOffset.UTC))
                 .bind("id", after.id())
                 .bind("limit", limit)
+                .map(PostgresTimelineReadAdapter::entry).all();
+    }
+
+    @Override
+    public Flux<TimelineEntry> month(UUID patientId, LocalDate first, LocalDate last) {
+        return db.sql(MONTH)
+                .bind("patient", patientId)
+                .bind("first", first)
+                .bind("last", last)
                 .map(PostgresTimelineReadAdapter::entry).all();
     }
 

@@ -1,0 +1,11 @@
+{
+  "_meta": {
+    "generated_by": "baymax PatientTimelineApiContractTest",
+    "source": "GET /app/api/patients/{id}/calendar?month=2026-10 over the case empty"
+  },
+  "body": {
+    "days": [ ],
+    "month": "2026-10"
+  },
+  "status": 200
+}

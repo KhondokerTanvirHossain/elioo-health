@@ -1,0 +1,62 @@
+{
+  "_meta": {
+    "generated_by": "baymax AttentionApiContractTest",
+    "source": "GET /app/api/patients/{id}/attention over the case full-stack"
+  },
+  "body": {
+    "items": [
+      {
+        "action_key": "attn.open",
+        "date": "2026-10-19",
+        "date_is_upload_day": false,
+        "date_uncertain": false,
+        "document_id": "e072b325-92e0-330d-a73d-ec6a91a3f878",
+        "document_type": "lab_report",
+        "kind": "urgent",
+        "level": "now",
+        "received_at": "2026-10-20T06:00:00Z"
+      },
+      {
+        "action_key": "attn.open",
+        "date": "2026-10-18",
+        "date_is_upload_day": false,
+        "date_uncertain": true,
+        "document_id": "dc7da7a8-3216-35b4-a49e-36f4f3dc8027",
+        "document_type": "lab_report",
+        "kind": "urgent",
+        "level": "this_week",
+        "received_at": "2026-10-19T06:00:00Z"
+      },
+      {
+        "action_key": "attn.open",
+        "date": "2026-10-21",
+        "date_is_upload_day": true,
+        "document_id": "4498422c-8c85-3428-9a2b-13ab213b80ba",
+        "kind": "retake",
+        "received_at": "2026-10-21T03:00:00Z",
+        "title_key": "attn.retake.title"
+      },
+      {
+        "action_key": "attn.open",
+        "crop": {
+          "src": "/app/documents/18233920-3755-3464-8f55-1502aaf09e63/image?key=bd519d05-63bd-3dec-9036-7a5ab0775ddc%2F038242ce-e222-3bf5-b30d-01fa1310c3ee%2F18233920-3755-3464-8f55-1502aaf09e63%2Fcrop-fb71a86e3.jpg"
+        },
+        "document_id": "18233920-3755-3464-8f55-1502aaf09e63",
+        "due_date": "2026-10-24",
+        "instruction": "Come back with the CBC report",
+        "kind": "follow_up",
+        "title_key": "attn.follow.title"
+      },
+      {
+        "action_key": "attn.open",
+        "date": "2026-10-21",
+        "date_is_upload_day": true,
+        "document_id": "a407f1d6-ca52-36ac-b3a0-9cd4f960131a",
+        "kind": "reading",
+        "received_at": "2026-10-21T05:55:00Z",
+        "title_key": "attn.reading.title"
+      }
+    ]
+  },
+  "status": 200
+}
