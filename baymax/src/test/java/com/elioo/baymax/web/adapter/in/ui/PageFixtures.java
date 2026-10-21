@@ -176,6 +176,12 @@ final class PageFixtures {
         put("POST /app/verify", new Fixture("/app/verify", false, Body.FORM, Map.of("code", "123456"), Stubs::noCode).withCookie("baymax_login", LOGIN));
         variant("POST /app/verify", new Fixture("/app/verify", false, Body.FORM, Map.of("code", "123456"), Stubs::codeAccepted)
                 .withCookie("baymax_login", LOGIN).named("accepted"));
+        // plan W3-api, S1: the no-JS fallback is the same pages under /app/basic, with the same fixtures
+        put("GET /app/basic/", Fixture.get("/app/basic/", false, k -> { }));
+        put("GET /app/basic", Fixture.get("/app/basic", false, k -> { }));
+        put("GET /app/basic/verify", Fixture.get("/app/basic/verify", false, k -> { }).withCookie("baymax_login", LOGIN));
+        put("POST /app/basic/login", new Fixture("/app/basic/login", false, Body.FORM, Map.of("whatsapp_number", "01700000000", "confirmed", "1"), Stubs::noCode));
+        put("POST /app/basic/verify", new Fixture("/app/basic/verify", false, Body.FORM, Map.of("code", "123456"), Stubs::noCode).withCookie("baymax_login", LOGIN));
         put("POST /app/logout", new Fixture("/app/logout", true, Body.FORM, Map.of(), Stubs::logsOut));
         put("POST /app/nudges/opt-out", new Fixture("/app/nudges/opt-out", false, Body.FORM, Map.of("p", ma, "t", "valid", "scope", "patient"), Stubs::validOptOutLink));
         variant("POST /app/nudges/opt-out", new Fixture("/app/nudges/opt-out", false, Body.FORM, Map.of("p", ma, "t", "valid", "scope", "family"), Stubs::validOptOutLink).named("family"));

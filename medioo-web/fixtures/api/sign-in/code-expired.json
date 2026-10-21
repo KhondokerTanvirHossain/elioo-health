@@ -1,0 +1,10 @@
+{
+  "_meta": {
+    "generated_by": "baymax SignInApiContractTest",
+    "source": "POST /app/api/sign-in/verify over the SignInApiContractTest case code-expired"
+  },
+  "body": {
+    "reason": "CODE_EXPIRED"
+  },
+  "status": 400
+}

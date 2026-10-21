@@ -1,0 +1,10 @@
+{
+  "_meta": {
+    "generated_by": "baymax SignInApiContractTest",
+    "source": "POST /app/api/sign-in/verify over the SignInApiContractTest case code-burned"
+  },
+  "body": {
+    "reason": "CODE_BURNED"
+  },
+  "status": 400
+}

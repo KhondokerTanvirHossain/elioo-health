@@ -483,10 +483,17 @@ class FamilyApiContractTest {
         List<String> hits = new ArrayList<>();
         Set<String> areasRead = new TreeSet<>();
         List<String> accountNumbers = new ArrayList<>();
+        // plan W3-api: the sign-in fixtures carry two numbers that are not a family's account number, each exempted
+        // at one path and only when it is exactly the value SignInApiContractTest serves — the visitor's own typed
+        // number shown back for a yes, and Medioo's public WhatsApp number in the link. Any other value there is a hit.
+        String shownBack = PhoneDisplay.full(SignInApiContractTest.NUMBER);
+        String waPrefix = "https://wa.me/" + SignInApiContractTest.PUBLIC_NUMBER + "?text=";
+        List<String> exempted = new ArrayList<>();
         for (Path file : files) {
             String area = FIXTURES.relativize(file).getName(0).toString();
             areasRead.add(area);
             boolean family = area.equals("family");
+            boolean signIn = area.equals("sign-in");
             JsonNode tree = json.readTree(Files.readString(file, StandardCharsets.UTF_8));
             Json.walk(tree, (path, node) -> {
                 List<String> seen = new ArrayList<>();
@@ -497,6 +504,10 @@ class FamilyApiContractTest {
                 if (node.isTextual() || node.isNumber()) {
                     if (family && path.equals(ACCOUNT_NUMBER) && node.isTextual()) {
                         accountNumbers.add(node.asText());
+                    } else if (signIn && node.isTextual() && (path.equals("$.body.confirm.number_display") && node.asText().equals(shownBack)
+                            || path.equals("$.body.wa_link") && node.asText().startsWith(waPrefix)
+                            && !NUMBER_FORMS.stream().anyMatch(p -> p.matcher(node.asText().substring(waPrefix.length())).find()))) {
+                        exempted.add(FIXTURES.relativize(file) + " " + path);
                     } else {
                         seen.add(node.asText());
                     }
@@ -511,6 +522,11 @@ class FamilyApiContractTest {
             });
         }
         assertThat(hits).as("string values carrying a phone number outside account.number").isEmpty();
+        // the exemption is not vacuous, and what it lets through is a number the patterns do see
+        assertThat(exempted).as("the sign-in numbers exempted by value").contains("sign-in/confirm.json $.body.confirm.number_display")
+                .anyMatch(e -> e.endsWith("$.body.wa_link"));
+        assertThat(NUMBER_FORMS.stream().anyMatch(p -> p.matcher(shownBack).find())).as("the patterns see " + shownBack).isTrue();
+        assertThat(NUMBER_FORMS.stream().anyMatch(p -> p.matcher(waPrefix).find())).as("the patterns see " + waPrefix).isTrue();
 
         Set<String> areas;
         try (Stream<Path> dirs = Files.list(FIXTURES)) {

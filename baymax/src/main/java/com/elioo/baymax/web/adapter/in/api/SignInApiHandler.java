@@ -39,6 +39,9 @@ import java.util.Optional;
  *   <li>{@code POST /app/api/sign-in/verify}, {@code {"code"}}: a session cookie and {@code {next}}, the held place
  *       through {@link LoginCookie#nextPage} (it feeds client-side navigation, so it is checked when it is used, not
  *       only when it was held), else {@code /app/home}.</li>
+ *   <li>(plan W3-api) {@code GET /app/api/sign-in/state}, open: the code step read back from the login cookie;
+ *       {@code GET /app/api/sign-in/next}, session: the held place, checked; {@code POST /app/api/sign-out}, session:
+ *       the session ended and its cookie cleared.</li>
  * </ul>
  * Both routes are in {@link AppApiGuard#OPEN}: no session needed, CSRF still applied, {@code Origin} required. That is
  * the CSRF rule for a sessionless mutation, not a defence against automation: a non-browser client sets {@code Origin}
@@ -82,9 +85,47 @@ public class SignInApiHandler {
                         LoginCookie.value(requested.phoneHash(), PhoneDisplay.last3(number.get()), requested.sent()),
                         LoginCookie.TTL, secure()));
                 next.ifPresent(n -> ok.cookie(LoginCookie.cookie(LoginCookie.NEXT_NAME, n, LoginCookie.TTL, secure())));
-                return json(ok, requested(requested, number.get(), lang));
+                return json(ok, requested(requested.sent(), PhoneDisplay.last3(number.get()), lang, properties));
             });
         });
+    }
+
+    /**
+     * {@code GET /app/api/sign-in/state} (plan W3-api; open, no session): the code step read back from the
+     * {@code baymax_login} cookie Java wrote, so the Next code page can show the right step after the family comes back
+     * from WhatsApp and never parses the cookie itself. {@code {"pending": false}} without a cookie of the shape Java
+     * writes — missing, tampered, or the pre-tail bare-hash form, whose 30 minutes ended long ago and which has no tail
+     * to show (the page asks for the number again, which writes a fresh one); otherwise {@code pending: true} and
+     * exactly what the confirmed request answered ({@link #requested}). Reads the cookie, writes nothing.
+     */
+    public Mono<ServerResponse> state(ServerRequest request) {
+        Optional<LoginCookie.Login> login = LoginCookie.read(request).filter(l -> l.tail() != null);
+        if (login.isEmpty()) {
+            return json(ServerResponse.ok(), Map.of("pending", false));
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("pending", true);
+        body.putAll(requested(login.get().sent(), login.get().tail(), Lang.of(request), properties));
+        return json(ServerResponse.ok(), body);
+    }
+
+    /**
+     * {@code GET /app/api/sign-in/next?next=<encoded>} (plan W3-api; session): the place a signed-in visitor of the
+     * sign-in page is sent on to, checked here by {@link LoginCookie#nextPage} exactly as the HTML page checks it, so
+     * Next never judges {@code next}. Anything refused, or none, is {@link LoginCookie#HOME}.
+     */
+    public Mono<ServerResponse> next(ServerRequest request) {
+        return json(ServerResponse.ok(), Map.of("next", request.queryParam("next").flatMap(LoginCookie::nextPage).orElse(LoginCookie.HOME)));
+    }
+
+    /**
+     * {@code POST /app/api/sign-out} (plan W3-api; session, CSRF): the session ended in the store, then 204 with the
+     * cleared {@code baymax_session} cookie ({@code Path=/app}, {@code Max-Age=0}), the HTML {@code /app/logout}'s two
+     * steps without its redirect.
+     */
+    public Mono<ServerResponse> signOut(ServerRequest request) {
+        return Mono.justOrEmpty(sessions.token(request)).flatMap(auth::logout)
+                .then(Mono.defer(() -> ServerResponse.noContent().cookie(sessions.clearedCookie()).build()));
     }
 
     public Mono<ServerResponse> verify(ServerRequest request) {
@@ -124,13 +165,14 @@ public class SignInApiHandler {
     }
 
     /**
-     * What a confirmed request answers: whether WhatsApp accepted the code, the tail the code page shows, the numbers
-     * its copy needs, and the WhatsApp link when a public number is set. Nothing else varies with the outcome.
+     * What a confirmed request answers, and what {@link #state} reads back: whether WhatsApp accepted the code, the
+     * tail the code page shows, the numbers its copy needs, and the WhatsApp link when a public number is set. Nothing
+     * else varies with the outcome. One method for both answers, so the two cannot drift.
      */
-    private Map<String, Object> requested(CodeRequest requested, String number, Lang lang) {
+    static Map<String, Object> requested(boolean sent, String tail, Lang lang, BaymaxProperties properties) {
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("sent", requested.sent());
-        body.put("number_tail", PhoneDisplay.last3(number));
+        body.put("sent", sent);
+        body.put("number_tail", tail);
         body.put("code_ttl_minutes", properties.getAuth().getOtpTtl().toMinutes());
         body.put("max_attempts", properties.getAuth().getOtpMaxAttempts());
         String link = WaLink.of(lang, properties.getWa().getPublicNumber());

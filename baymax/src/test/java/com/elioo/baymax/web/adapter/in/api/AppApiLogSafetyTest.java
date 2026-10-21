@@ -430,6 +430,32 @@ class AppApiLogSafetyTest {
                 verifyCode(c, login.get(), wrong).expectStatus().isBadRequest().expectBody().json("{\"reason\":\"CODE_WRONG\"}", true);
                 verifyCode(c, login.get(), code).expectStatus().isOk();
             });
+            // plan W3-api: the code step read back with no session (the cookie the request wrote carries the tail),
+            // the checked held place with the number and the name in the query, and sign-out on a session of its own
+            exercise.put("GET /app/api/sign-in/state", (c, t) -> {
+                c.get().uri("/app/api/sign-in/state").cookie("baymax_login", login.get()).exchange().expectStatus().isOk()
+                        .expectBody().jsonPath("$.pending").isEqualTo(true);
+                c.get().uri(b -> b.path("/app/api/sign-in/state").queryParam("n", NUMBER).build()).exchange().expectStatus().isOk()
+                        .expectBody().json("{\"pending\":false}", true);
+            });
+            exercise.put("GET /app/api/sign-in/next", (c, t) -> {
+                c.get().uri(b -> b.path("/app/api/sign-in/next").queryParam("next", "{n}").build("/app/documents/" + paper))
+                        .cookie("baymax_session", t).exchange().expectStatus().isOk()
+                        .expectBody().jsonPath("$.next").isEqualTo("/app/documents/" + paper);
+                c.get().uri(b -> b.path("/app/api/sign-in/next").queryParam("next", "{n}").build("/app/" + NAME + "/" + NUMBER))
+                        .cookie("baymax_session", t).exchange().expectStatus().isOk();
+                c.get().uri(b -> b.path("/app/api/sign-in/next").queryParam("next", "{n}").build("/app/" + NUMBER))
+                        .exchange().expectStatus().isUnauthorized();
+            });
+            String leaving = AppApiContext.session(context, family.id());
+            exercise.put("POST /app/api/sign-out", (c, t) -> {
+                c.post().uri("/app/api/sign-out").cookie("baymax_session", leaving).header("Origin", AppApiContext.ORIGIN)
+                        .contentType(MediaType.APPLICATION_JSON).exchange().expectStatus().isForbidden();
+                c.post().uri("/app/api/sign-out").cookie("baymax_session", leaving).header("X-Medioo", "1")
+                        .header("Origin", AppApiContext.ORIGIN).contentType(MediaType.APPLICATION_JSON).exchange()
+                        .expectStatus().isNoContent();
+                c.get().uri("/app/api/me").cookie("baymax_session", leaving).exchange().expectStatus().isUnauthorized();
+            });
             exercise.put("GET /app/api/upload-options", (c, t) -> c.get().uri("/app/api/upload-options").cookie("baymax_session", t)
                     .exchange().expectStatus().isOk());
             // the success path first: the photo is named for the patient, and the line intake and the handler write once

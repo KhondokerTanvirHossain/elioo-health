@@ -1,0 +1,10 @@
+{
+  "_meta": {
+    "generated_by": "baymax SignInApiContractTest",
+    "source": "GET /app/api/sign-in/state over the SignInApiContractTest case state-none"
+  },
+  "body": {
+    "pending": false
+  },
+  "status": 200
+}

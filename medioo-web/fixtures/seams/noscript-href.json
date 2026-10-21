@@ -1,0 +1,8 @@
+{
+  "_meta": {
+    "generated_by": "baymax BasicSignInPagesTest",
+    "source": "the held place a signed-out paper link keeps, and the <noscript> href to the Java fallback that holds it"
+  },
+  "held": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003",
+  "href": "/app/basic?next=%2Fapp%2Fdocuments%2F5e9edf6d-0a2a-4913-8675-9d07a4100003"
+}

@@ -20,7 +20,12 @@ GET /app/api/patients/{id}/labs
 GET /app/api/patients/{id}/medicines
 GET /app/api/patients/{id}/thread
 GET /app/api/patients/{id}/timeline
+GET /app/api/sign-in/next
+GET /app/api/sign-in/state
 GET /app/api/upload-options
+GET /app/basic
+GET /app/basic/
+GET /app/basic/verify
 GET /app/documents/{id}
 GET /app/documents/{id}/all
 GET /app/documents/{id}/delete
@@ -40,7 +45,10 @@ GET /baymax/{*rest}
 POST /app/add
 POST /app/api/sign-in/request
 POST /app/api/sign-in/verify
+POST /app/api/sign-out
 POST /app/api/uploads
+POST /app/basic/login
+POST /app/basic/verify
 POST /app/documents/{id}/delete
 POST /app/login
 POST /app/logout

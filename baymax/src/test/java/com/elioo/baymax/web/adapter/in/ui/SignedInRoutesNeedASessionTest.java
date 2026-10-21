@@ -21,7 +21,9 @@ class SignedInRoutesNeedASessionTest {
     static final Set<String> OPEN = Set.of(
             "GET /", "GET /lang/{code}", "GET /assets/{file}", "GET /baymax", "GET /baymax/{*rest}",
             "GET /app/", "GET /app", "POST /app/login", "GET /app/verify", "POST /app/verify", "POST /app/logout",
-            "GET /app/nudges/opt-out", "POST /app/nudges/opt-out");
+            "GET /app/nudges/opt-out", "POST /app/nudges/opt-out",
+            // plan W3-api, S1: the no-JS sign-in fallback, the same pages under /app/basic
+            "GET /app/basic/", "GET /app/basic", "POST /app/basic/login", "GET /app/basic/verify", "POST /app/basic/verify");
 
     /** What requireSession answers: 303 to the sign-in page, no cookie set, no family data read. */
     private static final String SESSION_REDIRECT = "303\nLocation: /app/\n\n";

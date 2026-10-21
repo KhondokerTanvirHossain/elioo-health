@@ -294,10 +294,12 @@ class AppApiGuardTest {
         properties.getWeb().setPublicOrigin(ORIGIN);
         AppApiGuard guard = new AppApiGuard(new SessionAuthFilter(auth, properties), properties);
         assertThat(AppApiGuard.OPEN).as("the probes stand on the open patterns")
-                .containsExactlyInAnyOrder("/app/api/sign-in/request", "/app/api/sign-in/verify");
+                .containsExactlyInAnyOrder("/app/api/sign-in/request", "/app/api/sign-in/verify", "/app/api/sign-in/state");
         return WebTestClient.bindToRouterFunction(RouterFunctions.route()
                 .POST("/app/api/sign-in/request", request)
                 .POST("/app/api/sign-in/verify", verify)
+                // plan W3-api: the one open read, probed with the request handler
+                .GET("/app/api/sign-in/state", request)
                 .filter(guard)
                 .build()).build();
     }
@@ -323,6 +325,31 @@ class AppApiGuardTest {
                     .isEqualTo("400 {\"reason\":\"SIGN_IN_RESTART\"}");
             assertThat(r.getResponseHeaders().getCacheControl()).as(uri + " Cache-Control").isEqualTo("no-store");
         }
+        var state = c.get().uri("/app/api/sign-in/state").exchange().expectBody(String.class).returnResult();
+        assertThat(state.getStatus().value() + " " + state.getResponseBody()).as("the open read")
+                .isEqualTo("400 {\"reason\":\"SIGN_IN_RESTART\"}");
+    }
+
+    /**
+     * Plan W3-api: of the three new sign-in routes only the state is open. It needs no session and no CSRF header (a
+     * read); the checked held place and sign-out are session routes, a visitor with none gets the 401 every session
+     * route gives — and a POST to the open state pattern is not open, it is the catch-all's.
+     */
+    @Test
+    void theSignInStateIsOpenAndTheHeldPlaceAndSignOutAreNot() {
+        var state = client.get().uri("/app/api/sign-in/state").exchange().expectBody(String.class).returnResult();
+        assertThat(state.getStatus().value() + " " + state.getResponseBody()).isEqualTo("200 {\"pending\":false}");
+        client.get().uri("/app/api/sign-in/next?next=%2Fapp%2Fhome").exchange()
+                .expectStatus().isUnauthorized()
+                .expectBody().json("{\"reason\":\"UNAUTHENTICATED\"}", true);
+        client.post().uri("/app/api/sign-out").header("X-Medioo", "1").header("Origin", ORIGIN)
+                .contentType(MediaType.APPLICATION_JSON).exchange()
+                .expectStatus().isUnauthorized()
+                .expectBody().json("{\"reason\":\"UNAUTHENTICATED\"}", true);
+        client.post().uri("/app/api/sign-in/state").header("X-Medioo", "1").header("Origin", ORIGIN)
+                .contentType(MediaType.APPLICATION_JSON).bodyValue("{}").exchange()
+                .expectStatus().isUnauthorized()
+                .expectBody().json("{\"reason\":\"UNAUTHENTICATED\"}", true);
     }
 
     /** An open route needs no session, but one that resolves is on the request for the handler, as on every route. */

@@ -61,8 +61,14 @@ public class AppApiGuard implements HandlerFilterFunction<ServerResponse, Server
      * lean on it against automation. What bounds abuse of {@code sign-in/request} is {@code WebAuthService.requestCode}:
      * it never sends for NO_ACCOUNT, NOT_PERMITTED or OUTSIDE_WINDOW, and mints at most {@code otpMaxLivePerHour} codes
      * per number. An open route never answers 401 (see {@link #filter}).
+     *
+     * <p>Plan W3-api adds the one open read, {@code GET /app/api/sign-in/state}: it answers from the visitor's own
+     * {@code baymax_login} cookie (its tail and its sent mark, nothing a database holds) and writes nothing. A pattern
+     * here is open under the methods its route registers and no other: a POST to it is the catch-all's, pattern
+     * {@code /app/api/**}, which is not open.
      */
-    static final Set<String> OPEN = Set.of(AppApiRouter.BASE + "/sign-in/request", AppApiRouter.BASE + "/sign-in/verify");
+    static final Set<String> OPEN = Set.of(AppApiRouter.BASE + "/sign-in/request", AppApiRouter.BASE + "/sign-in/verify",
+            AppApiRouter.BASE + "/sign-in/state");
 
     private final SessionAuthFilter sessions;
     private final BaymaxProperties properties;

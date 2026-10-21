@@ -49,9 +49,13 @@ public class AppApiRouter {
                 .GET(BASE + "/patients/{id}/follow-ups", timeline::followUps)
                 // plan W5-api: the চ্যাট thread, papers and the messages the provider accepted for this account (S4, S10)
                 .GET(BASE + "/patients/{id}/thread", thread::thread)
-                // the two routes that need no session (AppApiGuard.OPEN); CSRF still applies, Origin required
+                // the two mutations that need no session (AppApiGuard.OPEN); CSRF still applies, Origin required
                 .POST(BASE + "/sign-in/request", signIn::request)
                 .POST(BASE + "/sign-in/verify", signIn::verify)
+                // plan W3-api: the code step read back (open, a read), the checked held place and sign-out (session)
+                .GET(BASE + "/sign-in/state", signIn::state)
+                .GET(BASE + "/sign-in/next", signIn::next)
+                .POST(BASE + "/sign-out", signIn::signOut)
                 .GET(BASE + "/documents/{id}/status", status::status)
                 .GET(BASE + "/documents/{id}/delete-token", deletes::token)
                 .GET(BASE + "/documents/{id}", papers::paper)

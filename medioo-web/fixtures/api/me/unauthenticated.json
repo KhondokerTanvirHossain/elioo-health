@@ -1,0 +1,10 @@
+{
+  "_meta": {
+    "generated_by": "baymax MeApiContractTest",
+    "source": "GET /app/api/me over the MeApiContractTest case unauthenticated"
+  },
+  "body": {
+    "reason": "UNAUTHENTICATED"
+  },
+  "status": 401
+}
