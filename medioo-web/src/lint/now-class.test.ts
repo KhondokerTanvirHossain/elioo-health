@@ -9,13 +9,24 @@ import { describe, expect, it } from "vitest";
 // the allowed directories refer to the classes through NOW_ALLOWED / WEEK_ALLOWED, never as literals.
 const src = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-const RULES: { names: string[]; allowed: RegExp[] }[] = [
+// A token name ends where an identifier character would continue it, as in the CSS checks: --now, --now-ink and
+// --on-now are NOW tokens, --nowrap is not; --week-soft is THIS_WEEK, a BEM modifier like day-cell--weekend is not.
+// The plain class strings are matched as written.
+const RULES: { names: [label: string, pattern: RegExp][]; allowed: RegExp[] }[] = [
   {
-    names: ["--now", "now-banner", "verdict-card--now", "status-chip--crit"],
+    names: [
+      ["--now", /--(?:on-)?now(?![A-Za-z0-9_])/],
+      ["now-banner", /now-banner/],
+      ["verdict-card--now", /verdict-card--now/],
+      ["status-chip--crit", /status-chip--crit/],
+    ],
     allowed: [/^src\/components\/safety\//, /^src\/components\/StatusChip\//, /^src\/styles\//, /^src\/lint\//],
   },
   {
-    names: ["--week", "verdict-card--week"],
+    names: [
+      ["--week", /--(?:on-)?week(?![A-Za-z0-9_])/],
+      ["verdict-card--week", /verdict-card--week/],
+    ],
     allowed: [/^src\/components\/safety\//, /^src\/styles\//, /^src\/lint\//],
   },
 ];
@@ -25,7 +36,7 @@ function scanFile(rel: string, text: string): string[] {
   const found: string[] = [];
   for (const rule of RULES) {
     if (rule.allowed.some((a) => a.test(rel))) continue;
-    for (const name of rule.names) if (text.includes(name)) found.push(`${rel} ${name}`);
+    for (const [label, pattern] of rule.names) if (pattern.test(text)) found.push(`${rel} ${label}`);
   }
   return found;
 }
@@ -67,5 +78,16 @@ describe("NOW and THIS_WEEK class names in TypeScript", () => {
       "src/components/StatusChip/StatusChip.tsx verdict-card--week",
     ]);
     expect(scanFile("src/components/safety/NowBanner/NowBanner.tsx", `${probe} verdict-card--week`)).toEqual([]);
+  });
+
+  it("aNowTokenIsMatchedByItsNameNotBySubstring", () => {
+    // --on-now is a NOW token (the CSS checks say so), though it does not contain the substring "--now".
+    expect(scanFile("src/components/Probe/Probe.tsx", '<svg><path fill="var(--on-now)" /></svg>')).toEqual([
+      "src/components/Probe/Probe.tsx --now",
+    ]);
+    expect(scanFile("src/components/Probe/Probe.tsx", 'style={{ color: "var(--now-ink)" }}')).toEqual(["src/components/Probe/Probe.tsx --now"]);
+    // A BEM modifier or a token that only starts with the letters is not NOW or THIS_WEEK.
+    expect(scanFile("src/components/MonthCalendar/MonthCalendar.tsx", '<td className="day-cell--weekend month-calendar__day--weekly" />')).toEqual([]);
+    expect(scanFile("src/components/Probe/Probe.tsx", 'style={{ whiteSpace: "var(--nowrap)" }}')).toEqual([]);
   });
 });

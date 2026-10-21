@@ -1,6 +1,8 @@
-/* W1a skeleton styles: just enough of the shell to measure a realistic first load. Every colour, font and size comes
-   from src/styles/tokens.css (generated from medioo.tokens.json, imported first by layout.tsx); stylelint refuses a
-   colour literal anywhere else (plan W2a).
+/* W1a skeleton styles: just enough of the shell to measure a realistic first load. Every colour, font family, font
+   size and spacing step comes from src/styles/tokens.css (generated from medioo.tokens.json, imported first by
+   layout.tsx). stylelint refuses a colour literal in any stylesheet but tokens.css, and a font size that is not a
+   --text-* token anywhere (plan W2a). The skeleton's own box sizes (--tabbar-h, --header-h, the 560 px column) are
+   still literals here: the W3 shell layout replaces them.
 
    Fonts: url() only, no local(), on purpose. The budget probe must measure the worst case, a phone without Noto, so
    the font bytes always cross the wire here (budget.spec.ts fails if either file is not fetched). */
@@ -37,7 +39,7 @@ body {
   background: var(--bg);
   color: var(--label);
   font-family: var(--font-sys);
-  font-size: 1.0625rem;
+  font-size: var(--text-lg);
   line-height: 1.65;
 }
 
@@ -52,21 +54,21 @@ body {
 .shell-header {
   display: flex;
   align-items: center;
-  padding: 0 16px;
+  padding: 0 var(--space-4);
   border-bottom: 1px solid var(--sep);
 }
 .wordmark {
   font-weight: 700;
-  font-size: 1.25rem;
+  font-size: var(--text-xl);
   color: var(--tint-ink);
 }
 .shell-main {
-  padding: 24px 16px;
+  padding: var(--space-5) var(--space-4);
 }
 .shell-main h1 {
-  font-size: 1.375rem;
+  font-size: var(--text-title);
   line-height: 1.55;
-  margin: 0 0 12px;
+  margin: 0 0 var(--space-3);
 }
 .shell-main p {
   margin: 0;

@@ -37,6 +37,37 @@ describe("stylelint colour bans", () => {
     }
   });
 
+  it("everyFunctionTheConfigNamesIsRefused", async () => {
+    // Read from the config, so a typo in any entry is a failure here rather than a function that slips through.
+    const config = JSON.parse(readFileSync(join(web, ".stylelintrc.json"), "utf8")) as { rules: Record<string, unknown> };
+    const listed = config.rules["function-disallowed-list"] as string[];
+    const expected = ["rgb", "rgba", "hsl", "hsla", "hwb", "lab", "lch", "oklab", "oklch", "color", "color-mix"];
+    expect([...listed].sort()).toEqual([...expected].sort());
+    for (const fn of listed) {
+      const rules = await rulesFor(`.x { background: ${fn}(0 0 0); }\n`);
+      expect(rules, fn).toContain("function-disallowed-list");
+    }
+  });
+
+  it("aSystemColourIsRefused", async () => {
+    // color-named does not know CSS system colours; they paint whatever the platform says, outside every token.
+    for (const decl of ["color: CanvasText", "background: Canvas", "border-color: LinkText", "outline: 2px solid Highlight", "fill: GrayText"]) {
+      expect(await rulesFor(`.x { ${decl}; }\n`), decl).toContain("declaration-property-value-disallowed-list");
+    }
+    // A word that merely contains one is not one.
+    expect(await rulesFor(".x { color: var(--label); grid-area: marker; }\n")).toEqual([]);
+  });
+
+  it("aFontSizeIsATokenSoTheTwelvePixelFloorHoldsOnShippedCss", async () => {
+    for (const decl of ["font-size: 11px", "font-size: 0.6rem", "font-size: 12px", "font: 600 11px var(--font-bn)"]) {
+      const rules = await rulesFor(`.x { ${decl}; }\n`);
+      expect(rules.some((r) => r.startsWith("declaration-property-value-")), decl).toBe(true);
+    }
+    for (const decl of ["font-size: var(--text-xs)", "font-size: inherit", "font-size: 100%", "font: 600 var(--text-sm)/1.5 var(--font-bn)"]) {
+      expect(await rulesFor(`.x { ${decl}; }\n`), decl).toEqual([]);
+    }
+  });
+
   it("aVarColourIsAccepted", async () => {
     expect(await rulesFor(".x { color: var(--label); background: var(--bg); }\n")).toEqual([]);
   });

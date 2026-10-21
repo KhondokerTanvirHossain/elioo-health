@@ -2,7 +2,16 @@
   "rules": {
     "color-no-hex": true,
     "color-named": "never",
-    "function-disallowed-list": ["rgb", "rgba", "hsl", "hsla", "hwb", "lab", "lch", "oklab", "oklch", "color", "color-mix"]
+    "function-disallowed-list": ["rgb", "rgba", "hsl", "hsla", "hwb", "lab", "lch", "oklab", "oklch", "color", "color-mix"],
+    "declaration-property-value-disallowed-list": {
+      "/^(color|background(-color)?|border(-.+)?|outline(-color)?|fill|stroke|caret-color|accent-color|text-decoration(-color)?|text-emphasis(-color)?|column-rule(-color)?|box-shadow|text-shadow|-webkit-text-(fill|stroke)-color|stop-color|flood-color|lighting-color)$/": [
+        "/(^|[\\s,(])(canvas|canvastext|linktext|visitedtext|activetext|buttonface|buttontext|buttonborder|field|fieldtext|highlight|highlighttext|selecteditem|selecteditemtext|mark|marktext|graytext|accentcolor|accentcolortext)($|[\\s,)])/i"
+      ],
+      "font": ["/(^|\\s)[\\d.]+(px|rem|em|pt|pc|vw|vh|vmin|vmax|ch|ex|%)(\\/|\\s|$)/i"]
+    },
+    "declaration-property-value-allowed-list": {
+      "font-size": ["/^var\\(--text-[a-z0-9-]+\\)$/", "inherit", "100%"]
+    }
   },
   "overrides": [
     {

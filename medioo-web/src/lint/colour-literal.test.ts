@@ -27,12 +27,19 @@ const NAMED = new Set(
   ).split(" "),
 );
 const KEYWORDS = ["transparent", "currentcolor"];
+// CSS Color 4 system colours: they paint whatever the platform chooses, outside every token and contrast check.
+const SYSTEM = new Set(
+  (
+    "accentcolor accentcolortext activetext buttonborder buttonface buttontext canvas canvastext field fieldtext " +
+    "graytext highlight highlighttext linktext mark marktext selecteditem selecteditemtext visitedtext"
+  ).split(" "),
+);
 
 const HEX = /#[0-9a-fA-F]{3,8}\b/g;
 const FUNCTION = /\b(rgba?|hsla?|hwb|lab|lch|oklab|oklch|color-mix)\(/g;
-// fill="red", fill={"red"}, fill={'red'}, and style={{ color: "red" }} / backgroundColor: `red`.
-const NAMED_VALUE =
-  /\b(fill|stroke|stopColor|stop-color|floodColor|flood-color|color|background[A-Za-z-]*)\s*[=:]\s*\{?\s*(["'`])\s*([A-Za-z]+)\s*\2/g;
+// fill="red", fill={"red"}, fill={'red'}, and style={{ color: "red" }} / backgroundColor: `red` / borderColor,
+// outlineColor, caretColor, stop-color: any property whose name ends in color.
+const NAMED_VALUE = /\b(fill|stroke|[A-Za-z-]*[Cc]olor|background[A-Za-z-]*)\s*[=:]\s*\{?\s*(["'`])\s*([A-Za-z]+)\s*\2/g;
 
 /** Each colour literal in one source text, as `<file>:<line> <literal>`. */
 function scanText(file: string, text: string): string[] {
@@ -42,7 +49,7 @@ function scanText(file: string, text: string): string[] {
   for (const m of text.matchAll(FUNCTION)) found.push(`${file}:${lineOf(m.index!)} ${m[1]}(`);
   for (const m of text.matchAll(NAMED_VALUE)) {
     const name = m[3]!.toLowerCase();
-    if (NAMED.has(name) || KEYWORDS.includes(name)) found.push(`${file}:${lineOf(m.index!)} ${m[1]}=${m[3]}`);
+    if (NAMED.has(name) || KEYWORDS.includes(name) || SYSTEM.has(name)) found.push(`${file}:${lineOf(m.index!)} ${m[1]}=${m[3]}`);
   }
   return found;
 }
@@ -78,6 +85,11 @@ describe("colour literals in TypeScript", () => {
     expect(scanText("P.tsx", 'const s = { backgroundColor: "transparent" };')).toEqual(["P.tsx:1 backgroundColor=transparent"]);
     expect(scanText("P.tsx", "const s = { color: `rgba(0, 0, 0, 0.5)` };")).toEqual(["P.tsx:1 rgba("]);
     expect(scanText("P.tsx", 'const s = "color-mix(in srgb, red, blue)";')).toEqual(["P.tsx:1 color-mix("]);
+    // Every *Color property is a colour, and so is a CSS system colour.
+    expect(scanText("P.tsx", 'const s = { borderColor: "red" };')).toEqual(["P.tsx:1 borderColor=red"]);
+    expect(scanText("P.tsx", 'const s = { outlineColor: "White" };')).toEqual(["P.tsx:1 outlineColor=White"]);
+    expect(scanText("P.tsx", 'const s = { caretColor: "CanvasText" };')).toEqual(["P.tsx:1 caretColor=CanvasText"]);
+    expect(scanText("P.tsx", '<path fill="GrayText" />')).toEqual(["P.tsx:1 fill=GrayText"]);
     // A token is not a literal, and a word that is not a colour is not one either.
     expect(scanText("P.tsx", '<path fill="var(--label3)" className="tabs" color="tint" />')).toEqual([]);
   });

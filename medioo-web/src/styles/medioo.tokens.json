@@ -128,7 +128,7 @@
     "sys": "\"Noto Sans\", \"Noto Sans Bengali\", system-ui, sans-serif",
     "mono": "ui-monospace, Menlo, monospace"
   },
-  "text": { "xs": "12px", "sm": "14px", "md": "15px", "lg": "17px", "xl": "20px", "xxl": "28px" },
+  "text": { "xs": "12px", "sm": "14px", "md": "15px", "lg": "17px", "xl": "20px", "title": "22px", "xxl": "28px" },
   "radius": { "sm": "8px", "md": "12px", "lg": "16px", "xl": "24px", "pill": "999px" },
   "space": { "1": "4px", "2": "8px", "3": "12px", "4": "16px", "5": "24px", "6": "32px" },
   "layout": { "target-min": "44px", "target-primary": "48px", "sidebar-w": "256px", "conversation-w": "400px" },
