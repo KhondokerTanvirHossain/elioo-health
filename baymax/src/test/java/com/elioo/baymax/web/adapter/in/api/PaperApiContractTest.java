@@ -118,6 +118,10 @@ class PaperApiContractTest {
                 new UploadApiHandler(mock(UploadUseCase.class), properties, copy),
                 new PaperStatusApiHandler(results),
                 new PaperDeleteApiHandler(timeline, new DeleteConfirmation(properties, java.time.Clock.systemUTC())),
+                new FamilyApiHandler(org.mockito.Mockito.mock(com.elioo.baymax.web.application.port.in.TimelineUseCase.class),
+                        org.mockito.Mockito.mock(com.elioo.baymax.nudge.application.port.out.NudgeDataPort.class),
+                        org.mockito.Mockito.mock(com.elioo.baymax.nudge.application.port.in.NudgeOptOutUseCase.class),
+                        new com.elioo.baymax.web.adapter.in.ui.UiCopy(), properties),
                 guard)).build();
         // the HTML page of the same paper, from the same mocked read: what the JSON must agree with
         DocumentPages html = new DocumentPages(timeline, copy, new PageChrome(copy, sessions), results);

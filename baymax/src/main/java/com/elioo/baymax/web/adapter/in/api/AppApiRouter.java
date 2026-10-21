@@ -30,7 +30,8 @@ public class AppApiRouter {
     @Order(Ordered.HIGHEST_PRECEDENCE)
     public RouterFunction<ServerResponse> mediooAppApiRoutes(MeApiHandler me, SignInApiHandler signIn, PaperApiHandler papers,
                                                              UploadApiHandler uploads, PaperStatusApiHandler status,
-                                                             PaperDeleteApiHandler deletes, AppApiGuard guard) {
+                                                             PaperDeleteApiHandler deletes, FamilyApiHandler family,
+                                                             AppApiGuard guard) {
         return RouterFunctions.route()
                 .GET(BASE + "/me", me::me)
                 .PUT(BASE + "/active-patient", me::setActivePatient)
@@ -43,6 +44,12 @@ public class AppApiRouter {
                 .DELETE(BASE + "/documents/{id}", deletes::delete)
                 .GET(BASE + "/upload-options", uploads::options)
                 .POST(BASE + "/uploads", uploads::upload)
+                // the পরিবার tab (plan B5): reminders can only be stopped here until E1/E2-API (Q5, Q9)
+                .GET(BASE + "/family", family::family)
+                .PUT(BASE + "/family/reminders", family::familyReminders)
+                .PUT(BASE + "/patients/{id}/flags", family::setFlags)
+                .PUT(BASE + "/patients/{id}/reminders", family::patientReminders)
+                .PUT(BASE + "/language", family::language)
                 .route(RequestPredicates.path(BASE + "/**"), request -> ApiReason.NOT_FOUND.respond())
                 .filter(guard)
                 .build();

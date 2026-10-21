@@ -69,7 +69,10 @@ public enum ApiReason {
      * the reader's memory limit.
      */
     TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE),
-    /** A patient this viewer may see but not change (a share member, D30): upload and delete ({@code shared_patient_read_only}). */
+    /**
+     * A patient this viewer may see but not change (a share member, D30): upload and delete ({@code shared_patient_read_only}),
+     * the chronic flags and the reminder stop ({@code not_owner}).
+     */
     VIEW_ONLY(HttpStatus.FORBIDDEN),
     /** Upload: the press's key already made another patient's paper (D3); the client draws a new key. */
     UPLOAD_KEY_REUSED(HttpStatus.CONFLICT),
@@ -100,7 +103,11 @@ public enum ApiReason {
             Map.entry("upload_key_reused", UPLOAD_KEY_REUSED),
             Map.entry(FreeTierExceededException.DOCUMENTS, FREE_TIER_DOCUMENTS),
             Map.entry("confirm_required", CONFIRM_REQUIRED),
-            Map.entry("not_a_retake", NOT_A_RETAKE));
+            Map.entry("not_a_retake", NOT_A_RETAKE),
+            // a share member's write on a patient they see (TimelineService.updateChronicFlags, the reminders routes)
+            Map.entry("not_owner", VIEW_ONLY),
+            // chronic flags FamilyAccountService.normalizeFlags refuses: too many, or one too long
+            Map.entry("invalid_flags", INVALID));
 
     private final HttpStatus status;
 

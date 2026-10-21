@@ -69,6 +69,8 @@ class FilingDayIsReadNotDerivedTest {
                     "the \"sent\" label: the day the photo arrived, shown beside the filed day, never as it")),
             Map.entry("com/elioo/baymax/web/adapter/in/ui/FamilyView.java", new Allowed(1,
                     "the day a proxy consent was given, on the patient's calendar; not a paper's date")),
+            Map.entry("com/elioo/baymax/web/adapter/in/api/FamilyJson.java", new Allowed(1,
+                    "the days the terms and a proxy consent were accepted (the পরিবার JSON, as FamilyView); not a paper's date")),
             Map.entry("com/elioo/baymax/web/adapter/in/handler/TimelineApiHandler.java", new Allowed(1,
                     "the legacy JSON key named doc_date, whose value is the filed day (TimelineEntry.date())")),
             Map.entry("com/elioo/baymax/outbound/application/service/DocumentFacts.java", new Allowed(7,

@@ -66,10 +66,21 @@ class AppApiLogSafetyTest {
      * Each needle raw and as it appears in a logged URI: a path or query is logged percent-encoded, so the raw Bangla
      * and the raw {@code +880…} alone would miss a name in a path ({@code %E0%A6%B0…}) or a number ({@code %2B880…}).
      */
+    private static final String OWNER = "Tanvir";
     private static final List<String> NEEDLES = List.of("8801700000123", "01700000123", "%2B8801700000123", NAME,
             URLEncoder.encode(NAME, StandardCharsets.UTF_8), UriUtils.encodePathSegment(NAME, StandardCharsets.UTF_8),
             UriUtils.encodeQueryParam(NAME, StandardCharsets.UTF_8), PhoneDisplay.full(NUMBER), "+880 1700",
-            FILENAME, URLEncoder.encode(FILENAME, StandardCharsets.UTF_8));
+            FILENAME, URLEncoder.encode(FILENAME, StandardCharsets.UTF_8),
+            // plan B5: the owner's name, and the number in every form the পরিবার JSON or a log line could carry it — the
+            // 10-digit national form, and each form again in Bangla digits (a Bangla page shows them so)
+            OWNER, "1700000123", bangla("8801700000123"), bangla("01700000123"), bangla("1700000123"),
+            bangla(PhoneDisplay.full(NUMBER)), bangla("00000123"));
+    /**
+     * The number's last eight digits as a token: a UUID, a hash or a duration can hold them by chance, so they are
+     * matched with no hex digit on either side, never as a raw substring (the needle above is the Bangla form, which
+     * nothing else a log writes can hold).
+     */
+    private static final Pattern LAST_EIGHT = token("00000123");
     /** Where the minted sign-in code is written, at DEBUG only (DR-39): the second appender reads it from here. */
     private static final String DELIVERY_LOGGER = "com.elioo.baymax.web.adapter.out.delivery";
     private static final Pattern MINTED = Pattern.compile("otp fallback .*code=([0-9]{6})");
@@ -82,12 +93,19 @@ class AppApiLogSafetyTest {
         return Pattern.compile("(?<![0-9A-Fa-f])" + Pattern.quote(code) + "(?![0-9A-Fa-f])");
     }
 
+    /** The same text with Bangla digits in place of ASCII ones. */
+    static String bangla(String ascii) {
+        StringBuilder b = new StringBuilder();
+        ascii.chars().forEach(c -> b.append(c >= '0' && c <= '9' ? (char) ('০' + (c - '0')) : (char) c));
+        return b.toString();
+    }
+
     @Test
     void noApiRouteLogsTheOwnersNumberOrThePatientsNameAtInfoOrAbove() {
         AppApiContext.runner(POSTGRES, MINIO).withPropertyValues("baymax.auth.web-mints-code=true", "baymax.auth.hmac-secret=log-safety-secret").run(context -> {
-            FamilyAccount family = AppApiContext.family(context, NUMBER, "Tanvir");
+            FamilyAccount family = AppApiContext.family(context, NUMBER, OWNER);
             PatientProfile rokeya = AppApiContext.patient(context, family.id(), NAME);
-            AppApiContext.patient(context, family.id(), "Karim");
+            PatientProfile karim = AppApiContext.patient(context, family.id(), "Karim");
             UUID paper = AppApiContext.paper(context, POSTGRES, rokeya, "now");
             AppApiContext.value(POSTGRES, rokeya, paper, NAME, "6.9");
             // the paper's page in the bucket and the ledger, so the owner's delete below empties a real prefix
@@ -95,6 +113,10 @@ class AppApiLogSafetyTest {
             String token = AppApiContext.session(context, family.id());
             FamilyAccount other = AppApiContext.family(context, "+8801700000124", "Karim");
             String otherToken = AppApiContext.session(context, other.id());
+            // a sibling who sees Karim through a share: their writes on him are the 403 branch of the পরিবার routes
+            FamilyAccount member = AppApiContext.family(context, "+8801700000125", "Selim");
+            AppApiContext.share(context, karim, member.whatsappNumber());
+            String memberToken = AppApiContext.session(context, member.id());
             WebTestClient client = WebTestClient.bindToApplicationContext(context).build();
 
             // each route's requests: the success path and its refusals, so every branch that could log is reached
@@ -160,6 +182,56 @@ class AppApiLogSafetyTest {
                 c.method(HttpMethod.DELETE).uri("/app/api/documents/" + paper).cookie("baymax_session", t).header("X-Medioo", "1")
                         .header("Origin", AppApiContext.ORIGIN).contentType(MediaType.APPLICATION_JSON).bodyValue(confirm)
                         .exchange().expectStatus().isOk();
+            });
+            // the পরিবার tab (plan B5): the only answer in /app/api that carries the number, and a flag typed as the name
+            exercise.put("GET /app/api/family", (c, t) -> {
+                c.get().uri("/app/api/family").cookie("baymax_session", t).exchange().expectStatus().isOk()
+                        .expectBody().jsonPath("$.account.number").isEqualTo(PhoneDisplay.full(NUMBER))
+                        .jsonPath("$.account.owner_name").isEqualTo(OWNER);
+                c.get().uri(b -> b.path("/app/api/family").queryParam("probe", NAME).queryParam("n", NUMBER).build())
+                        .cookie("baymax_session", t).cookie("baymax_lang", "en").exchange().expectStatus().isOk();
+                c.get().uri("/app/api/family").cookie("baymax_session", memberToken).exchange().expectStatus().isOk();
+                c.get().uri("/app/api/family").exchange().expectStatus().isUnauthorized();
+            });
+            exercise.put("PUT /app/api/patients/{id}/flags", (c, t) -> {
+                json(c.put().uri("/app/api/patients/" + rokeya.id() + "/flags"), t, Map.of("chronic_flags", List.of("diabetes", NAME)))
+                        .expectStatus().isOk().expectBody().jsonPath("$.chronic_flags[1]").isEqualTo(NAME);
+                json(c.put().uri("/app/api/patients/" + rokeya.id() + "/flags"), t,
+                        Map.of("chronic_flags", java.util.Collections.nCopies(21, NAME + NUMBER)))
+                        .expectStatus().isBadRequest().expectBody().json("{\"reason\":\"INVALID\"}", true);
+                json(c.put().uri("/app/api/patients/" + rokeya.id() + "/flags"), t, Map.of("chronic_flags", List.of(NAME.repeat(4))))
+                        .expectStatus().isBadRequest().expectBody().json("{\"reason\":\"INVALID\"}", true);
+                json(c.put().uri("/app/api/patients/" + karim.id() + "/flags"), memberToken, Map.of("chronic_flags", List.of(NAME)))
+                        .expectStatus().isForbidden().expectBody().json("{\"reason\":\"VIEW_ONLY\"}", true);
+                json(c.put().uri("/app/api/patients/" + rokeya.id() + "/flags"), otherToken, Map.of("chronic_flags", List.of(NAME)))
+                        .expectStatus().isNotFound();
+                json(c.put().uri(b -> b.path("/app/api/patients/{id}/flags").build(NAME)), t, Map.of("chronic_flags", List.of()))
+                        .expectStatus().isNotFound();
+            });
+            exercise.put("PUT /app/api/patients/{id}/reminders", (c, t) -> {
+                json(c.put().uri("/app/api/patients/" + rokeya.id() + "/reminders"), t, Map.of("on", true))
+                        .expectStatus().isBadRequest().expectBody().json("{\"reason\":\"INVALID\"}", true);
+                json(c.put().uri("/app/api/patients/" + karim.id() + "/reminders"), memberToken, Map.of("on", false))
+                        .expectStatus().isForbidden().expectBody().json("{\"reason\":\"VIEW_ONLY\"}", true);
+                json(c.put().uri("/app/api/patients/" + rokeya.id() + "/reminders"), otherToken, Map.of("on", false))
+                        .expectStatus().isNotFound();
+                json(c.put().uri("/app/api/patients/" + rokeya.id() + "/reminders"), t, Map.of("on", false))
+                        .expectStatus().isOk().expectBody().jsonPath("$.reminders").isEqualTo("stopped_for_patient")
+                        .jsonPath("$.name").isEqualTo(NAME);
+            });
+            exercise.put("PUT /app/api/family/reminders", (c, t) -> {
+                json(c.put().uri("/app/api/family/reminders"), t, Map.of("on", true))
+                        .expectStatus().isBadRequest().expectBody().json("{\"reason\":\"INVALID\"}", true);
+                json(c.put().uri("/app/api/family/reminders"), memberToken, Map.of("on", false)).expectStatus().isOk();
+                json(c.put().uri("/app/api/family/reminders"), t, Map.of("on", false)).expectStatus().isOk()
+                        .expectBody().jsonPath("$.account.number").isEqualTo(PhoneDisplay.full(NUMBER))
+                        .jsonPath("$.account.reminders_stopped").isEqualTo(true);
+            });
+            exercise.put("PUT /app/api/language", (c, t) -> {
+                json(c.put().uri("/app/api/language"), t, Map.of("lang", "en")).expectStatus().isNoContent();
+                json(c.put().uri("/app/api/language"), t, Map.of("lang", NAME + NUMBER)).expectStatus().isNoContent();
+                c.put().uri("/app/api/language").cookie("baymax_session", t).contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(Map.of("lang", NAME)).exchange().expectStatus().isForbidden();
             });
             exercise.put("* /app/api/**", (c, t) -> {
                 c.get().uri("/app/api/nothing-here").cookie("baymax_session", t).exchange().expectStatus().isNotFound();
@@ -294,6 +366,12 @@ class AppApiLogSafetyTest {
     }
 
 
+    /** A JSON mutation with a session and both CSRF headers. */
+    private static WebTestClient.ResponseSpec json(WebTestClient.RequestBodySpec spec, String token, Object body) {
+        return spec.cookie("baymax_session", token).header("X-Medioo", "1").header("Origin", AppApiContext.ORIGIN)
+                .contentType(MediaType.APPLICATION_JSON).bodyValue(body).exchange();
+    }
+
     private static WebTestClient.ResponseSpec upload(WebTestClient c, String token, MultipartBodyBuilder body) {
         return c.post().uri("/app/api/uploads").cookie("baymax_session", token).header("X-Medioo", "1")
                 .header("Origin", AppApiContext.ORIGIN).body(BodyInserters.fromMultipartData(body.build())).exchange();
@@ -302,10 +380,15 @@ class AppApiLogSafetyTest {
         if (value == null) {
             return;
         }
-        List<String> hits = NEEDLES.stream().filter(value::contains).collect(Collectors.toCollection(ArrayList::new));
+        // each needle by its index in NEEDLES, never its text: the report then says which form leaked without echoing it
+        List<String> hits = java.util.stream.IntStream.range(0, NEEDLES.size()).filter(i -> value.contains(NEEDLES.get(i)))
+                .mapToObj(i -> "NEEDLES[" + i + "]").collect(Collectors.toCollection(ArrayList::new));
         codeTokens.stream().filter(p -> p.matcher(value).find()).forEach(p -> hits.add("a sign-in code"));
+        if (LAST_EIGHT.matcher(value).find()) {
+            hits.add("the number's last eight digits");
+        }
         if (!hits.isEmpty()) {
-            leaks.add(e.getLevel() + " " + e.getLoggerName() + " " + field + " carries " + hits.size() + " needle(s)");
+            leaks.add(e.getLevel() + " " + e.getLoggerName() + " " + field + " carries " + hits);
         }
     }
 }

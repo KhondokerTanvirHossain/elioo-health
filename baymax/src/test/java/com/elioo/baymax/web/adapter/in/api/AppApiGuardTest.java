@@ -106,6 +106,10 @@ class AppApiGuardTest {
                 new UploadApiHandler(mock(UploadUseCase.class), properties, new UiCopy()),
                 new PaperStatusApiHandler(results),
                 new PaperDeleteApiHandler(timeline, new DeleteConfirmation(properties, Clock.systemUTC())),
+                new FamilyApiHandler(org.mockito.Mockito.mock(com.elioo.baymax.web.application.port.in.TimelineUseCase.class),
+                        org.mockito.Mockito.mock(com.elioo.baymax.nudge.application.port.out.NudgeDataPort.class),
+                        org.mockito.Mockito.mock(com.elioo.baymax.nudge.application.port.in.NudgeOptOutUseCase.class),
+                        new com.elioo.baymax.web.adapter.in.ui.UiCopy(), properties),
                 guard))).build();
     }
 

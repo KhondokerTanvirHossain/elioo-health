@@ -1,0 +1,36 @@
+{
+  "_meta": {
+    "generated_by": "baymax FamilyApiContractTest",
+    "source": "GET /app/api/family over the case reminders-off"
+  },
+  "body": {
+    "account": {
+      "language": "bn",
+      "number": "+880 1700-000536",
+      "owner_name": "Tanvir",
+      "reminders_stopped": true,
+      "terms_date": "2026-09-14"
+    },
+    "flags_offered": [
+      "diabetes",
+      "hypertension",
+      "kidney",
+      "thyroid",
+      "heart"
+    ],
+    "patients": [
+      {
+        "age": 64,
+        "chronic_flags": [ ],
+        "consent_date": "2026-09-14",
+        "id": "b459aedc-0db2-3b7d-99f9-fa129492d244",
+        "name": "রোকেয়া পরীক্ষা",
+        "name_possessive": "রোকেয়া পরীক্ষার",
+        "owner": true,
+        "reminders": "stopped_for_family",
+        "sex_key": "sex.FEMALE"
+      }
+    ]
+  },
+  "status": 200
+}

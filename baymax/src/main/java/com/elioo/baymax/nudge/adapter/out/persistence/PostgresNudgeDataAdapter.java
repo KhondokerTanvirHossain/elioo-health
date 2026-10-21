@@ -18,7 +18,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
-/** Patient-scoped reads over the extraction tables, and the two opt-out columns. Raw SQL; the indexes exist (V5). */
+/** Patient-scoped reads over the extraction tables, and the two opt-out columns (written and read). Raw SQL; the indexes exist (V5). */
 @Component
 @RequiredArgsConstructor
 public class PostgresNudgeDataAdapter implements NudgeDataPort, NudgeOptOutPort {
@@ -126,6 +126,12 @@ public class PostgresNudgeDataAdapter implements NudgeDataPort, NudgeOptOutPort 
     public Mono<Void> optOutFamily(UUID familyId, Instant at) {
         return db.sql("UPDATE " + S + ".family_account SET nudges_opted_out_at = COALESCE(nudges_opted_out_at, :at) WHERE id = :id")
                 .bind("at", OffsetDateTime.ofInstant(at, ZoneOffset.UTC)).bind("id", familyId).then();
+    }
+
+    @Override
+    public Mono<Boolean> familyOptedOut(UUID familyId) {
+        return db.sql("SELECT nudges_opted_out_at IS NOT NULL AS stopped FROM " + S + ".family_account WHERE id = :id")
+                .bind("id", familyId).map((row, meta) -> Boolean.TRUE.equals(row.get("stopped", Boolean.class))).one();
     }
 
     static Instant instant(Row row, String col) {

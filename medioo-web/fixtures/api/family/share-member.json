@@ -1,0 +1,38 @@
+{
+  "_meta": {
+    "generated_by": "baymax FamilyApiContractTest",
+    "source": "GET /app/api/family over the case share-member"
+  },
+  "body": {
+    "account": {
+      "language": "bn",
+      "number": "+880 1700-000534",
+      "owner_name": "Karim",
+      "reminders_stopped": false,
+      "terms_date": "2026-09-20"
+    },
+    "flags_offered": [
+      "diabetes",
+      "hypertension",
+      "kidney",
+      "thyroid",
+      "heart"
+    ],
+    "patients": [
+      {
+        "age": 64,
+        "chronic_flags": [
+          "kidney"
+        ],
+        "consent_date": "2026-09-14",
+        "id": "06b2fc1c-7353-3acb-b414-c3e7a40e5630",
+        "name": "রোকেয়া পরীক্ষা",
+        "name_possessive": "রোকেয়া পরীক্ষার",
+        "owner": false,
+        "reminders": "on",
+        "sex_key": "sex.FEMALE"
+      }
+    ]
+  },
+  "status": 200
+}
