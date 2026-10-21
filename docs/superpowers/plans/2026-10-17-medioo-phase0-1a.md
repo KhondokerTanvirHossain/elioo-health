@@ -96,8 +96,8 @@ direction **fully automated first**: production stays `BAYMAX_GATE_MODE=off`.
   predecessor (V15 for PR 4, V16 for PR 12, V21 for PR 8, V22 for PR 9). If not, stop: the allocation table in the
   roadmap is wrong, fix it there first. (Renumbered 2026-10-18: PR 8 was V17 and PR 9 was V18 before PR 12 took V17. Renumbered again 2026-10-19 — PO
   direction 2026-10-19: the web portal first; Phase 0 PRs 7–10 rebase after the web chain, which takes V18–V21
-  (`2026-10-19-medioo-web-portal.md`); PR 8 moves V18 → V22 and PR 9 V19 → V23. The file names and preflights in the
-  PR 8 and PR 9 sections below still say V18/V19 and are rewritten at that rebase.)
+  (`2026-10-19-medioo-web-portal.md`); PR 8 moves V18 → V22 and PR 9 V19 → V23. The file names, preflights and
+  migration checks in the PR 8 and PR 9 sections below were rewritten to V22/V23 at PR 8's rebase, 2026-10-21.)
 - **Staging and commits:** explicit paths only, never `git add -A`/`git add .`; conventional commits ending with
   `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`; PR bodies end with
   `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
@@ -164,8 +164,8 @@ ahead of PRs 7–9 instead, because v21.0 expires 2027-01-21; see the note under
 | 5 | `outbound/application/service/UrgencyLines.java`; tests `outbound/InMemoryOutboundMessages.java`, `outbound/application/service/MessagesBundleTest.java`, `wa/application/service/DetailDeliveryGuardsTest.java`, `architecture/WaNeverSendsAComposedBodyTest.java`, `architecture/DeliveryCallersClaimFirstTest.java`, `wa/adapter/out/WhatsAppMessageDeliveryTest.java`, `outbound/application/service/DetailCacheAcceptanceTest.java` | `ExplainDocumentUseCase.java`, `ExplanationService.java`, `ReviewGateService.java`, `OutboundMessagePort.java`, `PostgresOutboundMessageAdapter.java`, `OutboundMessage.java`, `DeliveryOutcome.java`, `WhatsAppMessageDelivery.java`, `WaIntakeService.java`, `messages_bn/en.properties`; tests `ExplanationServiceTest.java`, `WaIntakeServiceTest.java`, `ReviewGateServiceTest.java` |
 | 6 | `wa/application/service/WaTextRouter.java`, `wa/domain/WaInbound.java`; tests `WaTextRouterTest`, `wa/adapter/in/WaWebhookDispatchTest`, `wa/adapter/in/EveryInboundTypeIsAnsweredTest` | `WaWebhookHandler.java`, `WaIntakeService.java`, `messages_bn/en.properties`; tests `WaIntakeServiceTest`, `CopyInstructionsHaveHandlersTest` |
 | 7 | — | `WaIntakeService.java`, `WaMessagingPort.java`, `WaGraphClient.java`, `messages_bn/en.properties`; tests `WaIntakeServiceTest`, `WaGraphClientTest`, `BaymaxAutoConfigurationTest` (unchanged, run) |
-| 8 | `V18__inbound_message.sql`; `wa/domain/InboundMessage.java`, `wa/application/port/out/InboundMessagePort.java`, `wa/adapter/out/persistence/PostgresInboundMessageAdapter.java`, `wa/adapter/in/WaInboundStartupReport.java`, `scripts/wa-replay-callback.sh`; tests `PostgresInboundMessageAdapterTest`, `wa/adapter/in/WaInboundIdempotencyAcceptanceTest`, `WaInboundStartupReportTest`, `WaReplayCallbackScriptTest` | `PhoneHasher.java` (`providerId`), `WaWebhookHandler.java`, `WaIntakeService.java`, `WaConfigValidator.java`, `PostgresHealthRecordAdapter.java`; tests `FamilyDeletionAcceptanceTest`, `WaWebhookRouterTest`, `WaIntakeServiceTest`, `WaConfigValidatorTest`; `docs/RUNBOOK.md` |
-| 9 | `V19__outbound_failure_kind.sql`; tests `outbound/FailureKindAcceptanceTest`, `extraction/RecoveredFailureIsToldOnceTest`, `architecture/FailedHasOneWriterTest` | `OutboundMessage.java`, `PostgresOutboundMessageAdapter.java`, `ExplanationService.java`, `ExplainDocumentUseCase.java`, `DocumentRecordPort.java` + adapter (unexplained query), `DocumentRecoveryService.java`, `messages_bn/en.properties`; `ExplanationServiceTest` |
+| 8 | `V22__inbound_message.sql`; `wa/domain/InboundMessage.java`, `wa/application/port/out/InboundMessagePort.java`, `wa/adapter/out/persistence/PostgresInboundMessageAdapter.java`, `wa/adapter/in/WaInboundStartupReport.java`, `scripts/wa-replay-callback.sh`; tests `PostgresInboundMessageAdapterTest`, `wa/adapter/in/WaInboundIdempotencyAcceptanceTest`, `WaInboundStartupReportTest`, `WaReplayCallbackScriptTest` | `PhoneHasher.java` (`providerId`), `WaWebhookHandler.java`, `WaIntakeService.java`, `WaConfigValidator.java`, `PostgresHealthRecordAdapter.java`; tests `FamilyDeletionAcceptanceTest`, `WaWebhookRouterTest`, `WaIntakeServiceTest`, `WaConfigValidatorTest`; `docs/RUNBOOK.md` |
+| 9 | `V23__outbound_failure_kind.sql`; tests `outbound/FailureKindAcceptanceTest`, `extraction/RecoveredFailureIsToldOnceTest`, `architecture/FailedHasOneWriterTest` | `OutboundMessage.java`, `PostgresOutboundMessageAdapter.java`, `ExplanationService.java`, `ExplainDocumentUseCase.java`, `DocumentRecordPort.java` + adapter (unexplained query), `DocumentRecoveryService.java`, `messages_bn/en.properties`; `ExplanationServiceTest` |
 | 10 | — | `BaymaxProperties.java` (`Wa.permits`, `readReceipts`, `graphVersion`), `application.properties`, `WaConfigValidator.java`, `WaMessagingPort.java`, `WaGraphClient.java`, `WaIntakeService.java`, `WhatsAppMessageDelivery.java`; tests `config/WaAllowlistTest` (new), `WaConfigValidatorTest`, `WaGraphClientTest`, `WaIntakeServiceTest`; `docs/RUNBOOK.md` |
 | 11 | — | `FamilyAccountService.java` (`normalizeNumber`), `WebAuthService.java` (`verify` fold); tests `FamilyAccountServiceTest`, `WebAuthServiceTest` |
 | 12 | `V17__wa_last_inbound.sql`, `web/application/port/out/InboundWindowPort.java`, `web/adapter/out/persistence/PostgresInboundWindowAdapter.java`, `web/domain/CodeRequest.java`, `config/WaAllowlistTest` (Task 10.1), `SignInIsFreeAcceptanceTest`; `web/domain/{CodeIssue,VerifyFailure}.java`, `web/application/port/in/CodeRejectedException.java`, `web/adapter/out/delivery/CompositeOtpDelivery.java`, `web/adapter/in/ui/PhoneDisplay.java`; tests `LogOtpDeliveryTest`, `CompositeOtpDeliveryTest`, `OtpDeliveryWiringTest`, `WaLoginCodeFlowTest`, `SignInPagesTest` | `PostgresHealthRecordAdapter.java` (`deleteFamily`), `WhatsAppMessageDelivery.java` (Task 10.1), `WebAuthUseCase.java`, `WebAuthService.java`, `OtpStorePort.java` + adapter, `LogOtpDelivery.java`, `BaymaxProperties.Auth`/`Wa`, `WaTextRouter.java`, `WaIntakeService.java`, `WaConfigValidator.java`, `WebUiHandler.java`, `AuthHandler.java`, bundles, `baymax.css`, `application.properties`; tests `WebAuthServiceTest`, `WebPersistenceAdaptersTest`, `WaIntakeServiceTest`, `WaConfigValidatorTest`, `BaymaxWebUiRouterTest`, `WebUiHandlerRenderTest`, `MediooBrandTest`, `BaymaxAuthRouterTest`; `docs/MEDIOO.md`, `docs/RUNBOOK.md`, `medscribe.env.example` |
@@ -4711,7 +4711,7 @@ static String describe(Throwable e) {
 
 ## PR 8 — C1: the same WhatsApp message twice is answered once (F9a)
 
-Branch `fix/baymax-wa-inbound-idempotency`, from merged PR 7. Migration **V18**.
+Branch `fix/baymax-wa-inbound-idempotency`, from merged PR 7. Migration **V22**.
 
 The webhook answers 200 as soon as the signature is good, then dispatches each message to a detached subscription
 (`WaWebhookHandler.java:66-78,100-125`); nothing records which message ids were handled, so a Meta re-delivery is
@@ -4741,13 +4741,13 @@ no second record and no type switch.
 
 ### Task 8.1: `inbound_message`, keyed by HMAC, against real Postgres
 
-**Files:** create `V18__inbound_message.sql`, `wa/domain/InboundMessage.java`, `wa/application/port/out/InboundMessagePort.java`,
+**Files:** create `V22__inbound_message.sql`, `wa/domain/InboundMessage.java`, `wa/application/port/out/InboundMessagePort.java`,
 `wa/adapter/out/persistence/PostgresInboundMessageAdapter.java`; tests `baymax/src/test/java/com/elioo/baymax/wa/domain/InboundMessageTest.java`,
 `baymax/src/test/java/com/elioo/baymax/wa/adapter/out/persistence/PostgresInboundMessageAdapterTest.java`; modify
 `web/application/service/PhoneHasher.java` (+`providerId`).
 
 - [ ] **Step 1: Preflight.** `git ls-tree --name-only origin/main baymax/src/main/resources/db/baymax/migration | sort -V | tail -1`
-  prints `V16__document_recovery_attempts.sql`.
+  prints `V21__document_upload_key.sql`.
 - [ ] **Step 2: Write the failing tests.** The privacy rules, both directions, on the domain constructor:
 
 ```java
@@ -4871,7 +4871,7 @@ class PostgresInboundMessageAdapterTest {
 
 - [ ] **Step 3: Run** → compile errors on `InboundMessage`, `InboundMessagePort` (new behaviour; the defect guard is
   Task 8.3's acceptance test).
-- [ ] **Step 4: Implement.** V18:
+- [ ] **Step 4: Implement.** V22:
 
 ```sql
 -- F9a (Phase 0, PR 8): every inbound WhatsApp message, keyed so that "the same message twice is answered once" is a
@@ -4938,7 +4938,7 @@ public record InboundMessage(UUID id, String providerKey, UUID familyId, UUID pa
   `public String providerId(String id) { return phone("wamid:" + id); }` (the same HMAC, domain-separated; it throws the
   503-shaped `auth_not_configured` when the secret is missing).
 - [ ] **Step 5:** both test classes green; `HexagonalArchitectureTest` green. `git status --ignored --short -- baymax/src | grep '^!!'`
-  prints nothing (new `wa/adapter/out/persistence`). Commit: `feat(baymax): inbound_message keyed by HMAC of the provider id (F9a, V18)`.
+  prints nothing (new `wa/adapter/out/persistence`). Commit: `feat(baymax): inbound_message keyed by HMAC of the provider id (F9a, V22)`.
 
 ### Task 8.2: Both delete paths, and a deletion sweep derived from the schema that cannot pass vacuously
 
@@ -5505,7 +5505,7 @@ shape, from the first number on `BAYMAX_WA_ALLOWLIST`, and POSTs it twice.
   it is a test aid for the allowlisted number only.
 - [ ] **Step 5:** stage the script, the test, the runbook;
   `feat(scripts): replay one signed WhatsApp callback twice, to try idempotency from the server`. The standard
-  pre-merge (migration check: V16 is the latest on main).
+  pre-merge (migration check: V21 is the latest on main).
 
 **Try it on your phone (PR 8):**
 - [ ] On the box: `python3 -I ~/wa-replay-callback.py` prints two `200`s. On the phone: **one** reply arrives (the
@@ -5522,7 +5522,7 @@ shape, from the first number on `BAYMAX_WA_ALLOWLIST`, and POSTs it twice.
 
 ## PR 9 — B2: every document ends with a reply, from one place
 
-Branch `fix/baymax-every-document-ends-with-a-reply`, from merged PR 8. Migration **V19**.
+Branch `fix/baymax-every-document-ends-with-a-reply`, from merged PR 8. Migration **V23**.
 
 Three paths still end in silence after "পড়ে দেখছি": a document that ends FAILED (the 2026-10-16 credits outage;
 `compose`'s `default -> Mono.empty()`), an EXPLANATION that failed safety (the FAILED_SAFETY row is saved and nothing is
@@ -5535,12 +5535,12 @@ value-free; a DETAIL that failed safety keeps PR 5's `wa.detail.unavailable` (un
 PR 5's `DetailDeliveryGuardsTest` already proves the detail arrives once, in both gate modes; no second "arrives once"
 test is added here (it would duplicate those guards).
 
-### Task 9.1: V19 — an outbound kind for failure notices (Testcontainers, both directions)
+### Task 9.1: V23 — an outbound kind for failure notices (Testcontainers, both directions)
 
-**Files:** create `V19__outbound_failure_kind.sql`, `baymax/src/test/java/com/elioo/baymax/outbound/FailureKindAcceptanceTest.java`;
+**Files:** create `V23__outbound_failure_kind.sql`, `baymax/src/test/java/com/elioo/baymax/outbound/FailureKindAcceptanceTest.java`;
 modify `OutboundMessage.java` (`Kind.FAILURE`), `PostgresOutboundMessageAdapter.java` (`consecutiveRetakes`).
 
-- [ ] **Step 1: Preflight** — the latest migration on main is `V18__inbound_message.sql`. **Write the failing test.** Add
+- [ ] **Step 1: Preflight** — the latest migration on main is `V22__inbound_message.sql`. **Write the failing test.** Add
   the enum constant `FAILURE` first, with no migration, so the red is the database refusing:
 
 ```java
@@ -5673,7 +5673,7 @@ ALTER TABLE ${flyway:defaultSchema}.outbound_message ADD CONSTRAINT outbound_mes
   `consecutiveRetakes` change `kind <> 'retake'` to `kind NOT IN ('retake', 'failure')` ("a failure notice is our fault,
   not a readable document, and must not reset the escalation").
 - [ ] **Step 4:** `./gradlew :baymax:test --tests '*FailureKindAcceptanceTest' --tests '*DeliveryOutcomeAcceptanceTest' --tests '*FamilyDeletionAcceptanceTest'` green.
-- [ ] **Step 5:** `feat(baymax): V19 outbound kind 'failure'; a failure notice does not reset retake escalation`.
+- [ ] **Step 5:** `feat(baymax): V23 outbound kind 'failure'; a failure notice does not reset retake escalation`.
 
 ### Task 9.2: FAILED, fail-closed and throwing explanations reply — code-only, value-free
 
@@ -5917,7 +5917,7 @@ class FailedHasOneWriterTest {
 
 ### Task 9.4: Ship
 
-- [ ] **Step 1:** the standard pre-merge (migration check: V18 is the latest on main). PR body: the three silent paths
+- [ ] **Step 1:** the standard pre-merge (migration check: V22 is the latest on main). PR body: the three silent paths
   closed, the central rule and how it is asserted, the inverted test, the copy drafts, and the plain statement that the
   FAILED and FAILED_SAFETY replies were exercised locally and by Testcontainers only.
 - [ ] **Step 2: Local run (the done for this PR).** With `docker compose up -d` and `.env.local`, start the app with the

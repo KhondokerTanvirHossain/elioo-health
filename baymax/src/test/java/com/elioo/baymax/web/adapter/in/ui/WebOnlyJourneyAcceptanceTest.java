@@ -391,12 +391,23 @@ class WebOnlyJourneyAcceptanceTest {
             StoragePort bucket = context.getBean(StoragePort.class);
             assertThat(bucket.listKeys(prefix).collectList().block()).as("the objects in the bucket before the delete")
                     .containsExactlyInAnyOrderElementsOf(keys);
+            // the paper arrived over WhatsApp too (V22): its inbound row holds the patient, the document and Meta's media id,
+            // a handle that fetches the photo again while Meta keeps it. "Removes the images, permanently" covers it.
+            String inboundKey = "f".repeat(32) + documentId.toString().replace("-", "");
+            sql("insert into baymax.inbound_message (provider_key, family_id, patient_id, document_id, type, media_id) values ('"
+                    + inboundKey + "','" + ma.familyId() + "','" + ma.id() + "','" + documentId + "','image','MEDIA-JOURNEY')");
             assertThat(get(web, session, documentPath + "/delete"))
                     .contains("method=\"post\"").contains("action=\"" + documentPath + "/delete\"");
             assertThat(web.post().uri(documentPath + "/delete").cookie("baymax_session", session).exchange()
                     .expectStatus().isOk().expectBody(String.class).returnResult().getResponseBody()).contains(copy.t(Lang.BN, "doc.deleted"));
             web.get().uri(documentPath).cookie("baymax_session", session).exchange().expectStatus().isNotFound();
             assertThat(tablesStillHolding(documentId)).as("tables still holding the deleted document").isEmpty();
+            // not swept by document_id: SET NULL clears that very column. Asked of the family instead
+            assertThat(scalar("select count(*) from baymax.inbound_message where family_id = '" + ma.familyId()
+                    + "' and (media_id is not null or patient_id is not null)"))
+                    .as("inbound rows of the family still holding a media id or the patient after the paper was deleted").isEqualTo("0");
+            assertThat(scalar("select count(*) from baymax.inbound_message where provider_key = '" + inboundKey + "'"))
+                    .as("the key itself stays: a Meta re-delivery must still be a duplicate").isEqualTo("1");
             assertThat(bucket.listKeys(prefix).collectList().block()).as("the bucket after the delete").isEmpty();
 
             // 8. sign out: the session no longer opens a tab; the landing and the number page are there, at both URLs
@@ -804,6 +815,12 @@ class WebOnlyJourneyAcceptanceTest {
         try (Connection c = connect(); Statement s = c.createStatement(); ResultSet rs = s.executeQuery(query)) {
             rs.next();
             return rs.getString(1);
+        }
+    }
+
+    private static void sql(String statement) throws Exception {
+        try (Connection c = connect(); Statement s = c.createStatement()) {
+            s.execute(statement);
         }
     }
 

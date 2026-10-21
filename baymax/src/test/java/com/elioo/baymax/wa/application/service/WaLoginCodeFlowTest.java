@@ -108,7 +108,9 @@ class WaLoginCodeFlowTest {
                 mock(DocumentIntakeUseCase.class), graph, new Copy(), props, auth,
                 Clock.fixed(NOW, ZoneOffset.UTC),
                 mock(com.elioo.baymax.family.application.port.in.FreeTierUseCase.class),
-                com.elioo.baymax.wa.WaFixtures.noUrgentPapers(), com.elioo.baymax.wa.WaFixtures.nothingStored());
+                com.elioo.baymax.wa.WaFixtures.noUrgentPapers(), com.elioo.baymax.wa.WaFixtures.nothingStored(),
+                mock(com.elioo.baymax.wa.application.port.out.InboundMessagePort.class), new PhoneHasher(props),
+                new WaInstance(Clock.fixed(NOW, ZoneOffset.UTC)));
 
         root = (Logger) LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
         before = root.getLevel();

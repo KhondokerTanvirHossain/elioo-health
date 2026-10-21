@@ -162,7 +162,7 @@ absent on any server where Baymax should not run.
 |---|---|---|
 | `BAYMAX_ENABLED` | `true` | loads the module at all |
 | `BAYMAX_ADMIN_TOKEN` | a long random string | gates `/api/v1/baymax/admin/**` and, until BMX-5 brings OTP, the family endpoints. Unset ⇒ those routes answer 503 |
-| `BAYMAX_AUTH_HMAC_SECRET` | **set** (`openssl rand -hex 32`) | Stands in for phone numbers in otp_code / web_session / audit_event. Blank = OTP login answers 503 (fail closed). Rotating it logs every family out. BMX-5. |
+| `BAYMAX_AUTH_HMAC_SECRET` | **set** (`openssl rand -hex 32`) | Stands in for phone numbers in otp_code / web_session / audit_event. Blank = OTP login answers 503 (fail closed). Rotating it logs every family out. BMX-5. Since F9a (V22) it also keys every inbound WhatsApp message (`inbound_message.provider_key`): with `BAYMAX_WA_ENABLED=true` a blank value **refuses to start**, and rotating it makes Meta re-deliveries of messages received before the rotation look new (answered twice) for as long as Meta retries them. |
 | `BAYMAX_COOKIE_SECURE` | blank (defaults true) | Only ever set `false` on a plain-http dev box; production is HTTPS behind Caddy. |
 | `BAYMAX_PUBLIC_BASE_URL` | `https://medioo.eliooo.org` (set 2026-09-19) | Builds the timeline links in outbound messages. Default in application.properties is the same host; set explicitly so a host change is one env edit + restart. |
 | `BAYMAX_GATE_NUDGES` | blank (defaults true) | DR-18: every nudge parked for the reviewer during the pilot, whatever `BAYMAX_GATE_MODE` says. Set `false` only after the PO ends the pilot gate. |
@@ -199,6 +199,7 @@ number id and WABA id are set and well-formed (it names the variable, never the 
 | `BAYMAX_WA_PHONE_NUMBER_ID` | digits only | the sending number's Graph id |
 | `BAYMAX_WA_WABA_ID` | digits only | the WhatsApp Business Account id |
 | `BAYMAX_WA_ALLOWLIST` | comma-separated E.164 numbers | **Tanvir's number only while the gate is off.** Enforced in code on every send; a non-E.164 entry refuses to start. **Blank means no restriction**: every family number would be messaged |
+| `BAYMAX_WA_TEST_NUMBER` | optional; the one E.164 number `scripts/wa-replay-callback.py` may send as (F9a) | Not read by the app. Today Tanvir's number. Can be passed on the command line instead of written here; see "Trying it from the server" under F9a |
 | `BAYMAX_WA_PUBLIC_NUMBER` | **set**: the display number of `BAYMAX_WA_PHONE_NUMBER_ID`, digits only, country code first (`8801…`), no plus, spaces, quotes or comment | the sign-in page's "WhatsApp খুলে কোড আনুন" link (`wa.me/<n>?text=কোড`, DR-39). Blank = no button (WARN at startup); malformed = startup refused, which takes MedScribe down too, so check it with `cat -A` before the deploy |
 | `BAYMAX_WA_SERVICE_WINDOW` | blank (defaults `PT23H`) | a web sign-in code is sent to WhatsApp automatically only if the number's own last message is at most this old (WhatsApp's free window is 24 h). Startup refuses zero or more than 24 h |
 | `BAYMAX_WA_GRAPH_VERSION` | **blank** (= the shipped default, `v25.0`) | set `v21.0` **only to roll back** after a Graph error on v25.0, then remove the line again. Surrounding spaces and a CR are dropped; a value not shaped like `v25.0` inside them (`21.0`, `v21.0 # rollback`) refuses to start (it takes MedScribe down too: check with `cat -A`); a version within 90 days of its expiry, past it, or not in the expiry table logs a WARN containing `graph version` and still starts. See "Graph API version" below |
@@ -507,7 +508,88 @@ by its `recovery documentId=` line and look at it before turning recovery back o
 loop on its own after two restarts; the switch is for when two is too many.
 
 Known gap: a restart in the second or two between the webhook's 200 and the document row being created leaves no
-document to recover.
+document to recover. Since F9a the message itself is recorded before the 200, so such a photo shows up in the startup
+count below (`never answered before this restart`); a Meta re-delivery reclaims it, the rest are F9c.
+
+## The same WhatsApp message twice (F9a)
+
+Meta re-delivers a webhook it thinks we did not acknowledge. The webhook now **claims** every message before it
+answers: one row in `baymax.inbound_message`, keyed by `HMAC(BAYMAX_AUTH_HMAC_SECRET, "wamid:" || id)` (never the
+wamid, which is base64 of the sender's number). Only the claim that inserted the row goes on to reply; a re-delivery
+is answered 200 and ignored. A committed claim is always dispatched, even if Meta hangs up before the answer.
+
+- **503** when the claim fails for a reason a retry can fix (database unreachable, a missing table, the HMAC secret):
+  Meta retries for up to 7 days and the claim makes the retry harmless. Messages of the same callback claimed before
+  the failure are answered; the rest wait for the retry.
+- **200, answered unkeyed** when the database refuses the row itself (SQLSTATE 22/23: a NUL in the text, an over-long
+  id). It would refuse it on every retry, so a 503 would be a week-long loop; the message is answered without
+  idempotency, like one with no provider id.
+- **Reclaim**: a row claimed by the PREVIOUS container and never answered (a deploy's `docker rm -f` between the commit
+  and the dispatch) is taken back, once, when Meta re-delivers it. A row received by the running container is never
+  taken back (it is in flight).
+
+What is kept: text and the Meta media id only for a sender with a family account (both deleted with the family; the
+CHECK `inbound_message_content_needs_family` refuses either without one), never text that carries a standalone
+six-digit run (a login code, however it is pasted back). Deleting one paper clears its row's media id, patient and
+document and keeps the key. **Retention**: rows from a number with no family are deleted after 8 days (Meta retries
+for 7; the key is all the dedupe needs), by `WaInboundRetentionJob` daily at 03:40 (`baymax.wa.inbound-purge-cron`).
+
+Log lines (digests only, never a wamid or a number):
+
+```bash
+docker logs medscribe-ai --since 15m 2>&1 | grep -E 'wa inbound duplicate ref=|wa intake done ref=|asking Meta to retry|wa inbound unrecordable|wa inbound reclaimed|never answered before this restart|wa inbound purge'
+```
+
+- `wa inbound duplicate ref=<digest> ignored (already claimed)`: a re-delivery, not answered again. Expected now and then.
+- `wa webhook: inbound could not be recorded, asking Meta to retry error=<class>`: a 503. More than a handful means the
+  database is unreachable from the container; Meta will retry, nothing is lost yet.
+- `wa inbound unrecordable ref=<digest> error=<class>: processed without idempotency`: a data error on one message;
+  answered, but a Meta re-delivery of it would be answered again. Any at all is worth a look at the class.
+- `wa inbound reclaimed: an earlier instance claimed it and never answered`: a deploy cut a message off and Meta's
+  re-delivery is answering it now.
+- At startup, WARN `<n> WhatsApp message(s) were received but never answered before this restart`: messages claimed by
+  the previous container and cut off by THIS restart before their reply. Each is closed as `outcome = 'CUT_OFF'` when
+  counted, so the next startup counts only what its own restart cut off (never a running total). Meta re-delivers one
+  only if it never got the 200 (then it is reclaimed); the rest nobody re-sends yet (F9c, Phase 4). The count says how
+  urgent that is. Put it in the build report.
+
+```sql
+-- in flight (NULL) or cut off by a restart (CUT_OFF), newest first; no text, no numbers
+SELECT received_at, type, coalesce(outcome, 'in flight') AS state, family_id IS NOT NULL AS known_family
+FROM baymax.inbound_message WHERE handled_at IS NULL OR outcome = 'CUT_OFF' ORDER BY received_at DESC LIMIT 20;
+```
+
+### Trying it from the server
+
+A phone cannot make Meta re-deliver. `scripts/wa-replay-callback.py` builds the callback Meta would send for the text
+"বিস্তারিত" from the number given as `--number` (with a message id of Meta's shape), signs it with
+`BAYMAX_WA_APP_SECRET`, and POSTs the identical bytes twice. **It forges a message from that number**, so it refuses
+unless the number is given explicitly, is on `BAYMAX_WA_ALLOWLIST`, and equals `BAYMAX_WA_TEST_NUMBER` (the dedicated
+test number: Tanvir's, today); it never takes the first allowlist entry, which becomes a pilot family's number the day
+one is added first. It prints the masked target and sends nothing without `--yes`. Standard library, python3 3.9 on the
+box is enough. It reads the secret and the allowlist from `~/medscribe.env` itself; `BAYMAX_WA_TEST_NUMBER` is read from
+the environment (or that file). `--dry-run` prints the path and body and sends nothing; the signature only with
+`--show-signature` (with it, anyone holding the output can replay the request to the public webhook).
+
+What one run does to the test number, as a real message from it would:
+
+- **one WhatsApp reply is sent** to it (the pointer to the latest paper, or `wa.no_document` if none is done; the
+  detail word may compose a detail message about that paper);
+- **its 24 h WhatsApp window is recorded as open** (`wa_last_inbound`, DR-39): a web sign-in code may then be sent to
+  it as free-form text;
+- **an `inbound_message` row is stored**, with the text "বিস্তারিত".
+
+```bash
+scp -i <key> scripts/wa-replay-callback.py ec2-user@<box>:~/wa-replay-callback.py          # from the dev machine
+BAYMAX_WA_TEST_NUMBER=+8801793399171 python3 -I ~/wa-replay-callback.py --number +8801793399171 --yes
+#   prints: target ****9171, then 200, 200
+docker logs medscribe-ai --since 5m 2>&1 | grep -c 'wa inbound duplicate'                   # 1
+```
+
+What proves it: two `200`s, **one** WhatsApp reply on the test phone, and exactly one `wa inbound duplicate` line.
+Each run uses a new id (its tail carries the minute), so running it again a minute later is answered once more, as a
+new message should be; run twice within the same minute, the second run's two POSTs are both duplicates and get no
+reply.
 
 ## Running the nudge job by hand (BMX-8)
 

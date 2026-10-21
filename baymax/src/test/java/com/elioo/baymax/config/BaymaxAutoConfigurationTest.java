@@ -70,8 +70,28 @@ class BaymaxAutoConfigurationTest {
                         "baymax.wa.app-secret=88e3540dd539aabbccddeeff00112233",
                         "baymax.wa.verify-token=78d41af3449a9bfbd560140166c6f2c2",
                         "baymax.wa.phone-number-id=1412074765313019",
-                        "baymax.wa.waba-id=4407553579467225")
+                        "baymax.wa.waba-id=4407553579467225",
+                        "baymax.auth.hmac-secret=" + "s".repeat(32))   // F9a: inbound messages are keyed by it
                 .run(context -> assertThat(context).hasBean("baymaxWaRoutes"));
+    }
+
+    /**
+     * F9a's startup rule has two directions: WhatsApp on without the HMAC secret refuses to start, naming it; WhatsApp
+     * off without it starts as before (the web login fails closed on its own, per request).
+     */
+    @Test
+    void theHmacSecretIsRequiredOnlyWhenWhatsappIsOn() {
+        runner().withPropertyValues("baymax.enabled=true", "baymax.wa.enabled=true",
+                        "baymax.wa.token=EAA" + "x".repeat(200),
+                        "baymax.wa.app-secret=88e3540dd539aabbccddeeff00112233",
+                        "baymax.wa.verify-token=78d41af3449a9bfbd560140166c6f2c2",
+                        "baymax.wa.phone-number-id=1412074765313019",
+                        "baymax.wa.waba-id=4407553579467225",
+                        "baymax.auth.hmac-secret=")
+                .run(context -> assertThat(context).hasFailed()
+                        .getFailure().rootCause().hasMessageContaining("BAYMAX_AUTH_HMAC_SECRET"));
+        runner().withPropertyValues("baymax.enabled=true", "baymax.wa.enabled=false", "baymax.auth.hmac-secret=")
+                .run(context -> assertThat(context).hasNotFailed());
     }
 
     /**

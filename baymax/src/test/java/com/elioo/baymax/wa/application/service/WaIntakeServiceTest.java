@@ -79,6 +79,10 @@ class WaIntakeServiceTest {
      * and never sent as a reply, so silence passed (CLAUDE.md: a mock that cannot fail the way production fails).
      */
     private final List<Map.Entry<String, String>> delivered = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private final com.elioo.baymax.wa.application.port.out.InboundMessagePort inbound =
+            mock(com.elioo.baymax.wa.application.port.out.InboundMessagePort.class);
+    private final com.elioo.baymax.web.application.service.PhoneHasher hasher =
+            new com.elioo.baymax.web.application.service.PhoneHasher(props);
     private WaIntakeService service;
 
     @BeforeEach
@@ -101,8 +105,155 @@ class WaIntakeServiceTest {
         when(attention.urgent(any(), any())).thenReturn(Mono.just(List.of()));
         when(urgency.current(any())).thenReturn(Mono.empty());
         when(urgency.currentOrAssess(any())).thenReturn(Mono.empty());
+        // F9a: the inbound key is HMAC(wamid); the record accepts writes unless a test says otherwise
+        props.getAuth().setHmacSecret("s".repeat(32));
+        when(inbound.markHandled(anyString(), anyString())).thenReturn(Mono.empty());
+        when(inbound.linkDocument(anyString(), any(), any())).thenReturn(Mono.empty());
         service = new WaIntakeService(records, documents, explainer, intake, graph, new Copy(), props, auth,
-                clock, freeTier, attention, urgency);
+                clock, freeTier, attention, urgency, inbound, hasher, new WaInstance(clock));
+    }
+
+    // ---- F9a: claim before the webhook answers, then handle once and record the outcome ----
+
+    private static final String WAMID = WaFixtures.wamid(FROM, 21);
+
+    @Test
+    void aKnownFamilysTextIsClaimedUnderTheHmacWithItsFamilyAndBodyAndNeverTheRawId() {
+        familyWith(patient("মা"));
+        when(inbound.claim(any(), any())).thenAnswer(i -> Mono.just(i.getArgument(0)));
+        WaInbound in = new WaInbound(WAMID, FROM, WaInbound.Type.TEXT, "বিস্তারিত", "", "", Instant.parse("2026-10-17T05:59:00Z"));
+
+        assertThat(service.claim(in).block()).isSameAs(in);
+
+        ArgumentCaptor<com.elioo.baymax.wa.domain.InboundMessage> row = ArgumentCaptor.forClass(com.elioo.baymax.wa.domain.InboundMessage.class);
+        verify(inbound).claim(row.capture(), eq(clock.instant()));
+        assertThat(row.getValue().providerKey()).isEqualTo(hasher.providerId(WAMID)).doesNotContain(WAMID).matches("[0-9a-f]{64}");
+        assertThat(row.getValue().familyId()).isEqualTo(FAMILY);
+        assertThat(row.getValue().type()).isEqualTo("text");
+        assertThat(row.getValue().body()).isEqualTo("বিস্তারিত");
+        assertThat(row.getValue().providerTimestamp()).isEqualTo(Instant.parse("2026-10-17T05:59:00Z"));
+        assertThat(delivered).as("the claim answers nobody; handle does").isEmpty();
+    }
+
+    @Test
+    void anUnknownSendersTextIsClaimedWithoutItsText() {
+        when(records.findFamilyByWhatsapp(E164)).thenReturn(Mono.empty());
+        when(inbound.claim(any(), any())).thenAnswer(i -> Mono.just(i.getArgument(0)));
+        service.claim(new WaInbound(WAMID, FROM, WaInbound.Type.TEXT, "আম্মার রিপোর্ট", "", "")).block();
+        ArgumentCaptor<com.elioo.baymax.wa.domain.InboundMessage> row = ArgumentCaptor.forClass(com.elioo.baymax.wa.domain.InboundMessage.class);
+        verify(inbound).claim(row.capture(), any());
+        assertThat(row.getValue().familyId()).isNull();
+        assertThat(row.getValue().body()).isNull();
+    }
+
+    @Test
+    void aMessageAlreadyClaimedIsEmptyNotAnError() {
+        when(inbound.claim(any(), any())).thenReturn(Mono.empty());
+        StepVerifier.create(service.claim(new WaInbound(WAMID, FROM, WaInbound.Type.TEXT, "hi", "", ""))).verifyComplete();
+    }
+
+    /** No secret, no key: an error signal (the webhook answers 503, Meta retries), never a throw at assembly time. */
+    @Test
+    void withoutTheHmacSecretTheClaimFailsAsASignalAndNothingIsRecorded() {
+        props.getAuth().setHmacSecret("");
+        Mono<WaInbound> claim = service.claim(new WaInbound(WAMID, FROM, WaInbound.Type.TEXT, "hi", "", ""));
+        StepVerifier.create(claim).expectError(com.elioo.baymax.common.error.BaymaxException.class).verify();
+        verify(inbound, never()).claim(any(), any());
+    }
+
+    @Test
+    void aMessageWithNoProviderIdIsPassedThroughWithoutAClaim() {
+        WaInbound in = new WaInbound("", FROM, WaInbound.Type.TEXT, "hi", "", "");
+        assertThat(service.claim(in).block()).isSameAs(in);
+        verify(inbound, never()).claim(any(), any());
+    }
+
+    @Test
+    void aHandledPhotoRecordsItsOutcomeAndLinksItsDocument() {
+        PatientProfile ma = patient("মা");
+        familyWith(ma);
+        Document doc = mock(Document.class);
+        UUID docId = UUID.randomUUID();
+        when(doc.id()).thenReturn(docId);
+        when(intake.accept(eq(ma.id()), any())).thenReturn(Mono.just(doc));
+
+        assertThat(service.handle(new WaInbound(WAMID, FROM, WaInbound.Type.IMAGE, "", "MEDIA-1", "image/jpeg")).block())
+                .isEqualTo(WaIntakeService.Outcome.ACCEPTED);
+        verify(inbound).linkDocument(hasher.providerId(WAMID), ma.id(), docId);
+        verify(inbound).markHandled(hasher.providerId(WAMID), "ACCEPTED");
+    }
+
+    @Test
+    void aFailedIntakeIsStillMarkedHandledWithFailed() {
+        familyWith(patient("মা"));
+        when(graph.downloadMedia("MEDIA-2")).thenReturn(Mono.error(new WaMessagingPort.MediaUnavailableException(404)));
+        assertThat(service.handle(new WaInbound(WAMID, FROM, WaInbound.Type.IMAGE, "", "MEDIA-2", "image/jpeg")).block())
+                .isEqualTo(WaIntakeService.Outcome.FAILED);
+        verify(inbound).markHandled(hasher.providerId(WAMID), "FAILED");
+        verify(inbound, never()).linkDocument(anyString(), any(), any());
+    }
+
+    /**
+     * handle()'s OWN error branch: onInbound itself errors (the family lookup fails, and withFamily has no fallback), so
+     * the FAILED stamp can only come from handle. The download-404 test above reaches FAILED through onImage's mapping
+     * instead, and would stay green with handle's onErrorResume deleted: same verdict, different rule.
+     */
+    @Test
+    void anErrorOutOfOnInboundItselfIsTheFailedOutcomeAndIsStamped() {
+        when(records.findFamilyByWhatsapp(E164)).thenReturn(Mono.error(new IllegalStateException("lookup failed")));
+        WaInbound in = new WaInbound(WAMID, FROM, WaInbound.Type.TEXT, "ধন্যবাদ", "", "");
+        StepVerifier.create(service.onInbound(in)).as("the precondition: onInbound itself errors")
+                .expectError(IllegalStateException.class).verify();
+
+        // the stamp first, the error swallowed: a replay without handle's onErrorResume fails ON the missing stamp
+        WaIntakeService.Outcome outcome = service.handle(in).onErrorResume(e -> Mono.empty()).block();
+        verify(inbound).markHandled(hasher.providerId(WAMID), "FAILED");
+        assertThat(outcome).isEqualTo(WaIntakeService.Outcome.FAILED);
+    }
+
+    /**
+     * A row the database refuses as data (SQLSTATE 22xxx / 23xxx) would be refused on every retry for a week: the claim
+     * passes the message through unclaimed, so it is answered. Anything else stays an error, the 503 that lets Meta retry.
+     */
+    @Test
+    void aClaimRefusedAsDataIsPassedThroughUnclaimedAndAnythingElseIsStillAnError() {
+        when(inbound.claim(any(), any())).thenReturn(Mono.error(new org.springframework.dao.DataIntegrityViolationException("x",
+                new io.r2dbc.spi.R2dbcDataIntegrityViolationException("invalid byte sequence", "22021"))));
+        WaInbound in = new WaInbound(WAMID, FROM, WaInbound.Type.TEXT, "hi", "", "");
+        assertThat(service.claim(in).block()).as("22021: answered unkeyed").isSameAs(in);
+
+        when(inbound.claim(any(), any())).thenReturn(Mono.error(new org.springframework.dao.DataAccessResourceFailureException("x",
+                new io.r2dbc.spi.R2dbcNonTransientResourceException("connection refused", "08001"))));
+        StepVerifier.create(service.claim(in)).as("08001: a retry can help").expectError().verify();
+
+        when(inbound.claim(any(), any())).thenReturn(Mono.error(new org.springframework.r2dbc.BadSqlGrammarException("x", "sql",
+                new io.r2dbc.spi.R2dbcBadGrammarException("relation does not exist", "42P01"))));
+        StepVerifier.create(service.claim(in)).as("42P01: the table is missing for every message; Meta holds them").expectError().verify();
+    }
+
+    /** The answer already went; a stamp that cannot be written shows as unhandled at the next restart, not as an error. */
+    @Test
+    void aLostOutcomeStampDoesNotTurnAnAnsweredMessageIntoAnError() {
+        familyWith(patient("মা"));
+        when(inbound.markHandled(anyString(), anyString())).thenReturn(Mono.error(new IllegalStateException("db down")));
+        assertThat(service.handle(new WaInbound(WAMID, FROM, WaInbound.Type.TEXT, "ধন্যবাদ", "", "")).block())
+                .isEqualTo(WaIntakeService.Outcome.REPLIED);
+        assertThat(delivered).hasSize(1);
+    }
+
+    /** A link that cannot be written never costs the family the document or the reply that follows it. */
+    @Test
+    void aLostDocumentLinkDoesNotFailAnAcceptedPhoto() {
+        PatientProfile ma = patient("মা");
+        familyWith(ma);
+        Document doc = mock(Document.class);
+        when(doc.id()).thenReturn(UUID.randomUUID());
+        when(intake.accept(eq(ma.id()), any())).thenReturn(Mono.just(doc));
+        when(inbound.linkDocument(anyString(), any(), any())).thenReturn(Mono.error(new IllegalStateException("db down")));
+
+        assertThat(service.handle(new WaInbound(WAMID, FROM, WaInbound.Type.IMAGE, "", "MEDIA-3", "image/jpeg")).block())
+                .isEqualTo(WaIntakeService.Outcome.ACCEPTED);
+        verify(inbound).markHandled(hasher.providerId(WAMID), "ACCEPTED");
     }
 
     private PatientProfile patient(String name) {

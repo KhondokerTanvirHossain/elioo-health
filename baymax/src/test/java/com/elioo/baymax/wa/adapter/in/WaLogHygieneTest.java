@@ -82,7 +82,8 @@ class WaLogHygieneTest {
     @Test
     void theWebhookLogsInboundAndStatusCallbacksByDigestOnly() throws Exception {
         WaIntakeService intake = mock(WaIntakeService.class);
-        when(intake.onInbound(any())).thenReturn(Mono.just(WaIntakeService.Outcome.ACCEPTED));
+        when(intake.claim(any())).thenAnswer(i -> Mono.just(i.getArgument(0)));
+        when(intake.handle(any())).thenReturn(Mono.just(WaIntakeService.Outcome.ACCEPTED));
         BaymaxProperties props = new BaymaxProperties();
         props.getWa().setEnabled(true);
         props.getWa().setVerifyToken("v");
@@ -121,6 +122,26 @@ class WaLogHygieneTest {
         String log = everything();
         assertNoWamidAndNoNumber(log);
         assertThat(log).contains("wa delivered id=" + row.id()).contains("ref=" + Redact.id(OUT));
+    }
+
+    /** F9a's two new webhook lines: a re-delivery ignored, and a claim that failed into a 503. Digests only. */
+    @Test
+    void aDuplicateAndAFailedClaimAreLoggedByDigestOnly() throws Exception {
+        byte[] body = ("{\"entry\":[{\"changes\":[{\"value\":{\"messages\":[{\"id\":\"" + IN + "\",\"from\":\"" + FROM
+                + "\",\"type\":\"text\",\"text\":{\"body\":\"Hi\"}}]}}]}]}").getBytes(StandardCharsets.UTF_8);
+        WaIntakeService duplicate = mock(WaIntakeService.class);
+        when(duplicate.claim(any())).thenReturn(Mono.empty());
+        webhook(duplicate).post().uri(WaWebhookRouter.WEBHOOK_PATH).header("X-Hub-Signature-256", WaSignature.sign(body, APP_SECRET))
+                .contentType(MediaType.APPLICATION_JSON).bodyValue(body).exchange().expectStatus().isOk();
+        WaIntakeService down = mock(WaIntakeService.class);
+        when(down.claim(any())).thenReturn(Mono.error(new IllegalStateException("insert failed for " + IN + " from " + FROM)));
+        webhook(down).post().uri(WaWebhookRouter.WEBHOOK_PATH).header("X-Hub-Signature-256", WaSignature.sign(body, APP_SECRET))
+                .contentType(MediaType.APPLICATION_JSON).bodyValue(body).exchange().expectStatus().isEqualTo(503);
+
+        String log = everything();
+        assertThat(log).as("the lines exist").contains("wa inbound duplicate ref=" + Redact.id(IN)).contains("asking Meta to retry");
+        assertThat(log).as("an exception message is never logged").doesNotContain("insert failed");
+        assertNoWamidAndNoNumber(log);
     }
 
     private WebTestClient webhook(WaIntakeService intake) {

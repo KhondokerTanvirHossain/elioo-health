@@ -345,7 +345,12 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
     @Override
     @org.springframework.transaction.annotation.Transactional
     public Mono<Long> deleteDocument(UUID documentId) {
-        return db.sql("UPDATE " + S + ".ai_call_log SET document_id = NULL WHERE document_id = :d").bind("d", documentId).then()
+        // V22: the WhatsApp message the paper arrived in keeps its key (a Meta re-delivery must still be a duplicate) and
+        // its family, and loses the patient, the document and Meta's media id, a handle that fetches the photo again
+        // while Meta keeps it. Same transaction; the FK's SET NULL alone would leave the media id.
+        return db.sql("UPDATE " + S + ".inbound_message SET media_id = NULL, patient_id = NULL, document_id = NULL"
+                        + " WHERE document_id = :d").bind("d", documentId).then()
+                .then(db.sql("UPDATE " + S + ".ai_call_log SET document_id = NULL WHERE document_id = :d").bind("d", documentId).then())
                 .then(db.sql("DELETE FROM " + S + ".observation WHERE document_id = :d").bind("d", documentId).then())
                 .then(db.sql("DELETE FROM " + S + ".medication_event WHERE document_id = :d").bind("d", documentId).then())
                 .then(db.sql("DELETE FROM " + S + ".follow_up WHERE document_id = :d").bind("d", documentId).then())

@@ -15,9 +15,13 @@ import com.elioo.baymax.outbound.application.service.Copy;
 import com.elioo.baymax.outbound.application.service.UrgencyLines;
 import com.elioo.baymax.outbound.domain.OutboundMessage;
 import com.elioo.baymax.outbound.domain.Urgency;
+import com.elioo.baymax.common.redact.Redact;
+import com.elioo.baymax.wa.application.port.out.InboundMessagePort;
 import com.elioo.baymax.wa.application.port.out.WaMessagingPort;
+import com.elioo.baymax.wa.domain.InboundMessage;
 import com.elioo.baymax.wa.domain.WaInbound;
 import com.elioo.baymax.web.application.port.in.AttentionUseCase;
+import com.elioo.baymax.web.application.service.PhoneHasher;
 import com.elioo.baymax.web.domain.AttentionItem;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -73,6 +77,12 @@ public class WaIntakeService {
     private final AttentionUseCase attention;
     /** F1's stored level of the latest paper, assessed once if it never was (a pre-V18 row). */
     private final DocumentUrgencyUseCase urgency;
+    /** F9a (V22): the record that makes a Meta re-delivery answered once. */
+    private final InboundMessagePort inbound;
+    /** The inbound key is HMAC(wamid): a wamid is base64 of the sender's number, so it is never stored itself. */
+    private final PhoneHasher hasher;
+    /** This instance's start: a claim older than it, never answered, died with an earlier instance and may be reclaimed. */
+    private final WaInstance instance;
 
     /** Why an inbound image did not become a document; each carries the reply the family receives. */
     public enum Outcome {
@@ -93,6 +103,78 @@ public class WaIntakeService {
 
     /** What the intake can read: a PDF or a JPEG/PNG photo sent as a file (PageRenderer decides by magic bytes). */
     private static final Set<String> READABLE_FILES = Set.of("application/pdf", "image/jpeg", "image/png");
+
+    /**
+     * Step 0 (F9a, spec §7.1): record the message under HMAC(provider id) before the webhook answers Meta. Emits the
+     * message when THIS call recorded it, so the caller goes on to {@link #handle} it; empty when it was already recorded
+     * (a re-delivery, to be acknowledged and ignored); an error when nothing could be recorded for a reason a retry can
+     * fix (the webhook answers 503 and Meta retries, which the claim makes harmless). A message the database refuses as
+     * DATA (SQLSTATE class 22 or 23: a NUL in the text, an over-long id) would be refused on every retry for a week, so it
+     * is emitted unclaimed, like a message with no provider id: answered now, without idempotency. Sends nothing.
+     */
+    public Mono<WaInbound> claim(WaInbound in) {
+        if (!keyed(in)) {
+            log.warn("[baymax] wa inbound without a provider id type={}: processed without idempotency", in.type());
+            return Mono.just(in);
+        }
+        // defer: a missing HMAC secret must be an error signal (503, Meta retries), not a throw at assembly time
+        return Mono.defer(() -> {
+            String key = hasher.providerId(in.providerMessageId());
+            return records.findFamilyByWhatsapp(e164(in.from()))
+                    .map(family -> java.util.Optional.of(family.id()))
+                    .defaultIfEmpty(java.util.Optional.empty())
+                    .flatMap(family -> inbound.claim(InboundMessage.received(key, family.orElse(null),
+                            in.type().name().toLowerCase(Locale.ROOT), in.text(), in.mediaId(), in.timestamp()),
+                            instance.startedAt()))
+                    .map(row -> in);
+        }).onErrorResume(WaIntakeService::refusedAsData, e -> {
+            log.warn("[baymax] wa inbound unrecordable ref={} error={}: processed without idempotency",
+                    Redact.id(in.providerMessageId()), e.getClass().getSimpleName());
+            return Mono.just(in);
+        });
+    }
+
+    /**
+     * The database refused the row itself (SQLSTATE class 22 data exception or 23 integrity violation), anywhere in the
+     * cause chain: the same bytes fail the same way on every retry. Everything else (unreachable, timed out, a missing
+     * table, the HMAC secret) is a reason to let Meta retry.
+     */
+    static boolean refusedAsData(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause() == t ? null : t.getCause()) {
+            String state = t instanceof io.r2dbc.spi.R2dbcException r ? r.getSqlState()
+                    : t instanceof java.sql.SQLException s ? s.getSQLState() : null;
+            if (state != null && (state.startsWith("22") || state.startsWith("23"))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Everything after the claim: {@link #onInbound}, the single entry point, then its outcome written once to the
+     * message's row. An error here is the FAILED outcome, never a second answer; a stamp that cannot be written is
+     * logged and the message shows as unhandled at the next restart (the answer already went).
+     */
+    public Mono<Outcome> handle(WaInbound in) {
+        return Mono.defer(() -> onInbound(in))
+                .onErrorResume(e -> {
+                    log.error("[baymax] wa handle failed ref={} error={}", Redact.id(in.providerMessageId()),
+                            e.getClass().getSimpleName());
+                    return Mono.just(Outcome.FAILED);
+                })
+                .flatMap(outcome -> !keyed(in) ? Mono.just(outcome)
+                        : Mono.defer(() -> inbound.markHandled(hasher.providerId(in.providerMessageId()), outcome.name()))
+                                .onErrorResume(e -> {
+                                    log.warn("[baymax] wa inbound outcome not recorded ref={} outcome={} error={}",
+                                            Redact.id(in.providerMessageId()), outcome, e.getClass().getSimpleName());
+                                    return Mono.empty();
+                                })
+                                .thenReturn(outcome));
+    }
+
+    private static boolean keyed(WaInbound in) {
+        return in.providerMessageId() != null && !in.providerMessageId().isBlank();
+    }
 
     /**
      * The one entry point from the webhook. Every message a family sends gets exactly one reply (Phase 0); the only
@@ -156,9 +238,9 @@ public class WaIntakeService {
 
     private Mono<Outcome> dispatch(WaInbound in, String number) {
         return switch (in.type()) {
-            case IMAGE -> onImage(in.from(), in.mediaId(), "wa.received");
+            case IMAGE -> onImage(in.from(), in.mediaId(), "wa.received", in.providerMessageId());
             case DOCUMENT -> readable(in.mimeType())
-                    ? onImage(in.from(), in.mediaId(), "wa.received.file")
+                    ? onImage(in.from(), in.mediaId(), "wa.received.file", in.providerMessageId())
                     // refused before any download or ack: a DOCX acknowledged and then dropped was silence by another name
                     : withFamily(number, f -> reply(number, "wa.unsupported_file", Outcome.REPLIED,
                             "document type not readable"), "document");
@@ -182,21 +264,22 @@ public class WaIntakeService {
         return READABLE_FILES.contains(mimeType.split(";")[0].trim().toLowerCase(Locale.ROOT));
     }
 
-    /** A photo, acknowledged with "ছবিটা পেয়েছি". */
+    /** A photo, acknowledged with "ছবিটা পেয়েছি". No provider id, so no inbound row to link. */
     public Mono<Outcome> onImage(String from, String mediaId) {
-        return onImage(from, mediaId, "wa.received");
+        return onImage(from, mediaId, "wa.received", null);
     }
 
     /**
-     * @param from   the sender's WhatsApp number as Meta reports it, digits only and no plus
-     * @param mediaId the image or file to fetch
-     * @param ackKey  the acknowledgement: wa.received for a photo, wa.received.file for a PDF
+     * @param from              the sender's WhatsApp number as Meta reports it, digits only and no plus
+     * @param mediaId           the image or file to fetch
+     * @param ackKey            the acknowledgement: wa.received for a photo, wa.received.file for a PDF
+     * @param providerMessageId the wamid, whose inbound row is linked to the document it became; null for none
      */
-    Mono<Outcome> onImage(String from, String mediaId, String ackKey) {
+    Mono<Outcome> onImage(String from, String mediaId, String ackKey, String providerMessageId) {
         String number = e164(from);
         return records.findFamilyByWhatsapp(number)
                 .flatMap(family -> records.patientsOf(family.id()).collectList()
-                        .flatMap(patients -> withPatients(number, family, mediaId, patients, ackKey)))
+                        .flatMap(patients -> withPatients(number, family, mediaId, patients, ackKey, providerMessageId)))
                 // defer: switchIfEmpty evaluates its argument at assembly time, so an eager reply(...) here
                 // sent the unknown-sender message on EVERY inbound image, known families included
                 .switchIfEmpty(Mono.defer(() -> reply(number, "wa.unknown", Outcome.UNKNOWN_SENDER,
@@ -234,7 +317,7 @@ public class WaIntakeService {
     }
 
     private Mono<Outcome> withPatients(String number, FamilyAccount family, String mediaId, List<PatientProfile> patients,
-                                       String ackKey) {
+                                       String ackKey, String providerMessageId) {
         if (patients.isEmpty()) {
             return reply(number, "wa.unknown", Outcome.UNKNOWN_SENDER, "family has no patient yet");
         }
@@ -257,7 +340,25 @@ public class WaIntakeService {
                 .flatMap(bytes -> intake.accept(patient.id(), List.of(new Upload(mediaId + ".jpg", bytes))))
                 .doOnNext(document -> log.info("[baymax] wa intake accepted documentId={} patientId={} bytes>0",
                         document.id(), patient.id()))
+                .flatMap(document -> linkDocument(providerMessageId, patient.id(), document.id()))
                 .thenReturn(Outcome.ACCEPTED);
+    }
+
+    /**
+     * The inbound row learns the patient and document its photo became (F9a): a patient delete then removes it. A link
+     * that cannot be written is logged and never costs the family the document or the reply (the family delete still
+     * removes the row by its family).
+     */
+    private Mono<Void> linkDocument(String providerMessageId, UUID patientId, UUID documentId) {
+        if (providerMessageId == null || providerMessageId.isBlank()) {
+            return Mono.empty();
+        }
+        return Mono.defer(() -> inbound.linkDocument(hasher.providerId(providerMessageId), patientId, documentId))
+                .onErrorResume(e -> {
+                    log.warn("[baymax] wa inbound not linked to its document documentId={} error={}", documentId,
+                            e.getClass().getSimpleName());
+                    return Mono.empty();
+                });
     }
 
     /**

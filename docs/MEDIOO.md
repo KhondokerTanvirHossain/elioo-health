@@ -66,7 +66,17 @@ MedScribe is becoming Medioo (codename Baymax): a WhatsApp-first health-memory a
   bullet below. Channel entirely off when `BAYMAX_WA_ENABLED` is unset, every existing behaviour unchanged —
   that is the RUNBOOK contract. **Known: the verify token is logged in clear** — `IWebFilter` logs full request URIs
   including query strings, so every handshake writes it to the production log and Meta re-verifies periodically
-  (DR-23, fix deferred; rotate the token when the filter is fixed).
+  (DR-23, fix deferred; rotate the token when the filter is fixed). **Inbound idempotency (F9a, V22):** every
+  inbound message is claimed in `baymax.inbound_message` before the webhook answers 200, keyed by
+  `HMAC(BAYMAX_AUTH_HMAC_SECRET, "wamid:" || id)` (never the wamid, which is base64 of the number), so a Meta
+  re-delivery is answered once; a claim that fails for a reason a retry can fix answers 503 (Meta retries for 7
+  days), one the database refuses as data is answered unkeyed. **A known family's free text is now stored
+  server-side** (a new kind of patient data at rest), as is its photos' Meta media id; an unknown sender's row keeps
+  neither (CHECK) and is purged after 8 days, and text carrying a standalone six-digit run (a login code) is never
+  kept. The family and patient delete paths remove the rows; a paper's delete clears its row's media id. With
+  `BAYMAX_WA_ENABLED=true` the app refuses to start without `BAYMAX_AUTH_HMAC_SECRET`. Open gap (F9c, Phase 4): a
+  message claimed and acknowledged, then cut off by a restart before its reply, is never answered; startup counts
+  each once (WARN `never answered before this restart`, closed as `CUT_OFF`), and one Meta re-delivers is reclaimed.
 
   **Known phase-1 limitation — "which patient?" (deferred, not a design choice).** §1.4 is explicit that the
   account model is *one WhatsApp number → multiple patient profiles* and that **every message must be able to
