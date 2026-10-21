@@ -3,7 +3,7 @@ import type { CopyKey } from "@/copy";
 /*
  * The /app/api bodies React reads, written from the fixtures Java's contract tests generate (fixtures/api/<area>/),
  * never from a guess. types.test.ts assigns every committed fixture of an area to its type, so `pnpm typecheck` fails
- * when a field the type names is dropped or retyped. For the now-banner it also compares every object's exact key set
+ * when a field the type names is dropped or retyped. For the NOW banner it also compares every object's exact key set
  * against lists the compiler holds equal to the type, so a field Java adds fails the test; for the documents it checks
  * at run time the literal values a JSON import widens to `string` (a gate, a level, a kind) against the unions below.
  * Fields are snake_case, as Java sends them.
