@@ -14,7 +14,7 @@ MedScribe AI is a Spring Boot reactive application that automates medical docume
 
 ## Tech Stack
 
-- **Backend**: Spring Boot 3.4.2 (Reactive), WebFlux, Java 21
+- **Backend**: Spring Boot 3.4.2 (Reactive) with Spring Framework overridden to 6.2.19 (see `build.gradle`), WebFlux, Java 21
 - **Architecture**: Hexagonal Architecture (Ports & Adapters / Clean Architecture)
 - **AWS Services**: Textract (planned), Comprehend Medical (planned), Bedrock Claude 3 (planned), S3
 - **Database**: PostgreSQL with R2DBC (reactive)

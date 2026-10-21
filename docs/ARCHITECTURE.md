@@ -82,6 +82,9 @@ Everything comes from the environment; see `medscribe.env.example`. The importan
 
 ## Deployment
 
+Stack: Spring Boot 3.4.2 with Spring Framework overridden to 6.2.19 (spring-framework#34178, a multipart hang on
+Boot's own 6.2.2), Java 21; see the comment in the root `build.gradle`. The rest of the BOM is Boot 3.4.2's.
+
 Push to `main` -> `.github/workflows/ci-cd.yml` -> Gradle build and tests -> two Docker images to GHCR, both
 tagged with the same sha (`medscribe-ai`, and `medioo-web` from W1b) -> SSH to the EC2 host -> `deploy.sh` swaps
 the `medscribe-ai` container and waits for `/actuator/health`, then swaps `medioo-web` and waits for `/app/healthz`
@@ -97,3 +100,9 @@ over the `n8n_edge` Docker network.
 - The structured "test rows" extractor targets lab reports; prescriptions yield raw text only (LLM prescription parser planned).
 - Doctor letterhead text leaks into detected patient conditions (letterhead stripping planned).
 - No authentication; no stalled-job recovery or cancellation; chat history not persisted; Textract path is behind Vision on Bangla.
+- Mixed BOM: Framework 6.2.19 runs on Boot 3.4.2's Reactor (reactor-core 3.7.2, reactor-netty 1.2.2), Netty
+  4.1.117.Final and Micrometer 1.14.3, though 6.2.19 was built against reactor-core 3.7.19. Linkage-checked, not
+  tested upstream; `ShippedSpringFrameworkVersionTest.LINKAGE_CHECKED` holds those versions while the override is set.
+  Removed by the next Boot upgrade, which also deletes the `spring-framework.version` override once Boot's own BOM
+  brings 6.2.19 or later (`ShippedSpringFrameworkVersionTest` fails if Boot moves while it is set).
+- Boot 3.4.x is past OSS support; Netty/reactor-netty upgrades tracked in #115.

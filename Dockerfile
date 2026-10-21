@@ -46,6 +46,14 @@ RUN --mount=type=cache,target=/root/.gradle gradle build -x test
 RUN mkdir -p build/dependency && \
     (cd build/dependency; jar -xf /workspace/medscribe-ai/build/libs/medscribe-ai-*-SNAPSHOT.jar)
 
+# The image refuses to build unless every Spring Framework jar it is about to ship is one version, at least 6.2.19
+# (6.2.2, Boot 3.4.2's own, hangs a multipart press of several photos: spring-framework#34178). Checked here, on the
+# extracted lib this image copies, because this build is the one that ships: it runs its own Gradle with tests
+# skipped and sees only the files copied above, so no test in CI's Gradle build covers it (build.gradle has the
+# override). CI's build job builds this stage on every PR, so a refusal fails the PR, not main's deploy.
+COPY scripts/check-framework-jars.sh /workspace/check-framework-jars.sh
+RUN sh /workspace/check-framework-jars.sh build/dependency/BOOT-INF/lib
+
 # ============================================
 # Stage 2: Runtime - Minimal JRE image
 # ============================================

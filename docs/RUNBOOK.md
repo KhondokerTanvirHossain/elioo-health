@@ -436,6 +436,17 @@ curl -s https://medioo.eliooo.org/app/healthz                                   
 free -m                                                                                         # "available" stays at 1 GB or more
 ```
 
+The Spring Framework the running container actually carries (build.gradle overrides Boot 3.4.2's 6.2.2, which
+hangs a multipart press of several photos, spring-framework#34178). Every line must be the same version, 6.2.19 or
+later. The image build already refuses otherwise (`scripts/check-framework-jars.sh`, which reads each jar's manifest
+and runs on every PR in CI's builder-stage build and again in the deploy job); this is a by-name look at what deployed:
+
+```bash
+docker exec medscribe-ai sh -c 'ls /workspace/app/lib' | grep -E '^spring-[a-z-]+-[0-9]' | grep -vE '^spring-(boot|data|security)'   # all 6.2.19
+```
+
+Rolling back across the Framework bump: see [Rollback](#rollback).
+
 ## Migrations
 
 Two independent Flyway instances run at startup over JDBC, then the app uses R2DBC:
@@ -588,6 +599,27 @@ constraint, so delete-on-request (§6.3, 24h) is broken for those families. Roll
 `DELETE FROM baymax.now_ack` first (the taps are a display preference; losing them only shows the NOW banner again),
 or a forward fix; the old deletes do not know the table. To take Baymax out of service without changing
 version, set `BAYMAX_ENABLED=false` and redeploy: routes and migrations stop, MedScribe is untouched.
+
+**Rolling back across the Framework bump (B4b #109, #114).** Images built from `579a35a` onward carry Framework
+6.2.19; the ones before carry Boot 3.4.2's 6.2.2, and with it the multipart hang (spring-framework#34178). Which images
+those are does not change; what a rollback to one costs does, with every merge, so check it at the time:
+
+1. **Prefer the forward path.** A PR that sets `ext['spring-framework.version']` in the root `build.gradle` to the
+   version wanted needs no schema reasoning. Both guards refuse anything below 6.2.19, so going lower also means
+   lowering the floor in the same PR (`FIXED` in `ShippedSpringFrameworkVersionTest`, `FLOOR_*` in
+   `scripts/check-framework-jars.sh`): a decision, and it brings the hang back.
+2. **An image rollback reverts every merge after the target, migrations included.** List them first:
+
+   ```bash
+   running=$(docker inspect -f '{{.Config.Image}}' medscribe-ai | awk -F: '{print $NF}')   # on the box
+   git diff --name-only <target sha> <running sha> -- '*/db/migration/' '*/db/baymax/migration/'   # in a checkout
+   ```
+
+   Anything listed is checked against the paragraph above: each must be additive (nullable or defaulted columns, no
+   `NOT NULL` without a default, no renamed or dropped column the old code reads), and none may be one that rules a
+   rollback out. D2's `filed_day_and_uncertain_date` (#117) is one, so no image older than #117 is a rollback target.
+3. **The box keeps only the newest 3 tags** (the prune in `deploy.sh`), so an older image comes from GHCR:
+   `docker login ghcr.io` first, as for any manual rollback.
 
 Restoring configuration: the backups are `~/medscribe.env.bak.*`.
 

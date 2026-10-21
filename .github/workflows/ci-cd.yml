@@ -111,6 +111,33 @@ jobs:
           GROQ_API_KEY: ci-placeholder
           # hotfix escape from the Graph expiry date gate only (RUNBOOK "Graph API version"); unset = gate on
           GRAPH_EXPIRY_GUARD_SKIP: ${{ vars.GRAPH_EXPIRY_GUARD_SKIP }}
+      # The Spring Framework guard on the jar that SHIPS (#114). The Gradle build above tests CI's own bootJar; the image
+      # rebuilds it with the Dockerfile's Gradle from only the files it copies, and scripts/check-framework-jars.sh
+      # refuses that build's lib inside `docker build`. The deploy job builds the image only on main, so the builder
+      # stage is built here too: a Docker-only regression (the image's Gradle, the COPY list, .dockerignore) fails the
+      # PR, not main's deploy. Both steps run even when the Gradle build failed, so each guard reports on its own.
+      # The check's cases run twice: on the runner, and in the Dockerfile's builder image (dash, mawk, its unzip),
+      # the runtime the check really runs in. Each refusal is asserted by the rule that fired, both directions.
+      - name: Framework jar check cases (runner and builder image)
+        if: ${{ !cancelled() }}
+        run: |
+          scripts/test_check_framework_jars.sh
+          builder=$(awk '$1 == "FROM" && $NF == "builder" { print $2 }' Dockerfile)
+          test -n "$builder" || { echo "::error::no builder stage in Dockerfile"; exit 1; }
+          docker run --rm -v "$PWD/scripts:/scripts:ro" "$builder" bash /scripts/test_check_framework_jars.sh
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+        if: ${{ !cancelled() }}
+      # Read-only cache: main's deploy writes it (mode=max, so the builder layers are in it); a PR never writes, so it
+      # cannot evict main's layers. Nothing is pushed or loaded.
+      - name: Java image builder stage (the Framework check on the build that ships)
+        if: ${{ !cancelled() }}
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: Dockerfile
+          target: builder
+          push: false
+          cache-from: type=gha
       # D4: the add sheet's script (baymax/ui/upload.js) — its pure rules, including exactly what one press sends.
       # The DOM wiring and the ES5 parse are covered inside the Gradle build (UploadScriptTest); this runs the rest.
       # Node 22 for every node step: the medioo-web image runs node:22-alpine, so CI tests the runtime it ships.
