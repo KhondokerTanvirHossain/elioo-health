@@ -45,7 +45,8 @@ import static org.mockito.Mockito.when;
 
 /**
  * Plan W3-api, S1: the no-JS sign-in fallback at {@code /app/basic}. It is {@link SignInPages}' own pages and handlers
- * served under a second base, so every form {@code action}, every redirect and the other-number link stay under
+ * served under a second base, so every form {@code action}, every redirect and every link (the brand mark and the
+ * language switch, followed to where it lands, included) stay under
  * {@code /app/basic} while the cookies, the {@code next=} checks and the copy are the same code. Over the real web UI
  * router ({@link WebUiTestKit}) with a mocked {@link WebAuthUseCase}; every request carries only the cookies a browser
  * would have been given, copied by hand from the previous answer.
@@ -65,12 +66,14 @@ class BasicSignInPagesTest {
 
     private final WebAuthUseCase auth = mock(WebAuthUseCase.class);
     private final BaymaxProperties properties = new BaymaxProperties();
+    private final WebUiTestKit kit;
     private final WebTestClient client;
     private final ObjectMapper json = new ObjectMapper();
 
     BasicSignInPagesTest() {
         properties.getWa().setPublicNumber("8801700000999");
-        client = new WebUiTestKit(auth, properties, true).client;
+        kit = new WebUiTestKit(auth, properties, true);
+        client = kit.client;
         when(auth.requestCode(NUMBER)).thenReturn(Mono.just(new CodeRequest(HASH, CodeIssue.SENT)));
         Instant now = Instant.now();
         when(auth.verify(anyString(), anyString())).thenAnswer(i -> HASH.equals(i.getArgument(0)) && CODE.equals(i.getArgument(1))
@@ -132,13 +135,9 @@ class BasicSignInPagesTest {
         return Dom.parse(html).all.stream().filter(e -> e.tag().equals(tag)).map(e -> e.attrs().get(attr)).toList();
     }
 
-    /**
-     * Every link's href except the brand mark's, which is the chrome's and points at {@code /app/} on every signed-out
-     * page (a no-JS visitor there meets the {@code <noscript>} link back here).
-     */
+    /** Every link's href on the page, the brand mark and the language toggle included. */
     private static List<String> links(String html) {
-        return Dom.parse(html).all.stream().filter(e -> e.tag().equals("a") && !e.classes().contains("brand"))
-                .map(e -> e.attrs().get("href")).toList();
+        return Dom.parse(html).all.stream().filter(e -> e.tag().equals("a")).map(e -> e.attrs().get("href")).toList();
     }
 
     private EntityExchangeResult<byte[]> post(String uri, MultiValueMap<String, String> form, Map<String, String> cookies) {
@@ -199,12 +198,113 @@ class BasicSignInPagesTest {
         assertThat(r.getStatus().value()).isEqualTo(200);
         String html = body(r);
         assertThat(attrs(html, "form", "action")).as("every form's action").containsExactly("/app/basic/verify");
-        assertThat(links(html)).as("the other-number link, and no link back to the scripted sign-in").contains("/app/basic/").doesNotContain("/app/");
+        assertThat(links(html)).as("the other-number link").contains("/app/basic/");
         assertThat(html).doesNotContain("<script");
 
         EntityExchangeResult<byte[]> none = get("/app/basic/verify", Map.of());
         assertThat(none.getStatus().value()).as("no login cookie: back to the number").isEqualTo(303);
         assertThat(none.getResponseHeaders().getFirst(HttpHeaders.LOCATION)).isEqualTo("/app/basic/");
+    }
+
+    // ---- every re-render and redirect stays under /app/basic -------------------------------------------------
+
+    private static final Map<String, String> LOGIN = Map.of(LoginCookie.NAME, LoginCookie.value(HASH, "171", true));
+
+    @Test
+    void anInvalidNumberReRendersUnderBasic() {
+        EntityExchangeResult<byte[]> r = post("/app/basic/login", form("whatsapp_number", "12"), Map.of());
+        assertThat(r.getStatus().value()).isEqualTo(200);
+        String html = body(r);
+        assertThat(html).as("the invalid-number copy").contains(kit.copy.t(Lang.BN, "login.number.invalid"));
+        assertThat(attrs(html, "form", "action")).as("the number form, again under basic").containsExactly("/app/basic/login");
+    }
+
+    @Test
+    void aWrongCodeReRendersUnderBasic() {
+        EntityExchangeResult<byte[]> r = post("/app/basic/verify", form("code", "000000"), LOGIN);
+        assertThat(r.getStatus().value()).isEqualTo(200);
+        String html = body(r);
+        assertThat(html).as("the wrong-code copy").contains(kit.copy.t(Lang.BN, "login.bad.wrong"));
+        assertThat(attrs(html, "form", "action")).as("the code form, again under basic").containsExactly("/app/basic/verify");
+        assertThat(links(html)).as("the other-number link, under basic").contains("/app/basic/").doesNotContain("/app/");
+    }
+
+    /** The {@code CodeRejectedException} branch for the refusals that are not WRONG. */
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(value = com.elioo.baymax.web.domain.VerifyFailure.class, names = {"EXPIRED", "BURNED"})
+    void aRefusedCodeReRendersUnderBasic(com.elioo.baymax.web.domain.VerifyFailure failure) {
+        when(auth.verify(HASH, "111111")).thenReturn(Mono.error(new com.elioo.baymax.web.application.port.in.CodeRejectedException(failure)));
+        EntityExchangeResult<byte[]> r = post("/app/basic/verify", form("code", "111111"), LOGIN);
+        assertThat(r.getStatus().value()).as(failure.name()).isEqualTo(200);
+        String html = body(r);
+        assertThat(html).as(failure + ": its own copy").contains(kit.copy.t(Lang.BN, SignInPages.refusalKey(failure),
+                properties.getAuth().getOtpMaxAttempts()));
+        assertThat(attrs(html, "form", "action")).as(failure + ": the code form, again under basic").containsExactly("/app/basic/verify");
+        assertThat(links(html)).as(failure + ": the other-number link, under basic").contains("/app/basic/").doesNotContain("/app/");
+    }
+
+    /** The second refusal branch: a plain 401 {@code BaymaxException}. */
+    @Test
+    void anUnauthorizedCodeReRendersUnderBasic() {
+        when(auth.verify(HASH, "222222")).thenReturn(Mono.error(com.elioo.baymax.common.error.BaymaxException.unauthorized("bad_code", "no")));
+        EntityExchangeResult<byte[]> r = post("/app/basic/verify", form("code", "222222"), LOGIN);
+        assertThat(r.getStatus().value()).isEqualTo(200);
+        String html = body(r);
+        assertThat(html).as("the wrong-code copy").contains(kit.copy.t(Lang.BN, "login.bad.wrong"));
+        assertThat(attrs(html, "form", "action")).as("the code form, again under basic").containsExactly("/app/basic/verify");
+        assertThat(links(html)).as("the other-number link, under basic").contains("/app/basic/").doesNotContain("/app/");
+    }
+
+    @Test
+    void aCodeWithoutTheLoginCookieGoesBackToTheBasicNumber() {
+        EntityExchangeResult<byte[]> r = post("/app/basic/verify", form("code", CODE), Map.of());
+        assertThat(r.getStatus().value()).isEqualTo(303);
+        assertThat(r.getResponseHeaders().getFirst(HttpHeaders.LOCATION)).isEqualTo("/app/basic/");
+    }
+
+    /**
+     * Every link on every {@code /app/basic} page, resolved to where a tap actually lands: a {@code /lang/*} link is
+     * followed through the router to its 303, so the language toggle's {@code back=} is checked, not its {@code /lang}
+     * prefix. Every local landing stays under {@code /app/basic}; the code page's toggle keeps the code step. Only
+     * {@code https://wa.me} leaves, and it is not a page of ours.
+     */
+    @Test
+    void everyLinkOnABasicPageLandsUnderBasic() {
+        Map<String, EntityExchangeResult<byte[]>> pages = new LinkedHashMap<>();
+        pages.put("number", get("/app/basic/", Map.of()));
+        pages.put("number, no slash", get("/app/basic", Map.of()));
+        pages.put("confirm", post("/app/basic/login", form("whatsapp_number", TYPED), Map.of()));
+        pages.put("invalid number", post("/app/basic/login", form("whatsapp_number", "12"), Map.of()));
+        pages.put("code, sent", get("/app/basic/verify", LOGIN));
+        pages.put("code, not sent", get("/app/basic/verify", Map.of(LoginCookie.NAME, LoginCookie.value(HASH, "171", false))));
+        pages.put("wrong code", post("/app/basic/verify", form("code", "000000"), LOGIN));
+        int toggles = 0;
+        List<String> offBasic = new ArrayList<>();
+        for (Map.Entry<String, EntityExchangeResult<byte[]>> page : pages.entrySet()) {
+            assertThat(page.getValue().getStatus().value()).as(page.getKey()).isEqualTo(200);
+            List<String> hrefs = links(body(page.getValue()));
+            assertThat(hrefs).as(page.getKey() + ": links read").isNotEmpty();
+            boolean codeStep = page.getKey().startsWith("code") || page.getKey().equals("wrong code");
+            for (String href : hrefs) {
+                if (href.startsWith("https://wa.me/")) {
+                    continue;
+                }
+                String lands = href;
+                if (href.startsWith("/lang/")) {
+                    toggles++;
+                    lands = get(href, Map.of()).getResponseHeaders().getFirst(HttpHeaders.LOCATION);
+                    if (codeStep && !"/app/basic/verify".equals(lands)) {
+                        offBasic.add(page.getKey() + ": " + href + " -> " + lands + " (the language switch must keep the code step)");
+                        continue;
+                    }
+                }
+                if (lands == null || !lands.startsWith("/app/basic")) {
+                    offBasic.add(page.getKey() + ": " + href + " -> " + lands);
+                }
+            }
+        }
+        assertThat(offBasic).as("links on /app/basic pages that land outside /app/basic").isEmpty();
+        assertThat(toggles).as("language links followed, so the sweep is not vacuous").isEqualTo(2 * pages.size());
     }
 
     /** DR-42, the Java half of the no-JS proof (S1): from the {@code <noscript>} href to the held page, with no script. */

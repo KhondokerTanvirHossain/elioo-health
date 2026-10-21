@@ -468,6 +468,41 @@ class FamilyApiContractTest {
     private static final String ACCOUNT_NUMBER = "$.body.account.number";
 
     /**
+     * The sweep's one sign-in exemption (plan W3-api): the visitor's own number shown back for a yes, at exactly
+     * {@code $.body.confirm.number_display} and exactly {@code shownBack}; and the WhatsApp link, at exactly
+     * {@code $.body.wa_link}, when it is {@code waPrefix} followed by text in which no number form is found once
+     * URL-decoded (the prefilled text is percent-encoded, so Bangla digits would hide from the patterns raw).
+     */
+    static boolean exemptSignInNumber(String path, String value, String shownBack, String waPrefix) {
+        if (path.equals("$.body.confirm.number_display")) {
+            return value.equals(shownBack);
+        }
+        if (path.equals("$.body.wa_link") && value.startsWith(waPrefix)) {
+            String text = java.net.URLDecoder.decode(value.substring(waPrefix.length()), StandardCharsets.UTF_8);
+            return NUMBER_FORMS.stream().noneMatch(p -> p.matcher(text).find());
+        }
+        return false;
+    }
+
+    /** The exemption in both directions, on the values themselves: the served link passes, a number after it does not. */
+    @Test
+    void theSignInExemptionLetsThroughOnlyTheServedValues() {
+        String shownBack = PhoneDisplay.full(SignInApiContractTest.NUMBER);
+        String waPrefix = "https://wa.me/" + SignInApiContractTest.PUBLIC_NUMBER + "?text=";
+        String served = com.elioo.baymax.web.adapter.in.WaLink.of(Lang.BN, SignInApiContractTest.PUBLIC_NUMBER);
+        assertThat(served).as("the served link starts with the prefix").startsWith(waPrefix);
+        assertThat(exemptSignInNumber("$.body.wa_link", served, shownBack, waPrefix)).as("the served link").isTrue();
+        assertThat(exemptSignInNumber("$.body.confirm.number_display", shownBack, shownBack, waPrefix)).as("the shown-back number").isTrue();
+        for (String hidden : List.of("01700000533", "%2B880%201700-000533", "+880 1700-000533",
+                java.net.URLEncoder.encode("কোড ০১৭০০০০০৫৩৩", StandardCharsets.UTF_8))) {
+            assertThat(exemptSignInNumber("$.body.wa_link", waPrefix + hidden, shownBack, waPrefix)).as("a number after ?text=: " + hidden).isFalse();
+        }
+        assertThat(exemptSignInNumber("$.body.confirm.number_display", "+880 1700-000533", shownBack, waPrefix)).as("another number shown back").isFalse();
+        assertThat(exemptSignInNumber("$.body.wa_link", "https://wa.me/8801700000533?text=x", shownBack, waPrefix)).as("another link number").isFalse();
+        assertThat(exemptSignInNumber("$.body.number", shownBack, shownBack, waPrefix)).as("any other path").isFalse();
+    }
+
+    /**
      * Derived from every committed MSW fixture, by field: the family's number appears as {@code body.account.number} of a
      * {@code family/*.json} and nowhere else under {@code fixtures/api/} — no other string value, no number value
      * ({@code 8801700000533} as a JSON number) and no field name — in any form a page shows (E.164,
@@ -504,9 +539,7 @@ class FamilyApiContractTest {
                 if (node.isTextual() || node.isNumber()) {
                     if (family && path.equals(ACCOUNT_NUMBER) && node.isTextual()) {
                         accountNumbers.add(node.asText());
-                    } else if (signIn && node.isTextual() && (path.equals("$.body.confirm.number_display") && node.asText().equals(shownBack)
-                            || path.equals("$.body.wa_link") && node.asText().startsWith(waPrefix)
-                            && !NUMBER_FORMS.stream().anyMatch(p -> p.matcher(node.asText().substring(waPrefix.length())).find()))) {
+                    } else if (signIn && node.isTextual() && exemptSignInNumber(path, node.asText(), shownBack, waPrefix)) {
                         exempted.add(FIXTURES.relativize(file) + " " + path);
                     } else {
                         seen.add(node.asText());

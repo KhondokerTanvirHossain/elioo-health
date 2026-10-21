@@ -43,7 +43,10 @@ import java.util.Optional;
  *       {@code GET /app/api/sign-in/next}, session: the held place, checked; {@code POST /app/api/sign-out}, session:
  *       the session ended and its cookie cleared.</li>
  * </ul>
- * Both routes are in {@link AppApiGuard#OPEN}: no session needed, CSRF still applied, {@code Origin} required. That is
+ * {@link AppApiGuard#OPEN} holds the two POST routes, {@code sign-in/request} and {@code sign-in/verify}, as open
+ * mutations: no session needed, CSRF still applied, {@code Origin} required. It also holds one open read,
+ * {@code GET sign-in/state}, which answers from the visitor's own login cookie and writes nothing, so CSRF does not
+ * apply to it; {@code sign-in/next} and {@code sign-out} need a session. The open mutations' rule is
  * the CSRF rule for a sessionless mutation, not a defence against automation: a non-browser client sets {@code Origin}
  * and {@code X-Medioo} freely. What bounds abuse is {@code WebAuthService.requestCode}: it never sends for NO_ACCOUNT,
  * NOT_PERMITTED or OUTSIDE_WINDOW, and mints at most {@code otpMaxLivePerHour} codes per number; there is no per-client

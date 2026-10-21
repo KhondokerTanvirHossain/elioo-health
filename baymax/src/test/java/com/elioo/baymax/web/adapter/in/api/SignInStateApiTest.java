@@ -166,16 +166,54 @@ class SignInStateApiTest {
         assertThat(compared).as("fields compared, so the comparison is not vacuous").contains("sent", "number_tail", "wa_link");
     }
 
-    /** A cookie the client wrote: not the shape Java writes, so nothing is pending and no tail is echoed. */
+    /** A cookie that is not of the shape Java writes: nothing is pending and no tail is echoed. */
     @Test
-    void aTamperedCookieIsNotPending() {
+    void aMalformedCookieIsNotPending() {
         WebTestClient client = client();
-        for (String tampered : List.of("not-a-hash", HASH.substring(2) + ".123", HASH + ".12", HASH + ".123.x", HASH.toUpperCase() + ".123",
-                // the pre-tail bare-hash form: it carries no tail to show, so the page asks for the number again
-                HASH)) {
-            EntityExchangeResult<byte[]> r = state(client, tampered);
-            assertThat(r.getStatus().value() + " " + text(r)).as(tampered).isEqualTo("200 {\"pending\":false}");
+        for (String malformed : List.of("not-a-hash", HASH.substring(2) + ".123", HASH + ".12", HASH + ".123.x", HASH.toUpperCase() + ".123")) {
+            EntityExchangeResult<byte[]> r = state(client, malformed);
+            assertThat(r.getStatus().value() + " " + text(r)).as(malformed).isEqualTo("200 {\"pending\":false}");
         }
+    }
+
+    /**
+     * A deliberate split from verify (PR #136 departure 6): the pre-tail bare-hash form is a valid login cookie, and
+     * {@code POST /app/api/sign-in/verify} still accepts a code for it, but the state reads it as not pending — it
+     * carries no tail to show, and its 30 minutes ended long ago. A visitor holding one is asked for the number again
+     * (which writes a fresh cookie); one who types a code anyway is still signed in. Both halves are asserted here, so
+     * a change to either side is seen.
+     */
+    @Test
+    void aPreTailCookieIsNotPendingThoughVerifyStillAcceptsIt() {
+        WebTestClient client = client();
+        EntityExchangeResult<byte[]> r = state(client, HASH);
+        assertThat(r.getStatus().value() + " " + text(r)).as("the bare-hash form, read back").isEqualTo("200 {\"pending\":false}");
+
+        java.time.Instant now = java.time.Instant.now();
+        when(auth.verify(HASH, "123456")).thenReturn(Mono.just(new com.elioo.baymax.web.domain.IssuedSession("tok-pre-tail",
+                new com.elioo.baymax.web.domain.WebSession(java.util.UUID.randomUUID(), java.util.UUID.randomUUID(), now, now, now.plusSeconds(600)))));
+        EntityExchangeResult<byte[]> verified = client.post().uri("/app/api/sign-in/verify").header("X-Medioo", "1")
+                .header("Origin", AppApiGuardTest.ORIGIN).cookie(LoginCookie.NAME, HASH)
+                .contentType(MediaType.APPLICATION_JSON).bodyValue(Map.of("code", "123456"))
+                .exchange().expectBody().returnResult();
+        assertThat(verified.getStatus().value()).as("verify still accepts the bare-hash form").isEqualTo(200);
+        org.mockito.Mockito.verify(auth).verify(HASH, "123456");
+    }
+
+    /**
+     * The cookie has no integrity check of its own: any well-shaped {@code <64 hex>.<3 digits>[.s]} reads as pending.
+     * That is safe because the state echoes only what the client already holds — its own tail and its own sent mark —
+     * and looks nothing up: no code is requested and none is checked.
+     */
+    @Test
+    void aClientWrittenWellShapedCookieIsEchoedAsItsOwn() throws Exception {
+        String written = "ab".repeat(32) + ".987";
+        JsonNode body = body(state(client(), written));
+        assertThat(body.get("pending").asBoolean()).as("well shaped, so pending").isTrue();
+        assertThat(body.get("number_tail").asText()).as("the client's own tail, echoed").isEqualTo("987");
+        assertThat(body.get("sent").asBoolean()).as("no .s mark written").isFalse();
+        org.mockito.Mockito.verify(auth, org.mockito.Mockito.never()).requestCode(anyString());
+        org.mockito.Mockito.verify(auth, org.mockito.Mockito.never()).verify(anyString(), anyString());
     }
 
     @Test

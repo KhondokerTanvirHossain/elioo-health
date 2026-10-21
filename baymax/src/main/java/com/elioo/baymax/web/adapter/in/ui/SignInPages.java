@@ -75,7 +75,8 @@ public class SignInPages implements WebPages {
 
     /**
      * The number page, the number's two posts and the code page with its post, under {@code base}: every form
-     * {@code action}, every redirect and the other-number link are built from {@code base}, so a family that started
+     * {@code action}, every redirect, the other-number link, the brand mark and the language switch's way back are
+     * built from {@code base}, so a family that started
      * under {@code /app/basic} stays there. Cookies, {@code next=}, the {@link LocalPath} checks and the copy are the
      * same code whatever the base; where sign-in lands ({@code next}, else {@link #HOME}) does not depend on it.
      */
@@ -112,7 +113,7 @@ public class SignInPages implements WebPages {
      * belongs to the code step). The {@code pattern} is a courtesy; the server is the check.
      */
     private Mono<ServerResponse> numberPage(Lang lang, String base, String raw, String error) {
-        return chrome.app(lang, chrome.top(lang, null, false)
+        return chrome.app(lang, chrome.top(lang, null, false, base + "/", base + "/")
                 + "<h1>" + copy.t(lang, "login.title") + "</h1>"
                 + (error == null ? "" : "<div class=\"err\" role=\"alert\">" + error + "</div>")
                 + "<form method=\"post\" action=\"" + base + "/login\">"
@@ -142,7 +143,7 @@ public class SignInPages implements WebPages {
                 return numberPage(lang, base, raw, copy.t(lang, "login.number.invalid"));
             }
             if (!"1".equals(form.getFirst("confirmed"))) {
-                return chrome.app(lang, chrome.top(lang, null, false)
+                return chrome.app(lang, chrome.top(lang, null, false, base + "/", base + "/")
                         + "<h1>" + copy.t(lang, "login.title") + "</h1>"
                         + "<p class=\"number-back\">" + esc(PhoneDisplay.full(number.get())) + "</p>"
                         + "<p>" + copy.t(lang, "login.number.confirm") + "</p>"
@@ -184,7 +185,8 @@ public class SignInPages implements WebPages {
         Lang lang = Lang.of(request);
         boolean sent = login.get().sent();
         String link = Optional.ofNullable(WaLink.of(lang, properties.getWa().getPublicNumber())).map(Html::esc).orElse(null);
-        StringBuilder b = new StringBuilder(chrome.top(lang, null, false));
+        // the language switch keeps the code step, under the base the visitor is on
+        StringBuilder b = new StringBuilder(chrome.top(lang, null, false, base + "/", base + "/verify"));
         b.append("<h1>").append(copy.t(lang, "login.title")).append("</h1>");
         if (sent) {
             b.append("<p class=\"lede\" role=\"status\">").append(copy.t(lang, "login.code.sent")).append("</p>");

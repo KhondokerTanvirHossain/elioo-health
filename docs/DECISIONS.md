@@ -919,6 +919,8 @@ reference.
   - **Default until ruled: keep the fallback.** The Next sign-in page carries a `<noscript>` link to Java's form, at a
     Java path that Caddy leaves on Java. W3 names that path and keeps the form's POST targets on Java too. The fallback
     stays until a measured check shows it is unused.
+  - **Ruled 2026-10-22 (PO, S1): keep the fallback**, served by Java at `/app/basic` (plan W3-api, PR #136); Caddy
+    leaves `/app/basic*` on Java at F3.
   - **Either way, W3 adds a no-JS e2e case for the expired-session path.** With JavaScript disabled, an expired
     session opens a reading page. The case asserts that a sign-in works with the fallback. If the PO accepts the gap,
     it asserts instead that the page says, in copy, that JavaScript is needed.
