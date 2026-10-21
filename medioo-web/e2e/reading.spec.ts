@@ -9,12 +9,12 @@ for (const colorScheme of ["light", "dark"] as const) {
     await page.goto("/app/probe");
 
     // The theme under test is the one painted. Without this, a page whose dark tokens are missing paints the light
-    // theme under a "dark" label and axe passes it. Nothing is hard-coded: the body must paint the page's own --c-bg
+    // theme under a "dark" label and axe passes it. Nothing is hard-coded: the body must paint the page's own --bg
     // as the active scheme resolves it, and the other scheme must paint a different background.
     const paint = () =>
       page.evaluate(() => {
         const swatch = document.createElement("div");
-        swatch.style.setProperty("background-color", "var(--c-bg)"); // CSSOM, which style-src 'self' permits
+        swatch.style.setProperty("background-color", "var(--bg)"); // CSSOM, which style-src 'self' permits
         document.body.append(swatch);
         const token = getComputedStyle(swatch).backgroundColor;
         swatch.remove();
@@ -26,7 +26,7 @@ for (const colorScheme of ["light", "dark"] as const) {
       });
     const active = await paint();
     expect(active.dark, "prefers-color-scheme is emulated").toBe(colorScheme === "dark");
-    expect(active.body, "the body paints the active scheme's --c-bg").toBe(active.token);
+    expect(active.body, "the body paints the active scheme's --bg").toBe(active.token);
     const other = colorScheme === "dark" ? "light" : "dark";
     await page.emulateMedia({ colorScheme: other });
     expect((await paint()).body, `the ${other} theme paints a different background`).not.toBe(active.body);

@@ -1,0 +1,211 @@
+{
+  "_meta": {
+    "source": "docs/design/2026-10-21-approved/{phone,desktop}.html, reconciled (plan W2a)",
+    "rendered_by": "src/styles/build-tokens.ts into src/styles/tokens.css (committed, byte-compared by tokens.test.ts)",
+    "surfaces": "'every surface' in an on-list is every app surface: bg, bg2, bg3, side, canvas, bar, recv, fill, tint-soft, mio-bg, now-soft, week-soft, unk-soft. paper is not one: only paper-ink is painted on it."
+  },
+  "color": {
+    "bg": { "light": "#ffffff", "dark": "#000000", "desktop": { "dark": "#1c1c1e" }, "role": "surface" },
+    "bg2": { "light": "#f2f2f7", "dark": "#000000", "desktop": { "light": "#f5f5f7", "dark": "#141416" }, "role": "surface" },
+    "bg3": { "light": "#ffffff", "dark": "#1c1c1e", "desktop": { "dark": "#2a2a2d" }, "role": "surface" },
+    "side": { "light": "#f3f4f6", "dark": "#232326", "role": "surface", "note": "desktop sidebar; defined on the phone too, unused there" },
+    "canvas": { "light": "#e8e9ed", "dark": "#101012", "role": "surface", "note": "desktop canvas behind the paper; defined on the phone too, unused there" },
+    "label": {
+      "light": "#000000", "dark": "#ffffff", "desktop": { "light": "#1d1d1f", "dark": "#f5f5f7" },
+      "role": "text",
+      "on": ["bg", "bg2", "bg3", "side", "canvas", "bar", "recv", "fill", "tint-soft", "mio-bg", "now-soft", "week-soft", "unk-soft"]
+    },
+    "label2": {
+      "light": "rgba(60, 60, 67, 0.82)", "dark": "rgba(235, 235, 245, 0.78)",
+      "role": "text",
+      "on": ["bg", "bg2", "bg3", "side", "canvas", "bar", "recv", "fill", "tint-soft", "mio-bg", "now-soft", "week-soft", "unk-soft"],
+      "note": "secondary text, and placeholder text (WCAG 1.4.3 counts a placeholder as text)"
+    },
+    "label3": {
+      "light": "rgba(60, 60, 67, 0.6)", "dark": "rgba(235, 235, 245, 0.5)",
+      "role": "non-text",
+      "on": ["bg", "bg2", "bg3"],
+      "note": "an icon glyph, a disabled glyph; never a color: for text and never in ::placeholder (roleUsageViolations). Alpha raised from the prototypes' 0.36/0.38 light and 0.32 dark so it clears 3:1 (Q1)."
+    },
+    "sep": {
+      "light": "rgba(60, 60, 67, 0.18)", "dark": "rgba(84, 84, 88, 0.6)",
+      "desktop": { "light": "rgba(60, 60, 67, 0.16)", "dark": "rgba(84, 84, 88, 0.62)" },
+      "role": "non-text",
+      "exempt": "WCAG 1.4.11: a separator is decorative; no component or state is perceived only through it"
+    },
+    "hover": {
+      "light": "rgba(120, 120, 128, 0.1)", "dark": "rgba(120, 120, 128, 0.18)",
+      "role": "non-text",
+      "exempt": "WCAG 1.4.11: a hover wash is a transient affordance, never the only way to perceive a component or its state"
+    },
+    "selbg": {
+      "light": "rgba(6, 120, 138, 0.13)", "dark": "rgba(92, 200, 214, 0.18)",
+      "role": "non-text",
+      "exempt": "WCAG 1.4.11: a selection wash is paired with aria-current and a tint-ink label; it is not the only signal"
+    },
+    "fill": {
+      "light": "rgba(120, 120, 128, 0.12)", "dark": "rgba(120, 120, 128, 0.24)",
+      "role": "surface",
+      "note": "a control's fill (a field, a segmented control's track). The plan's table called it non-text on bg/bg2/bg3, but a 12% grey cannot clear 3:1 on white without turning every field dark grey; the control is identified by the text on it, so fill is checked as the surface that text sits on (label and label2 on fill), which is the stricter of the two readings. Pending the PO with Q1."
+    },
+    "recv": { "light": "#e9e9eb", "dark": "#26252a", "desktop": { "dark": "#2c2c2f" }, "role": "surface" },
+    "recv-ink": { "light": "#000000", "dark": "#ffffff", "role": "text", "on": ["recv"] },
+    "sent": { "light": "#06788a", "dark": "#06788a", "role": "fill" },
+    "sent-ink": { "light": "#ffffff", "dark": "#ffffff", "role": "text", "on": ["sent"] },
+    "tint": { "light": "#06788a", "dark": "#5cc8d6", "role": "fill" },
+    "tint-ink": {
+      "light": "#045f6d", "dark": "#5cc8d6",
+      "role": "text",
+      "on": ["bg", "bg2", "bg3", "side", "canvas", "bar", "fill", "tint-soft", "mio-bg"]
+    },
+    "on-tint": { "light": "#ffffff", "dark": "#062a30", "role": "text", "on": ["tint"] },
+    "tint-soft": { "light": "rgba(6, 120, 138, 0.12)", "dark": "rgba(92, 200, 214, 0.16)", "role": "surface" },
+    "mio-bg": { "light": "#dff0f2", "dark": "#1d3b41", "role": "surface" },
+    "now": {
+      "light": "#d12c24", "dark": "#d93229",
+      "role": "fill",
+      "note": "Part B decision 7: the one NOW red. No desktop override: light is #d12c24 in both layouts. Every other now-* token derives from it."
+    },
+    "on-now": { "light": "#ffffff", "dark": "#ffffff", "role": "text", "on": ["now"] },
+    "now-ink": {
+      "light": { "mix": ["now", "#000000", 0.22] }, "dark": { "mix": ["now", "#ffffff", 0.45] },
+      "role": "text",
+      "on": ["bg", "bg2", "bg3", "side", "canvas", "bar", "recv", "fill", "tint-soft", "mio-bg", "now-soft", "week-soft", "unk-soft"]
+    },
+    "now-soft": { "light": { "alpha": ["now", 0.12] }, "dark": { "alpha": ["now", 0.18] }, "role": "surface" },
+    "week": {
+      "light": "#92400e", "dark": "#ffb340",
+      "role": "text",
+      "on": ["bg", "bg2", "bg3", "side", "canvas", "bar", "recv", "fill", "tint-soft", "mio-bg", "now-soft", "week-soft", "unk-soft"]
+    },
+    "week-soft": { "light": "rgba(255, 149, 0, 0.16)", "dark": "rgba(255, 159, 10, 0.2)", "role": "surface" },
+    "unk-soft": { "light": "rgba(120, 120, 128, 0.14)", "dark": "rgba(120, 120, 128, 0.26)", "role": "surface" },
+    "green": {
+      "light": "#248a3d", "dark": "#30d158",
+      "role": "non-text",
+      "on": ["bg", "bg2", "bg3"],
+      "note": "the follow-up circle carries meaning, so WCAG 1.4.11's 3:1 applies. Light changed from the prototypes' #34c759 (2.2:1 on white) (Q1)."
+    },
+    "paper": {
+      "light": "#fffdf8", "dark": "#f4efe4", "desktop": { "light": "#fffefa", "dark": "#f4f0e6" },
+      "role": "surface",
+      "note": "the paper stays light in the dark theme, as paper does"
+    },
+    "paper-ink": { "light": "#2b2b2b", "dark": "#2b2b2b", "role": "text", "on": ["paper"] },
+    "bar": {
+      "light": "rgba(249, 249, 249, 0.84)", "dark": "rgba(22, 22, 24, 0.84)",
+      "desktop": { "light": "rgba(250, 250, 252, 0.86)", "dark": "rgba(36, 36, 38, 0.86)" },
+      "role": "surface",
+      "note": "translucent: the navigation and tab bars"
+    },
+    "scrim": {
+      "light": "rgba(0, 0, 0, 0.32)", "dark": "rgba(0, 0, 0, 0.5)",
+      "desktop": { "light": "rgba(0, 0, 0, 0.28)" },
+      "role": "non-text",
+      "exempt": "WCAG 1.4.11: a modal scrim dims what is behind a sheet; the sheet, not the scrim, is the component"
+    }
+  },
+  "font": {
+    "bn": "\"Noto Sans Bengali\", \"Noto Sans\", system-ui, sans-serif",
+    "sys": "\"Noto Sans\", \"Noto Sans Bengali\", system-ui, sans-serif",
+    "mono": "ui-monospace, Menlo, monospace"
+  },
+  "text": { "xs": "12px", "sm": "14px", "md": "15px", "lg": "17px", "xl": "20px", "xxl": "28px" },
+  "radius": { "sm": "8px", "md": "12px", "lg": "16px", "xl": "24px", "pill": "999px" },
+  "space": { "1": "4px", "2": "8px", "3": "12px", "4": "16px", "5": "24px", "6": "32px" },
+  "layout": { "target-min": "44px", "target-primary": "48px", "sidebar-w": "256px", "conversation-w": "400px" },
+  "_renamed": {
+    "--now-fill": "now",
+    "--sys": "font-sys",
+    "--bnf": "font-bn",
+    "--mono": "font-mono",
+    "--sw": "sidebar-w",
+    "--cw": "conversation-w",
+    "--stage": "dropped: the phone frame's backdrop, a prototype device",
+    "--wordmark": "dropped: the wordmark is the SVG files in docs/design/2026-10-21-approved, chosen per theme by the Wordmark component (W2c), not a CSS url()",
+    "--shadow": "dropped: desktop elevation; W2a ships no shadow token, and the component that needs elevation adds one here (no colour literal may live outside tokens.css)"
+  },
+  "_absorbed": {
+    "desktop.html:light:--now: #d93229": "now #d12c24: decision 7 makes light #d12c24 in both layouts; desktop does not override",
+    "desktop.html:light:--now-fill: #d93229": "now #d12c24: decision 7, as --now above",
+    "phone.html:dark:--now: #ff8a80": "now #d93229: the prototypes' dark --now is an ink, not the fill; the dark fill is their --now-fill #d93229, and the dark ink is now-ink",
+    "desktop.html:dark:--now: #ff8a80": "now #d93229: as phone.html:dark:--now",
+    "phone.html:dark:--now-ink: var(--now)": "now-ink #ea8e89, derived as mix(now, #ffffff, 0.45): one red, its ink derived from it",
+    "desktop.html:dark:--now-ink: var(--now)": "now-ink #ea8e89, as phone.html:dark:--now-ink",
+    "phone.html:light:--now-ink: #a3201a": "now-ink #a3221c, derived as mix(now, #000000, 0.22)",
+    "desktop.html:light:--now-ink: #a3201a": "now-ink #a3221c, derived as mix(now, #000000, 0.22)",
+    "phone.html:light:--now-soft: rgba(224, 53, 43, 0.12)": "now-soft alpha(now, 0.12): one derived wash in both layouts",
+    "desktop.html:light:--now-soft: rgba(217, 50, 41, 0.11)": "now-soft alpha(now, 0.12): one derived wash in both layouts",
+    "phone.html:dark:--now-soft: rgba(255, 90, 79, 0.18)": "now-soft alpha(now, 0.18), derived from the dark fill",
+    "desktop.html:dark:--now-soft: rgba(255, 90, 79, 0.18)": "now-soft alpha(now, 0.18), derived from the dark fill",
+    "phone.html:light:--label3: rgba(60, 60, 67, 0.36)": "label3 alpha 0.6: one alpha for both layouts, raised to clear 3:1 on bg, bg2 and bg3 (Q1)",
+    "desktop.html:light:--label3: rgba(60, 60, 67, 0.38)": "label3 alpha 0.6, as phone.html:light:--label3 (Q1)",
+    "phone.html:dark:--label3: rgba(235, 235, 245, 0.32)": "label3 alpha 0.5, raised to clear 3:1 on dark bg3 (Q1)",
+    "desktop.html:dark:--label3: rgba(235, 235, 245, 0.32)": "label3 alpha 0.5, as phone.html:dark:--label3 (Q1)",
+    "phone.html:light:--green: #34c759": "green #248a3d: #34c759 is 2.2:1 on white, and the follow-up circle needs 3:1 (WCAG 1.4.11, Q1)",
+    "desktop.html:light:--green: #34c759": "green #248a3d, as phone.html:light:--green (Q1)",
+    "phone.html:light:--sys: -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"Noto Sans Bengali\", \"Segoe UI\", Roboto, sans-serif": "font-sys: the self-hosted Noto Sans first, so every phone renders the same glyphs (the system stacks were the prototype's stand-in)",
+    "desktop.html:light:--sys: -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"Segoe UI\", Roboto, \"Noto Sans Bengali\", sans-serif": "font-sys, as phone.html:light:--sys",
+    "phone.html:light:--bnf: \"Noto Sans Bengali\", -apple-system, BlinkMacSystemFont, sans-serif": "font-bn: self-hosted Noto Sans Bengali, then self-hosted Noto Sans for Latin",
+    "desktop.html:light:--bnf: \"Noto Sans Bengali\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif": "font-bn, as phone.html:light:--bnf",
+    "phone.html:light:--mono: \"Noto Sans Mono\", ui-monospace, Menlo, monospace": "font-mono: Noto Sans Mono is not self-hosted, so it is not named",
+    "desktop.html:light:--sw: 0px": "sidebar-w stays 256px; the prototype's collapse below 1200 px is the shell layout's job (W3), not a second value of the token",
+    "desktop.html:light:--cw: 360px": "conversation-w stays 400px; the prototype's narrower column below 1200 px is the shell layout's job (W3)",
+    "#e0352b": "now (decision 7)",
+    "#c4271e": "now-ink",
+    "#b5241c": "now-ink",
+    "#0a84ff": "tint",
+    "#8e8e93": "label3 (a neutral status dot, an icon tile: non-text, 3:1)",
+    "#636366": "label2 (an icon tile)",
+    "#f29100": "week (the THIS_WEEK dot)",
+    "#20a07a": "green (a normal-status dot)",
+    "#34c759": "green (#248a3d light, Q1)",
+    "#222": "paper-ink (the ink on the paper mock-up and on a crop)",
+    "rgba(255, 255, 255, 0.85)": "on-tint (secondary text on a highlighted row)",
+    "rgba(0, 0, 0, 0.16)": "dropped: a shadow tint and the context menu's blurred backdrop; a sheet's backdrop is scrim, a shadow see --shadow in _renamed",
+    "rgba(0, 0, 0, 0.22)": "dropped: the NOW banner's button wash; NowBanner (W2d-b) asks for a now-derived token if it keeps one",
+    "#25d366": "dropped: WhatsApp brand green on the prototype's share button, a prototype device",
+    "#1b1c1f": "dropped: the phone frame, a prototype device",
+    "#3a3b3f": "dropped: the phone frame, a prototype device",
+    "rgba(0, 0, 0, 0.35)": "dropped: the phone frame's shadow, a prototype device",
+    "rgba(0, 0, 0, 0.04)": "dropped: a shadow tint, see --shadow in _renamed",
+    "rgba(0, 0, 0, 0.08)": "dropped: a shadow tint, see --shadow in _renamed",
+    "rgba(0, 0, 0, 0.1)": "dropped: a shadow tint, see --shadow in _renamed",
+    "rgba(0, 0, 0, 0.12)": "dropped: a shadow tint, see --shadow in _renamed",
+    "rgba(0, 0, 0, 0.15)": "dropped: a shadow tint, see --shadow in _renamed",
+    "rgba(0, 0, 0, 0.18)": "dropped: a shadow tint, see --shadow in _renamed",
+    "rgba(0, 0, 0, 0.2)": "dropped: a shadow tint, see --shadow in _renamed",
+    "rgba(0, 0, 0, 0.3)": "dropped: a shadow tint, see --shadow in _renamed",
+    "rgba(0, 0, 0, 0.7)": "dropped: the page-number badge over a thumbnail; the thumbnails' PR (W7) asks for a token if it keeps it",
+    "#3cc493": "dropped: the prototype's app-icon gradient; the brand is the wordmark SVGs (W2c)",
+    "#0a7a62": "dropped: the prototype's app-icon gradient; the brand is the wordmark SVGs (W2c)",
+    "rgba(10, 122, 98, 0.28)": "dropped: the prototype's app-icon shadow",
+    "rgba(255, 255, 255, 0.4)": "dropped: the prototype's app-icon highlight",
+    "#1d4e89": "dropped: the mock lab's letterhead ink on the re-drawn paper; the app shows the real photo",
+    "#cdd2da": "dropped: a rule on the re-drawn crop; the app shows the real crop image",
+    "#555": "dropped: an ink on the re-drawn paper; the app shows the real photo",
+    "#f4f5f7": "dropped: a panel on the re-drawn paper; the app shows the real photo",
+    "#333": "dropped: an ink on the re-drawn paper; the app shows the real photo",
+    "#999": "dropped: a rule on the re-drawn paper; the app shows the real photo",
+    "#c8c8c8": "dropped: a rule on the re-drawn paper; the app shows the real photo",
+    "#444": "dropped: an ink on the re-drawn paper; the app shows the real photo",
+    "#2b3f8c": "dropped: a signature ink on the re-drawn paper; the app shows the real photo",
+    "#ddd": "dropped: a rule on the re-drawn paper; the app shows the real photo",
+    "#5f5f5f": "dropped: an ink on the re-drawn paper; the app shows the real photo",
+    "#0b6e4f": "dropped: the mock prescription's letterhead ink; the app shows the real photo",
+    "#1f2f7a": "dropped: the handwriting ink on the re-drawn prescription; the app shows the real photo",
+    "rgba(255, 214, 10, 0.5)": "dropped: the highlighter on the re-drawn crop; a highlight over the real image is the value sheet's (W6) token",
+    "rgba(255, 210, 0, 0.38)": "dropped: the highlighter on the re-drawn paper; a highlight over the real image is the value sheet's (W6) token",
+    "rgba(255, 200, 0, 0.7)": "dropped: the highlighter flash on the re-drawn paper",
+    "rgba(255, 210, 0, 0.45)": "dropped: the highlighter on the re-drawn crop",
+    "rgba(28, 28, 30, 0.86)": "dropped: the prototype's scene switcher, a prototype device",
+    "rgba(0, 0, 0, 0.25)": "dropped: the prototype's scene switcher shadow, a prototype device",
+    "rgba(255, 255, 255, 0.55)": "dropped: the prototype's scene switcher, a prototype device",
+    "rgba(255, 255, 255, 0.14)": "dropped: the prototype's scene switcher, a prototype device",
+    "#111": "dropped: the prototype's scene switcher, a prototype device",
+    "#5856d6": "dropped: an icon tile on a 'coming later' page; those features get their own tickets (decision 10)",
+    "#ff3b30": "dropped: an icon tile on a 'coming later' page (decision 10); a red that is not the NOW red is never a token",
+    "#ff9500": "dropped: an icon tile on a 'coming later' page (decision 10)",
+    "#ff2d55": "dropped: an icon tile on a 'coming later' page (decision 10); a red that is not the NOW red is never a token"
+  }
+}

@@ -7,3 +7,5 @@
 # written by next build/dev; regenerated every time
 next-env.d.ts
 *.tsbuildinfo
+# written by src/styles/tokens.test.ts when the committed tokens.css is stale (its failure message prints the cp line)
+/build/

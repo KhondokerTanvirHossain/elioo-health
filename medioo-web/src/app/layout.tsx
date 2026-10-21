@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import type { ReactNode } from "react";
 import { langOf } from "@/copy";
+// The generated tokens first: globals.css and every component stylesheet read their colours, fonts and sizes from it.
+import "@/styles/tokens.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
