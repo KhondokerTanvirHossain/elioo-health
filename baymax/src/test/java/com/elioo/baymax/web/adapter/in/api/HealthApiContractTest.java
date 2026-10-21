@@ -5,6 +5,8 @@ import com.elioo.baymax.extraction.BloodPressurePairAcceptanceTest;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.PatientAccess;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
+import com.elioo.baymax.nudge.application.port.in.NudgeOptOutUseCase;
+import com.elioo.baymax.nudge.application.port.out.NudgeDataPort;
 import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
 import com.elioo.baymax.testsupport.Json;
 import com.elioo.baymax.testsupport.Snapshot;
@@ -106,6 +108,8 @@ class HealthApiContractTest {
                 new UploadApiHandler(mock(UploadUseCase.class), properties, copy),
                 new PaperStatusApiHandler(mock(ResultUseCase.class)),
                 new PaperDeleteApiHandler(timeline, new DeleteConfirmation(properties, java.time.Clock.systemUTC())),
+                new FamilyApiHandler(mock(TimelineUseCase.class), mock(NudgeDataPort.class), mock(NudgeOptOutUseCase.class),
+                        copy, properties),
                 new HealthApiHandler(health),
                 guard)).build();
     }
