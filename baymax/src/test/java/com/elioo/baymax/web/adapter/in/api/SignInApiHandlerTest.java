@@ -8,6 +8,7 @@ import com.elioo.baymax.web.adapter.in.ui.Dom;
 import com.elioo.baymax.web.adapter.in.ui.PageChrome;
 import com.elioo.baymax.web.adapter.in.ui.SignInPages;
 import com.elioo.baymax.web.adapter.in.ui.UiCopy;
+import com.elioo.baymax.web.application.port.in.ResultUseCase;
 import com.elioo.baymax.web.application.port.in.AttentionUseCase;
 import com.elioo.baymax.web.application.port.in.CodeRejectedException;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
@@ -87,7 +88,8 @@ class SignInApiHandlerTest {
         AppApiGuard guard = new AppApiGuard(sessions, properties);
         MeApiHandler me = new MeApiHandler(mock(TimelineUseCase.class), mock(AttentionUseCase.class), properties);
         return WebTestClient.bindToRouterFunction(new AppApiRouter().mediooAppApiRoutes(me,
-                new SignInApiHandler(auth, sessions, properties), guard)).build();
+                new SignInApiHandler(auth, sessions, properties),
+                new PaperApiHandler(mock(ResultUseCase.class), new UiCopy()), guard)).build();
     }
 
     /** The HTML code page, rendered by {@link SignInPages} over the same mocks and properties. */

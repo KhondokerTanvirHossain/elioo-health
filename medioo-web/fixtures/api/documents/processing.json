@@ -1,0 +1,30 @@
+{
+  "_meta": {
+    "generated_by": "baymax PaperApiContractTest",
+    "source": "GET /app/api/documents/{id} over the PaperFixtures case processing"
+  },
+  "body": {
+    "id": "5e9edf6d-0a2a-4913-8675-9d07a4100003",
+    "owner": true,
+    "page_count": 1,
+    "pages": [
+      {
+        "n": 1,
+        "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/page/1"
+      }
+    ],
+    "patient": {
+      "age": 64,
+      "id": "5e9edf6d-0a2a-4913-8675-9d07a4100002",
+      "name": "Ma",
+      "name_objective": "Ma-কে",
+      "name_possessive": "Ma-র"
+    },
+    "received_at": "2026-10-20T03:59:00Z",
+    "status": "PROCESSING",
+    "viewer": {
+      "bangladesh": true
+    }
+  },
+  "status": 200
+}

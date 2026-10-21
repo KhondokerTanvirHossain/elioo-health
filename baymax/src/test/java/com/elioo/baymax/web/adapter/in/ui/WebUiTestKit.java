@@ -5,6 +5,7 @@ import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.nudge.application.port.in.NudgeOptOutUseCase;
 import com.elioo.baymax.nudge.application.port.out.NudgeDataPort;
+import com.elioo.baymax.testsupport.PaperFixtures;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.application.port.in.AttentionUseCase;
 import com.elioo.baymax.web.application.port.in.ResultUseCase;
@@ -33,9 +34,9 @@ final class WebUiTestKit {
 
     static final Instant NOW = Instant.parse("2026-10-18T09:00:00Z");
     static final String OWNER_NUMBER = "+8801700000000";
-    static final UUID FAMILY = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100001");
-    static final UUID MA_ID = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100002");
-    static final UUID DOC_ID = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100003");
+    static final UUID FAMILY = PaperFixtures.FAMILY;
+    static final UUID MA_ID = PaperFixtures.MA_ID;
+    static final UUID DOC_ID = PaperFixtures.DOC;
 
     final WebAuthUseCase auth;
     final TimelineUseCase timeline = mock(TimelineUseCase.class);

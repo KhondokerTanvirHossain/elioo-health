@@ -1,6 +1,7 @@
 package com.elioo.baymax.web.adapter.in.ui;
 
 import com.elioo.baymax.common.error.BaymaxException;
+import com.elioo.baymax.web.adapter.in.ImageRefs;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -46,8 +47,9 @@ public class PageChrome {
                 .header(HttpHeaders.SET_COOKIE, lang.cookie(sessions.cookie("x").isSecure()).toString()).build();
     }
 
+    /** {@link ImageRefs#crop}: every crop href on every page, and in {@code /app/api}, comes from there. */
     static String imageHref(UUID documentId, String key) {
-        return BASE + "/documents/" + documentId + "/image?key=" + java.net.URLEncoder.encode(key, java.nio.charset.StandardCharsets.UTF_8);
+        return ImageRefs.crop(documentId, key);
     }
 
     // ---- shared pieces -----------------------------------------------------------------------------------

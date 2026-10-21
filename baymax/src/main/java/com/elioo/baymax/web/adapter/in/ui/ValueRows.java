@@ -2,8 +2,8 @@ package com.elioo.baymax.web.adapter.in.ui;
 
 import com.elioo.baymax.outbound.domain.PrintedRange;
 import com.elioo.baymax.outbound.domain.ValueVerdict;
+import com.elioo.baymax.web.domain.PaperDisplay;
 
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -24,74 +24,24 @@ final class ValueRows {
     private ValueRows() {
     }
 
-    /**
-     * F2 on the page: the stored verdict; NULL or anything unrecognised is UNKNOWN, and a stored INSIDE is shown INSIDE
-     * only when the code proves it on the row as rendered (insideByCode). A stored OUTSIDE or CRITICAL without a stored
-     * side (a row V19's observation_verdict_side_matches_kind forbids) is UNKNOWN too: the page never guesses a direction,
-     * not even from the pin. The direction that withholds reassurance wins.
-     */
+    /** {@link PaperDisplay#kindOf}: the kind a row is drawn as, from its stored verdict (F2). */
     static ValueVerdict.Kind kindOf(Map<String, Object> v) {
-        Object raw = v.get("verdict");
-        if (raw == null) {
-            return ValueVerdict.Kind.UNKNOWN;
-        }
-        ValueVerdict.Kind kind;
-        try {
-            kind = ValueVerdict.Kind.valueOf(String.valueOf(raw).toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException e) {
-            return ValueVerdict.Kind.UNKNOWN;
-        }
-        if (kind == ValueVerdict.Kind.INSIDE && !PrintedRange.insideByCode(v)) {
-            return ValueVerdict.Kind.UNKNOWN;
-        }
-        boolean sided = kind == ValueVerdict.Kind.OUTSIDE || kind == ValueVerdict.Kind.CRITICAL;
-        return sided && storedSide(v) == null ? ValueVerdict.Kind.UNKNOWN : kind;
+        return PaperDisplay.kindOf(v);
     }
 
-    /** The stored verdict_side when it is one the page knows ("high" or "low"), else null. */
+    /** {@link PaperDisplay#storedSide}. */
     static String storedSide(Map<String, Object> v) {
-        Object side = v.get("verdict_side");
-        return "high".equals(side) || "low".equals(side) ? (String) side : null;
+        return PaperDisplay.storedSide(v);
     }
 
-    /**
-     * The pin only when it agrees with the verdict: INSIDE in the band, OUTSIDE/CRITICAL outside it and on the stored side
-     * ({@code storedSide}), UNKNOWN never. A bar that would tell a different story from the chip is
-     * not drawn; the chip keeps the stored verdict either way.
-     */
+    /** {@link PaperDisplay#pin}: the pin only where it agrees with the verdict. */
     static OptionalDouble pin(ValueVerdict.Kind kind, Map<String, Object> v, String storedSide) {
-        if (kind == ValueVerdict.Kind.UNKNOWN) {
-            return OptionalDouble.empty();
-        }
-        OptionalDouble p = PrintedRange.pinPercent(v);
-        if (p.isEmpty()) {
-            return p;
-        }
-        double at = p.getAsDouble();
-        boolean inBand = at >= 25 && at <= 75;
-        if (inBand != (kind == ValueVerdict.Kind.INSIDE)) {
-            return OptionalDouble.empty();
-        }
-        boolean otherSide = ("high".equals(storedSide) && at < 25) || ("low".equals(storedSide) && at > 75);
-        return otherSide ? OptionalDouble.empty() : p;
+        return PaperDisplay.pin(kind, v, storedSide);
     }
 
-    /**
-     * The chip's key. OUTSIDE and CRITICAL carry the stored verdict's side ({@code verdict_side}) and only that: the page
-     * never re-judges a stored verdict, and never reads a side off the pin. {@link #kindOf} has already made a sideless
-     * OUTSIDE or CRITICAL UNKNOWN, so reaching here without a side is a bug, not a row to guess at.
-     */
+    /** {@link PaperDisplay#chipKey}: the chip's key, a side only from the stored verdict. */
     static String chipKey(ValueVerdict.Kind kind, String storedSide) {
-        return switch (kind) {
-            case INSIDE -> "value.chip.inside";
-            case UNKNOWN -> "value.chip.unknown";
-            case OUTSIDE, CRITICAL -> {
-                if (storedSide == null) {
-                    throw new IllegalStateException(kind + " without its stored side is never given a direction");
-                }
-                yield "value.chip." + kind.name().toLowerCase(Locale.ROOT) + "." + storedSide;
-            }
-        };
+        return PaperDisplay.chipKey(kind, storedSide);
     }
 
     /** Where a value sheet was opened from, so its close goes back to the same row: the summary, or the detail. */
@@ -113,7 +63,7 @@ final class ValueRows {
         ValueVerdict.Kind kind = kindOf(v);
         String cls = kind.name().toLowerCase(Locale.ROOT);
         // the stored side belongs to the stored verdict: a demoted INSIDE or an UNKNOWN has none
-        String side = kind == ValueVerdict.Kind.INSIDE || kind == ValueVerdict.Kind.UNKNOWN ? null : storedSide(v);
+        String side = PaperDisplay.drawnSide(kind, v);
         OptionalDouble pin = pin(kind, v, side);
         String chip = copy.t(lang, chipKey(kind, side));
         String range = range(copy, lang, v);
@@ -150,7 +100,7 @@ final class ValueRows {
     static String sheetValue(UiCopy copy, Lang lang, Map<String, Object> v) {
         ValueVerdict.Kind kind = kindOf(v);
         String cls = kind.name().toLowerCase(Locale.ROOT);
-        String side = kind == ValueVerdict.Kind.INSIDE || kind == ValueVerdict.Kind.UNKNOWN ? null : storedSide(v);
+        String side = PaperDisplay.drawnSide(kind, v);
         OptionalDouble pin = pin(kind, v, side);
         String chip = copy.t(lang, chipKey(kind, side));
         String range = range(copy, lang, v);
@@ -175,16 +125,13 @@ final class ValueRows {
                 + "<span class=\"ends\" aria-hidden=\"true\"><span>" + esc(v.get("ref_low")) + "</span><span>" + esc(v.get("ref_high")) + "</span></span>";
     }
 
-    /** The fields a medicine line is captioned with, in the order the prescription writes them. */
-    private static final List<String> MEDICINE_FIELDS = List.of("name", "dose_text", "frequency_text", "timing_text", "duration_text");
-
     /**
      * MedicineRow (spec §9, principle 7): the crop first and large — what a pharmacy is shown — then the line as written,
      * quiet, joining only the fields that were written. No colour, no chip, no status: Medioo says nothing about a medicine.
      */
     static String medicine(UiCopy copy, Lang lang, UUID documentId, Map<String, Object> m) {
         String href = PageChrome.imageHref(documentId, crop(m.get("crop_key"), "a medicine"));
-        String caption = MEDICINE_FIELDS.stream().map(m::get).filter(Objects::nonNull).map(f -> String.valueOf(f).strip())
+        String caption = PaperDisplay.MEDICINE_FIELDS.stream().map(m::get).filter(Objects::nonNull).map(f -> String.valueOf(f).strip())
                 .filter(f -> !f.isEmpty()).map(Html::esc).collect(Collectors.joining(" · "));
         return "<a class=\"med\" href=\"" + href + "\"><img class=\"crop big\" loading=\"lazy\" alt=\"\" src=\"" + href + "\">"
                 + "<span class=\"cap\">" + caption + "</span><span class=\"zoom\">" + copy.t(lang, "crop.zoom") + "</span></a>";

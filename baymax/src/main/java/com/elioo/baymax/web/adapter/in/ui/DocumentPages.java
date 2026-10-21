@@ -9,10 +9,12 @@ import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.outbound.domain.UrgencyReason;
 import com.elioo.baymax.outbound.domain.ValueVerdict;
+import com.elioo.baymax.web.adapter.in.ImageRefs;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.application.port.in.ResultUseCase;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
 import com.elioo.baymax.web.domain.EarlierReading;
+import com.elioo.baymax.web.domain.PaperDisplay;
 import com.elioo.baymax.web.domain.ReadingView;
 import com.elioo.baymax.web.domain.ResultView;
 import com.elioo.baymax.web.domain.WebSession;
@@ -36,8 +38,6 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
-import java.util.EnumSet;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -85,8 +85,7 @@ public class DocumentPages implements WebPages {
      * The reasons the rule raises a paper to NOW with (UrgencyService; derived from it in ResultNowRenderTest). Their
      * blocks come first; the THIS_WEEK reasons a NOW paper also carries follow them (spec §4.11, "shown below if present").
      */
-    static final Set<UrgencyReason> NOW_REASONS = EnumSet.of(UrgencyReason.VALUE_CRITICAL, UrgencyReason.UNVERIFIED_VALUE_CRITICAL,
-            UrgencyReason.TEXT_EMERGENCY_PHRASE);
+    static final Set<UrgencyReason> NOW_REASONS = PaperDisplay.NOW_REASONS;
     /** The generic block: a legacy reason prefix, or a NOW stored with no reason — never a NOW page with nothing. */
     static final String OTHER_BLOCK = "why-other";
 
@@ -237,8 +236,7 @@ public class DocumentPages implements WebPages {
         if (values.isEmpty()) {
             return "";
         }
-        long outside = values.stream().map(ValueRows::kindOf)
-                .filter(k -> k == ValueVerdict.Kind.OUTSIDE || k == ValueVerdict.Kind.CRITICAL).count();
+        long outside = PaperDisplay.outsideCount(values);
         return "<p class=\"counts\">" + (outside == 0 ? copy.t(lang, "result.counts.none", values.size())
                 : copy.t(lang, "result.counts", values.size(), outside)) + "</p>";
     }
@@ -287,39 +285,17 @@ public class DocumentPages implements WebPages {
      * first, so a NOW page always says why it is NOW.
      */
     static List<Optional<UrgencyReason>> drawnOrder(List<String> stored) {
-        Set<Optional<UrgencyReason>> distinct = new LinkedHashSet<>();
-        (stored == null ? List.<String>of() : stored).forEach(reason -> distinct.add(UrgencyReason.ofReason(reason)));
-        List<Optional<UrgencyReason>> first = new ArrayList<>();
-        List<Optional<UrgencyReason>> below = new ArrayList<>();
-        for (Optional<UrgencyReason> reason : distinct) {
-            (reason.isEmpty() || NOW_REASONS.contains(reason.get()) ? first : below).add(reason);
-        }
-        if (first.isEmpty()) {
-            first.add(Optional.empty());
-        }
-        first.addAll(below);
-        return first;
+        return PaperDisplay.drawnOrder(stored);
     }
 
-    /**
-     * The value kinds this page's NOW reason blocks draw: CRITICAL under a stored value_critical, nothing below NOW. An
-     * OUTSIDE row stays in "যেগুলো সীমার বাইরে" below, as s11 draws it; its block points there. {@link #rowsOfKind} and
-     * this set are the one rule both places read.
-     */
+    /** {@link PaperDisplay#shownAbove}: the value kinds this page's NOW reason blocks draw; nothing below NOW. */
     static Set<ValueVerdict.Kind> shownAbove(ResultView r) {
-        if (r.urgency() != Urgency.NOW) {
-            return Set.of();
-        }
-        Set<ValueVerdict.Kind> kinds = EnumSet.noneOf(ValueVerdict.Kind.class);
-        for (String reason : r.urgencyReasons()) {
-            UrgencyReason.ofReason(reason).flatMap(DocumentPages::kindShownBy).ifPresent(kinds::add);
-        }
-        return kinds;
+        return PaperDisplay.shownAbove(r.urgency(), r.urgencyReasons());
     }
 
-    /** The value kind a reason's block draws its rows of, if it draws rows at all. */
+    /** {@link PaperDisplay#kindShownBy}: the value kind a reason's block draws its rows of, if it draws rows at all. */
     static Optional<ValueVerdict.Kind> kindShownBy(UrgencyReason reason) {
-        return reason == UrgencyReason.VALUE_CRITICAL ? Optional.of(ValueVerdict.Kind.CRITICAL) : Optional.empty();
+        return PaperDisplay.kindShownBy(reason);
     }
 
     /** One reason's block; {@code reason} null is the generic block. The page images stand in where no stored row matches. */
@@ -395,7 +371,7 @@ public class DocumentPages implements WebPages {
         StringBuilder b = new StringBuilder();
         int pages = v.pageCount() == null ? 1 : Math.max(1, v.pageCount());
         for (int n = 1; n <= pages; n++) {
-            String href = BASE + "/documents/" + documentId + "/page/" + n;
+            String href = ImageRefs.page(documentId, n);
             b.append("<a class=\"fullpage\" href=\"").append(href).append("\"><img class=\"page-img\" loading=\"lazy\" alt=\"\" src=\"")
                     .append(href).append("\"><span class=\"cap\">").append(copy.t(lang, "now.page", n)).append("</span><span class=\"zoom\">")
                     .append(copy.t(lang, "crop.zoom")).append("</span></a>");
@@ -533,10 +509,20 @@ public class DocumentPages implements WebPages {
 
     /** As above, for any page that shows a retake (the কাগজপত্র row, C3): one mapping from code to line. */
     static String retakeReason(UiCopy copy, Lang lang, String code) {
+        return copy.t(lang, retakeReasonKey(copy, code));
+    }
+
+    /**
+     * The copy key of a retake's line, from its stored code: the section's own key where both languages have one, else
+     * the reason's; a code this build does not know is the legacy key. The page and {@code /app/api} (which sends the key,
+     * never the code) read this one mapping.
+     */
+    public static String retakeReasonKey(UiCopy copy, String code) {
         RetakeReason reason = RetakeReason.ofCode(code).orElse(RetakeReason.LEGACY);
         String section = RetakeReason.sectionOf(code);
-        String specific = section == null ? null : copy.maybe(lang, "retake.reason." + reason.prefix() + "." + section);
-        return specific != null ? specific : copy.t(lang, "retake.reason." + reason.prefix());
+        String specific = section == null ? null : "retake.reason." + reason.prefix() + "." + section;
+        boolean everywhere = specific != null && java.util.Arrays.stream(Lang.values()).allMatch(l -> copy.maybe(l, specific) != null);
+        return everywhere ? specific : "retake.reason." + reason.prefix();
     }
 
     /** The photos the family sent, whole, each opening large: no region, the pipeline does not know one. */
@@ -544,7 +530,7 @@ public class DocumentPages implements WebPages {
         StringBuilder b = new StringBuilder();
         int pages = v.pageCount() == null ? 1 : Math.max(1, v.pageCount());
         for (int n = 1; n <= pages; n++) {
-            String href = BASE + "/documents/" + documentId + "/page/" + n;
+            String href = ImageRefs.page(documentId, n);
             b.append("<a class=\"fullpage\" href=\"").append(href).append("\"><img class=\"page-img\" loading=\"lazy\" alt=\"\" src=\"")
                     .append(href).append("\"><span class=\"cap\">").append(copy.t(lang, "retake.photo", n)).append("</span></a>");
         }
@@ -713,7 +699,7 @@ public class DocumentPages implements WebPages {
         StringBuilder b = new StringBuilder("<section id=\"pages\"><h2>").append(copy.t(lang, "detail.seg.pages")).append("</h2><p class=\"meta\">")
                 .append(copy.t(lang, "prescription".equals(v.documentType()) ? "detail.pages.rx" : "detail.pages.note")).append("</p>");
         for (int n = 1; n <= pages; n++) {
-            String href = BASE + "/documents/" + documentId + "/page/" + n;
+            String href = ImageRefs.page(documentId, n);
             b.append("<figure id=\"page-").append(n).append("\" class=\"pagefig\"><img class=\"page-img\" loading=\"lazy\" alt=\"\" src=\"")
                     .append(href).append("\"><figcaption><span>").append(copy.t(lang, "detail.page", n)).append("</span>")
                     .append("<a class=\"btn quiet\" href=\"").append(href).append("\">").append(copy.t(lang, "crop.zoom")).append("</a></figcaption></figure>");
@@ -994,8 +980,7 @@ public class DocumentPages implements WebPages {
         StringBuilder b = new StringBuilder();
         int pages = view.pageCount() == null ? 1 : Math.max(1, view.pageCount());
         for (int n = 1; n <= pages; n++) {
-            b.append("<img class=\"page-img\" loading=\"lazy\" alt=\"\" src=\"").append(BASE).append("/documents/").append(documentId)
-                    .append("/page/").append(n).append("\">");
+            b.append("<img class=\"page-img\" loading=\"lazy\" alt=\"\" src=\"").append(ImageRefs.page(documentId, n)).append("\">");
         }
         return b.toString();
     }

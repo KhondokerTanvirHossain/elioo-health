@@ -6,6 +6,7 @@
 GET /app
 GET /app/
 GET /app/add
+GET /app/api/documents/{id}
 GET /app/api/me
 GET /app/documents/{id}
 GET /app/documents/{id}/all

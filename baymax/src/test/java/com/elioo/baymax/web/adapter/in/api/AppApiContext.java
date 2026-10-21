@@ -17,6 +17,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.Duration;
 import java.time.Instant;
@@ -70,11 +71,34 @@ final class AppApiContext {
                 + patient.familyId() + "/" + patient.id() + "/" + document + "/page-1.jpg','image/jpeg',100,now())");
     }
 
-    private static void sql(PostgreSQLContainer<?> postgres, String statement) throws Exception {
+    static void sql(PostgreSQLContainer<?> postgres, String statement) throws Exception {
         try (Connection c = DriverManager.getConnection(postgres.getJdbcUrl() + "&sslmode=disable", postgres.getUsername(), postgres.getPassword());
              Statement s = c.createStatement()) {
             s.execute(statement);
         }
+    }
+
+    /** The single number a {@code select count(*) …} answers. */
+    static long count(PostgreSQLContainer<?> postgres, String query) throws Exception {
+        try (Connection c = DriverManager.getConnection(postgres.getJdbcUrl() + "&sslmode=disable", postgres.getUsername(), postgres.getPassword());
+             Statement s = c.createStatement(); ResultSet r = s.executeQuery(query)) {
+            r.next();
+            return r.getLong(1);
+        }
+    }
+
+    /** One stored value of a paper, as extraction stores it (with its crop, V5; no verdict, as before V19). */
+    static void value(PostgreSQLContainer<?> postgres, PatientProfile patient, UUID document, String name, String value) throws Exception {
+        sql(postgres, "INSERT INTO baymax.observation (patient_id, document_id, name, value, crop_key, observed_at) VALUES ('"
+                + patient.id() + "','" + document + "','" + name.replace("'", "''") + "','" + value + "','"
+                + patient.familyId() + "/" + patient.id() + "/" + document + "/crop-1.jpg',now())");
+    }
+
+    /** The paper's explanation, composed and not sent (V14: sent_at NULL), in this review state. */
+    static void explanation(PostgreSQLContainer<?> postgres, PatientProfile patient, UUID document, String gateStatus, String body) throws Exception {
+        sql(postgres, "INSERT INTO baymax.outbound_message (family_id, patient_id, document_id, kind, urgency, urgency_reasons, body, gate_status)"
+                + " VALUES ('" + patient.familyId() + "','" + patient.id() + "','" + document + "','explanation','now','[]','" + body + "','"
+                + gateStatus + "')");
     }
 
     /** A live session for the family; the returned token is the cookie value. */
