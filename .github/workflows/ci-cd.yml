@@ -140,9 +140,11 @@ jobs:
         working-directory: medioo-web
         run: |
           pnpm run lint
+          pnpm run lint:css
           pnpm run typecheck
           pnpm exec vitest run
           pnpm run build
+          pnpm run test:built
       # The browser download is cached per Playwright version and the install retried, so a CDN or apt-mirror hiccup
       # does not block every merge (main is protected and every merge deploys).
       - name: medioo-web Playwright version

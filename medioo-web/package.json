@@ -12,8 +12,10 @@
     "build": "next build",
     "start": "next start -p 3000",
     "lint": "eslint .",
+    "lint:css": "stylelint \"src/**/*.css\"",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:built": "vitest run -c vitest.built.config.mts",
     "e2e": "playwright test -c e2e/playwright.config.ts"
   },
   "dependencies": {
@@ -30,6 +32,8 @@
     "@types/react-dom": "19.2.7",
     "eslint": "9.39.5",
     "eslint-config-next": "15.5.28",
+    "postcss": "8.5.29",
+    "stylelint": "17.16.0",
     "typescript": "5.9.3",
     "vite": "8.3.4",
     "vitest": "5.0.5"
