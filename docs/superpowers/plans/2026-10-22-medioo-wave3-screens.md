@@ -957,7 +957,7 @@ Branch `fix/baymax-web-calendar-audit`. Lane B. S14 applies (blocks the merge).
 
 - [ ] **Step 1: Write the failing test.** `TimelineAuditTest`:
   - `aTimelineAndItsCalendarAreOneView`: the count of `audit_event` rows with `kind = 'timeline_view'` rises by exactly 1 across `GET /app/api/patients/{id}/timeline` plus `GET …/calendar?month=`.
-  - `aMonthLinkIsNoView`: a second calendar read adds 0.
+  - `aMonthLinkIsNoView`: a second calendar read adds 0. *(Amended by W8-api review, for PO sight:)* named `aSecondCalendarReadIsNoView`, because that is what it checks. A month link is not a bare calendar read: the page is server-rendered and every control is a plain link, so a month, filter or cursor link is a new render whose timeline read records one TIMELINE_VIEW.
   - `theTimelineStillRecordsItsView`: the guard, the timeline alone adds 1.
 - [ ] **Step 2:** `gl :baymax:test --tests '*TimelineAuditTest'`. Expected: FAIL with `expected: 1 but was: 2`.
 - [ ] **Step 3:** Implement. **Step 4:** run. Expected: PASS. **Step 5: Replay:** restore the calendar's `audit.record` and run the test. Expected: `expected: 1 but was: 2`. Restore and quote the line.
@@ -971,6 +971,7 @@ Branch `fix/baymax-web-calendar-audit`. Lane B. S14 applies (blocks the merge).
     -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   ```
   PR body: S14, and the effect on `WeeklyMetricsService`'s `timeline_views` column (none today, since nothing calls the calendar yet).
+  *(Amended by W8-api review, for PO sight:)* from W8 on, `timeline_views` counts papers-page renders (the first open plus every month, filter and cursor link), not opens; that halves the two-per-render the calendar's row would have made. Whether S14 meant no extra row per month link is asked of the PO in the PR.
 
 ---
 
@@ -1010,6 +1011,7 @@ Branch `feat/medioo-web-papers`. Lane C. After W2e-b and W8-api. Owns master Rev
     - `anEmptyPatientGetsTheEmptyState`: `timeline.empty.*`, and one add link, for the owner only.
     - `everyFollowUpCropIsItsOwn`: the `crops` check, applied to follow-up rows.
     - `oneOpenIsOneTimelineView`: the stub's request log shows one timeline GET and one calendar GET for one open. Java's `TimelineAuditTest` (W8-api) is the row-count half.
+      *(Amended by W8-api review, for PO sight:)* it also follows a month link (`?month=` of the previous month) and asserts the log shows exactly one more timeline GET and one more calendar GET for it, so the views per month link (one, through the timeline) are known and tested, not assumed to be zero.
     - `screenChecks("/app/timeline", "papers-busy", { crops: true, longest: true })`, where `LONGEST` uses `me-long` and `timeline/forty-five-first-page`.
 - [ ] **Step 2:** Run. Expected: FAIL on missing modules and on Next's 404.
 - [ ] **Step 3:** Implement.

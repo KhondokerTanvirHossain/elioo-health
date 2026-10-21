@@ -34,8 +34,10 @@ public interface TimelineUseCase {
 
     /**
      * Plan B3: one month of a patient's papers (by their filing day) and the open follow-ups due inside it.
-     * {@code month} null is the patient's current month. Records a TIMELINE_VIEW, as {@link #timeline} does; a patient
-     * this family cannot see is a 404 and records nothing.
+     * {@code month} null is the patient's current month. Records no audit row (PO decision S14): the papers page reads
+     * {@link #timeline} and this calendar for one render, and the timeline read records one TIMELINE_VIEW each time it is
+     * read. A month, filter or "more" link is a new render of the page, so it still records one view, through the timeline.
+     * A patient this family cannot see is a 404.
      */
     Mono<CalendarMonth> calendar(UUID familyId, UUID patientId, YearMonth month);
 
