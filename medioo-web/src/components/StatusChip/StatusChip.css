@@ -6,7 +6,7 @@
   align-items: center;
   gap: var(--space-1);
   max-width: 100%;
-  padding: 1px 9px;
+  padding: 1px 9px; /* the prototype chip's optical padding: the spacing scale (4/8/12…) has no 1 px or 9 px step */
   border-radius: var(--radius-pill);
   font-family: var(--font-bn);
   font-size: var(--text-sm);

@@ -54,6 +54,47 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
         expect(byState.size, "distinct states").toBe(registered);
         expect([...byState].filter(([, langs]) => langs.join() !== "bn,en"), "states not shown once in bn, then en").toEqual([]);
         expect(sections.filter((s) => s.box === 0).map((s) => `${s.state} (${s.lang})`), "states that render nothing").toEqual([]);
+        // The registry's exact list is src/catalog/states.test.tsx's: this page's own count above cannot see a state
+        // dropped from the registry, only one the page failed to render.
+      });
+
+      test("everyVisibleImageIsADecodedBrandFile", async ({ page }) => {
+        // A box with a width says nothing about an image: an <img width=48> whose file 404s or fails to decode still
+        // has one. So every visible image is checked by its content: loaded, decoded, and one of the approved files.
+        await open(page);
+        const BRAND = ["/brand/medioo-light.svg", "/brand/medioo-dark.svg", "/brand/mio.webp", "/brand/mio-head.webp"];
+        // Mio's eager images can sit below the fold; scroll each into view so the check waits on every one of them.
+        await page.$$eval("[data-catalog-state] img", (imgs) => imgs.forEach((i) => i.scrollIntoView()));
+        await page.waitForFunction(() =>
+          [...document.querySelectorAll<HTMLImageElement>("[data-catalog-state] img")]
+            .filter((i) => i.checkVisibility())
+            .every((i) => i.complete),
+        );
+        const images = await page.$$eval("[data-catalog-state] img", (imgs) =>
+          (imgs as HTMLImageElement[])
+            .filter((i) => i.checkVisibility())
+            .map((i) => ({
+              state: i.closest<HTMLElement>("[data-catalog-state]")!.dataset.catalogState!,
+              path: i.currentSrc ? new URL(i.currentSrc).pathname : "",
+              complete: i.complete,
+              natural: i.naturalWidth,
+            })),
+        );
+        const bad = images
+          .filter((i) => !i.complete || i.natural === 0 || !BRAND.includes(i.path))
+          .map((i) => `${i.state}: ${i.path || "no currentSrc"} complete=${i.complete} naturalWidth=${i.natural}`);
+        expect(bad).toEqual([]);
+        // Guard: the images the W2c states draw were all seen, so the empty list above is not vacuous. Two per
+        // language for Wordmark is one: the lazy theme overrides are hidden without data-theme.
+        const seen = new Set(images.map((i) => `${i.state} ${i.path}`));
+        for (const want of [
+          "MioAvatar/32 /brand/mio-head.webp",
+          "MioAvatar/48-still /brand/mio-head.webp",
+          "MioAvatar/96 /brand/mio.webp",
+          `Wordmark/default /brand/medioo-${colorScheme}.svg`,
+        ]) {
+          expect(seen, "visible, decoded images").toContain(want);
+        }
       });
 
       test("axeReportsNoViolation", async ({ page }) => {
@@ -89,9 +130,12 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
           const sections = [...document.querySelectorAll<HTMLElement>("[data-catalog-state]")];
           const over: string[] = [];
           const measured: string[] = [];
+          const empty: string[] = [];
           for (const section of sections) {
             const state = section.dataset.catalogState!;
             measured.push(state);
+            // The heading and at least one element of the state itself, or the inner loop measured nothing there.
+            if (section.querySelectorAll("*").length < 2) empty.push(state);
             for (const el of [section, ...section.querySelectorAll("*")]) {
               if (el.scrollWidth > el.clientWidth + 1) {
                 over.push(`${state} <${el.tagName.toLowerCase()} class="${el.getAttribute("class") ?? ""}"> ${el.scrollWidth} > ${el.clientWidth}`);
@@ -99,13 +143,14 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
             }
           }
           const root = document.documentElement;
-          return { over, measured, sections: sections.length, page: [root.scrollWidth, root.clientWidth] };
+          return { over, measured, empty, page: [root.scrollWidth, root.clientWidth] };
         });
         expect(result.over).toEqual([]);
         expect(result.page[0], "the page itself scrolls sideways").toBeLessThanOrEqual(result.page[1]! + 1);
-        // Guard: every registered section was measured, the long unbroken bubble among them.
-        expect(result.sections).toBeGreaterThan(0);
-        expect(result.measured.length).toBe(await page.locator("[data-catalog-state]").count());
+        // Guards: every section measured at least one element of its state, the W2c floor of sections was walked
+        // (13 states × 2 languages; states.test.tsx holds the exact list), and the long unbroken bubble among them.
+        expect(result.empty, "sections whose state has no element to measure").toEqual([]);
+        expect(result.measured.length).toBeGreaterThanOrEqual(26);
         expect(result.measured).toContain("MessageBubble/long-unbroken");
       });
 

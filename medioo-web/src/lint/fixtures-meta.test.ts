@@ -11,10 +11,14 @@ import { afterEach, describe, expect, it } from "vitest";
 
 type Walk = { read: string[]; offenders: string[] };
 
-// A class declared in a test source: the top-level class of its file, or a nested one (`@Nested class …`), whose
-// simple name is what Snapshot.meta writes. B3's now-banner fixtures name NowBannerApiTest's nested
-// NowBannerApiContractTest, which has no file of its own.
-const CLASS_DECLARATION = /^\s*(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:public|protected|private|static|final|abstract|sealed)\s+)*(?:class|record)\s+([A-Za-z_$][\w$]*)/gm;
+// A name counts only when JUnit runs it as a test, whose simple name is what Snapshot.meta writes:
+//  (a) the top-level class of a file (the file's name) whose source declares a test method, or
+//  (b) a class declared with @Nested directly above it (other annotations may sit between), in such a file.
+// Never a record, a support class with no test (testsupport/Snapshot), or an inner class JUnit does not run. B3's
+// now-banner fixtures name NowBannerApiTest's @Nested NowBannerApiContractTest, which has no file of its own.
+const TEST_METHOD = /^\s*@(?:Test|ParameterizedTest|RepeatedTest|TestFactory|TestTemplate)\b/m;
+const NESTED_CLASS =
+  /^\s*@Nested\b(?:\s+@\w+(?:\([^)]*\))?)*\s+(?:(?:public|protected|private|static|final|abstract)\s+)*class\s+([A-Za-z_$][\w$]*)/gm;
 
 function javaTestNames(javaRoot: string): Set<string> {
   const names = new Set<string>();
@@ -23,8 +27,10 @@ function javaTestNames(javaRoot: string): Set<string> {
       const path = join(dir, entry);
       if (statSync(path).isDirectory()) walk(path);
       else if (entry.endsWith(".java")) {
+        const source = readFileSync(path, "utf8");
+        if (!TEST_METHOD.test(source)) continue;
         names.add(entry.slice(0, -".java".length));
-        for (const m of readFileSync(path, "utf8").matchAll(CLASS_DECLARATION)) names.add(m[1]!);
+        for (const m of source.matchAll(NESTED_CLASS)) names.add(m[1]!);
       }
     }
   };
@@ -117,11 +123,31 @@ describe("fixtures meta", () => {
       "api/now-banner/planted.json": '{"_meta":{"generated_by":"pending B3 NowBannerApiContractTest"},"status":200,"body":{}}\n',
       "api/planted/renamed.json": '{"_meta":{"generated_by":"baymax NoSuchContractTest"},"body":{}}\n',
       "api/planted/hand.json": '{"body":{}}\n',
+      // Classes that exist in the test tree but are not tests: a support class with no @Test, a helper record.
+      "api/planted/support.json": '{"_meta":{"generated_by":"baymax Snapshot"},"body":{}}\n',
+      "api/planted/record.json": '{"_meta":{"generated_by":"baymax Fixture"},"body":{}}\n',
+      // An inner class of a test file that is not @Nested: JUnit never runs it as a test.
+      "api/planted/inner.json": '{"_meta":{"generated_by":"baymax Served"},"body":{}}\n',
     });
     expect(fixtureMetaOffenders(root, javaRoot).offenders).toEqual([
       `${join("api", "now-banner", "planted.json")}: generated_by "pending B3 NowBannerApiContractTest" is a placeholder, not a test`,
       `${join("api", "planted", "hand.json")}: no _meta.generated_by`,
+      `${join("api", "planted", "inner.json")}: generated_by names Served, and no test class of that name exists`,
+      `${join("api", "planted", "record.json")}: generated_by names Fixture, and no test class of that name exists`,
       `${join("api", "planted", "renamed.json")}: generated_by names NoSuchContractTest, and no test class of that name exists`,
+      `${join("api", "planted", "support.json")}: generated_by names Snapshot, and no test class of that name exists`,
     ]);
+  });
+
+  it("aNestedTestClassAndATopLevelTestClassAreAccepted", () => {
+    // The other direction: the rule still accepts what Java contract tests really are. NowBannerApiContractTest is
+    // NowBannerApiTest's @Nested class with no file of its own; PaperApiContractTest is a top-level test file.
+    const root = copyWith({
+      "api/planted/nested.json": '{"_meta":{"generated_by":"baymax NowBannerApiContractTest"},"body":{}}\n',
+      "api/planted/top.json": '{"_meta":{"generated_by":"baymax PaperApiContractTest"},"body":{}}\n',
+    });
+    const { read, offenders } = fixtureMetaOffenders(root, javaRoot);
+    expect(read).toEqual(expect.arrayContaining([join("api", "planted", "nested.json"), join("api", "planted", "top.json")]));
+    expect(offenders).toEqual([]);
   });
 });

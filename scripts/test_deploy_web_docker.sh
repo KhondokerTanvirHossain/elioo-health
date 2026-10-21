@@ -4,8 +4,8 @@
 # here. scripts/test_deploy_sh.sh covers the decisions against fakes; this covers what fakes cannot: that the image
 # builds, that the probe passes against the real Next server, that `docker inspect` of the running container shows the
 # settings deploy.sh claims, that an image built from another sha is refused and the previous container put back, and
-# that the shipped image has no component catalog (deploy.sh's WEB_CATALOG_PROBE passes in it, and fails against a
-# stand-in that serves one: plan W2c).
+# that the shipped image has no component catalog (deploy.sh's WEB_CATALOG_PROBE passes in it, also when it is started
+# with MEDIOO_CATALOG=1 at run time, and fails against a stand-in that serves one: plan W2c).
 # Runs in CI's build job, so a Dockerfile or probe break fails a PR instead of the first deploy after merge.
 #
 #   bash scripts/test_deploy_web_docker.sh
@@ -24,6 +24,7 @@ REPO="medioo-web-deploytest"
 NAME="medioo-web-deploytest-$SUFFIX"
 NET="medioo-deploytest-edge-$SUFFIX"
 SERVES="medioo-web-catalogtest-$SUFFIX"  # a throwaway node container that serves a catalog (the able-to-fail direction)
+RUNTIME="medioo-web-runtimeflag-$SUFFIX" # the shipped image started with MEDIOO_CATALOG=1 at run time
 TAG="a1b2c3d$SUFFIX"   # the sha the image is built from
 OTHER="ffff000$SUFFIX" # the same image under another tag: its baked sha is not this one
 FAILED=0
@@ -32,6 +33,7 @@ fail() { echo "FAIL: $1"; FAILED=1; }
 cleanup() {
   "$REAL_DOCKER" rm -f "$NAME" >/dev/null 2>&1
   "$REAL_DOCKER" rm -f "$SERVES" >/dev/null 2>&1
+  "$REAL_DOCKER" rm -f "$RUNTIME" >/dev/null 2>&1
   "$REAL_DOCKER" network rm "$NET" >/dev/null 2>&1
   "$REAL_DOCKER" rmi "$REPO:$TAG" "$REPO:$OTHER" >/dev/null 2>&1
   rm -rf "$WORK"
@@ -117,8 +119,32 @@ for _ in 1 2 3 4 5 6 7 8 9 10; do
 done
 if [ "$SERVED" != "200 true" ]; then
   fail "the catalog-serving stand-in never answered /app/catalog-test with 200 and a state (got '$SERVED')"
-elif "$REAL_DOCKER" exec "$SERVES" node -e "$CATALOG_PROBE" >/dev/null 2>&1; then
-  fail "the catalog probe passed against a server that serves the catalog: it cannot fail"
+else
+  # not merely non-zero: the definitive outcome (exit 1, what it saw on stdout), the one deploy.sh never retries
+  SAW=$("$REAL_DOCKER" exec "$SERVES" node -e "$CATALOG_PROBE" 2>/dev/null); RC=$?
+  [ "$RC" = 0 ] && fail "the catalog probe passed against a server that serves the catalog: it cannot fail"
+  [ "$RC:$SAW" = "1:status=200 states=yes" ] \
+    || fail "the catalog probe against a served catalog gave exit $RC '$SAW', expected exit 1 'status=200 states=yes'"
+fi
+
+# 1c. (W2c) the flag is a build-time fact, not a runtime one: the same shipped image, started with MEDIOO_CATALOG=1 in
+#    its runtime environment, still answers /app/catalog-test 404 without states. next.config.ts's `env` inlining is
+#    what makes this true; if Next stopped inlining it, only deploy.sh's two -e flags would stand in the way.
+"$REAL_DOCKER" run -d --name "$RUNTIME" -e MEDIOO_CATALOG=1 -e "GIT_SHA=$TAG" "$REPO:$TAG" >/dev/null \
+  || fail "could not start $REPO:$TAG with MEDIOO_CATALOG=1"
+"$REAL_DOCKER" exec "$RUNTIME" printenv MEDIOO_CATALOG 2>/dev/null | grep -qx 1 \
+  || fail "the runtime-flag container does not hold MEDIOO_CATALOG=1: the check below would not test it"
+UP=""
+for _ in $(seq 1 30); do
+  UP=$("$REAL_DOCKER" exec "$RUNTIME" node -e "fetch('http://127.0.0.1:3000/app/healthz').then(r=>process.stdout.write(String(r.status))).catch(()=>{})" 2>/dev/null)
+  [ "$UP" = 200 ] && break
+  sleep 1
+done
+if [ "$UP" != 200 ]; then
+  fail "$REAL_DOCKER run with MEDIOO_CATALOG=1 never answered /app/healthz (got '$UP')"
+else
+  SAW=$("$REAL_DOCKER" exec "$RUNTIME" node -e "$CATALOG_PROBE" 2>/dev/null); RC=$?
+  [ "$RC" = 0 ] || fail "with MEDIOO_CATALOG=1 at run time the shipped image serves the catalog: probe exit $RC '$SAW'"
 fi
 
 # 2. the same image under another tag: GIT_SHA says OTHER, the image says TAG. The probe refuses it, and the
@@ -129,4 +155,4 @@ grep -q "previous $NAME ($TAG) is back and healthy" "$WORK/out2.log" || fail "th
 [ "$(insp '{{.Config.Image}}')" = "$REPO:$TAG" ] || fail "after the failed swap the running image is $(insp '{{.Config.Image}}'), expected $REPO:$TAG"
 
 if [ "$FAILED" -ne 0 ]; then exit 1; fi
-echo "deploy-web-docker: 3 cases passed (real image, real daemon)"
+echo "deploy-web-docker: 4 cases passed (real image, real daemon)"

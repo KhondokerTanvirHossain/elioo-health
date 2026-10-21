@@ -1,7 +1,11 @@
 /* A conversation bubble (MessageBubble.tsx), the prototypes' Messages bubble. The row keeps 12 px beside the bubble
    on its tail side, and the tail is drawn by the row, inside that space: the curl in the bubble's colour, then a
    --bg mask that carves its inner curve. Nothing is drawn outside the row's box, so no element scrolls sideways
-   (catalog.spec.ts measures every element), and a long unbroken word wraps inside the bubble. */
+   (catalog.spec.ts measures every element), and a long unbroken word wraps inside the bubble.
+   Spacing and radii are tokens where the scale has the value (--space-2, --radius-lg; the bubble's 19 px from the
+   prototypes' Messages bubble is --radius-bubble). The raw px left are the prototype's optical values with no token
+   (the 14 px side and 9 px bottom padding, the 2 px row gap) and the drawn tail's geometry (offsets, widths, the
+   17 px height and the 10 px / 14 px curl radii), which belong to the drawing and not to the spacing scale. */
 .message-bubble {
   position: relative;
   display: flex;
@@ -19,8 +23,8 @@
   position: relative;
   min-width: 0;
   max-width: 76%;
-  padding: 8px 14px 9px;
-  border-radius: 19px;
+  padding: var(--space-2) 14px 9px;
+  border-radius: var(--radius-bubble);
   font-family: var(--font-bn);
   font-size: var(--text-lg);
   line-height: 1.45;
@@ -45,7 +49,7 @@
   left: 5px;
   width: 20px;
   background: var(--recv);
-  border-bottom-right-radius: 16px 14px;
+  border-bottom-right-radius: var(--radius-lg) 14px;
 }
 .message-bubble--recv.message-bubble--tail::after {
   left: 0;
@@ -57,7 +61,7 @@
   right: 5px;
   width: 20px;
   background: var(--sent);
-  border-bottom-left-radius: 16px 14px;
+  border-bottom-left-radius: var(--radius-lg) 14px;
 }
 .message-bubble--sent.message-bubble--tail::after {
   right: 0;

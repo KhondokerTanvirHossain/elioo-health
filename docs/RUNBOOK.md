@@ -33,10 +33,27 @@ answer `service == "medioo-web"` with `sha` (the `GIT_SHA` it was started with) 
 baked into the image) both equal to the tag `deploy.sh` holds. The `build` field is what makes it a check of the
 image: a container started from an image built from another sha cannot pass. Needs coreutils `timeout` (the box has
 `/usr/bin/timeout`).
+Once `/app/healthz` passes, `deploy.sh` runs `WEB_CATALOG_PROBE` inside the container (plan W2c). The component
+catalog `/app/catalog-test` exists only in an image built with `MEDIOO_CATALOG=1`, so the image that ships must
+answer it 404 with no `data-catalog-state` in the body. The probe prints what it saw and has three outcomes:
+`status=404 states=no` passes. A definitive other answer (`status=200 …`, or a 404 whose body renders states) fails
+at once and is not retried, because a served catalog is a property of the image. No answer (`no-answer TimeoutError`
+after its 2 s fetch deadline, `no-answer TypeError` with nothing listening, or a timed-out exec) is retried within the
+same 60 s / 30-try budget. The first React render in a new container (healthz is a route handler and warms nothing)
+can be slow on the shared box, so each retry is logged as `catalog probe got no answer … retrying`.
 - **The web step fails:** if the new `medioo-web` cannot start or never becomes healthy, the deploy exits 1 and
   prints its last 50 log lines, then **puts the previous `medioo-web` back** (the image it was running, with that
   sha) and checks it healthy. Java, already healthy, is not touched. On the first deploy there is no previous one,
   and the failed container is left in place to inspect (`docker logs medioo-web`).
+- **The catalog probe fails:** the same rollback (exit 1, last 50 log lines, the previous `medioo-web` put back,
+  Java untouched), with one of two ERROR lines that name the cause:
+  - `ERROR: medioo-web (sha <sha>) answers /app/catalog-test with something other than a 404 without catalog states
+    (status=<n> states=<yes|no>): an image built with MEDIOO_CATALOG=1 never ships (catalog probe)`. The image
+    serves the catalog. **Never ship it.** Find out how a catalog build reached the image: `MEDIOO_CATALOG` in the
+    Dockerfile or CI's image build, or `.next-catalog` copied into it. Fix that on a PR. Do not retry the deploy.
+  - `ERROR: medioo-web (sha <sha>) passed /app/healthz but /app/catalog-test gave no answer in 60s (last: …) (catalog
+    probe)`. The server never answered that path. Check `docker logs medioo-web` and `docker stats` (memory against
+    the 320 MB cap, and n8n's load). This is not a served catalog. Redeploy once the box has headroom.
 - **No edge network:** `n8n_edge` missing fails the web step (exit 1) before the running `medioo-web` is touched. On
   any other network it would pass its in-container probe while Caddy could not reach it nor it Java.
 - **The web pull fails.** If that tag is already on the box (a manual rollback, logged out, to a tag the prune kept),
@@ -433,6 +450,7 @@ docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' medioo-web          
 docker port medioo-web                                                                          # prints nothing: no host port
 docker port medscribe-ai                                                                        # 8086/tcp -> 127.0.0.1:8086 only (W1c)
 curl -s https://medioo.eliooo.org/app/healthz                                                   # {"service":"medioo-web","sha":<sha>,"build":<sha>}
+docker exec medioo-web node -e "$(DEPLOY_FUNCTIONS_ONLY=1 bash -c 'source ~/deploy.sh >/dev/null 2>&1; printf %s "$WEB_CATALOG_PROBE"')"; echo $?   # status=404 states=no, then 0: the image has no catalog (W2c)
 free -m                                                                                         # "available" stays at 1 GB or more
 ```
 
@@ -635,6 +653,7 @@ docker logs --tail 200 medscribe-ai 2>&1 | sed 's/\x1b\[[0-9;]*m//g'
 docker logs medscribe-ai 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep '\[baymax\]'
 docker logs --tail 200 medioo-web 2>&1          # Next.js; rotated at 10 MB x 3 files
 docker exec medioo-web node -e "fetch('http://127.0.0.1:3000/app/healthz').then(r=>r.text()).then(console.log)"   # sha and build: both the deployed sha
+docker exec medioo-web node -e "$(DEPLOY_FUNCTIONS_ONLY=1 bash -c 'source ~/deploy.sh >/dev/null 2>&1; printf %s "$WEB_CATALOG_PROBE"')"; echo $?   # read-only: 0 = no catalog; 1 = serves it; 3 = no answer
 ```
 
 Patient text never appears at INFO. Prompts, model replies and OCR text are DEBUG only; `ai_call_log` and

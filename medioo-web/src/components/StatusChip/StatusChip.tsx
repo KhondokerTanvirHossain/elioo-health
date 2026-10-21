@@ -45,12 +45,16 @@ const DRAWN: Record<Shape, ReactNode> = {
 /**
  * The one place an API value becomes a chip kind: a paper's value passes its `display_kind` and `side`, a lab point
  * its `kind` and `side`. Critical (red) exactly when the kind is critical AND a side is set; a sideless critical or
- * outside has no direction to show and is unknown, as Java's PaperDisplay.kindOf makes it.
+ * outside has no direction to show and is unknown, as Java's PaperDisplay.kindOf makes it. Matching is exact and fails
+ * closed: anything this table does not know (`CRITICAL`, a later additive verdict, an empty string) is unknown, never a
+ * direction. The parameters are `string` because this is the API boundary: what arrives is not yet known to be typed.
  */
-export function chipKindOf(kind: "inside" | "unknown" | "outside" | "critical", side: "high" | "low" | null | undefined): ChipKind {
-  if (kind === "inside") return "in";
-  if (kind === "unknown" || (side !== "high" && side !== "low")) return "unk";
-  return `${kind === "critical" ? "crit" : "out"}-${side}`;
+export function chipKindOf(kind: string, side: string | null | undefined): ChipKind {
+  if (side === "high" || side === "low") {
+    if (kind === "critical") return `crit-${side}`;
+    if (kind === "outside") return `out-${side}`;
+  }
+  return kind === "inside" ? "in" : "unk";
 }
 
 /** Colour + shape + word. Only the two critical kinds paint with the NOW tokens. */

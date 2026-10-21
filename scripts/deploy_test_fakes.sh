@@ -42,6 +42,9 @@ write_deploy_fakes() {
 # /app/catalog-test answers 404 "not found" (as every other path) unless:
 # FAKE_CATALOG=200           it answers 200 with a catalog state in the body, as an image built with MEDIOO_CATALOG=1
 # FAKE_CATALOG=404-states    it answers 404 but the body still renders a catalog state
+# FAKE_CATALOG=hang          it accepts and never answers (a cold first server render that never finishes)
+# FAKE_CATALOG=hang-once     the first catalog fetch of the case hangs, every later one answers the plain 404
+# FAKE_CATALOG=refused       nothing answers on the catalog path (connection refused), every time
 # FAKE_CATALOG_REF=<ref>     FAKE_CATALOG applies only to a container started from <ref> (e.g. not the one put back)
 # `docker run` writes its arguments, one per line, to run.<name>.args, where <name> is the image's repository
 # basename (run.medscribe-ai.args, run.medioo-web.args), so each container's argument boundaries can be checked.
@@ -145,7 +148,7 @@ case "$1" in
       "${FAKE_HEALTHZ_SERVICE:-medioo-web}" "${FAKE_HEALTHZ_SHA:-${gs:-unknown}}" "${FAKE_HEALTHZ_BUILD:-${ref##*:}}")}"
     # the process sees the container's environment (its -e values and the image's baked BUILD_SHA), not the test's
     exec env -i PATH="$PATH" $(cat "$envf" 2>/dev/null) BUILD_SHA="${ref##*:}" \
-      FAKE_HZ_STATUS="$status" FAKE_HZ_BODY="$body" FAKE_HZ_CATALOG="$catalog" \
+      FAKE_HZ_STATUS="$status" FAKE_HZ_BODY="$body" FAKE_HZ_CATALOG="$catalog" FAKE_HZ_ONCE="$FAKE_DIR/catalog.hung-once" \
       node --require "$(dirname "$0")/healthz-stub.cjs" -e "$code" "$@" ;;
   logs)
     echo "fake container log line" ;;
@@ -156,24 +159,35 @@ FAKE
   cat > "$bin/healthz-stub.cjs" <<'FAKE'
 // Preloaded by the fake `docker exec ... node -e <probe>`: stands in for the Next server inside the container.
 // fetch of exactly http://127.0.0.1:3000/app/healthz answers FAKE_HZ_STATUS with FAKE_HZ_BODY; /app/catalog-test
-// answers per FAKE_HZ_CATALOG (empty: the 404 every other URL gets; 200 or 404-states: a body with a catalog state);
+// answers per FAKE_HZ_CATALOG (empty: the 404 every other URL gets; 200 or 404-states: a body with a catalog state;
+// hang, refused: as below, on that path only; hang-once: hangs the first time, FAKE_HZ_ONCE marking it, then the 404);
 // any other URL is 404;
 // "refused" is nothing listening; "hang" accepts and never answers (only the caller's AbortSignal ends it, and an
 // interval keeps the event loop alive the way an open socket does).
+const fs = require("node:fs");
 const status = process.env.FAKE_HZ_STATUS || "200";
 const body = process.env.FAKE_HZ_BODY || "";
-const catalog = process.env.FAKE_HZ_CATALOG || "";
+let catalog = process.env.FAKE_HZ_CATALOG || "";
+const once = process.env.FAKE_HZ_ONCE || "";
 delete process.env.FAKE_HZ_STATUS;
 delete process.env.FAKE_HZ_BODY;
 delete process.env.FAKE_HZ_CATALOG;
+delete process.env.FAKE_HZ_ONCE;
+const hang = (opts) =>
+  new Promise((_, reject) => {
+    const keepAlive = setInterval(() => {}, 1000);
+    opts.signal?.addEventListener("abort", () => { clearInterval(keepAlive); reject(opts.signal.reason); });
+  });
+const refused = () => Promise.reject(new TypeError("fetch failed: connect ECONNREFUSED 127.0.0.1:3000"));
 globalThis.fetch = (url, opts = {}) => {
-  if (status === "refused") return Promise.reject(new TypeError("fetch failed: connect ECONNREFUSED 127.0.0.1:3000"));
-  if (status === "hang") {
-    return new Promise((_, reject) => {
-      const keepAlive = setInterval(() => {}, 1000);
-      opts.signal?.addEventListener("abort", () => { clearInterval(keepAlive); reject(opts.signal.reason); });
-    });
+  if (status === "refused") return refused();
+  if (status === "hang") return hang(opts);
+  if (String(url) === "http://127.0.0.1:3000/app/catalog-test" && catalog === "hang-once") {
+    if (fs.existsSync(once)) catalog = "";
+    else { fs.writeFileSync(once, "hung\n"); return hang(opts); }
   }
+  if (String(url) === "http://127.0.0.1:3000/app/catalog-test" && catalog === "hang") return hang(opts);
+  if (String(url) === "http://127.0.0.1:3000/app/catalog-test" && catalog === "refused") return refused();
   if (String(url) === "http://127.0.0.1:3000/app/catalog-test" && catalog) {
     const states = '<main data-catalog-states="13"><section data-catalog-state="StatusChip/crit-high"></section></main>';
     return Promise.resolve(new Response(states, { status: catalog === "200" ? 200 : 404, headers: { "content-type": "text/html" } }));
