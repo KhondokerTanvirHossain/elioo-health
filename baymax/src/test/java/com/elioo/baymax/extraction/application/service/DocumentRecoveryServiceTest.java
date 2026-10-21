@@ -79,7 +79,7 @@ class DocumentRecoveryServiceTest {
 
     private static StoredObject page(UUID documentId, int n) {
         return new StoredObject(UUID.randomUUID(), FAMILY, PATIENT, documentId, ObjectKind.PAGE, n, null,
-                "k" + n, "image/jpeg", 4, BOOT);
+                "k" + n, "image/jpeg", 4, BOOT, null, null);
     }
 
     /** The other direction of the pages rule: an S3 outage is an error to retry, never "pages missing" for good. */

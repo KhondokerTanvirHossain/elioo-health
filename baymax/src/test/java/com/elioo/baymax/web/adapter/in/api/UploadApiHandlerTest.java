@@ -1,5 +1,6 @@
 package com.elioo.baymax.web.adapter.in.api;
 
+import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
 import com.elioo.baymax.web.application.port.in.ResultUseCase;
 import com.elioo.baymax.web.adapter.in.ui.UiCopy;
 import com.elioo.baymax.common.error.BaymaxException;
@@ -78,7 +79,7 @@ class UploadApiHandlerTest {
         client = WebTestClient.bindToRouterFunction(new AppApiRouter().mediooAppApiRoutes(
                 new MeApiHandler(mock(TimelineUseCase.class), mock(AttentionUseCase.class), properties),
                 new SignInApiHandler(auth, new SessionAuthFilter(auth, properties), properties),
-                new PaperApiHandler(mock(ResultUseCase.class), new UiCopy()),
+                new PaperApiHandler(mock(ResultUseCase.class), new UiCopy(), mock(DocumentStorageUseCase.class)),
                 new UploadApiHandler(uploads, properties, new UiCopy()),
                 new PaperStatusApiHandler(mock(ResultUseCase.class)),
                 new PaperDeleteApiHandler(mock(TimelineUseCase.class), new DeleteConfirmation(properties, java.time.Clock.systemUTC())),

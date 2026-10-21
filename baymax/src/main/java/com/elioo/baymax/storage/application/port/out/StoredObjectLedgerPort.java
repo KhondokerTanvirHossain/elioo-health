@@ -18,4 +18,10 @@ public interface StoredObjectLedgerPort {
 
     /** SUM(size_bytes) for the document; 0 when it has no objects. */
     Mono<Long> bytesStored(UUID documentId);
+
+    /**
+     * Records a measured size on the row with this key, only if it has none yet: a stored size is never rewritten.
+     * Returns how many rows took it (0 when the row already had a size, or is gone).
+     */
+    Mono<Long> recordDimensions(String storageKey, int width, int height);
 }

@@ -23,6 +23,13 @@ public interface DocumentStorageUseCase {
 
     Flux<StoredObject> objectsOf(UUID documentId);
 
+    /**
+     * The document's ledger rows, each with its pixel size: a row stored without one (written before the columns
+     * existed) is measured from its object's header once, recorded, and returned with it. A row whose object is missing
+     * or does not read is returned as it is, without a size, never with zero.
+     */
+    Flux<StoredObject> measuredObjectsOf(UUID documentId);
+
     Mono<Long> bytesStored(UUID documentId);
 
     /** Objects, then their ledger rows: for a caller whose ledger rows are still there. */

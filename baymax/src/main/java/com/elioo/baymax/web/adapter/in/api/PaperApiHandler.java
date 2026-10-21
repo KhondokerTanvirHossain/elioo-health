@@ -2,11 +2,15 @@ package com.elioo.baymax.web.adapter.in.api;
 
 import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.extraction.domain.Document;
+import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
+import com.elioo.baymax.storage.domain.ImageDimensions;
+import com.elioo.baymax.storage.domain.StoredObject;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.adapter.in.ui.DocumentPages;
 import com.elioo.baymax.web.adapter.in.ui.Lang;
 import com.elioo.baymax.web.adapter.in.ui.UiCopy;
 import com.elioo.baymax.web.application.port.in.ResultUseCase;
+import com.elioo.baymax.web.domain.ResultView;
 import com.elioo.baymax.web.domain.WebSession;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
@@ -34,6 +38,7 @@ public class PaperApiHandler {
 
     private final ResultUseCase results;
     private final UiCopy copy;
+    private final DocumentStorageUseCase storage;
 
     public Mono<ServerResponse> paper(ServerRequest request) {
         WebSession session = SessionAuthFilter.session(request);
@@ -52,8 +57,23 @@ public class PaperApiHandler {
                 });
     }
 
+    /**
+     * The result, then (only for DONE, the one state whose JSON carries crops) the paper's stored image sizes, read
+     * once per paper after the result has proved the paper visible. A legacy row is measured here, on its paper's first
+     * read (D4b), never when an image is served, so serving an image never costs a ledger query.
+     */
     private Mono<Map<String, Object>> finished(WebSession session, UUID documentId) {
-        return results.result(session.familyId(), documentId).map(r -> PaperJson.of(r, code -> DocumentPages.retakeReasonKey(copy, code)));
+        return results.result(session.familyId(), documentId)
+                .flatMap(r -> sizes(r, documentId).map(sizes -> PaperJson.of(r, code -> DocumentPages.retakeReasonKey(copy, code), sizes)));
+    }
+
+    private Mono<Map<String, ImageDimensions>> sizes(ResultView r, UUID documentId) {
+        if (!r.done()) {
+            return Mono.just(Map.of());
+        }
+        return storage.measuredObjectsOf(documentId)
+                .filter(o -> o.dimensions().isPresent())
+                .collectMap(StoredObject::storageKey, o -> o.dimensions().orElseThrow());
     }
 
     private static boolean inFlight(Document.Status status) {

@@ -95,7 +95,7 @@ class DocumentIntakeServiceTest {
         });
         when(storage.storePage(any(), any(), any(), anyInt(), any())).thenAnswer(i -> Mono.just(
                 new StoredObject(UUID.randomUUID(), FAMILY, PATIENT, i.getArgument(2), ObjectKind.PAGE,
-                        i.getArgument(3), null, "page", "image/jpeg", 10, NOW)));
+                        i.getArgument(3), null, "page", "image/jpeg", 10, NOW, null, null)));
         when(extraction.process(any(), any())).thenReturn(Mono.empty());
     }
 
@@ -336,7 +336,7 @@ class DocumentIntakeServiceTest {
         assertThat(keyed).as("no keyed row is left").isEmpty();
 
         when(storage.storePage(any(), any(), any(), eq(2), any())).thenAnswer(i -> Mono.just(new StoredObject(UUID.randomUUID(),
-                FAMILY, PATIENT, i.getArgument(2), ObjectKind.PAGE, 2, null, "page", "image/jpeg", 10, NOW)));
+                FAMILY, PATIENT, i.getArgument(2), ObjectKind.PAGE, 2, null, "page", "image/jpeg", 10, NOW, null, null)));
         StepVerifier.create(service.accept(PATIENT, List.of(jpeg("a.jpg"), jpeg("b.jpg")), "k-store001"))
                 .assertNext(d -> assertThat(d.fresh()).as("the retry makes the document").isTrue()).verifyComplete();
     }
@@ -378,7 +378,7 @@ class DocumentIntakeServiceTest {
         java.util.concurrent.atomic.AtomicInteger stores = new java.util.concurrent.atomic.AtomicInteger();
         when(storage.storePage(any(), any(), any(), anyInt(), any())).thenAnswer(i -> stores.incrementAndGet() == 2
                 ? Mono.error(new IllegalStateException("bucket down"))
-                : Mono.just(new StoredObject(UUID.randomUUID(), FAMILY, PATIENT, i.getArgument(2), ObjectKind.PAGE, 1, null, "page", "image/jpeg", 10, NOW)));
+                : Mono.just(new StoredObject(UUID.randomUUID(), FAMILY, PATIENT, i.getArgument(2), ObjectKind.PAGE, 1, null, "page", "image/jpeg", 10, NOW, null, null)));
         when(storage.deleteDocument(any(), any(), any())).thenReturn(Mono.just(new DeletionReport("p/", 1, 1)));
         List<Upload> two = List.of(jpeg("a.jpg", 0xFF0000), jpeg("b.jpg", 0x00FF00));
         StepVerifier.create(service.acceptEach(PATIENT, two, "k-sep00004")).expectNextCount(1).expectErrorMessage("bucket down").verify();

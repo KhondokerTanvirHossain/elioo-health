@@ -2,6 +2,7 @@ package com.elioo.baymax.storage.adapter.out.persistence;
 
 import org.springframework.data.r2dbc.repository.Modifying;
 import org.springframework.data.r2dbc.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.data.repository.reactive.ReactiveCrudRepository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -20,4 +21,9 @@ public interface StoredObjectRepository extends ReactiveCrudRepository<StoredObj
 
     @Query("SELECT COALESCE(SUM(size_bytes), 0) FROM baymax.stored_object WHERE document_id = :documentId")
     Mono<Long> bytesStored(UUID documentId);
+
+    /** Only a row with no size yet takes one: a stored size is never rewritten (V24). */
+    @Modifying
+    @Query("UPDATE baymax.stored_object SET width_px = :width, height_px = :height WHERE storage_key = :storageKey AND width_px IS NULL")
+    Mono<Integer> recordDimensions(@Param("storageKey") String storageKey, @Param("width") int width, @Param("height") int height);
 }

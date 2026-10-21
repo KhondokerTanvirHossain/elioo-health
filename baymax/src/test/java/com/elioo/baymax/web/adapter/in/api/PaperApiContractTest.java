@@ -10,6 +10,9 @@ import com.elioo.baymax.extraction.domain.RetakeReason;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.outbound.domain.ValueVerdict;
+import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
+import com.elioo.baymax.storage.domain.ObjectKind;
+import com.elioo.baymax.storage.domain.StoredObject;
 import com.elioo.baymax.testsupport.Json;
 import com.elioo.baymax.testsupport.PaperFixtures;
 import com.elioo.baymax.testsupport.Snapshot;
@@ -38,6 +41,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.test.web.reactive.server.EntityExchangeResult;
 import org.springframework.test.web.reactive.server.WebTestClient;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.io.IOException;
@@ -90,6 +94,9 @@ class PaperApiContractTest {
     private final ObjectMapper json = new ObjectMapper();
     private final WebAuthUseCase auth = mock(WebAuthUseCase.class);
     private final ResultUseCase results = mock(ResultUseCase.class);
+    private final DocumentStorageUseCase storage = mock(DocumentStorageUseCase.class);
+    /** The ledger rows the mocked storage serves for the paper being served ({@link #ledgerOf}). */
+    private List<StoredObject> ledger = List.of();
     private final UiCopy copy = new UiCopy();
     private final BaymaxProperties properties = new BaymaxProperties();
     private final SessionAuthFilter sessions = new SessionAuthFilter(auth, properties);
@@ -99,6 +106,7 @@ class PaperApiContractTest {
     PaperApiContractTest() {
         Instant now = PaperFixtures.NOW;
         when(auth.authenticate(anyString())).thenReturn(Mono.empty());
+        when(storage.measuredObjectsOf(any())).thenReturn(Flux.empty());
         when(auth.authenticate("tok")).thenReturn(Mono.just(new WebSession(UUID.randomUUID(), FAMILY, now, now, now.plusSeconds(600))));
         properties.getWeb().setPublicOrigin(AppApiGuardTest.ORIGIN);
         AppApiGuard guard = new AppApiGuard(sessions, properties);
@@ -106,7 +114,7 @@ class PaperApiContractTest {
         TimelineUseCase timeline = mock(TimelineUseCase.class);
         client = WebTestClient.bindToRouterFunction(new AppApiRouter().mediooAppApiRoutes(
                 new MeApiHandler(timeline, attention, properties), new SignInApiHandler(auth, sessions, properties),
-                new PaperApiHandler(results, copy),
+                new PaperApiHandler(results, copy, storage),
                 new UploadApiHandler(mock(UploadUseCase.class), properties, copy),
                 new PaperStatusApiHandler(results),
                 new PaperDeleteApiHandler(timeline, new DeleteConfirmation(properties, java.time.Clock.systemUTC())),
@@ -167,6 +175,57 @@ class PaperApiContractTest {
     private void serve(ResultView r) {
         when(results.status(FAMILY, DOC)).thenReturn(Mono.just(Document.Status.valueOf(r.document().status())));
         when(results.result(FAMILY, DOC)).thenReturn(Mono.just(r));
+        ledger = ledgerOf(r.document());
+        when(storage.measuredObjectsOf(DOC)).thenReturn(Flux.fromIterable(ledger));
+    }
+
+    /**
+     * The paper's measured ledger as the storage serves it: one row per crop key the paper stores, except the last in key
+     * order, which has none (a crop whose object was never recorded), and one page row. So every MSW fixture with crops
+     * shows a crop with its size and, where it has two or more, one without. The sizes are distinct per row and never
+     * square: a crop paired with another row's size, or with its two sides swapped, is told apart.
+     */
+    static List<StoredObject> ledgerOf(DocumentView v) {
+        TreeSet<String> keys = cropKeys(v);
+        List<StoredObject> rows = new ArrayList<>();
+        rows.add(new StoredObject(UUID.nameUUIDFromBytes("page-1".getBytes(StandardCharsets.UTF_8)), FAMILY, PaperFixtures.MA_ID, DOC,
+                ObjectKind.PAGE, 1, null, "f/p/d/page-1.jpg", "image/jpeg", 100, PaperFixtures.NOW, 1600, 1200));
+        int i = 0;
+        for (String key : keys) {
+            if (key.equals(keys.last())) {
+                break;
+            }
+            rows.add(new StoredObject(UUID.nameUUIDFromBytes(key.getBytes(StandardCharsets.UTF_8)), FAMILY, PaperFixtures.MA_ID, DOC,
+                    ObjectKind.CROP, null, "x" + i, key, "image/jpeg", 100, PaperFixtures.NOW, 120 + 10 * i, 30 + i));
+            i++;
+        }
+        return rows;
+    }
+
+    /** Every crop key the paper's rows and the doctor's lines carry. */
+    @SuppressWarnings("unchecked")
+    static TreeSet<String> cropKeys(DocumentView v) {
+        TreeSet<String> keys = new TreeSet<>();
+        List<List<Map<String, Object>>> lists = new ArrayList<>();
+        lists.add(v.values() == null ? List.of() : v.values());
+        lists.add(v.medicines() == null ? List.of() : v.medicines());
+        lists.add(v.followUp() == null ? List.of() : v.followUp());
+        if (v.clinicalContext() != null) {
+            v.clinicalContext().values().forEach(lines -> {
+                if (lines instanceof List<?> l) {
+                    lists.add((List<Map<String, Object>>) l);
+                }
+            });
+        }
+        for (List<Map<String, Object>> rows : lists) {
+            for (Map<String, Object> row : rows) {
+                Object key = row.get("crop_key");
+                if (key != null && !String.valueOf(key).isBlank()) {
+                    keys.add(String.valueOf(key));
+                }
+            }
+        }
+        return keys;
     }
 
     private void serve(ReadingView r) {
@@ -540,6 +599,49 @@ class PaperApiContractTest {
             srcs.add(src);
         }
         assertThat(srcs).doesNotHaveDuplicates();
+    }
+
+    /**
+     * D4b: every crop in the tree (values, medicines, follow-ups, the doctor's lines) carries its own ledger row's stored
+     * size, paired by the storage key its {@code src} is built from (never by position); a crop with no ledger row has
+     * {@code width} and {@code height} null, never zero and never a neighbour's.
+     */
+    @Test
+    void everyCropCarriesItsStoredSize() throws IOException {
+        Map<String, Object> context = Map.of("diagnosis", List.of(PaperFixtures.line("Hyperkalaemia", "f/p/d/ctx-dx-1.jpg")));
+        DocumentView v = PaperFixtures.paper(List.of(PaperFixtures.potassiumCritical(), PaperFixtures.sodiumLow()),
+                List.of(PaperFixtures.medicine("Napa 500", "1+0+1", "7 days")), List.of(PaperFixtures.followUp("Come back in a week", null)),
+                context);
+        serve(PaperFixtures.result(v, Urgency.THIS_WEEK, List.of(), GateState.NONE, null, PaperFixtures.BD));
+        JsonNode body = get(Lang.BN);
+
+        Map<String, StoredObject> bySrc = new LinkedHashMap<>();
+        ledger.stream().filter(o -> o.kind() == ObjectKind.CROP).forEach(o -> bySrc.put(ImageRefs.crop(DOC, o.storageKey()), o));
+        Map<String, JsonNode> crops = new LinkedHashMap<>();
+        Json.walk(body, (path, node) -> {
+            if ("crop".equals(Json.fieldName(path))) {
+                crops.put(path, node);
+            }
+        });
+        assertThat(crops).as("one crop per stored crop key").hasSize(cropKeys(v).size());
+        int sized = 0;
+        int unsized = 0;
+        for (Map.Entry<String, JsonNode> crop : crops.entrySet()) {
+            JsonNode c = crop.getValue();
+            StoredObject row = bySrc.get(c.path("src").asText());
+            assertThat(c.has("width") && c.has("height")).as(crop.getKey() + " carries width and height").isTrue();
+            if (row == null) {
+                assertThat(c.path("width").isNull()).as(crop.getKey() + ".width with no ledger row").isTrue();
+                assertThat(c.path("height").isNull()).as(crop.getKey() + ".height with no ledger row").isTrue();
+                unsized++;
+            } else {
+                assertThat(c.path("width").asInt()).as(crop.getKey() + ".width").isEqualTo(row.widthPx());
+                assertThat(c.path("height").asInt()).as(crop.getKey() + ".height").isEqualTo(row.heightPx());
+                sized++;
+            }
+        }
+        assertThat(sized).as("crops with a ledger row (not vacuous)").isEqualTo(cropKeys(v).size() - 1);
+        assertThat(unsized).as("the crop without one").isEqualTo(1);
     }
 
     @Test

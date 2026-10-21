@@ -1,5 +1,6 @@
 package com.elioo.baymax.web.adapter.in.api;
 
+import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
@@ -101,7 +102,7 @@ class AppApiGuardTest {
                 .build();
         return WebTestClient.bindToRouterFunction(probes.and(new AppApiRouter().mediooAppApiRoutes(
                 new MeApiHandler(timeline, attention, properties), new SignInApiHandler(auth, sessions, properties),
-                new PaperApiHandler(mock(ResultUseCase.class), new UiCopy()),
+                new PaperApiHandler(mock(ResultUseCase.class), new UiCopy(), mock(DocumentStorageUseCase.class)),
                 new UploadApiHandler(mock(UploadUseCase.class), properties, new UiCopy()),
                 new PaperStatusApiHandler(results),
                 new PaperDeleteApiHandler(timeline, new DeleteConfirmation(properties, Clock.systemUTC())),

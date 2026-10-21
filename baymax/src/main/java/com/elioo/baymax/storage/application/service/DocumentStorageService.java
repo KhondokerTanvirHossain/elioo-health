@@ -5,6 +5,7 @@ import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
 import com.elioo.baymax.storage.application.port.out.StoragePort;
 import com.elioo.baymax.storage.application.port.out.StoredObjectLedgerPort;
 import com.elioo.baymax.storage.domain.DeletionReport;
+import com.elioo.baymax.storage.domain.ImageDimensions;
 import com.elioo.baymax.storage.domain.ObjectKind;
 import com.elioo.baymax.storage.domain.StorageKeys;
 import com.elioo.baymax.storage.domain.StoredObject;
@@ -13,9 +14,11 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.net.URI;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -32,6 +35,8 @@ import java.util.UUID;
 public class DocumentStorageService implements DocumentStorageUseCase {
 
     static final String JPEG = "image/jpeg";
+    /** How many objects a paper's first read fetches at once to measure them. */
+    static final int MEASURE_CONCURRENCY = 2;
 
     private final ObjectProvider<StoragePort> storage;
     private final StoredObjectLedgerPort ledger;
@@ -63,10 +68,24 @@ public class DocumentStorageService implements DocumentStorageUseCase {
         }
         return storagePort()
                 .flatMap(port -> port.put(key, bytes, JPEG))
-                .flatMap(size -> ledger.save(new StoredObject(null, familyId, patientId, documentId, kind,
-                        pageNo, itemId, key, JPEG, size, Instant.now())))
-                .doOnNext(saved -> log.info("[baymax] stored {} bytes={} documentId={} key={}",
-                        kind.dbValue(), saved.sizeBytes(), documentId, key));
+                .zipWith(measure(bytes))
+                .flatMap(stored -> {
+                    Optional<ImageDimensions> size = stored.getT2();
+                    return ledger.save(new StoredObject(null, familyId, patientId, documentId, kind, pageNo, itemId, key,
+                            JPEG, stored.getT1(), Instant.now(), size.map(ImageDimensions::width).orElse(null),
+                            size.map(ImageDimensions::height).orElse(null)));
+                })
+                .doOnNext(saved -> log.info("[baymax] stored {} bytes={} sized={} documentId={} key={}",
+                        kind.dbValue(), saved.sizeBytes(), saved.widthPx() != null, documentId, key));
+    }
+
+    /**
+     * The image's size from its header, off the event loop: header parsing is blocking CPU work, run on the bounded
+     * elastic scheduler as {@code S3StorageAdapter} runs its SDK calls. Empty when the header does not read, never zero.
+     */
+    private Mono<Optional<ImageDimensions>> measure(byte[] bytes) {
+        long cap = properties.getUpload().getMaxFileBytes();
+        return Mono.fromCallable(() -> ImageDimensions.of(bytes, cap)).subscribeOn(Schedulers.boundedElastic());
     }
 
     @Override
@@ -77,6 +96,34 @@ public class DocumentStorageService implements DocumentStorageUseCase {
     @Override
     public Flux<StoredObject> objectsOf(UUID documentId) {
         return ledger.findByDocument(documentId);
+    }
+
+    /**
+     * The ledger rows with their sizes. A row with none (written before V24) is measured from its object once, here, on
+     * its paper's first read, and recorded; the record only takes on a row still without a size, so a stored size is
+     * never rewritten. At most {@link #MEASURE_CONCURRENCY} objects are fetched at once, so a legacy paper's first read
+     * never holds more than two images in memory. A row whose object is missing or does not read comes back as it is,
+     * without a size: a paper is never refused for a size it cannot show.
+     */
+    @Override
+    public Flux<StoredObject> measuredObjectsOf(UUID documentId) {
+        return ledger.findByDocument(documentId)
+                .flatMapSequential(o -> o.dimensions().isPresent() ? Mono.just(o) : measured(o), MEASURE_CONCURRENCY);
+    }
+
+    private Mono<StoredObject> measured(StoredObject o) {
+        return storagePort()
+                .flatMap(port -> port.get(o.storageKey()))
+                .flatMap(this::measure)
+                .flatMap(size -> size.isEmpty() ? Mono.just(o)
+                        : ledger.recordDimensions(o.storageKey(), size.get().width(), size.get().height())
+                                .thenReturn(o.withDimensions(size.get())))
+                .defaultIfEmpty(o)
+                .onErrorResume(e -> {
+                    log.info("[baymax] could not measure stored {} documentId={} ({})", o.kind().dbValue(), o.documentId(),
+                            e.getClass().getSimpleName());
+                    return Mono.just(o);
+                });
     }
 
     @Override

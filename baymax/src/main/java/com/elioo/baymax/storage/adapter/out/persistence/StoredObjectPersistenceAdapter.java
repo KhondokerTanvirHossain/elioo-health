@@ -34,4 +34,9 @@ public class StoredObjectPersistenceAdapter implements StoredObjectLedgerPort {
     public Mono<Long> bytesStored(UUID documentId) {
         return repository.bytesStored(documentId).defaultIfEmpty(0L);
     }
+
+    @Override
+    public Mono<Long> recordDimensions(String storageKey, int width, int height) {
+        return repository.recordDimensions(storageKey, width, height).map(Integer::longValue).defaultIfEmpty(0L);
+    }
 }
