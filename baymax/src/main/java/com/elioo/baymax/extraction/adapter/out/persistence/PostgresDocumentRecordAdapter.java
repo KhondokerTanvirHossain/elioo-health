@@ -342,6 +342,33 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
                 .one();
     }
 
+    /**
+     * The nudges made from this paper, which name it only through {@code trigger_key} (NudgeRules): the paper itself
+     * ({@code document:<id>}, medicine_changed), one of its follow-ups ({@code follow_up:<id>}), one of its medicines
+     * ({@code medication:<id>}) or a trend starting at one of its values ({@code trend:<marker>:<observation id>}). Read
+     * while the paper's rows still exist, so it must run before they are deleted.
+     */
+    private static final String NUDGES_OF_THE_PAPER = "(n.trigger_key = 'document:' || CAST(:d AS text)"
+            + " OR n.trigger_key IN (SELECT 'follow_up:' || f.id FROM " + S + ".follow_up f WHERE f.document_id = :d)"
+            + " OR n.trigger_key IN (SELECT 'medication:' || m.id FROM " + S + ".medication_event m WHERE m.document_id = :d)"
+            + " OR EXISTS (SELECT 1 FROM " + S + ".observation o WHERE o.document_id = :d"
+            + " AND n.trigger_key LIKE 'trend:%:' || o.id))";
+
+    /**
+     * One transaction: everything the paper wrote, then the paper. Its ai_call_log rows keep their numbers and lose the
+     * id. Its {@code stored_object} ledger rows go here too, as {@code deleteFamily} does for a family, so that if the
+     * bucket cannot be emptied afterwards only bucket objects survive, and those are what {@code orphaned_objects} names.
+     *
+     * <p><b>Every message and nudge made from the paper that has not reached the family is withdrawn</b>, whatever its
+     * state: a {@code pending} explanation stays approvable (approve never re-reads the document) and a HELD nudge is
+     * composed from its {@code vars_json} alone (releaseHeld never re-reads the source rows), so either would still send
+     * WhatsApp text about a paper the family deleted. Unsent means {@code sent_at IS NULL} (V14: the provider accepted it)
+     * — pending, approved but never delivered, rejected, failed_safety — and a nudge whose status is not {@code sent},
+     * with the pending message of a gated nudge, which carries no document_id. Delivered history ({@code sent_at} set, a
+     * {@code sent} nudge) is kept, pending PO decision P1 (first raised by A13, #76).
+     *
+     * @return every row deleted, across all tables
+     */
     @Override
     @org.springframework.transaction.annotation.Transactional
     public Mono<Long> deleteDocument(UUID documentId) {
@@ -351,10 +378,20 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
         return db.sql("UPDATE " + S + ".inbound_message SET media_id = NULL, patient_id = NULL, document_id = NULL"
                         + " WHERE document_id = :d").bind("d", documentId).then()
                 .then(db.sql("UPDATE " + S + ".ai_call_log SET document_id = NULL WHERE document_id = :d").bind("d", documentId).then())
-                .then(db.sql("DELETE FROM " + S + ".observation WHERE document_id = :d").bind("d", documentId).then())
-                .then(db.sql("DELETE FROM " + S + ".medication_event WHERE document_id = :d").bind("d", documentId).then())
-                .then(db.sql("DELETE FROM " + S + ".follow_up WHERE document_id = :d").bind("d", documentId).then())
-                .then(db.sql("DELETE FROM " + S + ".document WHERE id = :d").bind("d", documentId).fetch().rowsUpdated());
+                .then(rows("DELETE FROM " + S + ".outbound_message WHERE document_id = :d AND sent_at IS NULL", documentId))
+                .flatMap(n -> rows("DELETE FROM " + S + ".outbound_message WHERE sent_at IS NULL AND id IN (SELECT n.message_id FROM "
+                        + S + ".nudge n WHERE n.status <> 'sent' AND n.message_id IS NOT NULL AND " + NUDGES_OF_THE_PAPER + ")", documentId)
+                        .map(m -> n + m))
+                .flatMap(n -> rows("DELETE FROM " + S + ".nudge n WHERE n.status <> 'sent' AND " + NUDGES_OF_THE_PAPER, documentId).map(m -> n + m))
+                .flatMap(n -> rows("DELETE FROM " + S + ".stored_object WHERE document_id = :d", documentId).map(m -> n + m))
+                .flatMap(n -> rows("DELETE FROM " + S + ".observation WHERE document_id = :d", documentId).map(m -> n + m))
+                .flatMap(n -> rows("DELETE FROM " + S + ".medication_event WHERE document_id = :d", documentId).map(m -> n + m))
+                .flatMap(n -> rows("DELETE FROM " + S + ".follow_up WHERE document_id = :d", documentId).map(m -> n + m))
+                .flatMap(n -> rows("DELETE FROM " + S + ".document WHERE id = :d", documentId).map(m -> n + m));
+    }
+
+    private Mono<Long> rows(String sql, UUID documentId) {
+        return db.sql(sql).bind("d", documentId).fetch().rowsUpdated();
     }
 
     @Override

@@ -6,6 +6,8 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.config.BaymaxProperties;
+import com.elioo.baymax.extraction.application.port.out.DocumentRecordPort;
+import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.testsupport.LoggedText;
@@ -32,6 +34,7 @@ import org.springframework.web.reactive.function.server.RouterFunctions;
 import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Mono;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -65,6 +68,9 @@ class AppApiGuardTest {
     private final WebAuthUseCase auth = mock(WebAuthUseCase.class);
     private final TimelineUseCase timeline = mock(TimelineUseCase.class);
     private final AttentionUseCase attention = mock(AttentionUseCase.class);
+    private final ResultUseCase results = mock(ResultUseCase.class);
+    private final DocumentRecordPort documents = mock(DocumentRecordPort.class);
+    private final HealthRecordPort records = mock(HealthRecordPort.class);
     /** How many times the probe route's handler ran: the guard must refuse before it, never after. */
     private final AtomicInteger probed = new AtomicInteger();
     private final WebTestClient client;
@@ -100,7 +106,10 @@ class AppApiGuardTest {
         return WebTestClient.bindToRouterFunction(probes.and(new AppApiRouter().mediooAppApiRoutes(
                 new MeApiHandler(timeline, attention, properties), new SignInApiHandler(auth, sessions, properties),
                 new PaperApiHandler(mock(ResultUseCase.class), new UiCopy()),
-                new UploadApiHandler(mock(UploadUseCase.class), properties, new com.elioo.baymax.web.adapter.in.ui.UiCopy()), guard))).build();
+                new UploadApiHandler(mock(UploadUseCase.class), properties, new UiCopy()),
+                new PaperStatusApiHandler(results),
+                new PaperDeleteApiHandler(documents, records, timeline, new DeleteConfirmation(properties, Clock.systemUTC())),
+                guard))).build();
     }
 
     private WebTestClient.RequestBodySpec mutation(WebTestClient c, String uri) {

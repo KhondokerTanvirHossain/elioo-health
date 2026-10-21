@@ -6,11 +6,13 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
+import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
 import com.elioo.baymax.testsupport.LoggedText;
 import com.elioo.baymax.web.adapter.in.PhoneDisplay;
 import com.elioo.baymax.testsupport.PaintedPaper;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.test.web.reactive.server.WebTestClient;
@@ -52,7 +54,7 @@ class AppApiLogSafetyTest {
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
-    /** Object storage, so an upload reaches its success path and its success line is among the lines swept (B4b). */
+    /** Object storage, so an upload and a delete reach their success paths and the lines written there are swept (B4b, B4c). */
     @Container
     static final MinIOContainer MINIO = com.elioo.baymax.storage.TestImages.minioContainer();
 
@@ -88,6 +90,8 @@ class AppApiLogSafetyTest {
             AppApiContext.patient(context, family.id(), "Karim");
             UUID paper = AppApiContext.paper(context, POSTGRES, rokeya, "now");
             AppApiContext.value(POSTGRES, rokeya, paper, NAME, "6.9");
+            // the paper's page in the bucket and the ledger, so the owner's delete below empties a real prefix
+            context.getBean(DocumentStorageUseCase.class).storePage(rokeya.familyId(), rokeya.id(), paper, 1, PaintedPaper.paintedPage()).block();
             String token = AppApiContext.session(context, family.id());
             FamilyAccount other = AppApiContext.family(context, "+8801700000124", "Karim");
             String otherToken = AppApiContext.session(context, other.id());
@@ -131,6 +135,31 @@ class AppApiLogSafetyTest {
                 c.get().uri("/app/api/documents/" + paper).exchange().expectStatus().isUnauthorized();
                 c.get().uri(b -> b.path("/app/api/documents/{id}").build(NAME)).cookie("baymax_session", t)
                         .exchange().expectStatus().isNotFound();
+            });
+            exercise.put("GET /app/api/documents/{id}/status", (c, t) -> {
+                c.get().uri("/app/api/documents/" + paper + "/status").cookie("baymax_session", t).exchange().expectStatus().isOk();
+                c.get().uri("/app/api/documents/" + paper + "/status").cookie("baymax_session", otherToken).exchange().expectStatus().isNotFound();
+                c.get().uri(b -> b.path("/app/api/documents/{id}/status").build(NAME)).cookie("baymax_session", t)
+                        .exchange().expectStatus().isNotFound();
+            });
+            exercise.put("GET /app/api/documents/{id}/delete-token", (c, t) -> {
+                c.get().uri("/app/api/documents/" + paper + "/delete-token").cookie("baymax_session", t).exchange().expectStatus().isOk();
+                c.get().uri("/app/api/documents/" + paper + "/delete-token").cookie("baymax_session", otherToken)
+                        .exchange().expectStatus().isNotFound();
+            });
+            exercise.put("DELETE /app/api/documents/{id}", (c, t) -> {
+                Map<?, ?> minted = c.get().uri("/app/api/documents/" + paper + "/delete-token").cookie("baymax_session", t).exchange()
+                        .expectStatus().isOk().expectBody(Map.class).returnResult().getResponseBody();
+                Map<String, Object> confirm = Map.of("confirm_token", minted.get("confirm_token"));
+                c.method(HttpMethod.DELETE).uri("/app/api/documents/" + paper).cookie("baymax_session", otherToken).header("X-Medioo", "1")
+                        .header("Origin", AppApiContext.ORIGIN).contentType(MediaType.APPLICATION_JSON).bodyValue(confirm)
+                        .exchange().expectStatus().isNotFound();
+                c.method(HttpMethod.DELETE).uri("/app/api/documents/" + paper).cookie("baymax_session", t).header("X-Medioo", "1")
+                        .header("Origin", AppApiContext.ORIGIN).contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(Map.of("confirm_token", NAME)).exchange().expectStatus().isBadRequest();
+                c.method(HttpMethod.DELETE).uri("/app/api/documents/" + paper).cookie("baymax_session", t).header("X-Medioo", "1")
+                        .header("Origin", AppApiContext.ORIGIN).contentType(MediaType.APPLICATION_JSON).bodyValue(confirm)
+                        .exchange().expectStatus().isOk();
             });
             exercise.put("* /app/api/**", (c, t) -> {
                 c.get().uri("/app/api/nothing-here").cookie("baymax_session", t).exchange().expectStatus().isNotFound();

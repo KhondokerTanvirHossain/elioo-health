@@ -22,6 +22,7 @@ import com.elioo.baymax.web.domain.TimelineEntry;
 import com.elioo.baymax.web.domain.TimelineFilter;
 import com.elioo.baymax.web.domain.TimelinePage;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.family.application.service.FamilyAccountService;
@@ -39,6 +40,7 @@ import java.util.UUID;
  * through {@code visiblePatient} / {@code findVisible}, which decide access in SQL; this class never checks
  * ownership by comparing ids itself.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class TimelineService implements TimelineUseCase {
@@ -105,6 +107,18 @@ public class TimelineService implements TimelineUseCase {
                                 .map(view -> view.withUrgency(stored.map(s -> s.level().dbValue()).orElse(null)))));
     }
 
+    /**
+     * Rows are deleted and committed FIRST; the bucket is emptied afterwards — {@code FamilyAccountService.deleteFamily}'s
+     * rule, for one paper, and for every caller of this method (the HTML delete, {@code /app/api}, {@code /api/v1}).
+     *
+     * <p>The reverse order destroyed the images and then, when the rows could not be deleted, left a paper that still
+     * claimed pages and crops which were already gone — silent and unrecoverable. This way round the only failure mode is
+     * images outliving their rows: visible in the bucket, recoverable by a sweep, and invisible to the family, whose paper
+     * is gone — which is what they asked for. A storage failure after the commit is therefore logged at ERROR with the
+     * marker {@code orphaned_objects} and the paper's id, and does NOT fail the request: it answers with
+     * {@code objectsDeleted = 0}. The ledger rows go with the other rows ({@code DocumentRecordPort.deleteDocument}), so
+     * after such a failure only bucket objects survive; how many there were is read before they go.
+     */
     @Override
     public Mono<DeletionReport> deleteDocument(UUID familyId, UUID documentId) {
         return visibleDocument(familyId, documentId)
@@ -115,12 +129,25 @@ public class TimelineService implements TimelineUseCase {
                     }
                     return d;
                 }))
-                // objects first, then the ledger, then the rows: a crash between the two leaves an orphan
-                // object (harmless) rather than a row pointing at nothing (a broken page)
-                .flatMap(d -> storage.deleteDocument(d.familyId(), d.patientId(), d.id())
-                        .flatMap(report -> documents.deleteDocument(d.id()).thenReturn(report))
-                        .flatMap(report -> audit.record(AuditEvent.family(AuditEvent.Kind.DOCUMENT_DELETE, familyId, d.patientId(), d.id(), clock.instant()))
-                                .thenReturn(report)));
+                .flatMap(d -> storage.objectsOf(d.id()).count()
+                        .flatMap(ledger -> documents.deleteDocument(d.id())
+                                .flatMap(rows -> audit.record(AuditEvent.family(AuditEvent.Kind.DOCUMENT_DELETE, familyId, d.patientId(), d.id(), clock.instant()))
+                                        .thenReturn(rows))
+                                .flatMap(rows -> deleteObjects(d).map(objects -> new DeletionReport(
+                                        StorageKeys.documentPrefix(d.familyId(), d.patientId(), d.id()), objects, ledger, rows)))));
+    }
+
+    /** The rows are already gone, so a storage failure cannot undo the delete: it is recorded, never propagated. */
+    private Mono<Long> deleteObjects(Document d) {
+        return storage.deleteDocument(d.familyId(), d.patientId(), d.id())
+                .map(DeletionReport::objectsDeleted)
+                .onErrorResume(e -> {
+                    // the class, never the message: a storage error can carry a provider URL or body
+                    log.error("[baymax] orphaned_objects scope=document id={} — rows are deleted and committed, bucket "
+                            + "objects under its prefix survive and need a sweep error={}", d.id(), e.getClass().getSimpleName());
+                    log.debug("[baymax] orphaned_objects detail id={}", d.id(), e);
+                    return Mono.just(0L);
+                });
     }
 
     @Override

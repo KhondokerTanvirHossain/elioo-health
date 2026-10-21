@@ -92,7 +92,9 @@ class TryDocumentsThroughTheWebTest {
         when(nudges.onDocumentDone(any())).thenReturn(Mono.empty());
         when(extraction.process(any(), any())).thenReturn(Mono.empty());
         DocumentIntakeService intake = new DocumentIntakeService(records, documents, freeTier, storage, new PageRenderer(), props, clock,
-                new DocumentProcessingChain(extraction, explainer, nudges, documents, clock, urgency));
+                new DocumentProcessingChain(extraction, explainer, nudges, documents, clock, urgency, storage));
+        // the chain asks whether a paper still exists when its extraction ends (a delete mid-read): every paper here does
+        when(documents.find(any())).thenAnswer(i -> Mono.just(Document.received(ma.id(), family, 1, NOW).withId(i.getArgument(0))));
         AuditPort audit = mock(AuditPort.class);
         when(audit.record(any())).thenReturn(Mono.empty());
         FamilyAccount account = new FamilyAccount(family, "+8801700000000", "Tanvir", FamilyAccount.Plan.FREE, NOW, NOW);

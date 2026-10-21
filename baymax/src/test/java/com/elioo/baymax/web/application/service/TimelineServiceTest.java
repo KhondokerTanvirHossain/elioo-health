@@ -13,6 +13,7 @@ import com.elioo.baymax.outbound.domain.StoredUrgency;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
 import com.elioo.baymax.storage.domain.DeletionReport;
+import com.elioo.baymax.storage.domain.StoredObject;
 import com.elioo.baymax.web.application.port.out.AuditPort;
 import com.elioo.baymax.web.application.port.out.TimelineReadPort;
 import com.elioo.baymax.web.domain.AuditEvent;
@@ -90,6 +91,7 @@ class TimelineServiceTest {
                 .expectErrorMatches(e -> ((BaymaxException) e).status().value() == 404).verify();
         verify(intake, never()).view(any());
         verify(storage, never()).deleteDocument(any(), any(), any());
+        verify(documents, never()).deleteDocument(any());
         verify(urgency, never()).currentOrAssess(any());   // a document the family cannot see is never assessed for it
     }
 
@@ -232,6 +234,7 @@ class TimelineServiceTest {
         StepVerifier.create(service.deleteDocument(FAMILY_A, DOC_B))
                 .expectErrorMatches(e -> ((BaymaxException) e).status().value() == 403).verify();
         verify(storage, never()).deleteDocument(any(), any(), any());
+        verify(documents, never()).deleteDocument(any());
     }
 
     /**
@@ -259,15 +262,28 @@ class TimelineServiceTest {
         verify(records).updateChronicFlags(PATIENT_B, List.of("diabetes", "asthma"));
     }
 
+    /**
+     * Was {@code theOwnerDeletesObjectsThenRows}: its name stated the order that left a paper claiming images already
+     * gone when its rows could not be deleted (plan B4c). Rows first, then the bucket, as deleteFamily does; the ledger
+     * count is read before the rows go, and the report carries every row deleted.
+     */
     @Test
-    void theOwnerDeletesObjectsThenRows() {
+    void theOwnerDeletesRowsThenObjects() {
         when(documents.findVisible(FAMILY_B, DOC_B)).thenReturn(Mono.just(DOCUMENT));
         when(records.visiblePatient(FAMILY_B, PATIENT_B)).thenReturn(Mono.just(new PatientAccess(PATIENT, true)));
-        when(storage.deleteDocument(FAMILY_B, PATIENT_B, DOC_B)).thenReturn(Mono.just(new DeletionReport("p/", 4, 4)));
-        when(documents.deleteDocument(DOC_B)).thenReturn(Mono.just(1L));
+        when(storage.objectsOf(DOC_B)).thenReturn(Flux.just(mock(StoredObject.class), mock(StoredObject.class),
+                mock(StoredObject.class), mock(StoredObject.class)));
+        when(storage.deleteDocument(FAMILY_B, PATIENT_B, DOC_B)).thenReturn(Mono.just(new DeletionReport("p/", 4, 0)));
+        when(documents.deleteDocument(DOC_B)).thenReturn(Mono.just(9L));
         StepVerifier.create(service.deleteDocument(FAMILY_B, DOC_B))
-                .assertNext(r -> assertThat(r.objectsDeleted()).isEqualTo(4)).verifyComplete();
-        verify(documents).deleteDocument(DOC_B);
+                .assertNext(r -> {
+                    assertThat(r.objectsDeleted()).isEqualTo(4);
+                    assertThat(r.ledgerRowsDeleted()).as("the ledger rows, counted before they went with the rows").isEqualTo(4);
+                    assertThat(r.rowsDeleted()).isEqualTo(9);
+                }).verifyComplete();
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(documents, storage);
+        order.verify(documents).deleteDocument(DOC_B);
+        order.verify(storage).deleteDocument(FAMILY_B, PATIENT_B, DOC_B);
     }
 
     @Test

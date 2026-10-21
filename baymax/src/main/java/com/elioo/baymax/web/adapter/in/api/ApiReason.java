@@ -69,12 +69,14 @@ public enum ApiReason {
      * the reader's memory limit.
      */
     TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE),
-    /** A patient this viewer may see but not change (a share member, D30): upload, and later delete. */
+    /** A patient this viewer may see but not change (a share member, D30): upload and delete ({@code shared_patient_read_only}). */
     VIEW_ONLY(HttpStatus.FORBIDDEN),
     /** Upload: the press's key already made another patient's paper (D3); the client draws a new key. */
     UPLOAD_KEY_REUSED(HttpStatus.CONFLICT),
     /** Upload: this month's free papers are used up ({@code allowance} of the upload options says until when). */
-    FREE_TIER_DOCUMENTS(HttpStatus.PAYMENT_REQUIRED);
+    FREE_TIER_DOCUMENTS(HttpStatus.PAYMENT_REQUIRED),
+    /** A paper delete without a valid confirm token: missing, another paper's, another session's, tampered or expired. */
+    CONFIRM_REQUIRED(HttpStatus.BAD_REQUEST);
 
     /**
      * The application's own reasons ({@link BaymaxException#reason()}) that have a name. Each maps to a name whose status
@@ -94,7 +96,8 @@ public enum ApiReason {
             Map.entry("request_too_large", TOO_LARGE),
             Map.entry("shared_patient_read_only", VIEW_ONLY),
             Map.entry("upload_key_reused", UPLOAD_KEY_REUSED),
-            Map.entry(FreeTierExceededException.DOCUMENTS, FREE_TIER_DOCUMENTS));
+            Map.entry(FreeTierExceededException.DOCUMENTS, FREE_TIER_DOCUMENTS),
+            Map.entry("confirm_required", CONFIRM_REQUIRED));
 
     private final HttpStatus status;
 

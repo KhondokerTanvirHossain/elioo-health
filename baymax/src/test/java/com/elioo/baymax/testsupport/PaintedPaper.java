@@ -10,6 +10,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.time.Duration;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -33,7 +34,7 @@ public final class PaintedPaper {
              "confidence":{"overall":0.95,"values":0.95,"medicines":1.0,"follow_up":1.0,"clinical_context":1.0}}
             """;
 
-    /** How long the WhatsApp port must stay silent before a journey counts its calls: longer than any retry or follow-up. */
+    /** How long a delivery port must stay silent before a test counts its calls: longer than any retry or follow-up. */
     public static final Duration SETTLE = Duration.ofSeconds(3);
 
     public static final int PAGE_W = 400;
@@ -88,5 +89,24 @@ public final class PaintedPaper {
         public final Sinks.Empty<Void> doneViewRead = Sinks.empty();
         public final AtomicInteger chainWaiting = new AtomicInteger();
         public final AtomicInteger sweeps = new AtomicInteger();
+
+        /** True only for {@link #ofTheModel()}: the stubbed model's extraction replies wait for {@link #modelReleased}. */
+        public final boolean holdsTheModel;
+        /** Emitted by the test to let the held extraction reply go (60 s at most, then it goes anyway). */
+        public final Sinks.Empty<Void> modelReleased = Sinks.empty();
+        /** Counted down by the stub once it has returned the held reply: the positive signal the pipeline went on. */
+        public final CountDownLatch replied = new CountDownLatch(1);
+
+        public Hold() {
+            this(false);
+        }
+
+        private Hold(boolean holdsTheModel) {
+            this.holdsTheModel = holdsTheModel;
+        }
+
+        public static Hold ofTheModel() {
+            return new Hold(true);
+        }
     }
 }

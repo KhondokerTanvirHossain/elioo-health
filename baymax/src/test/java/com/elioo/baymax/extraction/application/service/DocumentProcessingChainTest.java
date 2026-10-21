@@ -7,6 +7,8 @@ import com.elioo.baymax.outbound.application.port.in.DocumentUrgencyUseCase;
 import com.elioo.baymax.outbound.application.port.in.ExplainDocumentUseCase;
 import com.elioo.baymax.outbound.domain.StoredUrgency;
 import com.elioo.baymax.outbound.domain.Urgency;
+import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
+import com.elioo.baymax.storage.domain.DeletionReport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
@@ -37,8 +39,9 @@ class DocumentProcessingChainTest {
     private final NudgeUseCase nudges = mock(NudgeUseCase.class);
     private final DocumentRecordPort documents = mock(DocumentRecordPort.class);
     private final DocumentUrgencyUseCase urgency = mock(DocumentUrgencyUseCase.class);
+    private final DocumentStorageUseCase storage = mock(DocumentStorageUseCase.class);
     private final DocumentProcessingChain chain =
-            new DocumentProcessingChain(extraction, explainer, nudges, documents, Clock.fixed(T, ZoneOffset.UTC), urgency);
+            new DocumentProcessingChain(extraction, explainer, nudges, documents, Clock.fixed(T, ZoneOffset.UTC), urgency, storage);
 
     private static final Document DONE_DOC = received().withStatus(Document.Status.DONE, null, T);
     private static final Document RETAKE_DOC = received().withStatus(Document.Status.NEEDS_RETAKE, "blurred", T);
@@ -54,6 +57,62 @@ class DocumentProcessingChainTest {
         when(nudges.onDocumentDone(any())).thenReturn(Mono.empty());
         when(documents.update(any())).thenAnswer(i -> Mono.just(i.getArgument(0)));
         when(urgency.assessAndStore(any())).thenReturn(Mono.empty());
+        // every paper below still exists when its extraction ends, unless a test deletes it
+        when(documents.find(any())).thenAnswer(i -> Mono.just(received().withId(i.getArgument(0))));
+        when(documents.deleteDocument(any())).thenReturn(Mono.just(0L));
+        when(storage.deleteDocument(any(), any(), any())).thenReturn(Mono.just(new DeletionReport("p/", 0, 0)));
+    }
+
+    /**
+     * Review Focus 4, one direction: the family deleted the paper while the model read it. Whatever the extraction ended
+     * in, the chain removes what the pipeline wrote after the delete — the rows again, then the objects — and goes no
+     * further: no urgency, no explanation, no nudge.
+     */
+    @Test
+    void aPaperDeletedWhileBeingReadIsSweptAgainAndNeverExplained() {
+        Document d = received();
+        when(extraction.process(eq(d), any())).thenReturn(Mono.just(d.withStatus(Document.Status.DONE, null, T)));
+        when(documents.find(d.id())).thenReturn(Mono.empty());
+
+        StepVerifier.create(chain.run(d, List.of(new byte[]{1}))).verifyComplete();
+
+        InOrder order = inOrder(documents, storage);
+        order.verify(documents).deleteDocument(d.id());
+        order.verify(storage).deleteDocument(d.familyId(), d.patientId(), d.id());
+        verify(urgency, never()).assessAndStore(any());
+        verify(explainer, never()).explain(any());
+        verify(nudges, never()).onDocumentDone(any());
+    }
+
+    /** The same when the extraction itself errored on the vanished row: the error is the deletion's, not an incident. */
+    @Test
+    void anExtractionErrorOnADeletedPaperIsTheDeletionAndIsSweptToo() {
+        Document d = received();
+        when(extraction.process(eq(d), any())).thenReturn(Mono.error(new IllegalStateException("row gone")));
+        when(documents.find(d.id())).thenReturn(Mono.empty());
+
+        StepVerifier.create(chain.run(d, List.of(new byte[]{1}))).verifyComplete();
+
+        verify(storage).deleteDocument(d.familyId(), d.patientId(), d.id());
+        verify(explainer, never()).explain(any());
+    }
+
+    /**
+     * The other direction: an extraction that answered nothing (or errored) for a paper that still exists is not a
+     * deletion. Its rows and its pages are never touched, and an error still reaches the caller.
+     */
+    @Test
+    void anExtractionThatEndsForAPaperStillThereNeverTouchesItsRowsOrPages() {
+        Document empty = received();
+        when(extraction.process(eq(empty), any())).thenReturn(Mono.empty());
+        StepVerifier.create(chain.run(empty, List.of(new byte[]{1}))).verifyComplete();
+
+        Document failing = received();
+        when(extraction.process(eq(failing), any())).thenReturn(Mono.error(new IllegalStateException("boom")));
+        StepVerifier.create(chain.run(failing, List.of(new byte[]{1}))).verifyError(IllegalStateException.class);
+
+        verify(documents, never()).deleteDocument(any());
+        verify(storage, never()).deleteDocument(any(), any(), any());
     }
 
     /** F1: a DONE document is assessed and stored before explain runs, so an explanation that throws leaves it assessed. */
