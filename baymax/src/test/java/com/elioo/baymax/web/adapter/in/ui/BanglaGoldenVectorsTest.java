@@ -1,6 +1,7 @@
 package com.elioo.baymax.web.adapter.in.ui;
 
 import com.elioo.baymax.outbound.application.service.BanglaDate;
+import com.elioo.baymax.testsupport.Snapshot;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.util.HtmlUtils;
 
@@ -23,10 +24,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class BanglaGoldenVectorsTest {
 
-    private final UiCopy copy = new UiCopy();
-
     @Test
     void theWebFormatsNumbersAndDatesAsTheJavaPagesDo() {
+        files().forEach(WebCopyExportTest::matches);
+    }
+
+    /** bangla-vectors.json, with its guards (one of {@link WebCopyExportTest#GENERATORS}). */
+    static Map<String, String> files() {
+        UiCopy copy = new UiCopy();
         Map<String, Object> file = new TreeMap<>();
 
         List<Map<String, Object>> digits = new ArrayList<>();
@@ -63,10 +68,15 @@ class BanglaGoldenVectorsTest {
         file.put("day_months", dayMonths);
         file.put("month_years", monthYears);
 
-        // Text that is not an ISO date is shown as printed, never re-dated.
+        // Text that is not an ISO date is shown as printed, never re-dated. That includes text shaped like ISO that is not
+        // a day on the calendar (30 February, month 13, 1900 not a leap year), and padding Java's trim() keeps (a
+        // non-breaking space is not <= U+0020, and isBlank does not count it as whitespace).
+        List<String> printed = List.of("2026-10-12", "12/10/2026", "2026-02-30", "2026-13-01", "1900-02-29",
+                "2024-02-29", "2000-02-29", " 2026-10-12 ", "\t2026-10-12\n", "", "   ", " 2026-10-12", " ",
+                "　2026-10-12", "2026-1-5");
         List<Map<String, Object>> rawDates = new ArrayList<>();
         for (Lang lang : Lang.values()) {
-            for (String text : List.of("2026-10-12", "12/10/2026")) {
+            for (String text : printed) {
                 rawDates.add(entry("lang", lang.code, "text", text, "out", HtmlUtils.htmlUnescape(copy.date(lang, text))));
             }
         }
@@ -93,9 +103,9 @@ class BanglaGoldenVectorsTest {
         }
         assertThat(total).as("golden vectors in all").isGreaterThan(60);
 
-        file.put("_meta", WebCopyExportTest.meta(getClass(),
+        file.put("_meta", Snapshot.meta(BanglaGoldenVectorsTest.class,
                 "BanglaDate.digits, UiCopy.raw, dateText, dayMonthText, monthYear, date(Lang, String) and time"));
-        WebCopyExportTest.matches("bangla-vectors.json", WebCopyExportTest.json(file));
+        return Map.of("bangla-vectors.json", Snapshot.json(file));
     }
 
     private static Map<String, Object> entry(Object... kv) {

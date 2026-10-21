@@ -76,9 +76,32 @@ export function formatMonthYear(lang: Lang, isoDate: string): string {
  */
 export function formatPrinted(lang: Lang, text: string): string {
   if (lang !== "bn") return text;
-  if (text.trim() === "") return "";
-  const d = parseIso(text.trim());
+  if (javaIsBlank(text)) return "";
+  const d = parseIso(javaTrim(text));
   return d ? banglaFull(d) : text;
+}
+
+/*
+ * Java's String.isBlank and String.trim, which BanglaDate.format(String, …) uses, not JavaScript's trim: JS also strips
+ * a no-break space or U+3000, so "\u00a02026-10-12" would become a Bangla date that Java shows as written.
+ */
+
+/** Character.isWhitespace: the Unicode space separators except the no-break ones, plus \t \n \v \f \r and U+001C–U+001F. */
+const JAVA_WHITESPACE = /^[\t\n\v\f\r\u001c-\u0020\u1680\u2000-\u2006\u2008-\u200a\u2028\u2029\u205f\u3000]$/;
+
+/** String.isBlank: empty, or every code point is Character.isWhitespace. */
+function javaIsBlank(text: string): boolean {
+  for (const c of text) if (!JAVA_WHITESPACE.test(c)) return false;
+  return true;
+}
+
+/** String.trim: every code unit up to U+0020 removed from both ends, nothing else. */
+function javaTrim(text: string): string {
+  let start = 0;
+  let end = text.length;
+  while (start < end && text.charCodeAt(start) <= 0x20) start++;
+  while (end > start && text.charCodeAt(end - 1) <= 0x20) end--;
+  return text.slice(start, end);
 }
 
 const DHAKA = new Intl.DateTimeFormat("en-US", {

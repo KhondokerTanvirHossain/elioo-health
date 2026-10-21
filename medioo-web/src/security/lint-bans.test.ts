@@ -35,8 +35,60 @@ const BANNED: [string, string, string, string?][] = [
     'import c from "@/copy/generated/copy.bn.json";\nexport const G = c;\n',
     "no-restricted-imports",
   ],
+  // ...nor by a dynamic import or require, which no-restricted-imports does not see.
+  [
+    "generated copy imported dynamically",
+    'export const G = async () => (await import("@/copy/generated/copy.bn.json")).default;\n',
+    "no-restricted-syntax",
+  ],
+  [
+    "generated copy imported dynamically (template literal)",
+    "export const G = async (l: string) => (await import(`../copy/generated/copy.${l}.json`)).default;\n",
+    "no-restricted-syntax",
+  ],
+  [
+    "generated copy required",
+    'declare const require: (p: string) => unknown;\nexport const G = require("@/copy/generated/copy.bn.json");\n',
+    "no-restricted-syntax",
+  ],
+  // The safety lines (urgency wording, 999) are rendered only from what Java sent, never named as a literal outside
+  // src/components/safety/** (W2b review: urgency only for a RELEASED explanation, NOW only for a stored NOW, 999 only
+  // when viewer.bangladesh).
+  [
+    "an urgency line named as a literal",
+    `import { t } from "@/copy";\nexport const U = () => <p>{t("bn", "urgency.now")}</p>;\n`,
+    "no-restricted-syntax",
+  ],
+  [
+    "the 999 line named as a literal",
+    `import { t } from "@/copy";\nexport const N = () => <p>{t("en", "now.call999")}</p>;\n`,
+    "no-restricted-syntax",
+  ],
+  [
+    "the remote 999 line named as a template literal",
+    "import { t } from \"@/copy\";\nexport const N = () => <p>{t(\"en\", `now.remote.999`)}</p>;\n",
+    "no-restricted-syntax",
+  ],
+  [
+    "an urgency line named as a literal under src/copy",
+    `import { t } from "@/copy";\nexport const U = () => t("bn", "urgency.this_week.short");\n`,
+    "no-restricted-syntax",
+    "src/copy/lint-fixture.ts",
+  ],
+  [
+    "generated copy imported dynamically under src/components/safety",
+    'export const G = async () => (await import("@/copy/generated/copy.bn.json")).default;\n',
+    "no-restricted-syntax",
+    "src/components/safety/lint-fixture.tsx",
+  ],
   // src/copy/** may import the generated copy, but its override must not lift the other bans there.
   ["next/image under src/copy", `import Image from "next/image";\nexport const H = Image;\n`, "no-restricted-imports", "src/copy/lint-fixture.ts"],
+  [
+    "next/image under src/components/safety",
+    `import Image from "next/image";\nexport const H = Image;\n`,
+    "no-restricted-imports",
+    "src/components/safety/lint-fixture.tsx",
+  ],
 ];
 
 describe("lint bans", () => {
@@ -48,6 +100,19 @@ describe("lint bans", () => {
     // The one door itself reads the generated copy, by a spelling the pattern matches everywhere else.
     expect(
       await errorsIn('import c from "@/copy/generated/copy.bn.json";\nexport const G = c;\n', "src/copy/lint-fixture.ts"),
+    ).toEqual([]);
+    // The one safety directory renders the safety lines; every other ban still holds there (BANNED, below).
+    expect(
+      await errorsIn(
+        `import { t } from "@/copy";\nexport const S = () => <p>{t("bn", "urgency.now")} {t("bn", "now.call999")}</p>;\n`,
+        "src/components/safety/lint-fixture.tsx",
+      ),
+    ).toEqual([]);
+    // A key received from the API is not a literal, and an ordinary key literal is fine.
+    expect(
+      await errorsIn(
+        `import { t, type CopyKey } from "@/copy";\nexport const K = (p: { k: CopyKey }) => <p>{t("bn", p.k)} {t("bn", "now.notdoctor")}</p>;\n`,
+      ),
     ).toEqual([]);
   }, 30_000);
 

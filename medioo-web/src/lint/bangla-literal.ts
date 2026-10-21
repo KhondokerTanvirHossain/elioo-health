@@ -16,7 +16,13 @@ import ts from "typescript";
  * A file in a generated directory is exempt only when it is JSON whose `_meta.generated_by` names a Java test that
  * exists (`baymax <Name>` → `<Name>.java` under `javaTestRoot`). Where a file sits never makes it generated.
  */
-export type BanglaScan = { scanned: string[]; exempt: string[]; offenders: string[] };
+export type BanglaScan = {
+  scanned: string[];
+  exempt: string[];
+  offenders: string[];
+  /** What the TypeScript program alone contributed, so a test can see that half of the scan is live. */
+  program: string[];
+};
 
 export type BanglaScanOptions = {
   /** Directories, relative to the root and ending in `/`, whose files may be exempt when generated. */
@@ -28,7 +34,12 @@ export type BanglaScanOptions = {
 // Written with escapes so the lint holds no literal of its own.
 const BANGLA = /[\u0980-\u09FF]/u;
 
-const SKIPPED_DIRS = new Set(["node_modules", ".next", "out", "test-results", "playwright-report"]);
+/**
+ * Build outputs, skipped only directly under the root, as .gitignore and eslint.config.mjs anchor them: a source
+ * directory of the same name deeper down (a route segment `src/app/out/`) is source and is walked. node_modules is
+ * skipped at any depth.
+ */
+const ROOT_OUTPUT_DIRS = new Set([".next", "out", "test-results", "playwright-report"]);
 const SKIPPED_EXTENSIONS = new Set([".woff2", ".webp", ".png", ".jpg", ".jpeg", ".ico"]);
 
 /**
@@ -41,16 +52,22 @@ function skippedFile(name: string): boolean {
 
 const posix = (path: string) => path.split(sep).join("/");
 
-function walk(dir: string): string[] {
+function walk(dir: string, base: string = dir): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const path = join(dir, entry.name);
-    if (entry.isDirectory()) return SKIPPED_DIRS.has(entry.name) ? [] : walk(path);
+    if (entry.isDirectory()) {
+      const skipped = entry.name === "node_modules" || (dir === base && ROOT_OUTPUT_DIRS.has(entry.name));
+      return skipped ? [] : walk(path, base);
+    }
     if (!entry.isFile() || skippedFile(entry.name) || SKIPPED_EXTENSIONS.has(extname(entry.name).toLowerCase())) return [];
     return [path];
   });
 }
 
-/** The TypeScript program's source files, without node_modules; none when the root has no tsconfig.json. */
+/**
+ * The TypeScript program's source files, without node_modules; none when the root has no tsconfig.json. A tsconfig whose
+ * program is empty throws: the scan would otherwise fall back to walk-only without a word and stop following imports.
+ */
 function programFiles(root: string): string[] {
   const configPath = join(root, "tsconfig.json");
   if (!existsSync(configPath)) return [];
@@ -58,10 +75,12 @@ function programFiles(root: string): string[] {
   if (read.error) throw new Error(`bangla-literal lint: cannot read ${configPath}`);
   const parsed = ts.parseJsonConfigFileContent(read.config, ts.sys, root);
   const program = ts.createProgram({ rootNames: parsed.fileNames, options: { ...parsed.options, noEmit: true } });
-  return program
+  const files = program
     .getSourceFiles()
     .map((f) => resolve(f.fileName))
     .filter((f) => !f.split(sep).includes("node_modules"));
+  if (files.length === 0) throw new Error(`bangla-literal lint: the TypeScript program contributed zero files (${configPath})`);
+  return files;
 }
 
 /** The simple names of every .java file under `dir`. */
@@ -96,7 +115,8 @@ export function scanForBangla(root: string, options: BanglaScanOptions = {}): Ba
   const generatedDirs = options.generatedDirs ?? [];
   const tests = javaNames(options.javaTestRoot === undefined ? undefined : resolve(base, options.javaTestRoot));
 
-  const files = [...new Set([...programFiles(base), ...walk(base)])];
+  const program = programFiles(base);
+  const files = [...new Set([...program, ...walk(base)])];
   const scanned: string[] = [];
   const exempt: string[] = [];
   const offenders: string[] = [];
@@ -115,5 +135,10 @@ export function scanForBangla(root: string, options: BanglaScanOptions = {}): Ba
   }
 
   if (scanned.length === 0) throw new Error("bangla-literal lint scanned zero files");
-  return { scanned: scanned.sort(), exempt: exempt.sort(), offenders };
+  return {
+    scanned: scanned.sort(),
+    exempt: exempt.sort(),
+    offenders,
+    program: program.map((f) => posix(relative(base, f))).sort(),
+  };
 }
