@@ -175,10 +175,18 @@ FAKE
 # A GitHub compare URL (.../compare/<base>...<head>, the routes-floor check) answers like api.github.com, with a
 # nested "status":"ahead" BEFORE the top-level one, so only a parse of the top-level field reads it right:
 # FAKE_COMPARE=<ahead|behind|identical|diverged>  the top-level status (default ahead)
-# FAKE_COMPARE=fail                                 the API is unreachable (curl exits 22)
+# FAKE_COMPARE=fail                                 the API is unreachable (curl exits 22), every call
+# FAKE_COMPARE=fail-once                            the first call fails, the next answers ahead
 printf 'curl %s\n' "$*" >> "$FAKE_DIR/calls.log"
 if [[ "$*" == *'/compare/'* ]]; then
   [ "${FAKE_COMPARE:-}" = fail ] && { echo "curl: (22) The requested URL returned error: 503" >&2; exit 22; }
+  if [ "${FAKE_COMPARE:-}" = fail-once ]; then
+    if [ ! -e "$FAKE_DIR/compare-failed-once" ]; then
+      : > "$FAKE_DIR/compare-failed-once"
+      echo "curl: (28) Operation timed out after 30001 milliseconds" >&2; exit 28
+    fi
+    FAKE_COMPARE=ahead
+  fi
   printf '{"url":"x","base_commit":{"sha":"b","files_hint":{"status":"ahead"}},"status":"%s","ahead_by":1,"behind_by":0,"files":[{"filename":"deploy.sh","status":"modified"}]}\n' \
     "${FAKE_COMPARE:-ahead}"
   exit 0

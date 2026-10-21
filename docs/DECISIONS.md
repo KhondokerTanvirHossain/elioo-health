@@ -659,9 +659,14 @@ by Claude Code, recorded as Part A1–A8 of [the rebuild plan](superpowers/plans
    alone routes nothing; its header holds the in-place edit, validate and reload procedure for the single-file bind
    mount). There is no Next fallback proxy. Flipping a route back is a one-line Caddy edit plus that procedure.
    - **Java off the public port (W1c).** Java binds `127.0.0.1:8086` only and the security group closes 8086, so
-     every request goes through Caddy's HSTS and per-path routing. **Known gap until W1c lands:** Java is published
-     on all interfaces (`-p 8086:8086`) and CI smoke-tests `:8086` from the runner, so every `/app` page is reachable
-     over plain HTTP on `:8086`, bypassing Caddy. The topology above is not yet true on that point.
+     every request goes through Caddy's HSTS and per-path routing. From W1c, `deploy.sh` publishes Java as
+     `-p 127.0.0.1:8086:8086` (`java-loopback` in `scripts/test_deploy_sh.sh`), and every deploy asserts it on the
+     real box: `docker port medscribe-ai` must print exactly `8086/tcp -> 127.0.0.1:8086`, and
+     `http://<EC2 host>:8086` must not answer from the runner. The old CI smoke of `:8086` is gone.
+     - *Status, W1c (#104, 2026-10-21):* Java published on 127.0.0.1:8086 only, the `:8086` smoke replaced by the
+       negative check above; the security group's inbound 8086 rule is still open, pending PO/AWS (tracked as its own
+       item; remove this line when it is closed). Until then nothing listens on it: defence in depth, not the
+       control.
    - **Headers on a flipped path.** A path routed to `medioo-web` no longer gets Java's `BaymaxSecurityHeadersFilter`
      / `SecurityHeadersFilter` headers, so Next sets them itself on every routed path: the nonce CSP (its `img-src`
      copied verbatim from `BaymaxSecurityHeadersFilter`), `X-Frame-Options: DENY` and `nosniff`. Caddy owns HSTS,
@@ -682,7 +687,10 @@ by Claude Code, recorded as Part A1–A8 of [the rebuild plan](superpowers/plans
    route in the box's Caddyfile (backup, in-place write, validate, reload, as in the `Caddyfile.medioo` header), then
    sets `IMAGE_TAG`; `scripts/smoke-https.sh` runs after every rollback. Enforcement lands with the first flip (W1c):
    the flip records a routes-floor sha, and `deploy.sh` refuses an `IMAGE_TAG` that is not a descendant of it unless
-   `FORCE=1`. The RUNBOOK rollback one-liner carries the same floor. Within the floor, API changes are additive only,
+   `ROUTES_FLOOR_FORCE=1` (its own name since W1c review: a generic `FORCE=1`, which `scripts/draft-labels.sh` also
+   reads, left exported in a shell must not turn the floor into a warning). The floor is recorded after the flip's
+   PR merges, with its squash sha; until it is written, nothing is enforced. The RUNBOOK rollback one-liner carries
+   the same floor. Within the floor, API changes are additive only,
    so old Java with a new UI and new Java with an old UI never break.
    - **Amended 2026-10-21 (W1b, PR #100), for the PO to confirm.** "No `medioo-web` image" now means GHCR's
      missing-tag answer (`manifest unknown` / `not found`) only, and only that skips the web step green. Any other

@@ -68,23 +68,38 @@ what production answered on 2026-10-21:
 | `/medscribeai`, `/medscribeai/` | 200 | Java (MedScribe) |
 | `/baymax`, `/baymax/` | 301, `Location: /app` and `/app/` | Java |
 | `/api/v1/baymax/wa/webhook` (GET, no parameters) | 403 (Meta verification refused) | Java |
+| `/_next/static/x.js` | 404, JSON `statusCode == 400` (Java's error body, not Next's HTML 404) | Java, until `/_next/*` is routed |
+| `https://baymax.eliooo.org/app/home` | 301, `Location: https://medioo.eliooo.org/app/home` (DR-15) | Caddy's old-name block |
 
-The table is retried for up to about 50 s while Caddy reaches the new upstreams. It prints only paths, status codes
-and header values, never a body, because the Actions log is public (DR-38) and the health body carries disk, path
-and database details. JSON rows read the top-level field with `jq`, never a grep: every health component also says
+Each of `x-frame-options`, `x-content-type-options`, `referrer-policy` and `strict-transport-security` must arrive
+**exactly once** on the header rows: a browser acts on every copy (two conflicting `X-Frame-Options` are ignored, so
+framing is allowed), so an append instead of a replace fails the row whatever the last value says.
+
+The table is retried while Caddy reaches the new upstreams, within `SMOKE_DEADLINE` (default 90 s) for the whole run:
+each request's `--max-time` shrinks to what is left, so a Caddy that accepts and never answers fails in 90 s instead
+of holding the deploy job (CI's step also has `timeout-minutes: 3`). It prints only paths, status codes and header
+values, never a body, because the Actions log is public (DR-38) and the health body carries disk, path and database
+details. JSON rows read the top-level field with `jq`, never a grep: every health component also says
 `"status":"UP"`.
 
 Then CI checks the box's Caddyfile for **drift**: it copies `scripts/caddy-drift.sh` and
 `docs/infra/Caddyfile.medioo` to `/home/ec2-user/medioo-ci/` and compares the box's live `medioo.eliooo.org` and
 `baymax.eliooo.org` blocks with the repo's, read-only, on the box (so the n8n and bddrug blocks never reach the log).
-A difference fails the job with `box Caddyfile drifted from the repo — fold the box edit in first` and our blocks'
-diff. Fold the box edit into the repo file in a PR; never paste the repo file over it.
+It compares the file the **container** reads (`docker exec n8n-caddy-1 cat /etc/caddy/Caddyfile`, into a mode-600
+temp file removed on exit), and fails too if that differs from the host file: an inode replaced by `sed -i`/`mv`
+leaves Caddy on the old file while the host file looks right. A difference fails the job with
+`box Caddyfile drifted from the repo — fold the box edit in first` and our blocks' diff; a block that never closes
+fails as `unterminated` with no diff (its extraction would run into the other tenants' blocks). Fold the box edit into
+the repo file in a PR; never paste the repo file over it.
 
 **Java is off the public port (W1c).** `deploy.sh` publishes Java as `-p 127.0.0.1:8086:8086`, so `:8086` answers
 only on the box itself (its health wait and the admin `curl`s in this runbook); everything from outside goes through
 Caddy and TLS. Until W1c, host port 8086 served the whole app over plain HTTP to the internet, and CI's smoke checked
-`http://<EC2 host>:8086`; that check went with the port, in the same PR. The security group's inbound 8086 rule
-should be closed too (defence in depth: nothing listens there any more).
+`http://<EC2 host>:8086`. Now every deploy asserts the opposite on the real box: `docker port medscribe-ai` must print
+exactly `8086/tcp -> 127.0.0.1:8086` (the deploy step), and `http://<EC2 host>:8086` must not answer from the runner
+(curl `000`, its own step). Anything that publishes 8086 again, such as a hand `docker run -p 8086:8086` during an
+incident, turns the deploy red. The security group's inbound 8086 rule is still open, pending the PO/AWS (defence in
+depth: nothing listens there any more).
 
 `DEPLOY_FUNCTIONS_ONLY=1` is for `scripts/test_deploy_prune.sh`, `scripts/test_deploy_sh.sh` (both use the fakes in
 `scripts/deploy_test_fakes.sh`) and `scripts/test_deploy_web_docker.sh`, which source `deploy.sh` for its functions.
@@ -455,11 +470,22 @@ To flip a route (or flip one back, which is the same procedure with the block re
 
 1. **PR first.** Add the `handle <path> { reverse_proxy medioo-web:3000 }` block to `docs/infra/Caddyfile.medioo`,
    and the path's row to `scripts/smoke-https.sh` (with its test). The ship stage applies it to the box before the
-   PR merges, so the merge's deploy finds the box and the repo agreeing.
+   PR merges, so the merge's deploy finds the box and the repo agreeing. **Hold every other merge from the box edit
+   (step 4) until this PR's deploy is green:** any PR merged in between deploys `main`'s Caddyfile.medioo, and its
+   drift step goes red against the edited box.
 2. **Diff the box against the repo first.** On the box, with the copy of `main`'s file CI leaves after every deploy:
    `bash ~/medioo-ci/scripts/caddy-drift.sh ~/medioo-ci/docs/infra/Caddyfile.medioo ~/n8n/Caddyfile`.
    It must print `... match the repo`. Any difference is a box edit: fold it into the repo file first, never
-   overwrite it.
+   overwrite it. **Bootstrap (the first flip, W1c):** `~/medioo-ci/` does not exist until the first deploy that has
+   the drift step, so copy it by hand from a checkout, `main`'s file for this step and the PR's to its own path:
+   ```bash
+   ssh <box> 'mkdir -p ~/medioo-ci/scripts ~/medioo-ci/docs/infra ~/medioo-ci/pr<N>'
+   git show origin/main:docs/infra/Caddyfile.medioo > /tmp/main.medioo
+   scp scripts/caddy-drift.sh <box>:medioo-ci/scripts/          # from the PR's checkout: the checker under review
+   scp /tmp/main.medioo <box>:medioo-ci/docs/infra/Caddyfile.medioo
+   scp docs/infra/Caddyfile.medioo <box>:medioo-ci/pr<N>/Caddyfile.medioo   # for step 6
+   ```
+   Paste the step 2 and step 6 result lines into the PR.
 3. **Record the tenants' answers before the edit:**
    `for h in medioo.eliooo.org drugdb.eliooo.org <n8n host>; do curl -s -o /dev/null -w "$h %{http_code}\n" https://$h/; done`.
 4. **Back up, then write in place only.** The Caddyfile is a single-file bind mount into `n8n-caddy-1`: `sed -i`,
@@ -476,13 +502,19 @@ To flip a route (or flip one back, which is the same procedure with the block re
 5. **Check all three tenants:** the same `curl` loop as step 3 must print the same codes. Any change: restore the
    backup (`cat Caddyfile.bak-<stamp> > Caddyfile`), confirm the container sees it, reload.
 6. **Run the table:** `scripts/smoke-https.sh https://medioo.eliooo.org` from the PR's checkout. Every row PASS.
-   Then `caddy-drift.sh` with the PR's `Caddyfile.medioo` against the box: it must match.
-7. **Record the routes floor** once the PR has merged (its sha is the squash-merge commit on `main`):
+   Then `caddy-drift.sh` with the PR's `Caddyfile.medioo` against the box: it must match
+   (`bash ~/medioo-ci/scripts/caddy-drift.sh ~/medioo-ci/pr<N>/Caddyfile.medioo ~/n8n/Caddyfile`). Merge the PR next;
+   other merges stay held until its deploy is green.
+7. **Record the routes floor** once the PR has merged (its sha is the squash-merge commit on `main`; it does not exist
+   at step 4). **Required:** until the file is written, `deploy.sh` enforces nothing and logs "no route has flipped"
+   although one has. Post the `cat` output on the PR.
    ```bash
    cp ~/medioo-routes-floor ~/medioo-routes-floor.bak-$(date +%Y%m%d-%H%M) 2>/dev/null || true
    echo "<merge sha> <path> $(date -u +%F)" > ~/medioo-routes-floor
+   cat ~/medioo-routes-floor
    ```
-   From then on `deploy.sh` refuses an older sha ([Rollback](#rollback)).
+   From then on `deploy.sh` refuses an older sha ([Rollback](#rollback)). Advancing the floor at each flip also keeps
+   the compare range short.
 
 Headers: the medioo block deletes `Server`, which defers its header block to response-write time, so Caddy
 overwrites HSTS, `X-Content-Type-Options` and `Referrer-Policy` on every path, Java's or Next's.
@@ -521,8 +553,9 @@ them, so the one variable sets Java and `medioo-web` together, Java first. The l
 [Routing a path to medioo-web](#routing-a-path-to-medioo-web)), and `deploy.sh` **refuses** an `IMAGE_TAG` that is
 not that sha or a descendant of it, before touching anything:
 `ERROR: IMAGE_TAG <sha> is not a descendant of the routes floor <floor> (GitHub: behind)`. The box has no clone, so
-the ancestry comes from GitHub's compare API (one unauthenticated call; the repository is public); an API that cannot
-be reached, or a floor file that does not start with a sha, is refused too, not passed. No floor file means no route
+the ancestry comes from GitHub's compare API (one unauthenticated call, `?per_page=1&page=2` so the answer carries the
+status and no files list, `--max-time 30`, retried once; the repository is public; 60 calls per hour per IP); an API
+that cannot be reached twice in a row, or a floor file that does not start with a sha, is refused too, not passed. No floor file means no route
 has flipped: nothing is enforced. To roll back below the floor:
 
 1. Revert the routes flipped since the target sha: edit the box's Caddyfile back as in the procedure above (back up,
@@ -533,8 +566,10 @@ has flipped: nothing is enforced. To roll back below the floor:
 3. `IMAGE_TAG=<sha> bash ~/deploy.sh`, then `scripts/smoke-https.sh https://medioo.eliooo.org` from a checkout of
    that sha (its table matches its routes).
 
-`FORCE=1 IMAGE_TAG=<sha> bash ~/deploy.sh` overrides the refusal with a `WARNING: FORCE=1` line, for an emergency
-where the floor itself is the problem (GitHub down, a wrong floor file); it does not make an unrouted path work.
+`ROUTES_FLOOR_FORCE=1 IMAGE_TAG=<sha> bash ~/deploy.sh` overrides the refusal with a `WARNING: ROUTES_FLOOR_FORCE=1`
+line, for an emergency where the floor itself is the problem (GitHub down, a wrong floor file); it does not make an
+unrouted path work. It is deliberately not `FORCE=1`, which `scripts/draft-labels.sh` reads: a stray export of that
+overrides nothing (`floor-generic-force`). CI has no override: when GitHub's API is down, deploy by hand with it.
 Rolling back past W1b leaves a newer `medioo-web` running; rolling Java back past an `/app/api` endpoint a flipped
 route calls breaks that route for every family. The first flip is `/app/healthz` (W1c), which nothing but the smoke
 and monitoring calls.

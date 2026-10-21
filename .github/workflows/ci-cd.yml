@@ -39,7 +39,7 @@ jobs:
       # it fails in seconds rather than after 30 minutes of tests.
       - name: Refuse undeclared test fixtures
         run: scripts/check-test-fixtures.sh
-      # Three scripts, under a minute, no network. test_deploy_is_tip.sh: the deploy job's tip check (below), tested
+      # Five scripts, under a minute, nothing beyond 127.0.0.1. test_deploy_is_tip.sh: the deploy job's tip check (below), tested
       # both ways against a throwaway repository. test_deploy_prune.sh: deploy.sh against a fake docker/curl/df/sleep
       # (scripts/deploy_test_fakes.sh) — the prune (only our repository, newest 3 by time, never the tag being
       # deployed or a running image, before the pull), the free-space floor, the function-only mode and the
@@ -48,9 +48,10 @@ jobs:
       # (the runner's node, a stub /app/healthz) for the right sha, image and service, the pull errors told apart
       # (missing tag = Java only, any other = red), a failed web swap puts the previous one back, no published port
       # and no --env-file for Node, both repositories pruned without the rollback target; from W1c, Java published on
-      # 127.0.0.1 only and the routes floor enforced both ways. test_smoke_https.sh: the deploy job's https smoke
-      # (below) against a local stub of the production table, every row broken alone. test_caddy_drift.sh: the deploy
-      # job's drift check against fixture Caddyfiles, both ways.
+      # 127.0.0.1 only and the routes floor enforced both ways (ROUTES_FLOOR_FORCE only). test_smoke_https.sh: the
+      # deploy job's https smoke (below) against a local stub of the production table, every row broken alone,
+      # duplicate security headers, a host that never answers. test_caddy_drift.sh: the deploy job's drift check
+      # against fixture Caddyfiles, both ways (formatting ignored, unterminated blocks refused without a diff).
       - name: Deploy script tests (tip check, prune, two containers, https smoke, Caddy drift)
         run: |
           scripts/test_deploy_is_tip.sh
@@ -264,18 +265,41 @@ jobs:
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             # this job has just pushed medioo-web:<sha>, so a missing tag is a fault here, not a pre-W1b sha
             WEB_IMAGE_REQUIRED=1 IMAGE_TAG="$IMAGE_TAG" bash /home/ec2-user/deploy.sh
+            # Java off the public port (W1c), asserted on what Docker actually publishes, not on deploy.sh's arguments:
+            # exactly one mapping, on IPv4 loopback (no 0.0.0.0, no [::])
+            published="$(docker port medscribe-ai)"
+            if [ "$published" != "8086/tcp -> 127.0.0.1:8086" ]; then
+              echo "::error::medscribe-ai publishes [$(printf '%s' "$published" | tr '\n' ';')], expected exactly [8086/tcp -> 127.0.0.1:8086]"
+              exit 1
+            fi
+            echo "medscribe-ai publishes $published only"
       # The https upstream table (DR-40 A1, plan W1c), through Caddy, as a browser sees it: one row per path class
       # (Next's /app/healthz, Java's pages, the API, MedScribe, the /baymax redirects, the webhook refusal), with
-      # each class's security headers. Retried for up to ~50 s while Caddy reaches the new upstreams. Only paths,
-      # status codes and header values are printed, never a body: this log is public (DR-38) and the health body
-      # carries disk, path and database details. The old http://<EC2 host>:8086 check is gone with the port: Java is
-      # published on the box's 127.0.0.1 only (deploy.sh), so it could only fail.
+      # each class's security headers (each sent exactly once), /_next/* still Java's, and the old hostname's 301.
+      # Retried while Caddy reaches the new upstreams, within SMOKE_DEADLINE (90 s) for the whole run; the step's
+      # timeout is the backstop. Only paths, status codes and header values are printed, never a body: this log is
+      # public (DR-38) and the health body carries disk, path and database details.
       - name: Smoke test from runner (https table)
         if: steps.tip.outputs.current == 'true'
+        timeout-minutes: 3
         run: bash scripts/smoke-https.sh https://medioo.eliooo.org
+      # The other half of "Java off the public port" (W1c), from outside, on the real box: http://<EC2 host>:8086 must
+      # not answer at all (curl's 000: refused or timed out). Anything that publishes 8086 again (a hand `docker run
+      # -p 8086:8086` during an incident, an older deploy.sh, a compose file) turns this red while the https smoke
+      # above stays green. Replayed before merge while 8086 was still open: it failed with HTTP 200.
+      - name: Java does not answer on the public port
+        if: steps.tip.outputs.current == 'true'
+        timeout-minutes: 1
+        run: |
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 8 "http://${{ secrets.EC2_HOST }}:8086/actuator/health" || true)
+          [ "$code" = 000 ] || { echo "::error::Java answers on public :8086 (HTTP $code)"; exit 1; }
+          echo "public :8086 does not answer (curl: $code)"
       # Drift (plan W1c): the box's live medioo/baymax site blocks, read-only, against docs/infra/Caddyfile.medioo.
       # Runs on the box, so the other tenants' blocks (n8n, bddrug) never leave it; the output is our blocks' diff
-      # only. Runs even when the smoke failed: a drifted Caddyfile is a likely reason for it.
+      # only. Runs even when the smoke failed: a drifted Caddyfile is a likely reason for it. It compares the file the
+      # CONTAINER reads, copied to a mode-600 temp file and removed on exit, and separately checks that it is the same
+      # as the host file: a host file replaced by inode (sed -i, mv, rsync) leaves Caddy on the old one while the host
+      # file looks right (RUNBOOK). What Caddy has actually loaded is checked by the smoke, which asks it.
       - name: Copy the Caddy drift check to server
         if: ${{ !cancelled() && steps.tip.outputs.current == 'true' }}
         uses: appleboy/scp-action@v1
@@ -293,5 +317,14 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            bash /home/ec2-user/medioo-ci/scripts/caddy-drift.sh \
-              /home/ec2-user/medioo-ci/docs/infra/Caddyfile.medioo /home/ec2-user/n8n/Caddyfile
+            set -u
+            live="$(mktemp)"
+            trap 'rm -f "$live"' EXIT
+            docker exec n8n-caddy-1 cat /etc/caddy/Caddyfile > "$live" || { echo "caddy-drift: could not read the container's Caddyfile"; exit 1; }
+            rc=0
+            bash /home/ec2-user/medioo-ci/scripts/caddy-drift.sh /home/ec2-user/medioo-ci/docs/infra/Caddyfile.medioo "$live" || rc=1
+            if ! diff -q "$live" /home/ec2-user/n8n/Caddyfile >/dev/null; then
+              echo "caddy-drift: the container's Caddyfile differs from the host file (inode replaced?): docs/RUNBOOK.md -> Routing a path to medioo-web, step 4"
+              rc=1
+            fi
+            exit "$rc"

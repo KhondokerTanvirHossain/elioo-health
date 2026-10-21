@@ -457,6 +457,17 @@ Each line is one PR. The **Waves** order work; within a wave, lanes run in paral
   - *Routes floor mechanics (implementation):* the floor lives in `/home/ec2-user/medioo-routes-floor` (first token a
     sha); the box has no clone, so `deploy.sh` asks GitHub's compare API (`<floor>...<tag>` must answer `ahead` or
     `identical`); an unreachable API or a malformed file is refused, not passed; no file = nothing flipped yet.
+  - *Routes floor timing and name (W1c review):* Step 2 says to record the floor during the box apply, but the floor
+    is the flip's squash-merge sha, which does not exist until the PR merges. **The floor is recorded after merge
+    with the squash sha; until then `deploy.sh` enforces nothing** (it logs "no route has flipped" although one has),
+    so recording it is a required follow-up of the ship stage, and its `cat ~/medioo-routes-floor` is posted on the
+    PR. The override is `ROUTES_FLOOR_FORCE=1`, not `FORCE=1` (lines 94 and 441 above predate the rename). The
+    compare call asks for `?per_page=1&page=2` (no files list) with `--max-time 30` and one retry.
+  - *Smoke additions (W1c review):* each of the four Caddy/upstream security headers must arrive exactly once;
+    `/_next/static/x.js` must still be Java's JSON 404 until `/_next/*` is routed; `baymax.eliooo.org/app/home` must
+    301 to `https://medioo.eliooo.org/app/home`; the whole run is bounded by `SMOKE_DEADLINE` (90 s). Every deploy
+    also asserts `docker port medscribe-ai` = `127.0.0.1:8086` only and that `http://<EC2 host>:8086` does not answer
+    from the runner, and the drift step compares the container's Caddyfile, not only the host file.
 - Produces: a drift step in the deploy job, after the smoke, over the job's existing SSH: extract the box's live medioo/baymax blocks read-only and diff them against `docs/infra/Caddyfile.medioo`. A difference fails the step with "box Caddyfile drifted from the repo — fold the box edit in first". Test it both ways against fixture files: identical blocks pass, one changed header line fails.
 
 - [ ] **Step 1:** Run each table URL against production now. Record today's status codes as the expected values (the webhook refusal code in particular). Write `scripts/smoke-https.sh` with those values and run it. Expected: everything passes except `/app/healthz`, which fails because Next is not routed yet.

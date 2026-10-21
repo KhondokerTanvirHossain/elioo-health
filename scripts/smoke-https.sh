@@ -18,6 +18,14 @@
 #   page  /app/, /           Java's HTML pages
 #   api   /actuator/health, the webhook
 # Referrer-Policy stays strict-origin-when-cross-origin, the value production sends today (PO note in the W1c PR).
+# Each of X-Frame-Options, X-Content-Type-Options, Referrer-Policy and HSTS must arrive exactly once: a browser acts on
+# every copy it receives, not on the last one (two conflicting X-Frame-Options are ignored, so framing is allowed),
+# so an upstream or a Caddy edit that appends instead of replacing fails the row whatever the last value says.
+#
+# Routing stops at /app/healthz for now: /_next/static/x.js must still be Java's JSON 404 (field statusCode 400), not
+# Next's HTML one, so a broader route applied early fails here. The PR that routes /_next/* moves that row.
+# The old hostname (DR-15): {old}<path> is SMOKE_OLD_BASE (default https://baymax.eliooo.org) plus the path, and must
+# answer 301 to the same path on medioo.eliooo.org, so every link already sent to a family keeps working.
 #
 # A JSON field is read with jq, never grepped: the health body has "status":"UP" in every component, so a first-match
 # grep would pass a top-level DOWN. Bodies are never printed: the CI log is public (DR-38) and the health body
@@ -25,6 +33,9 @@
 #
 # SMOKE_TRIES (default 10) and SMOKE_SLEEP (default 5 s): the whole table is retried until it passes, so a Caddy
 # that has not yet reached a just-started upstream is waited for; only the last try's table is printed in full.
+# SMOKE_DEADLINE (default 90 s) bounds the whole run, every try and row included: each request's --max-time shrinks
+# to what is left, and no request or try starts after it. Without it a Caddy that accepts and never answers would
+# hold the deploy job for tries x rows x 15 s (over 25 minutes) instead of failing.
 set -uo pipefail
 
 BASE="${1:-}"
@@ -38,6 +49,13 @@ command -v curl >/dev/null 2>&1 || { echo "smoke-https: curl is required" >&2; e
 
 TRIES="${SMOKE_TRIES:-10}"
 SLEEP="${SMOKE_SLEEP:-5}"
+DEADLINE="${SMOKE_DEADLINE:-90}"
+OLD_BASE="${SMOKE_OLD_BASE:-https://baymax.eliooo.org}"
+OLD_BASE="${OLD_BASE%/}"
+for v in TRIES SLEEP DEADLINE; do
+  [[ "${!v}" =~ ^[0-9]+$ ]] || { echo "smoke-https: SMOKE_$v '${!v}' is not a whole number" >&2; exit 2; }
+done
+END=$((SECONDS + DEADLINE))
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
@@ -48,6 +66,7 @@ REFERRER="strict-origin-when-cross-origin"
 #                    json:<field>=<value>   the top-level JSON field equals <value>
 #                    html:<marker>          the body contains <marker> (an attribute, not a word)
 #                    location:<value>       the Location header equals <value> exactly
+#   a path starting {old} is asked of the old hostname (SMOKE_OLD_BASE); every other one of <base-url>
 TABLE='/app/healthz|200|next|json:service=medioo-web
 /actuator/health|200|api|json:status=UP
 /app/|200|page|html:name="whatsapp_number"
@@ -56,7 +75,9 @@ TABLE='/app/healthz|200|next|json:service=medioo-web
 /medscribeai/|200|-|-
 /baymax|301|-|location:/app
 /baymax/|301|-|location:/app/
-/api/v1/baymax/wa/webhook|403|api|-'
+/api/v1/baymax/wa/webhook|403|api|-
+/_next/static/x.js|404|-|json:statusCode=400
+{old}/app/home|301|-|location:https://medioo.eliooo.org/app/home'
 
 # header <file> <lower-case name>: the last value of that header, CR stripped (empty when absent)
 header() {
@@ -65,11 +86,23 @@ header() {
     END { print last }'
 }
 
+# header_count <file> <lower-case name>: how many times that header was sent
+header_count() {
+  tr -d '\r' < "$1" | awk -v n="$2" 'index($0, ":") && tolower(substr($0, 1, index($0, ":") - 1)) == n { c++ } END { print c + 0 }'
+}
+
 # check_row <path> <status> <class> <check>: prints one PASS or FAIL line; returns 1 on FAIL
 check_row() {
-  local path="$1" want="$2" class="$3" check="$4" body="$TMP/body" hdr="$TMP/headers" code reasons=() v
+  local path="$1" want="$2" class="$3" check="$4" body="$TMP/body" hdr="$TMP/headers" code reasons=() v url left times
   : > "$body"; : > "$hdr"
-  code=$(curl -s -o "$body" -D "$hdr" -w '%{http_code}' --connect-timeout 5 --max-time 15 "$BASE$path" 2>/dev/null) || true
+  if [ "${path#"{old}"}" != "$path" ]; then url="$OLD_BASE${path#"{old}"}"; path="$url"; else url="$BASE$path"; fi
+  left=$((END - SECONDS))
+  if [ "$left" -le 0 ]; then
+    echo "FAIL $path deadline of ${DEADLINE}s reached; not asked"
+    return 1
+  fi
+  code=$(curl -s -o "$body" -D "$hdr" -w '%{http_code}' --connect-timeout $((left < 5 ? left : 5)) \
+           --max-time $((left < 15 ? left : 15)) "$url" 2>/dev/null) || true
   code="${code:-000}"
   [ "$code" = "$want" ] || reasons+=("HTTP $code, expected $want")
 
@@ -94,6 +127,10 @@ check_row() {
     elif [ "$class" = next ] && [[ "$csp" != *"'nonce-"* ]]; then
       reasons+=("content-security-policy has no nonce (not medioo-web's policy)")
     fi
+    for v in x-frame-options x-content-type-options referrer-policy strict-transport-security; do
+      times=$(header_count "$hdr" "$v")
+      [ "$times" -le 1 ] || reasons+=("$v is sent $times times, expected once")
+    done
     v=$(header "$hdr" x-frame-options);        [ "$v" = DENY ] || reasons+=("x-frame-options is [$v], expected [DENY]")
     v=$(header "$hdr" x-content-type-options); [ "$v" = nosniff ] || reasons+=("x-content-type-options is [$v], expected [nosniff]")
     v=$(header "$hdr" referrer-policy);        [ "$v" = "$REFERRER" ] || reasons+=("referrer-policy is [$v], expected [$REFERRER]")
@@ -126,10 +163,14 @@ while :; do
   attempt=$((attempt + 1))
   failed=$(run_table)
   if [ "$failed" = 0 ] || [ "$attempt" -ge "$TRIES" ]; then break; fi
-  echo "attempt $attempt of $TRIES: $failed of $ROWS rows failed; retrying in ${SLEEP}s"
-  sleep "$SLEEP"
+  left=$((END - SECONDS))
+  if [ "$left" -le 0 ]; then echo "attempt $attempt of $TRIES: $failed of $ROWS rows failed; deadline of ${DEADLINE}s reached"; break; fi
+  pause=$((left < SLEEP ? left : SLEEP))
+  echo "attempt $attempt of $TRIES: $failed of $ROWS rows failed; retrying in ${pause}s"
+  sleep "$pause"
+  [ $((END - SECONDS)) -gt 0 ] || { echo "deadline of ${DEADLINE}s reached; not retrying"; break; }
 done
 
 sed 's/;/; /g' "$TMP/table"
-echo "smoke-https: $ROWS rows, $failed failed, attempt $attempt of $TRIES ($BASE)"
+echo "smoke-https: $ROWS rows, $failed failed, attempt $attempt of $TRIES, deadline ${DEADLINE}s ($BASE)"
 [ "$failed" = 0 ]

@@ -13,8 +13,8 @@
 #
 # Java is published on the box's 127.0.0.1:8086 only (plan W1c): from outside, everything goes through Caddy, which
 # reaches it as medscribe-ai:8086 on n8n_edge. Routes floor (W1c): once a path is routed to medioo-web, an IMAGE_TAG
-# that does not descend from the sha recorded in ROUTES_FLOOR_FILE is refused before anything changes; FORCE=1
-# overrides (routes_floor_check below; docs/RUNBOOK.md -> Rollback).
+# that does not descend from the sha recorded in ROUTES_FLOOR_FILE is refused before anything changes;
+# ROUTES_FLOOR_FORCE=1 overrides (routes_floor_check below; docs/RUNBOOK.md -> Rollback).
 #
 # DEPLOY_FUNCTIONS_ONLY=1 makes `source deploy.sh` define the functions and stop (scripts/test_deploy_prune.sh,
 # scripts/test_deploy_sh.sh). It is honoured only when the file is SOURCED: executing deploy.sh with it set fails,
@@ -242,7 +242,13 @@ deploy_web() {
 # The box has no clone, so ancestry comes from GitHub's compare API (the repository is public; one unauthenticated
 # call per deploy): <floor>...<tag> answering "ahead" or "identical" means <tag> descends from the floor. "behind" or
 # "diverged" is refused, and so is anything that cannot be checked (the API unreachable, a floor file that does not
-# hold a sha, no jq): a check that cannot run must not read as a pass. FORCE=1 overrides every refusal, loudly.
+# hold a sha, no jq): a check that cannot run must not read as a pass. ROUTES_FLOOR_FORCE=1 overrides every refusal,
+# loudly. Its own name, not FORCE: scripts/draft-labels.sh reads FORCE=1, and a generic name left exported in an
+# operator's shell on this shared box would silently turn the floor into a warning.
+# The call asks for page 2 of one commit per page: GitHub sends the changed-files list (with patches) only on page 1,
+# and the top-level status on every page, so the answer stays small however long the range grows (measured
+# 2026-10-21: 297 KB -> 41 KB for a 4-commit range). --max-time 30, and one retry on a failed call: GitHub's blips
+# must not stop every deploy, while two failures in a row still refuse.
 # No floor file means no route has flipped yet: nothing to enforce. Runs before anything on the box is changed.
 ROUTES_FLOOR_FILE="${ROUTES_FLOOR_FILE:-/home/ec2-user/medioo-routes-floor}"
 ROUTES_COMPARE_API="${ROUTES_COMPARE_API:-https://api.github.com/repos/KhondokerTanvirHossain/elioo-health/compare}"
@@ -262,8 +268,10 @@ routes_floor_check() {
     return 0
   elif ! command -v jq >/dev/null 2>&1; then
     why="could not check $tag against the routes floor $floor (jq is not installed)"
-  elif ! answer="$(curl -fsS --max-time 10 -H 'Accept: application/vnd.github+json' "$ROUTES_COMPARE_API/$floor...$tag" 2>&1)"; then
-    why="could not check $tag against the routes floor $floor (GitHub compare API: ${answer%%$'\n'*})"
+  elif ! answer="$(curl -fsS --max-time 30 -H 'Accept: application/vnd.github+json' "$ROUTES_COMPARE_API/$floor...$tag?per_page=1&page=2" 2>&1)" \
+       && { log "Routes floor: the GitHub compare call failed (${answer%%$'\n'*}); retrying once"; sleep 5;
+            ! answer="$(curl -fsS --max-time 30 -H 'Accept: application/vnd.github+json' "$ROUTES_COMPARE_API/$floor...$tag?per_page=1&page=2" 2>&1)"; }; then
+    why="could not check $tag against the routes floor $floor (GitHub compare API, twice: ${answer%%$'\n'*})"
   else
     # the top-level field, parsed: the answer nests a "status" in every file entry
     status="$(printf '%s' "$answer" | jq -r 'if type == "object" then (.status // "") else "" end' 2>/dev/null)" || status=""
@@ -277,11 +285,11 @@ routes_floor_check() {
         why="could not check $tag against the routes floor $floor (GitHub compare API answered no status)" ;;
     esac
   fi
-  if [ "${FORCE:-}" = 1 ]; then
-    log "WARNING: FORCE=1: deploying although $why"
+  if [ "${ROUTES_FLOOR_FORCE:-}" = 1 ]; then
+    log "WARNING: ROUTES_FLOOR_FORCE=1: deploying although $why"
     return 0
   fi
-  log "ERROR: $why. Nothing on the box was changed. FORCE=1 overrides."
+  log "ERROR: $why. Nothing on the box was changed. ROUTES_FLOOR_FORCE=1 overrides."
   return 1
 }
 

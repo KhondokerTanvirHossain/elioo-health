@@ -4,7 +4,12 @@
 # docs/infra/Caddyfile.medioo. Both directions, against fixture files built from the real repo file:
 # - identical blocks pass, whatever surrounds them (the n8n and bddrug blocks, comments, blank lines, block order);
 # - one changed line in a header, a route or the redirect fails, with the message and a diff of OUR blocks only;
-# - a block missing from either side fails (an empty extraction must never compare equal to another empty one);
+# - a block missing from either side fails (an empty extraction must never compare equal to another empty one), and
+#   so does a repo file with no blocks at all against an empty box file: the one case only the count guard catches;
+# - the box's own formatting is ignored: spaces for tabs, trailing whitespace, a comment and blank lines INSIDE our
+#   block pass (the "ignore" direction, which identical fixtures alone never exercise);
+# - a brace inside a quoted token is not a block brace, and a block that never closes (a botched hand edit) fails as
+#   unterminated with no diff, instead of running the extraction on into the other tenants' blocks;
 # - nothing from the other tenants' blocks is ever printed (the CI log is public, DR-38).
 #
 #   bash scripts/test_caddy_drift.sh
@@ -40,16 +45,16 @@ drugdb.eliooo.org {
 	reverse_proxy bddrug-web:3000
 }'
 
-# our blocks, as the box holds them: the repo file without its comments, with the box's own indentation and spacing
+# our blocks, as the box holds them: the repo file without its top-level comments (case 12 re-indents and re-spaces them)
 ours_as_box() { grep -v '^[[:space:]]*#' "$REPO_FILE"; }
 
 box() { # box <name> <content>: writes $WORK/<name>.Caddyfile
   printf '%s\n' "$2" > "$WORK/$1.Caddyfile"
 }
 
-run() { # run <box file>: exit code of the drift check; output in $WORK/out.log
+run() { # run <box file> [<repo file>]: exit code of the drift check; output in $WORK/out.log
   CASES=$((CASES + 1))
-  bash "$DRIFT" "$REPO_FILE" "$1" > "$WORK/out.log" 2>&1
+  bash "$DRIFT" "${2:-$REPO_FILE}" "$1" > "$WORK/out.log" 2>&1
 }
 out() { tr '\n' '|' < "$WORK/out.log" | cut -c1-500; }
 no_leak() { grep -q 'OTHER-TENANT-NEVER-PRINTED' "$WORK/out.log" && fail "$1: another tenant's block reached the output"; }
@@ -123,6 +128,49 @@ if run "$WORK/twice.Caddyfile"; then fail "twice: exited 0 with two medioo.elioo
 # 11. unreadable box file
 CASES=$((CASES + 1))
 if bash "$DRIFT" "$REPO_FILE" "$WORK/does-not-exist" > "$WORK/out.log" 2>&1; then fail "unreadable: exited 0: $(out)"; fi
+
+# 12. the box's own formatting, which the check promises to ignore: spaces for tabs, trailing whitespace on every line,
+#     and a comment plus extra blank lines INSIDE the medioo block. Identical fixtures never exercise this direction:
+#     without the trim and the in-block filters, this is a false red drift on a correct box.
+box formatting "$OTHERS
+
+$(ours_as_box | sed 's/	/    /g' | awk '{ print $0 "  \t" } /^ *encode / { print "    # note: a comment of the box'"'"'s own"; print ""; print "   " }')"
+grep -qE '^    encode .*  	$' "$WORK/formatting.Caddyfile" || fail "formatting: the fixture was not re-indented and re-spaced"
+run "$WORK/formatting.Caddyfile" || fail "formatting: drift reported for the same blocks re-indented, re-spaced and commented: $(out)"
+no_leak formatting
+
+# 13. a quoted brace is a token, not a block brace (valid Caddy). With braces counted inside quotes, the medioo block
+#     never closes and the extraction runs on into the n8n block AFTER it, printing its lines into the public log.
+QUOTED='		X-Note "a { brace"'
+box quoted "$(ours_as_box | awk -v q="$QUOTED" '{print} /^[[:space:]]*-Server/ {print q}')
+
+$OTHERS"
+if run "$WORK/quoted.Caddyfile"; then fail "quoted: exited 0 with a header line only the box has: $(out)"; fi
+no_leak quoted
+grep -qF 'X-Note "a { brace"' "$WORK/out.log" || fail "quoted: the diff does not show the box-only quoted line: $(out)"
+# the same line on both sides is no drift at all: the quoted brace is followed, not miscounted
+awk -v q="$QUOTED" '{print} /^[[:space:]]*-Server/ {print q}' "$REPO_FILE" > "$WORK/repo-quoted.medioo"
+run "$WORK/quoted.Caddyfile" "$WORK/repo-quoted.medioo" || fail "quoted-both: drift reported with the same quoted line on both sides: $(out)"
+no_leak quoted-both
+
+# 14. a medioo block that never closes (a hand edit that lost its last brace), followed by the other tenants: fails as
+#     unterminated, with no diff, and nothing of theirs is printed
+box unterminated "$(ours_as_box | awk '/^medioo\.eliooo\.org \{/ { inm = 1 } inm && /^\}/ { inm = 0; next } {print}')
+
+$OTHERS"
+if run "$WORK/unterminated.Caddyfile"; then fail "unterminated: exited 0 with an unclosed medioo block: $(out)"; fi
+grep -qF 'unterminated medioo.eliooo.org block in the box file' "$WORK/out.log" \
+  || fail "unterminated: no 'unterminated medioo.eliooo.org block in the box file' line: $(out)"
+grep -q '^[-+@]' "$WORK/out.log" && fail "unterminated: printed a diff of an extraction it could not bound: $(out)"
+no_leak unterminated
+
+# 15. no blocks on EITHER side (a repo file that lost them, an empty box read): two empty extractions are equal, so
+#     only the per-side block count can fail this. Every other "missing" case also has a non-empty side to diff.
+printf '# only a comment\n' > "$WORK/repo-empty.medioo"
+box empty-both ""
+if run "$WORK/empty-both.Caddyfile" "$WORK/repo-empty.medioo"; then fail "empty-both: exited 0 with no blocks on either side: $(out)"; fi
+grep -qF 'no medioo.eliooo.org block in the repo file' "$WORK/out.log" \
+  || fail "empty-both: no 'no medioo.eliooo.org block in the repo file' line: $(out)"
 
 if [ "$FAILED" -ne 0 ]; then exit 1; fi
 echo "caddy-drift: $CASES cases passed"
