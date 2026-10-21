@@ -55,11 +55,15 @@ describe("the built CSS", () => {
     postcss.parse(css).walkDecls((decl) => {
       if (!/var\(\s*--(now|on-now)\b/.test(decl.value) || decl.parent?.type !== "rule") return;
       for (const selector of (decl.parent as postcss.Rule).selectors) {
-        if (/^\.status-chip--crit-(high|low)$/.test(selector.trim())) allowedNowUses.push(`${selector.trim()} ${decl.prop}`);
+        if (/^\.(status-chip--crit-(high|low)|now-banner)$/.test(selector.trim())) allowedNowUses.push(`${selector.trim()} ${decl.prop}`);
       }
     });
     expect(allowedNowUses, "StatusChip's critical states paint with the NOW tokens in the built CSS").toEqual(
       expect.arrayContaining([expect.stringMatching(/^\.status-chip--crit-high /)]),
+    );
+    // W2d-b: the NOW banner ships, its ground the NOW red and its text --on-now, and is judged below as an allowed use.
+    expect(allowedNowUses, "the NOW banner paints with the NOW tokens in the built CSS").toEqual(
+      expect.arrayContaining([".now-banner background", ".now-banner color"]),
     );
 
     expect(nowUsageViolations(css, NOW_ALLOWED)).toEqual([]);

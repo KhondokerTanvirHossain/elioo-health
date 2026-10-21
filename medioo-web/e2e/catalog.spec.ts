@@ -37,23 +37,39 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
       test("everyRegisteredStateRenders", async ({ page }) => {
         await open(page);
         const registered = Number(await page.locator("main").getAttribute("data-catalog-states"));
-        // W2c registers 13 states (Wordmark 1, MioAvatar 3, MessageBubble 3, StatusChip 6); later PRs raise it.
-        expect(registered, "registered states").toBeGreaterThanOrEqual(13);
+        // W2c registers 13 states (Wordmark 1, MioAvatar 3, MessageBubble 3, StatusChip 6), W2d-b 6 (NowBanner);
+        // later PRs raise it.
+        expect(registered, "registered states").toBeGreaterThanOrEqual(19);
         const sections = await page.$$eval("[data-catalog-state]", (els) =>
           els.map((el) => {
             const h2 = el.querySelector(":scope > h2");
             const rendered = [...el.children].filter((c) => c !== h2);
             const box = rendered.reduce((w, c) => Math.max(w, c.getBoundingClientRect().width), 0);
-            return { state: el.getAttribute("data-catalog-state")!, lang: el.getAttribute("lang"), box };
+            return {
+              state: el.getAttribute("data-catalog-state")!,
+              lang: el.getAttribute("lang"),
+              box,
+              elements: rendered.length,
+              empty: el.hasAttribute("data-catalog-empty"),
+            };
           }),
         );
         expect(sections.length, "one section per state per language").toBe(registered * 2);
-        expect(sections.length).toBeGreaterThanOrEqual(26);
+        expect(sections.length).toBeGreaterThanOrEqual(38);
         const byState = new Map<string, string[]>();
         for (const s of sections) byState.set(s.state, [...(byState.get(s.state) ?? []), s.lang ?? "none"]);
         expect(byState.size, "distinct states").toBe(registered);
         expect([...byState].filter(([, langs]) => langs.join() !== "bn,en"), "states not shown once in bn, then en").toEqual([]);
-        expect(sections.filter((s) => s.box === 0).map((s) => `${s.state} (${s.lang})`), "states that render nothing").toEqual([]);
+        expect(
+          sections.filter((s) => !s.empty && s.box === 0).map((s) => `${s.state} (${s.lang})`),
+          "states that render nothing",
+        ).toEqual([]);
+        // A state marked empty (the banner Java says not to show) paints no element at all, in either language.
+        expect(
+          sections.filter((s) => s.empty && s.elements > 0).map((s) => `${s.state} (${s.lang}): ${s.elements} elements`),
+          "empty states that render something",
+        ).toEqual([]);
+        expect(sections.filter((s) => s.empty).map((s) => s.state)).toEqual(["NowBanner/hidden", "NowBanner/hidden"]);
         // The registry's exact list is src/catalog/states.test.tsx's: this page's own count above cannot see a state
         // dropped from the registry, only one the page failed to render.
       });
@@ -134,8 +150,9 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
           for (const section of sections) {
             const state = section.dataset.catalogState!;
             measured.push(state);
-            // The heading and at least one element of the state itself, or the inner loop measured nothing there.
-            if (section.querySelectorAll("*").length < 2) empty.push(state);
+            // The heading and at least one element of the state itself, or the inner loop measured nothing there. A
+            // state marked empty renders nothing by design, and everyRegisteredStateRenders holds it to that.
+            if (!section.hasAttribute("data-catalog-empty") && section.querySelectorAll("*").length < 2) empty.push(state);
             for (const el of [section, ...section.querySelectorAll("*")]) {
               if (el.scrollWidth > el.clientWidth + 1) {
                 over.push(`${state} <${el.tagName.toLowerCase()} class="${el.getAttribute("class") ?? ""}"> ${el.scrollWidth} > ${el.clientWidth}`);
@@ -147,11 +164,14 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
         });
         expect(result.over).toEqual([]);
         expect(result.page[0], "the page itself scrolls sideways").toBeLessThanOrEqual(result.page[1]! + 1);
-        // Guards: every section measured at least one element of its state, the W2c floor of sections was walked
-        // (13 states × 2 languages; states.test.tsx holds the exact list), and the long unbroken bubble among them.
+        // Guards: every section measured at least one element of its state, the floor of sections was walked
+        // (19 states × 2 languages; states.test.tsx holds the exact list), and the long names among them: the unbroken
+        // bubble (W2c) and the NOW banner's title with a long name, spaced and unbroken (W2d-b).
         expect(result.empty, "sections whose state has no element to measure").toEqual([]);
-        expect(result.measured.length).toBeGreaterThanOrEqual(26);
+        expect(result.measured.length).toBeGreaterThanOrEqual(38);
         expect(result.measured).toContain("MessageBubble/long-unbroken");
+        expect(result.measured).toContain("NowBanner/long-name");
+        expect(result.measured).toContain("NowBanner/long-unbroken");
       });
 
       test("onlyNowComponentsPaintTheNowRed", async ({ page }) => {
@@ -203,8 +223,13 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
         }, NOW_ALLOWED.source);
         expect(result.now.length, "the NOW tokens resolved").toBeGreaterThanOrEqual(3);
         expect(result.bad).toEqual([]);
-        // Guard: the red was found where it belongs (the critical chips), so the empty list above is not vacuous.
-        expect(result.painted).toEqual(expect.arrayContaining(["StatusChip/crit-high", "StatusChip/crit-low"]));
+        // Guard: the red was found where it belongs (the critical chips and the NOW banner), so the empty list above is
+        // not vacuous.
+        expect(result.painted).toEqual(
+          expect.arrayContaining(["StatusChip/crit-high", "StatusChip/crit-low", "NowBanner/one-patient", "NowBanner/abroad"]),
+        );
+        // And never on the banner Java said not to show.
+        expect(result.painted).not.toContain("NowBanner/hidden");
       });
 
       test("everyFieldAndTrackDrawsTheBoundary", async ({ page }) => {
@@ -407,6 +432,60 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
         await expect
           .poll(async () => (await visible()).map((i) => i.complete && i.natural > 0 && i.src.endsWith(file(other))))
           .toEqual([true, true]);
+      });
+
+      test("theNowBannersPrimaryActionsMeetThePrimaryTarget", async ({ page }) => {
+        // The legibility floor: touch targets at least 44 px, primary actions at least 48 px. On the NOW banner the
+        // primary actions are the 999 call (in Bangladesh) and opening the paper (abroad its only way forward).
+        await open(page);
+        const result = await page.evaluate(() => {
+          const heights: Record<string, number[]> = {};
+          for (const section of document.querySelectorAll<HTMLElement>('[data-catalog-state^="NowBanner/"]')) {
+            for (const [kind, selector] of [
+              ["call", ".now-banner__call"],
+              ["open", ".now-banner__open"],
+              ["seen", ".now-banner__seen"],
+            ] as const) {
+              for (const el of section.querySelectorAll(selector)) {
+                const key = `${section.dataset.catalogState} ${kind}`;
+                heights[key] = [...(heights[key] ?? []), el.getBoundingClientRect().height];
+              }
+            }
+          }
+          return heights;
+        });
+        const short = (min: number, kinds: string[]) =>
+          Object.entries(result)
+            .filter(([key]) => kinds.some((k) => key.endsWith(` ${k}`)))
+            .flatMap(([key, hs]) => hs.filter((h) => h < min - 0.5).map((h) => `${key} ${h.toFixed(1)}px`));
+        expect(short(48, ["call", "open"]), "primary actions under 48 px").toEqual([]);
+        expect(short(44, ["seen"]), "the seen button under 44 px").toEqual([]);
+        // Guard: the states that carry each action were measured, so the empty lists are about real buttons.
+        expect(result["NowBanner/one-patient call"]?.length, "999 calls on NowBanner/one-patient").toBe(2);
+        expect(result["NowBanner/abroad open"]?.length, "open links on NowBanner/abroad").toBe(2);
+        expect(result["NowBanner/abroad call"], "no 999 call abroad").toBeUndefined();
+      });
+
+      test("mioIsStillOnEveryNowBanner", async ({ page }) => {
+        // Mio is still on a NOW surface, read from what the browser runs, not from the class names: whatever class or
+        // selector would animate him, the computed animation is none.
+        await open(page);
+        const result = await page.evaluate(() => {
+          const moving: string[] = [];
+          let measured = 0;
+          for (const img of document.querySelectorAll<HTMLElement>('[data-catalog-state^="NowBanner/"] img.mio-avatar')) {
+            measured++;
+            const name = getComputedStyle(img).animationName;
+            if (name !== "none") moving.push(`${img.closest<HTMLElement>("[data-catalog-state]")!.dataset.catalogState}: ${name}`);
+          }
+          // The other direction: the moving Mio of MioAvatar/32 does report an animation, so "none" above is a reading.
+          const hop = document.querySelector<HTMLElement>('[data-catalog-state="MioAvatar/32"] img.mio-avatar');
+          return { moving, measured, hop: hop ? getComputedStyle(hop).animationName : null };
+        });
+        expect(result.moving).toEqual([]);
+        // 5 shown NowBanner states × 2 languages (NowBanner/hidden renders nothing).
+        expect(result.measured, "Mio avatars measured on NowBanner states").toBeGreaterThanOrEqual(10);
+        expect(result.hop, "MioAvatar/32 animates, so the reading can see an animation").toBe("mio-avatar-hop");
       });
 
       test("noCspViolation", async ({ page }) => {

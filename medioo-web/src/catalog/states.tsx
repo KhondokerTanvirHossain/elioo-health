@@ -1,19 +1,47 @@
 import type { JSX } from "react";
+import type { NowBannerJson } from "@/api/types";
 import { banglaDigits, t, type Lang } from "@/copy";
 import { MessageBubble } from "@/components/MessageBubble/MessageBubble";
 import { MioAvatar } from "@/components/MioAvatar/MioAvatar";
 import { OtpInput } from "@/components/OtpInput/OtpInput";
 import { PhoneField } from "@/components/PhoneField/PhoneField";
+import { NowBanner, type NowBannerPatient } from "@/components/safety/NowBanner/NowBanner";
 import { CHIP_KINDS, StatusChip } from "@/components/StatusChip/StatusChip";
 import { Wordmark } from "@/components/Wordmark/Wordmark";
+// B3's generated GET /app/api/now-banner bodies (baymax NowBannerApiContractTest): each state reads one as Java wrote it.
+import nowBannerAbroad from "../../fixtures/api/now-banner/abroad.json";
+import nowBannerAcked from "../../fixtures/api/now-banner/acked.json";
+import nowBannerOne from "../../fixtures/api/now-banner/one.json";
+import nowBannerTwoPatients from "../../fixtures/api/now-banner/two-patients.json";
 // Fictional names, written by baymax CatalogFixturesExportTest so no Bangla is typed here (Global Constraints).
 import catalogNames from "../../fixtures/catalog/names.json";
 
-/** One state of one component, as the catalog renders it in each language. */
-export type CatalogState = { component: string; state: string; render: (lang: Lang) => JSX.Element };
+/**
+ * One state of one component, as the catalog renders it in each language. `empty` marks a state whose point is that
+ * the component renders nothing (NowBanner when Java says `show: false`): catalog.spec.ts holds it to painting no
+ * element at all, and holds every other state to rendering something.
+ */
+export type CatalogState = { component: string; state: string; render: (lang: Lang) => JSX.Element; empty?: true };
 
 const names = catalogNames.names;
 const nameFor = (lang: Lang) => (lang === "bn" ? names.short : names.english);
+
+/**
+ * The patients GET /app/api/me would list beside a banner, reduced to the id and the name the banner reads: one per
+ * distinct patient of its documents, in order, named from `pool`. The name is display data the screen supplies, so it is the one thing a NowBanner state chooses; the
+ * banner is the generated body, unchanged.
+ */
+function bannerPatients(banner: NowBannerJson, pool: string[]): NowBannerPatient[] {
+  const ids = [...new Set(banner.documents.flatMap((d) => (d.patient_id === null ? [] : [d.patient_id])))];
+  return ids.map((id, i) => ({ id, name: pool[i % pool.length]! }));
+}
+
+const nowBanner = (state: string, banner: NowBannerJson, pool: (lang: Lang) => string[], empty?: true): CatalogState => ({
+  component: "NowBanner",
+  state,
+  render: (lang) => <NowBanner banner={banner} patients={bannerPatients(banner, pool(lang))} lang={lang} />,
+  ...(empty ? { empty } : {}),
+});
 
 /**
  * Every catalog state, registered per component. /app/catalog-test renders each one in both languages, and
@@ -94,4 +122,15 @@ export const STATES: CatalogState[] = [
     state: "error",
     render: (lang) => <PhoneField lang={lang} name="whatsapp_number" error="login.number.invalid" defaultValue="01700 0000" />,
   },
+
+  // The NOW banner over each of B3's generated bodies; acked.json is the one Java says not to show. The seen button is
+  // inert here: the catalog passes no onSeen, and without one NowBannerSeen sends no request at all
+  // (NowBanner.test.tsx › theCatalogButtonSendsNothing taps every one of these).
+  nowBanner("one-patient", nowBannerOne.body, (lang) => [nameFor(lang)]),
+  nowBanner("two-patients", nowBannerTwoPatients.body, (lang) => [nameFor(lang), names.long]),
+  nowBanner("abroad", nowBannerAbroad.body, (lang) => [nameFor(lang)]),
+  nowBanner("hidden", nowBannerAcked.body, (lang) => [nameFor(lang)], true),
+  // A long name, spaced and unbroken: the title wraps inside the banner, never past it (plan Review Focus 3).
+  nowBanner("long-name", nowBannerOne.body, () => [names.long]),
+  nowBanner("long-unbroken", nowBannerOne.body, () => [names.long_unbroken]),
 ];

@@ -1,0 +1,114 @@
+/* The global NOW banner (NowBanner.tsx): the one NOW red as its ground, the text and every edge in --on-now, which the
+   token file declares on --now and the contrast test holds at 4.5:1 in both themes. The title wraps anywhere, so a long
+   name typed without a space never pushes the banner wider than the screen (catalog states long-name, long-unbroken).
+   The actions are outlined on the red, never another colour on it. */
+.now-banner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 100%;
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--now);
+  color: var(--on-now);
+  font-family: var(--font-bn);
+}
+.now-banner__head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.now-banner__shape {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.now-banner__title {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+  min-width: 0;
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: 700;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.now-banner__name {
+  min-width: 0;
+  max-width: 100%;
+}
+.now-banner__name:not(:last-child)::after {
+  content: ",";
+}
+.now-banner__line {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.now-banner__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.now-banner__open,
+.now-banner__call,
+.now-banner__seen {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  min-height: var(--target-min);
+  padding: 0 var(--space-4);
+  border: 2px solid var(--on-now);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--on-now);
+  font: inherit;
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: center;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+/* The primary actions sit on the legibility floor's primary target (48 px): the 999 call in Bangladesh, and opening
+   the paper, which is the first thing to do from anywhere, abroad included. The seen button stays at the 44 px floor. */
+.now-banner__open,
+.now-banner__call {
+  min-height: var(--target-primary);
+}
+.now-banner__call {
+  font-weight: 700;
+  border-width: 3px;
+}
+.now-banner__seen {
+  cursor: pointer;
+}
+/* A refused or failed acknowledgement, said in words on its own line: the banner stays. */
+.now-banner__status {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.now-banner__seen:disabled {
+  cursor: progress;
+}
+.now-banner__open:focus-visible,
+.now-banner__call:focus-visible,
+.now-banner__seen:focus-visible {
+  outline: 3px solid var(--on-now);
+  outline-offset: 2px;
+}

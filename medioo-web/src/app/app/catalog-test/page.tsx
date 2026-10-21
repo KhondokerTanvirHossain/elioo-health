@@ -18,9 +18,14 @@ export default function CatalogTestPage() {
   return (
     <main data-catalog-states={STATES.length}>
       <h1 lang="en">catalog-test</h1>
-      {STATES.map(({ component, state, render }) =>
+      {STATES.map(({ component, state, render, empty }) =>
         LANGS.map((lang) => (
-          <section key={`${component}/${state}/${lang}`} data-catalog-state={`${component}/${state}`} lang={lang}>
+          <section
+            key={`${component}/${state}/${lang}`}
+            data-catalog-state={`${component}/${state}`}
+            data-catalog-empty={empty ? "" : undefined}
+            lang={lang}
+          >
             <h2 lang="en">
               {component}/{state} ({lang})
             </h2>
