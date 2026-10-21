@@ -285,6 +285,35 @@ class DocumentRecoveryAcceptanceTest {
         });
     }
 
+    /**
+     * PR 9: a FAILED document the family was never told about is "unexplained" too — the process died between the
+     * FAILED write and the notice — and one with a {@code failure} row is answered. Its window is pinned 12–18 hours
+     * back: clear of the other tests' documents (updated "now" or about an hour ago) and of the window and the
+     * count of {@link #unexplainedSinceFindsADoneDocumentWithNoMessageAndNotOneWithAnExplanation} (a day and more).
+     */
+    @Test
+    void aFailedDocumentWithoutANoticeIsUnexplainedAndOneWithANoticeIsNot() {
+        runner().run(context -> {
+            UUID family = UUID.randomUUID();
+            UUID patient = UUID.randomUUID();
+            seedFamily(family, patient);
+            DocumentRecordPort records = context.getBean(DocumentRecordPort.class);
+            Instant before = Instant.now().minus(Duration.ofHours(12));
+            Instant since = before.minus(Duration.ofHours(6));
+
+            Document told = finished(records, patient, family, Document.Status.FAILED, before.minus(Duration.ofHours(2)));
+            Document silent = finished(records, patient, family, Document.Status.FAILED, before.minus(Duration.ofHours(1)));
+            Document explainedOnly = finished(records, patient, family, Document.Status.FAILED, before.minus(Duration.ofMinutes(90)));
+            message(family, patient, told, "failure");
+            message(family, patient, explainedOnly, "explanation");
+
+            List<UUID> listed = records.unexplainedSince(since, before).collectList().block();
+            assertThat(listed).as("a failure notice answers a FAILED document").doesNotContain(told.id());
+            assertThat(listed).as("only a failure notice answers FAILED; an explanation row does not")
+                    .containsExactly(explainedOnly.id(), silent.id());
+        });
+    }
+
     private static Document done(DocumentRecordPort records, UUID patient, UUID family, Instant at) {
         return finished(records, patient, family, Document.Status.DONE, at);
     }

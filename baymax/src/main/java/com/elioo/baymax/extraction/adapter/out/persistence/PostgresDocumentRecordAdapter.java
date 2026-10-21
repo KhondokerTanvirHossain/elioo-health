@@ -452,9 +452,14 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
                 .one();
     }
 
-    /** A finished document with no family-facing message about it. Detail and nudge rows do not count. */
-    private static final String NEVER_EXPLAINED = "d.status IN ('DONE','NEEDS_RETAKE') AND NOT EXISTS (SELECT 1 FROM "
-            + S + ".outbound_message m WHERE m.document_id = d.id AND m.kind IN ('explanation','retake'))";
+    /**
+     * A finished document with no family-facing message about it. Detail and nudge rows do not count. A FAILED
+     * document is answered only by its failure notice (PR 9, V23): the family was told "reading it".
+     */
+    private static final String NEVER_EXPLAINED = "((d.status IN ('DONE','NEEDS_RETAKE') AND NOT EXISTS (SELECT 1 FROM "
+            + S + ".outbound_message m WHERE m.document_id = d.id AND m.kind IN ('explanation','retake'))) "
+            + "OR (d.status = 'FAILED' AND NOT EXISTS (SELECT 1 FROM "
+            + S + ".outbound_message m WHERE m.document_id = d.id AND m.kind = 'failure')))";
 
     @Override
     public Flux<UUID> unexplainedSince(Instant since, Instant before) {

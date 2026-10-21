@@ -123,7 +123,8 @@ public interface DocumentRecordPort {
 
     /**
      * F9b: DONE or NEEDS_RETAKE documents updated in {@code [since, before)} that have no explanation or retake
-     * message — the process died between extraction and {@code explain()}. Oldest first.
+     * message, and FAILED ones with no failure notice (PR 9) — the process died between extraction and
+     * {@code explain()}. Oldest first.
      */
     Flux<UUID> unexplainedSince(Instant since, Instant before);
 

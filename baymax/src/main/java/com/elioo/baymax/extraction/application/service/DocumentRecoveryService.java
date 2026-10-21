@@ -60,7 +60,10 @@ public class DocumentRecoveryService implements DocumentRecoveryUseCase {
                         }));
     }
 
-    /** DONE or NEEDS_RETAKE with no message: explained if recent, only counted if older (a late text about an old paper helps nobody). */
+    /**
+     * DONE or NEEDS_RETAKE with no message, or FAILED with no failure notice (PR 9): explained if recent, only counted
+     * if older (a late text about an old paper helps nobody).
+     */
     private Flux<RecoveryReport> unexplained(Instant cutoff) {
         Instant since = clock.instant().minus(properties.getRecovery().getExplainMaxAge());
         return documents.unexplainedSince(since, cutoff)
