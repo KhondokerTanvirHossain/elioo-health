@@ -1,8 +1,14 @@
 # DR-42 input: what a Next.js page costs over the wire (W1a measurement)
 
-**Status:** measurement and proposal only. **The PO decides DR-42** (plan `2026-10-21-medioo-nextjs-rebuild.md`,
-Part B, decision 1). This file does not decide it, and sets no interim policy: what the W budget tests do before
-DR-42 is listed under "Decisions for the PO" as a proposal.
+**Status:** measurement; decided by [DR-42](../../DECISIONS.md) (PO, 2026-10-21; plan
+`2026-10-21-medioo-nextjs-rebuild.md`, Part B, decision 1).
+- **Adopted:** items 1–5 of the proposal below: the no-JS scope, ≤ 265,409 B per routed page, the probe ceiling of
+  214,167 B, and both ceilings in one committed file.
+- **Added by DR-42:** the opt-out POST stays the one no-JS mutation. The file is `medioo-web/e2e/budget-ceilings.json`,
+  written by W1d. The enforcing run is this file's reference setup, the image behind a Caddy replica, which W1d adds to CI.
+- **Moot:** the interim proposal (record without enforcing).
+
+The measurement below is left as it was taken.
 
 **Measured:** 2026-10-21, on branch `feat/medioo-web-skeleton` (PR W1a), re-measured after the review fixes. Every
 number in the tables below comes from the runs named beside it; nothing is carried over from an earlier session.
