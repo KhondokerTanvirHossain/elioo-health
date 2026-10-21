@@ -106,5 +106,5 @@ over the `n8n_edge` Docker network.
   Boot's own BOM brings 6.2.19 or later (`ShippedSpringFrameworkVersionTest` fails if Boot moves while it is set).
 - Boot 3.4.x is past OSS support, and its BOM keeps Netty 4.1.117.Final and reactor-netty 1.2.2 in production
   behind Caddy, which predate published fixes (Netty's HTTP/1.1 chunk-extension request smuggling, CVE-2025-58056,
-  fixed in 4.1.125; reactor-netty's redirect credential leak, CVE-2025-22227). A known, tracked choice: move to a
+  fixed in 4.1.125; reactor-netty's redirect credential leak, CVE-2025-22227). A known, tracked choice (#115): move to a
   supported Boot line, or as an interim override `netty.version` and `reactor-bom.version` with their own replay.
