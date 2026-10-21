@@ -66,6 +66,29 @@ describe("the built CSS", () => {
       expect.arrayContaining([".now-banner background", ".now-banner color"]),
     );
 
+    // W2d-a: the NOW card's band and call link are allowed NOW uses, and the THIS_WEEK card's band is the one allowed
+    // --week use, so the --week check below judged a real use of the amber and not only its definitions.
+    const usesOf = (token: RegExp, selectorPattern: RegExp) => {
+      const out: string[] = [];
+      postcss.parse(css).walkDecls((decl) => {
+        if (!token.test(decl.value) || decl.parent?.type !== "rule") return;
+        for (const selector of (decl.parent as postcss.Rule).selectors) {
+          if (selectorPattern.test(selector.trim())) out.push(`${selector.trim()} ${decl.prop}`);
+        }
+      });
+      return out;
+    };
+    expect(usesOf(/var\(\s*--(now|on-now)\b/, /^\.verdict-card--now\b/), "VerdictCard's NOW band paints with the NOW tokens").toEqual(
+      expect.arrayContaining([".verdict-card--now .verdict-card__band background", ".verdict-card--now .verdict-card__band color"]),
+    );
+    expect(usesOf(/var\(\s*--week\b/, /./), "every --week use in the built CSS").toEqual(
+      expect.arrayContaining([".verdict-card--week .verdict-card__band background", ".verdict-card--week .verdict-card__band color"]),
+    );
+    expect(
+      usesOf(/var\(\s*--week\b/, /./).filter((u) => !u.startsWith(".verdict-card--week ")),
+      "--week used outside .verdict-card--week",
+    ).toEqual([]);
+
     expect(nowUsageViolations(css, NOW_ALLOWED)).toEqual([]);
     expect(tokenUsageViolations(css, "week", WEEK_ALLOWED)).toEqual([]);
     expect(roleUsageViolations(css, json as unknown as TokenFile)).toEqual([]);

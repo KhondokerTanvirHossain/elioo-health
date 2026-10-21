@@ -2,6 +2,15 @@ import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { t, type CopyKey, type Lang } from "@/copy";
+import failed from "../../fixtures/api/documents/failed.json";
+import notFound from "../../fixtures/api/documents/not-found.json";
+import nowAbroad from "../../fixtures/api/documents/now-abroad.json";
+import nowBd from "../../fixtures/api/documents/now-bd.json";
+import processing from "../../fixtures/api/documents/processing.json";
+import retakeThird from "../../fixtures/api/documents/retake-third.json";
+import routineReleased from "../../fixtures/api/documents/routine-released.json";
+import thisWeekPending from "../../fixtures/api/documents/this-week-pending.json";
+import unassessed from "../../fixtures/api/documents/unassessed.json";
 // B3's generated GET /app/api/now-banner bodies (baymax NowBannerApiContractTest), imported as JSON so the assignments
 // below are checked by `pnpm typecheck`: a field the type names that a fixture drops or retypes does not compile. A
 // field Java ADDS compiles silently (an imported value gets no excess-property check), so the key sets are pinned at
@@ -10,7 +19,20 @@ import abroad from "../../fixtures/api/now-banner/abroad.json";
 import acked from "../../fixtures/api/now-banner/acked.json";
 import one from "../../fixtures/api/now-banner/one.json";
 import twoPatients from "../../fixtures/api/now-banner/two-patients.json";
-import type { NowBannerDocumentJson, NowBannerJson, NowSeenJson } from "./types";
+import {
+  BANNER_LEVELS,
+  DISPLAY_KINDS,
+  GATES,
+  PAPER_STATUSES,
+  READING_STATUSES,
+  SIDES,
+  URGENCIES,
+  type Json,
+  type NowBannerDocumentJson,
+  type NowBannerJson,
+  type NowSeenJson,
+  type PaperJson,
+} from "./types";
 
 const nowBannerDir = join(__dirname, "..", "..", "fixtures/api/now-banner");
 
@@ -87,5 +109,115 @@ describe("API types", () => {
       }
     }
     expect(wrong).toEqual([]);
+  });
+});
+
+/*
+ * The generated contract and the types, held together twice (plan W2d-a):
+ *  - at compile time: every committed fixture's body is assigned to `Json<PaperJson>` below, so `pnpm typecheck` fails
+ *    here when B2's PaperApiContractTest writes a shape the type does not describe (a renamed key, a banner that
+ *    became a string, a result field missing);
+ *  - at run time: what a JSON import widens to `string` (a status, a gate, a level, a kind, a copy key) is checked
+ *    against the unions and the copy, and the list below against the directory, so a fixture added there cannot go
+ *    unchecked.
+ */
+
+// Compile time. A result body cannot pass as a reading one: PaperReadingJson declares every result key `never`.
+const PAPERS: Record<string, Json<PaperJson>> = {
+  "failed.json": failed.body,
+  "now-abroad.json": nowAbroad.body,
+  "now-bd.json": nowBd.body,
+  "processing.json": processing.body,
+  "retake-third.json": retakeThird.body,
+  "routine-released.json": routineReleased.body,
+  "this-week-pending.json": thisWeekPending.body,
+  "unassessed.json": unassessed.body,
+};
+// The one documents case that is not a paper: the {"reason"} refusal (Wave 2 plan, Shared interfaces).
+const REFUSALS: Record<string, { reason: string }> = { "not-found.json": notFound.body };
+const STATUS: Record<string, number> = {
+  "failed.json": failed.status,
+  "not-found.json": notFound.status,
+  "now-abroad.json": nowAbroad.status,
+  "now-bd.json": nowBd.status,
+  "processing.json": processing.status,
+  "retake-third.json": retakeThird.status,
+  "routine-released.json": routineReleased.status,
+  "this-week-pending.json": thisWeekPending.status,
+  "unassessed.json": unassessed.status,
+};
+
+const documentsDir = join(__dirname, "..", "..", "fixtures", "api", "documents");
+const onDisk = () => readdirSync(documentsDir).filter((f) => f.endsWith(".json")).sort();
+
+const has = (list: readonly string[], v: unknown) => typeof v === "string" && list.includes(v);
+
+/** Every `<x>_key` string anywhere in a body, with its path. */
+function copyKeys(node: unknown, path = ""): Array<{ path: string; key: string }> {
+  if (Array.isArray(node)) return node.flatMap((n, i) => copyKeys(n, `${path}[${i}]`));
+  if (node === null || typeof node !== "object") return [];
+  return Object.entries(node as Record<string, unknown>).flatMap(([k, v]) => [
+    ...(k.endsWith("_key") && typeof v === "string" ? [{ path: `${path}.${k}`, key: v }] : []),
+    ...copyKeys(v, `${path}.${k}`),
+  ]);
+}
+
+describe("the /app/api types", () => {
+  it("everyDocumentsFixtureIsAPaperJson", () => {
+    // Every committed documents fixture is in one of the two typed lists above, and only those.
+    expect([...Object.keys(PAPERS), ...Object.keys(REFUSALS)].sort()).toEqual(onDisk());
+    expect(Object.keys(STATUS).sort()).toEqual(onDisk());
+    // A paper is a 200 body; a refusal is not.
+    expect(Object.keys(PAPERS).filter((f) => STATUS[f] !== 200), "papers sent with a status other than 200").toEqual([]);
+    expect(Object.keys(REFUSALS).filter((f) => STATUS[f] === 200), "refusals sent as 200").toEqual([]);
+    // Guards: both kinds and both paper variants were read.
+    expect(Object.keys(REFUSALS).length).toBeGreaterThan(0);
+    const statuses = Object.values(PAPERS).map((p) => p.status);
+    expect(statuses.some((s) => has(READING_STATUSES, s)), "a reading paper").toBe(true);
+    expect(statuses.some((s) => !has(READING_STATUSES, s)), "a finished paper").toBe(true);
+  });
+
+  it("everyLiteralAJsonImportWidensIsOneTheTypeNames", () => {
+    const wrong: string[] = [];
+    const check = (file: string, field: string, list: readonly string[], v: unknown, nullable = false) => {
+      if (nullable && v === null) return;
+      if (!has(list, v)) wrong.push(`${file} ${field}: ${JSON.stringify(v)}`);
+    };
+    let levels = 0;
+    for (const [file, paper] of Object.entries(PAPERS)) {
+      check(file, "status", PAPER_STATUSES, paper.status);
+      if (has(READING_STATUSES, paper.status)) continue;
+      const p = paper as Record<string, unknown> & { values?: Array<Record<string, unknown>> };
+      check(file, "gate", GATES, p.gate);
+      check(file, "urgency", URGENCIES, p.urgency, true);
+      const banner = p.banner as { level?: unknown } | null;
+      if (banner !== null) {
+        levels++;
+        check(file, "banner.level", BANNER_LEVELS, banner.level);
+      }
+      for (const v of p.values ?? []) {
+        check(file, `values[${String(v.id)}].display_kind`, DISPLAY_KINDS, v.display_kind);
+        check(file, `values[${String(v.id)}].side`, SIDES, v.side, true);
+      }
+    }
+    expect(wrong).toEqual([]);
+    expect(levels, "papers with a banner").toBeGreaterThan(0);
+  });
+
+  it("everyCopyKeyJavaSentResolvesInBothLanguages", () => {
+    const keys = Object.entries(PAPERS).flatMap(([file, body]) => copyKeys(body).map((k) => ({ ...k, file })));
+    const missing: string[] = [];
+    for (const { file, path, key } of keys) {
+      for (const lang of ["bn", "en"] as const) {
+        try {
+          t(lang, key as CopyKey);
+        } catch {
+          missing.push(`${file} ${path}: ${key} (${lang})`);
+        }
+      }
+    }
+    expect(missing).toEqual([]);
+    // Guard: the walk found the keys a NOW paper carries, so the empty list above is not vacuous.
+    expect(keys.map((k) => k.key)).toEqual(expect.arrayContaining(["urgency.now", "now.notdoctor", "result.counts"]));
   });
 });

@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { CONTROL_CLASS, FIELD_SELECTOR, NOW_ALLOWED } from "../src/styles/now-usage";
@@ -15,6 +17,21 @@ const VIEWPORTS = {
 } as const;
 const SCHEMES = ["light", "dark"] as const;
 
+// The registry's floor, derived as states.test.tsx derives the list: W2c's 13 states (Wordmark 1, MioAvatar 3,
+// MessageBubble 3, StatusChip 6), W2e-a's 5 (OtpInput 3, PhoneField 2), W2d-b's 6 (NowBanner), then W2d-a's one
+// VerdictCard state per paper fixture (every 200 body B2's contract test wrote), Toast/default and Sheet/open. Later
+// PRs raise it.
+const documentsDir = join(__dirname, "..", "fixtures", "api", "documents");
+const PAPER_FIXTURES = readdirSync(documentsDir)
+  .filter((f) => f.endsWith(".json"))
+  .filter((f) => (JSON.parse(readFileSync(join(documentsDir, f), "utf8")) as { status: number }).status === 200);
+const MIN_STATES = 13 + 5 + 6 + PAPER_FIXTURES.length + 2;
+
+/** Every open modal dialog closed (the Sheet/open states), so a whole-page check is not judging a page made inert. */
+async function closeSheets(page: Page) {
+  await page.evaluate(() => document.querySelectorAll("dialog").forEach((d) => d.close()));
+}
+
 /** Loads the catalog with the CSP-violation hook installed from the first byte, every eager image loaded. */
 async function open(page: Page) {
   await page.addInitScript(() => {
@@ -27,6 +44,13 @@ async function open(page: Page) {
   const response = await page.goto("/app/catalog-test");
   expect(response?.status(), "the catalog build serves /app/catalog-test").toBe(200);
   await page.waitForLoadState("load");
+  // The Sheet/open states open on hydration (showModal), so every check measures them open, in both languages.
+  await expect
+    .poll(() => page.evaluate(() => document.querySelectorAll('[data-catalog-state="Sheet/open"] dialog:modal').length), {
+      message: "both Sheet/open states are open as modals (showModal)",
+      timeout: 10_000,
+    })
+    .toBe(2);
 }
 
 for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
@@ -37,9 +61,8 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
       test("everyRegisteredStateRenders", async ({ page }) => {
         await open(page);
         const registered = Number(await page.locator("main").getAttribute("data-catalog-states"));
-        // W2c registers 13 states (Wordmark 1, MioAvatar 3, MessageBubble 3, StatusChip 6), W2d-b 6 (NowBanner);
-        // later PRs raise it.
-        expect(registered, "registered states").toBeGreaterThanOrEqual(19);
+        expect(PAPER_FIXTURES.length, "paper fixtures read").toBeGreaterThan(0);
+        expect(registered, "registered states").toBeGreaterThanOrEqual(MIN_STATES);
         const sections = await page.$$eval("[data-catalog-state]", (els) =>
           els.map((el) => {
             const h2 = el.querySelector(":scope > h2");
@@ -55,7 +78,7 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
           }),
         );
         expect(sections.length, "one section per state per language").toBe(registered * 2);
-        expect(sections.length).toBeGreaterThanOrEqual(38);
+        expect(sections.length).toBeGreaterThanOrEqual(MIN_STATES * 2);
         const byState = new Map<string, string[]>();
         for (const s of sections) byState.set(s.state, [...(byState.get(s.state) ?? []), s.lang ?? "none"]);
         expect(byState.size, "distinct states").toBe(registered);
@@ -134,10 +157,22 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
         expect((await paint()).body, `the ${other} theme paints a different background`).not.toBe(active.body);
         await page.emulateMedia({ colorScheme });
 
+        // A modal sheet makes the rest of the page inert, which an accessibility check must not judge as the page the
+        // family meets: the whole page is judged with the sheets closed, then each open sheet on its own, in the top layer.
+        await closeSheets(page);
         const results = await new AxeBuilder({ page }).analyze();
         expect(results.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
         // An analysis that checked nothing would also report nothing.
         expect(results.passes.length).toBeGreaterThan(0);
+
+        for (const lang of ["bn", "en"]) {
+          const sheet = `[data-catalog-state="Sheet/open"][lang="${lang}"] dialog`;
+          await page.evaluate((selector) => document.querySelector<HTMLDialogElement>(selector)!.showModal(), sheet);
+          const sheetResults = await new AxeBuilder({ page }).include(sheet).analyze();
+          expect(sheetResults.violations.map((v) => `Sheet/open (${lang}) ${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
+          expect(sheetResults.passes.length, `axe checked the open sheet (${lang})`).toBeGreaterThan(0);
+          await closeSheets(page);
+        }
       });
 
       test("noElementOverflowsItsBox", async ({ page }) => {
@@ -165,10 +200,10 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
         expect(result.over).toEqual([]);
         expect(result.page[0], "the page itself scrolls sideways").toBeLessThanOrEqual(result.page[1]! + 1);
         // Guards: every section measured at least one element of its state, the floor of sections was walked
-        // (19 states × 2 languages; states.test.tsx holds the exact list), and the long names among them: the unbroken
-        // bubble (W2c) and the NOW banner's title with a long name, spaced and unbroken (W2d-b).
+        // (the derived floor × 2 languages; states.test.tsx holds the exact list), and the long names among them: the
+        // unbroken bubble (W2c) and the NOW banner's title with a long name, spaced and unbroken (W2d-b).
         expect(result.empty, "sections whose state has no element to measure").toEqual([]);
-        expect(result.measured.length).toBeGreaterThanOrEqual(38);
+        expect(result.measured.length).toBeGreaterThanOrEqual(MIN_STATES * 2);
         expect(result.measured).toContain("MessageBubble/long-unbroken");
         expect(result.measured).toContain("NowBanner/long-name");
         expect(result.measured).toContain("NowBanner/long-unbroken");
@@ -223,10 +258,17 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
         }, NOW_ALLOWED.source);
         expect(result.now.length, "the NOW tokens resolved").toBeGreaterThanOrEqual(3);
         expect(result.bad).toEqual([]);
-        // Guard: the red was found where it belongs (the critical chips and the NOW banner), so the empty list above is
-        // not vacuous.
+        // Guard: the red was found where it belongs (the critical chips, the NOW banner and the NOW verdict cards), so
+        // the empty list above is not vacuous.
         expect(result.painted).toEqual(
-          expect.arrayContaining(["StatusChip/crit-high", "StatusChip/crit-low", "NowBanner/one-patient", "NowBanner/abroad"]),
+          expect.arrayContaining([
+            "StatusChip/crit-high",
+            "StatusChip/crit-low",
+            "NowBanner/one-patient",
+            "NowBanner/abroad",
+            "VerdictCard/now-bd",
+            "VerdictCard/now-abroad",
+          ]),
         );
         // And never on the banner Java said not to show.
         expect(result.painted).not.toContain("NowBanner/hidden");
@@ -239,6 +281,8 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
         // built/now-usage.built.test.ts cannot: source order, a later rule that recolours the edge
         // (`border-color: var(--focus)` on focus), and a class only the markup puts on the element.
         await open(page);
+        // The open sheets make the page behind them inert, so no field there could be hovered or focused.
+        await closeSheets(page);
         const controls = await page.evaluate(
           ({ fields, controlClass }) => {
             const re = new RegExp(controlClass);
@@ -365,6 +409,8 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
         // The pattern as Chromium compiles it (the v flag), on the element: a pattern invalid under v is dropped and
         // then validates nothing, which a unit test compiling its own RegExp cannot see.
         await open(page);
+        // The open sheets make the page behind them inert, so the field could not be filled.
+        await closeSheets(page);
         const input = page.locator('[data-catalog-state="OtpInput/empty"][lang="en"] input');
         // ASCII, Bangla (U+09E7 to U+09EC, built from code points so no Bangla literal is typed), too short, not a digit.
         const bangla = Array.from({ length: 6 }, (_, i) => String.fromCodePoint(0x09e7 + i)).join("");
@@ -486,6 +532,44 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
         // 5 shown NowBanner states × 2 languages (NowBanner/hidden renders nothing).
         expect(result.measured, "Mio avatars measured on NowBanner states").toBeGreaterThanOrEqual(10);
         expect(result.hop, "MioAvatar/32 animates, so the reading can see an animation").toBe("mio-avatar-hop");
+      });
+
+      test("theSheetIsModalAndEscapeClosesIt", async ({ page }) => {
+        // What jsdom cannot show: the platform's modal. The sheet is in the top layer with focus inside it, the page
+        // behind it is inert, and Escape closes the one on top (en, opened last), then the other.
+        await open(page);
+        const state = () =>
+          page.evaluate(() =>
+            [...document.querySelectorAll<HTMLDialogElement>('[data-catalog-state="Sheet/open"] dialog')].map((d) => ({
+              lang: d.closest("section")!.getAttribute("lang"),
+              open: d.open,
+              modal: d.matches(":modal"),
+              focusInside: d.contains(document.activeElement),
+              name: document.getElementById(d.getAttribute("aria-labelledby") ?? "")?.textContent ?? null,
+            })),
+          );
+        const before = await state();
+        expect(before.map((d) => [d.lang, d.open, d.modal])).toEqual([
+          ["bn", true, true],
+          ["en", true, true],
+        ]);
+        expect(before.every((d) => d.name), "each sheet is named by its title").toBe(true);
+        expect(before.find((d) => d.lang === "en")!.focusInside, "focus is inside the top sheet").toBe(true);
+        // The page behind is inert: a click on the catalog heading does not reach it (the top layer is hit instead).
+        const behind = await page.evaluate(() => {
+          const h1 = document.querySelector("h1")!.getBoundingClientRect();
+          const hit = document.elementFromPoint(h1.left + 2, h1.top + 2);
+          return hit !== null && hit.closest("dialog") !== null;
+        });
+        expect(behind, "the page behind the sheet is covered").toBe(true);
+
+        await page.keyboard.press("Escape");
+        expect((await state()).map((d) => [d.lang, d.open])).toEqual([
+          ["bn", true],
+          ["en", false],
+        ]);
+        await page.keyboard.press("Escape");
+        expect((await state()).map((d) => d.open)).toEqual([false, false]);
       });
 
       test("noCspViolation", async ({ page }) => {

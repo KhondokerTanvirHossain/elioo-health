@@ -1,0 +1,35 @@
+/* A confirmation (Toast.tsx), the prototypes' toast: the bar's material, the label's ink and a check. It never uses
+   the NOW or THIS_WEEK tokens (Toast.test.tsx), and it wraps rather than running off a phone (the prototype's
+   nowrap would overflow a long Bangla line). The raw px are the prototype's optical values with no token on the
+   spacing scale (the 10/18 px padding, the 22 px radius of a pill this tall, the 20 px check). */
+.toast {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+  padding: 10px 18px;
+  border-radius: 22px;
+  background: var(--bar);
+  color: var(--label);
+  font-family: var(--font-bn);
+  font-size: var(--text-md);
+  font-weight: 500;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+  box-shadow: 0 0 0 0.5px var(--sep);
+}
+.toast__shape {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: var(--green);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.toast__text {
+  min-width: 0;
+}

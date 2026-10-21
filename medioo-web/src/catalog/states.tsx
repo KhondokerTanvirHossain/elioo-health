@@ -1,18 +1,30 @@
 import type { JSX } from "react";
-import type { NowBannerJson } from "@/api/types";
+import type { Json, NowBannerJson, PaperJson } from "@/api/types";
 import { banglaDigits, t, type Lang } from "@/copy";
 import { MessageBubble } from "@/components/MessageBubble/MessageBubble";
 import { MioAvatar } from "@/components/MioAvatar/MioAvatar";
 import { OtpInput } from "@/components/OtpInput/OtpInput";
 import { PhoneField } from "@/components/PhoneField/PhoneField";
 import { NowBanner, type NowBannerPatient } from "@/components/safety/NowBanner/NowBanner";
+import { Sheet } from "@/components/Sheet/Sheet";
 import { CHIP_KINDS, StatusChip } from "@/components/StatusChip/StatusChip";
+import { Toast } from "@/components/Toast/Toast";
+import { VerdictCard } from "@/components/safety/VerdictCard/VerdictCard";
 import { Wordmark } from "@/components/Wordmark/Wordmark";
 // B3's generated GET /app/api/now-banner bodies (baymax NowBannerApiContractTest): each state reads one as Java wrote it.
 import nowBannerAbroad from "../../fixtures/api/now-banner/abroad.json";
 import nowBannerAcked from "../../fixtures/api/now-banner/acked.json";
 import nowBannerOne from "../../fixtures/api/now-banner/one.json";
 import nowBannerTwoPatients from "../../fixtures/api/now-banner/two-patients.json";
+// The papers B2's PaperApiContractTest wrote from Java's PaperJson (fixtures/api/documents, the 200 bodies).
+import failed from "../../fixtures/api/documents/failed.json";
+import nowAbroad from "../../fixtures/api/documents/now-abroad.json";
+import nowBd from "../../fixtures/api/documents/now-bd.json";
+import processing from "../../fixtures/api/documents/processing.json";
+import retakeThird from "../../fixtures/api/documents/retake-third.json";
+import routineReleased from "../../fixtures/api/documents/routine-released.json";
+import thisWeekPending from "../../fixtures/api/documents/this-week-pending.json";
+import unassessed from "../../fixtures/api/documents/unassessed.json";
 // Fictional names, written by baymax CatalogFixturesExportTest so no Bangla is typed here (Global Constraints).
 import catalogNames from "../../fixtures/catalog/names.json";
 
@@ -24,6 +36,22 @@ import catalogNames from "../../fixtures/catalog/names.json";
 export type CatalogState = { component: string; state: string; render: (lang: Lang) => JSX.Element; empty?: true };
 
 const names = catalogNames.names;
+
+/**
+ * One VerdictCard state per paper fixture, named by its file. states.test.tsx derives the expected ids from the
+ * directory, so a fixture B2 adds fails there until it is listed here; types.test.ts holds every body to PaperJson,
+ * the literals a JSON import widens included, which is what makes the cast below true.
+ */
+export const PAPER_FIXTURES: Record<string, Json<PaperJson>> = {
+  failed: failed.body,
+  "now-abroad": nowAbroad.body,
+  "now-bd": nowBd.body,
+  processing: processing.body,
+  "retake-third": retakeThird.body,
+  "routine-released": routineReleased.body,
+  "this-week-pending": thisWeekPending.body,
+  unassessed: unassessed.body,
+};
 const nameFor = (lang: Lang) => (lang === "bn" ? names.short : names.english);
 
 /**
@@ -133,4 +161,30 @@ export const STATES: CatalogState[] = [
   // A long name, spaced and unbroken: the title wraps inside the banner, never past it (plan Review Focus 3).
   nowBanner("long-name", nowBannerOne.body, () => [names.long]),
   nowBanner("long-unbroken", nowBannerOne.body, () => [names.long_unbroken]),
+
+  ...Object.entries(PAPER_FIXTURES).map(
+    ([name, body]): CatalogState => ({
+      component: "VerdictCard",
+      state: name,
+      render: (lang) => <VerdictCard paper={body as PaperJson} lang={lang} />,
+    }),
+  ),
+
+  { component: "Toast", state: "default", render: (lang) => <Toast messageKey="profile.saved" lang={lang} /> },
+
+  {
+    // Opened as a modal on load (showModal), so the catalog shows it as it is used; catalog.spec.ts closes both before
+    // its whole-page axe run (a modal makes the rest of the page inert) and checks this one on its own.
+    component: "Sheet",
+    state: "open",
+    render: (lang) => (
+      <Sheet titleKey="retake.tips" open lang={lang}>
+        <ul>
+          <li>{t(lang, "retake.tip.1")}</li>
+          <li>{t(lang, "retake.tip.2")}</li>
+          <li>{t(lang, "retake.tip.3")}</li>
+        </ul>
+      </Sheet>
+    ),
+  },
 ];
