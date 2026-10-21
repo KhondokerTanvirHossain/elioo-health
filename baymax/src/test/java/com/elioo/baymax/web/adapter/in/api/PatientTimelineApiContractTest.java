@@ -241,8 +241,8 @@ class PatientTimelineApiContractTest {
     }
 
     /**
-     * PO decision S14 (plan W8-api): the calendar records no audit row; the timeline read is the papers page's one
-     * TIMELINE_VIEW ({@code TimelineAuditTest} counts the open). Another family's GET is still 404 and adds nothing; the
+     * PO decision S14 (plan W8-api): the calendar records no audit row; the timeline read records one TIMELINE_VIEW each
+     * time it is read ({@code TimelineAuditTest} counts one render). Another family's GET is still 404 and adds nothing; the
      * owner's GET answers 200 with the month's papers and adds nothing either.
      */
     @Test

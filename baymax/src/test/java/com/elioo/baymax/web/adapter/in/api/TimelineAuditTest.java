@@ -18,11 +18,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Plan W8-api, PO decision S14: one open of কাগজপত্র is one TIMELINE_VIEW. The page reads the timeline and the calendar;
- * the timeline read is the view, and the calendar read (the page's own and every month link after it) records no audit
- * row, so the weekly export's {@code timeline_views} counts opens, not requests. Over the real router, guard, services
- * and Postgres: the count is read from {@code baymax.audit_event} itself. Every read asserts its 200 and its content
- * first, because a 404 also adds no row and would make "adds 0" pass for a reason other than the rule.
+ * Plan W8-api, PO decision S14: the calendar read records no audit row, and the timeline read records one TIMELINE_VIEW
+ * each time it is read. One render of the papers page reads both, so it is one view, not two. What this test does not
+ * claim: that a month link records nothing. The page is server-rendered and every control is a plain link, so a month,
+ * filter or "more" link is a new render whose timeline read records one TIMELINE_VIEW; W8's {@code oneOpenIsOneTimelineView}
+ * request log is where the reads per link are counted. Over the real router, guard, services and Postgres: the count is
+ * read from {@code baymax.audit_event} itself. Every read asserts its 200 and its content first, because a 404 also adds
+ * no row and would make "adds 0" pass for a reason other than the rule.
  */
 @Testcontainers
 class TimelineAuditTest {
@@ -92,15 +94,16 @@ class TimelineAuditTest {
             readCalendar(client, s, "2026-10");
 
             assertThat(timelineViews(s.patient()) - before)
-                    .as("timeline_view rows added by one open of the papers page (timeline + calendar)").isEqualTo(1L);
+                    .as("timeline_view rows added by one render of the papers page (timeline + calendar)").isEqualTo(1L);
         });
     }
 
+    /** A calendar read by itself, here a second month after a render, adds no row of any kind. */
     @Test
-    void aMonthLinkIsNoView() {
+    void aSecondCalendarReadIsNoView() {
         FixedPapers.runnerAt(POSTGRES, NOW).run(context -> {
             WebTestClient client = WebTestClient.bindToApplicationContext(context).build();
-            Seeded s = seed(context, "month-link");
+            Seeded s = seed(context, "second-calendar");
             readTimeline(client, s);
             readCalendar(client, s, "2026-10");
             long views = timelineViews(s.patient());
@@ -108,8 +111,8 @@ class TimelineAuditTest {
 
             readCalendar(client, s, "2026-09");
 
-            assertThat(timelineViews(s.patient()) - views).as("timeline_view rows added by a month link").isEqualTo(0L);
-            assertThat(auditRows(s.patient()) - rows).as("audit_event rows of any kind added by a month link").isEqualTo(0L);
+            assertThat(timelineViews(s.patient()) - views).as("timeline_view rows added by a second calendar read").isEqualTo(0L);
+            assertThat(auditRows(s.patient()) - rows).as("audit_event rows of any kind added by a second calendar read").isEqualTo(0L);
         });
     }
 
