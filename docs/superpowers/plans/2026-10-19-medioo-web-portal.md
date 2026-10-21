@@ -11325,14 +11325,17 @@ literal routes registered before `/app/patients/{id}`), `ui/FamilyView` (the two
 
 ### Task E1.2: the whole delete, end to end through the web, swept from the schema
 
-**Files:** create test `family/WebDeletionAcceptanceTest.java` (Testcontainers Postgres + MinIO; the fixture builder and
-`tablesStillHolding` from `FamilyDeletionAcceptanceTest`, made package-visible).
+**Files:** create test `family/WebDeletionAcceptanceTest.java` (Testcontainers Postgres + MinIO; the `Fixture` seed and
+`targets()` / `emptyBefore(targets, fx, scope)` / `stillHolding(targets, fx, scope)` from `FamilyDeletionAcceptanceTest`,
+made package-visible. `tablesStillHolding` no longer exists: PR 8 (F9a) replaced it with these, the sweep derived from
+foreign keys AND column names, with a guard on every swept column the fixture left empty).
 
 - [ ] **Step 1:** seed one family with a row in **every** family/patient table the fixture builder knows (documents,
   observations with verdicts, urgency, upload keys, OTPs, sessions, audit, outbound messages, nudges, window), sign in
   through the web, `POST /app/account/delete` with the typed confirmation, then assert
-  `tablesStillHolding(familyId, patientId)` is empty — the list of tables comes from `information_schema` and the test
-  first asserts it found at least the tables V1–V21 created (an empty sweep would pass vacuously) — and that MinIO holds
+  `emptyBefore(targets(), fx, t -> true)` is empty before the delete and `stillHolding(targets(), fx, t -> true)` is
+  empty after it — the list of columns comes from `pg_constraint` and `information_schema`, and `targets()` first
+  asserts both derivations still see what they must (an empty sweep would pass vacuously) — and that MinIO holds
   no object under the family's prefix. A second family seeded the same way keeps every row (the other direction).
 - [ ] **Step 2: replay** — skip `document` in the delete (the bug `FamilyDeletionAcceptanceTest` was written for) →
   red naming `document`. Standard pre-merge. Commit `feat(baymax-ui): delete a patient or everything from পরিবার, swept from the schema`.

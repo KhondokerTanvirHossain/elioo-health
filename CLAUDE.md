@@ -89,10 +89,15 @@ Key files when changing behaviour:
   Postgres raises; the deletion test asserted six tables by hand and skipped `document`, the only one that blocked
   the delete — and never inserted a `document` row at all, so the table it forgot was also empty. **For any
   operation spanning multiple tables or systems, the assertion is derived from the schema or the system itself,
-  never from a hand-written list of what the author remembered.** `FamilyDeletionAcceptanceTest.tablesStillHolding`
-  asks `information_schema` which tables carry a family or patient id and sweeps every one, so a table added in a
-  later migration cannot be silently missed. A derived check needs its own guard against emptiness: if the query
-  returns no tables the sweep passes vacuously, which is the same defect one level up.
+  never from a hand-written list of what the author remembered.** `FamilyDeletionAcceptanceTest.targets()` derives
+  the sweep twice and unites the two: every foreign key in `baymax` that points at `family_account`,
+  `patient_profile` or `share_member` (`pg_constraint`, whatever the column is called), and every column named
+  `family_id` / `patient_id` (`information_schema`, the only way to find FK-less tables such as `audit_event` and
+  `stored_object`); `stillHolding(targets, fixture, scope)` then sweeps every one, so a table added in a later
+  migration cannot be silently missed. A derived check needs its own guard against emptiness: if the query returns no
+  tables the sweep passes vacuously, which is the same defect one level up — so `targets()` asserts both derivations
+  still see what they must, and `emptyBefore(targets, fixture, scope)` fails on any swept column the fixture left
+  empty before the delete (an empty column passes the sweep without testing anything).
 - **A test that works around a constraint, or whose name encodes surprising behaviour, is evidence of a defect
   rather than of intent.** Distinct from the ten above: those were checks that could not fail, this is a check
   that described the bug and called it correct. `PostgresHealthRecordAdapterTest` deleted `stored_object` and
