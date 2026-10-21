@@ -29,6 +29,8 @@ export type StubRecord = {
   "x-medioo": string | null;
   origin: string | null;
   "content-type": string | null;
+  /** The status stub Java answered. */
+  status: number;
 };
 
 /** A row whose image Java serves: its crop's href and stored size (PaperValueJson.crop). */
@@ -77,6 +79,8 @@ export async function useScenario(
   const base = new URL(process.env.E2E_BASE_URL ?? `http://127.0.0.1:${process.env.E2E_PORT ?? 3217}`);
   const run = randomUUID();
   const cookie = (n: string, value: string) => ({ name: n, value, domain: base.hostname, path: "/app" });
+  // A second call in one test (signed in, then signed out) must not keep the first scenario's session.
+  await page.context().clearCookies({ name: "baymax_session" });
   await page.context().addCookies([
     cookie("e2e_scenario", name),
     cookie("e2e_run", run),

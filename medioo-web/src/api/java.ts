@@ -50,7 +50,16 @@ const read = cache(async (path: string): Promise<JavaAnswer<unknown>> => {
   } catch {
     throw new Error(`java unreachable ${pattern(path)}`);
   }
-  if (response.status === 200) return { status: 200, body: await response.json() };
+  if (response.status === 200) {
+    // Parsed inside a try: a SyntaxError's message quotes the start of the body, which must never reach the log.
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      throw new Error(`java 200 ${pattern(path)}`);
+    }
+    return { status: 200, body };
+  }
   if (REFUSALS.has(response.status)) {
     const reason = await response.json().then(
       (b: { reason?: unknown } | null) => (typeof b?.reason === "string" ? b.reason : null),

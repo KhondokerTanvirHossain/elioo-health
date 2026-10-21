@@ -32,6 +32,11 @@ export function patientName(fixture) {
   return JSON.parse(readFileSync(join(FIXTURES, fixture), "utf8")).body.patients[0].name;
 }
 
+/** The number a `sign-in/request` confirm fixture shows back, for the same reason. */
+export function numberShown(fixture) {
+  return JSON.parse(readFileSync(join(FIXTURES, fixture), "utf8")).body.confirm.number_display;
+}
+
 /** The open sign-in routes every signed-out scenario answers (AppApiGuard.OPEN, W3-api). */
 const SIGN_IN = {
   "POST /app/api/sign-in/request": ["sign-in/confirm.json", "sign-in/sent.json"],
@@ -54,6 +59,11 @@ export const SCENARIOS = {
     ...SIGN_IN,
     "GET /app/api/me": "me/unauthenticated.json",
     "POST /app/api/sign-in/request": ["sign-in/confirm.json", "sign-in/not-sent.json"],
+  },
+  "signed-out-invalid-after-confirm": {
+    ...SIGN_IN,
+    "GET /app/api/me": "me/unauthenticated.json",
+    "POST /app/api/sign-in/request": ["sign-in/confirm.json", "sign-in/invalid-number.json"],
   },
   "signed-out-invalid": {
     ...SIGN_IN,
@@ -84,13 +94,25 @@ export const SCENARIOS = {
     "GET /app/api/me": "me/preview-on.json",
     "GET /app/api/sign-in/state": "sign-in/state-none.json",
   },
+  // A preview family on the preview code page whose verify answers a place Next serves (a literal: Java's fixture
+  // holds a paper, which Next does not serve yet, so it could not show the preview kept).
+  "preview-verify-to-sign-in": {
+    ...SIGN_IN,
+    "GET /app/api/me": "me/preview-on.json",
+    "GET /app/api/sign-in/state": "sign-in/state-pending-sent.json",
+    "POST /app/api/sign-in/verify": { status: 200, body: { next: "/app/" } },
+    "GET /app/api/sign-in/next": "sign-in/next-held.json",
+  },
   "preview-off": { ...SIGN_IN, "GET /app/api/me": "me/preview-off.json", "GET /app/api/sign-in/next": "sign-in/next-held.json" },
   // Java failing, for the server-log check: `me` is a 502 (read by the preview gate), and the held-place read is a 500
   // whose body carries a fixture's name and number, which must never reach the Next server log.
   "java-502": { ...SIGN_IN, "GET /app/api/me": { status: 502, body: "bad gateway" } },
   "next-500": {
     "GET /app/api/me": "me/one-patient.json",
-    "GET /app/api/sign-in/next": { status: 500, body: { error: `failed for ${patientName("me/one-patient.json")}` } },
+    "GET /app/api/sign-in/next": {
+      status: 500,
+      body: { error: `failed for ${patientName("me/one-patient.json")} at ${numberShown("sign-in/confirm.json")}` },
+    },
   },
 };
 
@@ -114,8 +136,32 @@ export const PAGE_MARKERS = {
 /** Each routed scenario's longest twin (`me/long-name.json` and the area's longest fixture), per screen. */
 export const LONGEST = {};
 
-/** Whether a scenario runs without the session cookie. */
-export function signedOut(name) {
-  const me = SCENARIOS[name]?.["GET /app/api/me"];
-  return name.startsWith("signed-out") || name.startsWith("state-") || me === "me/unauthenticated.json";
+/** The `{status, body}` a scenario value answers first: a fixture file read, a literal as it is. */
+function firstAnswer(value) {
+  const v = Array.isArray(value) ? value[0] : value;
+  if (typeof v !== "string") return v ?? null;
+  const fixture = JSON.parse(readFileSync(join(FIXTURES, v), "utf8"));
+  return { status: fixture.status ?? 200, body: fixture.body };
+}
+
+/**
+ * The long name a longest twin must render, read from the twin's own `me` answer (`patients[0].name`), never passed by
+ * the caller: the overflow check then judges the strings that scenario actually serves. Throws when the twin has no
+ * `me` with a named patient, so a twin that cannot carry a long name fails instead of being judged on short strings.
+ */
+export function longNameOf(name, table = SCENARIOS[name]) {
+  const me = table?.["GET /app/api/me"];
+  const first = me === undefined ? undefined : firstAnswer(me)?.body?.patients?.[0]?.name;
+  if (typeof first !== "string" || first.trim() === "") throw new Error(`${name}: its me answer names no patient`);
+  return first;
+}
+
+/**
+ * Whether a scenario runs without the session cookie: named `signed-out*` or `state-*`, or its `me` answers 401 —
+ * judged on the answer (a fixture's status or a literal's), never on a file name.
+ */
+export function signedOut(name, table = SCENARIOS[name]) {
+  if (name.startsWith("signed-out") || name.startsWith("state-")) return true;
+  const me = table?.["GET /app/api/me"];
+  return me !== undefined && firstAnswer(me)?.status === 401;
 }

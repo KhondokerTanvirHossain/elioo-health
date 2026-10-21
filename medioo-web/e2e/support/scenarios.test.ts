@@ -1,0 +1,108 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { FIXTURES, SCENARIOS, UNAUTHENTICATED, longNameOf, signedOut } from "./scenarios.mjs";
+
+/*
+ * The scenario table is held to Java, not to what its author remembered (CLAUDE.md: a stub that cannot fail the way
+ * production fails is not a test). Every key is a route Java serves, as its generated snapshot spells it, and every
+ * fixture a key answers with was written by Java's contract test for that same method and route. Every W4–W10 screen
+ * extends this table, so a scenario serving a route Java lacks, or a fixture written for another route, fails here.
+ */
+
+const SNAPSHOT = join(__dirname, "..", "..", "..", "docs", "infra", "app-routes.txt");
+
+/** `METHOD pattern` lines of the snapshot, every method (the `/app/api` lines included); comments left out. */
+export function snapshotRoutes(text: string): Set<string> {
+  return new Set(
+    text
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => /^(?:GET|POST|PUT|PATCH|DELETE|\*) \/\S+$/.test(line)),
+  );
+}
+
+/** Each fixture path a scenario value names (a string, or each string of a list), with the key it answers. */
+export function fixturesOf(scenarios: Record<string, Record<string, unknown>>): { scenario: string; key: string; file: string }[] {
+  const out: { scenario: string; key: string; file: string }[] = [];
+  for (const [scenario, table] of Object.entries(scenarios)) {
+    for (const [key, value] of Object.entries(table)) {
+      for (const v of Array.isArray(value) ? value : [value]) if (typeof v === "string") out.push({ scenario, key, file: v });
+    }
+  }
+  return out;
+}
+
+/** What is wrong with a fixture for a key: missing, or written by Java for another method or route. */
+export function fixtureProblem(key: string, file: string, fixtures: string = FIXTURES): string | null {
+  const path = join(fixtures, file);
+  if (!existsSync(path)) return `${file} does not exist`;
+  const source = (JSON.parse(readFileSync(path, "utf8")) as { _meta?: { source?: unknown } })._meta?.source;
+  if (typeof source !== "string") return `${file} has no _meta.source`;
+  return source.startsWith(`${key} `) ? null : `${file} was written for "${source}", not "${key}"`;
+}
+
+describe("the scenario table is Java's", () => {
+  const routes = snapshotRoutes(readFileSync(SNAPSHOT, "utf8"));
+
+  it("theSnapshotParsed", () => {
+    // Guard: an empty parse would make every key "missing", and a wrong parse would let anything through.
+    expect(routes.size, "routes parsed from app-routes.txt").toBeGreaterThan(20);
+    expect(routes.has("GET /app/api/me")).toBe(true);
+    expect(routes.has("POST /app/api/sign-in/request")).toBe(true);
+  });
+
+  it("everyKeyIsARouteJavaServes", () => {
+    const keys = Object.values(SCENARIOS).flatMap((table) => Object.keys(table));
+    expect(keys.length, "scenario keys").toBeGreaterThan(0);
+    expect([...new Set(keys.filter((k) => !routes.has(k)))], "keys that are not a line of app-routes.txt").toEqual([]);
+  });
+
+  it("everyFixtureWasWrittenForItsKey", () => {
+    const named = fixturesOf(SCENARIOS);
+    expect(named.length, "fixtures named by the scenarios").toBeGreaterThan(0);
+    const problems = named
+      .map(({ scenario, key, file }) => ({ scenario, problem: fixtureProblem(key, file) }))
+      .filter((p) => p.problem !== null)
+      .map((p) => `${p.scenario}: ${p.problem}`);
+    expect(problems).toEqual([]);
+  });
+
+  // The dangerous direction, on synthetic tables: each check refuses what it exists to refuse.
+  it("aFixtureUnderAnotherRouteIsRefused", () => {
+    expect(fixtureProblem("GET /app/api/sign-in/next", "sign-in/verified.json")).toBe(
+      'sign-in/verified.json was written for "POST /app/api/sign-in/verify over the SignInApiContractTest case verified", not "GET /app/api/sign-in/next"',
+    );
+    expect(fixtureProblem("GET /app/api/sign-in/next", "sign-in/next-held.json")).toBeNull();
+    expect(fixtureProblem("GET /app/api/me", "me/nope.json")).toBe("me/nope.json does not exist");
+    // A prefix of another route is not that route: "GET /app/api/me" must not accept a "GET /app/api/meX" fixture.
+    expect(fixtureProblem("GET /app/api/m", "me/one-patient.json")).not.toBeNull();
+  });
+
+  it("signedOutIsJudgedOnMesAnswerNotItsFileName", () => {
+    expect(signedOut("x", { "GET /app/api/me": UNAUTHENTICATED })).toBe(true);
+    expect(signedOut("x", { "GET /app/api/me": "me/unauthenticated.json" })).toBe(true);
+    expect(signedOut("x", { "GET /app/api/me": { status: 502, body: "bad gateway" } })).toBe(false);
+    expect(signedOut("x", { "GET /app/api/me": "me/one-patient.json" })).toBe(false);
+    expect(signedOut("x", {})).toBe(false);
+    expect(signedOut("signed-in")).toBe(false);
+    expect(signedOut("signed-out")).toBe(true);
+  });
+
+  it("theLongNameIsTheTwinsOwnMeName", () => {
+    const long = (JSON.parse(readFileSync(join(FIXTURES, "me", "long-name.json"), "utf8")) as {
+      body: { patients: { name: string }[] };
+    }).body.patients[0]!.name;
+    expect(long.length, "the long-name fixture's name is long").toBeGreaterThan(20);
+    expect(longNameOf("twin", { "GET /app/api/me": "me/long-name.json" })).toBe(long);
+    // A twin without a named patient cannot carry a long name: it fails, never judged on short strings.
+    expect(() => longNameOf("twin", { "GET /app/api/me": "me/no-patients.json" })).toThrow("names no patient");
+    expect(() => longNameOf("twin", { "GET /app/api/me": UNAUTHENTICATED })).toThrow("names no patient");
+    expect(() => longNameOf("twin", {})).toThrow("names no patient");
+  });
+
+  it("aMisspelledRouteIsRefused", () => {
+    expect(routes.has("GET /app/api/sign-in/nxt")).toBe(false);
+    expect(routes.has("GET /app/api/sign-in/next")).toBe(true);
+  });
+});

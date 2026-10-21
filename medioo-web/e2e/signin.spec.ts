@@ -14,6 +14,21 @@ import { screenChecks } from "./support/screen-checks";
  */
 
 const body = <T>(fixture: string): T => (JSON.parse(readFileSync(join(FIXTURES, fixture), "utf8")) as { body: T }).body;
+/**
+ * The headers Node's fetch adds on its own (undici), which say nothing about what Next chose to forward; `pragma` and
+ * `cache-control` are what the fetch standard adds for `cache: "no-store"`.
+ */
+const NODE_TRANSPORT = new Set([
+  "accept",
+  "accept-encoding",
+  "accept-language",
+  "cache-control",
+  "connection",
+  "host",
+  "pragma",
+  "sec-fetch-mode",
+  "user-agent",
+]);
 const seam = JSON.parse(readFileSync(join(FIXTURES, "..", "seams", "noscript-href.json"), "utf8")) as { held: string; href: string };
 
 async function typeNumber(page: Page, number: string) {
@@ -40,21 +55,32 @@ test.describe("the number page", () => {
 
   test("aSignedInVisitorIsSentToJavasCheckedPlace", async ({ page }) => {
     const recorder = await useScenario(page, "signed-in");
-    const response = await page.request.get("/app/?next=%2Fapp%2Fdocuments%2Fx", { maxRedirects: 0 });
+    // The browser sends what a hostile page could make it send; none of it may reach Java.
+    const response = await page.request.get("/app/?next=%2Fapp%2Fdocuments%2Fx", {
+      headers: { origin: "https://evil.example", authorization: "Bearer x", "x-medioo-preview": "1", "x-medioo-path": "/app/x" },
+      maxRedirects: 0,
+    });
     expect(response.status()).toBe(307);
     expect(response.headers()["location"]).toBe(body<{ next: string }>("sign-in/next-held.json").next);
     const asked = (await recorder.java()).filter((r) => r.path === "/app/api/sign-in/next");
     expect(asked.map((r) => [r.method, r.query])).toEqual([["GET", "next=%2Fapp%2Fdocuments%2Fx"]]);
-    // Next forwards the cookie and nothing else a browser sent.
-    expect(asked[0]!.headerNames).not.toContain("origin");
-    expect(asked[0]!.headerNames).not.toContain("x-medioo-preview");
+    // Next forwards the cookie and nothing else a browser sent: what reached Java, minus Node's own transport headers.
+    expect(asked[0]!.headerNames.filter((h) => !NODE_TRANSPORT.has(h))).toEqual(["cookie"]);
 
-    const hostile = await useScenario(page, "signed-in-hostile");
+    await useScenario(page, "signed-in-hostile");
     const landed = await page.request.get("/app/?next=%2F%2Fevil.example", { maxRedirects: 0 });
     expect(landed.headers()["location"]).toBe(body<{ next: string }>("sign-in/next-hostile.json").next);
     expect(landed.headers()["location"]).toBe("/app/home");
-    // The hop never goes through the no-JS fallback: no request of this test named /app/basic.
-    expect((await hostile.java()).filter((r) => r.path.startsWith("/app/basic"))).toEqual([]);
+  });
+
+  test("aSignedOutScenarioAfterASignedInOneCarriesNoSession", async ({ page }) => {
+    await useScenario(page, "signed-in");
+    expect((await page.request.get("/app", { maxRedirects: 0 })).status(), "signed in: sent on").toBe(307);
+    const out = await useScenario(page, "signed-out");
+    const response = await page.request.get("/app", { maxRedirects: 0 });
+    expect(response.status(), "signed out: the number step").toBe(200);
+    const asked = (await out.java()).filter((r) => r.path === "/app/api/sign-in/next");
+    expect(asked.map((r) => r.status), "stub Java answered the held-place read without a session").toEqual([401]);
   });
 
   test("theNumberIsShownBackBeforeAnythingIsSent", async ({ page }) => {
@@ -72,6 +98,41 @@ test.describe("the number page", () => {
     await confirmAndLeave(page);
     const both = recorder.requests().filter((r) => r.path === "/app/api/sign-in/request");
     expect(both.map((r) => (r.body as { confirmed?: boolean }).confirmed)).toEqual([undefined, true]);
+  });
+
+  test("theFocusFollowsTheStep", async ({ page }) => {
+    await useScenario(page, "signed-out");
+    await page.goto("/app");
+    await typeNumber(page, "01700000123");
+    // The number shown back takes focus, so a screen reader reads it out for the yes (this flow's safety step).
+    await expect(page.locator("[data-number-back]")).toBeFocused();
+    await page.getByRole("button", { name: t("bn", "login.number.change") }).click();
+    await expect(page.locator('input[name="whatsapp_number"]')).toBeFocused();
+    await expect(page.locator('input[name="whatsapp_number"]')).toHaveValue("01700000123");
+  });
+
+  test("aNumberRefusedAfterTheYesIsSaidOnTheFieldWithFocus", async ({ page }) => {
+    await useScenario(page, "signed-out-invalid-after-confirm");
+    await page.goto("/app");
+    await typeNumber(page, "01700000123");
+    await page.getByRole("button", { name: t("bn", "login.number.yes") }).click();
+    const input = page.locator('input[name="whatsapp_number"]');
+    await expect(input).toBeFocused();
+    await expect(input).toHaveAttribute("aria-invalid", "true");
+    await expect(page.locator(".phone-field__error")).toHaveText(t("bn", "login.number.invalid"));
+  });
+
+  test("theWelcomeSaysMediooIsNotADoctor", async ({ page, context, baseURL }) => {
+    await useScenario(page, "signed-out");
+    await page.goto("/app");
+    await expect(page.locator(".sign-in__welcome")).toContainText(t("bn", "chat.intro"));
+    await context.addCookies([{ name: "baymax_lang", value: "en", url: baseURL! }]);
+    await page.goto("/app");
+    await expect(page.locator(".sign-in__welcome")).toContainText(t("en", "chat.intro"));
+    // The code page shares the welcome.
+    await useScenario(page, "state-pending-sent");
+    await page.goto("/app/verify");
+    await expect(page.locator(".sign-in__welcome")).toContainText(t("en", "chat.intro"));
   });
 
   test("anInvalidNumberIsSaidUnderTheField", async ({ page }) => {
@@ -163,6 +224,17 @@ test.describe("the code page", () => {
     expect(new URL(page.url()).pathname).toBe(next);
   });
 
+  test("verifiedOpensTheHeldPlaceInsideThePreview", async ({ page }) => {
+    // A preview family signing in on the preview code page, whose held place is a page Next serves: it stays inside
+    // the preview, as page.tsx sends a signed-in visitor on (href), and is not dropped onto Java's page.
+    await useScenario(page, "preview-verify-to-sign-in");
+    await page.goto("/app/preview/verify");
+    const leaving = page.waitForRequest((r) => r.isNavigationRequest() && new URL(r.url()).pathname !== "/app/preview/verify");
+    await page.locator('input[name="code"]').fill("123456");
+    await page.getByRole("button", { name: t("bn", "login.enter") }).click();
+    expect(new URL((await leaving).url()).pathname).toBe("/app/preview/");
+  });
+
   test("theCodePageSurvivesALeaveToWhatsApp", async ({ page }) => {
     await useScenario(page, "state-pending-not-sent");
     await page.goto("/app/verify");
@@ -208,12 +280,38 @@ test.describe("without JavaScript", () => {
     await useScenario(page, "signed-out");
     expect(seam.href.startsWith("/app/basic?next=%2F"), "the seam is a held place under /app/basic").toBe(true);
     await page.goto(`/app/?next=${encodeURIComponent(seam.held)}`);
-    const link = page.locator("noscript a, a.sign-in__nojs");
+    // Inside <noscript> only: the same link rendered to every visitor would be another way in beside the primary.
+    const link = page.locator("noscript a");
     await expect(link).toHaveCount(1);
     await expect(link).toHaveAttribute("href", seam.href);
     await expect(link).toHaveText(t("bn", "login.nojs"));
     // The number field without JavaScript is in no form: nothing it holds can be submitted into a URL.
     expect(await page.locator("form").count()).toBe(0);
+    // The step's press does nothing without JavaScript, so it is not offered as one: disabled, and below the way in.
+    await expect(page.locator("[data-primary]")).toHaveCount(1);
+    await expect(page.locator("[data-primary]")).toBeDisabled();
+    const order = await page.evaluate(() => {
+      const a = document.querySelector("noscript a");
+      const press = document.querySelector("[data-primary]");
+      return a && press ? Boolean(a.compareDocumentPosition(press) & Node.DOCUMENT_POSITION_FOLLOWING) : null;
+    });
+    expect(order, "the no-JS link comes before the step's controls").toBe(true);
+  });
+
+  test("theCodePagesPressIsOffWithoutJavaScript", async ({ page }) => {
+    await useScenario(page, "state-pending-sent");
+    await page.goto("/app/verify");
+    await expect(page.locator("noscript a")).toHaveAttribute("href", "/app/basic?next=");
+    await expect(page.locator("[data-primary]")).toBeDisabled();
+  });
+});
+
+test.describe("with JavaScript", () => {
+  test("theNoScriptLinkIsNotShown", async ({ page }) => {
+    await useScenario(page, "signed-out");
+    await page.goto("/app/?next=%2Fapp%2Fhome");
+    await expect(page.locator("[data-primary]")).toBeEnabled();
+    await expect(page.locator('a[href^="/app/basic"]')).toHaveCount(0);
   });
 });
 
@@ -231,6 +329,41 @@ test.describe("Java failing", () => {
   });
 });
 
-screenChecks("/app", "signed-out", { fields: ["phone-field__input"] });
-screenChecks("/app/verify", "state-pending-sent", { fields: ["otp-input"] });
-screenChecks("/app/verify", "state-pending-not-sent");
+screenChecks("/app", "signed-out", { fields: ["phone-field__input"], onePrimary: true });
+screenChecks("/app/verify", "state-pending-sent", { fields: ["otp-input"], onePrimary: true });
+screenChecks("/app/verify", "state-pending-not-sent", { onePrimary: true });
+// The states a press reaches, judged by the same checks: the number shown back for a yes (its primary and the quiet
+// login.number.change), a refused number, a refused code.
+screenChecks("/app", "signed-out", {
+  onePrimary: true,
+  act: {
+    state: "the number shown back",
+    run: async (page) => {
+      await typeNumber(page, "01700000123");
+      await expect(page.locator("[data-number-back]")).toBeVisible();
+    },
+  },
+});
+screenChecks("/app", "signed-out-invalid", {
+  fields: ["phone-field__input"],
+  onePrimary: true,
+  act: {
+    state: "a refused number",
+    run: async (page) => {
+      await typeNumber(page, "12");
+      await expect(page.locator(".phone-field__error")).toHaveText(t("bn", "login.number.invalid"));
+    },
+  },
+});
+screenChecks("/app/verify", "state-code-wrong", {
+  fields: ["otp-input"],
+  onePrimary: true,
+  act: {
+    state: "a refused code",
+    run: async (page) => {
+      await page.locator('input[name="code"]').fill("123456");
+      await page.getByRole("button", { name: t("bn", "login.enter") }).click();
+      await expect(page.locator(".otp-input__error")).toHaveText(t("bn", "login.bad.wrong"));
+    },
+  },
+});

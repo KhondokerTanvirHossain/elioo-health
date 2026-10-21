@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { CONTROL_CLASS, FIELD_SELECTOR, NOW_ALLOWED } from "../../src/styles/now-usage";
 import { useScenario, type CropRow } from "./browser-api";
 import { expectedWidth } from "./png.mjs";
-import { LONGEST } from "./scenarios.mjs";
+import { LONGEST, longNameOf } from "./scenarios.mjs";
 
 /*
  * The content checks every routed page and every catalog state meet (plan Wave 3, Shared interfaces → e2e support),
@@ -323,6 +323,53 @@ export function targetReport(page: Page) {
   });
 }
 
+/**
+ * Whether every value row shows its own crop: the rendered `[data-value-row]` count is the fixture's `rows.length`
+ * (so a missing row cannot be made up by an extra image elsewhere), each row holds exactly one visible image, and that
+ * image is the row's crop (`src`) decoded at the row's own width. Rows are matched by DOM order, since
+ * `PaperValueJson.id` is nullable. Returns every problem; empty means each row was checked.
+ */
+export async function cropRowsReport(page: Page, rows: readonly CropRow[]): Promise<string[]> {
+  const problems: string[] = [];
+  const widths = rows.map((r) => expectedWidth(r));
+  if (rows.length === 0) problems.push("no rows in the fixture: nothing would be checked");
+  if (new Set(widths).size !== widths.length) problems.push("this fixture cannot detect a swap: two rows share a width");
+  const rendered = await page.locator("[data-value-row]").count();
+  if (rendered !== rows.length) problems.push(`${rendered} value rows rendered, the fixture has ${rows.length}`);
+  // Wait for every row image to load before reading natural widths.
+  await imagesReport(page, "[data-value-row]");
+  const perRow = await page.$$eval("[data-value-row]", (els) =>
+    els.map((el) =>
+      [...el.querySelectorAll("img")]
+        .filter((i) => i.checkVisibility())
+        .map((i) => ({ src: i.getAttribute("src") ?? "", natural: i.naturalWidth })),
+    ),
+  );
+  perRow.forEach((images, i) => {
+    const row = rows[i];
+    if (images.length !== 1) problems.push(`row ${i + 1} shows ${images.length} images, not one`);
+    if (!row || images.length !== 1) return;
+    const [image] = images;
+    if (image!.src !== row.crop.src) problems.push(`row ${i + 1} shows ${image!.src}, not its crop ${row.crop.src}`);
+    if (image!.natural !== expectedWidth(row)) {
+      problems.push(`row ${i + 1} decodes at ${image!.natural} px, its crop is ${expectedWidth(row)} px`);
+    }
+  });
+  return problems;
+}
+
+/** Whether some element's own text (a text child, not a descendant's) contains `text`: a long name split across
+ * elements, or present only in an attribute, is not rendered as one string. */
+export function rendersOwnText(page: Page, text: string): Promise<boolean> {
+  return page.evaluate(
+    (n) =>
+      [...document.querySelectorAll("body *")].some((el) =>
+        [...el.childNodes].some((c) => c.nodeType === 3 && (c.textContent ?? "").includes(n)),
+      ),
+    text,
+  );
+}
+
 /** A routed page opened under a scenario, with the CSP hook installed and every eager image and font loaded. */
 export async function openRoute(page: Page, route: string, scenario: string) {
   await useScenario(page, scenario);
@@ -336,12 +383,21 @@ export async function openRoute(page: Page, route: string, scenario: string) {
 /**
  * Registers the content checks for one routed page under one scenario, in both colour schemes. `crops` adds the check
  * that every value row shows its own crop (`rows`: the fixture's values, in DOM order); `longest` registers the route a
- * second time under its longest twin (LONGEST), whose long name must be on the page before overflow is judged.
+ * second time under its longest twin (LONGEST), whose long name (read from the twin's own `me`, longNameOf) must be on
+ * the page before overflow is judged. `onePrimary` requires exactly one `[data-primary]` (not at most one), so a page
+ * that lost its marker cannot quietly fall from the 48 px rule to 44 px. `act` drives the page to a state a press
+ * reaches (a confirm step, a refusal) before every check runs, so those states are judged too.
  */
 export function screenChecks(
   route: string,
   scenario: string,
-  opts: { crops?: CropRow[]; longest?: boolean; fields?: string[]; longName?: string } = {},
+  opts: {
+    crops?: CropRow[];
+    longest?: boolean;
+    fields?: string[];
+    onePrimary?: boolean;
+    act?: { state: string; run: (page: Page) => Promise<void> };
+  } = {},
 ) {
   const scenarios = [scenario];
   if (opts.longest) {
@@ -349,13 +405,18 @@ export function screenChecks(
     test(`${route} has a longest twin`, () => expect(twin, `LONGEST[${scenario}]`).toBeDefined());
     if (twin) scenarios.push(twin);
   }
+  const open = async (page: Page, name: string) => {
+    await openRoute(page, route, name);
+    if (opts.act) await opts.act.run(page);
+  };
+  const state = opts.act ? ` after ${opts.act.state}` : "";
   for (const name of scenarios) {
     for (const colorScheme of SCHEMES) {
-      test.describe(`${route} under ${name}, ${colorScheme}`, () => {
+      test.describe(`${route} under ${name}${state}, ${colorScheme}`, () => {
         test.use({ colorScheme });
 
         test("axeReportsNoViolation", async ({ page }) => {
-          await openRoute(page, route, name);
+          await open(page, name);
           await expectSchemeIsPainted(page, colorScheme);
           const report = await axeReport(page);
           expect(report.violations).toEqual([]);
@@ -363,20 +424,16 @@ export function screenChecks(
         });
 
         test("noCspViolation", async ({ page }) => {
-          await openRoute(page, route, name);
+          await open(page, name);
           expect(await cspViolations(page)).toEqual([]);
         });
 
         test("noElementOverflowsItsBox", async ({ page }) => {
-          await openRoute(page, route, name);
+          await open(page, name);
           if (name !== scenario) {
-            // The longest twin's name is on the page, element by element, or overflow was judged on short strings.
-            expect(opts.longName, "the long name to look for").toBeDefined();
-            const present = await page.evaluate(
-              (n) => [...document.querySelectorAll("body *")].some((el) => [...el.childNodes].some((c) => c.nodeType === 3 && c.textContent?.includes(n))),
-              opts.longName!,
-            );
-            expect(present, "the long name is rendered").toBe(true);
+            // The longest twin's name (from its own `me`) is on the page, or overflow was judged on short strings.
+            const longName = longNameOf(name);
+            expect(await rendersOwnText(page, longName), `the long name "${longName}" is rendered`).toBe(true);
           }
           const report = await overflowReport(page, "body");
           expect(report.over).toEqual([]);
@@ -385,7 +442,7 @@ export function screenChecks(
         });
 
         test("everyFieldAndTrackDrawsTheBoundary", async ({ page }) => {
-          await openRoute(page, route, name);
+          await open(page, name);
           const report = await boundaryReport(page, "body");
           expect(
             report.controls.filter((c) => !c.scanned).map((c) => `${c.tag}.${c.classes.join(".")} carries no CONTROL_CLASS class`),
@@ -397,14 +454,14 @@ export function screenChecks(
         });
 
         test("noTextUnderTwelvePixels", async ({ page }) => {
-          await openRoute(page, route, name);
+          await open(page, name);
           const report = await smallTextReport(page, "body");
           expect(report.small).toEqual([]);
           expect(report.texts, "text nodes measured").toBeGreaterThan(0);
         });
 
         test("onlyNowComponentsPaintTheNowRed", async ({ page }) => {
-          await openRoute(page, route, name);
+          await open(page, name);
           const report = await nowRedReport(page, "body");
           expect(report.now.length, "the NOW tokens resolved").toBeGreaterThanOrEqual(3);
           expect(report.elements, "elements judged").toBeGreaterThan(0);
@@ -412,15 +469,16 @@ export function screenChecks(
         });
 
         test("everyTargetMeetsTheFloor", async ({ page }) => {
-          await openRoute(page, route, name);
+          await open(page, name);
           const report = await targetReport(page);
           expect(report.small).toEqual([]);
           expect(report.measured, "targets measured").toBeGreaterThan(0);
-          expect(report.primaries, "at most one primary action").toBeLessThanOrEqual(1);
+          if (opts.onePrimary) expect(report.primaries, "exactly one primary action").toBe(1);
+          else expect(report.primaries, "at most one primary action").toBeLessThanOrEqual(1);
         });
 
         test("everyVisibleImageIsADecodedBrandFileOrItsOwnCrop", async ({ page }) => {
-          await openRoute(page, route, name);
+          await open(page, name);
           const crops = new Map((opts.crops ?? []).map((row) => [row.crop.src, expectedWidth(row)]));
           const images = await imagesReport(page, "body");
           const bad = images
@@ -436,13 +494,8 @@ export function screenChecks(
 
         if (opts.crops) {
           test("everyCropIsItsRowsOwnImage", async ({ page }) => {
-            await openRoute(page, route, name);
-            const rows = opts.crops!;
-            const widths = rows.map((r) => expectedWidth(r));
-            expect(new Set(widths).size, "this fixture cannot detect a swap: two rows share a width").toBe(widths.length);
-            const shown = await imagesReport(page, "[data-value-row]");
-            expect(shown.length, "one crop per value row").toBe(rows.length);
-            expect(shown.map((s) => [s.src, s.natural])).toEqual(rows.map((r) => [r.crop.src, expectedWidth(r)]));
+            await open(page, name);
+            expect(await cropRowsReport(page, opts.crops!)).toEqual([]);
           });
         }
       });

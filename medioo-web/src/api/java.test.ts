@@ -88,6 +88,36 @@ describe("javaGet", () => {
     expect(error?.message).not.toContain("Rokeya");
   });
 
+  it("aNonJsonOkNamesTheStatusAndPatternOnly", async () => {
+    // undici's SyntaxError quotes the start of the body ("Unexpected token 'R', "Rokeya +88"..."), which would reach
+    // the Next server log: the 200 that is not JSON is named like any other failure, with no cause attached.
+    stubFetch({ [PAPER]: { status: 200, body: "Rokeya +8801700000123" } });
+    const error = await javaGet(PAPER).then(
+      () => null,
+      (e: Error) => e,
+    );
+    expect(error?.message).toBe("java 200 /app/api/documents/{id}");
+    expect(error?.cause).toBeUndefined();
+  });
+
+  it("anUnreachableJavaNamesThePatternOnly", async () => {
+    const path = `${PAPER}?x=+8801700000123`;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        throw new TypeError(`fetch failed ${url}`);
+      }),
+    );
+    const error = await javaGet(path).then(
+      () => null,
+      (e: Error) => e,
+    );
+    expect(error?.message).toBe("java unreachable /app/api/documents/{id}");
+    expect(error?.message).not.toContain("?");
+    expect(error?.message).not.toContain("8801700000123");
+    expect(error?.cause).toBeUndefined();
+  });
+
   it("aPreviewRequestReadsMeFirstAndStopsWhenNotPreview", async () => {
     incoming.set("x-medioo-preview", "1");
     stubFetch({ "/app/api/me": { status: 200, body: { preview: false } }, [PAPER]: { status: 200, body: {} } });

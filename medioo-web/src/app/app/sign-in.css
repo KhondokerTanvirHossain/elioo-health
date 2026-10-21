@@ -61,12 +61,21 @@
   font-weight: 600;
   cursor: pointer;
 }
+/* The no-JavaScript way in (SignInFrame's noscript link), a link drawn as the primary press. */
+a.sign-in__primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  text-decoration: none;
+}
 .sign-in__primary:disabled {
   cursor: progress;
   opacity: 0.6;
 }
 .sign-in__primary:focus-visible,
 .sign-in__quiet:focus-visible,
+.sign-in__number:focus-visible,
 .sign-in__wa:focus-visible {
   outline: var(--focus-width) solid var(--focus);
   outline-offset: var(--focus-offset);

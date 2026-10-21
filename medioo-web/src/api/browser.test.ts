@@ -67,6 +67,28 @@ describe("apiSend", () => {
     expect(assign).toHaveBeenCalledWith("/app/?next=%2Fapp%2Fpreview%2Fdocuments%2Fd1%3Fall%3D1");
   });
 
+  // The other direction of the 401 rule: only UNAUTHENTICATED is "go and sign in". A sign-in route's 401 with another
+  // reason, or a bodiless 401, is a refusal the island says in copy, never a redirect.
+  it("aFourOhOneWithAnotherReasonIsARefusalNotARedirect", async () => {
+    answer(401, { reason: "SIGN_IN_RESTART" });
+    expect(await apiSend("POST", "/app/api/sign-in/verify", { code: "123456" })).toEqual({
+      kind: "refused",
+      status: 401,
+      reason: "SIGN_IN_RESTART",
+    });
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it("aBodylessFourOhOneIsARefusalNotARedirect", async () => {
+    answer(401);
+    expect(await apiSend("POST", "/app/api/sign-in/verify", { code: "123456" })).toEqual({
+      kind: "refused",
+      status: 401,
+      reason: "",
+    });
+    expect(assign).not.toHaveBeenCalled();
+  });
+
   it("aRefusalIsItsReason", async () => {
     answer(403, { reason: "VIEW_ONLY" });
     expect(await apiSend("DELETE", "/app/api/documents/d1")).toEqual({ kind: "refused", status: 403, reason: "VIEW_ONLY" });

@@ -6,11 +6,11 @@ import { FIXTURES, SCENARIOS } from "./scenarios.mjs";
 /*
  * Stub Java for the e2e suite (plan Wave 3, Shared interfaces → e2e support). `next start` reads it as
  * JAVA_INTERNAL_URL; browser-api.ts answers the browser's own /app/api calls through the same `answer()`. It picks the
- * scenario from the `e2e_scenario` cookie; `baymax_session` means only "signed in". It refuses mutations as
+ * scenario from the `e2e_scenario` cookie; `baymax_session` means only "signed in". In AppApiGuard.filter's order: a
+ * route that needs a session and has none is 401 UNAUTHENTICATED, whatever its headers; then a mutation is refused as
  * AppApiGuard.csrf does, in its order: no `X-Medioo: 1` is 403 MISSING_HEADER; a foreign Origin, or none on an open
  * route, is 403 FORBIDDEN_ORIGIN; no JSON or multipart type (a body-less POST or DELETE included) is 415
- * UNSUPPORTED_MEDIA_TYPE. Then a route that needs a session and has none is 401 UNAUTHENTICATED, and a route the
- * scenario does not map is 404 NOT_FOUND. It records every request and serves the log at GET /__requests (DELETE
+ * UNSUPPORTED_MEDIA_TYPE. Then a route the scenario does not map is 404 NOT_FOUND. It records every request and serves the log at GET /__requests (DELETE
  * clears it). It logs nothing.
  */
 
@@ -60,6 +60,10 @@ export function answer({ method, path, headers, origin, counters }) {
   const scenario = SCENARIOS[name ?? ""];
   if (!scenario) return { status: 404, body: { reason: "NOT_FOUND" } };
   const signature = `${method} ${path}`;
+  // AppApiGuard.filter's order: the session first, then (inside admitted()) CSRF for a mutation, then the route.
+  if (!OPEN.has(signature) && cookieValue(headers.cookie, "baymax_session") === null) {
+    return { status: 401, body: { reason: "UNAUTHENTICATED" } };
+  }
   if (MUTATIONS.has(method)) {
     if (headers["x-medioo"] !== "1") return { status: 403, body: { reason: "MISSING_HEADER" } };
     const from = headers.origin;
@@ -70,9 +74,6 @@ export function answer({ method, path, headers, origin, counters }) {
     if (type !== "application/json" && type !== "multipart/form-data") {
       return { status: 415, body: { reason: "UNSUPPORTED_MEDIA_TYPE" } };
     }
-  }
-  if (!OPEN.has(signature) && cookieValue(headers.cookie, "baymax_session") === null) {
-    return { status: 401, body: { reason: "UNAUTHENTICATED" } };
   }
   const key = routeKey(scenario, method, path);
   if (key === null) return { status: 404, body: { reason: "NOT_FOUND" } };
@@ -119,8 +120,9 @@ function serve(port, host, origin) {
     req.resume();
     req.on("end", () => {
       const entry = { method: req.method ?? "GET", path: url.pathname, query: url.search.slice(1), headers: req.headers };
-      log.push(record(entry));
       const { status, body } = answer({ ...entry, origin, counters });
+      // The status it answered, beside what it received, so a test can see which side of the guard a read fell on.
+      log.push({ ...record(entry), status });
       if (status === 204) {
         res.writeHead(204);
         return res.end();

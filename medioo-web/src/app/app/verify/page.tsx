@@ -41,7 +41,7 @@ export default async function VerifyPage() {
         </>
       )}
       <p className="sign-in__mask">{words.number}</p>
-      <CodeFlow words={words} numberHref={numberHref} />
+      <CodeFlow words={words} numberHref={numberHref} preview={preview} />
       {words.sent?.resend && (
         <a className="sign-in__quiet" href={words.sent.resend.href}>
           {words.sent.resend.text}

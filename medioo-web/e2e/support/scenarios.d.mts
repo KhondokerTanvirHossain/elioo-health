@@ -8,4 +8,6 @@ export const PAGE_SCENARIOS: Record<string, string>;
 export const PAGE_MARKERS: Record<string, string>;
 export const LONGEST: Record<string, string>;
 export function patientName(fixture: string): string;
-export function signedOut(name: string): boolean;
+export function numberShown(fixture: string): string;
+export function longNameOf(name: string, table?: Record<string, Value>): string;
+export function signedOut(name: string, table?: Record<string, Value>): boolean;
