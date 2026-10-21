@@ -17,6 +17,11 @@ const W2C: string[] = [
   "MessageBubble/long-unbroken",
   // One chip state per kind, derived from the kinds the component knows, so a kind added there needs a state here.
   ...CHIP_KINDS.map((kind) => `StatusChip/${kind}`),
+  // W2e-a: the two sign-in fields.
+  "OtpInput/empty",
+  "OtpInput/filled",
+  "PhoneField/empty",
+  "PhoneField/error",
 ];
 
 const ids = () => STATES.map(({ component, state }) => `${component}/${state}`);

@@ -79,17 +79,18 @@ describe("the built CSS", () => {
     expect(rootProps.has("--boundary"), "the built CSS defines --boundary in :root").toBe(true);
     // Q1 (A), PR #120: no input or segmented track relies on the fill wash alone, and every control carries a drawn
     // boundary whatever its background.
-    expect(fillBoundaryViolations(css)).toEqual([]);
-    expect(controlBoundaryViolations(css)).toEqual([]);
-    // What the two checks judged. W2a ships no field and no track, so both lists are empty and both checks above
-    // are vacuous today. This pin says so instead of letting a green run read as coverage: W2e-a, the first PR that
-    // ships a field, replaces it with its non-empty guard (the field and track classes are among the painters and
-    // the controls) and adds the rendered computed-style check (plan W2e-a Step 3).
+    // Soft, so one run reports both: a field that drops its boundary is a --fill painter and a control at once.
+    expect.soft(fillBoundaryViolations(css), "fillBoundaryViolations").toEqual([]);
+    expect.soft(controlBoundaryViolations(css), "controlBoundaryViolations").toEqual([]);
+    // What the two checks judged, so the empty lists above are not vacuous: the W2e-a fields (OtpInput's and
+    // PhoneField's inputs) are among both the --fill painters and the controls. A later PR that ships a field or a
+    // segmented track adds its class here, and to catalog.spec.ts everyFieldAndTrackDrawsTheBoundary's guard, which
+    // checks what the browser paints (order, a recolouring rule, a class put on by markup).
     const painters = fillPainters(css);
     const controls = controlSelectors(css);
     console.info(`--fill painters in the built CSS (${painters.length}): ${painters.join(", ") || "none"}`);
     console.info(`controls in the built CSS (${controls.length}): ${controls.join(", ") || "none"}`);
-    expect(painters, "W2a ships no field or track; W2e-a replaces this pin with its non-empty guard").toEqual([]);
-    expect(controls, "W2a ships no field or track; W2e-a replaces this pin with its non-empty guard").toEqual([]);
+    expect(painters, "--fill painters in the built CSS").toEqual(expect.arrayContaining([".otp-input", ".phone-field__input"]));
+    expect(controls, "controls in the built CSS").toEqual(expect.arrayContaining([".otp-input", ".phone-field__input"]));
   });
 });

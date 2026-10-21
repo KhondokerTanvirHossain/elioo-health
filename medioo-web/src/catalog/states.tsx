@@ -1,7 +1,9 @@
 import type { JSX } from "react";
-import { t, type Lang } from "@/copy";
+import { banglaDigits, t, type Lang } from "@/copy";
 import { MessageBubble } from "@/components/MessageBubble/MessageBubble";
 import { MioAvatar } from "@/components/MioAvatar/MioAvatar";
+import { OtpInput } from "@/components/OtpInput/OtpInput";
+import { PhoneField } from "@/components/PhoneField/PhoneField";
 import { CHIP_KINDS, StatusChip } from "@/components/StatusChip/StatusChip";
 import { Wordmark } from "@/components/Wordmark/Wordmark";
 // Fictional names, written by baymax CatalogFixturesExportTest so no Bangla is typed here (Global Constraints).
@@ -58,4 +60,19 @@ export const STATES: CatalogState[] = [
   ...CHIP_KINDS.map(
     (kind): CatalogState => ({ component: "StatusChip", state: kind, render: (lang) => <StatusChip kind={kind} lang={lang} /> }),
   ),
+
+  // The sign-in fields (W2e-a). A fictional code, in the digits a family would type in each language.
+  { component: "OtpInput", state: "empty", render: (lang) => <OtpInput length={6} lang={lang} name="code" /> },
+  {
+    component: "OtpInput",
+    state: "filled",
+    render: (lang) => <OtpInput length={6} lang={lang} name="code" defaultValue={lang === "bn" ? banglaDigits("042917") : "042917"} />,
+  },
+  { component: "PhoneField", state: "empty", render: (lang) => <PhoneField lang={lang} name="whatsapp_number" /> },
+  {
+    // A number Java refused (INVALID_NUMBER, the copy key login.number.invalid), shown back as typed: too short.
+    component: "PhoneField",
+    state: "error",
+    render: (lang) => <PhoneField lang={lang} name="whatsapp_number" error="login.number.invalid" defaultValue="01700 0000" />,
+  },
 ];

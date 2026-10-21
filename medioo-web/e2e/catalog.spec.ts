@@ -1,6 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
-import { NOW_ALLOWED } from "../src/styles/now-usage";
+import { CONTROL_CLASS, NOW_ALLOWED } from "../src/styles/now-usage";
 
 /*
  * The component catalog (/app/catalog-test, catalog build only), in the `catalog` project: every registered state, in
@@ -14,6 +14,8 @@ const VIEWPORTS = {
   desktop: { width: 1280, height: 800 },
 } as const;
 const SCHEMES = ["light", "dark"] as const;
+// The elements Q1 (A) is about: a text field, a select, a segmented track (CONTROL_CLASS adds the classed ones).
+const FIELDS = "input:not([type=checkbox], [type=radio], [type=hidden]), textarea, select, [role=radiogroup], [role=tablist]";
 
 /** Loads the catalog with the CSP-violation hook installed from the first byte, every eager image loaded. */
 async function open(page: Page) {
@@ -205,6 +207,97 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
         expect(result.bad).toEqual([]);
         // Guard: the red was found where it belongs (the critical chips), so the empty list above is not vacuous.
         expect(result.painted).toEqual(expect.arrayContaining(["StatusChip/crit-high", "StatusChip/crit-low"]));
+      });
+
+      test("everyFieldAndTrackDrawsTheBoundary", async ({ page }) => {
+        // Q1 (A), PR #120, on what the browser paints: every field and track is washed with --fill and draws --boundary
+        // as an edge, at rest, hovered and focused, under both data-theme values over this system scheme. This sees
+        // what the CSS scan in built/now-usage.built.test.ts cannot: source order, a later rule that recolours the
+        // edge (`border-color: var(--focus)` on focus), and a class only the markup puts on the element.
+        await open(page);
+        const controls = await page.evaluate(
+          ({ fields, controlClass }) => {
+            const re = new RegExp(controlClass);
+            const found = [...document.querySelectorAll<HTMLElement>("[data-catalog-state] *")].filter(
+              (el) => el.matches(fields) || [...el.classList].some((c) => re.test(`.${c}`)),
+            );
+            return found.map((el, i) => {
+              el.setAttribute("data-boundary-check", String(i));
+              return { state: el.closest<HTMLElement>("[data-catalog-state]")!.dataset.catalogState!, classes: [...el.classList] };
+            });
+          },
+          { fields: FIELDS, controlClass: CONTROL_CLASS.source },
+        );
+
+        const bad: string[] = [];
+        for (const theme of ["light", "dark"] as const) {
+          await page.evaluate((t) => document.documentElement.setAttribute("data-theme", t), theme);
+          // The theme's --fill and --boundary as getComputedStyle spells a colour, read off a swatch.
+          const tokens = await page.evaluate(() => {
+            const swatch = document.createElement("div");
+            document.body.append(swatch);
+            const resolved = (token: string) => {
+              const raw = getComputedStyle(document.documentElement).getPropertyValue(token).trim();
+              swatch.style.setProperty("background-color", raw);
+              const value = raw === "" ? "" : getComputedStyle(swatch).backgroundColor;
+              swatch.style.removeProperty("background-color");
+              return value;
+            };
+            const out = { fill: resolved("--fill"), boundary: resolved("--boundary") };
+            swatch.remove();
+            return out;
+          });
+          expect(tokens.fill, `--fill resolves under data-theme=${theme}`).not.toBe("");
+          expect(tokens.boundary, `--boundary resolves under data-theme=${theme}`).not.toBe("");
+
+          for (const mode of ["rest", "hover", "focus"] as const) {
+            for (const [i, control] of controls.entries()) {
+              const el = page.locator(`[data-boundary-check="${i}"]`);
+              await page.mouse.move(0, 0);
+              await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+              if (mode === "hover") await el.hover();
+              if (mode === "focus") await el.focus();
+              const problems = await el.evaluate((node, { fill, boundary }) => {
+                const cs = getComputedStyle(node);
+                const visible = (style: string) => style !== "none" && style !== "hidden";
+                const out: string[] = [];
+                if (cs.backgroundColor !== fill) out.push(`background-color ${cs.backgroundColor}, not --fill ${fill}`);
+                const sides = ["top", "right", "bottom", "left"];
+                const border = sides.some(
+                  (side) =>
+                    parseFloat(cs.getPropertyValue(`border-${side}-width`)) > 0 &&
+                    visible(cs.getPropertyValue(`border-${side}-style`)) &&
+                    cs.getPropertyValue(`border-${side}-color`) === boundary,
+                );
+                const outline = parseFloat(cs.outlineWidth) > 0 && visible(cs.outlineStyle) && cs.outlineColor === boundary;
+                // A ring: the boundary's colour, offsets and blur 0, a spread of at least 1px ("<colour> 0px 0px 0px 1px").
+                const shadows = cs.boxShadow === "none" ? [] : cs.boxShadow.split(/,(?![^(]*\))/);
+                const ring = shadows.some((shadow) => {
+                  const m = /^\s*(rgba?\([^)]*\))\s+(.*)$/.exec(shadow);
+                  if (!m || m[1] !== boundary) return false;
+                  const px = m[2]!.split(/\s+/).filter((w) => w.endsWith("px")).map(parseFloat);
+                  return px.length === 4 && px[0] === 0 && px[1] === 0 && px[2] === 0 && px[3]! >= 1;
+                });
+                if (!border && !outline && !ring) {
+                  const edges = sides.map(
+                    (side) =>
+                      `${side} ${cs.getPropertyValue(`border-${side}-width`)} ${cs.getPropertyValue(`border-${side}-style`)} ${cs.getPropertyValue(`border-${side}-color`)}`,
+                  );
+                  out.push(`draws no --boundary ${boundary} (border ${edges.join(", ")}; outline ${cs.outlineWidth} ${cs.outlineStyle} ${cs.outlineColor})`);
+                }
+                return out;
+              }, tokens);
+              for (const p of problems) bad.push(`${control.state} .${control.classes.join(".")} ${mode} data-theme=${theme}: ${p}`);
+            }
+          }
+        }
+        expect(bad).toEqual([]);
+        // Guards: fields were checked at this layout and scheme, so the empty list above is not vacuous, and the two
+        // W2e-a fields were among them. A later PR that ships a field or a segmented track adds its class here.
+        expect(controls.length, "fields and tracks checked").toBeGreaterThan(0);
+        const classes = new Set(controls.flatMap((c) => c.classes));
+        expect(classes, "the OtpInput field was checked").toContain("otp-input");
+        expect(classes, "the PhoneField input was checked").toContain("phone-field__input");
       });
 
       test("noTextUnderTwelvePixels", async ({ page }) => {
