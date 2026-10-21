@@ -60,3 +60,18 @@ dependencies {
 springBoot {
     mainClass = 'com.elioo.healthcare.MedscribeAiApplication'
 }
+
+// ShippedSpringFrameworkVersionTest reads the bootJar itself: its BOOT-INF/lib is built from the production runtime
+// classpath, which Gradle resolves apart from the test runtime classpath, so a check on the test classpath alone can
+// pass while the jar ships another Framework. It also gets the root override, to fail when Boot moves while it is set.
+tasks.named('test') {
+    def bootJarFile = tasks.named('bootJar').flatMap { it.archiveFile }
+    dependsOn tasks.named('bootJar')
+    inputs.file(bootJarFile).withPropertyName('shippedBootJar')
+    def override = project.findProperty('spring-framework.version')
+    inputs.property('springFrameworkOverride', override ?: '')
+    doFirst {
+        systemProperty 'shipped.bootJar', bootJarFile.get().asFile.absolutePath
+        systemProperty 'spring-framework.override', override ?: ''
+    }
+}

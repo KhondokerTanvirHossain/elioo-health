@@ -125,6 +125,10 @@ jobs:
           cache-dependency-path: medioo-web/pnpm-lock.yaml
       - name: Upload script tests
         run: node --test baymax/src/test/js/*.test.mjs
+      # The image build runs scripts/check-framework-jars.sh on the lib it ships; its own cases (both directions, and
+      # an empty lib fails) run here, so a broken check cannot pass every image silently.
+      - name: Framework jar check cases
+        run: scripts/test_check_framework_jars.sh
       # medioo-web (DR-40, plan W1a): built and tested here; the deploy job builds its image and runs it beside Java (W1b),
       # with no traffic until Caddy routes a path to it (W1c).
       # DR-40 A3, enforced here and in Java: no server action, no mutating route handler, Java fetched with GET/HEAD

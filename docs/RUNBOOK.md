@@ -436,6 +436,19 @@ curl -s https://medioo.eliooo.org/app/healthz                                   
 free -m                                                                                         # "available" stays at 1 GB or more
 ```
 
+The Spring Framework the running container actually carries (build.gradle overrides Boot 3.4.2's 6.2.2, which
+hangs a multipart press of several photos, spring-framework#34178). Every line must be the same version, 6.2.19 or
+later; the image build already refuses otherwise (`scripts/check-framework-jars.sh`), this confirms what deployed:
+
+```bash
+docker exec medscribe-ai sh -c 'ls /workspace/app/lib' | grep -E '^spring-(aop|beans|context|core|expression|jcl|jdbc|r2dbc|tx|web|webflux)-[0-9]'   # all 6.2.19
+```
+
+Rolling back across the Framework bump: the last image on 6.2.2 is `8248ac8`. Rolling back to it also removes
+B4b (#109, `579a35a`, which carried the bump) and B4c (#110); no migration landed in between, so it is schema-safe,
+and it brings the hang back. A Framework-only rollback is a revert of the `ext['spring-framework.version']` line on
+`main`, which also brings the hang back.
+
 ## Migrations
 
 Two independent Flyway instances run at startup over JDBC, then the app uses R2DBC:

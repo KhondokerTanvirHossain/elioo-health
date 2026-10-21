@@ -44,10 +44,25 @@ subprojects {
 
     // Spring Framework 6.2.19 under Boot 3.4.2. 6.2.2 (Boot 3.4.2's) has spring-framework#34178: MultipartParser never
     // re-requests when demand arrives after a part was written to disk, so a press of several photos over 256 KB each
-    // can hang forever with no error. Through a real server 19 of 40 presses of 2-3 such files hung on 6.2.2, 0 of 40 on
-    // 6.2.19. Set as a project property, not as a bomProperty on the import below: medscribe-ai applies the Boot plugin,
+    // can hang forever with no error. The fix is spring-framework#34388 (onRequest hook), first released in 6.2.4;
+    // 6.2.19 is not the fix version but a choice, the latest 6.2.x patch when this was set, inside Boot 3.4's 6.2.x line.
+    // Through a real server 19 of 40 presses of 2-3 such files hung on 6.2.2, 0 of 40 on 6.2.19, both on reactor-core 3.7.2.
+    //
+    // A mixed BOM, deliberately: only Framework moves. Reactor (reactor-core 3.7.2, reactor-netty 1.2.2), Netty
+    // 4.1.117.Final, Micrometer (micrometer-observation 1.14.3) and Spring Data 2024.1.2 stay on Boot 3.4.2's versions,
+    // though 6.2.19's own POMs declare reactor-core 3.7.19 and micrometer-observation 1.15.12. Linkage was checked in
+    // bytecode both ways on review of #111: every Reactor/Netty/Micrometer member 6.2.19 references exists in those versions, and every
+    // Framework member Boot 3.4.2 and Spring Data 3.4.2 reference exists in 6.2.19 (only the unused netty5 adapters had
+    // gaps). Upstream never tested this pairing. Reactor is not bumped here: one moving part per rollback unit.
+    // ShippedSpringFrameworkVersionTest pins reactor-core at 3.7.2, so moving it is a conscious change.
+    //
+    // Set as a project property, not as a bomProperty on the import below: medscribe-ai applies the Boot plugin,
     // which imports spring-boot-dependencies a second time and honours only the project property, so a bomProperty
-    // here left the bootJar on 6.2.2 (ShippedSpringFrameworkVersionTest guards the deployable's classpath).
+    // here left the bootJar on 6.2.2. Checked on the artefact, not a classpath: ShippedSpringFrameworkVersionTest reads
+    // the bootJar's BOOT-INF/lib, and the Dockerfile runs scripts/check-framework-jars.sh on the lib the image ships.
+    //
+    // Remove this line once the Boot BOM's own spring-framework.version is >= 6.2.19 (the next Boot upgrade); until
+    // then ShippedSpringFrameworkVersionTest fails if Boot moves off 3.4.2 while it is set, so an upgrade must decide.
     ext['spring-framework.version'] = '6.2.19'
 
     // Common dependency management (BOM)
