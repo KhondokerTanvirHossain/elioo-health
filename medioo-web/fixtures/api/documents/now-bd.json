@@ -1,0 +1,164 @@
+{
+  "_meta": {
+    "generated_by": "baymax PaperApiContractTest",
+    "source": "GET /app/api/documents/{id} over the PaperFixtures case now-bd"
+  },
+  "body": {
+    "banner": {
+      "level": "now",
+      "line_key": "urgency.now"
+    },
+    "counts": {
+      "line_key": "result.counts",
+      "outside": 2,
+      "values": 4
+    },
+    "date": "2026-10-12",
+    "date_is_upload_day": false,
+    "doctor": {
+      "diagnosis": [
+        {
+          "crop": {
+            "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fctx-dx-1.jpg"
+          },
+          "text": "Hyperkalaemia"
+        }
+      ]
+    },
+    "document_type": "lab_report",
+    "facility": "Shapla Diagnostics",
+    "filed": false,
+    "follow_up": [
+      {
+        "crop": {
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Ffu-Repeatthetestafter7days.jpg"
+        },
+        "due_date": "2026-10-19",
+        "instruction": "Repeat the test after 7 days"
+      }
+    ],
+    "gate": "RELEASED",
+    "id": "5e9edf6d-0a2a-4913-8675-9d07a4100003",
+    "medicines": [
+      {
+        "crop": {
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fmed-Napa500.jpg"
+        },
+        "dose_text": "1+0+1",
+        "duration_text": "7 days",
+        "name": "Napa 500"
+      }
+    ],
+    "now": {
+      "bring_key": "now.bring",
+      "call_999": true,
+      "flags_go_key": "now.flags.go",
+      "notdoctor_key": "now.notdoctor",
+      "remote_share": false
+    },
+    "owner": true,
+    "page_count": 2,
+    "pages": [
+      {
+        "n": 1,
+        "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/page/1"
+      },
+      {
+        "n": 2,
+        "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/page/2"
+      }
+    ],
+    "patient": {
+      "age": 64,
+      "id": "5e9edf6d-0a2a-4913-8675-9d07a4100002",
+      "name": "Ma",
+      "name_objective": "Ma-কে",
+      "name_possessive": "Ma-র"
+    },
+    "printed_date": "2026-10-12",
+    "reasons": [
+      "value_critical",
+      "value_outside_range"
+    ],
+    "received_at": "2026-10-20T03:59:00Z",
+    "status": "DONE",
+    "unverified": {
+      "follow_up": 0,
+      "medicines": 0,
+      "total": 1,
+      "values": 1
+    },
+    "urgency": "now",
+    "values": [
+      {
+        "chip_key": "value.chip.outside.low",
+        "crop": {
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Sodium.jpg"
+        },
+        "display_kind": "outside",
+        "id": "7e0f2d86-408b-3c71-8ffd-bfd91a5e282b",
+        "in_now_block": false,
+        "name": "Sodium",
+        "pin": 2.0,
+        "ref_high": "145",
+        "ref_low": "135",
+        "side": "low",
+        "unit": "mmol/L",
+        "value": "128"
+      },
+      {
+        "chip_key": "value.chip.critical.high",
+        "crop": {
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Potassium.jpg"
+        },
+        "display_kind": "critical",
+        "id": "7af69ec6-676f-3bb9-b0bb-3e665c36ed57",
+        "in_now_block": true,
+        "name": "Potassium",
+        "pin": 98.0,
+        "ref_high": "5.1",
+        "ref_low": "3.5",
+        "side": "high",
+        "unit": "mmol/L",
+        "value": "6.9"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Haemoglobin.jpg"
+        },
+        "display_kind": "inside",
+        "id": "efae053b-a72a-3298-9d84-a304a320cc9c",
+        "in_now_block": false,
+        "name": "Haemoglobin",
+        "pin": 40.7,
+        "ref_high": "15.5",
+        "ref_low": "12.0",
+        "side": null,
+        "unit": "g/dL",
+        "value": "13.1"
+      },
+      {
+        "chip_key": "value.chip.unknown",
+        "crop": {
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-LDL.jpg"
+        },
+        "display_kind": "unknown",
+        "id": "4cb575e6-bdf6-36eb-acb9-8693f27a4198",
+        "in_now_block": false,
+        "name": "LDL",
+        "pin": null,
+        "ref_high": "100",
+        "ref_low": null,
+        "side": null,
+        "unit": "mg/dL",
+        "value": "90"
+      }
+    ],
+    "viewer": {
+      "bangladesh": true
+    },
+    "wording": "Potassium is far above the printed range."
+  },
+  "status": 200
+}

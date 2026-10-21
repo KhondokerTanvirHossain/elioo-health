@@ -1,0 +1,10 @@
+{
+  "_meta": {
+    "generated_by": "baymax PaperApiContractTest",
+    "source": "GET /app/api/documents/{id} over the PaperFixtures case not-found"
+  },
+  "body": {
+    "reason": "NOT_FOUND"
+  },
+  "status": 404
+}

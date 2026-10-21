@@ -2,6 +2,7 @@ package com.elioo.baymax.web.adapter.in.ui;
 
 import com.elioo.baymax.outbound.domain.PrintedRange;
 import com.elioo.baymax.outbound.domain.ValueVerdict;
+import com.elioo.baymax.web.domain.PaperDisplay;
 
 import java.util.List;
 import java.util.Locale;
@@ -24,74 +25,24 @@ final class ValueRows {
     private ValueRows() {
     }
 
-    /**
-     * F2 on the page: the stored verdict; NULL or anything unrecognised is UNKNOWN, and a stored INSIDE is shown INSIDE
-     * only when the code proves it on the row as rendered (insideByCode). A stored OUTSIDE or CRITICAL without a stored
-     * side (a row V19's observation_verdict_side_matches_kind forbids) is UNKNOWN too: the page never guesses a direction,
-     * not even from the pin. The direction that withholds reassurance wins.
-     */
+    /** {@link PaperDisplay#kindOf}: the kind a row is drawn as, from its stored verdict (F2). */
     static ValueVerdict.Kind kindOf(Map<String, Object> v) {
-        Object raw = v.get("verdict");
-        if (raw == null) {
-            return ValueVerdict.Kind.UNKNOWN;
-        }
-        ValueVerdict.Kind kind;
-        try {
-            kind = ValueVerdict.Kind.valueOf(String.valueOf(raw).toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException e) {
-            return ValueVerdict.Kind.UNKNOWN;
-        }
-        if (kind == ValueVerdict.Kind.INSIDE && !PrintedRange.insideByCode(v)) {
-            return ValueVerdict.Kind.UNKNOWN;
-        }
-        boolean sided = kind == ValueVerdict.Kind.OUTSIDE || kind == ValueVerdict.Kind.CRITICAL;
-        return sided && storedSide(v) == null ? ValueVerdict.Kind.UNKNOWN : kind;
+        return PaperDisplay.kindOf(v);
     }
 
-    /** The stored verdict_side when it is one the page knows ("high" or "low"), else null. */
+    /** {@link PaperDisplay#storedSide}. */
     static String storedSide(Map<String, Object> v) {
-        Object side = v.get("verdict_side");
-        return "high".equals(side) || "low".equals(side) ? (String) side : null;
+        return PaperDisplay.storedSide(v);
     }
 
-    /**
-     * The pin only when it agrees with the verdict: INSIDE in the band, OUTSIDE/CRITICAL outside it and on the stored side
-     * ({@code storedSide}), UNKNOWN never. A bar that would tell a different story from the chip is
-     * not drawn; the chip keeps the stored verdict either way.
-     */
+    /** {@link PaperDisplay#pin}: the pin only where it agrees with the verdict. */
     static OptionalDouble pin(ValueVerdict.Kind kind, Map<String, Object> v, String storedSide) {
-        if (kind == ValueVerdict.Kind.UNKNOWN) {
-            return OptionalDouble.empty();
-        }
-        OptionalDouble p = PrintedRange.pinPercent(v);
-        if (p.isEmpty()) {
-            return p;
-        }
-        double at = p.getAsDouble();
-        boolean inBand = at >= 25 && at <= 75;
-        if (inBand != (kind == ValueVerdict.Kind.INSIDE)) {
-            return OptionalDouble.empty();
-        }
-        boolean otherSide = ("high".equals(storedSide) && at < 25) || ("low".equals(storedSide) && at > 75);
-        return otherSide ? OptionalDouble.empty() : p;
+        return PaperDisplay.pin(kind, v, storedSide);
     }
 
-    /**
-     * The chip's key. OUTSIDE and CRITICAL carry the stored verdict's side ({@code verdict_side}) and only that: the page
-     * never re-judges a stored verdict, and never reads a side off the pin. {@link #kindOf} has already made a sideless
-     * OUTSIDE or CRITICAL UNKNOWN, so reaching here without a side is a bug, not a row to guess at.
-     */
+    /** {@link PaperDisplay#chipKey}: the chip's key, a side only from the stored verdict. */
     static String chipKey(ValueVerdict.Kind kind, String storedSide) {
-        return switch (kind) {
-            case INSIDE -> "value.chip.inside";
-            case UNKNOWN -> "value.chip.unknown";
-            case OUTSIDE, CRITICAL -> {
-                if (storedSide == null) {
-                    throw new IllegalStateException(kind + " without its stored side is never given a direction");
-                }
-                yield "value.chip." + kind.name().toLowerCase(Locale.ROOT) + "." + storedSide;
-            }
-        };
+        return PaperDisplay.chipKey(kind, storedSide);
     }
 
     /** Where a value sheet was opened from, so its close goes back to the same row: the summary, or the detail. */

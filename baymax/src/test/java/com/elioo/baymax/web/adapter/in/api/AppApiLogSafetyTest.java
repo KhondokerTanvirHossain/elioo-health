@@ -76,8 +76,11 @@ class AppApiLogSafetyTest {
             FamilyAccount family = AppApiContext.family(context, NUMBER, "Tanvir");
             PatientProfile rokeya = AppApiContext.patient(context, family.id(), NAME);
             AppApiContext.patient(context, family.id(), "Karim");
-            AppApiContext.paper(context, POSTGRES, rokeya, "now");
+            UUID paper = AppApiContext.paper(context, POSTGRES, rokeya, "now");
+            AppApiContext.value(POSTGRES, rokeya, paper, NAME, "6.9");
             String token = AppApiContext.session(context, family.id());
+            FamilyAccount other = AppApiContext.family(context, "+8801700000124", "Karim");
+            String otherToken = AppApiContext.session(context, other.id());
             WebTestClient client = WebTestClient.bindToApplicationContext(context).build();
 
             // each route's requests: the success path and its refusals, so every branch that could log is reached
@@ -105,6 +108,15 @@ class AppApiLogSafetyTest {
                         .bodyValue(Map.of("patient_id", NAME)).exchange().expectStatus().isForbidden();
                 c.put().uri("/app/api/active-patient").cookie("baymax_session", t).contentType(MediaType.APPLICATION_JSON)
                         .bodyValue(Map.of("patient_id", NAME)).exchange().expectStatus().isForbidden();
+            });
+            exercise.put("GET /app/api/documents/{id}", (c, t) -> {
+                // the owner's GET carries the patient's name and a value named after her; another family's and a
+                // visitor's are refused before anything is read
+                c.get().uri("/app/api/documents/" + paper).cookie("baymax_session", t).exchange().expectStatus().isOk();
+                c.get().uri("/app/api/documents/" + paper).cookie("baymax_session", otherToken).exchange().expectStatus().isNotFound();
+                c.get().uri("/app/api/documents/" + paper).exchange().expectStatus().isUnauthorized();
+                c.get().uri(b -> b.path("/app/api/documents/{id}").build(NAME)).cookie("baymax_session", t)
+                        .exchange().expectStatus().isNotFound();
             });
             exercise.put("* /app/api/**", (c, t) -> {
                 c.get().uri("/app/api/nothing-here").cookie("baymax_session", t).exchange().expectStatus().isNotFound();

@@ -44,11 +44,11 @@ public final class Dom {
             return attrs;
         }
 
-        Element parent() {
+        public Element parent() {
             return parent;
         }
 
-        List<Element> children() {
+        public List<Element> children() {
             return children;
         }
 
@@ -58,11 +58,11 @@ public final class Dom {
         }
 
         /** The element's own text nodes (not its children's), with entities for spaces read as spaces. */
-        String ownText() {
+        public String ownText() {
             return ownText.toString().replace("&nbsp;", " ").replace("\u00a0", " ").trim();
         }
 
-        Element previousSibling() {
+        public Element previousSibling() {
             if (parent == null) {
                 return null;
             }
@@ -71,7 +71,7 @@ public final class Dom {
         }
 
         /** The opening tag as written, for a failure message. */
-        String describe() {
+        public String describe() {
             StringBuilder b = new StringBuilder("<").append(tag);
             attrs.forEach((k, v) -> {
                 if (Set.of("class", "type", "href", "id").contains(k)) {
@@ -82,9 +82,9 @@ public final class Dom {
         }
     }
 
-    final Element root = new Element("#document", Map.of(), null);
+    public final Element root = new Element("#document", Map.of(), null);
     public final List<Element> all = new ArrayList<>();
-    final List<String> unclosed = new ArrayList<>();
+    public final List<String> unclosed = new ArrayList<>();
 
     private Dom() {
     }

@@ -10,7 +10,9 @@ import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.testsupport.LoggedText;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
+import com.elioo.baymax.web.adapter.in.ui.UiCopy;
 import com.elioo.baymax.web.application.port.in.AttentionUseCase;
+import com.elioo.baymax.web.application.port.in.ResultUseCase;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
 import com.elioo.baymax.web.application.port.in.WebAuthUseCase;
 import com.elioo.baymax.web.domain.FamilyOverview;
@@ -95,7 +97,8 @@ class AppApiGuardTest {
                 .filter(guard)
                 .build();
         return WebTestClient.bindToRouterFunction(probes.and(new AppApiRouter().mediooAppApiRoutes(
-                new MeApiHandler(timeline, attention, properties), new SignInApiHandler(auth, sessions, properties), guard))).build();
+                new MeApiHandler(timeline, attention, properties), new SignInApiHandler(auth, sessions, properties),
+                new PaperApiHandler(mock(ResultUseCase.class), new UiCopy()), guard))).build();
     }
 
     private WebTestClient.RequestBodySpec mutation(WebTestClient c, String uri) {

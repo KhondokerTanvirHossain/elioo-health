@@ -15,6 +15,14 @@ import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.outbound.application.port.in.DocumentUrgencyUseCase;
 import com.elioo.baymax.outbound.application.port.in.ExplainDocumentUseCase;
 import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
+import com.elioo.baymax.extraction.application.port.out.DocumentReadPort;
+import com.elioo.baymax.healthrecord.domain.FamilyAccount;
+import com.elioo.baymax.outbound.application.port.out.OutboundMessagePort;
+import com.elioo.baymax.web.adapter.in.api.AppApiRouter;
+import com.elioo.baymax.web.adapter.in.api.PaperApiHandler;
+import com.elioo.baymax.web.adapter.in.ui.DocumentPages;
+import com.elioo.baymax.web.adapter.in.ui.UiCopy;
+import com.elioo.baymax.web.application.service.ResultService;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.application.port.in.UploadUseCase;
 import com.elioo.baymax.web.application.port.out.AuditPort;
@@ -116,12 +124,22 @@ class NoProseInTheJsonApiTest {
         TimelineService timeline = new TimelineService(records, documents, intake, storage, audit, clock, urgency, timelineRead);
         DocumentHandler documentApi = new DocumentHandler(intake, timeline, mock(ExplainDocumentUseCase.class), mock(UploadUseCase.class));
         TimelineApiHandler timelineApi = new TimelineApiHandler(timeline);
+        // the paper's display model (rebuild plan B2), over the real result service and the same intake view
+        when(records.findFamily(FAMILY)).thenReturn(Mono.just(new FamilyAccount(FAMILY, "+8801700000401", "Tanvir",
+                FamilyAccount.Plan.FREE, T, T)));
+        DocumentReadPort reads = mock(DocumentReadPort.class);
+        when(reads.retakeOrdinal(DOC)).thenReturn(Mono.just(1));
+        ResultService result = new ResultService(records, documents, intake, audit, clock, mock(OutboundMessagePort.class), urgency,
+                new BaymaxProperties(), reads);
+        PaperApiHandler paperApi = new PaperApiHandler(result, new UiCopy());
 
         RouterFunction<ServerResponse> routes = RouterFunctions.route(GET("/documents/{id}"), documentApi::status)
                 .andRoute(GET("/patients/{id}/timeline"), timelineApi::timeline)
+                .andRoute(GET(AppApiRouter.BASE + "/documents/{id}"), paperApi::paper)
                 .filter((request, next) -> {
-                    // a family session for "/patients/…" and "?as=family"; the admin path (no session) otherwise
-                    if (request.path().startsWith("/patients/") || request.queryParam("as").isPresent()) {
+                    // a family session for "/patients/…", "/app/api/…" and "?as=family"; the admin path (no session) otherwise
+                    if (request.path().startsWith("/patients/") || request.path().startsWith(AppApiRouter.BASE + "/")
+                            || request.queryParam("as").isPresent()) {
                         request.attributes().put(SessionAuthFilter.SESSION_ATTRIBUTE,
                                 new WebSession(UUID.randomUUID(), FAMILY, T, T, T.plusSeconds(3600)));
                     }
@@ -156,6 +174,23 @@ class NoProseInTheJsonApiTest {
         JsonNode reasonCode = body.path("documents").get(0).path("retake_reason_code");
         assertThat(reasonCode.isMissingNode()).as(uri + " $.documents[0].retake_reason_code is a field").isFalse();
         assertThat(reasonCode.isNull() ? null : reasonCode.asText()).as(uri + " $.documents[0].retake_reason_code").isEqualTo(code);
+    }
+
+    /** The paper's display model names a retake by its copy key (the code's own mapping) and carries no prose either. */
+    @ParameterizedTest
+    @MethodSource("storedDocuments")
+    void thePaperJsonCarriesNoProseAndNoReasonField(String status, String prose, String code) throws Exception {
+        wire(status, prose, code);
+        String uri = AppApiRouter.BASE + "/documents/" + DOC;
+        JsonNode body = get(uri);
+        assertThat(body.path("status").asText()).as(uri + " $.status").isEqualTo(status);
+        assertNoProseAndNoReasonField(uri, body, prose);
+        if ("NEEDS_RETAKE".equals(status)) {
+            assertThat(body.path("retake").path("reason_key").asText()).as(uri + " $.retake.reason_key")
+                    .isEqualTo(DocumentPages.retakeReasonKey(new UiCopy(), code));
+        } else {
+            assertThat(body.has("retake")).as(uri + " $.retake on " + status).isFalse();
+        }
     }
 
     private JsonNode get(String uri) throws Exception {
