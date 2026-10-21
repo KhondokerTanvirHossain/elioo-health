@@ -1,0 +1,63 @@
+/* The WhatsApp number (PhoneField.tsx), the prototype's number field. Q1 (A), PR #120: the input is painted with the
+   --fill wash and draws a 1 px --boundary edge in every state, invalid included; no rule here takes the border away
+   or recolours it. The focus ring is an outline beside the boundary, never in its place. An error is said in words
+   (the copy key the caller passes), in the label colour and never in the NOW red, which belongs to a NOW result. */
+.phone-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 100%;
+}
+.phone-field__label {
+  font-family: var(--font-bn);
+  font-size: var(--text-md);
+  color: var(--label2);
+}
+.phone-field__input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--target-primary);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--boundary);
+  border-radius: var(--radius-md);
+  background: var(--fill);
+  color: var(--label);
+  caret-color: var(--tint-ink);
+  font-family: var(--font-sys);
+  font-size: var(--text-title);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  /* The prototype's number tracking (phone.html:347, .numfield input). */
+  letter-spacing: 0.02em;
+}
+/* Invalid draws a second edge outside the boundary; focus, declared after it, replaces that ring while focused. The
+   ring's width and offset are the prototypes' :focus-visible outline (phone.html:61, desktop.html:62). */
+.phone-field__input[aria-invalid="true"] {
+  outline: var(--focus-width) solid var(--label2);
+  outline-offset: var(--focus-offset);
+}
+.phone-field__input:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+.phone-field__error {
+  margin: 0;
+  font-family: var(--font-bn);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--label);
+  overflow-wrap: anywhere;
+}
+/* The alert is in the page before any refusal (a live region announces a change, not its arrival); while it is empty
+   it takes back the column gap it would otherwise add, so an empty alert moves nothing. */
+.phone-field__error:empty {
+  margin-block-start: calc(var(--space-2) * -1);
+}
+.phone-field__hint {
+  margin: 0;
+  font-family: var(--font-bn);
+  font-size: var(--text-sm);
+  color: var(--label2);
+  overflow-wrap: anywhere;
+}

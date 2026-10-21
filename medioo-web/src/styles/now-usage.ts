@@ -436,11 +436,23 @@ function effectsOf(prop: string, value: string, namesBoundary: (v: string) => bo
 
 // ---- Controls: the elements Q1 (A) is about -----------------------------------------------------------------------
 
-/** Inputs whose edge the platform draws, or that are buttons: not a text field. */
-const NOT_A_FIELD = /^\[type=(checkbox|radio|hidden|range|color|file|submit|button|reset|image)\]$/;
+/**
+ * Input types whose edge the platform draws, or that are buttons: not a text field. The one list both Q1 (A) guards
+ * read: NOT_A_FIELD here (the CSS scan) and FIELD_SELECTOR (catalog.spec.ts everyFieldAndTrackDrawsTheBoundary, the
+ * rendered check), so the two judge the same elements (now-usage.fields.test.tsx compares them type by type).
+ */
+export const NON_FIELD_INPUT_TYPES = ["checkbox", "radio", "hidden", "range", "color", "file", "submit", "button", "reset", "image"] as const;
+const NOT_A_FIELD = new RegExp(`^\\[type=(${NON_FIELD_INPUT_TYPES.join("|")})\\]$`);
 /** The class a control's own element carries: `.field`, `.segmented`, `.otp-input`, `.phone-field__input`, `.seg__track`. */
 export const CONTROL_CLASS = /^\.(field|segmented|[\w-]+-(input|segmented)|[\w-]+__(input|field|track|control))$/;
-const CONTROL_SIMPLE = /^(input|textarea|select|\[role=(radiogroup|tablist)\])$/;
+/** The elements that are controls by what they are, beside `input` (whose non-field types are excluded above). */
+const CONTROL_ELEMENTS = ["textarea", "select", "[role=radiogroup]", "[role=tablist]"] as const;
+const CONTROL_SIMPLE = new RegExp(`^(input|${CONTROL_ELEMENTS.map((s) => s.replace(/[[\]]/g, "\\$&")).join("|")})$`);
+/** The same set as a DOM selector, for the rendered check: what the CSS scan calls a control, the browser check picks. */
+export const FIELD_SELECTOR = [
+  `input:not(${NON_FIELD_INPUT_TYPES.map((type) => `[type=${type}]`).join(", ")})`,
+  ...CONTROL_ELEMENTS,
+].join(", ");
 
 function isControl(p: Parsed): boolean {
   if (p.pseudoElement || [...p.subject].some((s) => NOT_A_FIELD.test(s))) return false;

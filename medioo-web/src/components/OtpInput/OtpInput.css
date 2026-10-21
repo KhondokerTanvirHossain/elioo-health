@@ -1,0 +1,67 @@
+/* The sign-in code (OtpInput.tsx): one field, the prototype's code boxes drawn as one wide box. Q1 (A), PR #120: the
+   field is painted with the --fill wash and draws a 1 px --boundary edge in every state, invalid included; no rule
+   here takes the border away or recolours it. The focus ring is an outline beside the boundary, never in its place
+   (built/now-usage.built.test.ts judges the CSS, catalog.spec.ts everyFieldAndTrackDrawsTheBoundary what the browser
+   paints). A refusal is said in words (the copy key the caller passes), in the label colour and never in the NOW red,
+   which belongs to a NOW result. */
+.otp-input__wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 100%;
+}
+.otp-input__label {
+  font-family: var(--font-bn);
+  font-size: var(--text-md);
+  color: var(--label2);
+}
+.otp-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--target-primary);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--boundary);
+  border-radius: var(--radius-md);
+  background: var(--fill);
+  color: var(--label);
+  caret-color: var(--tint-ink);
+  font-family: var(--font-sys);
+  font-size: var(--text-xxl);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  /* Stands in for the 8 px gap between the prototype's six code boxes (phone.html .otp, gap: 8px): one field, the six
+     digits still read apart. */
+  letter-spacing: 0.3em;
+  text-align: center;
+}
+/* Invalid draws a second edge outside the boundary; focus, declared after it, replaces that ring while focused. The
+   ring's width and offset are the prototypes' :focus-visible outline (phone.html:61, desktop.html:62). */
+.otp-input[aria-invalid="true"] {
+  outline: var(--focus-width) solid var(--label2);
+  outline-offset: var(--focus-offset);
+}
+.otp-input:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+.otp-input__error {
+  margin: 0;
+  font-family: var(--font-bn);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--label);
+  overflow-wrap: anywhere;
+}
+/* The alert is in the page before any refusal (a live region announces a change, not its arrival); while it is empty
+   it takes back the column gap it would otherwise add, so an empty alert moves nothing. */
+.otp-input__error:empty {
+  margin-block-start: calc(var(--space-2) * -1);
+}
+.otp-input__hint {
+  margin: 0;
+  font-family: var(--font-bn);
+  font-size: var(--text-sm);
+  color: var(--label2);
+  overflow-wrap: anywhere;
+}
