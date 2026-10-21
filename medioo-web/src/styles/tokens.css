@@ -22,6 +22,7 @@
   --sent-ink: #ffffff;
   --tint: #06788a;
   --tint-ink: #045f6d;
+  --focus: #06788a;
   --on-tint: #ffffff;
   --tint-soft: rgba(6, 120, 138, 0.12);
   --mio-bg: #dff0f2;
@@ -93,6 +94,7 @@
     --sent-ink: #ffffff;
     --tint: #5cc8d6;
     --tint-ink: #5cc8d6;
+    --focus: #5cc8d6;
     --on-tint: #062a30;
     --tint-soft: rgba(92, 200, 214, 0.16);
     --mio-bg: #1d3b41;
@@ -141,6 +143,7 @@
   --sent-ink: #ffffff;
   --tint: #5cc8d6;
   --tint-ink: #5cc8d6;
+  --focus: #5cc8d6;
   --on-tint: #062a30;
   --tint-soft: rgba(92, 200, 214, 0.16);
   --mio-bg: #1d3b41;

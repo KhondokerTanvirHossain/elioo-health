@@ -2,7 +2,16 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { LAYOUTS, THEMES, normaliseColour, renderTokensCss, resolveTokens, type TokenFile } from "./build-tokens";
+import {
+  LAYOUTS,
+  THEMES,
+  normaliseColour,
+  parseColour,
+  renderTokensCss,
+  resolveTokens,
+  valueFor,
+  type TokenFile,
+} from "./build-tokens";
 import json from "./medioo.tokens.json";
 
 // The one token source (plan W2a). Every test below reads medioo.tokens.json and the two approved prototypes; nothing
@@ -17,11 +26,12 @@ const layoutOf = (file: string) => (file === "desktop.html" ? "desktop" : "phone
 
 const copy = (): TokenFile => JSON.parse(JSON.stringify(src)) as TokenFile;
 const colourNames = (file: TokenFile) => Object.keys(file.color);
-const isDerivedFromNow = (value: unknown) => {
+const isDerivedFrom = (value: unknown, from: string[]) => {
   if (typeof value !== "object" || value === null) return false;
   const op = (value as Record<string, unknown>).mix ?? (value as Record<string, unknown>).alpha;
-  return Array.isArray(op) && op[0] === "now";
+  return Array.isArray(op) && from.includes(op[0] as string);
 };
+const isDerivedFromNow = (value: unknown) => isDerivedFrom(value, ["now"]);
 
 /** Every :root block of a prototype, with its theme: dark when under prefers-color-scheme: dark or [data-theme="dark"]. */
 function rootBlocks(html: string): { theme: "light" | "dark"; props: [string, string][] }[] {
@@ -43,6 +53,51 @@ function rootBlocks(html: string): { theme: "light" | "dark"; props: [string, st
 }
 
 const stripRootBlocks = (html: string) => html.replace(/:root[^{]*\{[^}]*\}/g, "");
+
+/** Hue in degrees and chroma (max − min, 0..1) of a resolved colour, with its alpha. */
+function hueOf(value: string): { hue: number; chroma: number; alpha: number } {
+  const { r, g, b, a } = parseColour(value);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const d = max - min;
+  let hue = 0;
+  if (d > 0) {
+    if (max === r) hue = 60 * (((g - b) / d) % 6);
+    else if (max === g) hue = 60 * ((b - r) / d + 2);
+    else hue = 60 * ((r - g) / d + 4);
+  }
+  return { hue: (hue + 360) % 360, chroma: d / 255, alpha: a };
+}
+// Chroma, not HSL saturation: a near-white like paper #fffdf8 has HSL saturation 1 and no colour to speak of.
+const visible = (c: { chroma: number; alpha: number }) => c.chroma > 0.25 && c.alpha > 0.05;
+/** The NOW red's family: hue 345°–20°, anything an eye would call red. */
+const inRedBand = (value: string) => {
+  const c = hueOf(value);
+  return visible(c) && (c.hue >= 345 || c.hue <= 20);
+};
+/** THIS_WEEK's amber: hue above 20° up to 50°. */
+const inAmberBand = (value: string) => {
+  const c = hueOf(value);
+  return visible(c) && c.hue > 20 && c.hue <= 50;
+};
+
+/**
+ * Every colour token whose resolved value, in any theme and layout, falls in `band` but is neither one of `owners`
+ * nor written (in that theme and layout, desktop override included) as a mix or alpha of one of them.
+ */
+function huedOutside(file: TokenFile, band: (value: string) => boolean, owners: string[]): string[] {
+  const resolved = resolveTokens(file);
+  const offenders = new Set<string>();
+  for (const theme of THEMES) {
+    for (const layout of LAYOUTS) {
+      for (const name of colourNames(file)) {
+        if (owners.includes(name) || !band(resolved[theme][layout][name]!)) continue;
+        if (!isDerivedFrom(valueFor(file.color[name]!, theme, layout), owners)) offenders.add(name);
+      }
+    }
+  }
+  return [...offenders];
+}
 
 describe("medioo.tokens.json and tokens.css", () => {
   it("theCommittedTokensCssIsTheRendererOutput", () => {
@@ -100,7 +155,8 @@ describe("medioo.tokens.json and tokens.css", () => {
     const missing: string[] = [];
     for (const file of PROTOTYPES) {
       const body = stripRootBlocks(readFileSync(join(approved, file), "utf8"));
-      for (const literal of body.match(/#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)/g) ?? []) {
+      // color-mix() derives a colour as surely as a literal does (a wash, a ring), so it is collected whole.
+      for (const literal of body.match(/color-mix\((?:[^()]|\([^()]*\))*\)|#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)/g) ?? []) {
         collected.push(literal);
         const n = normaliseColour(literal);
         if (!values.has(n) && !absorbed.has(n)) missing.push(`${file}: ${literal}`);
@@ -109,6 +165,7 @@ describe("medioo.tokens.json and tokens.css", () => {
     // The reader really read the prototypes.
     expect(collected.length).toBeGreaterThan(0);
     expect(collected).toContain("#25d366");
+    expect(collected).toContain("color-mix(in srgb, var(--tint) 60%, transparent)");
     expect([...new Set(missing)]).toEqual([]);
   });
 
@@ -157,28 +214,31 @@ describe("medioo.tokens.json and tokens.css", () => {
   });
 
   it("noSecondRedUnderAnotherName", () => {
-    const secondRed = (file: TokenFile): string[] => {
-      const resolved = resolveTokens(file);
-      const offenders = new Set<string>();
-      for (const theme of THEMES) {
-        for (const layout of LAYOUTS) {
-          const r = resolved[theme][layout];
-          const reds = new Set(["now", "now-ink", "now-soft"].map((n) => normaliseColour(r[n]!)));
-          for (const name of colourNames(file)) {
-            if (name === "now") continue;
-            const token = file.color[name]!;
-            if (!reds.has(normaliseColour(r[name]!))) continue;
-            const value = theme === "light" ? token.light : token.dark;
-            if (!isDerivedFromNow(value)) offenders.add(name);
-          }
-        }
-      }
-      return [...offenders];
-    };
-    expect(secondRed(src)).toEqual([]);
+    expect(huedOutside(src, inRedBand, ["now"])).toEqual([]);
+    // One hex digit off is the same red to an eye, and the prototypes' own reds are reds.
+    for (const red of ["#d12c25", "#e0352b", "#ff3b30", "#ff2d55"]) {
+      const planted = copy();
+      planted.color.danger = { light: red, dark: red, role: "fill" };
+      expect(huedOutside(planted, inRedBand, ["now"]), red).toEqual(["danger"]);
+    }
+    // A desktop override is a value too: a now-derived phone value with a literal red on desktop is a second red.
+    const desktopOnly = copy();
+    desktopOnly.color.crit = { light: { alpha: ["now", 0.5] }, dark: { alpha: ["now", 0.5] }, desktop: { light: "#d12c24" }, role: "fill" };
+    expect(huedOutside(desktopOnly, inRedBand, ["now"])).toEqual(["crit"]);
+    // THIS_WEEK's amber is not a red.
+    expect(huedOutside(src, inRedBand, ["now"])).not.toContain("week");
+    const resolved = resolveTokens(src);
+    expect(inRedBand(resolved.light.phone.now!)).toBe(true);
+    expect(inRedBand(resolved.light.phone.week!)).toBe(false);
+  });
+
+  it("noSecondAmberUnderAnotherName", () => {
+    expect(huedOutside(src, inAmberBand, ["week", "week-soft"])).toEqual([]);
+    const resolved = resolveTokens(src);
+    for (const theme of THEMES) expect(inAmberBand(resolved[theme].phone.week!), `${theme} week is amber`).toBe(true);
     const planted = copy();
-    planted.color.crit = { light: "#d12c24", dark: "#d93229", role: "fill" };
-    expect(secondRed(planted)).toEqual(["crit"]);
+    planted.color.alert = { light: "#f29100", dark: "#ff9500", role: "fill" };
+    expect(huedOutside(planted, inAmberBand, ["week", "week-soft"])).toEqual(["alert"]);
   });
 
   it("everyFontSizeTokenIsAtLeastTwelvePixels", () => {

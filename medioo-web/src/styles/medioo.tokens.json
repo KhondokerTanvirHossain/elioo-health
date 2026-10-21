@@ -65,6 +65,12 @@
       "role": "text",
       "on": ["every-surface", "fill"]
     },
+    "focus": {
+      "light": { "alpha": ["tint", 1] }, "dark": { "alpha": ["tint", 1] },
+      "role": "non-text",
+      "on": ["bg", "bg2", "bg3"],
+      "note": "the focus ring (:focus-visible outline, a focused field's border): the phone prototype's full-tint ring in both layouts. The desktop prototype's color-mix(tint 60%, transparent) is 2.5:1 on white, under WCAG 1.4.11's 3:1 (Q1). Derived from tint so it follows it."
+    },
     "on-tint": { "light": "#ffffff", "dark": "#062a30", "role": "text", "on": ["tint"] },
     "tint-soft": { "light": "rgba(6, 120, 138, 0.12)", "dark": "rgba(92, 200, 214, 0.16)", "role": "surface" },
     "mio-bg": {
@@ -164,6 +170,16 @@
     "desktop.html:dark:--recv: #2c2c2f": "recv #26252a, the phone's dark value, in both layouts: the NOW band at the top of a paper card sits on recv, and #d93229 on #2c2c2f is 2.94:1, under the 3:1 a fill needs against its surface; on #26252a it is 3.26:1 (Q1)",
     "desktop.html:light:--sw: 0px": "sidebar-w stays 256px; the prototype's collapse below 1200 px is the shell layout's job (W3), not a second value of the token",
     "desktop.html:light:--cw: 360px": "conversation-w stays 400px; the prototype's narrower column below 1200 px is the shell layout's job (W3)",
+    "color-mix(in srgb, var(--tint) 60%, transparent)": "focus (= tint, the phone prototype's ring) for desktop.html's :focus-visible outline: at 60% the ring is 2.5:1 on white, under WCAG 1.4.11's 3:1 (Q1). The same expression is the first frame of the desktop upload pulse, which the upload sheet (W7) draws with focus or tint-soft",
+    "color-mix(in srgb, var(--tint) 55%, var(--sep))": "focus: the desktop composer field's border while focused",
+    "color-mix(in srgb, var(--tint) 45%, var(--sep))": "dropped: the desktop dropzone's dashed border; the upload sheet (W7) draws it with focus or asks for a token",
+    "color-mix(in srgb, var(--week) 14%, transparent)": "week-soft: the THIS_WEEK banner's button wash (desktop.html)",
+    "color-mix(in srgb, var(--week) 22%, transparent)": "week-soft with hover over it: the same button's hover is the hover wash on week-soft, not a second amber",
+    "color-mix(in srgb, var(--bg) 70%, transparent)": "dropped: the desktop dropzone's translucent panel; the upload sheet (W7) paints it bg",
+    "color-mix(in srgb, var(--bg2) 60%, transparent)": "dropped: a blank day in the desktop month grid; MonthCalendar (W2e-b) paints it bg2 or asks for a token",
+    "color-mix(in srgb, var(--tint) 10%, transparent)": "tint-soft: the desktop drop overlay's wash",
+    "color-mix(in srgb, var(--tint) 16%, var(--bg2))": "dropped: the landing page hero's gradient; the landing page is ported last (decision 6) and asks for a token then",
+    "color-mix(in srgb, var(--tint) 18%, transparent)": "tint-soft: the voice orb's pulse ring (phone.html and desktop.html)",
     "#e0352b": "now (decision 7)",
     "#c4271e": "now-ink",
     "#b5241c": "now-ink",

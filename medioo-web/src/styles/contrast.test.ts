@@ -69,7 +69,14 @@ describe("contrast of the declared pairs", () => {
   it("everyNonTextTokenClearsThreeWhereItIsDeclared", () => {
     const { pairs, failures } = contrastChecks(src, "non-text", 3);
     expect(failures).toEqual([]);
-    for (const pair of ["light/phone green on bg", "light/phone label3 on bg3", "dark/phone green on bg", "dark/phone label3 on bg3"]) {
+    for (const pair of [
+      "light/phone green on bg",
+      "light/phone label3 on bg3",
+      "dark/phone green on bg",
+      "dark/phone label3 on bg3",
+      "light/desktop focus on bg2",
+      "dark/desktop focus on bg3",
+    ]) {
       expect(pairs.some((p) => p.startsWith(`${pair} = `)), pair).toBe(true);
     }
   });
