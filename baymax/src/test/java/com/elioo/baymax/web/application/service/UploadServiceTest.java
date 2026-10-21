@@ -267,7 +267,7 @@ class UploadServiceTest {
         List<Upload> pages = List.of(new Upload("a.jpg", new byte[]{1}));
         // the wrong path answers too, so taking it fails on what comes back rather than on a mock's null
         when(intake.accept(any(), any(), any())).thenReturn(Mono.just(new CreatedDocument(paper(ma, Document.Status.RECEIVED), true)));
-        when(documents.linkRetake(any(), any())).thenReturn(Mono.empty());
+        when(documents.linkRetake(any(), any())).thenReturn(Mono.just(true));
 
         for (UUID refused : List.of(done.id(), abbusRetake.id())) {
             StepVerifier.create(service.upload(FAMILY, ma.id(), pages, Grouping.ONE, null, refused))
@@ -285,7 +285,7 @@ class UploadServiceTest {
                 .verify();
         verify(intake, never()).accept(any(), any(), any());
         verify(intake, never()).acceptEach(any(), any(), any());
-        verify(documents, never()).create(any());
+        verify(audit, never()).record(any());   // nor an upload recorded for a press that was refused
         verify(documents, never()).linkRetake(any(), any());
     }
 
@@ -310,7 +310,7 @@ class UploadServiceTest {
         Document one = paper(ma, Document.Status.RECEIVED);
         Document two = paper(ma, Document.Status.RECEIVED);
         when(intake.acceptEach(ma.id(), pages, "k-retake01")).thenReturn(Flux.just(new CreatedDocument(one, true), new CreatedDocument(two, true)));
-        when(documents.linkRetake(any(), any())).thenReturn(Mono.empty());
+        when(documents.linkRetake(any(), any())).thenReturn(Mono.just(true));
 
         StepVerifier.create(service.admit(FAMILY, ma.id(), retake.id())).verifyComplete();
         StepVerifier.create(service.upload(FAMILY, ma.id(), pages, Grouping.SEPARATE, "k-retake01", retake.id()))
@@ -322,7 +322,8 @@ class UploadServiceTest {
 
     /**
      * A replayed press (the same key, made nothing new) is linked again: the press that made it may have died between the
-     * document and the link, and the second identical UPDATE is a no-op.
+     * document and the link. The write is first-wins (PostgresDocumentRecordAdapter.linkRetake), so this relinks only a
+     * paper left unlinked; RetakeLinkAcceptanceTest shows both directions on Postgres.
      */
     @Test
     void aReplayedPressThatReplacesIsLinkedAgain() {
@@ -332,10 +333,41 @@ class UploadServiceTest {
         List<Upload> pages = List.of(new Upload("a.jpg", new byte[]{1}));
         Document earlier = paper(ma, Document.Status.RECEIVED);
         when(intake.accept(ma.id(), pages, "k-retake02")).thenReturn(Mono.just(new CreatedDocument(earlier, false)));
-        when(documents.linkRetake(any(), any())).thenReturn(Mono.empty());
+        when(documents.linkRetake(any(), any())).thenReturn(Mono.just(true));
         StepVerifier.create(service.upload(FAMILY, ma.id(), pages, Grouping.ONE, "k-retake02", retake.id()))
                 .expectNext(List.of(earlier)).verifyComplete();
         verify(documents).linkRetake(earlier.id(), retake.id());
+    }
+
+    /**
+     * A replay whose paper already names another retake (a replay of the key with a different {@code replaces}): the
+     * first link stands, the port says so ({@code false}), and the upload is answered as any replay is. One INFO line
+     * with exactly the two ids, no WARN: it is not a failure, and the paper the family still owes stays on its stack.
+     */
+    @Test
+    void aReplayWhosePaperAlreadyNamesAnotherRetakeKeepsTheFirstLink() {
+        PatientProfile ma = owned("আম্মা");
+        Document other = paper(ma, Document.Status.NEEDS_RETAKE);
+        when(documents.findVisible(FAMILY, other.id())).thenReturn(Mono.just(other));
+        List<Upload> pages = List.of(new Upload("a.jpg", new byte[]{1}));
+        Document earlier = paper(ma, Document.Status.RECEIVED);
+        when(intake.accept(ma.id(), pages, "k-retake03")).thenReturn(Mono.just(new CreatedDocument(earlier, false)));
+        when(documents.linkRetake(earlier.id(), other.id())).thenReturn(Mono.just(false));
+
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(UploadService.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> events = new ch.qos.logback.core.read.ListAppender<>();
+        events.start();
+        logger.addAppender(events);
+        try {
+            StepVerifier.create(service.upload(FAMILY, ma.id(), pages, Grouping.ONE, "k-retake03", other.id()))
+                    .expectNext(List.of(earlier)).verifyComplete();
+        } finally {
+            logger.detachAppender(events);
+        }
+        assertThat(events.list.stream().filter(e -> e.getLevel().isGreaterOrEqual(ch.qos.logback.classic.Level.WARN)).toList()).isEmpty();
+        assertThat(events.list.stream().filter(e -> e.getLevel() == ch.qos.logback.classic.Level.INFO).toList())
+                .singleElement().satisfies(i -> assertThat(i.getArgumentArray()).containsExactly(earlier.id(), other.id()));
+        verify(audit, never()).record(any());
     }
 
     /**

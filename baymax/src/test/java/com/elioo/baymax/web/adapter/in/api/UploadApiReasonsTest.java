@@ -26,6 +26,8 @@ class UploadApiReasonsTest {
                 .as("reasons the upload path throws that have no ApiReason name").isEmpty();
         // MultipartUploads throws these and mentions no UploadUseCase: swept only because the sweep names the file
         assertThat(swept).as("the size refusals were swept").containsKeys("file_too_large", "request_too_large");
+        // D1: UploadService's retake rule; named so that a sweep which stopped reaching it fails here, not silently
+        assertThat(swept).as("the retake refusal was swept, at its status").containsEntry("not_a_retake", 400);
     }
 
     @Test

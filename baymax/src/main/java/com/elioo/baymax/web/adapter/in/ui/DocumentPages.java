@@ -469,8 +469,9 @@ public class DocumentPages implements WebPages {
         UUID documentId = PageChrome.uuid(r.document().documentId());
         StringBuilder b = new StringBuilder(header(lang, r, "failed.title", null))
                 .append("<section id=\"failed\" class=\"retake-card\"><p>").append(copy.t(lang, "failed.p")).append("</p>");
-        // a FAILED paper is not waiting for a retake: a resend of it replaces nothing (and naming it would be refused)
-        b.append(r.owner() ? sendForm(lang, "failed-form", r.patient(), documentId, null, "failed.again", true)
+        // a FAILED paper is not waiting for a retake, so its resend never names it (that would be refused); it names the
+        // retake this paper was itself sent to replace, when there is one, so the photo that reads clears that card too
+        b.append(r.owner() ? sendForm(lang, "failed-form", r.patient(), documentId, r.replaces(), "failed.again", true)
                 : "<p class=\"meta\">" + copy.t(lang, "retake.viewonly") + "</p>");
         b.append("<p class=\"small\">").append(copy.t(lang, "failed.free")).append("</p></section>");
         return b.append(deleteLink(lang, documentId)).toString();

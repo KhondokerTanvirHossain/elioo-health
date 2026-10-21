@@ -201,8 +201,12 @@ class FamilyDeletionAcceptanceTest {
             sql("insert into baymax.medication_event (patient_id, document_id, name, crop_key, at) values ('"
                     + p + "','" + d + "','Metformin','k','2026-09-01T00:00:00Z')");
         }
-        // D1 (migration retake_replaces): docB was sent to replace docA, so the delete crosses document's self-reference (ON DELETE SET NULL,
-        // and the same-patient trigger's NULL pass) as a family with a retake would
+        // D1 (migration retake_replaces): docB was sent to replace docA, so the fixture's graph holds a linked pair as a family
+        // with a retake does. It is realism, not a guard of the self-reference: the family delete removes both papers in one
+        // statement, so the key's action never finds a surviving row, and neither ON DELETE SET NULL nor the trigger's NULL
+        // pass is reached (replayed: with the NULL pass kept for INSERT only, and with the key declared ON DELETE RESTRICT,
+        // this test still passes). It would fail only if the delete stopped being one statement under a blocking key. The
+        // SET NULL path is guarded by PaperDeleteApiTest.deletingAPaperThatARetakeReplacedKeepsTheRetakeUnlinked alone.
         sql("update baymax.document set replaces_document_id = '" + docA + "' where id = '" + docB + "'");
         // a known id: the container is shared by both tests, so "a detached row with 10 tokens" is not this fixture's row
         UUID costRow = UUID.randomUUID();

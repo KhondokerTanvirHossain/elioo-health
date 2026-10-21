@@ -190,11 +190,13 @@ class RetakeLinkAcceptanceTest {
     }
 
     /**
-     * The same JSON press twice (a double tap, a resend) with {@code replaces}: one new paper, linked once, the retry
-     * answered with the same paper (D3), and no link failure logged — the second identical UPDATE is a no-op.
+     * The same JSON press twice (a double tap, a resend) with {@code replaces}: one new paper, the retry answered with the
+     * same paper (D3), and the retry links it again. Between the two presses the link is cleared, which is what a first
+     * press that died after its document and before its link leaves behind: only a retry that relinks a replay's
+     * documents puts it back (a retry that skipped them would leave the stale card for 30 days). No WARN either way.
      */
     @Test
-    void aReplayedPressWithReplacesLinksOnce() {
+    void aReplayedPressWithReplacesLinksAgainWhenTheFirstPressDiedBeforeItsLink() {
         AppApiContext.runner(POSTGRES, MINIO).run(context -> {
             Family f = family(context, "+8801700000753");
             UUID a = paper(context, f.patient(), "NEEDS_RETAKE");
@@ -202,20 +204,77 @@ class RetakeLinkAcceptanceTest {
             events.start();
             Logger upload = (Logger) LoggerFactory.getLogger(UploadService.class);
             upload.addAppender(events);
+            String b;
             try {
                 String key = UUID.randomUUID().toString();
                 EntityExchangeResult<byte[]> first = apiPress(f, key, a);
-                EntityExchangeResult<byte[]> retry = apiPress(f, key, a);
                 assertThat(first.getStatus().value()).as(text(first)).isEqualTo(200);
+                b = firstId(first);
+                // the first press died between its document and its link
+                AppApiContext.sql(POSTGRES, "UPDATE baymax.document SET replaces_document_id = NULL WHERE id = '" + b + "'");
+                EntityExchangeResult<byte[]> retry = apiPress(f, key, a);
                 assertThat(retry.getStatus().value()).as(text(retry)).isEqualTo(200);
-                assertThat(firstId(retry)).as("the retry's paper").isEqualTo(firstId(first));
+                assertThat(firstId(retry)).as("the retry's paper").isEqualTo(b);
             } finally {
                 upload.detachAppender(events);
             }
             assertThat(scalar("SELECT count(*) FROM baymax.document WHERE patient_id = '" + f.patient().id() + "' AND id <> '" + a + "'"))
                     .as("one new paper").isEqualTo("1");
-            assertThat(scalar("SELECT count(*) FROM baymax.document WHERE replaces_document_id = '" + a + "'")).as("linked once").isEqualTo("1");
+            assertThat(scalar("SELECT replaces_document_id::text FROM baymax.document WHERE id = '" + b + "'"))
+                    .as("the replay relinked the paper the first press left unlinked").isEqualTo(a.toString());
             assertThat(events.list.stream().filter(e -> e.getLevel().isGreaterOrEqual(Level.WARN)).toList()).as("WARN or above").isEmpty();
+        });
+    }
+
+    /**
+     * First link wins. A replay of the same press (same key, same photo) naming a DIFFERENT retake of the same patient
+     * passes every check (A2 is this patient's NEEDS_RETAKE paper), but must not move the link: moved, A's stale card
+     * would come back and A2's card would leave the stack although no photo of A2 was ever sent, hiding a paper the
+     * family still owes.
+     */
+    @Test
+    void aReplayNamingAnotherRetakeLeavesTheFirstLinkInPlace() {
+        AppApiContext.runner(POSTGRES, MINIO).run(context -> {
+            Family f = family(context, "+8801700000756");
+            UUID a = paper(context, f.patient(), "NEEDS_RETAKE");
+            UUID a2 = paper(context, f.patient(), "NEEDS_RETAKE");
+            String key = UUID.randomUUID().toString();
+            EntityExchangeResult<byte[]> first = apiPress(f, key, a);
+            assertThat(first.getStatus().value()).as(text(first)).isEqualTo(200);
+            EntityExchangeResult<byte[]> replay = apiPress(f, key, a2);
+            assertThat(replay.getStatus().value()).as(text(replay)).isEqualTo(200);
+            String b = firstId(first);
+            assertThat(firstId(replay)).as("the replay's paper").isEqualTo(b);
+
+            assertThat(scalar("SELECT replaces_document_id::text FROM baymax.document WHERE id = '" + b + "'"))
+                    .as("the first link stands").isEqualTo(a.toString());
+            assertThat(retakeCards(context, f.patient())).as("A2 is still owed a photo; A is not").containsExactly(a2);
+        });
+    }
+
+    /**
+     * The FAILED page of a paper that was itself sent to replace a retake (A needs a retake, B was sent from A's page, B
+     * FAILED): the resend from B's page carries B's own link, so the photo that finally reads clears A's card too. Without
+     * it the new photo C is unlinked and A's card stays for 30 days after C is read: the same stale duplicate, on the one
+     * path the retake page does not cover.
+     */
+    @Test
+    void aResendFromAFailedRetakeReplacesTheRetakeItWasSentFor() {
+        AppApiContext.runner(POSTGRES, MINIO).run(context -> {
+            Family f = family(context, "+8801700000757");
+            UUID a = paper(context, f.patient(), "NEEDS_RETAKE");
+            UUID b = paper(context, f.patient(), "FAILED");
+            AppApiContext.sql(POSTGRES, "UPDATE baymax.document SET created_at = created_at - interval '1 hour' WHERE id = '" + a + "'");
+            AppApiContext.sql(POSTGRES, "UPDATE baymax.document SET replaces_document_id = '" + a + "' WHERE id = '" + b + "'");
+            assertThat(retakeCards(context, f.patient())).as("B failed: A is still owed a photo").containsExactly(a);
+
+            Map<String, String> form = form(f, b, "failed-form");
+            assertThat(form).containsEntry("replaces", a.toString());
+            UUID c = idOf(post(f, form));
+            waitFor(f, c, "DONE");
+
+            assertThat(scalar("SELECT replaces_document_id::text FROM baymax.document WHERE id = '" + c + "'")).isEqualTo(a.toString());
+            assertThat(retakeCards(context, f.patient())).as("retake cards once the resend is read").isEmpty();
         });
     }
 
@@ -247,6 +306,43 @@ class RetakeLinkAcceptanceTest {
                     "UPDATE baymax.document SET replaces_document_id = id WHERE id = '" + mine + "'"))
                     .hasMessageContaining("a retake replaces a paper of the same patient");
             assertThat(scalar("SELECT (replaces_document_id IS NULL)::text FROM baymax.document WHERE id = '" + mine + "'")).isEqualTo("true");
+        });
+    }
+
+    /** The same rule on INSERT: a row written with a link already in it (a later writer, a backfill) meets the trigger too. */
+    @Test
+    void theDatabaseRefusesALinkAcrossPatientsOnInsert() {
+        AppApiContext.runner(POSTGRES, MINIO).run(context -> {
+            Family f = family(context, "+8801700000758");
+            PatientProfile abbu = AppApiContext.patient(context, f.patient().familyId(), "Abbu");
+            UUID theirs = paper(context, abbu, "NEEDS_RETAKE");
+            UUID row = UUID.randomUUID();
+            assertThatThrownBy(() -> AppApiContext.sql(POSTGRES,
+                    "INSERT INTO baymax.document (id, patient_id, family_id, status, page_count, replaces_document_id) VALUES ('"
+                            + row + "','" + f.patient().id() + "','" + f.patient().familyId() + "','RECEIVED',1,'" + theirs + "')"))
+                    .hasMessageContaining("a retake replaces a paper of the same patient");
+            assertThat(scalar("SELECT count(*) FROM baymax.document WHERE id = '" + row + "'")).isEqualTo("0");
+        });
+    }
+
+    /**
+     * A retake replaces an OLDER paper. A replay of the press that made A, sent with {@code replaces} = B (A's own
+     * replacement, NEEDS_RETAKE too), would otherwise link A to B while B links A: IN_FLIGHT then hides both and a paper
+     * that still needs a photo leaves the stack. Ordering by upload rules a cycle out for every writer.
+     */
+    @Test
+    void theDatabaseRefusesALinkToANewerPaper() {
+        AppApiContext.runner(POSTGRES, MINIO).run(context -> {
+            Family f = family(context, "+8801700000759");
+            UUID a = paper(context, f.patient(), "NEEDS_RETAKE");
+            UUID b = paper(context, f.patient(), "NEEDS_RETAKE");
+            AppApiContext.sql(POSTGRES, "UPDATE baymax.document SET created_at = created_at - interval '1 hour' WHERE id = '" + a + "'");
+            AppApiContext.sql(POSTGRES, "UPDATE baymax.document SET replaces_document_id = '" + a + "' WHERE id = '" + b + "'");
+            assertThatThrownBy(() -> AppApiContext.sql(POSTGRES,
+                    "UPDATE baymax.document SET replaces_document_id = '" + b + "' WHERE id = '" + a + "'"))
+                    .hasMessageContaining("a retake replaces an older paper");
+            assertThat(scalar("SELECT (replaces_document_id IS NULL)::text FROM baymax.document WHERE id = '" + a + "'")).isEqualTo("true");
+            assertThat(retakeCards(context, f.patient())).as("B is still owed a photo").containsExactly(b);
         });
     }
 

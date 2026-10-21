@@ -39,6 +39,14 @@ jobs:
       # it fails in seconds rather than after 30 minutes of tests.
       - name: Refuse undeclared test fixtures
         run: scripts/check-test-fixtures.sh
+      # Flyway runs with outOfOrder=false and every merge deploys: a migration numbered at or below what main already
+      # holds (two branches that each took "the next free number") stops the deployable at startup. Numbers are taken
+      # at merge time; this fails the required check on the PR instead. test_check_migration_order.sh covers it both ways.
+      - name: Refuse a migration numbered at or below main's
+        run: |
+          git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+          bash scripts/test_check_migration_order.sh
+          bash scripts/check-migration-order.sh origin/main
       # Five scripts, under a minute, nothing beyond 127.0.0.1. test_deploy_is_tip.sh: the deploy job's tip check (below), tested
       # both ways against a throwaway repository. test_deploy_prune.sh: deploy.sh against a fake docker/curl/df/sleep
       # (scripts/deploy_test_fakes.sh) — the prune (only our repository, newest 3 by time, never the tag being

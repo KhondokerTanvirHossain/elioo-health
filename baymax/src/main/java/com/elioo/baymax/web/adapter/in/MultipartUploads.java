@@ -234,11 +234,23 @@ public final class MultipartUploads {
 
     /**
      * D1: the NEEDS_RETAKE paper this press was sent to replace (the retake page's hidden {@code replaces} field, or the
-     * JSON upload's), or null when the press names none or names something that is not an id. Whether it may be replaced
-     * is {@code UploadUseCase}'s to say, never this reader's.
+     * JSON upload's), or null when the press names none or names something that is not an id (the JSON route refuses the
+     * latter first, {@link #replacesMalformed}). Whether it may be replaced is {@code UploadUseCase}'s to say, never this
+     * reader's.
      */
     public static UUID replacesOrNull(MultiValueMap<String, Part> parts) {
         return uuidOrNull(field(parts, "replaces"));
+    }
+
+    /**
+     * D1: a {@code replaces} that is present, not blank and not an id ({@code undefined}, a truncated id). The JSON route
+     * answers it INVALID, as it does a misspelt {@code group}: read as "replaces nothing" it would be a 200 with an
+     * unlinked paper and the stale card back, a client bug with no signal. The HTML sheet stays lenient
+     * ({@link #replacesOrNull}): its value is the page's own hidden field.
+     */
+    public static boolean replacesMalformed(MultiValueMap<String, Part> parts) {
+        String raw = field(parts, "replaces");
+        return raw != null && uuidOrNull(raw) == null;
     }
 
     /** A form field's trimmed value; null when absent, blank or a file. */

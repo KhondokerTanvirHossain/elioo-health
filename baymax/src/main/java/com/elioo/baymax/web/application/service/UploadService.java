@@ -80,8 +80,10 @@ public class UploadService implements UploadUseCase {
 
     /**
      * Links each document the press returned to the paper it replaces; a replay's documents too (the press that made them
-     * may have died before its link), and the second identical UPDATE changes nothing. A link that fails costs only the
-     * stale card it exists to clear: logged with the two ids and nothing else, and the upload stands.
+     * may have died before its link). First link wins: a replay naming another retake leaves the first link in place
+     * (one INFO line, ids only), so neither the first retake's stale card comes back nor the other's leaves unsent. A
+     * link that fails costs only the stale card it exists to clear: logged with the two ids and nothing else, and the
+     * upload stands.
      */
     private Mono<Void> link(List<CreatedDocument> created, UUID replaces) {
         if (replaces == null) {
@@ -89,6 +91,12 @@ public class UploadService implements UploadUseCase {
         }
         return Flux.fromIterable(created).map(c -> c.document().id())
                 .concatMap(id -> documents.linkRetake(id, replaces)
+                        .doOnNext(linked -> {
+                            if (!linked) {
+                                log.info("[baymax] retake link kept: the paper already names another documentId={} replaces={}", id, replaces);
+                            }
+                        })
+                        .then()
                         .onErrorResume(e -> {
                             log.warn("[baymax] retake link failed documentId={} replaces={}", id, replaces);
                             return Mono.empty();

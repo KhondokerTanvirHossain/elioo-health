@@ -77,7 +77,7 @@ public class UploadApiHandler {
             }
             String key = MultipartUploads.uploadKey(parts);
             Optional<Grouping> grouping = grouping(MultipartUploads.field(parts, "group"));
-            if (key == null || grouping.isEmpty()) {
+            if (key == null || grouping.isEmpty() || MultipartUploads.replacesMalformed(parts)) {
                 // the client's own mistake, not a refusal intake can make: no reason string for the sheet to word
                 return ApiReason.INVALID.respond();
             }

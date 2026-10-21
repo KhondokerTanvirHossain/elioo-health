@@ -237,6 +237,44 @@ class UploadApiHandlerTest {
         verify(uploads, never()).upload(any(), any(), any(), any(), any(), any());
     }
 
+    /**
+     * D1: {@code replaces} present but not an id ({@code undefined}, a truncated id) is the client's own mistake, INVALID
+     * like a misspelt {@code group}, and never guessed as "replaces nothing": a 200 with an unlinked paper would bring the
+     * stale retake card back with no signal. Refused before admission, so nothing is looked up or read.
+     */
+    @Test
+    void aReplacesThatIsNotAnIdIsInvalidAndNothingIsAdmittedOrUploaded() {
+        // the wrong path answers too (200, an unlinked paper), so taking it fails on the status, not on a mock's null
+        when(uploads.upload(eq(FAMILY), eq(MA), any(), any(), eq(KEY), any())).thenReturn(Mono.just(List.of(doc(MA))));
+        for (String bad : List.of("undefined", "5e9edf6d-0a2a-4913", "null")) {
+            MultipartBodyBuilder body = press(MA, KEY, "one", "p1.jpg");
+            body.part("replaces", bad);
+            post(body).expectStatus().isBadRequest().expectBody().json("{\"reason\":\"INVALID\"}", true);
+        }
+        verify(uploads, never()).admit(any(), any(), any());
+        verify(uploads, never()).upload(any(), any(), any(), any(), any(), any());
+
+        // the other direction: a blank replaces is the same as none
+        Document one = doc(MA);
+        when(uploads.upload(eq(FAMILY), eq(MA), any(), eq(Grouping.ONE), eq(KEY), isNull())).thenReturn(Mono.just(List.of(one)));
+        MultipartBodyBuilder blank = press(MA, KEY, "one", "p1.jpg");
+        blank.part("replaces", " ");
+        post(blank).expectStatus().isOk();
+        verify(uploads).admit(FAMILY, MA, null);
+    }
+
+    /** D1: a replaces the use case refuses ({@code not_a_retake}) is NOT_A_RETAKE, asked before any file is read. */
+    @Test
+    void aReplacesThatIsNotThisPatientsRetakeIsRefusedBeforeItsFilesAreRead() {
+        UUID finished = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4210009");
+        when(uploads.admit(FAMILY, MA, finished)).thenReturn(Mono.error(BaymaxException.badRequest("not_a_retake", "finished")));
+        MultipartBodyBuilder body = press(MA, KEY, "one", "p1.jpg");
+        body.part("replaces", finished.toString());
+        post(body).expectStatus().isBadRequest().expectBody().json("{\"reason\":\"NOT_A_RETAKE\"}", true);
+        verify(uploads).admit(FAMILY, MA, finished);
+        verify(uploads, never()).upload(any(), any(), any(), any(), any(), any());
+    }
+
     static Stream<String> namedReasons() {
         return ApiReason.BY_REASON.keySet().stream().sorted();
     }
