@@ -81,7 +81,7 @@ printf 'SOME_SETTING=x\nBAYMAX_ADMIN_TOKEN=java-only-secret\n' > "$WORK/env"
 # against a copy whose waits never end fails on the clock instead of hanging the suite.
 TIMEOUT=$(PATH="$BIN:$PATH" command -v timeout)
 run_deploy() {
-  env PATH="$BIN:$PATH" IMAGE_TAG="$NEW" ENV_FILE="$WORK/env" "$@" \
+  env PATH="$BIN:$PATH" IMAGE_TAG="$NEW" ENV_FILE="$WORK/env" ROUTES_FLOOR_FILE="$FAKE_DIR/routes-floor" "$@" \
     "$TIMEOUT" "${RUN_LIMIT:-300}" bash "$DEPLOY" > "$FAKE_DIR/out.log" 2>&1
 }
 
@@ -365,6 +365,83 @@ new_case web-run-fails-restore
 if run_deploy FAKE_NETWORK=1 FAKE_RUN_FAIL="$WEB:$NEW"; then fail "$CASE: exited 0 although medioo-web could not be started: $(out)"; fi
 web_last_run_is "$W_RUN"
 grep -qF "previous medioo-web ($W_RUN) is back and healthy" "$FAKE_DIR/out.log" || fail "$CASE: the previous medioo-web is not back and healthy: $(out)"
+
+# 25. (W1c) Java off the public port: the one published port is 127.0.0.1:8086, and the health wait asks 127.0.0.1
+#     (not "localhost", which can resolve to ::1, where nothing listens any more)
+new_case java-loopback
+run_deploy FAKE_NETWORK=1 || fail "$CASE: deploy.sh failed: $(out)"
+A="$FAKE_DIR/run.medscribe-ai.args"
+if [ -f "$A" ]; then
+  arg_pair "$A" -p 127.0.0.1:8086:8086 || fail "$CASE: Java is not published as '-p 127.0.0.1:8086:8086': $(tr '\n' '|' < "$A")"
+  PUBLISHES=$(grep -cxE -- '-p|--publish' "$A")
+  [ "$PUBLISHES" = 1 ] || fail "$CASE: $PUBLISHES -p/--publish arguments, expected exactly one: $(tr '\n' '|' < "$A")"
+  grep -qE -- '^(-P|--publish-all|--publish=.*|-p=.*)$' "$A" && fail "$CASE: another way of publishing a port: $(tr '\n' '|' < "$A")"
+  grep -qxE '(0\.0\.0\.0:)?8086:8086' "$A" && fail "$CASE: 8086 is published on every interface: $(tr '\n' '|' < "$A")"
+  grep -qE '^--network$' "$A" || fail "$CASE: Java is not on the edge network, so with no public port nothing but the box could reach it"
+else
+  fail "$CASE: Java was never run: $(out)"
+fi
+grep -qE '^curl .*http://127\.0\.0\.1:8086/actuator/health' "$FAKE_DIR/calls.log" \
+  || fail "$CASE: the health wait does not ask http://127.0.0.1:8086: $(grep '^curl ' "$FAKE_DIR/calls.log" | head -1)"
+
+# 26-33. (W1c) the routes floor: once a route has flipped, an IMAGE_TAG that is not a descendant of the recorded
+#     floor sha is refused (it predates a route Caddy now sends to medioo-web), unless FORCE=1. Both directions.
+FLOOR=4c8e1f0aa9b3d2e7c6f5a4b3c2d1e0f9a8b7c6d5
+STATE_RE='^docker (pull|rm|rmi|run|stop|kill|restart) '
+# refused_before_touching <why>: exit 1 with the line, the compare asked (when expected), nothing changed on the box
+refused_before_touching() {
+  grep -qF "$1" "$FAKE_DIR/out.log" || fail "$CASE: no '$1' line: $(out)"
+  [ "$(count "$STATE_RE")" = 0 ] || fail "$CASE: refused, but changed the box first: $(grep -m1 -E "$STATE_RE" "$FAKE_DIR/calls.log")"
+}
+deployed() { [ -n "$(first_line "^docker run .* $REPO:${1:-$NEW}\$")" ] || fail "$CASE: Java $1 was not deployed: $(out)"; }
+
+new_case floor-none
+run_deploy FAKE_NETWORK=1 || fail "$CASE: failed with no routes floor recorded: $(out)"
+grep -qF 'no routes floor recorded' "$FAKE_DIR/out.log" || fail "$CASE: no 'no routes floor recorded' line: $(out)"
+[ "$(count '/compare/')" = 0 ] || fail "$CASE: asked GitHub with no floor to compare against"
+deployed
+
+new_case floor-descendant
+echo "$FLOOR /app/healthz 2026-10-21" > "$FAKE_DIR/routes-floor"
+run_deploy FAKE_NETWORK=1 FAKE_COMPARE=ahead || fail "$CASE: a descendant of the floor was refused: $(out)"
+grep -qE "^curl .*/compare/$FLOOR\.\.\.$NEW( |\$)" "$FAKE_DIR/calls.log" \
+  || fail "$CASE: did not ask GitHub to compare $FLOOR...$NEW: $(grep '^curl .*compare' "$FAKE_DIR/calls.log")"
+CMP=$(first_line '/compare/'); FIRST_STATE=$(first_line "$STATE_RE")
+[ -n "$CMP" ] && [ -n "$FIRST_STATE" ] && [ "$CMP" -lt "$FIRST_STATE" ] \
+  || fail "$CASE: the floor check (line '$CMP') does not come before the first change to the box (line '$FIRST_STATE')"
+deployed
+
+new_case floor-identical
+echo "$FLOOR" > "$FAKE_DIR/routes-floor"
+run_deploy FAKE_NETWORK=1 IMAGE_TAG="$FLOOR" FAKE_COMPARE=fail || fail "$CASE: the floor sha itself was refused: $(out)"
+deployed "$FLOOR"
+
+new_case floor-ancestor
+echo "$FLOOR /app/healthz 2026-10-21" > "$FAKE_DIR/routes-floor"
+if run_deploy FAKE_NETWORK=1 FAKE_COMPARE=behind; then fail "$CASE: deployed a sha older than the routes floor: $(out)"; fi
+refused_before_touching "is not a descendant of the routes floor $FLOOR (GitHub: behind)"
+
+new_case floor-diverged
+echo "$FLOOR" > "$FAKE_DIR/routes-floor"
+if run_deploy FAKE_NETWORK=1 FAKE_COMPARE=diverged; then fail "$CASE: deployed a sha off the floor's line: $(out)"; fi
+refused_before_touching "is not a descendant of the routes floor $FLOOR (GitHub: diverged)"
+
+new_case floor-force
+echo "$FLOOR" > "$FAKE_DIR/routes-floor"
+run_deploy FAKE_NETWORK=1 FAKE_COMPARE=behind FORCE=1 || fail "$CASE: FORCE=1 did not override the floor: $(out)"
+grep -qF 'WARNING: FORCE=1' "$FAKE_DIR/out.log" || fail "$CASE: no 'WARNING: FORCE=1' line: $(out)"
+deployed
+
+new_case floor-unreachable
+echo "$FLOOR" > "$FAKE_DIR/routes-floor"
+if run_deploy FAKE_NETWORK=1 FAKE_COMPARE=fail; then fail "$CASE: deployed although the floor could not be checked: $(out)"; fi
+refused_before_touching "could not check $NEW against the routes floor $FLOOR"
+
+new_case floor-malformed
+echo "not-a-sha; rm -rf /" > "$FAKE_DIR/routes-floor"
+if run_deploy FAKE_NETWORK=1; then fail "$CASE: deployed with an unreadable routes floor: $(out)"; fi
+refused_before_touching "routes floor file"
+[ "$(count '/compare/')" = 0 ] || fail "$CASE: put a malformed floor into the GitHub URL"
 
 if [ "$FAILED" -ne 0 ]; then exit 1; fi
 echo "deploy-sh: $CASES cases passed"

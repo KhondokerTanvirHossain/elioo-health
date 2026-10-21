@@ -47,12 +47,17 @@ jobs:
       # swapped and healthy before medioo-web is touched and untouched after its run, the web health probe EXECUTED
       # (the runner's node, a stub /app/healthz) for the right sha, image and service, the pull errors told apart
       # (missing tag = Java only, any other = red), a failed web swap puts the previous one back, no published port
-      # and no --env-file for Node, both repositories pruned without the rollback target.
-      - name: Deploy script tests (tip check, prune, two containers)
+      # and no --env-file for Node, both repositories pruned without the rollback target; from W1c, Java published on
+      # 127.0.0.1 only and the routes floor enforced both ways. test_smoke_https.sh: the deploy job's https smoke
+      # (below) against a local stub of the production table, every row broken alone. test_caddy_drift.sh: the deploy
+      # job's drift check against fixture Caddyfiles, both ways.
+      - name: Deploy script tests (tip check, prune, two containers, https smoke, Caddy drift)
         run: |
           scripts/test_deploy_is_tip.sh
           bash scripts/test_deploy_prune.sh
           bash scripts/test_deploy_sh.sh
+          bash scripts/test_smoke_https.sh
+          bash scripts/test_caddy_drift.sh
       # The real medioo-web image, built from its Dockerfile, and deploy_web against the runner's Docker daemon (only
       # `docker pull` shimmed): the probe against the real Next server, `docker inspect` of what deploy.sh started
       # (no ports, 320m, rotated logs, exactly two env vars, one network), and an image built from another sha refused
@@ -259,24 +264,34 @@ jobs:
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             # this job has just pushed medioo-web:<sha>, so a missing tag is a fault here, not a pre-W1b sha
             WEB_IMAGE_REQUIRED=1 IMAGE_TAG="$IMAGE_TAG" bash /home/ec2-user/deploy.sh
-      # Both must pass: the container on its host port, and the public https name through Caddy, which is the
-      # path every user takes (a healthy :8086 behind a broken proxy or certificate is still an outage).
-      # Only the HTTP status is printed, never the body: this log is public (DR-38) and the health body carries
-      # disk, path and database details.
-      # The :8086 check works only while host port 8086 is open to the internet, which is itself an exposure
-      # (the whole app over plain HTTP, bypassing Caddy). It MUST be removed in the same PR that binds Java to
-      # 127.0.0.1 (plan W1c), or every deploy after that one goes red; the https check then stays as the smoke.
-      - name: Smoke test from runner
+      # The https upstream table (DR-40 A1, plan W1c), through Caddy, as a browser sees it: one row per path class
+      # (Next's /app/healthz, Java's pages, the API, MedScribe, the /baymax redirects, the webhook refusal), with
+      # each class's security headers. Retried for up to ~50 s while Caddy reaches the new upstreams. Only paths,
+      # status codes and header values are printed, never a body: this log is public (DR-38) and the health body
+      # carries disk, path and database details. The old http://<EC2 host>:8086 check is gone with the port: Java is
+      # published on the box's 127.0.0.1 only (deploy.sh), so it could only fail.
+      - name: Smoke test from runner (https table)
         if: steps.tip.outputs.current == 'true'
-        run: |
-          check() {
-            local code=""
-            for i in $(seq 1 10); do
-              code=$(curl -sS -o /dev/null -w '%{http_code}' "$1" || true)
-              if [ "$code" = 200 ]; then echo "UP ($code): $1"; return 0; fi
-              sleep 5
-            done
-            echo "Health check failed: $1 (last HTTP status: ${code:-none})"; return 1
-          }
-          check "http://${{ secrets.EC2_HOST }}:8086/actuator/health"
-          check "https://medioo.eliooo.org/actuator/health"
+        run: bash scripts/smoke-https.sh https://medioo.eliooo.org
+      # Drift (plan W1c): the box's live medioo/baymax site blocks, read-only, against docs/infra/Caddyfile.medioo.
+      # Runs on the box, so the other tenants' blocks (n8n, bddrug) never leave it; the output is our blocks' diff
+      # only. Runs even when the smoke failed: a drifted Caddyfile is a likely reason for it.
+      - name: Copy the Caddy drift check to server
+        if: ${{ !cancelled() && steps.tip.outputs.current == 'true' }}
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: scripts/caddy-drift.sh,docs/infra/Caddyfile.medioo
+          target: /home/ec2-user/medioo-ci/
+      - name: Caddy drift check (box vs repo)
+        if: ${{ !cancelled() && steps.tip.outputs.current == 'true' }}
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            bash /home/ec2-user/medioo-ci/scripts/caddy-drift.sh \
+              /home/ec2-user/medioo-ci/docs/infra/Caddyfile.medioo /home/ec2-user/n8n/Caddyfile

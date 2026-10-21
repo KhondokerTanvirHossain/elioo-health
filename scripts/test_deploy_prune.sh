@@ -84,8 +84,9 @@ run_prune() {
 # Java, so GHCR has no medioo-web image for the tag (a pre-W1b sha) and the web step is skipped: some of them run
 # with no edge network, which the web step rightly refuses (scripts/test_deploy_sh.sh covers that step).
 run_deploy() {
+  # ROUTES_FLOOR_FILE: a path that never exists, so a floor recorded on the machine running the test cannot leak in
   PATH="$BIN:$PATH" IMAGE_TAG="$1" ENV_FILE="$2" FAKE_PULL_FAIL="ghcr.io/khondokertanvirhossain/elioo-health/medioo-web:$1" \
-    bash "$DEPLOY" > "$FAKE_DIR/out.log" 2>&1
+    ROUTES_FLOOR_FILE="$FAKE_DIR/no-routes-floor" bash "$DEPLOY" > "$FAKE_DIR/out.log" 2>&1
 }
 
 out() { tr '\n' '|' < "$FAKE_DIR/out.log"; }

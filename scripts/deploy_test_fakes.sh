@@ -172,7 +172,17 @@ FAKE
 #!/usr/bin/env bash
 # answers like Spring's health endpoint with show-details=always: the details must never reach the log
 # FAKE_CURL_FAIL=1: Java never becomes healthy
+# A GitHub compare URL (.../compare/<base>...<head>, the routes-floor check) answers like api.github.com, with a
+# nested "status":"ahead" BEFORE the top-level one, so only a parse of the top-level field reads it right:
+# FAKE_COMPARE=<ahead|behind|identical|diverged>  the top-level status (default ahead)
+# FAKE_COMPARE=fail                                 the API is unreachable (curl exits 22)
 printf 'curl %s\n' "$*" >> "$FAKE_DIR/calls.log"
+if [[ "$*" == *'/compare/'* ]]; then
+  [ "${FAKE_COMPARE:-}" = fail ] && { echo "curl: (22) The requested URL returned error: 503" >&2; exit 22; }
+  printf '{"url":"x","base_commit":{"sha":"b","files_hint":{"status":"ahead"}},"status":"%s","ahead_by":1,"behind_by":0,"files":[{"filename":"deploy.sh","status":"modified"}]}\n' \
+    "${FAKE_COMPARE:-ahead}"
+  exit 0
+fi
 [ -n "${FAKE_CURL_FAIL:-}" ] && exit 7
 echo '{"status":"UP","components":{"diskSpace":{"status":"UP","details":{"total":20959212,"free":5452595,"path":"/app/."}},"r2dbc":{"status":"UP","details":{"database":"PostgreSQL"}}}}'
 FAKE
