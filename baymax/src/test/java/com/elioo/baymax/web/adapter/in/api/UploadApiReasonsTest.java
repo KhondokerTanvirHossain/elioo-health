@@ -20,20 +20,22 @@ class UploadApiReasonsTest {
     void everyReasonTheUploadPathCanThrowHasAName() throws Exception {
         Map<String, Integer> swept = UploadRefusalSweep.reasonsWithStatus();
         assertThat(swept).as("the sweep found the refusals; an empty set would pass vacuously").hasSizeGreaterThanOrEqualTo(10);
-        // MultipartUploads throws these and mentions no UploadUseCase: swept only because the sweep names the file
-        assertThat(swept).as("the size refusals were swept").containsKeys("file_too_large", "request_too_large");
         Map<String, Integer> reasons = new TreeMap<>(swept);
         reasons.put(FreeTierExceededException.DOCUMENTS, 402);
-        assertThat(reasons.keySet()).as("reasons the upload path throws that have no ApiReason name")
-                .allSatisfy(r -> assertThat(ApiReason.BY_REASON).as(r).containsKey(r));
+        assertThat(reasons.keySet().stream().filter(r -> !ApiReason.BY_REASON.containsKey(r)).toList())
+                .as("reasons the upload path throws that have no ApiReason name").isEmpty();
+        // MultipartUploads throws these and mentions no UploadUseCase: swept only because the sweep names the file
+        assertThat(swept).as("the size refusals were swept").containsKeys("file_too_large", "request_too_large");
     }
 
     @Test
     void eachNameKeepsTheStatusItsReasonIsThrownWith() throws Exception {
         Map<String, Integer> swept = UploadRefusalSweep.reasonsWithStatus();
         assertThat(swept).hasSizeGreaterThanOrEqualTo(10);
-        swept.forEach((reason, status) -> assertThat(ApiReason.BY_REASON.get(reason).status().value())
-                .as(reason + " → " + ApiReason.BY_REASON.get(reason)).isEqualTo(status));
+        swept.forEach((reason, status) -> {
+            assertThat(ApiReason.BY_REASON).as("a name for " + reason).containsKey(reason);
+            assertThat(ApiReason.BY_REASON.get(reason).status().value()).as(reason + " → " + ApiReason.BY_REASON.get(reason)).isEqualTo(status);
+        });
         assertThat(ApiReason.BY_REASON.get(FreeTierExceededException.DOCUMENTS)).isEqualTo(ApiReason.FREE_TIER_DOCUMENTS);
         assertThat(ApiReason.FREE_TIER_DOCUMENTS.status().value()).isEqualTo(402);
     }
