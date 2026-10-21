@@ -172,7 +172,15 @@ public class ExtractionPipelineAcceptanceTest {
                 when(client.invoke(any())).thenAnswer(i -> {
                     String prompt = ((com.elioo.healthcare.llm.model.LlmRequest) i.getArgument(0)).userPrompt();
                     if (prompt != null && prompt.startsWith("SKELETON:\n") && prompt.contains("\n\nURGENCY LINE:")) {
-                        return Mono.just(answer(prompt.substring("SKELETON:\n".length(), prompt.indexOf("\n\nURGENCY LINE:"))));
+                        String phrased = prompt.substring("SKELETON:\n".length(), prompt.indexOf("\n\nURGENCY LINE:"));
+                        if (hold != null && hold.holdsTheExplanation) {
+                            // the EXPLAIN reply waits for the test (a paper DONE, its explanation still being written)
+                            hold.asked.countDown();
+                            return hold.modelReleased.asMono().timeout(Duration.ofSeconds(60), Mono.empty())
+                                    .then(Mono.fromSupplier(() -> answer(phrased)))
+                                    .doOnSuccess(r -> hold.replied.countDown());
+                        }
+                        return Mono.just(answer(phrased));
                     }
                     if (prompt != null && prompt.startsWith("SKELETON:\n")) {
                         // a nudge (NudgeComposer): its skeleton is already correct, so the model changes nothing either
@@ -183,6 +191,7 @@ public class ExtractionPipelineAcceptanceTest {
                     String reply = given.replyTo(nonExplainCalls.getAndIncrement());
                     if (hold != null && hold.holdsTheModel) {
                         // the extraction reply waits for the test (a paper caught PROCESSING); then the latch says it went
+                        hold.asked.countDown();
                         return hold.modelReleased.asMono().timeout(Duration.ofSeconds(60), Mono.empty())
                                 .then(Mono.fromSupplier(() -> answer(reply)))
                                 .doOnSuccess(r -> hold.replied.countDown());

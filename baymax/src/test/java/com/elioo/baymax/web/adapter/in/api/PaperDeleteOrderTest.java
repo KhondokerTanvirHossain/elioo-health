@@ -79,6 +79,12 @@ class PaperDeleteOrderTest {
                         "baymax.auth.hmac-secret=paper-delete-order-secret", "baymax.web.public-origin=" + AppApiContext.ORIGIN);
     }
 
+    /**
+     * "Rows first" is safe only if the row delete rolls back as ONE unit: every statement before the blocked
+     * {@code DELETE FROM document} — the ledger rows, the unsent message, the nudge, the observation — must come back
+     * when it fails, or the paper would stay visible with its ledger gone and its pending messages withdrawn. So the
+     * paper carries a row in each, and the whole schema-derived picture is compared before and after, not one table.
+     */
     @Test
     void whenTheRowsCannotBeDeletedTheImagesStay() {
         runner().run(context -> {
@@ -87,12 +93,36 @@ class PaperDeleteOrderTest {
             String page = StorageKeys.page(p.patient.familyId(), p.patient.id(), p.document, 1);
             StoragePort bucket = context.getBean(StoragePort.class);
             String stored = sha256(bucket.get(page).block());
+            String needle = "Rollback-needle-" + p.document.toString().substring(0, 8);
+            sql("INSERT INTO baymax.observation (patient_id, document_id, name, value, unit, crop_key, observed_at) VALUES ('"
+                    + p.patient.id() + "','" + p.document + "','" + needle + "','4.2','mmol/L','" + page + "',now())");
+            sql("INSERT INTO baymax.outbound_message (family_id, patient_id, document_id, kind, urgency, body, gate_status) VALUES ('"
+                    + p.patient.familyId() + "','" + p.patient.id() + "','" + p.document + "','explanation','routine','pending: "
+                    + needle + "','pending')");
+            sql("INSERT INTO baymax.nudge (family_id, patient_id, rule, trigger_key, urgency, status, vars_json, hold_until) VALUES ('"
+                    + p.patient.familyId() + "','" + p.patient.id() + "','medicine_changed','document:" + p.document
+                    + "','this_week','held','{\"changes\":\"" + needle + "\"}', now())");
             try {
                 sql("CREATE TABLE baymax.test_delete_blocker (document_id uuid REFERENCES baymax.document(id))");
                 sql("INSERT INTO baymax.test_delete_blocker VALUES ('" + p.document + "')");
+                Map<String, Long> rowsBefore;
+                List<String> textBefore;
+                try (Connection c = connect()) {
+                    rowsBefore = DeletionSweep.rowsByTable(c, p.document);
+                    textBefore = DeletionSweep.textHolding(c, List.of(needle));
+                }
+                assertThat(rowsBefore).as("the paper's rows before the delete")
+                        .containsEntry("stored_object", 1L).containsEntry("observation", 1L).containsEntry("outbound_message", 1L);
+                assertThat(textBefore).as("the held nudge's words before the delete").contains("nudge.vars_json holds " + needle + " x1");
 
                 delete(p).expectStatus().is5xxServerError();
 
+                try (Connection c = connect()) {
+                    assertThat(DeletionSweep.rowsByTable(c, p.document)).as("every table naming the paper, after the blocked delete")
+                            .isEqualTo(rowsBefore);
+                    assertThat(DeletionSweep.textHolding(c, List.of(needle))).as("every text naming the paper, after the blocked delete")
+                            .isEqualTo(textBefore);
+                }
                 assertThat(scalar("select count(*) from baymax.document where id = '" + p.document + "'"))
                         .as("the document row, which the blocker kept").isEqualTo("1");
                 assertThat(bucket.listKeys(StorageKeys.documentPrefix(p.patient.familyId(), p.patient.id(), p.document))
@@ -127,6 +157,35 @@ class PaperDeleteOrderTest {
             ILoggingEvent orphan = errors.get(0);
             assertThat(orphan.getFormattedMessage()).as("the orphan's marker").contains("orphaned_objects");
             assertThat(Arrays.asList(orphan.getArgumentArray())).as("the orphan line names the paper by id").contains(p.document);
+            // once the rows are gone the prefix cannot be rebuilt from the document row: the line carries it, and the count
+            assertThat(Arrays.asList(orphan.getArgumentArray())).as("the orphan line names the prefix to sweep")
+                    .contains(StorageKeys.documentPrefix(p.patient.familyId(), p.patient.id(), p.document), 1L);
+        });
+    }
+
+    /**
+     * The drift WARN ("removed N objects but M ledger rows") is the one production signal that the bucket and the ledger
+     * diverged. Rows first removes the ledger rows with the paper, so a delete that compared the bucket against the
+     * rows left would WARN on every normal delete and teach everyone to ignore it. A normal delete warns about nothing.
+     */
+    @Test
+    void aNormalDeleteLogsNoDriftWarning() {
+        runner().run(context -> {
+            assertThat(context).hasNotFailed();
+            Paper p = paper(context, "+8801700000483");
+            Logger storage = (Logger) LoggerFactory.getLogger("com.elioo.baymax.storage");
+            ListAppender<ILoggingEvent> events = new ListAppender<>();
+            events.start();
+            storage.addAppender(events);
+            try {
+                delete(p).expectStatus().isOk().expectBody().json("{\"objects_deleted\":1}");
+            } finally {
+                storage.detachAppender(events);
+            }
+            assertThat(events.list.stream().filter(e -> e.getLevel().isGreaterOrEqual(Level.WARN)).map(ILoggingEvent::getFormattedMessage))
+                    .as("WARN or worse from storage during a normal delete").isEmpty();
+            assertThat(events.list.stream().map(ILoggingEvent::getFormattedMessage))
+                    .as("the storage delete itself ran and logged (the appender saw the logger)").anyMatch(m -> m.contains("deleted prefix="));
         });
     }
 

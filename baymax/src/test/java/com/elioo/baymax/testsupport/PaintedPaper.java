@@ -81,7 +81,14 @@ public final class PaintedPaper {
                 && Math.abs(a.getBlue() - b.getBlue()) < 40;
     }
 
-    /** The held journey's two signals: the chain's assessment waits for the page, the page's yields for a DONE view. */
+    /**
+     * Signals that hold a running pipeline at a chosen point. The journey's held test holds the urgency (its
+     * {@code HeldUrgency} and {@code SignallingIntake} wrappers read the first four). A test built with
+     * {@link #ofTheModel()} also holds the stubbed model's extraction reply, and one built with
+     * {@link #ofTheExplanation()} holds its EXPLAIN reply instead ({@code ExtractionPipelineAcceptanceTest}'s stub reads
+     * the rest), so a paper can be caught PROCESSING, or DONE with its explanation still being written, for as long as
+     * the test needs.
+     */
     public static final class Hold {
         /** How long the page's own assessment yields for a DONE view: long enough that a view read alongside it wins. */
         public static final Duration YIELD = Duration.ofSeconds(2);
@@ -92,21 +99,30 @@ public final class PaintedPaper {
 
         /** True only for {@link #ofTheModel()}: the stubbed model's extraction replies wait for {@link #modelReleased}. */
         public final boolean holdsTheModel;
-        /** Emitted by the test to let the held extraction reply go (60 s at most, then it goes anyway). */
+        /** True only for {@link #ofTheExplanation()}: the stubbed model's EXPLAIN replies wait for {@link #modelReleased}. */
+        public final boolean holdsTheExplanation;
+        /** Emitted by the test to let the held reply go (60 s at most, then it goes anyway). */
         public final Sinks.Empty<Void> modelReleased = Sinks.empty();
+        /** Counted down by the stub when the held call arrives: the positive signal the pipeline is waiting on it. */
+        public final CountDownLatch asked = new CountDownLatch(1);
         /** Counted down by the stub once it has returned the held reply: the positive signal the pipeline went on. */
         public final CountDownLatch replied = new CountDownLatch(1);
 
         public Hold() {
-            this(false);
+            this(false, false);
         }
 
-        private Hold(boolean holdsTheModel) {
+        private Hold(boolean holdsTheModel, boolean holdsTheExplanation) {
             this.holdsTheModel = holdsTheModel;
+            this.holdsTheExplanation = holdsTheExplanation;
         }
 
         public static Hold ofTheModel() {
-            return new Hold(true);
+            return new Hold(true, false);
+        }
+
+        public static Hold ofTheExplanation() {
+            return new Hold(false, true);
         }
     }
 }

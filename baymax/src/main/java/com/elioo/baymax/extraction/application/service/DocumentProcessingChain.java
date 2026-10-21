@@ -6,6 +6,7 @@ import com.elioo.baymax.nudge.application.port.in.NudgeUseCase;
 import com.elioo.baymax.outbound.application.port.in.DocumentUrgencyUseCase;
 import com.elioo.baymax.outbound.application.port.in.ExplainDocumentUseCase;
 import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
+import com.elioo.baymax.storage.domain.StorageKeys;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -57,15 +58,23 @@ public class DocumentProcessingChain {
      * removed what existed then; the pipeline kept writing after it — crops into the bucket and their ledger rows (which
      * have no foreign key), and the model call's ai_call_log row with the id. Both deletes run again, over whatever the
      * pipeline left: the rows (idempotent — it detaches the call log, removes the ledger rows and any unsent message),
-     * then the objects under the paper's prefix. Only when the row is really gone: an extraction that answered nothing
-     * for a paper that still exists is not a deletion, and its pages are never touched here.
+     * then the objects under the paper's prefix, checked for drift against the late ledger rows counted first. Only when
+     * the row is really gone: an extraction that answered nothing for a paper that still exists is not a deletion, and
+     * its pages are never touched here.
+     *
+     * <p>Nothing after this point can explain the paper either way: a message naming a paper that no longer exists is
+     * refused where every writer stores it ({@code OutboundMessagePort.save}), so a delete landing later than this
+     * check — during the EXPLAIN call — is covered there, not here.
      */
     private Mono<Document> forgetIfDeleted(Document document) {
-        return exists(document).flatMap(there -> there ? Mono.<Document>empty() : documents.deleteDocument(document.id())
-                .then(storage.deleteDocument(document.familyId(), document.patientId(), document.id())
-                        .doOnError(e -> log.error("[baymax] orphaned_objects scope=document id={} — a paper deleted while "
-                                + "being read left objects the sweep could not remove error={}", document.id(), e.getClass().getSimpleName()))
-                        .onErrorResume(e -> Mono.empty()))
+        String prefix = StorageKeys.documentPrefix(document.familyId(), document.patientId(), document.id());
+        return exists(document).flatMap(there -> there ? Mono.<Document>empty() : storage.objectsOf(document.id()).count()
+                .flatMap(late -> documents.deleteDocument(document.id())
+                        .then(storage.deleteDocumentObjects(document.familyId(), document.patientId(), document.id(), late)
+                                .doOnError(e -> log.error("[baymax] orphaned_objects scope=document id={} prefix={} objects={} — a "
+                                        + "paper deleted while being read left objects the sweep could not remove error={}",
+                                        document.id(), prefix, late, e.getClass().getSimpleName()))
+                                .onErrorResume(e -> Mono.empty())))
                 .then(Mono.fromRunnable(() -> log.info("[baymax] document deleted while being read documentId={}; "
                         + "its late crops and rows were removed and nothing was explained", document.id())))
                 .then(Mono.<Document>empty()));

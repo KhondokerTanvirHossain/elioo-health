@@ -43,9 +43,22 @@ public class AiCallLogPersistenceAdapter implements AiCallLogPort {
     private final AiCallLogRepository repository;
     private final DatabaseClient databaseClient;
 
+    /**
+     * A call made for a paper the family deleted while the call was running (an EXPLAIN takes seconds) keeps its numbers
+     * and loses the id, as the delete does for the calls made before it ({@code DocumentRecordPort.deleteDocument}):
+     * after the insert, the id is cleared when the paper is gone. The paper's row is read {@code FOR KEY SHARE}, so a
+     * check that meets a delete in flight waits for it; a call stored before the delete took its lock is detached by it.
+     */
     @Override
     public Mono<AiCallRecord> save(AiCallRecord record) {
-        return repository.save(AiCallLogEntity.from(record)).map(AiCallLogEntity::toRecord);
+        return repository.save(AiCallLogEntity.from(record)).map(AiCallLogEntity::toRecord)
+                .flatMap(saved -> saved.documentId() == null ? Mono.just(saved)
+                        : databaseClient.sql("UPDATE " + BaymaxSchema.NAME + ".ai_call_log SET document_id = NULL WHERE id = :id "
+                                        + "AND NOT EXISTS (SELECT 1 FROM " + BaymaxSchema.NAME + ".document d WHERE d.id = :d FOR KEY SHARE)")
+                                .bind("id", saved.id()).bind("d", saved.documentId())
+                                .fetch().rowsUpdated()
+                                .flatMap(detached -> detached == 0 ? Mono.just(saved)
+                                        : repository.findById(saved.id()).map(AiCallLogEntity::toRecord)));
     }
 
     @Override

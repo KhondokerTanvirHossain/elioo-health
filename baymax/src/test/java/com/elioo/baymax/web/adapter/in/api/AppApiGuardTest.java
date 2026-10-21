@@ -6,8 +6,6 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.config.BaymaxProperties;
-import com.elioo.baymax.extraction.application.port.out.DocumentRecordPort;
-import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.testsupport.LoggedText;
@@ -69,8 +67,6 @@ class AppApiGuardTest {
     private final TimelineUseCase timeline = mock(TimelineUseCase.class);
     private final AttentionUseCase attention = mock(AttentionUseCase.class);
     private final ResultUseCase results = mock(ResultUseCase.class);
-    private final DocumentRecordPort documents = mock(DocumentRecordPort.class);
-    private final HealthRecordPort records = mock(HealthRecordPort.class);
     /** How many times the probe route's handler ran: the guard must refuse before it, never after. */
     private final AtomicInteger probed = new AtomicInteger();
     private final WebTestClient client;
@@ -108,7 +104,7 @@ class AppApiGuardTest {
                 new PaperApiHandler(mock(ResultUseCase.class), new UiCopy()),
                 new UploadApiHandler(mock(UploadUseCase.class), properties, new UiCopy()),
                 new PaperStatusApiHandler(results),
-                new PaperDeleteApiHandler(documents, records, timeline, new DeleteConfirmation(properties, Clock.systemUTC())),
+                new PaperDeleteApiHandler(timeline, new DeleteConfirmation(properties, Clock.systemUTC())),
                 guard))).build();
     }
 

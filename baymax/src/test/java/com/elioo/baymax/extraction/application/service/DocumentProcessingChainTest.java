@@ -12,6 +12,7 @@ import com.elioo.baymax.storage.domain.DeletionReport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
@@ -23,6 +24,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
@@ -60,7 +62,8 @@ class DocumentProcessingChainTest {
         // every paper below still exists when its extraction ends, unless a test deletes it
         when(documents.find(any())).thenAnswer(i -> Mono.just(received().withId(i.getArgument(0))));
         when(documents.deleteDocument(any())).thenReturn(Mono.just(0L));
-        when(storage.deleteDocument(any(), any(), any())).thenReturn(Mono.just(new DeletionReport("p/", 0, 0)));
+        when(storage.objectsOf(any())).thenReturn(Flux.empty());
+        when(storage.deleteDocumentObjects(any(), any(), any(), anyLong())).thenReturn(Mono.just(new DeletionReport("p/", 0, 0)));
     }
 
     /**
@@ -78,7 +81,7 @@ class DocumentProcessingChainTest {
 
         InOrder order = inOrder(documents, storage);
         order.verify(documents).deleteDocument(d.id());
-        order.verify(storage).deleteDocument(d.familyId(), d.patientId(), d.id());
+        order.verify(storage).deleteDocumentObjects(d.familyId(), d.patientId(), d.id(), 0L);
         verify(urgency, never()).assessAndStore(any());
         verify(explainer, never()).explain(any());
         verify(nudges, never()).onDocumentDone(any());
@@ -93,7 +96,7 @@ class DocumentProcessingChainTest {
 
         StepVerifier.create(chain.run(d, List.of(new byte[]{1}))).verifyComplete();
 
-        verify(storage).deleteDocument(d.familyId(), d.patientId(), d.id());
+        verify(storage).deleteDocumentObjects(d.familyId(), d.patientId(), d.id(), 0L);
         verify(explainer, never()).explain(any());
     }
 
@@ -112,6 +115,7 @@ class DocumentProcessingChainTest {
         StepVerifier.create(chain.run(failing, List.of(new byte[]{1}))).verifyError(IllegalStateException.class);
 
         verify(documents, never()).deleteDocument(any());
+        verify(storage, never()).deleteDocumentObjects(any(), any(), any(), anyLong());
         verify(storage, never()).deleteDocument(any(), any(), any());
     }
 

@@ -45,7 +45,10 @@ public final class DeletionSweep {
             new Survivor("audit_event", "true", null,
                     "the audit of the view and of the delete itself; ids only, no text (V8)"),
             new Survivor("outbound_message", "sent_at IS NOT NULL", "sent_at is null", P1),
-            new Survivor("nudge", "status = 'sent'", "status <> 'sent'", P1));
+            // delivered is read from the message, not from nudge.status alone: a gated nudge keeps 'gated' after the
+            // reviewer approves it and WhatsApp accepts it (approve updates only the message)
+            new Survivor("nudge", "status = 'sent' OR EXISTS (SELECT 1 FROM baymax.outbound_message dm WHERE dm.id = nudge.message_id "
+                    + "AND dm.sent_at IS NOT NULL)", "undelivered", P1));
 
     private DeletionSweep() {
     }

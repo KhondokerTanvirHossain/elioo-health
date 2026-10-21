@@ -25,7 +25,15 @@ public interface DocumentStorageUseCase {
 
     Mono<Long> bytesStored(UUID documentId);
 
+    /** Objects, then their ledger rows: for a caller whose ledger rows are still there. */
     Mono<DeletionReport> deleteDocument(UUID familyId, UUID patientId, UUID documentId);
+
+    /**
+     * The bucket half of a paper deleted rows first: its ledger rows already went with its other rows, and
+     * {@code ledgerRowsDeleted} is how many (read before they went). Empties the paper's prefix, removes any ledger row
+     * written since, and warns of drift only when the objects removed differ from the ledger rows that recorded them.
+     */
+    Mono<DeletionReport> deleteDocumentObjects(UUID familyId, UUID patientId, UUID documentId, long ledgerRowsDeleted);
 
     /** Only the crops of a document (objects and ledger), keeping its pages; for re-cropping. */
     Mono<DeletionReport> deleteCrops(UUID familyId, UUID patientId, UUID documentId);

@@ -8,6 +8,7 @@ import com.elioo.baymax.extraction.ExtractionPipelineAcceptanceTest;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.nudge.application.port.in.NudgeUseCase;
+import com.elioo.baymax.nudge.application.port.out.NudgePort;
 import com.elioo.baymax.outbound.application.port.in.ReviewGateUseCase;
 import com.elioo.baymax.outbound.application.port.out.MessageDeliveryPort;
 import com.elioo.baymax.outbound.domain.DeliveryOutcome;
@@ -107,10 +108,11 @@ class PaperDeleteApiTest {
     @BeforeEach
     void listen() {
         int n = PAPERS.incrementAndGet();
-        assertThat(n).as("needles keep their length (and the spans their place) below ten papers").isLessThan(10);
-        value = "Kalium-884" + n;
-        medicine = "Zorvalex-773" + n;
-        followUp = "Return-for-review-551" + n;
+        assertThat(n).as("needles keep their length (and the spans their place): one base-36 digit per paper").isLessThan(36);
+        char d = Character.forDigit(n, 36);
+        value = "Kalium-884" + d;
+        medicine = "Zorvalex-773" + d;
+        followUp = "Return-for-review-551" + d;
         chain = new ListAppender<>();
         chain.start();
         ((Logger) LoggerFactory.getLogger(EXTRACTION_LOGGER)).addAppender(chain);
@@ -344,6 +346,9 @@ class PaperDeleteApiTest {
             }
             assertThat(hold.replied.await(30, TimeUnit.SECONDS)).as("the held model reply went out within 30 s").isTrue();
             String line = awaitChainEnd(f.document);
+            // the path, not just the outcome: the chain's own stop ran, not a cleanup somewhere after "document finished"
+            assertThat(chainLines()).as("the chain's stop for a paper deleted mid-read (chain ended: %s)", line)
+                    .anyMatch(l -> l.contains("document deleted while being read documentId=" + f.document));
 
             try (Connection c = connect()) {
                 assertThat(DeletionSweep.tablesStillHolding(c, f.document)).as("tables still holding the paper deleted mid-read (chain ended: %s)", line).isEmpty();
@@ -354,6 +359,132 @@ class PaperDeleteApiTest {
             }
             assertThat(f.keysInBucket()).as("the bucket under the paper deleted mid-read").isEmpty();
             assertThat(f.delivery.since(mark, f.patient.familyId())).as("messages handed to the channel").isEmpty();
+        });
+    }
+
+    /**
+     * The two cross-paper rules, in the shape production makes them (NudgeRules), not the one shape the first fixture
+     * used. A trend is keyed to the run's FIRST reading ({@code trend:<marker>:<first observation id>}) and fires when
+     * a new paper completes the run, so the paper a family deletes ("wrong paper") is usually the LATEST reading: its
+     * trend is keyed to an older paper's observation, while {@code marker} and {@code values} quote this one. A
+     * medicine_changed is keyed {@code document:<newer prescription>} and its {@code changes} quote the OLDER one's
+     * medicines verbatim. Both are held, with every variable their copy needs, so a release would really send them.
+     */
+    @Test
+    void crossPaperNudgesThatQuoteTheDeletedPaperAreWithdrawn() {
+        runner().run(context -> {
+            Fixture f = paperOf(context, "+8801700000483");
+            Ids ids = ids(f.document);
+            // the marker the alias table gives this value (the needle is no real lab name, so it is named here)
+            exec("update baymax.observation set canonical_name = 'potassium' where id = ?", ids.observation);
+            // an earlier paper whose potassium reading opens the run: the trend is keyed to IT
+            UUID older = AppApiContext.paper(context, POSTGRES, f.patient, "routine");
+            UUID opening = insert("insert into baymax.observation (patient_id, document_id, name, canonical_name, value, unit, "
+                    + "crop_key, observed_at) values (?, ?, 'Potassium', 'potassium', '3.9', 'mmol/L', ?, ?)",
+                    f.patient.id(), older, StorageKeys.documentPrefix(f.patient.familyId(), f.patient.id(), older) + "crop-v1.jpg",
+                    java.sql.Timestamp.from(Instant.now().minus(Duration.ofDays(60))));
+            // a later prescription: its medicine_changed compares it with this paper, which is its "before"
+            UUID newer = AppApiContext.paper(context, POSTGRES, f.patient, "routine");
+            exec("update baymax.document set document_type = 'prescription', doc_date = date '2026-10-20' where id = ?", newer);
+            UUID trend = seedNudge(f, "trend", "trend:potassium:" + opening, "held",
+                    "{\"patient\":\"Ma\",\"marker\":\"" + value + "\",\"values\":\"3.9 mmol/L → 4.2 mmol/L\",\"count\":\"২\","
+                            + "\"first_date\":\"১৩ আগস্ট\",\"last_date\":\"১২ অক্টোবর\",\"direction\":\"একটু একটু করে বাড়ছে\","
+                            + "\"direction_en\":\"creeping up\"}", null);
+            UUID changed = seedNudge(f, "medicine_changed", "document:" + newer, "held",
+                    "{\"patient\":\"Ma\",\"changes\":\"" + medicine + " — 10 mg · 1+0+0 → (নতুন প্রেসক্রিপশনে নেই)\","
+                            + "\"date\":\"২০ অক্টোবর\"}", null);
+            try (Connection c = connect()) {
+                assertThat(DeletionSweep.textHolding(c, List.of(value, medicine))).as("the cross-paper nudges quote the paper")
+                        .contains("nudge.vars_json holds " + value + " x1", "nudge.vars_json holds " + medicine + " x1");
+            }
+            int mark = f.delivery.handed.size();
+
+            delete(f.client, f.session, f.document, deleteToken(f.client, f.session, f.document)).expectStatus().isOk();
+            context.getBean(NudgeUseCase.class).evaluateAll().block(Duration.ofSeconds(30));
+
+            assertThat(f.delivery.since(mark, f.patient.familyId()).stream().map(OutboundMessage::body).toList())
+                    .as("messages handed to the channel after the delete").isEmpty();
+            try (Connection c = connect()) {
+                assertThat(count(c, "select count(*) from baymax.nudge where id = ?", trend))
+                        .as("the trend keyed to an older paper's reading, quoting this one").isZero();
+                assertThat(count(c, "select count(*) from baymax.nudge where id = ?", changed))
+                        .as("the medicine_changed keyed to a newer prescription, quoting this one").isZero();
+                assertThat(DeletionSweep.textStillHolding(c, List.of(value, medicine))).as("text still holding the deleted paper").isEmpty();
+            }
+        });
+    }
+
+    /**
+     * The other direction of the delete rule: what reached the family stays until PO decision P1, and "reached" is read
+     * from the message, never from {@code nudge.status} alone. A gated nudge keeps {@code status = 'gated'} after the
+     * reviewer approves it and WhatsApp accepts it (approve updates only the message), and that row is the cap ledger
+     * ({@code countedSince} counts sent and gated): deleting it would let the family get one nudge more than the cap.
+     */
+    @Test
+    void deliveredNudgesOfADeletedPaperAreKeptAndStillCounted() {
+        runner().run(context -> {
+            Fixture f = paperOf(context, "+8801700000484");
+            Ids ids = ids(f.document);
+            UUID sentMessage = seedDeliveredNudgeMessage(f, "released", "Ma's follow-up: " + followUp);
+            UUID sent = seedNudge(f, "follow_up_due", "follow_up:" + ids.followUp, "sent",
+                    "{\"patient\":\"Ma\",\"instruction\":\"" + followUp + "\"}", sentMessage);
+            UUID approvedMessage = seedDeliveredNudgeMessage(f, "approved", "Ma's course of " + medicine + " ends");
+            UUID approved = seedNudge(f, "course_ending", "medication:" + ids.medication, "gated",
+                    "{\"patient\":\"Ma\",\"medicine\":\"" + medicine + "\"}", approvedMessage);
+            NudgePort nudges = context.getBean(NudgePort.class);
+            Instant week = Instant.now().minus(Duration.ofDays(7));
+            long counted = nudges.countedSince(f.patient.id(), week).block();
+            assertThat(counted).as("the cap ledger counts both delivered nudges before the delete").isEqualTo(2);
+
+            delete(f.client, f.session, f.document, deleteToken(f.client, f.session, f.document)).expectStatus().isOk();
+
+            try (Connection c = connect()) {
+                assertThat(count(c, "select count(*) from baymax.nudge where id = ?", sent))
+                        .as("the sent nudge, delivered history kept pending P1").isEqualTo(1);
+                assertThat(count(c, "select count(*) from baymax.nudge where id = ?", approved))
+                        .as("the gated nudge whose approved message WhatsApp accepted, kept pending P1").isEqualTo(1);
+                assertThat(count(c, "select count(*) from baymax.outbound_message where id = ?", sentMessage))
+                        .as("the sent nudge's delivered message").isEqualTo(1);
+                assertThat(count(c, "select count(*) from baymax.outbound_message where id = ?", approvedMessage))
+                        .as("the approved nudge's delivered message").isEqualTo(1);
+            }
+            assertThat(nudges.countedSince(f.patient.id(), week).block()).as("the cap ledger after the delete").isEqualTo(counted);
+        });
+    }
+
+    /**
+     * Review Focus 4 on the path after extraction: the paper is DONE and its explanation is being written (the EXPLAIN
+     * reply is held) when the family deletes it. Whatever the writer — this chain, the urgency sweep, a retake — a
+     * message naming a paper that no longer exists is never stored, so it is neither delivered nor left for the
+     * reviewer to approve. The wait is on positive signals: the held call arrived, the reply went, the chain's last line.
+     */
+    @Test
+    void anExplanationFinishedAfterTheDeleteIsNeitherStoredNorSent() {
+        PaintedPaper.Hold hold = PaintedPaper.Hold.ofTheExplanation();
+        runner().withBean(PaintedPaper.Hold.class, () -> hold).run(context -> {
+            assertThat(context).hasNotFailed();
+            Fixture f = new Fixture(context, "+8801700000485");
+            int mark = f.delivery.handed.size();
+            try {
+                f.document = upload(f);
+                assertThat(hold.asked.await(30, TimeUnit.SECONDS)).as("the explanation's model call arrived and is held").isTrue();
+                delete(f.client, f.session, f.document, deleteToken(f.client, f.session, f.document)).expectStatus().isOk();
+            } finally {
+                hold.modelReleased.tryEmitEmpty();
+            }
+            assertThat(hold.replied.await(30, TimeUnit.SECONDS)).as("the held EXPLAIN reply went out within 30 s").isTrue();
+            String line = awaitChainEnd(f.document);
+
+            assertThat(f.delivery.since(mark, f.patient.familyId()).stream().map(OutboundMessage::body).toList())
+                    .as("messages handed to the channel (chain ended: %s)", line).isEmpty();
+            try (Connection c = connect()) {
+                assertThat(count(c, "select count(*) from baymax.outbound_message where document_id = ?", f.document))
+                        .as("messages naming the paper deleted while its explanation was written, delivered or not").isZero();
+                assertThat(DeletionSweep.tablesStillHolding(c, f.document)).as("tables still holding the paper").isEmpty();
+                assertThat(DeletionSweep.textStillHolding(c, List.of(value, medicine, followUp, f.document.toString())))
+                        .as("text still holding the paper").isEmpty();
+            }
+            assertThat(f.keysInBucket()).as("the bucket under the paper").isEmpty();
         });
     }
 
@@ -450,11 +581,7 @@ class PaperDeleteApiTest {
         List<String> ends = List.of("document finished documentId=" + document, "document processing ended in error documentId=" + document,
                 "document deleted while being read documentId=" + document);
         for (int i = 0; i < 120; i++) {
-            List<String> lines;
-            synchronized (chain.list) {
-                lines = chain.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
-            }
-            for (String l : lines) {
+            for (String l : chainLines()) {
                 if (ends.stream().anyMatch(l::contains)) {
                     return l;
                 }
@@ -462,6 +589,12 @@ class PaperDeleteApiTest {
             Thread.sleep(250);
         }
         throw new AssertionError("timed out after 30 s waiting for the intake chain's last line for " + document);
+    }
+
+    private List<String> chainLines() {
+        synchronized (chain.list) {
+            return chain.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
+        }
     }
 
     private static String deleteToken(WebTestClient client, String session, UUID document) {
@@ -518,9 +651,55 @@ class PaperDeleteApiTest {
         }
     }
 
-    private static void seedNudge(Fixture f, String rule, String trigger, String status, String vars, UUID message) throws Exception {
+    /**
+     * A nudge message the provider accepted (V14: {@code sent_at} with {@code delivery_status = 'sent'} and the
+     * provider's id; a fictional one), released at once or approved by the reviewer.
+     */
+    private static UUID seedDeliveredNudgeMessage(Fixture f, String gateStatus, String body) throws Exception {
+        try (Connection c = connect(); PreparedStatement s = c.prepareStatement("insert into baymax.outbound_message "
+                + "(family_id, patient_id, kind, urgency, body, gate_status, reviewer, decided_at, sent_at, delivery_status, "
+                + "provider_message_id) values (?, ?, 'nudge', 'routine', ?, ?, ?, ?, now(), 'sent', ?) returning id")) {
+            s.setObject(1, f.patient.familyId());
+            s.setObject(2, f.patient.id());
+            s.setString(3, body);
+            s.setString(4, gateStatus);
+            boolean approved = "approved".equals(gateStatus);
+            s.setString(5, approved ? "tanvir" : null);
+            s.setObject(6, approved ? java.sql.Timestamp.from(Instant.now()) : null);
+            s.setString(7, "wamid.TEST-" + UUID.randomUUID());
+            try (ResultSet rs = s.executeQuery()) {
+                rs.next();
+                return rs.getObject(1, UUID.class);
+            }
+        }
+    }
+
+    /** Runs one statement over the test's own connection, binding {@code args} in order. */
+    private static UUID insert(String sql, Object... args) throws Exception {
+        try (Connection c = connect(); PreparedStatement s = c.prepareStatement(sql + " returning id")) {
+            for (int i = 0; i < args.length; i++) {
+                s.setObject(i + 1, args[i]);
+            }
+            try (ResultSet rs = s.executeQuery()) {
+                rs.next();
+                return rs.getObject(1, UUID.class);
+            }
+        }
+    }
+
+    private static void exec(String sql, Object... args) throws Exception {
+        try (Connection c = connect(); PreparedStatement s = c.prepareStatement(sql)) {
+            for (int i = 0; i < args.length; i++) {
+                s.setObject(i + 1, args[i]);
+            }
+            s.executeUpdate();
+        }
+    }
+
+    private static UUID seedNudge(Fixture f, String rule, String trigger, String status, String vars, UUID message) throws Exception {
         try (Connection c = connect(); PreparedStatement s = c.prepareStatement("insert into baymax.nudge (family_id, patient_id, rule, "
-                + "trigger_key, urgency, status, vars_json, message_id, hold_until) values (?, ?, ?, ?, ?, ?, cast(? as jsonb), ?, ?)")) {
+                + "trigger_key, urgency, status, vars_json, message_id, hold_until) values (?, ?, ?, ?, ?, ?, cast(? as jsonb), ?, ?) "
+                + "returning id")) {
             s.setObject(1, f.patient.familyId());
             s.setObject(2, f.patient.id());
             s.setString(3, rule);
@@ -530,7 +709,10 @@ class PaperDeleteApiTest {
             s.setString(7, vars);
             s.setObject(8, message);
             s.setObject(9, "held".equals(status) ? java.sql.Timestamp.from(Instant.now().minus(Duration.ofHours(1))) : null);
-            s.executeUpdate();
+            try (ResultSet rs = s.executeQuery()) {
+                rs.next();
+                return rs.getObject(1, UUID.class);
+            }
         }
     }
 

@@ -86,11 +86,15 @@ class SignInApiHandlerTest {
         SessionAuthFilter sessions = new SessionAuthFilter(auth, properties);
         properties.getWeb().setPublicOrigin(ORIGIN);
         AppApiGuard guard = new AppApiGuard(sessions, properties);
-        MeApiHandler me = new MeApiHandler(mock(TimelineUseCase.class), mock(AttentionUseCase.class), properties);
+        TimelineUseCase timeline = mock(TimelineUseCase.class);
+        MeApiHandler me = new MeApiHandler(timeline, mock(AttentionUseCase.class), properties);
         return WebTestClient.bindToRouterFunction(new AppApiRouter().mediooAppApiRoutes(me,
                 new SignInApiHandler(auth, sessions, properties),
                 new PaperApiHandler(mock(ResultUseCase.class), new UiCopy()),
-                new UploadApiHandler(mock(com.elioo.baymax.web.application.port.in.UploadUseCase.class), properties, new UiCopy()), guard)).build();
+                new UploadApiHandler(mock(com.elioo.baymax.web.application.port.in.UploadUseCase.class), properties, new UiCopy()),
+                new PaperStatusApiHandler(mock(ResultUseCase.class)),
+                new PaperDeleteApiHandler(timeline, new DeleteConfirmation(properties, java.time.Clock.systemUTC())),
+                guard)).build();
     }
 
     /** The HTML code page, rendered by {@link SignInPages} over the same mocks and properties. */

@@ -7,6 +7,7 @@ import com.elioo.baymax.outbound.domain.OutboundMessage;
 import com.elioo.baymax.outbound.domain.Urgency;
 import io.r2dbc.spi.Row;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
@@ -17,6 +18,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class PostgresOutboundMessageAdapter implements OutboundMessagePort {
@@ -27,10 +29,22 @@ public class PostgresOutboundMessageAdapter implements OutboundMessagePort {
 
     private final DatabaseClient db;
 
+    /**
+     * Stores the message — unless it names a paper that no longer exists, in which case nothing is stored and the result
+     * is empty. This is the one place every writer of a paper's message meets (the chain's explanation, the urgency
+     * sweep, a retake, a detail), so "no message about a deleted paper" is asserted here once rather than on each path:
+     * a paper deleted while its explanation was being composed (an EXPLAIN call takes seconds) would otherwise get a
+     * RELEASED message delivered straight away, or a PENDING one a reviewer could still approve ({@code document_id}
+     * has no foreign key, V9). The paper's row is read {@code FOR KEY SHARE}, and the delete locks it {@code FOR
+     * UPDATE} first ({@code PostgresDocumentRecordAdapter.deleteDocument}): a message stored before the delete is
+     * withdrawn by it, one stored during it waits and is then refused.
+     */
     @Override
     public Mono<OutboundMessage> save(OutboundMessage m) {
         var spec = db.sql("INSERT INTO " + T + " (family_id, patient_id, document_id, kind, urgency, urgency_reasons, body, gate_status, sent_at, created_at) "
-                        + "VALUES (:family, :patient, :document, :kind, :urgency, :reasons, :body, :status, :sent, :created) RETURNING " + COLS)
+                        + "SELECT :family, :patient, :document, :kind, :urgency, :reasons, :body, :status, :sent, :created "
+                        + "WHERE CAST(:document AS uuid) IS NULL OR EXISTS (SELECT 1 FROM " + BaymaxSchema.NAME
+                        + ".document d WHERE d.id = :document FOR KEY SHARE) RETURNING " + COLS)
                 .bind("family", m.familyId()).bind("kind", m.kind().dbValue()).bind("urgency", m.urgency().dbValue())
                 .bind("status", m.gateStatus().dbValue()).bind("created", at(m.createdAt()))
                 .bind("reasons", UrgencyReasonsJson.encode(m.urgencyReasons()));
@@ -38,7 +52,9 @@ public class PostgresOutboundMessageAdapter implements OutboundMessagePort {
         spec = m.documentId() == null ? spec.bindNull("document", UUID.class) : spec.bind("document", m.documentId());
         spec = m.body() == null ? spec.bindNull("body", String.class) : spec.bind("body", m.body());
         spec = m.sentAt() == null ? spec.bindNull("sent", OffsetDateTime.class) : spec.bind("sent", at(m.sentAt()));
-        return spec.map((row, meta) -> from(row)).one();
+        return spec.map((row, meta) -> from(row)).one()
+                .switchIfEmpty(Mono.fromRunnable(() -> log.info("[baymax] message withdrawn: document deleted documentId={} kind={} gate={}",
+                        m.documentId(), m.kind().dbValue(), m.gateStatus().dbValue())));
     }
 
     @Override
