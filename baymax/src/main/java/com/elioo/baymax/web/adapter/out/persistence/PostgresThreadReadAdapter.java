@@ -1,6 +1,7 @@
 package com.elioo.baymax.web.adapter.out.persistence;
 
 import com.elioo.baymax.config.BaymaxSchema;
+import com.elioo.baymax.outbound.adapter.out.persistence.PostgresOutboundMessageAdapter;
 import com.elioo.baymax.outbound.domain.OutboundMessage;
 import com.elioo.baymax.web.application.port.out.ThreadReadPort;
 import com.elioo.baymax.web.domain.ThreadItem;
@@ -27,6 +28,12 @@ import java.util.UUID;
  *   <li>{@code document_id} is NULL or still names a {@code document} row (S10): a deleted paper's delivered explanation
  *       stays stored (P1 is the PO's) and is not shown.</li>
  * </ul>
+ * And one message is left out because the thread already shows it (review of #135, finding 6): a DONE paper's card
+ * carries its newest explanation's body as {@code wording} ({@code ResultService.gate}, which reads
+ * {@code latestOfKind}), so that one explanation is not listed a second time as a bubble after the card. It is picked by
+ * the very order {@code latestOfKind} uses ({@link PostgresOutboundMessageAdapter#LATEST_OF_KIND_ORDER}); an older or
+ * re-sent explanation of the same paper is still listed. A share member's card carries that wording too, as the paper
+ * page does: S4 withholds the owner's message rows, not the card's wording.
  * The order is the upload or acceptance instant, then {@code paper} above {@code message} on a tie, then id, all newest
  * first, and the cursor compares the same triple.
  */
@@ -48,11 +55,17 @@ public class PostgresThreadReadAdapter implements ThreadReadPort {
                    AND m.family_id = :viewer
                    AND m.sent_at IS NOT NULL AND m.delivery_status = 'sent'
                    AND (m.document_id IS NULL OR EXISTS (SELECT 1 FROM %1$s.document x WHERE x.id = m.document_id))
+                   AND NOT (m.kind = 'explanation' AND EXISTS (
+                        SELECT 1 FROM %1$s.document c
+                         WHERE c.id = m.document_id AND c.patient_id = :patient AND c.status = 'DONE'
+                           AND m.id = (SELECT e.id FROM %1$s.outbound_message e
+                                        WHERE e.document_id = c.id AND e.kind = 'explanation'
+                                        ORDER BY %2$s LIMIT 1)))
             ) t
             WHERE (t.at, t.item, t.id) < (:at, :item, :id)
             ORDER BY t.at DESC, t.item DESC, t.id DESC
             LIMIT :limit
-            """.formatted(S);
+            """.formatted(S, PostgresOutboundMessageAdapter.LATEST_OF_KIND_ORDER);
 
     private final DatabaseClient db;
 

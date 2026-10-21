@@ -14,8 +14,10 @@ import java.util.Map;
  *   <li>{@code {"kind": "message", "at", "message_kind", "document_id", "body"}}: {@code at} is when the provider accepted
  *       it, {@code message_kind} its stored kind, {@code body} the text as sent.</li>
  * </ul>
- * Nothing about the delivery or the review leaves Java: no wamid, delivery status, reviewer, reject reason, gate status,
- * urgency reasons or model. Instants are ISO-8601 UTC.
+ * A message item carries no wamid, delivery status, reviewer, reject reason, gate status or model; a paper's card is the
+ * paper JSON exactly as {@code GET /app/api/documents/{id}} sends it (its {@code gate}, {@code urgency}, {@code reasons}
+ * and {@code wording} included). The newest explanation of a DONE paper is not a message item: the card carries it as
+ * {@code wording}. {@code body} is the WhatsApp text as stored. Instants are ISO-8601 UTC.
  */
 final class ThreadJson {
 

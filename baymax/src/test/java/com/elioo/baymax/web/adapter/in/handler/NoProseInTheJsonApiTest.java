@@ -167,6 +167,7 @@ class NoProseInTheJsonApiTest {
                 FamilyAccount.Plan.FREE, T, T)));
         DocumentReadPort reads = mock(DocumentReadPort.class);
         when(reads.retakeOrdinal(DOC)).thenReturn(Mono.just(1));
+        when(reads.retakeReplaced(DOC)).thenReturn(Mono.just(false));
         ResultService result = new ResultService(records, documents, intake, audit, clock, mock(OutboundMessagePort.class), urgency,
                 new BaymaxProperties(), reads);
         when(storage.measuredObjectsOf(any(), any())).thenReturn(Flux.empty());

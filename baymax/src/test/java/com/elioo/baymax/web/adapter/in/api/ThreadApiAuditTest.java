@@ -38,22 +38,32 @@ class ThreadApiAuditTest {
             String k = "thread-audit";
             UUID f = FixedPapers.family(POSTGRES, FixedPapers.id(k, "family"), "+8801700000951", "Rahim");
             PatientProfile ma = FixedPapers.patient(POSTGRES, FixedPapers.id(k, "ma"), f, "Ma");
+            // both branches of ResultUseCase.card (review of #135, finding 1): three finished papers (its result branch)
+            // and two still being read, RECEIVED and PROCESSING (its reading branch), so a view recorded by either fails
             List<UUID> papers = new ArrayList<>();
-            for (int i = 0; i < 5; i++) {
+            List<String> statuses = List.of("DONE", "RECEIVED", "DONE", "PROCESSING", "DONE");
+            for (int i = 0; i < statuses.size(); i++) {
                 Instant at = Instant.parse("2026-10-01T04:00:00Z").plus(Duration.ofDays(i));
-                papers.add(FixedPapers.paper(POSTGRES, FixedPapers.id(k, "paper-" + i), ma, "lab_report", "DONE",
-                        at.toString().substring(0, 10), at, i == 0 ? "now" : "routine"));
+                boolean done = "DONE".equals(statuses.get(i));
+                papers.add(FixedPapers.paper(POSTGRES, FixedPapers.id(k, "paper-" + i), ma, done ? "lab_report" : null, statuses.get(i),
+                        done ? at.toString().substring(0, 10) : null, at, !done ? null : i == 0 ? "now" : "routine"));
             }
             String session = FixedPapers.session(context, f, NOW);
             long before = views(ma);
 
             client.get().uri("/app/api/patients/" + ma.id() + "/thread").cookie("baymax_session", session).exchange()
-                    .expectStatus().isOk().expectBody().jsonPath("$.items.length()").isEqualTo(5);
-            assertThat(views(ma) - before).as("document_view rows a thread read of five papers added").isEqualTo(0);
+                    .expectStatus().isOk().expectBody().jsonPath("$.items.length()").isEqualTo(5)
+                    .jsonPath("$.items[?(@.card.status == 'RECEIVED')]").isNotEmpty()
+                    .jsonPath("$.items[?(@.card.status == 'PROCESSING')]").isNotEmpty();
+            assertThat(views(ma) - before).as("document_view rows a thread read of five papers (three DONE, one RECEIVED, one"
+                    + " PROCESSING) added").isEqualTo(0);
 
-            // the guard: the counter counts. One paper GET is one view, so the zero above is not a query that sees nothing
+            // the guard: the counter counts, on both branches. One finished paper's GET is one view, and so is one in-flight
+            // paper's, so the zero above is not a query that sees nothing, nor a reading branch that could never record
             client.get().uri("/app/api/documents/" + papers.get(2)).cookie("baymax_session", session).exchange().expectStatus().isOk();
-            assertThat(views(ma) - before).as("document_view rows after one GET /app/api/documents/{id}").isEqualTo(1);
+            assertThat(views(ma) - before).as("document_view rows after one GET /app/api/documents/{id} of a DONE paper").isEqualTo(1);
+            client.get().uri("/app/api/documents/" + papers.get(3)).cookie("baymax_session", session).exchange().expectStatus().isOk();
+            assertThat(views(ma) - before).as("document_view rows after one more GET, of the PROCESSING paper").isEqualTo(2);
         });
     }
 }

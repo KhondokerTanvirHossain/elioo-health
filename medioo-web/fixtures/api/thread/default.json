@@ -7,7 +7,7 @@
     "items": [
       {
         "at": "2026-10-20T03:00:00Z",
-        "body": "Ma's follow-up visit is in three days.",
+        "body": "Ma-এর ফলো-আপের তারিখ কাছে এসে গেছে: ২৪ অক্টোবর।\nপ্রেসক্রিপশনে লেখা: \"৭ দিন পর রিপোর্ট নিয়ে আবার আসবেন\"।\nসম্ভব হলে সেই দিন ডাক্তার দেখিয়ে নিন; সাথে নিয়ে যাবেন আগের রিপোর্ট ও প্রেসক্রিপশনগুলো।\nএই ধরনের বার্তা আর চান না? এখানে ক্লিক করুন: https://baymax.eliooo.org/app/nudges/opt-out?p=2d7a649c-ead0-3fde-aa67-d4705b4d5f7a&t=5e9edf6d0a2a4913867500000000beef",
         "document_id": null,
         "kind": "message",
         "message_kind": "nudge"
@@ -61,11 +61,11 @@
         "kind": "paper"
       },
       {
-        "at": "2026-10-12T04:02:00Z",
-        "body": "Ma's report from Shapla Diagnostics has been read. Every value printed is inside its range.",
+        "at": "2026-10-12T04:05:00Z",
+        "body": "ল্যাব রিপোর্ট, ১২ অক্টোবর — বিস্তারিত:\nটাইমলাইন: https://baymax.eliooo.org/app/documents/0426f85b-bc70-326a-8083-1753e8504005",
         "document_id": "0426f85b-bc70-326a-8083-1753e8504005",
         "kind": "message",
-        "message_kind": "explanation"
+        "message_kind": "detail"
       },
       {
         "at": "2026-10-12T04:00:00Z",
@@ -108,7 +108,7 @@
           "viewer": {
             "bangladesh": true
           },
-          "wording": "Ma's report from Shapla Diagnostics has been read. Every value printed is inside its range."
+          "wording": "রিপোর্টটি পেয়েছি — ল্যাব রিপোর্ট, ১২ অক্টোবর।\nMa-এর টাইমলাইনে রেখে দিলাম: https://baymax.eliooo.org/app/documents/0426f85b-bc70-326a-8083-1753e8504005\nকাগজে যা লেখা আছে নিচে তুলে দিলাম।\nবিস্তারিত জানতে চাইলে লিখুন \"বিস্তারিত\"।"
         },
         "kind": "paper"
       }

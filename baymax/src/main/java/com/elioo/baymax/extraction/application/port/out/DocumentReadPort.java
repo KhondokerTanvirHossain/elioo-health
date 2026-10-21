@@ -20,6 +20,13 @@ public interface DocumentReadPort {
     Mono<Integer> retakeOrdinal(UUID documentId);
 
     /**
+     * Review of #135, finding 10: whether a NEEDS_RETAKE document has already been sent again, that is, another paper names
+     * it in {@code replaces_document_id} and did not FAIL (the chat stack's own rule, {@code DocumentSql.NOT_REPLACED}).
+     * False for any other status, for a retake still waiting, and for a document that does not exist.
+     */
+    Mono<Boolean> retakeReplaced(UUID documentId);
+
+    /**
      * B6, the value sheet's history: this patient's observations of {@code canonicalName} on finished (DONE) papers
      * ordered before {@code beforeDocumentId} (timeline date, then sent time), newest first. The unit is NOT compared
      * here: the caller folds it (one fold for the whole module, {@code MarkerThreshold.sameUnit}). Each map holds

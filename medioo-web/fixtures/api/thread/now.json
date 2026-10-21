@@ -6,13 +6,6 @@
   "body": {
     "items": [
       {
-        "at": "2026-10-20T04:30:00Z",
-        "body": "Ma's potassium is printed above its range. Please speak to a doctor today.",
-        "document_id": "fc239e1d-d4a9-36ac-be87-e25aec279cbc",
-        "kind": "message",
-        "message_kind": "explanation"
-      },
-      {
         "at": "2026-10-20T04:00:00Z",
         "card": {
           "banner": {
@@ -59,7 +52,7 @@
           },
           "printed_date": "2026-10-20",
           "reasons": [
-            "other"
+            "value_critical"
           ],
           "received_at": "2026-10-20T04:00:00Z",
           "status": "DONE",
@@ -75,20 +68,20 @@
               },
               "display_kind": "critical",
               "id": "48c27e90-48d7-396c-85cd-85cb46e3e366",
-              "in_now_block": false,
+              "in_now_block": true,
               "name": "Potassium",
               "pin": 98.0,
               "ref_high": "5.1",
               "ref_low": "3.5",
               "side": "high",
               "unit": "mmol/L",
-              "value": "6.9"
+              "value": "12.0"
             }
           ],
           "viewer": {
             "bangladesh": true
           },
-          "wording": "Ma's potassium is printed above its range. Please speak to a doctor today."
+          "wording": "রিপোর্টটি পেয়েছি — ল্যাব রিপোর্ট, ২০ অক্টোবর।\nPotassium এসেছে 12.0 mmol/L, যা স্বাভাবিকের চেয়ে অনেক বেশি।\nএখনই ডাক্তারের কাছে যান। দেরি করবেন না।\nরোগী যদি অজ্ঞান হন, শ্বাস নিতে কষ্ট হয়, বা বুকে ব্যথা হয় — সরাসরি নিকটস্থ হাসপাতালের জরুরি বিভাগে যান।\nসাথে নিয়ে যাবেন: এই রিপোর্ট এবং আগের প্রেসক্রিপশনগুলো।"
         },
         "kind": "paper"
       }

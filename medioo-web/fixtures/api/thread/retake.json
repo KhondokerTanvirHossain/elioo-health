@@ -7,7 +7,7 @@
     "items": [
       {
         "at": "2026-10-19T04:01:00Z",
-        "body": "The photo of Ma's paper is too blurred to read. Please send it again in good light.",
+        "body": "ছবিটা স্পষ্ট বোঝা যাচ্ছে না।\nদিনের আলোয়, কাগজটা সমান করে রেখে আরেকবার ছবি তুলে পাঠান।\nঅনুমান করে কিছু বলতে চাই না — তাই আগে ছবিটা দেখে নিই।",
         "document_id": "6167322d-9512-3418-94db-ff72f6ff0673",
         "kind": "message",
         "message_kind": "retake"
@@ -48,7 +48,8 @@
           "received_at": "2026-10-19T04:00:00Z",
           "retake": {
             "ordinal": 1,
-            "reason_key": "retake.reason.low_overall"
+            "reason_key": "retake.reason.low_overall",
+            "replaced": false
           },
           "status": "NEEDS_RETAKE",
           "unverified": null,

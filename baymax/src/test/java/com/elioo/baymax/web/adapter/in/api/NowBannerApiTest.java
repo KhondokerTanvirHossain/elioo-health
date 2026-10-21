@@ -586,12 +586,20 @@ class NowBannerApiTest {
             String acks = "SELECT count(*) FROM baymax.now_ack WHERE document_id = '" + paper + "'";
             long before = count(acks);
 
-            for (Map.Entry<String, String> dead : Map.of("an expired session", expired, "a signed-out token", signedOut).entrySet()) {
+            // soft (review of #135, finding 11): a replay that lets a dead session reach the handler shows both the status
+            // and the now_ack count going red, so the failure names the defect (an ack stored), not merely a wrong code
+            org.assertj.core.api.SoftAssertions soft = new org.assertj.core.api.SoftAssertions();
+            for (Map.Entry<String, String> dead : new java.util.TreeMap<>(Map.of("an expired session", expired, "a signed-out token",
+                    signedOut)).entrySet()) {
                 EntityExchangeResult<byte[]> r = put(client, dead.getValue(), Map.of("seen", seen)).expectBody().returnResult();
-                assertThat(r.getStatus().value()).as("PUT /app/api/now-banner/ack with " + dead.getKey()).isEqualTo(401);
-                assertThat(body(r.getResponseBody())).as("its body").isEqualTo(body("{\"reason\":\"UNAUTHENTICATED\"}".getBytes()));
-                assertThat(count(acks)).as("now_ack rows for the paper after the ack with " + dead.getKey()).isEqualTo(before);
+                soft.assertThat(r.getStatus().value()).as("PUT /app/api/now-banner/ack with " + dead.getKey()).isEqualTo(401);
+                soft.assertThat(r.getResponseBody()).as("its body").isNotNull();
+                if (r.getResponseBody() != null) {
+                    soft.assertThat(body(r.getResponseBody())).as("its body").isEqualTo(body("{\"reason\":\"UNAUTHENTICATED\"}".getBytes()));
+                }
+                soft.assertThat(count(acks)).as("now_ack rows for the paper after the ack with " + dead.getKey()).isEqualTo(before);
             }
+            soft.assertAll();
             assertThat(before).isZero();
             ack(client, a.session(), seen);
             assertThat(count(acks)).as("the same seen set from a live session").isEqualTo(1);

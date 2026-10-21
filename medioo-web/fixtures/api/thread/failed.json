@@ -7,7 +7,7 @@
     "items": [
       {
         "at": "2026-10-19T04:05:00Z",
-        "body": "We could not finish reading Ma's paper. Nothing was lost; please send it again.",
+        "body": "দুঃখিত — এই কাগজটা এখন পড়া গেল না। এটা আপনার ছবির দোষ নয়।\nএটা এ মাসের হিসাবে গোনা হবে না। কিছুক্ষণ পরে ছবিটা আবার পাঠান।",
         "document_id": "779e693e-ca29-3a3c-95ce-f57a097f7d8c",
         "kind": "message",
         "message_kind": "failure"

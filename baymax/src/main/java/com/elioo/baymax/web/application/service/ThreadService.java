@@ -21,7 +21,8 @@ import java.util.UUID;
  * SQL runs; then one page of the read model for that patient, as this viewer sees it ({@link ThreadReadPort}), with one
  * row more than a page to know whether there is a next one. Each paper's card is read through {@link ResultUseCase#card},
  * which records no DOCUMENT_VIEW: reading the thread is not opening a paper. A paper deleted between the page and its
- * card is left out of the page, never a 404 for the whole thread.
+ * card ({@code document_not_found}, and only that reason) is left out of the page, never a 404 for the whole thread; any
+ * other failure of a card, a 404 for another reason included, fails the request rather than silently dropping a paper.
  */
 @Service
 @RequiredArgsConstructor
@@ -61,7 +62,10 @@ public class ThreadService implements ThreadUseCase {
         };
     }
 
+    /** The reason {@code ResultService.visibleDocument} answers for a paper that is not there (or not this family's). */
+    static final String DOCUMENT_NOT_FOUND = "document_not_found";
+
     private static boolean gone(Throwable e) {
-        return e instanceof BaymaxException be && be.status() == HttpStatus.NOT_FOUND;
+        return e instanceof BaymaxException be && be.status() == HttpStatus.NOT_FOUND && DOCUMENT_NOT_FOUND.equals(be.reason());
     }
 }

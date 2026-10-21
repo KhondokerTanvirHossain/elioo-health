@@ -2,6 +2,7 @@ package com.elioo.baymax.extraction.adapter.out.persistence;
 
 import com.elioo.baymax.config.BaymaxSchema;
 import com.elioo.baymax.extraction.application.port.out.DocumentReadPort;
+import com.elioo.baymax.web.adapter.out.persistence.DocumentSql;
 import lombok.RequiredArgsConstructor;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.stereotype.Component;
@@ -23,6 +24,18 @@ public class PostgresDocumentReadAdapter implements DocumentReadPort {
     static final int READINGS_SCANNED = 200;
 
     private final DatabaseClient db;
+
+    /**
+     * A NEEDS_RETAKE paper that {@link DocumentSql#NOT_REPLACED} no longer counts as owed: the one predicate the attention
+     * stack and the health screen use, so the thread's card and the stack cannot disagree about the same retake.
+     */
+    @Override
+    public Mono<Boolean> retakeReplaced(UUID documentId) {
+        return db.sql("SELECT d.status = 'NEEDS_RETAKE' AND NOT (" + DocumentSql.NOT_REPLACED + ") AS replaced FROM " + S
+                        + ".document d WHERE d.id = :id")
+                .bind("id", documentId)
+                .map((row, meta) -> Boolean.TRUE.equals(row.get("replaced", Boolean.class))).one().defaultIfEmpty(false);
+    }
 
     /**
      * This patient's NEEDS_RETAKE papers sent after their last finished one (DONE or FAILED) and up to this one. A paper

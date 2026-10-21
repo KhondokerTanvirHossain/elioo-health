@@ -6,11 +6,11 @@
   "body": {
     "items": [
       {
-        "at": "2026-09-15T04:02:00Z",
-        "body": "Ma's report number 15 has been read. Every value printed is inside its range.",
+        "at": "2026-09-15T04:03:00Z",
+        "body": "ল্যাব রিপোর্ট, ১৫ সেপ্টেম্বর — বিস্তারিত:\nটাইমলাইন: https://baymax.eliooo.org/app/documents/97316a6e-5d8f-3b9c-b67d-8b2db60985a4",
         "document_id": "97316a6e-5d8f-3b9c-b67d-8b2db60985a4",
         "kind": "message",
-        "message_kind": "explanation"
+        "message_kind": "detail"
       },
       {
         "at": "2026-09-15T04:00:00Z",
@@ -53,16 +53,16 @@
           "viewer": {
             "bangladesh": true
           },
-          "wording": "Ma's report number 15 has been read. Every value printed is inside its range."
+          "wording": "রিপোর্টটি পেয়েছি — ল্যাব রিপোর্ট, ১৫ সেপ্টেম্বর।\nMa-এর টাইমলাইনে রেখে দিলাম: https://baymax.eliooo.org/app/documents/97316a6e-5d8f-3b9c-b67d-8b2db60985a4\nকাগজে যা লেখা আছে নিচে তুলে দিলাম।\nবিস্তারিত জানতে চাইলে লিখুন \"বিস্তারিত\"।"
         },
         "kind": "paper"
       },
       {
-        "at": "2026-09-14T04:02:00Z",
-        "body": "Ma's report number 14 has been read. Every value printed is inside its range.",
+        "at": "2026-09-14T04:03:00Z",
+        "body": "ল্যাব রিপোর্ট, ১৪ সেপ্টেম্বর — বিস্তারিত:\nটাইমলাইন: https://baymax.eliooo.org/app/documents/0274ac91-49d6-3b80-ad3d-9e8ac36daa5d",
         "document_id": "0274ac91-49d6-3b80-ad3d-9e8ac36daa5d",
         "kind": "message",
-        "message_kind": "explanation"
+        "message_kind": "detail"
       },
       {
         "at": "2026-09-14T04:00:00Z",
@@ -105,16 +105,16 @@
           "viewer": {
             "bangladesh": true
           },
-          "wording": "Ma's report number 14 has been read. Every value printed is inside its range."
+          "wording": "রিপোর্টটি পেয়েছি — ল্যাব রিপোর্ট, ১৪ সেপ্টেম্বর।\nMa-এর টাইমলাইনে রেখে দিলাম: https://baymax.eliooo.org/app/documents/0274ac91-49d6-3b80-ad3d-9e8ac36daa5d\nকাগজে যা লেখা আছে নিচে তুলে দিলাম।\nবিস্তারিত জানতে চাইলে লিখুন \"বিস্তারিত\"।"
         },
         "kind": "paper"
       },
       {
-        "at": "2026-09-13T04:02:00Z",
-        "body": "Ma's report number 13 has been read. Every value printed is inside its range.",
+        "at": "2026-09-13T04:03:00Z",
+        "body": "ল্যাব রিপোর্ট, ১৩ সেপ্টেম্বর — বিস্তারিত:\nটাইমলাইন: https://baymax.eliooo.org/app/documents/1eaa1453-ef51-382a-a49b-49acf0d1d1e0",
         "document_id": "1eaa1453-ef51-382a-a49b-49acf0d1d1e0",
         "kind": "message",
-        "message_kind": "explanation"
+        "message_kind": "detail"
       },
       {
         "at": "2026-09-13T04:00:00Z",
@@ -157,16 +157,16 @@
           "viewer": {
             "bangladesh": true
           },
-          "wording": "Ma's report number 13 has been read. Every value printed is inside its range."
+          "wording": "রিপোর্টটি পেয়েছি — ল্যাব রিপোর্ট, ১৩ সেপ্টেম্বর।\nMa-এর টাইমলাইনে রেখে দিলাম: https://baymax.eliooo.org/app/documents/1eaa1453-ef51-382a-a49b-49acf0d1d1e0\nকাগজে যা লেখা আছে নিচে তুলে দিলাম।\nবিস্তারিত জানতে চাইলে লিখুন \"বিস্তারিত\"।"
         },
         "kind": "paper"
       },
       {
-        "at": "2026-09-12T04:02:00Z",
-        "body": "Ma's report number 12 has been read. Every value printed is inside its range.",
+        "at": "2026-09-12T04:03:00Z",
+        "body": "ল্যাব রিপোর্ট, ১২ সেপ্টেম্বর — বিস্তারিত:\nটাইমলাইন: https://baymax.eliooo.org/app/documents/78af877f-51b3-38d9-9ad5-557e42efbb68",
         "document_id": "78af877f-51b3-38d9-9ad5-557e42efbb68",
         "kind": "message",
-        "message_kind": "explanation"
+        "message_kind": "detail"
       },
       {
         "at": "2026-09-12T04:00:00Z",
@@ -209,16 +209,16 @@
           "viewer": {
             "bangladesh": true
           },
-          "wording": "Ma's report number 12 has been read. Every value printed is inside its range."
+          "wording": "রিপোর্টটি পেয়েছি — ল্যাব রিপোর্ট, ১২ সেপ্টেম্বর।\nMa-এর টাইমলাইনে রেখে দিলাম: https://baymax.eliooo.org/app/documents/78af877f-51b3-38d9-9ad5-557e42efbb68\nকাগজে যা লেখা আছে নিচে তুলে দিলাম।\nবিস্তারিত জানতে চাইলে লিখুন \"বিস্তারিত\"।"
         },
         "kind": "paper"
       },
       {
-        "at": "2026-09-11T04:02:00Z",
-        "body": "Ma's report number 11 has been read. Every value printed is inside its range.",
+        "at": "2026-09-11T04:03:00Z",
+        "body": "প্রেসক্রিপশন, ১১ সেপ্টেম্বর — বিস্তারিত:\nটাইমলাইন: https://baymax.eliooo.org/app/documents/3640d900-8df8-3940-a42b-94f0515a65f8\n\nপ্রেসক্রিপশনে যা লেখা আছে:\nTab. Demoxin-1 500 mg · ১+০+১ · খাবারের পরে · ৭ দিন\nTab. Demoxin-2 500 mg · ১+০+১ · খাবারের পরে · ৭ দিন\nTab. Demoxin-3 500 mg · ১+০+১ · খাবারের পরে · ৭ দিন\nTab. Demoxin-4 500 mg · ১+০+১ · খাবারের পরে · ৭ দিন\nTab. Demoxin-5 500 mg · ১+০+১ · খাবারের পরে · ৭ দিন\nTab. Demoxin-6 500 mg · ১+০+১ · খাবারের পরে · ৭ দিন\nTab. Demoxin-7 500 mg · ১+০+১ · খাবারের পরে · ৭ দিন\nTab. Demoxin-8 500 mg · ১+০+১ · খাবারের পরে · ৭ দিন",
         "document_id": "3640d900-8df8-3940-a42b-94f0515a65f8",
         "kind": "message",
-        "message_kind": "explanation"
+        "message_kind": "detail"
       },
       {
         "at": "2026-09-11T04:00:00Z",
@@ -229,13 +229,102 @@
           "date_is_upload_day": false,
           "date_uncertain": false,
           "doctor": { },
-          "document_type": "lab_report",
+          "document_type": "prescription",
           "facility": "Shapla Diagnostics",
           "filed": true,
           "follow_up": [ ],
           "gate": "RELEASED",
           "id": "3640d900-8df8-3940-a42b-94f0515a65f8",
-          "medicines": [ ],
+          "medicines": [
+            {
+              "crop": {
+                "height": null,
+                "src": "/app/documents/3640d900-8df8-3940-a42b-94f0515a65f8/image?key=898ef9f6-a43a-3761-a236-4e2aa98b1218%2F000ff928-583c-3724-bb1d-2b13aa054503%2F3640d900-8df8-3940-a42b-94f0515a65f8%2Fmed-254c7b34.jpg",
+                "width": null
+              },
+              "dose_text": "১+০+১",
+              "duration_text": "৭ দিন",
+              "frequency_text": "খাবারের পরে",
+              "name": "Tab. Demoxin-1 500 mg"
+            },
+            {
+              "crop": {
+                "height": null,
+                "src": "/app/documents/3640d900-8df8-3940-a42b-94f0515a65f8/image?key=898ef9f6-a43a-3761-a236-4e2aa98b1218%2F000ff928-583c-3724-bb1d-2b13aa054503%2F3640d900-8df8-3940-a42b-94f0515a65f8%2Fmed-49451c22.jpg",
+                "width": null
+              },
+              "dose_text": "১+০+১",
+              "duration_text": "৭ দিন",
+              "frequency_text": "খাবারের পরে",
+              "name": "Tab. Demoxin-2 500 mg"
+            },
+            {
+              "crop": {
+                "height": null,
+                "src": "/app/documents/3640d900-8df8-3940-a42b-94f0515a65f8/image?key=898ef9f6-a43a-3761-a236-4e2aa98b1218%2F000ff928-583c-3724-bb1d-2b13aa054503%2F3640d900-8df8-3940-a42b-94f0515a65f8%2Fmed-52fe27c7.jpg",
+                "width": null
+              },
+              "dose_text": "১+০+১",
+              "duration_text": "৭ দিন",
+              "frequency_text": "খাবারের পরে",
+              "name": "Tab. Demoxin-3 500 mg"
+            },
+            {
+              "crop": {
+                "height": null,
+                "src": "/app/documents/3640d900-8df8-3940-a42b-94f0515a65f8/image?key=898ef9f6-a43a-3761-a236-4e2aa98b1218%2F000ff928-583c-3724-bb1d-2b13aa054503%2F3640d900-8df8-3940-a42b-94f0515a65f8%2Fmed-81cec878.jpg",
+                "width": null
+              },
+              "dose_text": "১+০+১",
+              "duration_text": "৭ দিন",
+              "frequency_text": "খাবারের পরে",
+              "name": "Tab. Demoxin-4 500 mg"
+            },
+            {
+              "crop": {
+                "height": null,
+                "src": "/app/documents/3640d900-8df8-3940-a42b-94f0515a65f8/image?key=898ef9f6-a43a-3761-a236-4e2aa98b1218%2F000ff928-583c-3724-bb1d-2b13aa054503%2F3640d900-8df8-3940-a42b-94f0515a65f8%2Fmed-f988f8ca.jpg",
+                "width": null
+              },
+              "dose_text": "১+০+১",
+              "duration_text": "৭ দিন",
+              "frequency_text": "খাবারের পরে",
+              "name": "Tab. Demoxin-5 500 mg"
+            },
+            {
+              "crop": {
+                "height": null,
+                "src": "/app/documents/3640d900-8df8-3940-a42b-94f0515a65f8/image?key=898ef9f6-a43a-3761-a236-4e2aa98b1218%2F000ff928-583c-3724-bb1d-2b13aa054503%2F3640d900-8df8-3940-a42b-94f0515a65f8%2Fmed-4dcf0c14.jpg",
+                "width": null
+              },
+              "dose_text": "১+০+১",
+              "duration_text": "৭ দিন",
+              "frequency_text": "খাবারের পরে",
+              "name": "Tab. Demoxin-6 500 mg"
+            },
+            {
+              "crop": {
+                "height": null,
+                "src": "/app/documents/3640d900-8df8-3940-a42b-94f0515a65f8/image?key=898ef9f6-a43a-3761-a236-4e2aa98b1218%2F000ff928-583c-3724-bb1d-2b13aa054503%2F3640d900-8df8-3940-a42b-94f0515a65f8%2Fmed-722a20b1.jpg",
+                "width": null
+              },
+              "dose_text": "১+০+১",
+              "duration_text": "৭ দিন",
+              "frequency_text": "খাবারের পরে",
+              "name": "Tab. Demoxin-7 500 mg"
+            },
+            {
+              "crop": {
+                "height": null,
+                "src": "/app/documents/3640d900-8df8-3940-a42b-94f0515a65f8/image?key=898ef9f6-a43a-3761-a236-4e2aa98b1218%2F000ff928-583c-3724-bb1d-2b13aa054503%2F3640d900-8df8-3940-a42b-94f0515a65f8%2Fmed-eba81002.jpg",
+                "width": null
+              },
+              "dose_text": "১+০+১",
+              "duration_text": "৭ দিন",
+              "frequency_text": "খাবারের পরে",
+              "name": "Tab. Demoxin-8 500 mg"
+            }
+          ],
           "owner": true,
           "page_count": 1,
           "pages": [
@@ -261,16 +350,16 @@
           "viewer": {
             "bangladesh": true
           },
-          "wording": "Ma's report number 11 has been read. Every value printed is inside its range."
+          "wording": "রিপোর্টটি পেয়েছি — প্রেসক্রিপশন, ১১ সেপ্টেম্বর।\nMa-এর টাইমলাইনে রেখে দিলাম: https://baymax.eliooo.org/app/documents/3640d900-8df8-3940-a42b-94f0515a65f8\nকাগজে যা লেখা আছে নিচে তুলে দিলাম।\nবিস্তারিত জানতে চাইলে লিখুন \"বিস্তারিত\"।\n\nপ্রেসক্রিপশনে যা লেখা আছে:\nTab. Demoxin-1 500 mg · ১+০+১ · খাবারের পরে · ৭ দিন\nTab. Demoxin-2 500 mg · ১+০+১ · খাবারের পরে · ৭ দিন\nTab. Demoxin-3 500 mg · ১+০+১ · খাবারের পরে · ৭ দিন\nTab. Demoxin-4 500 mg · ১+০+১ · খাবারের পরে · ৭ দিন\nTab. Demoxin-5 500 mg · ১+০+১ · খাবারের পরে · ৭ দিন\nTab. Demoxin-6 500 mg · ১+০+১ · খাবারের পরে · ৭ দিন\nTab. Demoxin-7 500 mg · ১+০+১ · খাবারের পরে · ৭ দিন\nTab. Demoxin-8 500 mg · ১+০+১ · খাবারের পরে · ৭ দিন"
         },
         "kind": "paper"
       },
       {
-        "at": "2026-09-10T04:02:00Z",
-        "body": "Ma's report number 10 has been read. Every value printed is inside its range.",
+        "at": "2026-09-10T04:03:00Z",
+        "body": "ল্যাব রিপোর্ট, ১০ সেপ্টেম্বর — বিস্তারিত:\nটাইমলাইন: https://baymax.eliooo.org/app/documents/5703abbc-288d-3128-82e1-b4fb202a70b4",
         "document_id": "5703abbc-288d-3128-82e1-b4fb202a70b4",
         "kind": "message",
-        "message_kind": "explanation"
+        "message_kind": "detail"
       },
       {
         "at": "2026-09-10T04:00:00Z",
@@ -313,16 +402,16 @@
           "viewer": {
             "bangladesh": true
           },
-          "wording": "Ma's report number 10 has been read. Every value printed is inside its range."
+          "wording": "রিপোর্টটি পেয়েছি — ল্যাব রিপোর্ট, ১০ সেপ্টেম্বর।\nMa-এর টাইমলাইনে রেখে দিলাম: https://baymax.eliooo.org/app/documents/5703abbc-288d-3128-82e1-b4fb202a70b4\nকাগজে যা লেখা আছে নিচে তুলে দিলাম।\nবিস্তারিত জানতে চাইলে লিখুন \"বিস্তারিত\"।"
         },
         "kind": "paper"
       },
       {
-        "at": "2026-09-09T04:02:00Z",
-        "body": "Ma's report number 9 has been read. Every value printed is inside its range.",
+        "at": "2026-09-09T04:03:00Z",
+        "body": "ল্যাব রিপোর্ট, ৯ সেপ্টেম্বর — বিস্তারিত:\nটাইমলাইন: https://baymax.eliooo.org/app/documents/03138ef5-a4aa-368d-8a0f-df9ce49e0366",
         "document_id": "03138ef5-a4aa-368d-8a0f-df9ce49e0366",
         "kind": "message",
-        "message_kind": "explanation"
+        "message_kind": "detail"
       },
       {
         "at": "2026-09-09T04:00:00Z",
@@ -365,16 +454,16 @@
           "viewer": {
             "bangladesh": true
           },
-          "wording": "Ma's report number 9 has been read. Every value printed is inside its range."
+          "wording": "রিপোর্টটি পেয়েছি — ল্যাব রিপোর্ট, ৯ সেপ্টেম্বর।\nMa-এর টাইমলাইনে রেখে দিলাম: https://baymax.eliooo.org/app/documents/03138ef5-a4aa-368d-8a0f-df9ce49e0366\nকাগজে যা লেখা আছে নিচে তুলে দিলাম।\nবিস্তারিত জানতে চাইলে লিখুন \"বিস্তারিত\"।"
         },
         "kind": "paper"
       },
       {
-        "at": "2026-09-08T04:02:00Z",
-        "body": "Ma's report number 8 has been read. Every value printed is inside its range.",
+        "at": "2026-09-08T04:03:00Z",
+        "body": "ল্যাব রিপোর্ট, ৮ সেপ্টেম্বর — বিস্তারিত:\nটাইমলাইন: https://baymax.eliooo.org/app/documents/260b99af-2aea-3d21-8bbc-2bf1226b2f8b",
         "document_id": "260b99af-2aea-3d21-8bbc-2bf1226b2f8b",
         "kind": "message",
-        "message_kind": "explanation"
+        "message_kind": "detail"
       },
       {
         "at": "2026-09-08T04:00:00Z",
@@ -417,16 +506,16 @@
           "viewer": {
             "bangladesh": true
           },
-          "wording": "Ma's report number 8 has been read. Every value printed is inside its range."
+          "wording": "রিপোর্টটি পেয়েছি — ল্যাব রিপোর্ট, ৮ সেপ্টেম্বর।\nMa-এর টাইমলাইনে রেখে দিলাম: https://baymax.eliooo.org/app/documents/260b99af-2aea-3d21-8bbc-2bf1226b2f8b\nকাগজে যা লেখা আছে নিচে তুলে দিলাম।\nবিস্তারিত জানতে চাইলে লিখুন \"বিস্তারিত\"।"
         },
         "kind": "paper"
       },
       {
-        "at": "2026-09-07T04:02:00Z",
-        "body": "Ma's report number 7 has been read. Every value printed is inside its range.",
+        "at": "2026-09-07T04:03:00Z",
+        "body": "ল্যাব রিপোর্ট, ৭ সেপ্টেম্বর — বিস্তারিত:\nটাইমলাইন: https://baymax.eliooo.org/app/documents/a88a9f8e-32f6-35c1-a9ec-a553d48233b6",
         "document_id": "a88a9f8e-32f6-35c1-a9ec-a553d48233b6",
         "kind": "message",
-        "message_kind": "explanation"
+        "message_kind": "detail"
       },
       {
         "at": "2026-09-07T04:00:00Z",
@@ -469,16 +558,16 @@
           "viewer": {
             "bangladesh": true
           },
-          "wording": "Ma's report number 7 has been read. Every value printed is inside its range."
+          "wording": "রিপোর্টটি পেয়েছি — ল্যাব রিপোর্ট, ৭ সেপ্টেম্বর।\nMa-এর টাইমলাইনে রেখে দিলাম: https://baymax.eliooo.org/app/documents/a88a9f8e-32f6-35c1-a9ec-a553d48233b6\nকাগজে যা লেখা আছে নিচে তুলে দিলাম।\nবিস্তারিত জানতে চাইলে লিখুন \"বিস্তারিত\"।"
         },
         "kind": "paper"
       },
       {
-        "at": "2026-09-06T04:02:00Z",
-        "body": "Ma's report number 6 has been read. Every value printed is inside its range.",
+        "at": "2026-09-06T04:03:00Z",
+        "body": "ল্যাব রিপোর্ট, ৬ সেপ্টেম্বর — বিস্তারিত:\nটাইমলাইন: https://baymax.eliooo.org/app/documents/63bfbc60-6a14-3c21-a71f-2df759e9f67c",
         "document_id": "63bfbc60-6a14-3c21-a71f-2df759e9f67c",
         "kind": "message",
-        "message_kind": "explanation"
+        "message_kind": "detail"
       },
       {
         "at": "2026-09-06T04:00:00Z",
@@ -521,7 +610,7 @@
           "viewer": {
             "bangladesh": true
           },
-          "wording": "Ma's report number 6 has been read. Every value printed is inside its range."
+          "wording": "রিপোর্টটি পেয়েছি — ল্যাব রিপোর্ট, ৬ সেপ্টেম্বর।\nMa-এর টাইমলাইনে রেখে দিলাম: https://baymax.eliooo.org/app/documents/63bfbc60-6a14-3c21-a71f-2df759e9f67c\nকাগজে যা লেখা আছে নিচে তুলে দিলাম।\nবিস্তারিত জানতে চাইলে লিখুন \"বিস্তারিত\"।"
         },
         "kind": "paper"
       }

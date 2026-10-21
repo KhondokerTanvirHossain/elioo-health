@@ -969,7 +969,8 @@ class PaperApiContractTest {
     void aRetakeCarriesItsReasonKeyNeverTheCode() throws IOException {
         serve(PaperFixtures.retake("low_overall", 3, true));
         JsonNode body = get(Lang.BN);
-        assertThat(fieldNames(body.path("retake"))).containsExactlyInAnyOrder("reason_key", "ordinal");
+        assertThat(fieldNames(body.path("retake"))).containsExactlyInAnyOrder("reason_key", "ordinal", "replaced");
+        assertThat(body.path("retake").path("replaced").isBoolean()).as("retake.replaced, a boolean Java decides").isTrue();
         assertThat(body.path("retake").path("reason_key").asText()).isEqualTo(DocumentPages.retakeReasonKey(copy, "low_overall"));
         assertThat(body.path("retake").path("ordinal").asInt()).isEqualTo(3);
         List<String> code = new ArrayList<>();

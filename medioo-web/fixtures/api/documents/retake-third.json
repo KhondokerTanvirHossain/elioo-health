@@ -37,7 +37,8 @@
     "received_at": "2026-10-20T03:59:00Z",
     "retake": {
       "ordinal": 3,
-      "reason_key": "retake.reason.low_overall"
+      "reason_key": "retake.reason.low_overall",
+      "replaced": false
     },
     "status": "NEEDS_RETAKE",
     "unverified": null,

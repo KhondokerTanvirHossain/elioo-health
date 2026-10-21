@@ -80,14 +80,22 @@ class PostgresThreadReadAdapterTest {
     /** A message composed for {@code family} about {@code p}, stored through the port, not yet handed to any channel. */
     private static OutboundMessage composed(ApplicationContext context, UUID family, PatientProfile p, UUID document, String kind,
                                             OutboundMessage.GateStatus gate) {
-        return context.getBean(OutboundMessagePort.class).save(new OutboundMessage(null, family, p.id(), document,
-                OutboundMessage.Kind.fromDbValue(kind), Urgency.ROUTINE, List.of(), "Body of a " + kind + " message.", gate,
-                null, null, null, null, T0)).block();
+        return composed(context, family, p, document, kind, gate, T0);
     }
 
-    /** The provider accepted it at {@code at}: delivery_status 'sent', the wamid, sent_at (V13, V14). */
+    private static OutboundMessage composed(ApplicationContext context, UUID family, PatientProfile p, UUID document, String kind,
+                                            OutboundMessage.GateStatus gate, Instant createdAt) {
+        return context.getBean(OutboundMessagePort.class).save(new OutboundMessage(null, family, p.id(), document,
+                OutboundMessage.Kind.fromDbValue(kind), Urgency.ROUTINE, List.of(), "Body of a " + kind + " message.", gate,
+                null, null, null, null, createdAt)).block();
+    }
+
+    /**
+     * The provider accepted it at {@code at}: delivery_status 'sent', the wamid, sent_at (V13, V14). Composed a minute
+     * before, so the newest of a kind by {@code created_at} (latestOfKind's order) is the newest delivered.
+     */
     private static UUID delivered(ApplicationContext context, UUID family, PatientProfile p, UUID document, String kind, Instant at) {
-        OutboundMessage m = composed(context, family, p, document, kind, OutboundMessage.GateStatus.RELEASED);
+        OutboundMessage m = composed(context, family, p, document, kind, OutboundMessage.GateStatus.RELEASED, at.minusSeconds(60));
         context.getBean(OutboundMessagePort.class).recordDelivery(m.id(), DeliveryOutcome.sent("wamid." + m.id()), at).block();
         return m.id();
     }
@@ -106,17 +114,17 @@ class PostgresThreadReadAdapterTest {
             Holder a = owner(context);
             UUID doc = paper(context, a.ma(), T0);
             OutboundMessagePort port = context.getBean(OutboundMessagePort.class);
-            UUID pending = composed(context, a.family().id(), a.ma(), doc, "explanation", OutboundMessage.GateStatus.PENDING).id();
-            UUID rejected = composed(context, a.family().id(), a.ma(), doc, "explanation", OutboundMessage.GateStatus.REJECTED).id();
+            UUID pending = composed(context, a.family().id(), a.ma(), doc, "detail", OutboundMessage.GateStatus.PENDING).id();
+            UUID rejected = composed(context, a.family().id(), a.ma(), doc, "detail", OutboundMessage.GateStatus.REJECTED).id();
             UUID failedSafety = context.getBean(OutboundMessagePort.class).save(new OutboundMessage(null, a.family().id(), a.ma().id(), doc,
                     OutboundMessage.Kind.EXPLANATION, Urgency.ROUTINE, List.of(), null, OutboundMessage.GateStatus.FAILED_SAFETY,
                     null, null, null, null, T0)).block().id();
-            UUID failedDelivery = composed(context, a.family().id(), a.ma(), doc, "explanation", OutboundMessage.GateStatus.RELEASED).id();
+            UUID failedDelivery = composed(context, a.family().id(), a.ma(), doc, "detail", OutboundMessage.GateStatus.RELEASED).id();
             port.recordDelivery(failedDelivery, DeliveryOutcome.failed("provider 131047"), T0.plusSeconds(60)).block();
             // the log adapter's outcome: sent_at stamped, no delivery status, nothing reached the family (S11)
-            UUID logged = composed(context, a.family().id(), a.ma(), doc, "explanation", OutboundMessage.GateStatus.RELEASED).id();
+            UUID logged = composed(context, a.family().id(), a.ma(), doc, "detail", OutboundMessage.GateStatus.RELEASED).id();
             port.markSent(logged, T0.plusSeconds(90)).block();
-            UUID sent = delivered(context, a.family().id(), a.ma(), doc, "explanation", T0.plusSeconds(120));
+            UUID sent = delivered(context, a.family().id(), a.ma(), doc, "detail", T0.plusSeconds(120));
             assertThat(scalar("SELECT count(*) FROM baymax.outbound_message WHERE id = '" + logged + "' AND sent_at IS NOT NULL"
                     + " AND delivery_status IS NULL")).as("the logged row is stored as the log adapter writes it").isEqualTo("1");
 
@@ -158,7 +166,11 @@ class PostgresThreadReadAdapterTest {
                 inserted.add(delivered(context, a.family().id(), a.ma(), doc, kind, T0.plusSeconds(60L * ++i)));
                 insertedKinds.add(kind);
             }
+            // the paper's newest explanation is its card's wording and is not listed (review of #135, finding 6): one newer
+            // than all of the above, so the explanation inserted in the loop is an older one, and listed
+            UUID cards = delivered(context, a.family().id(), a.ma(), doc, "explanation", T0.plusSeconds(60L * ++i));
             List<ThreadItem> items = read(context, a.family().id(), a.ma());
+            assertThat(ids(items)).as("the explanation the card carries").doesNotContain(cards);
             for (int k = 0; k < inserted.size(); k++) {
                 UUID id = inserted.get(k);
                 ThreadItem.Message listed = items.stream().filter(it -> it.id().equals(id)).map(ThreadItem.Message.class::cast)
@@ -174,19 +186,54 @@ class PostgresThreadReadAdapterTest {
         return "'" + kinds.get(ids.indexOf(id)) + "'";
     }
 
+    /**
+     * Review of #135, finding 6, in both directions: the explanation a DONE paper's card carries as its wording (the row
+     * {@code latestOfKind} picks) is not listed a second time; an older delivered explanation of the same paper is. When
+     * the newest explanation is still with the reviewer (the card says PENDING and carries no wording), the older
+     * delivered one is the only place its text appears, so it is listed. A paper that is not DONE carries no wording:
+     * its explanation is listed.
+     */
+    @Test
+    void onlyTheExplanationTheCardCarriesIsLeftOut() {
+        runner().run(context -> {
+            Holder a = owner(context);
+            UUID doc = paper(context, a.ma(), T0);
+            UUID older = delivered(context, a.family().id(), a.ma(), doc, "explanation", T0.plusSeconds(120));
+            UUID carried = delivered(context, a.family().id(), a.ma(), doc, "explanation", T0.plusSeconds(240));
+            List<UUID> listed = ids(read(context, a.family().id(), a.ma()));
+            assertThat(listed).as("the explanation " + carried + " the card carries").doesNotContain(carried);
+            assertThat(listed).as("the older explanation " + older).contains(older);
+            assertThat(context.getBean(OutboundMessagePort.class).latestOfKind(doc, OutboundMessage.Kind.EXPLANATION).block().id())
+                    .as("the one left out is the one the card reads").isEqualTo(carried);
+
+            // the newest explanation still with the reviewer: no wording on the card, so every delivered one is listed
+            UUID reviewing = composed(context, a.family().id(), a.ma(), doc, "explanation", OutboundMessage.GateStatus.PENDING,
+                    T0.plusSeconds(600)).id();
+            assertThat(ids(read(context, a.family().id(), a.ma()))).as("with a newer explanation " + reviewing + " pending")
+                    .contains(older, carried).doesNotContain(reviewing);
+
+            // a paper that is not DONE carries no wording: its only explanation is listed
+            UUID again = paper(context, a.ma(), T0.plusSeconds(900));
+            UUID reprocessed = delivered(context, a.family().id(), a.ma(), again, "explanation", T0.plusSeconds(960));
+            sql("UPDATE baymax.document SET status = 'PROCESSING' WHERE id = '" + again + "'");
+            assertThat(ids(read(context, a.family().id(), a.ma()))).as("the explanation of a paper being read again")
+                    .contains(reprocessed);
+        });
+    }
+
     @Test
     void aDeletedPapersMessagesAreNotListed() {
         runner().run(context -> {
             Holder a = owner(context);
             UUID doc = paper(context, a.ma(), T0);
-            UUID explanation = delivered(context, a.family().id(), a.ma(), doc, "explanation", T0.plusSeconds(60));
-            assertThat(ids(read(context, a.family().id(), a.ma()))).as("before the delete").contains(explanation);
+            UUID detail = delivered(context, a.family().id(), a.ma(), doc, "detail", T0.plusSeconds(60));
+            assertThat(ids(read(context, a.family().id(), a.ma()))).as("before the delete").contains(detail);
 
             context.getBean(DocumentRecordPort.class).deleteDocument(doc).block();
-            assertThat(scalar("SELECT count(*) FROM baymax.outbound_message WHERE id = '" + explanation + "'"))
+            assertThat(scalar("SELECT count(*) FROM baymax.outbound_message WHERE id = '" + detail + "'"))
                     .as("the delivered row is kept (P1 is the PO's)").isEqualTo("1");
-            assertThat(ids(read(context, a.family().id(), a.ma()))).as("the message " + explanation + " after its paper was deleted")
-                    .doesNotContain(explanation).doesNotContain(doc);
+            assertThat(ids(read(context, a.family().id(), a.ma()))).as("the message " + detail + " after its paper was deleted")
+                    .doesNotContain(detail).doesNotContain(doc);
         });
     }
 
@@ -206,7 +253,7 @@ class PostgresThreadReadAdapterTest {
         runner().run(context -> {
             Holder a = owner(context);
             UUID doc = paper(context, a.ma(), T0);
-            UUID ownersMessage = delivered(context, a.family().id(), a.ma(), doc, "explanation", T0.plusSeconds(60));
+            UUID ownersMessage = delivered(context, a.family().id(), a.ma(), doc, "detail", T0.plusSeconds(60));
             HealthRecordPort records = context.getBean(HealthRecordPort.class);
             String memberNumber = nextNumber();
             FamilyAccount member = records.createFamily(new FamilyAccount(null, memberNumber, "Sister", FamilyAccount.Plan.FAMILY, T0, T0)).block();
@@ -226,7 +273,7 @@ class PostgresThreadReadAdapterTest {
             List<UUID> expectedNewestFirst = new ArrayList<>();
             for (int i = 0; i < 3; i++) {
                 UUID doc = paper(context, a.ma(), T0.plus(Duration.ofHours(2L * i)));
-                UUID message = delivered(context, a.family().id(), a.ma(), doc, "explanation", T0.plus(Duration.ofHours(2L * i + 1)));
+                UUID message = delivered(context, a.family().id(), a.ma(), doc, "detail", T0.plus(Duration.ofHours(2L * i + 1)));
                 expectedNewestFirst.add(0, doc);
                 expectedNewestFirst.add(0, message);
             }
@@ -248,7 +295,7 @@ class PostgresThreadReadAdapterTest {
                 Instant at = T0.plus(Duration.ofHours(i));
                 UUID doc = paper(context, a.ma(), at);
                 all.add(doc);
-                all.add(delivered(context, a.family().id(), a.ma(), doc, "explanation", at));
+                all.add(delivered(context, a.family().id(), a.ma(), doc, "retake", at));
                 all.add(delivered(context, a.family().id(), a.ma(), doc, "detail", at.plusSeconds(1)));
             }
             ThreadReadPort port = context.getBean(ThreadReadPort.class);
