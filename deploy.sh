@@ -11,6 +11,11 @@
 # swap that fails puts the previous medioo-web back. Tested by scripts/test_deploy_sh.sh (fakes) and
 # scripts/test_deploy_web_docker.sh (the real image and daemon). Needs coreutils `timeout` (the box has it).
 #
+# Java is published on the box's 127.0.0.1:8086 only (plan W1c): from outside, everything goes through Caddy, which
+# reaches it as medscribe-ai:8086 on n8n_edge. Routes floor (W1c): once a path is routed to medioo-web, an IMAGE_TAG
+# that does not descend from the sha recorded in ROUTES_FLOOR_FILE is refused before anything changes;
+# ROUTES_FLOOR_FORCE=1 overrides (routes_floor_check below; docs/RUNBOOK.md -> Rollback).
+#
 # DEPLOY_FUNCTIONS_ONLY=1 makes `source deploy.sh` define the functions and stop (scripts/test_deploy_prune.sh,
 # scripts/test_deploy_sh.sh). It is honoured only when the file is SOURCED: executing deploy.sh with it set fails,
 # so a stray export can never turn a deploy into a silent no-op that exits 0.
@@ -226,6 +231,68 @@ deploy_web() {
   return 1
 }
 
+# routes_floor_check <tag>: 0 when <tag> may be deployed under the routes floor (DR-40 A2, plan W1c).
+#
+# Caddy routing is box state, not tied to IMAGE_TAG: once a path is routed to medioo-web, a sha from before that
+# flip would deploy code that does not serve it (or a Java that lacks the /app/api a flipped page calls). Each flip
+# records its merge sha in ROUTES_FLOOR_FILE (default /home/ec2-user/medioo-routes-floor; first token of the first
+# non-comment line, the rest is free text such as the route and the date; RUNBOOK -> Routing a path to medioo-web).
+# A <tag> that is not that sha or a descendant of it is refused: revert the routes first (RUNBOOK -> Rollback).
+#
+# The box has no clone, so ancestry comes from GitHub's compare API (the repository is public; one unauthenticated
+# call per deploy): <floor>...<tag> answering "ahead" or "identical" means <tag> descends from the floor. "behind" or
+# "diverged" is refused, and so is anything that cannot be checked (the API unreachable, a floor file that does not
+# hold a sha, no jq): a check that cannot run must not read as a pass. ROUTES_FLOOR_FORCE=1 overrides every refusal,
+# loudly. Its own name, not FORCE: scripts/draft-labels.sh reads FORCE=1, and a generic name left exported in an
+# operator's shell on this shared box would silently turn the floor into a warning.
+# The call asks for page 2 of one commit per page: GitHub sends the changed-files list (with patches) only on page 1,
+# and the top-level status on every page, so the answer stays small however long the range grows (measured
+# 2026-10-21: 297 KB -> 41 KB for a 4-commit range). --max-time 30, and one retry on a failed call: GitHub's blips
+# must not stop every deploy, while two failures in a row still refuse.
+# No floor file means no route has flipped yet: nothing to enforce. Runs before anything on the box is changed.
+ROUTES_FLOOR_FILE="${ROUTES_FLOOR_FILE:-/home/ec2-user/medioo-routes-floor}"
+ROUTES_COMPARE_API="${ROUTES_COMPARE_API:-https://api.github.com/repos/KhondokerTanvirHossain/elioo-health/compare}"
+routes_floor_check() {
+  local tag="$1" floor="" why="" answer status=""
+  if [ ! -e "$ROUTES_FLOOR_FILE" ]; then
+    log "Routes floor: no routes floor recorded ($ROUTES_FLOOR_FILE); no route has flipped to medioo-web, nothing to enforce"
+    return 0
+  fi
+  floor="$(grep -vE '^[[:space:]]*(#|$)' "$ROUTES_FLOOR_FILE" 2>/dev/null | head -1 | awk '{print $1}')" || true
+  if ! printf '%s' "$floor" | grep -qE '^[0-9a-f]{7,40}$'; then
+    why="the routes floor file $ROUTES_FLOOR_FILE does not start with a git sha"
+  elif ! printf '%s' "$tag" | grep -qE '^[0-9a-f]{7,40}$'; then
+    why="IMAGE_TAG $tag is not a git sha, so it cannot be checked against the routes floor $floor"
+  elif [ "$tag" = "$floor" ]; then
+    log "Routes floor: $tag is the routes floor itself"
+    return 0
+  elif ! command -v jq >/dev/null 2>&1; then
+    why="could not check $tag against the routes floor $floor (jq is not installed)"
+  elif ! answer="$(curl -fsS --max-time 30 -H 'Accept: application/vnd.github+json' "$ROUTES_COMPARE_API/$floor...$tag?per_page=1&page=2" 2>&1)" \
+       && { log "Routes floor: the GitHub compare call failed (${answer%%$'\n'*}); retrying once"; sleep 5;
+            ! answer="$(curl -fsS --max-time 30 -H 'Accept: application/vnd.github+json' "$ROUTES_COMPARE_API/$floor...$tag?per_page=1&page=2" 2>&1)"; }; then
+    why="could not check $tag against the routes floor $floor (GitHub compare API, twice: ${answer%%$'\n'*})"
+  else
+    # the top-level field, parsed: the answer nests a "status" in every file entry
+    status="$(printf '%s' "$answer" | jq -r 'if type == "object" then (.status // "") else "" end' 2>/dev/null)" || status=""
+    case "$status" in
+      ahead|identical)
+        log "Routes floor: $tag descends from the routes floor $floor (GitHub: $status)"
+        return 0 ;;
+      behind|diverged)
+        why="IMAGE_TAG $tag is not a descendant of the routes floor $floor (GitHub: $status). Revert the routes flipped since then and record the older floor first (docs/RUNBOOK.md -> Rollback)" ;;
+      *)
+        why="could not check $tag against the routes floor $floor (GitHub compare API answered no status)" ;;
+    esac
+  fi
+  if [ "${ROUTES_FLOOR_FORCE:-}" = 1 ]; then
+    log "WARNING: ROUTES_FLOOR_FORCE=1: deploying although $why"
+    return 0
+  fi
+  log "ERROR: $why. Nothing on the box was changed. ROUTES_FLOOR_FORCE=1 overrides."
+  return 1
+}
+
 if [ "${DEPLOY_FUNCTIONS_ONLY:-}" = 1 ]; then
   if [ "${BASH_SOURCE[0]}" != "$0" ]; then return 0; fi
   log "ERROR: DEPLOY_FUNCTIONS_ONLY=1 is set but deploy.sh was executed, not sourced; refusing to deploy"
@@ -237,9 +304,13 @@ IMAGE_TAG="${IMAGE_TAG:?IMAGE_TAG (git sha) is required}"
 ENV_FILE="${ENV_FILE:-/home/ec2-user/medscribe.env}"
 CONTAINER_NAME="${CONTAINER_NAME:-medscribe-ai}"
 PORT=8086
-HEALTH_URL="http://localhost:${PORT}/actuator/health"
+# 127.0.0.1, not localhost: Java is published on IPv4 loopback only (below), and localhost can resolve to ::1 first
+HEALTH_URL="http://127.0.0.1:${PORT}/actuator/health"
 
 [ -f "$ENV_FILE" ] || { log "ERROR: $ENV_FILE not found. Copy medscribe.env.example there and fill it in."; exit 1; }
+
+# before the prune, the pulls and the swap: a refused tag leaves the box exactly as it was
+routes_floor_check "$IMAGE_TAG" || exit 1
 
 # GCP credentials: mount if the path in the env file exists on this host
 GCP_HOST_PATH="$(grep -E '^GCP_CREDENTIALS_HOST_PATH=' "$ENV_FILE" | cut -d= -f2- || true)"
@@ -258,7 +329,7 @@ if docker network inspect "$EDGE_NETWORK" >/dev/null 2>&1; then
   NETWORK_OPT=(--network "$EDGE_NETWORK")
   log "Attaching to network $EDGE_NETWORK (Caddy reverse proxy)"
 else
-  log "WARNING: network $EDGE_NETWORK not found; container only reachable on host port ${PORT}"
+  log "WARNING: network $EDGE_NETWORK not found; Caddy cannot reach the container, only the box itself on 127.0.0.1:${PORT}"
 fi
 
 MIN_FREE_KB="${MIN_FREE_KB:-1572864}"
@@ -278,13 +349,15 @@ if docker ps -a --format '{{.Names}}' | grep -qx "$CONTAINER_NAME"; then
   docker rm -f "$CONTAINER_NAME" >/dev/null
 fi
 
+# Java off the public port (DR-40 A1, plan W1c): published on the box's loopback only, for deploy.sh's health wait and
+# the RUNBOOK's admin calls. Everything from outside goes through Caddy, which reaches medscribe-ai:8086 on n8n_edge.
 log "Starting $CONTAINER_NAME"
 docker run -d \
   --name "$CONTAINER_NAME" \
   --restart unless-stopped \
   --memory=1200m \
   ${NETWORK_OPT[@]+"${NETWORK_OPT[@]}"} \
-  -p "${PORT}:${PORT}" \
+  -p "127.0.0.1:${PORT}:${PORT}" \
   --env-file "$ENV_FILE" \
   -e GCP_CREDENTIALS_PATH=/secrets/gcp-credentials.json \
   ${GCP_MOUNT[@]+"${GCP_MOUNT[@]}"} \

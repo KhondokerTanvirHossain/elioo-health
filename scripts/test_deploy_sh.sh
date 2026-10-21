@@ -81,7 +81,7 @@ printf 'SOME_SETTING=x\nBAYMAX_ADMIN_TOKEN=java-only-secret\n' > "$WORK/env"
 # against a copy whose waits never end fails on the clock instead of hanging the suite.
 TIMEOUT=$(PATH="$BIN:$PATH" command -v timeout)
 run_deploy() {
-  env PATH="$BIN:$PATH" IMAGE_TAG="$NEW" ENV_FILE="$WORK/env" "$@" \
+  env PATH="$BIN:$PATH" IMAGE_TAG="$NEW" ENV_FILE="$WORK/env" ROUTES_FLOOR_FILE="$FAKE_DIR/routes-floor" "$@" \
     "$TIMEOUT" "${RUN_LIMIT:-300}" bash "$DEPLOY" > "$FAKE_DIR/out.log" 2>&1
 }
 
@@ -365,6 +365,106 @@ new_case web-run-fails-restore
 if run_deploy FAKE_NETWORK=1 FAKE_RUN_FAIL="$WEB:$NEW"; then fail "$CASE: exited 0 although medioo-web could not be started: $(out)"; fi
 web_last_run_is "$W_RUN"
 grep -qF "previous medioo-web ($W_RUN) is back and healthy" "$FAKE_DIR/out.log" || fail "$CASE: the previous medioo-web is not back and healthy: $(out)"
+
+# 25. (W1c) Java off the public port: the one published port is 127.0.0.1:8086, and the health wait asks 127.0.0.1
+#     (not "localhost", which can resolve to ::1, where nothing listens any more)
+new_case java-loopback
+run_deploy FAKE_NETWORK=1 || fail "$CASE: deploy.sh failed: $(out)"
+A="$FAKE_DIR/run.medscribe-ai.args"
+if [ -f "$A" ]; then
+  arg_pair "$A" -p 127.0.0.1:8086:8086 || fail "$CASE: Java is not published as '-p 127.0.0.1:8086:8086': $(tr '\n' '|' < "$A")"
+  PUBLISHES=$(grep -cxE -- '-p|--publish' "$A")
+  [ "$PUBLISHES" = 1 ] || fail "$CASE: $PUBLISHES -p/--publish arguments, expected exactly one: $(tr '\n' '|' < "$A")"
+  grep -qE -- '^(-P|--publish-all|--publish=.*|-p=.*)$' "$A" && fail "$CASE: another way of publishing a port: $(tr '\n' '|' < "$A")"
+  grep -qxE '(0\.0\.0\.0:)?8086:8086' "$A" && fail "$CASE: 8086 is published on every interface: $(tr '\n' '|' < "$A")"
+  grep -qE '^--network$' "$A" || fail "$CASE: Java is not on the edge network, so with no public port nothing but the box could reach it"
+else
+  fail "$CASE: Java was never run: $(out)"
+fi
+grep -qE '^curl .*http://127\.0\.0\.1:8086/actuator/health' "$FAKE_DIR/calls.log" \
+  || fail "$CASE: the health wait does not ask http://127.0.0.1:8086: $(grep '^curl ' "$FAKE_DIR/calls.log" | head -1)"
+
+# 26-35. (W1c) the routes floor: once a route has flipped, an IMAGE_TAG that is not a descendant of the recorded
+#     floor sha is refused (it predates a route Caddy now sends to medioo-web), unless ROUTES_FLOOR_FORCE=1 (and
+#     only that: a generic FORCE=1 left in a shell overrides nothing). Both directions.
+FLOOR=4c8e1f0aa9b3d2e7c6f5a4b3c2d1e0f9a8b7c6d5
+STATE_RE='^docker (pull|rm|rmi|run|stop|kill|restart) '
+# refused_before_touching <why>: exit 1 with the line, and NOTHING run but the compare call(s) and the pause before its
+# one retry. Derived from the log, not a list of mutating verbs: deploy.sh also mutates through `docker image prune`,
+# `exec`, `login`, `network`, and any call at all before the check means the check no longer runs first.
+ONLY_COMPARE_RE='/compare/|^sleep 5$'
+refused_before_touching() {
+  grep -qF "$1" "$FAKE_DIR/out.log" || fail "$CASE: no '$1' line: $(out)"
+  [ "$(grep -vcE "$ONLY_COMPARE_RE" "$FAKE_DIR/calls.log")" = 0 ] \
+    || fail "$CASE: refused, but ran something first: $(grep -vE "$ONLY_COMPARE_RE" "$FAKE_DIR/calls.log" | head -1)"
+}
+deployed() { [ -n "$(first_line "^docker run .* $REPO:${1:-$NEW}\$")" ] || fail "$CASE: Java ${1:-$NEW} was not deployed: $(out)"; }
+
+new_case floor-none
+run_deploy FAKE_NETWORK=1 || fail "$CASE: failed with no routes floor recorded: $(out)"
+grep -qF 'no routes floor recorded' "$FAKE_DIR/out.log" || fail "$CASE: no 'no routes floor recorded' line: $(out)"
+[ "$(count '/compare/')" = 0 ] || fail "$CASE: asked GitHub with no floor to compare against"
+deployed
+
+new_case floor-descendant
+echo "$FLOOR /app/healthz 2026-10-21" > "$FAKE_DIR/routes-floor"
+run_deploy FAKE_NETWORK=1 FAKE_COMPARE=ahead || fail "$CASE: a descendant of the floor was refused: $(out)"
+# the cheapest answer that still carries the top-level status: page 2 of one commit per page has no files list
+# (measured 2026-10-21: 297 KB with every file and patch -> 41 KB), so a long range cannot time the compare out
+grep -qE "^curl .*/compare/$FLOOR\.\.\.$NEW\?per_page=1&page=2( |\$)" "$FAKE_DIR/calls.log" \
+  || fail "$CASE: did not ask GitHub to compare $FLOOR...$NEW?per_page=1&page=2: $(grep '^curl .*compare' "$FAKE_DIR/calls.log")"
+grep -qE "^curl .*--max-time 30 .*/compare/" "$FAKE_DIR/calls.log" \
+  || fail "$CASE: the compare call is not bounded by --max-time 30: $(grep '^curl .*compare' "$FAKE_DIR/calls.log")"
+CMP=$(first_line '/compare/'); FIRST_STATE=$(first_line "$STATE_RE")
+[ -n "$CMP" ] && [ -n "$FIRST_STATE" ] && [ "$CMP" -lt "$FIRST_STATE" ] \
+  || fail "$CASE: the floor check (line '$CMP') does not come before the first change to the box (line '$FIRST_STATE')"
+deployed
+
+new_case floor-identical
+echo "$FLOOR" > "$FAKE_DIR/routes-floor"
+run_deploy FAKE_NETWORK=1 IMAGE_TAG="$FLOOR" FAKE_COMPARE=fail || fail "$CASE: the floor sha itself was refused: $(out)"
+deployed "$FLOOR"
+
+new_case floor-ancestor
+echo "$FLOOR /app/healthz 2026-10-21" > "$FAKE_DIR/routes-floor"
+if run_deploy FAKE_NETWORK=1 FAKE_COMPARE=behind; then fail "$CASE: deployed a sha older than the routes floor: $(out)"; fi
+refused_before_touching "is not a descendant of the routes floor $FLOOR (GitHub: behind)"
+
+new_case floor-diverged
+echo "$FLOOR" > "$FAKE_DIR/routes-floor"
+if run_deploy FAKE_NETWORK=1 FAKE_COMPARE=diverged; then fail "$CASE: deployed a sha off the floor's line: $(out)"; fi
+refused_before_touching "is not a descendant of the routes floor $FLOOR (GitHub: diverged)"
+
+new_case floor-force
+echo "$FLOOR" > "$FAKE_DIR/routes-floor"
+run_deploy FAKE_NETWORK=1 FAKE_COMPARE=behind ROUTES_FLOOR_FORCE=1 || fail "$CASE: ROUTES_FLOOR_FORCE=1 did not override the floor: $(out)"
+grep -qF 'WARNING: ROUTES_FLOOR_FORCE=1' "$FAKE_DIR/out.log" || fail "$CASE: no 'WARNING: ROUTES_FLOOR_FORCE=1' line: $(out)"
+deployed
+
+# a generic FORCE=1 (scripts/draft-labels.sh reads the same name) left exported in a shell overrides nothing
+new_case floor-generic-force
+echo "$FLOOR" > "$FAKE_DIR/routes-floor"
+if run_deploy FAKE_NETWORK=1 FAKE_COMPARE=behind FORCE=1; then fail "$CASE: a stray FORCE=1 overrode the routes floor: $(out)"; fi
+refused_before_touching "is not a descendant of the routes floor $FLOOR (GitHub: behind)"
+
+new_case floor-unreachable
+echo "$FLOOR" > "$FAKE_DIR/routes-floor"
+if run_deploy FAKE_NETWORK=1 FAKE_COMPARE=fail; then fail "$CASE: deployed although the floor could not be checked: $(out)"; fi
+refused_before_touching "could not check $NEW against the routes floor $FLOOR"
+[ "$(count '/compare/')" = 2 ] || fail "$CASE: asked GitHub $(count '/compare/') time(s), expected 2 (one retry)"
+
+# one failed call (a GitHub blip) is retried once before the deploy is refused
+new_case floor-retry
+echo "$FLOOR" > "$FAKE_DIR/routes-floor"
+run_deploy FAKE_NETWORK=1 FAKE_COMPARE=fail-once || fail "$CASE: one failed compare call refused the deploy: $(out)"
+[ "$(count '/compare/')" = 2 ] || fail "$CASE: asked GitHub $(count '/compare/') time(s), expected 2"
+deployed
+
+new_case floor-malformed
+echo "not-a-sha; rm -rf /" > "$FAKE_DIR/routes-floor"
+if run_deploy FAKE_NETWORK=1; then fail "$CASE: deployed with an unreadable routes floor: $(out)"; fi
+refused_before_touching "routes floor file"
+[ -s "$FAKE_DIR/calls.log" ] && fail "$CASE: ran something with a malformed floor: $(head -1 "$FAKE_DIR/calls.log")"
 
 if [ "$FAILED" -ne 0 ]; then exit 1; fi
 echo "deploy-sh: $CASES cases passed"

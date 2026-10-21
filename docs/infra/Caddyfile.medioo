@@ -1,13 +1,15 @@
-# Medioo site blocks, copied read-only from the box on 2026-10-21 (DR-40, plan task X1).
+# Medioo site blocks, copied read-only from the box on 2026-10-21 (DR-40, plan task X1); routed per path from W1c.
 #
-# Source of truth: until W1c, the box is the source — /home/ec2-user/n8n/Caddyfile on the EC2 host, which also
-# holds the n8n ({$DOMAIN}) and bddrug (drugdb.eliooo.org) blocks; those are deliberately not copied here. One reload
-# affects all three tenants. From W1c on, the box's medioo/baymax blocks are pasted from THIS file. Editing this file
-# routes nothing by itself: a path reaches medioo-web only once it is routed in the box's Caddyfile.
+# Source of truth: from W1c on, THIS file. The box's /home/ec2-user/n8n/Caddyfile also holds the n8n ({$DOMAIN}) and
+# bddrug (drugdb.eliooo.org) blocks; those are deliberately not copied here, and one reload affects all three tenants.
+# The box's medioo/baymax blocks are pasted from this file. Editing this file routes nothing by itself: a path reaches
+# medioo-web only once it is routed in the box's Caddyfile (docs/RUNBOOK.md -> Routing a path to medioo-web).
 #
-# Drift: nothing detects it automatically until W1c adds the check to the post-deploy smoke. Before pasting from
-# this file, diff its blocks against the live Caddyfile's medioo/baymax blocks; any difference is a box edit to fold
-# in here first, never to overwrite.
+# Drift: after every deploy, CI extracts the box's live medioo/baymax blocks (read-only) and compares them with the
+# blocks below, comments and blank lines aside (scripts/caddy-drift.sh, tested by scripts/test_caddy_drift.sh). A
+# difference fails the deploy job with "box Caddyfile drifted from the repo — fold the box edit in first". Before
+# pasting from this file, run the same check by hand; any difference is a box edit to fold in here first, never to
+# overwrite.
 #
 # Editing the box. /home/ec2-user/n8n/Caddyfile is bind-mounted into n8n-caddy-1 as a SINGLE FILE (read-only inside
 # the container). Anything that replaces the inode — sed -i, mv of a temp file, rsync, an editor that saves by
@@ -27,7 +29,12 @@
 # Referrer-Policy on every path, Java's or Next's; an upstream that sets a different Referrer-Policy is overruled.
 #
 # DR-40 A1: Java is the default. A path goes to medioo-web:3000 only once it is listed here and applied on the box.
-# Flipping a route back is a one-line edit plus the procedure above.
+# Flipping a route back is a one-line edit plus the procedure above, and the routes floor (RUNBOOK -> Rollback).
+# The handle blocks are mutually exclusive: the most specific path matcher wins, and the bare `handle` is Java. Only
+# /app/healthz is routed so far (W1c); /_next/* and /fonts/* come with the first HTML route.
+#
+# Referrer-Policy stays strict-origin-when-cross-origin, the value production has sent since before the rebuild
+# (noted for the PO in the W1c PR): medioo-web's own headers send the same value, and Caddy overwrites it anyway.
 
 medioo.eliooo.org {
 	encode zstd gzip
@@ -39,7 +46,13 @@ medioo.eliooo.org {
 		-Server
 	}
 
-	reverse_proxy medscribe-ai:8086
+	handle /app/healthz {
+		reverse_proxy medioo-web:3000
+	}
+
+	handle {
+		reverse_proxy medscribe-ai:8086
+	}
 }
 
 # Old public name (DR-15, 2026-09-19): every URL already sent to families keeps working via a permanent redirect.
