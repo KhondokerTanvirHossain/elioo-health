@@ -49,7 +49,11 @@ public class PostgresHealthReadAdapter implements HealthReadPort {
             LIMIT 1
             """.formatted(S);
 
-    /** The paper's medicines as written, in the order the paper page lists them (MedicationEventRepository). */
+    /**
+     * The paper's medicines as written, alphabetically by name, then id: the same ORDER BY as the paper page
+     * ({@code MedicationEventRepository.findByDocumentId}), so both screens list one prescription in one order. This is
+     * NOT the order the lines are printed in: {@code medication_event} keeps no printed ordinal.
+     */
     private static final String MEDICINES = """
             SELECT m.name, m.dose_text, m.frequency_text, m.timing_text, m.duration_text, m.crop_key
             FROM %1$s.medication_event m
@@ -59,17 +63,20 @@ public class PostgresHealthReadAdapter implements HealthReadPort {
 
     /**
      * The newest paper uploaded after {@code :after} that may be a prescription and is not read yet: being read (its type
-     * is not known), or waiting for a retake as a prescription or with no type.
+     * is not known), or still owed as a prescription or with no type — waiting for a retake, or FAILED on our side (review
+     * of #122, finding 7; Pending for the PO). A paper replaced by a new photo that did not fail is not owed
+     * ({@link DocumentSql#NOT_REPLACED}, the chat stack's own rule).
      */
     private static final String NEWER_NOT_READ = """
             SELECT d.id
             FROM %1$s.document d
             WHERE d.patient_id = :patient AND d.created_at > :after
               AND (d.status IN ('RECEIVED', 'PROCESSING')
-                   OR (d.status = 'NEEDS_RETAKE' AND (d.document_type = 'prescription' OR d.document_type IS NULL)))
+                   OR (d.status IN ('NEEDS_RETAKE', 'FAILED') AND (d.document_type = 'prescription' OR d.document_type IS NULL)))
+              AND %2$s
             ORDER BY d.created_at DESC, d.id DESC
             LIMIT 1
-            """.formatted(S);
+            """.formatted(S, DocumentSql.NOT_REPLACED);
 
     /** Before every upload: a timestamptz Postgres takes, unlike Instant.MIN. */
     private static final OffsetDateTime BEFORE_ANY = OffsetDateTime.parse("1900-01-01T00:00:00Z");

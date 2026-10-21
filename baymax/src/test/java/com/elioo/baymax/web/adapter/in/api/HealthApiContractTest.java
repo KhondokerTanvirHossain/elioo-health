@@ -1,6 +1,7 @@
 package com.elioo.baymax.web.adapter.in.api;
 
 import com.elioo.baymax.config.BaymaxProperties;
+import com.elioo.baymax.extraction.BloodPressurePairAcceptanceTest;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.PatientAccess;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
@@ -61,9 +62,11 @@ import static org.mockito.Mockito.when;
  * and the real {@link UiCopy}. Every assertion reads the parsed tree by field; none matches a substring of the document.
  *
  * <p>The cases React's MSW handlers serve are written here too, in the generated-file envelope, and compared byte for byte
- * with the committed {@code medioo-web/fixtures/api/health/*.json}. The blood-pressure rows carry the line exactly as
- * extraction writes it for {@code BP : 130 / 80} ({@code BloodPressurePairAcceptanceTest}: {@code "1:0-13"}) and one crop
- * per value, never a shared key; that the pair survives the real extraction path is that test's, end to end.
+ * with the committed {@code medioo-web/fixtures/api/health/*.json}. The blood-pressure rows are built here (a departure
+ * from plan Step 5's "seeded through the extraction path", listed in the PR) but carry the line as
+ * {@link BloodPressurePairAcceptanceTest#EXTRACTED_BP_LINE}, the constant that test asserts equal to the {@code source_line}
+ * extraction stores for {@code BP : 130 / 80}, so the fixture cannot drift from extraction; and one crop per value, never a
+ * shared key. That the pair survives the real extraction path is that test's, end to end.
  */
 class HealthApiContractTest {
 
@@ -169,9 +172,9 @@ class HealthApiContractTest {
     /** One BP : 130 / 80 line read through extraction: two values, two crops, one line. */
     static List<Map<String, Object>> bpRows() {
         Map<String, Object> systolic = row(LAB_OCT, 41, "2026-10-12", "BP", "bp_systolic", "130", "mmHg", null, null);
-        systolic.put("source_line", "1:0-13");
+        systolic.put("source_line", BloodPressurePairAcceptanceTest.EXTRACTED_BP_LINE);
         Map<String, Object> diastolic = row(LAB_OCT, 42, "2026-10-12", "BP", "bp_diastolic", "80", "mmHg", null, null);
-        diastolic.put("source_line", "1:0-13");
+        diastolic.put("source_line", BloodPressurePairAcceptanceTest.EXTRACTED_BP_LINE);
         return List.of(systolic, diastolic);
     }
 
@@ -363,11 +366,16 @@ class HealthApiContractTest {
         assertThat(body.path("medicines")).hasSize(2);
         Set<String> allowed = new HashSet<>(PaperDisplay.MEDICINE_FIELDS);
         allowed.add("crop");
-        for (JsonNode medicine : body.path("medicines")) {
+        List<Map<String, Object>> served = cases().get("medicines-latest").get().latest().medicines();
+        for (int i = 0; i < body.path("medicines").size(); i++) {
+            JsonNode medicine = body.path("medicines").get(i);
             assertThat(allowed).as("keys of " + medicine).containsAll(fieldNames(medicine));
             assertThat(fieldNames(medicine.path("crop"))).containsExactly("src");
-            assertThat(medicine.path("crop").path("src").asText()).startsWith(ImageRefs.crop(RX, "x").substring(0, ImageRefs.crop(RX, "x").indexOf("?")));
+            assertThat(medicine.path("crop").path("src").asText()).as("medicine " + i + "'s own crop")
+                    .isEqualTo(ImageRefs.crop(RX, (String) served.get(i).get("crop_key")));
         }
+        assertThat(body.path("medicines").get(0).path("crop").path("src").asText()).as("each line its own crop")
+                .isNotEqualTo(body.path("medicines").get(1).path("crop").path("src").asText());
         assertThat(body.path("medicines").get(0).path("name").asText()).isEqualTo("Tab. Demoprol");
         assertThat(body.path("medicines").get(0).path("timing_text").asText()).isEqualTo("after food");
         assertThat(body.path("medicines").get(1).has("frequency_text")).as("a field the line was not written with is absent").isFalse();

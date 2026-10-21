@@ -69,10 +69,9 @@ public class PostgresTimelineReadAdapter implements TimelineReadPort {
      */
     private static final String IN_FLIGHT = COLUMNS + """
             WHERE d.patient_id = :patient AND d.status IN ('RECEIVED', 'PROCESSING', 'NEEDS_RETAKE') AND d.created_at >= :since
-              AND NOT (d.status = 'NEEDS_RETAKE' AND EXISTS (SELECT 1 FROM %1$s.document r
-                                                             WHERE r.replaces_document_id = d.id AND r.status <> 'FAILED'))
+              AND %1$s
             ORDER BY d.created_at DESC, d.id DESC
-            """.formatted(S);
+            """.formatted(DocumentSql.NOT_REPLACED);
 
     private final DatabaseClient db;
 

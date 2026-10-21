@@ -38,7 +38,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * extraction wrote; the pair can only come from the OCR line it stored.
  */
 @Testcontainers
-class BloodPressurePairAcceptanceTest {
+public class BloodPressurePairAcceptanceTest {
+
+    /**
+     * The {@code source_line} extraction stores for this class's {@code BP : 130 / 80} page, asserted below against the row
+     * extraction wrote. {@code HealthApiContractTest} seeds its blood-pressure rows (and so the committed {@code bp.json}
+     * MSW fixture) with this constant, so the fixture cannot drift from what extraction stores.
+     */
+    public static final String EXTRACTED_BP_LINE = "1:0-13";
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
@@ -104,7 +111,7 @@ class BloodPressurePairAcceptanceTest {
             assertThat(stored).extracting(r -> r[0] + "=" + r[1]).containsExactly("bp_systolic=130", "bp_diastolic=80");
             // the guard: this is the shape production writes — one crop per value, never a shared key
             assertThat(stored.get(0)[2]).isNotEqualTo(stored.get(1)[2]);
-            assertThat(stored).extracting(r -> r[3]).containsExactly("1:0-13", "1:0-13");
+            assertThat(stored).extracting(r -> r[3]).containsExactly(EXTRACTED_BP_LINE, EXTRACTED_BP_LINE);
 
             HealthUseCase.HealthLabs labs = context.getBean(HealthUseCase.class).labs(family, patient).block();
             assertThat(labs.bp().points()).hasSize(1);
@@ -138,7 +145,7 @@ class BloodPressurePairAcceptanceTest {
                             + created.id() + "' ORDER BY name, value");
                     assertThat(stored).extracting(r -> r[0] + "=" + r[1]).containsExactly("BP=130", "BP=80", "Pulse=72");
                     assertThat(stored.get(2)[2]).as("the region-recovered value's line").isNull();
-                    assertThat(stored.get(0)[2]).as("an OCR value's line, in the same run").isEqualTo("1:0-13");
+                    assertThat(stored.get(0)[2]).as("an OCR value's line, in the same run").isEqualTo(EXTRACTED_BP_LINE);
                 });
     }
 

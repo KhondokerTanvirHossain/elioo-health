@@ -86,9 +86,11 @@ public record MarkerThreshold(
     }
 
     /**
-     * The one unit fold of the module (plan B6): what {@link #sameUnit} compares, and the unit half of the health
-     * series key ({@code HealthService}), so a series never joins two readings a threshold would keep apart, nor
-     * splits two it would join. Null folds to the empty string.
+     * The one unit fold of the module (plan B6): what {@link #sameUnit} compares, the unit half of the health series key
+     * ({@code HealthService}) and the nudge trend's unit key ({@code NudgeRules}), so a series never joins two printed
+     * units a threshold would keep apart, nor splits two it would join. Null folds to the empty string, which is "no
+     * unit", not a unit: a threshold never matches it, and the health series puts each such row in a series of its own.
+     * {@code MarkerThresholdTest} fails on any other copy of this fold in the module.
      */
     public static String foldUnit(String s) {
         if (s == null) {

@@ -22,8 +22,13 @@ class CropCutterTest {
 
     /** SpanLocatorTest's page, with a white image big enough for its boxes. */
     static PageOcr page() throws Exception {
+        return page(200);
+    }
+
+    /** The same page on a taller image, where a two-line span is not refused as "most of the page". */
+    static PageOcr page(int height) throws Exception {
         PageOcr p = SpanLocatorTest.PAGE;
-        BufferedImage img = new BufferedImage(400, 200, BufferedImage.TYPE_INT_RGB);
+        BufferedImage img = new BufferedImage(400, height, BufferedImage.TYPE_INT_RGB);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ImageIO.write(img, "jpg", out);
         return new PageOcr(1, p.text(), p.words(), Base64.getEncoder().encodeToString(out.toByteArray()), 0.9);
@@ -111,6 +116,44 @@ class CropCutterTest {
         assertThat(nextLine.bytes()).isPresent();
         assertThat(nextLine.line()).isPresent();
         assertThat(nextLine.line()).isNotEqualTo(systolic.line());
+    }
+
+    /**
+     * Review of #122, finding 1: the line is the OCR line that holds the value's own text, exactly that line's
+     * {@code [start,end)}, never the model's span widened to every word it touches. Model offsets drift (DR-12); a drifted
+     * span that still contains {@code BP 130} must name the BP line, or the systolic and the diastolic of one printed
+     * reading carry two keys and never pair. Both directions: a span that starts on the line above, and one that runs on
+     * into the next, still name the BP line; a value on another line still names that other line.
+     */
+    @Test
+    void aDriftedClaimedSpanNamesTheLineThatHoldsTheValueAndNothingWider() throws Exception {
+        // a 600px page, so a crop of two 20px lines is a crop and not refused as the page (MAX_CROP_PAGE_FRACTION)
+        Map<Integer, PageOcr> pages = Map.of(1, page(600));
+        String text = SpanLocatorTest.PAGE.text();
+        int bpStart = text.indexOf("BP : 130 / 80 mmHg");
+        String bpLine = "1:" + bpStart + "-" + (bpStart + "BP : 130 / 80 mmHg".length());
+        assertThat(bpLine).as("the test page's BP line").isEqualTo("1:31-49");
+
+        // (1) starts on the previous line: "58 Y\nBP : 130"
+        CropCutter.Cut fromAbove = cutter.cutValue(new ExtractionResult.SourceSpan(1, 26, 39), "BP", "130", pages);
+        assertThat(fromAbove.outcome()).isEqualTo(CropCutter.Outcome.CLAIMED_SPAN);
+        assertThat(fromAbove.line()).contains("1:31-49");
+
+        // (2) runs on into the Rx line: "BP : 130 / 80 mmHg\nRx"
+        int rxEnd = text.indexOf("Rx") + 2;
+        CropCutter.Cut intoNext = cutter.cutValue(new ExtractionResult.SourceSpan(1, bpStart, rxEnd), "BP", "130", pages);
+        assertThat(intoNext.outcome()).isEqualTo(CropCutter.Outcome.CLAIMED_SPAN);
+        assertThat(intoNext.line()).contains("1:31-49");
+
+        // (3) the other direction: a value on another line names that line, exactly
+        String rxLineText = "1. Tab . Demoprol 50 mg";
+        int rxLine = text.indexOf(rxLineText);
+        int demoprol = text.indexOf("Demoprol");
+        CropCutter.Cut other = cutter.cutValue(new ExtractionResult.SourceSpan(1, demoprol, demoprol + "Demoprol 50".length()),
+                "Demoprol", "50", pages);
+        assertThat(other.outcome()).isEqualTo(CropCutter.Outcome.CLAIMED_SPAN);
+        assertThat(other.line()).contains("1:" + rxLine + "-" + (rxLine + rxLineText.length()));
+        assertThat(other.line()).isNotEqualTo(fromAbove.line());
     }
 
     /** A cut that failed, or one cut from a region of the image, names no OCR line. */

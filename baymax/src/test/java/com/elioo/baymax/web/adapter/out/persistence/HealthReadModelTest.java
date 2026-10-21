@@ -203,6 +203,70 @@ class HealthReadModelTest {
         });
     }
 
+    /**
+     * Review of #122, finding 4: a retake that has since been replaced by a paper that was read is not owed any more. The
+     * chat stack (IN_FLIGHT) already drops it; the health screen must agree. Both directions: a replacement that was read
+     * (here a lab report) silences it, a replacement that FAILED does not.
+     */
+    @Test
+    void aReplacedRetakeIsNotSaid() {
+        runner().run(context -> {
+            UUID ma = patient(context);
+            UUID done = doc(context, ma, "2026-08-01T08:00:00Z", "2026-08-01", "prescription", "DONE");
+            UUID retake = doc(context, ma, "2026-08-10T08:00:00Z", null, "prescription", "NEEDS_RETAKE");
+            UUID replacement = doc(context, ma, "2026-08-11T08:00:00Z", "2026-08-11", "lab_report", "DONE");
+            replaces(replacement, retake);
+            HealthReadPort port = context.getBean(HealthReadPort.class);
+            LatestPrescription latest = port.latestPrescription(ma).block();
+            assertThat(latest.documentId()).isEqualTo(done);
+            assertThat(latest.newerNotRead()).as("the retake was replaced by a paper that was read").isEmpty();
+
+            sql("UPDATE baymax.document SET status = 'FAILED' WHERE id = '" + replacement + "'");
+            assertThat(port.latestPrescription(ma).block().newerNotRead()).as("a FAILED replacement leaves the retake owed").contains(retake);
+        });
+    }
+
+    /**
+     * Review of #122, finding 8: P is read; a later prescription N waits for a retake; its retake R is read with an older
+     * printed date than P, so P stays the latest. N was retaken and read: it is not "a newer prescription not read yet".
+     */
+    @Test
+    void aRetakenPrescriptionIsNotSaidWhenItsRetakeWasRead() {
+        runner().run(context -> {
+            UUID ma = patient(context);
+            UUID p = doc(context, ma, "2026-08-01T08:00:00Z", "2026-08-01", "prescription", "DONE");
+            UUID n = doc(context, ma, "2026-08-10T08:00:00Z", null, "prescription", "NEEDS_RETAKE");
+            UUID r = doc(context, ma, "2026-08-11T08:00:00Z", "2026-07-01", "prescription", "DONE");
+            replaces(r, n);
+            LatestPrescription latest = context.getBean(HealthReadPort.class).latestPrescription(ma).block();
+            assertThat(latest.documentId()).as("the retake's printed date is older, so P stays the latest").isEqualTo(p);
+            assertThat(latest.newerNotRead()).as("N was retaken and read").isEmpty();
+        });
+    }
+
+    /**
+     * Review of #122, finding 7 (widens the plan's definition; Pending for the PO beside Q8): a later upload that FAILED on
+     * our side was never read, and the family still owes a readable photo, so the older list is not the latest unsaid. A
+     * FAILED paper typed as something else is not a prescription; one replaced by a retake that is not FAILED is not owed.
+     */
+    @Test
+    void aLaterFailedUploadIsSaid() {
+        runner().run(context -> {
+            UUID ma = patient(context);
+            doc(context, ma, "2026-08-01T08:00:00Z", "2026-08-01", "prescription", "DONE");
+            HealthReadPort port = context.getBean(HealthReadPort.class);
+            doc(context, ma, "2026-08-05T08:00:00Z", null, "lab_report", "FAILED");
+            assertThat(port.latestPrescription(ma).block().newerNotRead()).as("a FAILED lab report is not a prescription").isEmpty();
+
+            UUID failed = doc(context, ma, "2026-08-10T08:00:00Z", null, null, "FAILED");
+            assertThat(port.latestPrescription(ma).block().newerNotRead()).contains(failed);
+
+            UUID retake = doc(context, ma, "2026-08-12T08:00:00Z", "2026-07-01", "prescription", "DONE");
+            replaces(retake, failed);
+            assertThat(port.latestPrescription(ma).block().newerNotRead()).as("the FAILED paper was retaken and read").isEmpty();
+        });
+    }
+
     @Test
     void aLabReportsMedicinesAreNotAPrescription() {
         runner().run(context -> {
@@ -238,6 +302,11 @@ class HealthReadModelTest {
             assertThat((String) row.get("crop_key")).contains(rx.toString());
             assertThat(row).doesNotContainKey("action");
         });
+    }
+
+    /** D1: {@code retake} is the paper sent in place of {@code replaced}. */
+    private static void replaces(UUID retake, UUID replaced) throws Exception {
+        sql("UPDATE baymax.document SET replaces_document_id = '" + replaced + "' WHERE id = '" + retake + "'");
     }
 
     private static void sql(String statement) throws Exception {

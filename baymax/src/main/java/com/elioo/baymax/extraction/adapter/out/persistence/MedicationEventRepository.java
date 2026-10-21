@@ -12,6 +12,7 @@ import java.util.UUID;
  */
 public interface MedicationEventRepository extends ReactiveCrudRepository<MedicationEventEntity, UUID> {
 
-    @Query("SELECT * FROM baymax.medication_event WHERE document_id = :documentId ORDER BY name")
+    /** Alphabetically, then by id so two lines with one name keep one order: the health screen's ORDER BY too (plan B6). */
+    @Query("SELECT * FROM baymax.medication_event WHERE document_id = :documentId ORDER BY name, id")
     Flux<MedicationEventEntity> findByDocumentId(UUID documentId);
 }

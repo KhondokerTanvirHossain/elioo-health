@@ -114,7 +114,59 @@ class HealthServiceTest {
         assertThat(pointIds).as("every observation is in a point").containsExactlyInAnyOrderElementsOf(rows.stream().map(r -> r.get("id")).toList());
     }
 
+    /**
+     * Review of #122, finding 6, the dangerous direction: a row with no printed unit is never joined by name alone.
+     * Creatinine read without its unit on two papers (1.2, really mg/dL; 106, really µmol/L) is not one series rising 90x.
+     */
+    @Test
+    void twoRowsWithNoUnitAreNeverOneSeries() {
+        Map<String, Object> mgdl = row(doc(), "2026-10-01", "Creatinine", "creatinine", "1.2", null);
+        Map<String, Object> umol = row(doc(), "2026-09-01", "Creatinine", "creatinine", "106", null);
+        HealthUseCase.HealthLabs labs = labs(mgdl, umol);
+        assertThat(labs.series()).hasSize(2);
+        assertThat(labs.series()).allSatisfy(s -> assertThat(s.points()).hasSize(1));
+        assertThat(labs.series()).extracting(s -> s.points().get(0).observationId())
+                .containsExactly((UUID) mgdl.get("id"), (UUID) umol.get("id"));
+    }
+
+    /** Finding 6, the other half: a row with no unit (null or blank) never joins a series that has one. */
+    @Test
+    void aRowWithNoUnitNeverJoinsAUnitSeries() {
+        Map<String, Object> bare = row(doc(), "2026-10-01", "Creatinine", "creatinine", "1.2", null);
+        Map<String, Object> blank = row(doc(), "2026-09-15", "Creatinine", "creatinine", "1.3", "  ");
+        Map<String, Object> printed = row(doc(), "2026-09-01", "Creatinine", "creatinine", "106", "µmol/L");
+        Map<String, Object> printedToo = row(doc(), "2026-08-01", "Creatinine", "creatinine", "101", "umol/L");
+        HealthUseCase.HealthLabs labs = labs(bare, blank, printed, printedToo);
+        assertThat(labs.series()).extracting(s -> s.points().size()).containsExactly(1, 1, 2);
+        assertThat(labs.series().get(2).points()).extracting(LabSeries.Point::observationId)
+                .as("the unit series holds only rows with a printed unit").containsExactly((UUID) printed.get("id"), (UUID) printedToo.get("id"));
+    }
+
     // ---- blood pressure, both directions ---------------------------------------------------------------------
+
+    /**
+     * Review of #122, finding 2: the "same document" half of the pair key. Two vitals papers from one clinic template both
+     * store {@code BP : 130 / 80} on line {@code 1:0-13}; keyed on the line alone that is two of each on one key, and every
+     * pair would vanish. Each paper is its own pair, both halves from it, newest first.
+     */
+    @Test
+    void theSameLineOnTwoPapersIsTwoPairs() {
+        UUID d1 = doc(), d2 = doc();
+        HealthUseCase.HealthLabs labs = labs(
+                bpOn(d1, "2026-10-01", "bp_systolic", "130", "1:0-13", "crop-v1.jpg"),
+                bpOn(d1, "2026-10-01", "bp_diastolic", "80", "1:0-13", "crop-v2.jpg"),
+                bpOn(d2, "2026-09-01", "bp_systolic", "150", "1:0-13", "crop-v1.jpg"),
+                bpOn(d2, "2026-09-01", "bp_diastolic", "95", "1:0-13", "crop-v2.jpg"));
+        assertThat(labs.bp().points()).hasSize(2);
+        assertThat(labs.bp().points()).allSatisfy(p -> {
+            assertThat(p.systolic().documentId()).isEqualTo(p.documentId());
+            assertThat(p.diastolic().documentId()).isEqualTo(p.documentId());
+        });
+        assertThat(labs.bp().points()).as("newest first").extracting(LabSeries.BpPoint::documentId).containsExactly(d1, d2);
+        assertThat(labs.bp().points()).extracting(p -> p.systolic().value() + "/" + p.diastolic().value())
+                .containsExactly("130/80", "150/95");
+        assertThat(labs.series()).isEmpty();
+    }
 
     @Test
     void aSystolicAndDiastolicOnOneLineAreOnePair() {
@@ -338,7 +390,11 @@ class HealthServiceTest {
     }
 
     private Map<String, Object> bp(UUID document, String canonical, String value, String line, String crop) {
-        Map<String, Object> m = row(document, "2026-10-01", "BP", canonical, value, "mmHg");
+        return bpOn(document, "2026-10-01", canonical, value, line, crop);
+    }
+
+    private Map<String, Object> bpOn(UUID document, String date, String canonical, String value, String line, String crop) {
+        Map<String, Object> m = row(document, date, "BP", canonical, value, "mmHg");
         m.put("crop_key", "f/p/" + document + "/" + crop);
         if (line != null) {
             m.put("source_line", line);

@@ -30,7 +30,9 @@ import java.util.UUID;
  * <ul>
  *   <li><b>A series</b> is {@code (patient, canonical_name, MarkerThreshold.foldUnit(unit))}. Two rows are one series only
  *       when all three are equal; nothing is paired by name alone and nothing consumes a first match, so an absolute
- *       count and a percentage of one cell type stay two series, and MICRO SIGN, GREEK MU and ASCII u are one unit.</li>
+ *       count and a percentage of one cell type stay two series, and MICRO SIGN, GREEK MU and ASCII u are one unit. A row
+ *       with no printed unit (null or blank once folded) is a series of its own: it never joins another unitless row nor
+ *       a series with a unit, as no threshold ever matches it either.</li>
  *   <li><b>A blood-pressure pair</b> is a {@code bp_systolic} and a {@code bp_diastolic} on the same document and the same
  *       non-null OCR line ({@code source_line}), exactly one of each. Never by order, by document alone or by crop key:
  *       production gives every value its own crop, even two cut from one line. Anything else stays in its own series.</li>
@@ -93,7 +95,9 @@ public class HealthService implements HealthUseCase {
             paired.add(diastolic.get(0).get("id"));
         }
 
-        // 2. series: every other row, keyed by canonical name and folded unit
+        // 2. series: every other row, keyed by canonical name and folded unit; a row with no printed unit is its own series,
+        //    keyed by its observation id, because "no unit" is not a unit: creatinine read without one on two papers may be
+        //    1.2 mg/dL and 106 µmol/L, and joined by name alone they would draw a 90x rise that never happened
         Map<List<String>, List<Map<String, Object>>> byKey = new LinkedHashMap<>();
         for (Map<String, Object> row : rows) {
             if (paired.contains(row.get("id"))) {
@@ -101,7 +105,8 @@ public class HealthService implements HealthUseCase {
             }
             String canonical = String.valueOf(row.get("canonical_name"));
             String fold = MarkerThreshold.foldUnit((String) row.get("unit"));
-            byKey.computeIfAbsent(List.of(canonical, fold), k -> new ArrayList<>()).add(row);
+            List<String> key = fold.isEmpty() ? List.of(canonical, fold, "observation:" + row.get("id")) : List.of(canonical, fold);
+            byKey.computeIfAbsent(key, k -> new ArrayList<>()).add(row);
         }
         List<LabSeries> series = new ArrayList<>();
         byKey.forEach((key, members) -> {

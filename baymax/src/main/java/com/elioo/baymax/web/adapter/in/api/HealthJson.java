@@ -48,7 +48,7 @@ public final class HealthJson {
             m.put("date_uncertain", latest.dateUncertain());
         }
         m.put("medicines", !latest.found() ? List.of()
-                : latest.medicines().stream().filter(HealthJson::hasCrop).map(row -> medicine(latest.documentId(), row)).toList());
+                : latest.medicines().stream().map(row -> medicine(latest.documentId(), row)).toList());
         m.put("newer_prescription_not_read", latest.newerNotRead().isPresent());
         m.put("newer_document_id", latest.newerNotRead().map(UUID::toString).orElse(null));
         return m;
@@ -90,22 +90,24 @@ public final class HealthJson {
         return m;
     }
 
+    /**
+     * A row {@code HealthService} has already narrowed to what the line was written with plus {@code crop_key}: the one
+     * copy of the as-written rule is there. Here the crop key becomes its crop. A row without one cannot exist
+     * ({@code medication_event.crop_key} is NOT NULL, DR-12) and is refused loudly, never silently dropped.
+     */
     private static Map<String, Object> medicine(UUID documentId, Map<String, Object> row) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        for (String field : PaperDisplay.MEDICINE_FIELDS) {
-            Object written = row.get(field);
-            if (written != null && !String.valueOf(written).isBlank()) {
-                m.put(field, String.valueOf(written));
-            }
+        Object cropKey = row.get("crop_key");
+        if (cropKey == null || String.valueOf(cropKey).isBlank()) {
+            throw new IllegalStateException("a medicine line without its crop on document " + documentId);
         }
-        m.put("crop", ordered("src", ImageRefs.crop(documentId, String.valueOf(row.get("crop_key")))));
+        Map<String, Object> m = new LinkedHashMap<>();
+        row.forEach((key, written) -> {
+            if (!key.equals("crop_key")) {
+                m.put(key, written);
+            }
+        });
+        m.put("crop", ordered("src", ImageRefs.crop(documentId, String.valueOf(cropKey))));
         return m;
-    }
-
-    /** No line without its crop (DR-12); Postgres cannot hold one, so this skip is defensive. */
-    private static boolean hasCrop(Map<String, Object> row) {
-        Object key = row.get("crop_key");
-        return key != null && !String.valueOf(key).isBlank();
     }
 
     private static Map<String, Object> ordered(Object... pairs) {

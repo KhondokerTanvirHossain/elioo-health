@@ -255,7 +255,7 @@ Each line is one PR. The **Waves** order work; within a wave, lanes run in paral
   - the guard is replayed against the pre-fix query.
 - **D2** Retakes filed under the upload day; uncertain dates stored (migration). Proof: a month-grouping test across a Dhaka midnight.
 - **W8** কাগজপত্র wall calendar, DueCard, month list; Review Focus 1. Flips `/app/timeline`.
-- **B6** Lab series by `(patient_id, canonical_name, folded unit)`, with blood-pressure pairing via the shared `crop_key`, and medicines as written on the latest prescription (decision 9). Proof:
+- **B6** Lab series by `(patient_id, canonical_name, folded unit)`, with blood-pressure pairing via the OCR line the value was read from (`observation.source_line`, Q8 in the Wave 2b/3 plan; production never shares a `crop_key`), and medicines as written on the latest prescription (decision 9). Proof:
   - a join test in the dangerous direction (two different rows sharing a key are not merged);
   - the MICRO SIGN fold;
   - one-sided points are never INSIDE.
