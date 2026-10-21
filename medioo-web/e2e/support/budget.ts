@@ -78,3 +78,36 @@ export function concretePath(pattern: string): string {
   }
   return pattern;
 }
+
+/** The two self-hosted Noto subsets the W1a probe measured, both on every measured load (DR-42 item 2). */
+export const NOTO_SUBSETS = ["/fonts/noto-sans-bengali.woff2", "/fonts/noto-sans-latin.woff2"] as const;
+
+export type MeasuredRow = { kind: string; url: string; status: number; wire: number };
+
+/**
+ * Why a load's fonts do not make it a whole DR-42 measurement: empty when both Noto subsets crossed the wire, once
+ * each, answering 200 with non-zero wire bytes, and no other font came with them. globals.css loads the subsets by
+ * unicode-range, so a page that lays out no Bangla (the `en` cookie, a Latin-only error state) fetches no Bengali
+ * subset, and a broken @font-face, path or CSP font-src fetches nothing at all; either would measure up to 97,648 B
+ * under the truth and pass. A measurement that missed a class is flattering, not small.
+ */
+export function fontProblems(rows: readonly MeasuredRow[]): string[] {
+  const pathOf = (url: string) => new URL(url, "http://budget.invalid").pathname;
+  const fonts = rows.filter((r) => r.kind === "font");
+  const problems: string[] = [];
+  for (const subset of NOTO_SUBSETS) {
+    const seen = fonts.filter((r) => pathOf(r.url) === subset);
+    if (seen.length === 0) {
+      problems.push(`missing ${subset}`);
+      continue;
+    }
+    if (seen.length > 1) problems.push(`${subset} fetched ${seen.length} times`);
+    for (const r of seen) {
+      if (r.status !== 200) problems.push(`${subset} answered ${r.status}`);
+      else if (r.wire <= 0) problems.push(`${subset} has ${r.wire} B on the wire`);
+    }
+  }
+  const known: readonly string[] = NOTO_SUBSETS;
+  for (const r of fonts) if (!known.includes(pathOf(r.url))) problems.push(`unexpected font ${r.url}`);
+  return problems;
+}

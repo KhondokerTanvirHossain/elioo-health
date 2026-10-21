@@ -4,8 +4,8 @@
 # without Docker (BUDGET_REPLICA_ONLY=1):
 #   - from the repo's docs/infra/Caddyfile.medioo, the replica is the medioo.eliooo.org block with only the address and
 #     the reverse_proxy upstreams changed: every other line identical, in order, and nothing sent to Java;
-#   - a source block without `encode zstd gzip`, without Strict-Transport-Security, without the site, or that never
-#     closes, is refused with a message naming why, so the run can never measure a setup that is not production's.
+#   - a source block without `encode zstd gzip`, without Strict-Transport-Security, without the site, that never
+#     closes, or whose Java upstream the rewrite cannot replace, is refused with a message naming why, so the run can never measure a setup that is not production's.
 #
 #   bash scripts/test_budget_replica.sh
 set -uo pipefail
@@ -49,6 +49,11 @@ refused no-site "no 'medioo.eliooo.org {' block" "${good/medioo.eliooo.org/examp
 close=$'}\n'
 refused unclosed "never closes" "${good%"$close"}"
 refused no-proxy "has no reverse_proxy" "${good/reverse_proxy medscribe-ai:8086/respond 200}"
+# An upstream the rewrite cannot replace (a block-form reverse_proxy, or two upstreams on one line) keeps Java in the
+# replica; only the "still sends a path to Java" guard stands between that and a run measuring Java's pages.
+java_block=$'reverse_proxy medscribe-ai:8086 {\n\t\t\tflush_interval -1\n\t\t}'
+refused java-block "still sends a path to Java" "${good/reverse_proxy medscribe-ai:8086/$java_block}"
+refused java-two-upstreams "still sends a path to Java" "${good/reverse_proxy medscribe-ai:8086/reverse_proxy medscribe-ai:8086 medscribe-ai:8087}"
 
 [ "$FAILED" = 0 ] && echo "test_budget_replica: all cases passed"
 exit "$FAILED"

@@ -2,12 +2,13 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, type Page, type Response, type TestInfo } from "@playwright/test";
 import { NEXT_PAGES } from "../src/routing/paths";
-import { ceilingMessage, concretePath, isJavaImage, readCeilings, routeTotal } from "./support/budget";
+import { ceilingMessage, concretePath, fontProblems, isJavaImage, readCeilings, routeTotal } from "./support/budget";
 
 type Kind = "document" | "script" | "stylesheet" | "font" | "rsc" | "other";
 type Row = {
   kind: Kind;
   url: string;
+  status: number;
   sameOrigin: boolean;
   encoding: string;
   wire: number;
@@ -19,11 +20,13 @@ type Row = {
  * The DR-42 first-load wire budget, enforced (W1d).
  *
  * Every load is measured exactly as the W1a measurement measured /app/probe: a cold first load (a fresh context per
- * test), both self-hosted Noto subsets fetched and counted, the encoded body bytes from the browser's network stack
+ * test), both self-hosted Noto subsets fetched and counted (forced in coldLoad, required of every load, the probe and
+ * each routed page alike, by fontProblems), the encoded body bytes from the browser's network stack
  * (`responseBodySize`, not a content-length header, which a streamed HTML response does not have), headers not
  * counted. The ceilings are read from e2e/budget-ceilings.json and nowhere else, never from a probe measured in this
  * run, which would move with the framework. They are defined on the phone profile (Pixel 7, 390x844), so they are
- * enforced on the phone project; the desktop project measures and records.
+ * enforced on the phone project once that project is shown to be that profile (enforcedHere); the desktop project
+ * measures and records.
  *
  * The defining run is behind a Caddy replica of docs/infra/Caddyfile.medioo (scripts/budget-behind-caddy.sh), with
  * E2E_VIA_CADDY=1: every measured document must then carry Strict-Transport-Security, which only that Caddy block
@@ -65,6 +68,17 @@ async function coldLoad(page: Page, origin: string, path: string): Promise<Load>
   const doc = await page.goto(path);
   await page.waitForLoadState("networkidle");
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
+  // The worst case the ceilings are defined on (a phone without Noto, DR-42 item 2) fetches both subsets, whatever
+  // this page happens to lay out: globals.css loads them by unicode-range, so a page with no Bangla on its first render
+  // (the `en` cookie, a Latin-only error state) would otherwise skip 69,784 B. Each load asks for one face through the
+  // page's own @font-face rules, so a face that is broken or blocked still fetches nothing and fontProblems says so.
+  await page.evaluate(() =>
+    Promise.all([
+      // U+0985 BENGALI LETTER A, by code point: copy lives in the catalog, never as a literal (bangla-literal.test.ts).
+      document.fonts.load('400 16px "Noto Sans Bengali"', String.fromCodePoint(0x0985)),
+      document.fonts.load('400 16px "Noto Sans"', "A"),
+    ]).then(() => undefined),
+  );
   await page.waitForLoadState("networkidle");
 
   const rows: Row[] = [];
@@ -75,6 +89,7 @@ async function coldLoad(page: Page, origin: string, path: string): Promise<Load>
     rows.push({
       kind: kindOf(r),
       url: r.url().replace(origin, ""),
+      status: r.status(),
       sameOrigin: new URL(r.url()).origin === origin,
       encoding: r.headers()["content-encoding"] ?? "identity",
       wire: sizes.responseBodySize,
@@ -130,6 +145,28 @@ function expectAWholeMeasurement(load: Load, origin: string, path: string) {
   expect(load.totals.script?.count ?? 0, `${path}: Next's client scripts`).toBeGreaterThan(0);
   expect(load.totals.stylesheet?.count ?? 0, `${path}: the stylesheet`).toBeGreaterThan(0);
   for (const r of load.rows) expect(r.wire, `wire bytes measured for ${r.url}`).toBeGreaterThan(0);
+  // Both Noto subsets, on every measured load and not only the probe (DR-42 item 2): globals.css loads them by
+  // unicode-range, so a load without one is up to 97,648 B under the worst case the ceilings are defined on.
+  expect(fontProblems(load.rows), `${path}: both Noto subsets crossed the wire, once each`).toEqual([]);
+}
+
+/**
+ * Whether this test enforces the ceilings. They are defined on a profile (Pixel 7, 390x844, DR-42 item 2), not on a
+ * project's name, so the enforcing project's profile is asserted before a number is compared; and a config without a
+ * project of that name fails here, so a rename cannot switch enforcement off in the `next start` run.
+ */
+async function enforcedHere(page: Page, testInfo: TestInfo): Promise<boolean> {
+  expect(
+    testInfo.config.projects.map((p) => p.name),
+    `a project named "${ENFORCED_ON}" exists, or no run would enforce the ceilings`,
+  ).toContain(ENFORCED_ON);
+  if (testInfo.project.name !== ENFORCED_ON) return false;
+  expect(page.viewportSize(), `the ${ENFORCED_ON} project measures at DR-42's 390x844`).toEqual({ width: 390, height: 844 });
+  expect(testInfo.project.use.isMobile, `the ${ENFORCED_ON} project is a mobile profile`).toBe(true);
+  expect(await page.evaluate(() => navigator.userAgent), `the ${ENFORCED_ON} project is the Pixel 7 profile`).toMatch(
+    /\bPixel 7\b/,
+  );
+  return true;
 }
 
 test("the framework floor: a cold first load of the probe, within the probe ceiling", async ({ page, baseURL }, testInfo) => {
@@ -138,16 +175,10 @@ test("the framework floor: a cold first load of the probe, within the probe ceil
   record(testInfo, "budget", baseURL!, load);
 
   expectAWholeMeasurement(load, origin, "/app/probe");
-  // The probe is built to cross the wire with both fonts, the worst case (a phone without Noto).
-  const fonts = load.rows.filter((r) => r.kind === "font").map((r) => r.url).sort();
-  expect(fonts, "both Noto subsets crossed the wire").toEqual([
-    "/fonts/noto-sans-bengali.woff2",
-    "/fonts/noto-sans-latin.woff2",
-  ]);
 
   // The probe's own total, every response (it loads no Java image, and none is excused from the floor).
   const { probe } = readCeilings();
-  if (testInfo.project.name === ENFORCED_ON) {
+  if (await enforcedHere(page, testInfo)) {
     expect(load.all.wire, ceilingMessage("probe", "/app/probe", load.all.wire, probe)).toBeLessThanOrEqual(probe);
   }
 });
@@ -164,7 +195,7 @@ for (const pattern of NEXT_PAGES) {
 
     expectAWholeMeasurement(load, origin, path);
     const { route } = readCeilings();
-    if (testInfo.project.name === ENFORCED_ON) {
+    if (await enforcedHere(page, testInfo)) {
       expect(total, ceilingMessage("route", path, total, route)).toBeLessThanOrEqual(route);
     }
   });

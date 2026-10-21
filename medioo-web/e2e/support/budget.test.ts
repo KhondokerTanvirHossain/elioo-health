@@ -2,7 +2,16 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { CEILINGS_FILE, ceilingMessage, concretePath, isJavaImage, readCeilings, routeTotal } from "./budget";
+import {
+  CEILINGS_FILE,
+  NOTO_SUBSETS,
+  ceilingMessage,
+  concretePath,
+  fontProblems,
+  isJavaImage,
+  readCeilings,
+  routeTotal,
+} from "./budget";
 
 // The rules budget.spec.ts enforces with, judged here without a browser (DR-42 items 2-4, screens plan S9).
 const dir = mkdtempSync(join(tmpdir(), "budget-ceilings-"));
@@ -13,11 +22,23 @@ const file = (name: string, text: string) => {
 };
 
 describe("readCeilings", () => {
-  it("reads the committed file, and it holds exactly the two ceilings", () => {
-    const c = readCeilings(CEILINGS_FILE);
-    expect(Object.keys(c).sort()).toEqual(["probe", "route"]);
-    expect(Number.isSafeInteger(c.probe) && c.probe > 0).toBe(true);
-    expect(Number.isSafeInteger(c.route) && c.route > 0).toBe(true);
+  it("reads the committed file, and it holds exactly DR-42's two ceilings, as docs/DECISIONS.md records them", () => {
+    // The numbers are the PO's record (DR-42 items 2 and 3), parsed from it rather than restated here: a ceilings change
+    // fails this test unless DECISIONS.md, which changes only with the PO, changes with it.
+    const decisions = readFileSync(join(__dirname, "..", "..", "..", "docs", "DECISIONS.md"), "utf8");
+    const start = decisions.indexOf("\n## DR-42 |");
+    expect(start, "the DR-42 section was found in docs/DECISIONS.md").toBeGreaterThanOrEqual(0);
+    const end = decisions.indexOf("\n## ", start + 1);
+    const dr42 = decisions.slice(start, end < 0 ? undefined : end);
+    const number = (re: RegExp, what: string) => {
+      const m = re.exec(dr42);
+      expect(m, `DR-42 states ${what}`).not.toBeNull();
+      return Number((m?.[1] ?? "").replace(/,/g, ""));
+    };
+    const route = number(/^2\. \*\*First-load wire budget per routed page: ≤ ([\d,]+) B/m, "item 2's route ceiling");
+    const probe = number(/^3\. \*\*Framework floor ceiling: the probe ≤ ([\d,]+) B/m, "item 3's probe ceiling");
+    expect(Number.isSafeInteger(probe) && probe > 0 && Number.isSafeInteger(route) && route > 0).toBe(true);
+    expect(readCeilings(CEILINGS_FILE)).toEqual({ probe, route });
   });
 
   it("refuses a missing file by name", () => {
@@ -120,5 +141,67 @@ describe("concretePath", () => {
 
   it("refuses a dynamic segment it has no fixture for, rather than measuring a 404", () => {
     expect(() => concretePath("/app/documents/[id]")).toThrow(/\/app\/documents\/\[id\] has a dynamic segment/);
+  });
+});
+
+describe("fontProblems (DR-42 item 2: both self-hosted Noto subsets fetched and counted, on every measured load)", () => {
+  const BN = "/fonts/noto-sans-bengali.woff2";
+  const LATIN = "/fonts/noto-sans-latin.woff2";
+  const font = (url: string, over: Partial<{ status: number; wire: number; kind: string }> = {}) => ({
+    kind: "font",
+    url,
+    status: 200,
+    wire: url === BN ? 69_784 : 27_864,
+    ...over,
+  });
+  const page = [
+    { kind: "document", url: "/app/verify", status: 200, wire: 3_465 },
+    { kind: "script", url: "/_next/static/chunks/main-app.js", status: 200, wire: 50_000 },
+  ];
+
+  it("names the two subsets the W1a probe measured, and nothing else", () => {
+    expect([...NOTO_SUBSETS]).toEqual([BN, LATIN]);
+  });
+
+  it("passes a load on which both subsets crossed the wire, once each", () => {
+    expect(fontProblems([...page, font(LATIN), font(BN)])).toEqual([]);
+  });
+
+  it("refuses a load missing the Bengali subset (a page that laid out no Bangla, or whose face failed)", () => {
+    expect(fontProblems([...page, font(LATIN)])).toEqual([`missing ${BN}`]);
+  });
+
+  it("refuses a load missing the Latin subset", () => {
+    expect(fontProblems([...page, font(BN)])).toEqual([`missing ${LATIN}`]);
+  });
+
+  it("refuses a load missing both", () => {
+    expect(fontProblems(page)).toEqual([`missing ${BN}`, `missing ${LATIN}`]);
+  });
+
+  it("refuses a subset that answered other than 200 (a broken path measures a small error body)", () => {
+    expect(fontProblems([...page, font(BN, { status: 404, wire: 120 }), font(LATIN)])).toEqual([`${BN} answered 404`]);
+  });
+
+  it("refuses a subset with no wire bytes measured", () => {
+    expect(fontProblems([...page, font(BN), font(LATIN, { wire: 0 })])).toEqual([`${LATIN} has 0 B on the wire`]);
+  });
+
+  it("refuses a subset fetched twice (the measurement is no longer one cold load)", () => {
+    expect(fontProblems([...page, font(BN), font(BN), font(LATIN)])).toEqual([`${BN} fetched 2 times`]);
+  });
+
+  it("refuses a font that is neither subset, so a third face cannot ride along unexamined", () => {
+    expect(fontProblems([...page, font(BN), font(LATIN), font("/fonts/other.woff2")])).toEqual([
+      "unexpected font /fonts/other.woff2",
+    ]);
+  });
+
+  it("does not count a non-font response at a subset's path as the font", () => {
+    expect(fontProblems([...page, font(BN, { kind: "other" }), font(LATIN)])).toEqual([`missing ${BN}`]);
+  });
+
+  it("matches a subset by path, whatever the origin or query", () => {
+    expect(fontProblems([...page, font(`https://medioo.example${BN}?v=1`), font(LATIN)])).toEqual([]);
   });
 });
