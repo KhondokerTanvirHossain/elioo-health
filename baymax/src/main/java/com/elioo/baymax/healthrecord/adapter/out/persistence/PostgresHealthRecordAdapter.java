@@ -149,9 +149,11 @@ public class PostgresHealthRecordAdapter implements HealthRecordPort {
                 .flatMap(c -> add(c, "follow_up", "DELETE FROM " + S + ".follow_up WHERE patient_id IN " + patientsOf, "family", familyId))
                 .flatMap(c -> add(c, "outbound_message", "DELETE FROM " + S + ".outbound_message WHERE family_id = :family", "family", familyId))
                 .flatMap(c -> add(c, "nudge", "DELETE FROM " + S + ".nudge WHERE family_id = :family", "family", familyId))
-                // V22: every inbound WhatsApp message of this family, text included; before document (its FK is SET NULL)
-                // and patient_profile / family_account (no cascade, so forgetting this table fails the delete loudly)
-                .flatMap(c -> add(c, "inbound_message", "DELETE FROM " + S + ".inbound_message WHERE family_id = :family", "family", familyId))
+                // V22: every inbound WhatsApp message of this family, text included, AND every row filed under one of its
+                // patients (a photo claimed before the family existed holds the patient and no family); before document
+                // (its FK is SET NULL) and patient_profile / family_account (no cascade, so forgetting a row fails loudly)
+                .flatMap(c -> add(c, "inbound_message", "DELETE FROM " + S + ".inbound_message WHERE family_id = :family"
+                        + " OR patient_id IN " + patientsOf, "family", familyId))
                 .flatMap(c -> add(c, "stored_object", "DELETE FROM " + S + ".stored_object WHERE family_id = :family", "family", familyId))
                 .flatMap(c -> add(c, "document", "DELETE FROM " + S + ".document WHERE family_id = :family", "family", familyId))
                 .flatMap(c -> add(c, "web_session", "DELETE FROM " + S + ".web_session WHERE family_id = :family", "family", familyId))

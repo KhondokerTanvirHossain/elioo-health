@@ -148,7 +148,7 @@ class FamilyDeletionAcceptanceTest {
     }
 
     /** A family's whole graph, with a row in every table the schema says can hold its data. */
-    private record Fixture(UUID family, UUID patient, UUID docA, UUID docB, List<UUID> shareMembers) {
+    private record Fixture(UUID family, UUID patient, UUID docA, UUID docB, List<UUID> shareMembers, UUID costRow) {
     }
 
     @SuppressWarnings("unchecked")
@@ -201,7 +201,10 @@ class FamilyDeletionAcceptanceTest {
             sql("insert into baymax.medication_event (patient_id, document_id, name, crop_key, at) values ('"
                     + p + "','" + d + "','Metformin','k','2026-09-01T00:00:00Z')");
         }
-        sql("insert into baymax.ai_call_log (document_id, purpose, provider, model, input_tokens) values ('" + docA + "','extract','groq','m',10)");
+        // a known id: the container is shared by both tests, so "a detached row with 10 tokens" is not this fixture's row
+        UUID costRow = UUID.randomUUID();
+        sql("insert into baymax.ai_call_log (id, document_id, purpose, provider, model, input_tokens) values ('" + costRow + "','"
+                + docA + "','extract','groq','m',10)");
         // what a family accumulates outside the document graph: a composed message, a nudge, a session, a code, an audit
         sql("insert into baymax.outbound_message (family_id, patient_id, document_id, kind, urgency, body, gate_status) values ('"
                 + f + "','" + p + "','" + docA + "','explanation','routine','লেখা','released')");
@@ -223,12 +226,15 @@ class FamilyDeletionAcceptanceTest {
         inbound.claim(InboundMessage.received(textKey, f, "text", "বিস্তারিত", null, Instant.now()), null).block();
         inbound.claim(InboundMessage.received(photoKey, f, "image", null, "MEDIA-1", Instant.now()), null).block();
         inbound.linkDocument(photoKey, p, docA).block();
+        // a photo claimed before the family existed and filed under p by a handler that found it: patient set, family not
+        // (the claim and the handling each look the family up). Written by SQL: linkDocument now fills the family in.
+        sql("insert into baymax.inbound_message (provider_key, patient_id, type) values ('" + hexKey(f, 3) + "','" + p + "','image')");
 
         List<UUID> shares = new ArrayList<>();
         for (String id : column("select id from baymax.share_member where patient_id = '" + p + "'")) {
             shares.add(UUID.fromString(id));
         }
-        return new Fixture(f, p, docA, docB, shares);
+        return new Fixture(f, p, docA, docB, shares, costRow);
     }
 
     /** An HMAC-shaped key, unique per family, so two fixtures in one database never collide. */
@@ -275,7 +281,8 @@ class FamilyDeletionAcceptanceTest {
 
             assertThat(stillHolding(targets, fx, t -> true)).as("tables still holding rows for the deleted family").isEmpty();
             assertThat(scalar("select count(*) from baymax.ai_call_log where document_id = '" + fx.docA() + "'")).isEqualTo("0");
-            assertThat(scalar("select count(*) from baymax.ai_call_log where document_id is null and input_tokens = 10")).isEqualTo("1");
+            assertThat(scalar("select (document_id is null)::text from baymax.ai_call_log where id = '" + fx.costRow() + "'"))
+                    .as("the fixture's cost row survives, detached from the deleted document").isEqualTo("true");
             assertThat(bucket.listKeys(familyId + "/").collectList().block()).isEmpty();
             assertThat(bucket.listKeys(otherFamily + "/").collectList().block()).hasSize(1);
 
@@ -305,6 +312,8 @@ class FamilyDeletionAcceptanceTest {
             assertThat(stillHolding(targets, fx, patientScoped)).as("tables still holding rows for the deleted patient").isEmpty();
             assertThat(scalar("select count(*) from baymax.family_account where id = '" + fx.family() + "'"))
                     .as("the family survives its patient").isEqualTo("1");
+            assertThat(scalar("select (document_id is null)::text from baymax.ai_call_log where id = '" + fx.costRow() + "'"))
+                    .as("the fixture's cost row survives, detached from the patient's deleted document").isEqualTo("true");
             assertThat(scalar("select count(*) from baymax.inbound_message where family_id = '" + fx.family()
                     + "' and patient_id is null and body is not null"))
                     .as("the family-level WhatsApp text belongs to the family, not the patient").isEqualTo("1");
