@@ -1,6 +1,5 @@
 package com.elioo.baymax.web.adapter.in.api;
 
-import com.elioo.baymax.common.time.PatientCalendar;
 import com.elioo.baymax.extraction.domain.DocumentView;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.outbound.domain.Urgency;
@@ -9,14 +8,13 @@ import com.elioo.baymax.outbound.domain.ValueVerdict;
 import com.elioo.baymax.storage.domain.ImageDimensions;
 import com.elioo.baymax.web.adapter.in.ImageRefs;
 import com.elioo.baymax.web.domain.GateState;
+import com.elioo.baymax.web.domain.PaperDate;
 import com.elioo.baymax.web.domain.PaperDisplay;
 import com.elioo.baymax.web.domain.ReadingView;
 import com.elioo.baymax.web.domain.ResultView;
 import com.elioo.baymax.web.domain.ViewerLocale;
 
 import java.time.Instant;
-import java.time.LocalDate;
-import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -55,7 +53,7 @@ public final class PaperJson {
         Function<Map<String, Object>, Map<String, Object>> crop = row -> crop(documentId, String.valueOf(row.get("crop_key")), sizes);
         Map<String, Object> m = head(v, r.patient(), r.owner(), r.viewer(), r.receivedAt());
         m.put("document_type", v.documentType());
-        dates(m, v.documentDate(), r.receivedAt());
+        dates(m, v.documentDate(), r.date());
         m.put("facility", blank(v.facility()) ? null : v.facility());
         Urgency level = r.urgency();
         m.put("urgency", level == null ? null : level.dbValue());
@@ -139,28 +137,16 @@ public final class PaperJson {
     }
 
     /**
-     * DocumentPages.paperDateText's rule: a printed date is shown as printed (ISO or not); only when nothing was printed is
-     * the paper dated by its upload day, on the patient's calendar (Dhaka), and marked so.
+     * D2: the paper's date is the day it is filed under, {@code document.timeline_date}, read and never re-derived here.
+     * When that is its upload day (a retake, whose printed date is the least trustworthy read there is, or a paper that
+     * printed none) {@code printed_date} is null, never absent, and {@code date_is_upload_day} says so; otherwise the
+     * printed date is sent as printed beside it. {@code date_uncertain} is the model's mark on a printed date (Q6).
      */
-    private static void dates(Map<String, Object> m, String printed, Instant receivedAt) {
-        if (!blank(printed)) {
-            m.put("printed_date", printed);
-            m.put("date", iso(printed) ? printed : null);
-            m.put("date_is_upload_day", false);
-        } else {
-            m.put("printed_date", null);
-            m.put("date", receivedAt == null ? null : PatientCalendar.dayOf(receivedAt).toString());
-            m.put("date_is_upload_day", true);
-        }
-    }
-
-    private static boolean iso(String date) {
-        try {
-            LocalDate.parse(date);
-            return true;
-        } catch (DateTimeParseException e) {
-            return false;
-        }
+    private static void dates(Map<String, Object> m, String printed, PaperDate filed) {
+        m.put("printed_date", filed.uploadDay() || blank(printed) ? null : printed);
+        m.put("date", filed.date() == null ? null : filed.date().toString());
+        m.put("date_is_upload_day", filed.uploadDay());
+        m.put("date_uncertain", filed.uncertain());
     }
 
     private static Map<String, Object> value(Map<String, Object> row, Set<ValueVerdict.Kind> above,

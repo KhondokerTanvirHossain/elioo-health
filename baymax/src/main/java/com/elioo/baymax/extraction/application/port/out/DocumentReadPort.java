@@ -24,7 +24,7 @@ public interface DocumentReadPort {
      * ordered before {@code beforeDocumentId} (timeline date, then sent time), newest first. The unit is NOT compared
      * here: the caller folds it (one fold for the whole module, {@code MarkerThreshold.sameUnit}). Each map holds
      * {@code id}, {@code document_id}, {@code value}, {@code unit} (absent when none was printed), {@code crop_key},
-     * {@code date} (the paper's {@code timeline_date}) and {@code date_is_fallback} ({@code doc_date IS NULL}).
+     * {@code date} (the paper's {@code timeline_date}) and {@code date_is_fallback} ({@code timeline_date_is_upload_day}, D2).
      */
     Flux<Map<String, Object>> readingsOf(UUID patientId, String canonicalName, UUID beforeDocumentId);
 }

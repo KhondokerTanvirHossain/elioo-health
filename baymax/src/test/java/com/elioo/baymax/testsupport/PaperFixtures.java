@@ -4,6 +4,7 @@ import com.elioo.baymax.extraction.domain.DocumentView;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.web.domain.GateState;
+import com.elioo.baymax.web.domain.PaperDate;
 import com.elioo.baymax.web.domain.ReadingView;
 import com.elioo.baymax.web.domain.ResultView;
 import com.elioo.baymax.web.domain.ViewerLocale;
@@ -150,6 +151,30 @@ public final class PaperFixtures {
 
     // ---- result and reading views -----------------------------------------------------------------------
 
+    /**
+     * D2: the filing day the document row would read back for this view, as V24's generated columns define it: a retake
+     * or a paper with no printed date under its upload day in Dhaka, every other paper under its printed date. Test
+     * support only — it stands in for the row a mocked read never touches; main code reads the columns and never this.
+     * A printed date Postgres could not hold as a date has no filing day here.
+     */
+    public static PaperDate filedAsStored(DocumentView view, Instant receivedAt) {
+        String printed = view.documentDate();
+        if ("NEEDS_RETAKE".equals(view.status()) || printed == null || printed.isBlank()) {
+            return new PaperDate(receivedAt == null ? null : com.elioo.baymax.common.time.PatientCalendar.dayOf(receivedAt), true, false);
+        }
+        try {
+            return new PaperDate(java.time.LocalDate.parse(printed), false, false);
+        } catch (java.time.format.DateTimeParseException e) {
+            return new PaperDate(null, false, false);
+        }
+    }
+
+    /** The same view, its printed date marked uncertain by the model (Q6). */
+    public static ResultView uncertain(ResultView r) {
+        return new ResultView(r.document(), r.patient(), r.owner(), r.viewer(), r.urgency(), r.urgencyReasons(), r.gate(), r.wording(),
+                r.retakeOrdinal(), r.reviewHours(), r.receivedAt(), r.now(), new PaperDate(r.date().date(), r.date().uploadDay(), true));
+    }
+
     public static ResultView result(DocumentView view, Urgency urgency, List<String> reasons, GateState gate, String wording, ViewerLocale viewer) {
         return result(view, MA, urgency, reasons, gate, wording, viewer);
     }
@@ -163,7 +188,7 @@ public final class PaperFixtures {
     public static ResultView result(DocumentView view, PatientProfile patient, Urgency urgency, List<String> reasons, GateState gate,
                                     String wording, ViewerLocale viewer, Instant receivedAt) {
         return new ResultView(view, patient, true, viewer, "DONE".equals(view.status()) ? urgency : null, reasons, gate, wording,
-                0, REVIEW_HOURS, receivedAt, NOW);
+                0, REVIEW_HOURS, receivedAt, NOW, filedAsStored(view, receivedAt));
     }
 
     /**
@@ -173,14 +198,16 @@ public final class PaperFixtures {
     public static ResultView retake(String code, int ordinal, boolean owner) {
         DocumentView view = new DocumentView(DOC.toString(), "NEEDS_RETAKE", code, null, null, null, null, null, 1,
                 null, null, null, null, null);
-        return new ResultView(view, MA, owner, BD, null, List.of(), GateState.NONE, null, ordinal, REVIEW_HOURS, NOW.minusSeconds(60), NOW);
+        return new ResultView(view, MA, owner, BD, null, List.of(), GateState.NONE, null, ordinal, REVIEW_HOURS, NOW.minusSeconds(60), NOW,
+                filedAsStored(view, NOW.minusSeconds(60)));
     }
 
     /** B5: a one-page FAILED paper of Ma's, seen by its owner. */
     public static ResultView failed() {
         DocumentView view = new DocumentView(DOC.toString(), "FAILED", null, null, null, null, null, null, 1,
                 null, null, null, null, null);
-        return new ResultView(view, MA, true, BD, null, List.of(), GateState.NONE, null, 0, REVIEW_HOURS, NOW.minusSeconds(60), NOW);
+        return new ResultView(view, MA, true, BD, null, List.of(), GateState.NONE, null, 0, REVIEW_HOURS, NOW.minusSeconds(60), NOW,
+                filedAsStored(view, NOW.minusSeconds(60)));
     }
 
     /**
@@ -196,13 +223,13 @@ public final class PaperFixtures {
                 List.of(followUp("Repeat the test after 7 days", "2026-10-19")), context,
                 Map.of("values", 1, "medicines", 0, "follow_up", 0, "total", 1));
         return new ResultView(view, MA, true, BD, null, List.of(), GateState.NONE, null, "NEEDS_RETAKE".equals(status) ? 1 : 0,
-                REVIEW_HOURS, NOW.minusSeconds(60), NOW);
+                REVIEW_HOURS, NOW.minusSeconds(60), NOW, filedAsStored(view, NOW.minusSeconds(60)));
     }
 
     /** The same view with another typical review time, so a test can tell the served value from a default. */
     public static ResultView withReviewHours(ResultView r, int hours) {
         return new ResultView(r.document(), r.patient(), r.owner(), r.viewer(), r.urgency(), r.urgencyReasons(), r.gate(), r.wording(),
-                r.retakeOrdinal(), hours, r.receivedAt(), r.now());
+                r.retakeOrdinal(), hours, r.receivedAt(), r.now(), r.date());
     }
 
     /** A paper still being read ({@code RECEIVED} or {@code PROCESSING}), sent a minute ago, seen by its owner in Bangladesh. */

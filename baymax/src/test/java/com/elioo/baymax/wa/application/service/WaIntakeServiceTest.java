@@ -1112,9 +1112,11 @@ class WaIntakeServiceTest {
     private static final java.time.ZoneId DHAKA = java.time.ZoneId.of("Asia/Dhaka");
     private final java.util.Map<UUID, java.util.List<AttentionItem.Urgent>> urgentRows = new java.util.HashMap<>();
 
+    /** As the row reads back: a DONE paper with a printed date is filed under it (D2, document.timeline_date). */
     private Document doneDocument(PatientProfile p, LocalDate docDate, Instant uploadedAt) {
         return new Document(UUID.randomUUID(), p.id(), FAMILY, "lab_report", docDate, "Shapla Diagnostics", "{}", 0.93,
-                Document.Status.DONE, null, "anthropic/claude-sonnet-5", null, 1, uploadedAt, uploadedAt);
+                Document.Status.DONE, null, "anthropic/claude-sonnet-5", null, 1, uploadedAt, uploadedAt,
+                com.elioo.baymax.extraction.domain.VerifiedItems.Unverified.none(), null, null, false, docDate, false);
     }
 
     /** A paper uploaded on the morning of its own date. */
@@ -1137,20 +1139,29 @@ class WaIntakeServiceTest {
                 new com.elioo.baymax.outbound.domain.StoredUrgency(d.id(), level, List.of(), d.createdAt())));
         if (level.isAtLeast(Urgency.THIS_WEEK)) {
             java.util.List<AttentionItem.Urgent> rows = urgentRows.computeIfAbsent(d.patientId(), k -> new java.util.ArrayList<>());
-            rows.add(new AttentionItem.Urgent(d.id(), level, d.documentType(), d.docDate(), false, d.createdAt()));
+            rows.add(new AttentionItem.Urgent(d.id(), level, d.documentType(), d.timelineDate(), d.timelineDateIsUploadDay(), d.createdAt()));
             rows.sort(AttentionItem.ORDER);
             when(attention.urgent(FAMILY, d.patientId())).thenReturn(Mono.just(List.copyOf(rows)));
         }
     }
 
     private Map<String, String> paper(Document d) {
-        return Map.of("document_type", copy.documentType(d.documentType()), "date", BanglaDate.format(d.docDate(), TODAY),
+        return paper(d, d.timelineDate());
+    }
+
+    /** The paper's name for the family, dated {@code date}. */
+    private Map<String, String> paper(Document d, LocalDate date) {
+        return Map.of("document_type", copy.documentType(d.documentType()), "date", BanglaDate.format(date, TODAY),
                 "link", props.getOutbound().getPublicBaseUrl() + "/app/documents/" + d.id());
     }
 
     /** Nothing stands: the opener, the intro and the latest paper with its link. No "মনে করিয়ে দিই", no urgency line. */
     private String greetingNaming(Document d) {
-        return String.join("\n", bn("wa.greeting.hello"), bn("wa.greeting.intro"), copy.bn("wa.greeting.latest", paper(d)));
+        return greetingNaming(d, d.timelineDate());
+    }
+
+    private String greetingNaming(Document d, LocalDate date) {
+        return String.join("\n", bn("wa.greeting.hello"), bn("wa.greeting.intro"), copy.bn("wa.greeting.latest", paper(d, date)));
     }
 
     /** A standing level: the opener, the urgent paper's name, its fixed line and the red-flag line, then the intro. */
@@ -1166,6 +1177,32 @@ class WaIntakeServiceTest {
 
     private String plainThanks() {
         return bn("wa.thanks") + "\n" + bn("safety.red_flag_line");
+    }
+
+    /**
+     * D2: a paper is named by the day it is filed under, as Postgres generated it (document.timeline_date), never by a
+     * date read off the page. A retake read back from its row carries its Dhaka upload day there; the misread printed
+     * date stays in doc_date and must never reach the family. Asserted on the whole message the paper's name is built
+     * into, against the one built from each date, not on a substring.
+     */
+    @Test
+    void aRetakeIsNeverDescribedByItsMisreadDate() {
+        PatientProfile ma = patient("মা");
+        familyWith(ma);
+        Instant uploaded = Instant.parse("2026-10-20T04:00:00Z");
+        LocalDate misread = LocalDate.parse("2021-03-04");
+        LocalDate uploadDay = LocalDate.parse("2026-10-20");
+        // as the row reads back: the printed date kept, the filing day the upload day, and the fallback flag set
+        Document retake = new Document(UUID.randomUUID(), ma.id(), FAMILY, "lab_report", misread, null, "{}", 0.4,
+                Document.Status.NEEDS_RETAKE, "developer prose", "anthropic/claude-sonnet-5", null, 1, uploaded, uploaded,
+                com.elioo.baymax.extraction.domain.VerifiedItems.Unverified.none(), null, "low_overall", false, uploadDay, true);
+        latestIs(retake);
+
+        service.onText(FROM, "Hi").block();
+
+        assertThat(sentBodies()).as("the paper is named by the day it was uploaded")
+                .containsExactly(greetingNaming(retake, uploadDay))
+                .doesNotContain(greetingNaming(retake, misread));
     }
 
     /**

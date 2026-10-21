@@ -117,7 +117,7 @@ class DocumentDetailRenderTest {
     void onlyTheOwnerIsOfferedDelete() {
         ResultView owner = ResultFixtures.result(ResultFixtures.lab(List.of()), Urgency.ROUTINE, List.of(), GateState.NONE, null, ResultFixtures.BD);
         ResultView member = new ResultView(owner.document(), owner.patient(), false, owner.viewer(), owner.urgency(), List.of(),
-                GateState.NONE, null, 0, 2, owner.receivedAt(), owner.now());
+                GateState.NONE, null, 0, 2, owner.receivedAt(), owner.now(), owner.date());
         assertThat(kit.documents.detail(Lang.BN, owner)).contains("/documents/" + ResultFixtures.DOC + "/delete")
                 .contains(copy.t(Lang.BN, "detail.delete"));
         assertThat(kit.documents.detail(Lang.BN, member)).doesNotContain("/delete").doesNotContain(copy.t(Lang.BN, "detail.delete"));

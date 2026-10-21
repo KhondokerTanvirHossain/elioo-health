@@ -772,6 +772,51 @@ class PaperApiContractTest {
         assertThat(dated.path("date_is_upload_day").asBoolean(true)).isFalse();
     }
 
+    /**
+     * D2: a retake is dated by the day it is filed under (its Dhaka upload day, document.timeline_date), never by a date
+     * the model read off the page it could not read — even when the view carries that printed date. {@code printed_date}
+     * is present and null, as for a paper with no printed date, and the body's keys are the shipped B2 keys plus
+     * {@code date_uncertain}, nothing else.
+     */
+    @Test
+    void aRetakeIsDatedByItsUploadDayNeverByWhatWasMisread() throws IOException {
+        // a retake's keys as B2 shipped them (medioo-web/fixtures/api/documents/retake-third.json before D2)
+        java.util.Set<String> shippedKeys = new java.util.TreeSet<>(List.of("banner", "counts", "date", "date_is_upload_day", "doctor",
+                "document_type", "facility", "filed", "follow_up", "gate", "id", "medicines", "owner", "page_count", "pages", "patient",
+                "printed_date", "reasons", "received_at", "retake", "status", "unverified", "urgency", "values", "viewer"));
+
+        DocumentView misread = new DocumentView(DOC.toString(), "NEEDS_RETAKE", "low_overall", "lab_report", "2021-03-04", null, null, null, 1,
+                null, null, null, null, null);
+        Instant uploaded = Instant.parse("2026-10-20T04:00:00Z");
+        serve(new ResultView(misread, PaperFixtures.MA, true, PaperFixtures.BD, null, List.of(), GateState.NONE, null, 1,
+                PaperFixtures.REVIEW_HOURS, uploaded, PaperFixtures.NOW, PaperFixtures.filedAsStored(misread, uploaded)));
+        JsonNode body = get(Lang.BN);
+        assertThat(body.path("date").asText()).isEqualTo("2026-10-20");
+        assertThat(body.path("date_is_upload_day").asBoolean()).isTrue();
+        assertThat(body.has("printed_date")).as("$.printed_date is present").isTrue();
+        assertThat(body.path("printed_date").isNull()).as("$.printed_date of a retake").isTrue();
+        assertThat(body.path("date_uncertain").isBoolean()).isTrue();
+        java.util.Set<String> expected = new java.util.TreeSet<>(shippedKeys);
+        expected.add("date_uncertain");
+        assertThat(new java.util.TreeSet<>(fieldNames(body))).isEqualTo(expected);
+    }
+
+    /** Q6: an uncertain printed date is sent as printed, filed under it, and marked; a plain one is not marked. */
+    @Test
+    void anUncertainPrintedDateIsSentAsPrintedAndMarked() throws IOException {
+        DocumentView printed = PaperFixtures.paper("2026-07-11", List.of(PaperFixtures.haemoglobinInside()), List.of(), List.of(), Map.of(), null);
+        ResultView plain = PaperFixtures.result(printed, Urgency.ROUTINE, List.of(), GateState.NONE, null, PaperFixtures.BD);
+        serve(PaperFixtures.uncertain(plain));
+        JsonNode body = get(Lang.BN);
+        assertThat(body.path("date").asText()).isEqualTo("2026-07-11");
+        assertThat(body.path("printed_date").asText()).isEqualTo("2026-07-11");
+        assertThat(body.path("date_is_upload_day").asBoolean(true)).isFalse();
+        assertThat(body.path("date_uncertain").asBoolean(false)).isTrue();
+        serve(plain);
+        assertThat(get(Lang.BN).path("date_uncertain").isBoolean()).isTrue();
+        assertThat(get(Lang.BN).path("date_uncertain").asBoolean(true)).isFalse();
+    }
+
     @Test
     void aPrintedDateThatIsNotIsoIsShownAsPrintedNeverAsTheUploadDay() throws IOException {
         DocumentView printed = PaperFixtures.paper("12/10/2026", List.of(PaperFixtures.haemoglobinInside()), List.of(), List.of(), Map.of(), null);
@@ -791,7 +836,8 @@ class PaperApiContractTest {
         serve(PaperFixtures.reading(status.name()));
         // were the paper sent through the result read, this is what it would give: a result-shaped body for an unread paper
         when(results.result(FAMILY, DOC)).thenReturn(Mono.just(new ResultView(PaperFixtures.pending(status.name()), PaperFixtures.MA, true,
-                PaperFixtures.BD, null, List.of(), GateState.NONE, null, 0, PaperFixtures.REVIEW_HOURS, PaperFixtures.NOW, PaperFixtures.NOW)));
+                PaperFixtures.BD, null, List.of(), GateState.NONE, null, 0, PaperFixtures.REVIEW_HOURS, PaperFixtures.NOW, PaperFixtures.NOW,
+                PaperFixtures.filedAsStored(PaperFixtures.pending(status.name()), PaperFixtures.NOW))));
         JsonNode body = get(Lang.BN);
         assertThat(fieldNames(body)).as("the fields of a " + status + " paper")
                 .containsExactlyInAnyOrder("id", "status", "patient", "owner", "viewer", "received_at", "page_count", "pages");

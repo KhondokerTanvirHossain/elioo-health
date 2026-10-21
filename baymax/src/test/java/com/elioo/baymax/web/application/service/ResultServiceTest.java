@@ -140,7 +140,7 @@ class ResultServiceTest {
     void modelWordingCannotTravelWithAnyGateStateButReleased(GateState gate) {
         assertThatThrownBy(() -> new ResultView(DocumentView.pending(Document.received(PATIENT, FAMILY, 1, NOW).withId(DOC)
                 .withStatus(Document.Status.DONE, null, NOW)), MA, true, new ViewerLocale(true), Urgency.NOW, List.of(), gate,
-                "body", 0, 2, NOW, NOW))
+                "body", 0, 2, NOW, NOW, new com.elioo.baymax.web.domain.PaperDate(null, true, false)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("F3: model wording only when released");
     }
@@ -149,11 +149,12 @@ class ResultServiceTest {
     @Test
     void releasedWordingTravelsAndUrgencyWaitsForDone() {
         DocumentView done = DocumentView.pending(Document.received(PATIENT, FAMILY, 1, NOW).withId(DOC).withStatus(Document.Status.DONE, null, NOW));
-        assertThat(new ResultView(done, MA, true, new ViewerLocale(true), Urgency.NOW, null, GateState.RELEASED, "body", 0, 2, NOW, NOW)
+        assertThat(new ResultView(done, MA, true, new ViewerLocale(true), Urgency.NOW, null, GateState.RELEASED, "body", 0, 2, NOW, NOW,
+                new com.elioo.baymax.web.domain.PaperDate(null, true, false))
                 .wording()).isEqualTo("body");
         DocumentView reading = DocumentView.pending(Document.received(PATIENT, FAMILY, 1, NOW).withId(DOC));
         assertThatThrownBy(() -> new ResultView(reading, MA, true, new ViewerLocale(true), Urgency.NOW, List.of(), GateState.NONE,
-                null, 0, 2, NOW, NOW)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("from DONE onwards");
+                null, 0, 2, NOW, NOW, new com.elioo.baymax.web.domain.PaperDate(null, true, false))).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("from DONE onwards");
     }
 
     private void done() {

@@ -459,7 +459,7 @@ public class WaIntakeService {
                 ? urgency.currentOrAssess(newest.id())
                         .filter(s -> s.level().isAtLeast(Urgency.THIS_WEEK))
                         .map(s -> new AttentionItem.Urgent(newest.id(), s.level(), newest.documentType(), paperOf(newest).date(),
-                                newest.docDate() == null, newest.createdAt()))
+                                newest.timelineDateIsUploadDay(), newest.createdAt()))
                         .flux()
                 : Flux.empty();
         return Flux.concat(stored, newestStored)
@@ -476,9 +476,13 @@ public class WaIntakeService {
         return uploadedAt != null && !uploadedAt.isBefore(cutoff);
     }
 
+    /**
+     * D2: a paper is named by the day it is filed under, {@code document.timeline_date}, read from its row and never
+     * re-derived here: a retake by its upload day, never by a date misread off the page it could not read. Today, in
+     * Dhaka, stands in only for a record that was never read back (no row, so no filing day to read).
+     */
     private Paper paperOf(Document d) {
-        LocalDate date = d.docDate() != null ? d.docDate()
-                : d.createdAt() != null ? LocalDate.ofInstant(d.createdAt(), DHAKA) : LocalDate.now(clock.withZone(DHAKA));
+        LocalDate date = d.timelineDate() != null ? d.timelineDate() : LocalDate.now(clock.withZone(DHAKA));
         return new Paper(d.id(), d.documentType(), date);
     }
 

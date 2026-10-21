@@ -8,6 +8,7 @@
     "counts": null,
     "date": "2026-10-20",
     "date_is_upload_day": true,
+    "date_uncertain": false,
     "doctor": { },
     "document_type": null,
     "facility": null,

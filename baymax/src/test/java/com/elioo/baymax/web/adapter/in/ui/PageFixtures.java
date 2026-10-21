@@ -441,7 +441,7 @@ final class PageFixtures {
             when(k.results.result(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(new ResultView(view,
                     k.ma(3).patient(), true, new ViewerLocale(true), Urgency.THIS_WEEK, List.of("diagnosis_present"),
                     GateState.RELEASED, "রিপোর্টটি পেয়েছি। এ সপ্তাহের মধ্যে একজন ডাক্তার দেখান।", 0, 2,
-                    WebUiTestKit.NOW.minusSeconds(3600), WebUiTestKit.NOW)));
+                    WebUiTestKit.NOW.minusSeconds(3600), WebUiTestKit.NOW, com.elioo.baymax.testsupport.PaperFixtures.filedAsStored(view, WebUiTestKit.NOW.minusSeconds(3600)))));
         }
 
         /** D1: {@link #doneLab}'s HbA1c sheet with every earlier reading the service lists (ResultService.EARLIER_READINGS). */
@@ -508,7 +508,7 @@ final class PageFixtures {
             when(k.results.result(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(new ResultView(view,
                     k.ma(3).patient(), true, new ViewerLocale(true), Urgency.THIS_WEEK, List.of("diagnosis_present"),
                     GateState.RELEASED, "রিপোর্টটি পেয়েছি। এ সপ্তাহের মধ্যে একজন ডাক্তার দেখান।", 0, 2,
-                    WebUiTestKit.NOW.minusSeconds(3600), WebUiTestKit.NOW)));
+                    WebUiTestKit.NOW.minusSeconds(3600), WebUiTestKit.NOW, com.elioo.baymax.testsupport.PaperFixtures.filedAsStored(view, WebUiTestKit.NOW.minusSeconds(3600)))));
         }
 
         /** B6: {@link #doneLab}, with one earlier HbA1c (upload-day date) and no earlier Creatinine. */
@@ -545,7 +545,7 @@ final class PageFixtures {
             when(k.results.status(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(Document.Status.DONE));
             when(k.results.result(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(new ResultView(view,
                     k.ma(3).patient(), true, new ViewerLocale(bangladesh), Urgency.NOW, reasons, GateState.PENDING, null, 0, 2,
-                    WebUiTestKit.NOW.minusSeconds(3600), WebUiTestKit.NOW)));
+                    WebUiTestKit.NOW.minusSeconds(3600), WebUiTestKit.NOW, com.elioo.baymax.testsupport.PaperFixtures.filedAsStored(view, WebUiTestKit.NOW.minusSeconds(3600)))));
         }
 
         /** B5: a two-page NEEDS_RETAKE paper of Ma's (low_overall), the {@code ordinal}-th in a row; {@code owner} false is view-only. */
@@ -564,7 +564,7 @@ final class PageFixtures {
             when(k.results.status(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(status));
             when(k.results.result(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(new ResultView(DocumentView.pending(d),
                     k.ma(3).patient(), owner, new ViewerLocale(true), null, List.of(), GateState.NONE, null, ordinal, 2,
-                    WebUiTestKit.NOW.minusSeconds(600), WebUiTestKit.NOW)));
+                    WebUiTestKit.NOW.minusSeconds(600), WebUiTestKit.NOW, com.elioo.baymax.testsupport.PaperFixtures.filedAsStored(DocumentView.pending(d), WebUiTestKit.NOW.minusSeconds(600)))));
         }
 
         /** A9: a two-page paper of Ma's being read, sent 30 s ago, seen from a Bangladeshi number. */

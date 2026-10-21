@@ -15,11 +15,15 @@ import java.util.List;
  *
  * @param retakeOrdinal 1, 2, 3… for a NEEDS_RETAKE document (this patient's streak up to and including it), else 0
  * @param reviewHours   the typical review time in the PENDING copy (spec §4.10 "[N]"), from configuration
+ * @param date          D2: the day the paper is filed under, read from the document row ({@link PaperDate#of})
  */
 public record ResultView(DocumentView document, PatientProfile patient, boolean owner, ViewerLocale viewer,
                          Urgency urgency, List<String> urgencyReasons, GateState gate, String wording,
-                         int retakeOrdinal, int reviewHours, Instant receivedAt, Instant now) {
+                         int retakeOrdinal, int reviewHours, Instant receivedAt, Instant now, PaperDate date) {
     public ResultView {
+        if (date == null) {
+            throw new IllegalArgumentException("D2: a paper is shown with the day it is filed under, read from its row");
+        }
         if (wording != null && gate != GateState.RELEASED) {
             throw new IllegalArgumentException("F3: model wording only when released or approved, not " + gate);
         }

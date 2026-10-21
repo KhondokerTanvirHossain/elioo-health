@@ -18,6 +18,7 @@ import com.elioo.baymax.web.domain.AuditEvent;
 import com.elioo.baymax.web.domain.EarlierReading;
 import com.elioo.baymax.web.domain.GateState;
 import com.elioo.baymax.web.domain.ReadingView;
+import com.elioo.baymax.web.domain.PaperDate;
 import com.elioo.baymax.web.domain.ResultView;
 import com.elioo.baymax.web.domain.ViewerLocale;
 import lombok.RequiredArgsConstructor;
@@ -85,7 +86,7 @@ public class ResultService implements ResultUseCase {
                 .map(t -> new ResultView(t.getT3(), t.getT1().patient(), t.getT1().owner(), t.getT2(),
                         level.map(StoredUrgency::level).orElse(null), level.map(StoredUrgency::reasons).orElse(List.of()),
                         t.getT4().state(), t.getT4().wording(), t.getT5(), properties.getOutbound().getReviewTypicalHours(),
-                        d.createdAt(), clock.instant()))));
+                        d.createdAt(), clock.instant(), PaperDate.of(d)))));
     }
 
     /** How many earlier readings the value sheet lists (s13 draws two; ten is a page, not a trend). */

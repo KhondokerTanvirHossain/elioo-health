@@ -103,7 +103,8 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
     private Mono<Long> writeDocument(Document d) {
         var spec = db.sql("""
                         UPDATE %s.document SET
-                            document_type = :type, doc_date = :docDate, facility = :facility,
+                            document_type = :type, doc_date = :docDate, doc_date_uncertain = :dateUncertain,
+                            facility = :facility,
                             extraction_json = CAST(:extraction AS jsonb), confidence_overall = :confidence,
                             status = :status, status_reason = :reason, status_reason_code = :reasonCode,
                             model_final = :model,
@@ -122,6 +123,7 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
                 .bind("unverifiedFollowUp", d.unverified().followUp())
                 .bind("unverifiedContext", d.unverified().clinicalContext())
                 .bind("status", d.status().name())
+                .bind("dateUncertain", d.docDateUncertain())
                 .bind("updatedAt", OffsetDateTime.ofInstant(d.updatedAt(), ZoneOffset.UTC));
         spec = bindOrNull(spec, "type", d.documentType(), String.class);
         spec = bindOrNull(spec, "docDate", d.docDate(), java.time.LocalDate.class);

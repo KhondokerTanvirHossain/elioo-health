@@ -15,6 +15,7 @@
     },
     "date": "2026-10-12",
     "date_is_upload_day": false,
+    "date_uncertain": false,
     "doctor": {
       "diagnosis": [
         {

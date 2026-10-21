@@ -63,6 +63,7 @@ public class TimelineApiHandler {
         m.put("id", e.documentId().toString());
         m.put("doc_date", e.date().toString());
         m.put("doc_date_is_fallback", e.dateIsFallback());
+        m.put("doc_date_uncertain", e.dateUncertain());
         m.put("document_type", e.documentType());
         m.put("facility", e.facility());
         m.put("status", e.status());

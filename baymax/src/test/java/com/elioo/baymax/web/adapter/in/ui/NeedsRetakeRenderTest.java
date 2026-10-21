@@ -163,7 +163,8 @@ class NeedsRetakeRenderTest {
         // sent two days ago (in Dhaka): the date alone, no "আজ"
         ResultView old = ResultFixtures.retake("no_text", 1, true);
         ResultView earlier = new ResultView(old.document(), old.patient(), true, old.viewer(), null, List.of(), GateState.NONE, null, 1, 2,
-                ResultFixtures.NOW.minus(java.time.Duration.ofDays(2)), ResultFixtures.NOW);
+                ResultFixtures.NOW.minus(java.time.Duration.ofDays(2)), ResultFixtures.NOW,
+                com.elioo.baymax.testsupport.PaperFixtures.filedAsStored(old.document(), ResultFixtures.NOW.minus(java.time.Duration.ofDays(2))));
         assertThat(kit.documents.retakeBody(Lang.BN, earlier))
                 .contains("</h1><p class=\"meta\">" + copy.t(Lang.BN, "retake.meta", copy.dateText(Lang.BN, LocalDate.of(2026, 10, 18)), 1) + "</p>")
                 .doesNotContain("আজ,");
@@ -190,7 +191,8 @@ class NeedsRetakeRenderTest {
         DocumentView view = DocumentView.pending(stored(status, retake ? LOW_OVERALL_PROSE : "groq HTTP 503", retake ? "low_overall" : null));
         when(kit.results.status(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(Document.Status.valueOf(status)));
         when(kit.results.result(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(new ResultView(view, ResultFixtures.MA,
-                true, ResultFixtures.BD, null, List.of(), GateState.NONE, null, retake ? 1 : 0, 2, ResultFixtures.NOW, ResultFixtures.NOW)));
+                true, ResultFixtures.BD, null, List.of(), GateState.NONE, null, retake ? 1 : 0, 2, ResultFixtures.NOW, ResultFixtures.NOW,
+                com.elioo.baymax.testsupport.PaperFixtures.filedAsStored(view, ResultFixtures.NOW))));
         // were the legacy read made, it would answer: the page must not ask (it knows neither the streak nor the owner)
         when(kit.timeline.document(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)).thenReturn(Mono.just(view));
         String html = kit.page("/app/documents/" + WebUiTestKit.DOC_ID, "bn");
