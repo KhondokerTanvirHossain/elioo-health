@@ -133,12 +133,72 @@ class ExplanationServiceTest {
         verify(metered, never()).invoke(any(), any(), any(LlmRequest.class));
     }
 
-    /** The other direction: a detail request on a failed document must not send the notice again. */
+    /**
+     * detail() filters DONE before it reaches composeChecked, so this stays green whatever composeChecked does with a
+     * FAILED document; it guards detail()'s own filter. The FAILED branch itself is tested below (PR 9 review).
+     */
     @Test
     void aDetailRequestOnAFailedDocumentSendsNothingNew() {
         failed();
         StepVerifier.create(service.detail(DOC)).verifyComplete();
         verify(delivery, never()).deliver(any());
+    }
+
+    /** The branch PR 9 added, run directly: composeChecked(DETAIL) on FAILED composes nothing — not the notice. */
+    @Test
+    void aDetailCompositionOnAFailedDocumentComposesNothing() {
+        failed();
+        StepVerifier.create(service.composeChecked(DOC, OutboundMessage.Kind.DETAIL)).verifyComplete();
+        verify(delivery, never()).deliver(any());
+        verify(messages, never()).save(any());
+    }
+
+    /**
+     * The real way to send the notice twice: explain() running twice for one FAILED document (a retry, the startup
+     * sweep). The second finds the FAILURE row the first stored and composes nothing.
+     */
+    @Test
+    void aSecondExplainOnAFailedDocumentSendsNoSecondNotice() {
+        failed();
+        when(messages.latestOfKind(DOC, OutboundMessage.Kind.FAILURE)).thenAnswer(i -> Mono.justOrEmpty(lastSaved.get())
+                .filter(m -> m.kind() == OutboundMessage.Kind.FAILURE));
+
+        StepVerifier.create(service.explain(DOC)).assertNext(m -> assertThat(m.kind()).isEqualTo(OutboundMessage.Kind.FAILURE))
+                .verifyComplete();
+        StepVerifier.create(service.explain(DOC)).verifyComplete();
+
+        verify(delivery, times(1)).deliver(any());
+        verify(messages, times(1)).save(any());
+    }
+
+    /** Gate-sensitive (Global Constraints): under gate-mode=all the notice is parked for the reviewer, never delivered. */
+    @Test
+    void aFailureNoticeUnderGateAllIsParkedForTheReviewerNotDelivered() {
+        properties.getOutbound().setGateMode("all");
+        failed();
+
+        service.explain(DOC).block();
+
+        ArgumentCaptor<OutboundMessage> parked = ArgumentCaptor.forClass(OutboundMessage.class);
+        verify(reviewer).notifyPending(parked.capture());
+        assertThat(parked.getValue().kind()).isEqualTo(OutboundMessage.Kind.FAILURE);
+        assertThat(parked.getValue().gateStatus()).isEqualTo(OutboundMessage.GateStatus.PENDING);
+        assertThat(parked.getValue().body()).isEqualTo(new Copy().bn("failure.document", Map.of()));
+        verify(delivery, never()).deliver(any());
+    }
+
+    /** And under gate-mode=urgency with the default levels the ROUTINE notice is released and delivered once. */
+    @Test
+    void aFailureNoticeUnderTheUrgencyGateIsReleasedAndDeliveredOnce() {
+        properties.getOutbound().setGateMode("urgency");
+        failed();
+
+        service.explain(DOC).block();
+
+        ArgumentCaptor<OutboundMessage> sent = ArgumentCaptor.forClass(OutboundMessage.class);
+        verify(delivery, times(1)).deliver(sent.capture());
+        assertThat(sent.getValue().kind()).isEqualTo(OutboundMessage.Kind.FAILURE);
+        verify(reviewer, never()).notifyPending(any());
     }
 
     /**
@@ -200,12 +260,72 @@ class ExplanationServiceTest {
         done(NORMAL);
         when(documents.medicinesOf(DOC)).thenReturn(Flux.just(Map.<String, Object>of(
                 "name", "Cap. DDR", "frequency_text", "১+০+০ ... ১+০+১")));
+        DocumentFacts facts = new DocumentFacts(documents.find(DOC).block(), "Ma", List.of(NORMAL), List.of(), Map.of(), link());
 
-        service.explain(DOC).onErrorResume(e -> Mono.empty()).block();   // pre-fix it errors; the defect is the silence
+        StepVerifier.create(service.explain(DOC))
+                .assertNext(m -> {
+                    assertThat(m.kind()).isEqualTo(OutboundMessage.Kind.EXPLANATION);
+                    assertThat(m.urgency()).isEqualTo(Urgency.ROUTINE);
+                })
+                .verifyComplete();
 
         ArgumentCaptor<OutboundMessage> sent = ArgumentCaptor.forClass(OutboundMessage.class);
         verify(delivery).deliver(sent.capture());
-        assertThat(sent.getValue().body()).doesNotContain("DDR").doesNotContain("১+০+০").contains(link());
+        assertThat(sent.getValue().kind()).isEqualTo(OutboundMessage.Kind.EXPLANATION);
+        assertThat(sent.getValue().body()).as("the fallback, exactly: built from the bundle")
+                .isEqualTo(service.fallbackBody(facts, Urgency.ROUTINE));
+        assertThat(sent.getValue().body()).doesNotContain("DDR").doesNotContain("১+০+০");
+    }
+
+    /** The reason code an operator reads at ERROR: a DR-16 defect is not a model outage (PR 9 review). */
+    @Test
+    void anElidedMedicineFailsCompositionWithItsOwnReason() {
+        done(NORMAL);
+        when(documents.medicinesOf(DOC)).thenReturn(Flux.just(Map.<String, Object>of(
+                "name", "Cap. DDR", "frequency_text", "১+০+০ ... ১+০+১")));
+
+        StepVerifier.create(service.composeChecked(DOC, OutboundMessage.Kind.EXPLANATION))
+                .expectErrorSatisfies(e -> assertThat(e).isInstanceOf(ExplanationCompositionException.class)
+                        .extracting(x -> ((ExplanationCompositionException) x).reason())
+                        .isEqualTo(ExplanationCompositionException.MEDICINE_ELIDED))
+                .verify();
+    }
+
+    /**
+     * The throw closest to 2026-10-16: the EXPLAIN model call itself errors (credits) on a NOW document. The fallback
+     * goes at the stored urgency, so it carries the NOW line and the red-flag line, and none of the values.
+     */
+    @Test
+    void anExplainModelOutageStillSendsTheFallbackAtTheStoredUrgency() {
+        done(CRITICAL);
+        when(metered.invoke(eq(AiCallPurpose.EXPLAIN), any(), any(LlmRequest.class)))
+                .thenReturn(Mono.error(new RuntimeException("credits")));
+
+        service.explain(DOC).block();
+
+        ArgumentCaptor<OutboundMessage> sent = ArgumentCaptor.forClass(OutboundMessage.class);
+        verify(delivery, times(1)).deliver(sent.capture());
+        assertThat(sent.getValue().kind()).isEqualTo(OutboundMessage.Kind.EXPLANATION);
+        assertThat(sent.getValue().urgency()).isEqualTo(Urgency.NOW);
+        String body = sent.getValue().body();
+        assertThat(body).contains(new Copy().bn("urgency.now", Map.of())).contains(new Copy().bn("safety.red_flag_line", Map.of()));
+        assertThat(body.replace(link(), "")).doesNotContain("11.2");
+    }
+
+    /**
+     * No fallback exists for a NEEDS_RETAKE document: when its retake lookup throws, explain() errors with the original
+     * error (DocumentProcessingChain logs it) and nothing is delivered — never a log line claiming a fallback went.
+     */
+    @Test
+    void aRetakeWhoseLookupThrowsPropagatesTheErrorAndSendsNothing() {
+        when(documents.find(DOC)).thenReturn(Mono.just(new Document(DOC, PATIENT, FAMILY, null, null, null, null, 0.6,
+                Document.Status.NEEDS_RETAKE, "blurry", null, null, 1, NOW, NOW)));
+        RuntimeException dbDown = new RuntimeException("connection refused");
+        when(messages.consecutiveRetakes(FAMILY)).thenReturn(Mono.error(dbDown));
+
+        StepVerifier.create(service.explain(DOC)).expectErrorMatches(e -> e == dbDown).verify();
+        verify(delivery, never()).deliver(any());
+        verify(messages, never()).save(any());
     }
 
     /** The fallback is code; derived over every level, it passes the same checklist as any template and fits the cap. */

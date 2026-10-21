@@ -30,8 +30,9 @@ public interface ExplainDocumentUseCase {
 
     /**
      * The post-extraction message: {@code composeChecked(EXPLANATION)} then {@code release}. A FAILED document yields a
-     * FAILURE notice; a DONE document never ends in silence: an explanation that failed safety, or whose composition
-     * threw, is replaced by the code-only, value-free fallback (PR 9).
+     * FAILURE notice, once (empty when one exists). A DONE explanation that failed safety, or whose composition threw,
+     * is replaced by the code-only, value-free fallback (PR 9). When no fallback can be built — it threw as well, or the
+     * status has none — the original error propagates; it is never reported as sent.
      */
     Mono<OutboundMessage> explain(UUID documentId);
 

@@ -80,6 +80,16 @@ public class DocumentRecoveryService implements DocumentRecoveryUseCase {
                                         properties.getRecovery().getExplainMaxAge());
                             }
                         })
+                        .thenMany(Flux.<RecoveryReport>empty()))
+                // apart, and at INFO: every FAILED document from before V23 has no notice and never will, so this count
+                // is non-zero on every startup; what an operator watches is whether it grows between restarts
+                .concatWith(documents.countFailedUnnotifiedBefore(since)
+                        .doOnNext(n -> {
+                            if (n > 0) {
+                                log.info("[baymax] recovery: {} FAILED document(s) older than {} have no failure notice", n,
+                                        properties.getRecovery().getExplainMaxAge());
+                            }
+                        })
                         .thenMany(Flux.<RecoveryReport>empty()));
     }
 

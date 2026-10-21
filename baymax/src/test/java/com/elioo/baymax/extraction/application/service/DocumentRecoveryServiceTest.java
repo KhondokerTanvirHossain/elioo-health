@@ -66,6 +66,7 @@ class DocumentRecoveryServiceTest {
 
         when(documents.unexplainedSince(any(), any())).thenReturn(Flux.empty());
         when(documents.countUnexplainedBefore(any())).thenReturn(Mono.just(0L));
+        when(documents.countFailedUnnotifiedBefore(any())).thenReturn(Mono.just(0L));
     }
 
     private Document stuck(Document.Status status, Instant updatedAt, int pages) {
@@ -241,5 +242,34 @@ class DocumentRecoveryServiceTest {
                 .extracting(ILoggingEvent::getFormattedMessage)
                 .as("the never-explained count, at WARN")
                 .containsExactly("[baymax] recovery: 3 finished document(s) older than PT6H were never explained");
+    }
+
+    /**
+     * PR 9 review: FAILED documents without a notice are counted on their own line, at INFO, so the pre-V23 failures
+     * (which never get a notice) cannot inflate the WARN that says a READ paper was never explained. Both directions:
+     * the FAILED count never reaches the WARN, and the WARN's own count still does.
+     */
+    @Test
+    void failedDocumentsWithoutANoticeAreCountedApartFromTheNeverExplainedWarn() {
+        Instant since = BOOT.plusSeconds(30).minus(properties.getRecovery().getExplainMaxAge());
+        when(documents.countUnexplainedBefore(since)).thenReturn(Mono.just(0L));
+        when(documents.countFailedUnnotifiedBefore(since)).thenReturn(Mono.just(7L));
+        Logger logger = (Logger) LoggerFactory.getLogger(DocumentRecoveryService.class);
+        ListAppender<ILoggingEvent> logged = new ListAppender<>();
+        logged.start();
+        logger.addAppender(logged);
+        try {
+            StepVerifier.create(service.recoverInterrupted(BOOT)).verifyComplete();
+        } finally {
+            logger.detachAppender(logged);
+        }
+
+        verify(documents).countFailedUnnotifiedBefore(since);
+        verify(chain, never()).explainOnly(any());
+        assertThat(logged.list).filteredOn(e -> e.getLevel() == Level.WARN).as("no WARN: no read paper went unexplained")
+                .isEmpty();
+        assertThat(logged.list).filteredOn(e -> e.getLevel() == Level.INFO)
+                .extracting(ILoggingEvent::getFormattedMessage)
+                .contains("[baymax] recovery: 7 FAILED document(s) older than PT6H have no failure notice");
     }
 }

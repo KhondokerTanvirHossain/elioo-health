@@ -93,9 +93,29 @@ class RecoveredFailureIsToldOnceTest {
         });
         when(documents.idsWithStatus(any())).thenAnswer(i -> Flux.fromIterable(table.values())
                 .filter(d -> d.status() == i.getArgument(0)).map(Document::id));
-        when(documents.unexplainedSince(any(), any())).thenReturn(Flux.empty());
-        when(documents.countUnexplainedBefore(any())).thenReturn(Mono.just(0L));
+        // Derived from the fake state, never stubbed empty: the second half of recoverInterrupted (the unexplained
+        // sweep) is the one path that could tell the same document twice in one sweep, and an empty stub switched it
+        // off (PR 9 review). Same predicate as PostgresDocumentRecordAdapter's NEVER_EXPLAINED, whose SQL is asserted
+        // on Postgres in DocumentRecoveryAcceptanceTest.
+        when(documents.unexplainedSince(any(), any())).thenAnswer(i -> Flux.defer(() -> Flux.fromIterable(table.values())
+                .filter(d -> unanswered(d) && !d.updatedAt().isBefore(i.getArgument(0)) && d.updatedAt().isBefore(i.getArgument(1)))
+                .sort(java.util.Comparator.comparing(Document::updatedAt)).map(Document::id)));
+        when(documents.countUnexplainedBefore(any())).thenAnswer(i -> Mono.fromSupplier(() -> table.values().stream()
+                .filter(d -> d.status() != Document.Status.FAILED && unanswered(d) && d.updatedAt().isBefore(i.getArgument(0))).count()));
+        when(documents.countFailedUnnotifiedBefore(any())).thenAnswer(i -> Mono.fromSupplier(() -> table.values().stream()
+                .filter(d -> d.status() == Document.Status.FAILED && unanswered(d) && d.updatedAt().isBefore(i.getArgument(0))).count()));
         when(delivery.deliver(any())).thenReturn(Mono.just(DeliveryOutcome.logged()));
+    }
+
+    /** NEVER_EXPLAINED over the fake: FAILED needs a failure row; DONE/NEEDS_RETAKE an explanation or retake with a body. */
+    private boolean unanswered(Document d) {
+        return switch (d.status()) {
+            case FAILED -> messages.rows().stream()
+                    .noneMatch(m -> d.id().equals(m.documentId()) && m.kind() == OutboundMessage.Kind.FAILURE);
+            case DONE, NEEDS_RETAKE -> messages.rows().stream().noneMatch(m -> d.id().equals(m.documentId()) && m.body() != null
+                    && (m.kind() == OutboundMessage.Kind.EXPLANATION || m.kind() == OutboundMessage.Kind.RETAKE));
+            default -> false;
+        };
     }
 
     private Document processing(Instant createdAt) {
@@ -124,6 +144,29 @@ class RecoveredFailureIsToldOnceTest {
         assertThat(failureRows().get(0).documentId()).isEqualTo(d.id());
         assertThat(messages.rows()).as("the notice and nothing else").hasSize(1);
         verify(delivery, times(1)).deliver(any());
+        // the unexplained half really ran over the same table, so "once" is not "once because the sweep was off"
+        verify(documents).unexplainedSince(any(), any());
+    }
+
+    /**
+     * The sweep's own direction, on the same derived state: a FAILED document a restart left between the FAILED write
+     * and the notice (updated inside the window, no failure row) is told by the unexplained sweep — once, even though
+     * the same sweep also fails an interrupted document.
+     */
+    @Test
+    void aFailedDocumentARestartLeftWithoutItsNoticeIsToldOnceByTheSweep() {
+        Document stranded = new Document(UUID.randomUUID(), PATIENT, FAMILY, null, null, null, null, null,
+                Document.Status.FAILED, "llm_error", null, null, 1, BOOT.minus(Duration.ofHours(1)), BOOT.minus(Duration.ofMinutes(50)));
+        table.put(stranded.id(), stranded);
+        Document interrupted = processing(BOOT.minus(Duration.ofMinutes(10)));
+        when(documents.markRecoveryAttempt(interrupted.id(), BOOT)).thenReturn(Mono.just(3));
+
+        List<RecoveryReport> reports = recovery.recoverInterrupted(BOOT).collectList().block();
+
+        assertThat(reports).extracting(RecoveryReport::outcome).containsExactly("failed_interrupted_repeatedly", "explained");
+        assertThat(failureRows()).extracting(OutboundMessage::documentId).as("one notice per document")
+                .containsExactlyInAnyOrder(stranded.id(), interrupted.id());
+        verify(delivery, times(2)).deliver(any());
     }
 
     @Test

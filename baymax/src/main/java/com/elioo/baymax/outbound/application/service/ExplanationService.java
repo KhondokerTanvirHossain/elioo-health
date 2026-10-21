@@ -84,9 +84,12 @@ public class ExplanationService implements ExplainDocumentUseCase {
     /**
      * Phase 0, PR 9: every document the family was told "reading it" about ends in a reply, from here. Every FAILED a
      * document can reach is written by DocumentExtractionService or DocumentProcessingChain.fail, and both lead here
-     * ({@code FailedHasOneWriterTest}): FAILED becomes the FAILURE notice. A DONE explanation that failed safety, or
-     * whose composition threw, becomes the code-only fallback. Only composition is guarded: an error after a message
-     * was stored (a delivery bookkeeping write) propagates as before, so the family is never sent a second message.
+     * ({@code FailedHasOneWriterTest}): FAILED becomes the FAILURE notice, once per document. A DONE explanation that
+     * failed safety, or whose composition threw, becomes the code-only fallback — when the fallback can be built. When
+     * it cannot (it threw too, or the status has none: a NEEDS_RETAKE whose retake lookup threw), the original error
+     * propagates and DocumentProcessingChain logs it; nothing claims a fallback went. Only composition is guarded: an
+     * error after a message was stored (a delivery bookkeeping write) propagates as before, so the family is never sent
+     * a second message.
      */
     @Override
     public Mono<OutboundMessage> explain(UUID documentId) {
@@ -94,31 +97,57 @@ public class ExplanationService implements ExplainDocumentUseCase {
                 // fail-closed still means the MODEL's text never goes: the attempt is stored with no body, as before,
                 // and the family then gets the code-only fallback instead of silence
                 .map(m -> m.gateStatus() == OutboundMessage.GateStatus.FAILED_SAFETY && m.kind() == OutboundMessage.Kind.EXPLANATION
-                        ? store(m).then(fallbackFor(documentId))
+                        ? store(m).then(fallbackFor(documentId, "failed_safety")
+                                .switchIfEmpty(Mono.defer(() -> {
+                                    log.error("[baymax] explanation failed closed and no fallback exists documentId={}", documentId);
+                                    return Mono.<OutboundMessage>empty();
+                                })))
                         : release(m))
-                // an explanation that cannot be composed safely still ends in a reply; the log carries the class only
-                // (the message can name a medicine: MedicineTranscription.elided)
+                // an explanation that cannot be composed safely still ends in a reply. Class and reason code at ERROR;
+                // the message can name a medicine or a diagnosis (MedicineTranscription.elided), so it is DEBUG only
                 .onErrorResume(e -> !(e instanceof BaymaxException), e -> {
-                    log.error("[baymax] explanation threw documentId={} error={} — sending the code-only fallback",
-                            documentId, e.getClass().getSimpleName());
-                    return Mono.just(fallbackFor(documentId));
+                    String reason = ExplanationCompositionException.reasonOf(e);
+                    log.error("[baymax] explanation threw documentId={} error={} reason={}",
+                            documentId, e.getClass().getSimpleName(), reason);
+                    log.debug("[baymax] explanation threw detail documentId={}: {}", documentId, e.getMessage());
+                    return Mono.just(fallbackFor(documentId, reason).switchIfEmpty(Mono.defer(() -> {
+                        log.error("[baymax] explanation threw and no fallback exists documentId={} reason={}", documentId, reason);
+                        return Mono.<OutboundMessage>error(e);
+                    })));
                 })
                 .flatMap(next -> next);
     }
 
-    /** The code-only fallback for a DONE document, at its STORED urgency (F1); empty for any other status. */
-    private Mono<OutboundMessage> fallbackFor(UUID documentId) {
+    /**
+     * The code-only fallback for a DONE document, at its STORED urgency (F1); empty for any other status. {@code cause}
+     * is a code ({@code failed_safety} or an {@link ExplanationCompositionException} reason), logged once it was released.
+     */
+    private Mono<OutboundMessage> fallbackFor(UUID documentId, String cause) {
         return Mono.defer(() -> documents.find(documentId))
                 .filter(d -> d.status() == Document.Status.DONE)
                 .flatMap(d -> facts(d).flatMap(f -> storedUrgency.assessAndStore(f)
-                        .flatMap(stored -> fallback(f, stored.asAssessment()))));
+                        .flatMap(stored -> fallback(f, stored.asAssessment()))))
+                .doOnNext(m -> log.info("[baymax] explanation fallback documentId={} urgency={} gate={} cause={}",
+                        documentId, m.urgency().dbValue(), m.gateStatus().dbValue(), cause));
     }
 
-    /** The pipeline ended FAILED: the family was told "reading it" and hears the outcome once, never values. */
-    private OutboundMessage failureNotice(Document document) {
-        return new OutboundMessage(null, document.familyId(), document.patientId(), document.id(),
-                OutboundMessage.Kind.FAILURE, Urgency.ROUTINE, List.of("document_failed"),
-                copy.bn("failure.document", Map.of()), gate.decide(Urgency.ROUTINE), null, null, null, null, clock.instant());
+    /**
+     * The pipeline ended FAILED: the family was told "reading it" and hears the outcome once, never values. Once per
+     * document: a second explain() — the startup sweep, a retry — finds the FAILURE row and composes nothing. Any row
+     * counts, PENDING or REJECTED included (the reviewer has it or decided it). Two explain() calls racing inside the
+     * same few milliseconds could both pass the check; the processing chain and the sweep never run one document
+     * concurrently (one container, the sweep only takes documents updated before this instance started).
+     */
+    private Mono<OutboundMessage> failureNotice(Document document) {
+        return messages.latestOfKind(document.id(), OutboundMessage.Kind.FAILURE).hasElement().flatMap(told -> {
+            if (told) {
+                log.info("[baymax] failure notice already exists documentId={}; nothing new composed", document.id());
+                return Mono.<OutboundMessage>empty();
+            }
+            return Mono.just(new OutboundMessage(null, document.familyId(), document.patientId(), document.id(),
+                    OutboundMessage.Kind.FAILURE, Urgency.ROUTINE, List.of("document_failed"),
+                    copy.bn("failure.document", Map.of()), gate.decide(Urgency.ROUTINE), null, null, null, null, clock.instant()));
+        });
     }
 
     /**
@@ -134,7 +163,6 @@ public class ExplanationService implements ExplainDocumentUseCase {
             return Mono.error(new IllegalStateException("fallback template violated its own checklist: "
                     + MessageSafetyCheck.forLog(violations)));
         }
-        log.info("[baymax] explanation fallback documentId={} urgency={}", facts.document().id(), assessed.level().dbValue());
         Document d = facts.document();
         return release(new OutboundMessage(null, d.familyId(), d.patientId(), d.id(), OutboundMessage.Kind.EXPLANATION,
                 assessed.level(), assessed.reasons(), body, gate.decide(assessed.level()), null, null, null, null, clock.instant()));
@@ -164,9 +192,9 @@ public class ExplanationService implements ExplainDocumentUseCase {
                     // F1: composed at the STORED level (max of everything ever assessed), never at a fresh, lower read
                     case DONE -> facts(document).flatMap(facts -> storedUrgency.assessAndStore(facts)
                             .flatMap(stored -> compose(facts, kind, stored.asAssessment())));
-                    // PR 9: the family was told "reading it"; a FAILED document is answered once, by the notice. A
-                    // detail request on it composes nothing (the notice is never sent twice).
-                    case FAILED -> kind == OutboundMessage.Kind.EXPLANATION ? Mono.just(failureNotice(document)) : Mono.<OutboundMessage>empty();
+                    // PR 9: the family was told "reading it"; a FAILED document is answered once, by the notice (and
+                    // only when no FAILURE row exists yet). DETAIL on it composes nothing.
+                    case FAILED -> kind == OutboundMessage.Kind.EXPLANATION ? failureNotice(document) : Mono.<OutboundMessage>empty();
                     default -> Mono.<OutboundMessage>empty();
                 });
     }
@@ -267,7 +295,8 @@ public class ExplanationService implements ExplainDocumentUseCase {
                 .map(text -> {
                     List<String> finalCheck = safety.violations(text, facts, assessed.level());
                     if (!finalCheck.isEmpty()) {
-                        throw new IllegalStateException("template violated its own checklist: " + finalCheck);
+                        throw new ExplanationCompositionException(ExplanationCompositionException.TEMPLATE_CHECKLIST,
+                                "template violated its own checklist: " + finalCheck);
                     }
                     // DR-16: the verbatim medicine block goes on after the checklist has passed on the model's text —
                     // it is exempt from the phrase and number checks (it IS the extraction) and must match the store
@@ -275,7 +304,8 @@ public class ExplanationService implements ExplainDocumentUseCase {
                     // in for "৩০ দিন। তারপর" and turned a two-phase regimen into two simultaneous doses.
                     List<String> elided = MedicineTranscription.elided(medicines);
                     if (!elided.isEmpty()) {
-                        throw new IllegalStateException("medicine instruction is abbreviated, not transcribed: " + elided);
+                        throw new ExplanationCompositionException(ExplanationCompositionException.MEDICINE_ELIDED,
+                                "medicine instruction is abbreviated, not transcribed: " + elided);
                     }
                     // DR-26: the doctor's own diagnosis lines, verbatim, inserted after generation like the
                     // medicines — never explained, never paraphrased, never passed to the model. The family's
@@ -287,11 +317,13 @@ public class ExplanationService implements ExplainDocumentUseCase {
                     String full = block.isEmpty() ? head : head + "\n\n" + block;
                     List<String> missing = MedicineTranscription.verify(full, medicines);
                     if (!missing.isEmpty()) {
-                        throw new IllegalStateException("medicine transcription is not verbatim: " + missing);
+                        throw new ExplanationCompositionException(ExplanationCompositionException.MEDICINE_NOT_VERBATIM,
+                                "medicine transcription is not verbatim: " + missing);
                     }
                     List<String> dxMissing = DiagnosisTranscription.verify(full, facts);
                     if (!dxMissing.isEmpty()) {
-                        throw new IllegalStateException("diagnosis transcription is not verbatim: " + dxMissing);
+                        throw new ExplanationCompositionException(ExplanationCompositionException.DIAGNOSIS_NOT_VERBATIM,
+                                "diagnosis transcription is not verbatim: " + dxMissing);
                     }
                     // The cap is asserted on what is actually SENT, after every insertion — it used to run on
                     // the model's text while the longest part was appended afterwards, so it never covered the
@@ -317,7 +349,8 @@ public class ExplanationService implements ExplainDocumentUseCase {
                         OutboundMessage.GateStatus.FAILED_SAFETY, null, null, null, null, clock.instant())))
                 // urgency is never lowered by any later stage: the row must carry what was assessed
                 .flatMap(message -> message.urgency() != assessed.level()
-                        ? Mono.<OutboundMessage>error(new IllegalStateException("urgency changed after assessment"))
+                        ? Mono.<OutboundMessage>error(new ExplanationCompositionException(
+                                ExplanationCompositionException.URGENCY_CHANGED, "urgency changed after assessment"))
                         : Mono.just(message));
     }
 

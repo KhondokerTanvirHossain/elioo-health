@@ -453,13 +453,18 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
     }
 
     /**
-     * A finished document with no family-facing message about it. Detail and nudge rows do not count. A FAILED
-     * document is answered only by its failure notice (PR 9, V23): the family was told "reading it".
+     * A DONE or NEEDS_RETAKE document with no family-facing message about it. Detail and nudge rows do not count, and
+     * neither does an explanation row with no body: that is a FAILED_SAFETY attempt (stored before the PR 9 fallback is
+     * built), so a fallback that never got stored — a restart in that window, a throw — leaves the document unanswered
+     * and the sweep picks it up. PENDING and REJECTED rows carry their body and count: the reviewer has them.
      */
-    private static final String NEVER_EXPLAINED = "((d.status IN ('DONE','NEEDS_RETAKE') AND NOT EXISTS (SELECT 1 FROM "
-            + S + ".outbound_message m WHERE m.document_id = d.id AND m.kind IN ('explanation','retake'))) "
-            + "OR (d.status = 'FAILED' AND NOT EXISTS (SELECT 1 FROM "
-            + S + ".outbound_message m WHERE m.document_id = d.id AND m.kind = 'failure')))";
+    private static final String FINISHED_UNANSWERED = "(d.status IN ('DONE','NEEDS_RETAKE') AND NOT EXISTS (SELECT 1 FROM "
+            + S + ".outbound_message m WHERE m.document_id = d.id AND m.kind IN ('explanation','retake') AND m.body IS NOT NULL))";
+    /** A FAILED document is answered only by its failure notice (PR 9, V23): the family was told "reading it". */
+    private static final String FAILED_UNNOTIFIED = "(d.status = 'FAILED' AND NOT EXISTS (SELECT 1 FROM "
+            + S + ".outbound_message m WHERE m.document_id = d.id AND m.kind = 'failure'))";
+    /** Either. The outer parentheses keep the time window applying to BOTH branches (DocumentRecoveryAcceptanceTest). */
+    private static final String NEVER_EXPLAINED = "(" + FINISHED_UNANSWERED + " OR " + FAILED_UNNOTIFIED + ")";
 
     @Override
     public Flux<UUID> unexplainedSince(Instant since, Instant before) {
@@ -473,7 +478,16 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
 
     @Override
     public Mono<Long> countUnexplainedBefore(Instant since) {
-        return db.sql("SELECT COUNT(*) FROM " + S + ".document d WHERE " + NEVER_EXPLAINED + " AND d.updated_at < :since")
+        return countBefore(FINISHED_UNANSWERED, since);
+    }
+
+    @Override
+    public Mono<Long> countFailedUnnotifiedBefore(Instant since) {
+        return countBefore(FAILED_UNNOTIFIED, since);
+    }
+
+    private Mono<Long> countBefore(String predicate, Instant since) {
+        return db.sql("SELECT COUNT(*) FROM " + S + ".document d WHERE " + predicate + " AND d.updated_at < :since")
                 .bind("since", OffsetDateTime.ofInstant(since, ZoneOffset.UTC))
                 .map((row, meta) -> {
                     Long count = row.get(0, Long.class);

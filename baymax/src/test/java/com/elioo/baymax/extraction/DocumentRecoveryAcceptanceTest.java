@@ -314,6 +314,68 @@ class DocumentRecoveryAcceptanceTest {
         });
     }
 
+    /**
+     * PR 9 review: a fail-closed explanation is stored (no body) BEFORE the fallback is built, so a fallback that never
+     * got stored — a throw, a DB error, {@code docker rm -f} on deploy in that window — must leave the document
+     * unanswered for the sweep. Both directions: a FAILED_SAFETY row alone is no answer; with the bodied fallback row
+     * beside it, it is. Window pinned 8–10 hours back: clear of every other test's window and count.
+     */
+    @Test
+    void aFailedClosedExplanationAloneIsNoAnswerButWithItsFallbackItIs() {
+        runner().run(context -> {
+            UUID family = UUID.randomUUID();
+            UUID patient = UUID.randomUUID();
+            seedFamily(family, patient);
+            DocumentRecordPort records = context.getBean(DocumentRecordPort.class);
+            Instant before = Instant.now().minus(Duration.ofHours(8));
+            Instant since = before.minus(Duration.ofHours(2));
+
+            Document closedOnly = done(records, patient, family, before.minus(Duration.ofMinutes(30)));
+            Document closedThenFallback = done(records, patient, family, before.minus(Duration.ofMinutes(20)));
+            failedClosed(family, patient, closedOnly);
+            failedClosed(family, patient, closedThenFallback);
+            message(family, patient, closedThenFallback, "explanation");
+
+            assertThat(records.unexplainedSince(since, before).collectList().block())
+                    .as("a FAILED_SAFETY row is no answer; with its bodied fallback it is")
+                    .containsExactly(closedOnly.id());
+        });
+    }
+
+    /**
+     * PR 9 review, the dangerous direction of the FAILED branch: every deploy runs this query over all of production's
+     * history, so a FAILED document updated BEFORE the window (the 2026-10-16 credits-outage papers) is never listed —
+     * a misplaced window would text every family that ever had a failed paper. It is counted instead, on its own
+     * count: the never-explained one does not see it (pre-V23 failures never get a notice), and a FAILED document with
+     * a notice is in neither. Counted as deltas, because the class shares one database. Window pinned 3 days back.
+     */
+    @Test
+    void aFailedDocumentOlderThanTheWindowIsCountedApartAndNeverListed() {
+        runner().run(context -> {
+            UUID family = UUID.randomUUID();
+            UUID patient = UUID.randomUUID();
+            seedFamily(family, patient);
+            DocumentRecordPort records = context.getBean(DocumentRecordPort.class);
+            Instant before = Instant.now().minus(Duration.ofDays(3));
+            Instant since = before.minus(Duration.ofHours(6));
+            long failedBefore = records.countFailedUnnotifiedBefore(since).block();
+            long unexplainedBefore = records.countUnexplainedBefore(since).block();
+
+            Document oldSilent = finished(records, patient, family, Document.Status.FAILED, since.minus(Duration.ofHours(1)));
+            Document oldTold = finished(records, patient, family, Document.Status.FAILED, since.minus(Duration.ofHours(2)));
+            message(family, patient, oldTold, "failure");
+            Document inside = finished(records, patient, family, Document.Status.FAILED, before.minus(Duration.ofHours(1)));
+
+            assertThat(records.unexplainedSince(since, before).collectList().block())
+                    .as("older than the window: never listed, so never texted on a deploy").doesNotContain(oldSilent.id())
+                    .as("the window still finds the one inside it").containsExactly(inside.id());
+            assertThat(records.countFailedUnnotifiedBefore(since).block() - failedBefore)
+                    .as("the old FAILED document without a notice is counted, the one with a notice is not").isEqualTo(1L);
+            assertThat(records.countUnexplainedBefore(since).block() - unexplainedBefore)
+                    .as("FAILED documents never inflate the never-explained count").isZero();
+        });
+    }
+
     private static Document done(DocumentRecordPort records, UUID patient, UUID family, Instant at) {
         return finished(records, patient, family, Document.Status.DONE, at);
     }
@@ -331,9 +393,16 @@ class DocumentRecoveryAcceptanceTest {
         return records.update(created.withStatus(status, null, code, at)).block();
     }
 
+    /** A message the family got (or the reviewer holds): it has a body, as every released, pending or rejected row does. */
     private static void message(UUID family, UUID patient, Document document, String kind) throws Exception {
+        sql("insert into baymax.outbound_message (family_id, patient_id, document_id, kind, urgency, gate_status, body) values ('"
+                + family + "','" + patient + "','" + document.id() + "','" + kind + "','routine','released','a fictional body')");
+    }
+
+    /** A fail-closed attempt: stored with no body, as ExplanationService stores FAILED_SAFETY before the fallback. */
+    private static void failedClosed(UUID family, UUID patient, Document document) throws Exception {
         sql("insert into baymax.outbound_message (family_id, patient_id, document_id, kind, urgency, gate_status) values ('"
-                + family + "','" + patient + "','" + document.id() + "','" + kind + "','routine','released')");
+                + family + "','" + patient + "','" + document.id() + "','explanation','now','failed_safety')");
     }
 
     /** Outcomes the sweep reported for one document; the sweep also reports the other tests' leftovers. */
