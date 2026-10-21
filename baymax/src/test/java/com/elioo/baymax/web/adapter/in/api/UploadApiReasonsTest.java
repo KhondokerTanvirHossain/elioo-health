@@ -26,8 +26,10 @@ class UploadApiReasonsTest {
                 .as("reasons the upload path throws that have no ApiReason name").isEmpty();
         // MultipartUploads throws these and mentions no UploadUseCase: swept only because the sweep names the file
         assertThat(swept).as("the size refusals were swept").containsKeys("file_too_large", "request_too_large");
-        // D1: UploadService's retake rule; named so that a sweep which stopped reaching it fails here, not silently
-        assertThat(swept).as("the retake refusal was swept, at its status").containsEntry("not_a_retake", 400);
+        // D1: UploadService's retake rule is reached by the sweep (its patient rule is), and never refuses: a stale
+        // replaces and another patient's paper are dropped, not refused (PO 2026-10-22, DR-46/DR-47)
+        assertThat(swept).as("UploadService's patient rule was swept").containsKey("shared_patient_read_only");
+        assertThat(swept).as("the retake rule refuses nothing (DR-47)").doesNotContainKey("not_a_retake");
     }
 
     @Test

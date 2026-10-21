@@ -269,16 +269,20 @@ class UploadApiHandlerTest {
         verify(uploads).admit(FAMILY, MA, null);
     }
 
-    /** D1: a replaces the use case refuses ({@code not_a_retake}: another patient's paper) is NOT_A_RETAKE, asked before any file is read. */
+    /**
+     * D1 / DR-47: a {@code replaces} admission drops (stale, or another patient's paper) still uploads: the press goes on
+     * to the upload with the field as sent, and the use case, not the handler, decides it links nothing.
+     */
     @Test
-    void aReplacesNamingAnotherPatientsPaperIsRefusedBeforeItsFilesAreRead() {
+    void aReplacesAdmissionDropsStillUploads() {
         UUID abbus = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4210009");
-        when(uploads.admit(FAMILY, MA, abbus)).thenReturn(Mono.error(BaymaxException.badRequest("not_a_retake", "abbus")));
+        when(uploads.admit(FAMILY, MA, abbus)).thenReturn(Mono.empty());
+        when(uploads.upload(eq(FAMILY), eq(MA), any(), eq(Grouping.ONE), eq(KEY), eq(abbus))).thenReturn(Mono.just(List.of(doc(MA))));
         MultipartBodyBuilder body = press(MA, KEY, "one", "p1.jpg");
         body.part("replaces", abbus.toString());
-        post(body).expectStatus().isBadRequest().expectBody().json("{\"reason\":\"NOT_A_RETAKE\"}", true);
+        post(body).expectStatus().isOk();
         verify(uploads).admit(FAMILY, MA, abbus);
-        verify(uploads, never()).upload(any(), any(), any(), any(), any(), any());
+        verify(uploads).upload(eq(FAMILY), eq(MA), any(), eq(Grouping.ONE), eq(KEY), eq(abbus));
     }
 
     static Stream<String> namedReasons() {

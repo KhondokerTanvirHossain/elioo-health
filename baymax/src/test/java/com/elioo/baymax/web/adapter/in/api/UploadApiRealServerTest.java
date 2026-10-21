@@ -364,7 +364,7 @@ class UploadApiRealServerTest {
         }
 
         @Override
-        public Mono<Void> admit(UUID familyId, UUID patientId, UUID replaces) {
+        public Mono<UUID> admit(UUID familyId, UUID patientId, UUID replaces) {
             return Mono.empty();
         }
 

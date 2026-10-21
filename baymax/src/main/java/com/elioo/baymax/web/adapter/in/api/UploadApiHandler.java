@@ -83,7 +83,7 @@ public class UploadApiHandler {
             }
             UUID replaces = MultipartUploads.replacesOrNull(parts);
             // who may send for this patient, and the retake it replaces, are asked before a file is joined into memory: a
-            // view-only press, or one naming another patient's paper, reads nothing (a stale replaces is dropped, not refused)
+            // view-only press reads nothing; a replaces that is not this patient's retake is dropped, never refused (DR-47)
             return uploads.admit(session.familyId(), patientId, replaces).then(MultipartUploads.files(parts, properties, grouping.get())).flatMap(files -> {
                 long bytes = files.stream().mapToLong(u -> u.bytes().length).sum();
                 return uploads.upload(session.familyId(), patientId, files, grouping.get(), key, replaces)

@@ -884,7 +884,7 @@ Branch `feat/medioo-web-upload`. Lane C. Owns master Review Focus 3. Java keeps 
 **Interfaces:**
 - Consumes:
   - `GET /app/api/upload-options`: who the viewer may send for, view-only patients, the one preselect, allowance, `limits.max_pages`, `limits.max_files`, `max_file_bytes`, `max_request_bytes`.
-  - `POST /app/api/uploads`: multipart `patient`, `upload_key`, `group` `one`|`separate`, `replaces` (D1), and `file` parts → document ids. Refusals: `CHOOSE_PATIENT`, `NO_FILE`, `EMPTY_FILE`, `UNSUPPORTED_FILE`, `UNREADABLE_PDF`, `TOO_MANY_PAGES`, `TOO_MANY_FILES`, `TOO_LARGE`, `VIEW_ONLY`, `UPLOAD_KEY_REUSED`, `FREE_TIER_DOCUMENTS`, `NOT_A_RETAKE`.
+  - `POST /app/api/uploads`: multipart `patient`, `upload_key`, `group` `one`|`separate`, `replaces` (D1), and `file` parts → document ids. Refusals: `CHOOSE_PATIENT`, `NO_FILE`, `EMPTY_FILE`, `UNSUPPORTED_FILE`, `UNREADABLE_PDF`, `TOO_MANY_PAGES`, `TOO_MANY_FILES`, `TOO_LARGE`, `VIEW_ONLY`, `UPLOAD_KEY_REUSED`, `FREE_TIER_DOCUMENTS`. No `NOT_A_RETAKE` (*update 2026-10-22, [DR-47](../../DECISIONS.md)*): a `replaces` that is not this patient's retake is dropped and the photo uploads unlinked, never refused, so `refusals.json` (derived from `UploadApiReasonsTest`'s sweep) does not carry it and W7 writes no copy for it.
   - `GET /app/api/documents/{id}/status`.
   - Components: `SheetDialog`, `ToastRegion`, `MessageBubble` (progress lines `up.*`).
 
@@ -916,6 +916,7 @@ Branch `feat/medioo-web-upload`. Lane C. Owns master Review Focus 3. Java keeps 
     - `oneDocumentOpensItsPaperSeveralOpenThePapers`.
     - `dragAndDropAddsPages`: on desktop, a `DataTransfer` drop of two files fills the tray.
     - `aRetakeNamesThePaperItReplaces`: `/app/add?patient=<p>&replaces=<d>` sends `replaces=<d>`.
+    - `aRetakeDropsReplacesWhenThePatientChanges` (*added 2026-10-22, DR-47*): on `/app/add?patient=<p>&replaces=<d>`, choosing another patient on the sheet sends no `replaces` part, and choosing `<p>` again sends it again. The server drops a `replaces` of another patient anyway (DR-47), so this keeps the press honest rather than saving it from a refusal; if the PO reverses DR-47's default, it is what keeps the server's 400 reachable only by a tampered client.
     - `withoutJavaScriptTheSheetSaysSo`: `upload.nojs`, and no form.
     - `screenChecks("/app/add", "upload-owner-two", { longest: true })`, where `LONGEST` uses `me-long`.
 - [ ] **Step 2:** Run `gl :baymax:test --tests '*UploadApiContractTest' --tests '*UploadCutOffAcceptanceTest'` and the web commands. Expected: FAIL on the missing fixtures. The acceptance test FAILS if the cut-off press left a row. If it passes at once, it is a test written after the code, and it gets its own replay in Step 5.

@@ -59,45 +59,69 @@ public class UploadService implements UploadUseCase {
     }
 
     @Override
-    public Mono<Void> admit(UUID familyId, UUID patientId, UUID replaces) {
-        // deferred: the paper is looked up only once the patient rule passed
-        return owned(familyId, patientId).then(Mono.defer(() -> retakeOf(familyId, patientId, replaces))).then();
+    public Mono<UUID> admit(UUID familyId, UUID patientId, UUID replaces) {
+        // deferred: the paper is looked up only once the patient rule passed; silent, so a press logs its drop once (upload)
+        return owned(familyId, patientId).then(Mono.defer(() -> retakeOf(familyId, patientId, replaces, false)));
     }
 
     /**
-     * D1, the one place the {@code replaces} rule is written: the paper a press links to, or empty for none. Null replaces
-     * nothing. A paper this family can see, of this patient, waiting for a retake, is linked. A stale one is dropped and
-     * the photo is a normal new paper (PO ruling 2026-10-22, D1 finding 16), never refused: one it cannot see (deleted
-     * since the retake page was drawn, or never its own: the same answer, so a press learns nothing about ids it cannot
-     * see), and one of this patient that no longer waits for a retake. A visible paper of ANOTHER patient is not stale but
-     * a press that contradicts itself, and stays 400 {@code not_a_retake}: taking it would file the photo under whichever
-     * patient the client got wrong. The retake_replaces trigger holds the same-patient half for every writer.
+     * D1, the one place the {@code replaces} rule is written: the paper a press links to, or empty for none, and never a
+     * refusal. Null replaces nothing. A paper this family can see, of this patient, waiting for a retake, is linked.
+     * Anything else is dropped and the photo is a normal new paper of the chosen patient:
+     * <ul>
+     *   <li>stale (PO ruling 2026-10-22, D1 finding 16, DR-46/DR-47): a paper it cannot see (deleted since the retake page
+     *       was drawn, or never its own: the same answer and the same line, so a press learns nothing about ids it cannot
+     *       see), or one of this patient that no longer waits for a retake;</li>
+     *   <li>another patient's paper the family can see (DR-47, pending the PO's confirmation): {@code patient} is the field
+     *       the family chose and {@code replaces} the context the client carried, so the photo goes where they chose and
+     *       the other patient's retake card stays theirs.</li>
+     * </ul>
+     * {@code sayDrop} logs the drop: one INFO line per press, said by {@link #upload} (admit passes false), no id on it, and the
+     * two kinds in their own words so a log reader can tell a found paper from a gone one. The retake_replaces trigger
+     * holds the same-patient half for every writer.
      */
-    private Mono<UUID> retakeOf(UUID familyId, UUID patientId, UUID replaces) {
+    private Mono<UUID> retakeOf(UUID familyId, UUID patientId, UUID replaces, boolean sayDrop) {
         if (replaces == null) {
             return Mono.empty();
         }
         return documents.findVisible(familyId, replaces)
-                .flatMap(d -> !patientId.equals(d.patientId())
-                        ? Mono.<UUID>error(BaymaxException.badRequest("not_a_retake", "replaces names another patient's paper"))
-                        : d.status() == Document.Status.NEEDS_RETAKE ? Mono.just(d.id()) : Mono.<UUID>empty());
+                .map(d -> !patientId.equals(d.patientId()) ? Retake.ANOTHER_PATIENT
+                        : d.status() == Document.Status.NEEDS_RETAKE ? Retake.link(d.id()) : Retake.STALE)
+                .defaultIfEmpty(Retake.STALE)
+                .flatMap(r -> {
+                    if (r.linkTo() != null) {
+                        return Mono.just(r.linkTo());
+                    }
+                    if (sayDrop) {
+                        log.info(r.dropLine());
+                    }
+                    return Mono.empty();
+                });
+    }
+
+    /** What {@link #retakeOf} found: the paper to link, or the line its drop is logged with (no id on either line). */
+    private record Retake(UUID linkTo, String dropLine) {
+        static final Retake STALE = new Retake(null,
+                "[baymax] upload's replaces is stale (its paper is gone or no longer waits for a retake): uploaded unlinked");
+        static final Retake ANOTHER_PATIENT = new Retake(null,
+                "[baymax] upload's replaces names another patient's paper: uploaded unlinked under the chosen patient");
+
+        static Retake link(UUID paper) {
+            return new Retake(paper, null);
+        }
     }
 
     /**
-     * Links each document the press returned to the paper it replaces ({@code replaces}, as {@link #retakeOf} resolved
-     * {@code asked}, the press's own field; null when it links nothing); a replay's documents too (the press that made them
+     * Links each document the press returned to the paper it replaces ({@code replaces}, as {@link #retakeOf} resolved the
+     * press's own field; null when it links nothing); a replay's documents too (the press that made them
      * may have died before its link). First link wins: a replay naming another retake leaves the first link in place
      * (one INFO line, ids only), so neither the first retake's stale card comes back nor the other's leaves unsent. A
      * link that fails costs only the stale card it exists to clear: logged with the two ids and nothing else, and the
      * upload stands.
      */
-    private Mono<Void> link(List<CreatedDocument> created, UUID asked, UUID replaces) {
+    private Mono<Void> link(List<CreatedDocument> created, UUID replaces) {
         if (replaces == null) {
-            if (asked != null) {
-                // no id on the line: the press named a paper that is gone or read, and that is all the log needs
-                log.info("[baymax] upload's replaces is stale (its paper is gone or no longer waits for a retake): uploaded unlinked");
-            }
-            return Mono.empty();
+            return Mono.empty();   // nothing to link; a dropped replaces was logged by retakeOf
         }
         return Flux.fromIterable(created).map(c -> c.document().id())
                 .concatMap(id -> documents.linkRetake(id, replaces)
@@ -126,11 +150,11 @@ public class UploadService implements UploadUseCase {
     public Mono<List<Document>> upload(UUID familyId, UUID patientId, List<Upload> uploads, Grouping grouping, String uploadKey,
                                        UUID replaces) {
         return owned(familyId, patientId)
-                .flatMap(access -> retakeOf(familyId, patientId, replaces).map(Optional::of).defaultIfEmpty(Optional.empty()))
+                .flatMap(access -> retakeOf(familyId, patientId, replaces, true).map(Optional::of).defaultIfEmpty(Optional.empty()))
                 .flatMap(linkTo -> (grouping == Grouping.SEPARATE
                         ? intake.acceptEach(patientId, uploads, uploadKey).collectList()
                         : intake.accept(patientId, uploads, uploadKey).map(List::of))
-                        .flatMap(created -> link(created, replaces, linkTo.orElse(null)).thenReturn(created)))
+                        .flatMap(created -> link(created, linkTo.orElse(null)).thenReturn(created)))
                 // only what this press made is an upload: a replay or a race's loser made nothing, so it records nothing
                 .flatMap(created -> Flux.fromIterable(created).filter(CreatedDocument::fresh)
                         .concatMap(c -> audit.record(AuditEvent.family(AuditEvent.Kind.DOCUMENT_UPLOAD, familyId, patientId, c.document().id(), clock.instant())))

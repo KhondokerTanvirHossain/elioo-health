@@ -294,30 +294,46 @@ class UploadServiceTest {
     }
 
     /**
-     * Not stale, so outside the ruling and refused as today: a paper the family can see that is ANOTHER patient's. The
-     * press contradicts itself, and taking it would file the photo under whichever patient the client got wrong. 400
-     * {@code not_a_retake} before intake: nothing stored, nothing created, nothing linked.
+     * DR-47 (engineering default, pending the PO's confirmation): a visible paper of ANOTHER patient is dropped like a
+     * stale one, never refused. {@code patient} is the field the family chose; {@code replaces} is hidden context the
+     * client carried (W7's sheet keeps its patient chooser while the URL names a retake), so the photo is a normal new
+     * paper of the chosen patient, linked to nothing, and the other patient's retake card stays theirs. One INFO line per
+     * press (said by upload, not again by admit), its own words and no id: a log reader can tell it from a stale drop.
      */
     @Test
-    void anotherPatientsPaperIsStillNotARetake() {
+    void anotherPatientsPaperIsDroppedAndThePhotoIsUploadedUnderTheChosenPatient() {
         PatientProfile ma = owned("আম্মা");
         PatientProfile abbu = owned("আব্বু");
         Document abbusRetake = paper(abbu, Document.Status.NEEDS_RETAKE);
         when(documents.findVisible(FAMILY, abbusRetake.id())).thenReturn(Mono.just(abbusRetake));
         List<Upload> pages = List.of(new Upload("a.jpg", new byte[]{1}));
-        when(intake.accept(any(), any(), any())).thenReturn(Mono.just(new CreatedDocument(paper(ma, Document.Status.RECEIVED), true)));
+        Document made = paper(ma, Document.Status.RECEIVED);
+        when(intake.accept(ma.id(), pages, "k-other01")).thenReturn(Mono.just(new CreatedDocument(made, true)));
+        // the wrong path answers too, so taking it fails on what is verified rather than on a mock's null
         when(documents.linkRetake(any(), any())).thenReturn(Mono.just(true));
 
-        StepVerifier.create(service.upload(FAMILY, ma.id(), pages, Grouping.ONE, null, abbusRetake.id()))
-                .expectErrorMatches(e -> e instanceof BaymaxException b && b.status().value() == 400 && "not_a_retake".equals(b.reason()))
-                .verify();
-        StepVerifier.create(service.admit(FAMILY, ma.id(), abbusRetake.id()))
-                .expectErrorMatches(e -> e instanceof BaymaxException b && b.status().value() == 400 && "not_a_retake".equals(b.reason()))
-                .verify();
-        verify(intake, never()).accept(any(), any(), any());
-        verify(intake, never()).acceptEach(any(), any(), any());
-        verify(audit, never()).record(any());
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(UploadService.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> events = new ch.qos.logback.core.read.ListAppender<>();
+        events.start();
+        logger.addAppender(events);
+        try {
+            StepVerifier.create(service.admit(FAMILY, ma.id(), abbusRetake.id())).as("admit links nothing").verifyComplete();
+            StepVerifier.create(service.upload(FAMILY, ma.id(), pages, Grouping.ONE, "k-other01", abbusRetake.id()))
+                    .expectNext(List.of(made)).verifyComplete();
+        } finally {
+            logger.detachAppender(events);
+        }
+        verify(intake).accept(ma.id(), pages, "k-other01");
+        verify(audit).record(argThat(e -> e.kind() == AuditEvent.Kind.DOCUMENT_UPLOAD && made.id().equals(e.documentId())));
         verify(documents, never()).linkRetake(any(), any());
+        List<ch.qos.logback.classic.spi.ILoggingEvent> lines = events.list.stream()
+                .filter(e -> e.getLevel().isGreaterOrEqual(ch.qos.logback.classic.Level.INFO)).toList();
+        assertThat(lines).hasSize(1).allSatisfy(e -> {
+            assertThat(e.getLevel()).isEqualTo(ch.qos.logback.classic.Level.INFO);
+            assertThat(e.getFormattedMessage()).contains("another patient's paper").doesNotContain("is stale")
+                    .doesNotContain(abbusRetake.id().toString()).doesNotContain(abbu.id().toString());
+            assertThat(e.getArgumentArray()).as("no id, no count, nothing").isNullOrEmpty();
+        });
     }
 
     /** The patient rule comes first: for a patient the family may only see, the paper named is never even looked up. */
@@ -343,7 +359,8 @@ class UploadServiceTest {
         when(intake.acceptEach(ma.id(), pages, "k-retake01")).thenReturn(Flux.just(new CreatedDocument(one, true), new CreatedDocument(two, true)));
         when(documents.linkRetake(any(), any())).thenReturn(Mono.just(true));
 
-        StepVerifier.create(service.admit(FAMILY, ma.id(), retake.id())).verifyComplete();
+        // admit names the paper it will link, so the sheet knows its replaces still holds (UploadUiHandler's close link)
+        StepVerifier.create(service.admit(FAMILY, ma.id(), retake.id())).expectNext(retake.id()).verifyComplete();
         StepVerifier.create(service.upload(FAMILY, ma.id(), pages, Grouping.SEPARATE, "k-retake01", retake.id()))
                 .expectNext(List.of(one, two)).verifyComplete();
         verify(documents).linkRetake(one.id(), retake.id());
