@@ -580,7 +580,13 @@ meaning of existing data is not, and needs a forward fix. **D2's filed-day migra
 is one of these:** it redefines `document.timeline_date` so a retake is filed under its Dhaka upload day. An image older
 than it starts against it (Flyway ignores a future migration) but still computes `doc_date IS NULL AS
 date_is_fallback` in the timeline and earlier-readings SQL, so every retake would show under its upload day with no
-"(আপলোডের তারিখ)" mark, an upload day passing as a visit day. Roll forward with a fix, never back past it. To take Baymax out of service without changing
+"(আপলোডের তারিখ)" mark, an upload day passing as a visit day. Roll forward with a fix, never back past it.
+**B3's `now_ack` migration (plan B3) is another:** `now_ack` references `document`, `patient_profile` and
+`family_account` with no cascade, and only images from B3 on delete its rows. An older image starts against it, but
+once any দেখেছি row exists its `deleteDocument`, `deletePatient` and `deleteFamily` all fail on a `now_ack_*_fkey`
+constraint, so delete-on-request (§6.3, 24h) is broken for those families. Rolling Java back past B3 requires
+`DELETE FROM baymax.now_ack` first (the taps are a display preference; losing them only shows the NOW banner again),
+or a forward fix; the old deletes do not know the table. To take Baymax out of service without changing
 version, set `BAYMAX_ENABLED=false` and redeploy: routes and migrations stop, MedScribe is untouched.
 
 Restoring configuration: the backups are `~/medscribe.env.bak.*`.

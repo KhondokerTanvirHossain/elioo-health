@@ -806,6 +806,9 @@ plan's Global Constraints, now also a dated line in `direction-contract.md`:
      existing document (`routine`/`this_week` → `now`, or a NULL first assessment), the A11 sweep gives NOW to an
      older upload whose `explain()` threw, up to an hour later, and the review gate releases a held NOW paper later.
      In each of those the paper is not new, and it is the one most at risk of being missed.
+     - *Amendment, plan B3 (for PO sight): the key is `(document_id, urgency, reasons digest, release state)`;
+       `urgency_assessed_at` is restamped by every no-op re-assessment, see the engineering note below and replay (a2)
+       in PR #123.*
    - **Per account holder, never per family.** The acknowledgement belongs to the member who tapped (member id) and is
      stored on the server, so it holds across that person's devices. A per-family acknowledgement would let one
      account holder's tap hide the global NOW banner from every other member of the family, including members who
@@ -1111,7 +1114,11 @@ DR-41 recommended per account holder. Under (b), member A's tap also hides the b
 B who never saw it.
 
 What limits that is unchanged and still binding. The acknowledgement covers only the exact set of NOW documents visible
-at the tap, as `(document_id, urgency_assessed_at, release state)`. So the banner shows again **for every member** after:
+at the tap, as `(document_id, urgency_assessed_at, release state)`.
+*Amendment, plan B3 (for PO sight): the key is `(document_id, urgency, reasons digest, release state)`;
+`urgency_assessed_at` is restamped by every no-op re-assessment, see the engineering note under DR-41 item 5 and replay
+(a2) in PR #123.*
+So the banner shows again **for every member** after:
 - a new NOW upload;
 - a `this_week` → `now` raise;
 - an A11 sweep assessment;
