@@ -14,7 +14,11 @@ export default defineConfig({
   // code; e2e/*.spec.ts belong to Playwright and are picked up by neither.
   test: {
     projects: [
-      { extends: true, test: { name: "node", include: ["src/**/*.test.ts"], exclude, environment: "node" } },
+      // e2e/support holds the pure rules the specs use (the DR-42 budget arithmetic), judged here without a browser.
+      {
+        extends: true,
+        test: { name: "node", include: ["src/**/*.test.ts", "e2e/support/**/*.test.ts"], exclude, environment: "node" },
+      },
       { extends: true, test: { name: "dom", include: ["src/**/*.test.tsx"], exclude, environment: "jsdom" } },
     ],
   },

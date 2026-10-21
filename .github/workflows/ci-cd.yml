@@ -60,13 +60,16 @@ jobs:
       # deploy job's https smoke (below) against a local stub of the production table, every row broken alone,
       # duplicate security headers, a host that never answers. test_caddy_drift.sh: the deploy job's drift check
       # against fixture Caddyfiles, both ways (formatting ignored, unterminated blocks refused without a diff).
-      - name: Deploy script tests (tip check, prune, two containers, https smoke, Caddy drift)
+      # test_budget_replica.sh: the Caddy replica of the DR-42 enforcing run (W1d), only the address and upstreams
+      # changed, and a source without production's encode or HSTS lines refused.
+      - name: Deploy script tests (tip check, prune, two containers, https smoke, Caddy drift, budget replica)
         run: |
           scripts/test_deploy_is_tip.sh
           bash scripts/test_deploy_prune.sh
           bash scripts/test_deploy_sh.sh
           bash scripts/test_smoke_https.sh
           bash scripts/test_caddy_drift.sh
+          bash scripts/test_budget_replica.sh
       # The real medioo-web image, built from its Dockerfile, and deploy_web against the runner's Docker daemon (only
       # `docker pull` shimmed): the probe against the real Next server, `docker inspect` of what deploy.sh started
       # (no ports, 320m, rotated logs, exactly two env vars, one network), and an image built from another sha refused
@@ -199,7 +202,7 @@ jobs:
       # All three projects: phone and desktop against the production build (catalog-off.spec.ts: /app/catalog-test is a
       # 404 there), catalog against the catalog build (every component state: overflow, the rendered NOW red, axe,
       # 12 px, the wordmark per theme, CSP; both widths, both schemes).
-      - name: medioo-web browser tests (CSP, axe, no-JS reading, budget probe, component catalog)
+      - name: medioo-web browser tests (CSP, axe, no-JS reading, budget ceilings, component catalog)
         working-directory: medioo-web
         run: pnpm exec playwright test -c e2e/playwright.config.ts
       - name: medioo-web budget numbers
@@ -208,6 +211,14 @@ jobs:
         run: |
           node -e 'const d = require("./test-results/budget.json"); console.log(JSON.stringify({ totals: d.totals, all: d.all }, null, 2))' \
             || echo "no budget.json (the browser tests did not reach the probe)"
+      # DR-42's enforcing run (plan W1d): the real medioo-web image behind a Caddy replica of docs/infra/Caddyfile.medioo
+      # (its encode and header block, only the address and the upstreams changed), and budget.spec.ts against that Caddy
+      # with E2E_VIA_CADDY=1: the probe within "probe" and every page of NEXT_PAGES within "route", read from
+      # medioo-web/e2e/budget-ceilings.json, on the phone profile. Every measured document must carry the HSTS header
+      # only that Caddy block sets, so a run that bypassed Caddy fails. The next start run above applies the same
+      # ceilings and can only be stricter. Prints paths and byte counts only.
+      - name: medioo-web budget ceilings behind Caddy (DR-42, the enforcing run)
+        run: bash scripts/budget-behind-caddy.sh
       - name: Upload medioo-web Playwright report
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

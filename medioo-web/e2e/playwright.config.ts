@@ -22,6 +22,8 @@ if (!process.env.E2E_BASE_URL) {
 
 export default defineConfig({
   testDir: ".",
+  // Playwright's own files are *.spec.ts; e2e/support/*.test.ts are Vitest unit tests of the specs' pure rules.
+  testMatch: /\.spec\.ts$/,
   outputDir: "../test-results",
   reporter: [["list"], ["html", { outputFolder: "../playwright-report", open: "never" }]],
   forbidOnly: !!process.env.CI,

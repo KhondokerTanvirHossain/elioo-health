@@ -1,9 +1,37 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { expect, test, type Response } from "@playwright/test";
+import { expect, test, type Page, type Response, type TestInfo } from "@playwright/test";
+import { NEXT_PAGES } from "../src/routing/paths";
+import { ceilingMessage, concretePath, isJavaImage, readCeilings, routeTotal } from "./support/budget";
 
 type Kind = "document" | "script" | "stylesheet" | "font" | "rsc" | "other";
-type Row = { kind: Kind; url: string; sameOrigin: boolean; encoding: string; wire: number; decoded: number };
+type Row = {
+  kind: Kind;
+  url: string;
+  sameOrigin: boolean;
+  encoding: string;
+  wire: number;
+  decoded: number;
+  javaImage: boolean;
+};
+
+/**
+ * The DR-42 first-load wire budget, enforced (W1d).
+ *
+ * Every load is measured exactly as the W1a measurement measured /app/probe: a cold first load (a fresh context per
+ * test), both self-hosted Noto subsets fetched and counted, the encoded body bytes from the browser's network stack
+ * (`responseBodySize`, not a content-length header, which a streamed HTML response does not have), headers not
+ * counted. The ceilings are read from e2e/budget-ceilings.json and nowhere else, never from a probe measured in this
+ * run, which would move with the framework. They are defined on the phone profile (Pixel 7, 390x844), so they are
+ * enforced on the phone project; the desktop project measures and records.
+ *
+ * The defining run is behind a Caddy replica of docs/infra/Caddyfile.medioo (scripts/budget-behind-caddy.sh), with
+ * E2E_VIA_CADDY=1: every measured document must then carry Strict-Transport-Security, which only that Caddy block
+ * sets, so a run that bypassed Caddy cannot pass. The suite's run against `next start` applies the same ceilings and
+ * can only be stricter (Caddy encodes only what Next sent unencoded).
+ */
+const VIA_CADDY = process.env.E2E_VIA_CADDY === "1";
+const ENFORCED_ON = "phone";
 
 function kindOf(response: Response): Kind {
   const request = response.request();
@@ -13,14 +41,16 @@ function kindOf(response: Response): Kind {
   return "other";
 }
 
-/**
- * A cold load of /app/probe, measured per resource class: decoded bytes (what the browser parses) and wire bytes (the
- * encoded body actually transferred, from the network stack rather than a content-length header, which a streamed
- * HTML response does not have). The numbers feed the DR-42 proposal; this spec does not enforce a budget yet — the PO
- * sets it (plan Part B, decision 1). It fails only on a third-party script, or on a measurement that missed something.
- */
-test("cold first load of the probe, by resource class", async ({ page, baseURL }, testInfo) => {
-  const origin = new URL(baseURL!).origin;
+type Load = {
+  rows: Row[];
+  totals: Record<string, { count: number; wire: number; decoded: number }>;
+  all: { wire: number; decoded: number };
+  scriptRequests: string[];
+  document: Response | null;
+};
+
+/** One cold load of `path`, every response measured. */
+async function coldLoad(page: Page, origin: string, path: string): Promise<Load> {
   const responses: Response[] = [];
   // Every script the page TRIED to load, from the request side: a foreign script that never answers (DNS failure,
   // blocked, offline CI) produces no response, and a response-only check would never see it.
@@ -32,7 +62,7 @@ test("cold first load of the probe, by resource class", async ({ page, baseURL }
     if (!r.url().startsWith("data:")) responses.push(r);
   });
 
-  await page.goto("/app/probe");
+  const doc = await page.goto(path);
   await page.waitForLoadState("networkidle");
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
   await page.waitForLoadState("networkidle");
@@ -49,10 +79,11 @@ test("cold first load of the probe, by resource class", async ({ page, baseURL }
       encoding: r.headers()["content-encoding"] ?? "identity",
       wire: sizes.responseBodySize,
       decoded: body.length,
+      javaImage: isJavaImage(r.url()),
     });
   }
 
-  const totals: Record<string, { count: number; wire: number; decoded: number }> = {};
+  const totals: Load["totals"] = {};
   for (const row of rows) {
     const t = (totals[row.kind] ??= { count: 0, wire: 0, decoded: 0 });
     t.count += 1;
@@ -60,28 +91,81 @@ test("cold first load of the probe, by resource class", async ({ page, baseURL }
     t.decoded += row.decoded;
   }
   const all = rows.reduce((a, r) => ({ wire: a.wire + r.wire, decoded: a.decoded + r.decoded }), { wire: 0, decoded: 0 });
+  return { rows, totals, all, scriptRequests, document: doc };
+}
 
+function record(testInfo: TestInfo, name: string, baseURL: string, load: Load, extra: object = {}) {
   const out = join(__dirname, "..", "test-results");
   mkdirSync(out, { recursive: true });
-  const file = testInfo.project.name === "phone" ? "budget.json" : `budget-${testInfo.project.name}.json`;
+  const file = testInfo.project.name === "phone" ? `${name}.json` : `${name}-${testInfo.project.name}.json`;
+  const { rows, totals, all } = load;
   writeFileSync(
     join(out, file),
-    JSON.stringify({ project: testInfo.project.name, baseURL, totals, all, rows }, null, 2) + "\n",
+    JSON.stringify({ project: testInfo.project.name, baseURL, viaCaddy: VIA_CADDY, ...extra, totals, all, rows }, null, 2) +
+      "\n",
   );
+}
 
-  // The one rule enforced now: every script is our own.
-  expect(scriptRequests.length, "script requests seen").toBeGreaterThan(0);
-  const foreign = scriptRequests.filter((url) => new URL(url).origin !== origin);
-  expect(foreign, "third-party scripts").toEqual([]);
+/** What every measured load must satisfy before its total means anything. */
+function expectAWholeMeasurement(load: Load, origin: string, path: string) {
+  // The page itself was measured: a 404, an error page or a redirect to sign-in is a different (smaller) page.
+  expect(load.document, `${path}: the navigation produced a document response`).not.toBeNull();
+  expect(load.document!.status(), `${path}: the document answered 200`).toBe(200);
+  expect(new URL(load.document!.url()).pathname, `${path}: the document is the page asked for`).toBe(path);
+  if (VIA_CADDY) {
+    // Only the Caddy block sets HSTS (Next does not, DR-40 A1): without it this run did not go through Caddy.
+    expect(
+      load.document!.headers()["strict-transport-security"],
+      `${path}: E2E_VIA_CADDY=1 but the document has no Strict-Transport-Security, so the run bypassed Caddy`,
+    ).toBe("max-age=31536000");
+  }
 
-  // A measurement that missed a class is flattering, not small: require each class the probe is built to exercise.
-  expect(totals.document?.count, "one HTML document").toBe(1);
-  expect(totals.script?.count ?? 0, "Next's client scripts").toBeGreaterThan(0);
-  expect(totals.stylesheet?.count ?? 0, "the stylesheet").toBeGreaterThan(0);
-  const fonts = rows.filter((r) => r.kind === "font").map((r) => r.url).sort();
+  // Every script is our own.
+  expect(load.scriptRequests.length, `${path}: script requests seen`).toBeGreaterThan(0);
+  const foreign = load.scriptRequests.filter((url) => new URL(url).origin !== origin);
+  expect(foreign, `${path}: third-party scripts`).toEqual([]);
+
+  // A measurement that missed a class is flattering, not small.
+  expect(load.totals.document?.count, `${path}: one HTML document`).toBe(1);
+  expect(load.totals.script?.count ?? 0, `${path}: Next's client scripts`).toBeGreaterThan(0);
+  expect(load.totals.stylesheet?.count ?? 0, `${path}: the stylesheet`).toBeGreaterThan(0);
+  for (const r of load.rows) expect(r.wire, `wire bytes measured for ${r.url}`).toBeGreaterThan(0);
+}
+
+test("the framework floor: a cold first load of the probe, within the probe ceiling", async ({ page, baseURL }, testInfo) => {
+  const origin = new URL(baseURL!).origin;
+  const load = await coldLoad(page, origin, "/app/probe");
+  record(testInfo, "budget", baseURL!, load);
+
+  expectAWholeMeasurement(load, origin, "/app/probe");
+  // The probe is built to cross the wire with both fonts, the worst case (a phone without Noto).
+  const fonts = load.rows.filter((r) => r.kind === "font").map((r) => r.url).sort();
   expect(fonts, "both Noto subsets crossed the wire").toEqual([
     "/fonts/noto-sans-bengali.woff2",
     "/fonts/noto-sans-latin.woff2",
   ]);
-  for (const r of rows) expect(r.wire, `wire bytes measured for ${r.url}`).toBeGreaterThan(0);
+
+  // The probe's own total, every response (it loads no Java image, and none is excused from the floor).
+  const { probe } = readCeilings();
+  if (testInfo.project.name === ENFORCED_ON) {
+    expect(load.all.wire, ceilingMessage("probe", "/app/probe", load.all.wire, probe)).toBeLessThanOrEqual(probe);
+  }
 });
+
+// Every routed page (NEXT_PAGES, held equal to the build's pages by src/routing/built/routes.built.test.ts) against the
+// route ceiling. Its total is every response of the cold load except Java's crop and page images (S9).
+for (const pattern of NEXT_PAGES) {
+  test(`routed page ${pattern}: a cold first load within the route ceiling`, async ({ page, baseURL }, testInfo) => {
+    const origin = new URL(baseURL!).origin;
+    const path = concretePath(pattern);
+    const load = await coldLoad(page, origin, path);
+    const total = routeTotal(load.rows);
+    record(testInfo, `budget-route${path.replace(/[^a-zA-Z0-9]+/g, "-")}`, baseURL!, load, { path, routeTotal: total });
+
+    expectAWholeMeasurement(load, origin, path);
+    const { route } = readCeilings();
+    if (testInfo.project.name === ENFORCED_ON) {
+      expect(total, ceilingMessage("route", path, total, route)).toBeLessThanOrEqual(route);
+    }
+  });
+}
