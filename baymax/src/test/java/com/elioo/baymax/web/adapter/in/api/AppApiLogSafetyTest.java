@@ -235,7 +235,8 @@ class AppApiLogSafetyTest {
             });
             exercise.put("GET /app/api/patients/{id}/timeline", (c, t) -> {
                 c.get().uri("/app/api/patients/" + rokeya.id() + "/timeline").cookie("baymax_session", t).exchange().expectStatus().isOk()
-                        .expectBody().jsonPath("$.entries[0].document_id").isEqualTo(paper.toString());
+                        // B6's two routine papers below are filed later and sort first; what matters is that the name's paper is in the answer
+                        .expectBody().jsonPath("$.entries[?(@.document_id == '" + paper + "')]").exists();
                 c.get().uri(b -> b.path("/app/api/patients/" + rokeya.id() + "/timeline").queryParam("cursor", NAME).build())
                         .cookie("baymax_session", t).exchange().expectStatus().isBadRequest();
                 c.get().uri("/app/api/patients/" + rokeya.id() + "/timeline").cookie("baymax_session", otherToken)
