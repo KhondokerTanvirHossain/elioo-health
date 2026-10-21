@@ -1,11 +1,11 @@
 import type { JSX } from "react";
-import type { MePatient, NowBannerJson } from "@/api/types";
+import type { NowBannerJson } from "@/api/types";
 import { banglaDigits, t, type Lang } from "@/copy";
 import { MessageBubble } from "@/components/MessageBubble/MessageBubble";
 import { MioAvatar } from "@/components/MioAvatar/MioAvatar";
 import { OtpInput } from "@/components/OtpInput/OtpInput";
 import { PhoneField } from "@/components/PhoneField/PhoneField";
-import { NowBanner } from "@/components/safety/NowBanner/NowBanner";
+import { NowBanner, type NowBannerPatient } from "@/components/safety/NowBanner/NowBanner";
 import { CHIP_KINDS, StatusChip } from "@/components/StatusChip/StatusChip";
 import { Wordmark } from "@/components/Wordmark/Wordmark";
 // B3's generated GET /app/api/now-banner bodies (baymax NowBannerApiContractTest): each state reads one as Java wrote it.
@@ -27,27 +27,13 @@ const names = catalogNames.names;
 const nameFor = (lang: Lang) => (lang === "bn" ? names.short : names.english);
 
 /**
- * The patients GET /app/api/me would list beside a banner: one per distinct patient of its documents, in order, named
- * from `pool`. The name is display data the screen supplies, so it is the one thing a NowBanner state chooses; the
+ * The patients GET /app/api/me would list beside a banner, reduced to the id and the name the banner reads: one per
+ * distinct patient of its documents, in order, named from `pool`. The name is display data the screen supplies, so it is the one thing a NowBanner state chooses; the
  * banner is the generated body, unchanged.
  */
-function bannerPatients(banner: NowBannerJson, pool: string[]): MePatient[] {
+function bannerPatients(banner: NowBannerJson, pool: string[]): NowBannerPatient[] {
   const ids = [...new Set(banner.documents.flatMap((d) => (d.patient_id === null ? [] : [d.patient_id])))];
-  return ids.map((id, i) => {
-    const name = pool[i % pool.length]!;
-    return {
-      id,
-      name,
-      name_possessive: name,
-      name_objective: name,
-      age: 64,
-      sex: "female",
-      owner: true,
-      documents: 1,
-      last_document_at: null,
-      urgent: true,
-    };
-  });
+  return ids.map((id, i) => ({ id, name: pool[i % pool.length]! }));
 }
 
 const nowBanner = (state: string, banner: NowBannerJson, pool: (lang: Lang) => string[], empty?: true): CatalogState => ({
@@ -138,7 +124,8 @@ export const STATES: CatalogState[] = [
   },
 
   // The NOW banner over each of B3's generated bodies; acked.json is the one Java says not to show. The seen button is
-  // inert here: the catalog has no session and passes no onSeen.
+  // inert here: the catalog passes no onSeen, and without one NowBannerSeen sends no request at all
+  // (NowBanner.test.tsx › theCatalogButtonSendsNothing taps every one of these).
   nowBanner("one-patient", nowBannerOne.body, (lang) => [nameFor(lang)]),
   nowBanner("two-patients", nowBannerTwoPatients.body, (lang) => [nameFor(lang), names.long]),
   nowBanner("abroad", nowBannerAbroad.body, (lang) => [nameFor(lang)]),

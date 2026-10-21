@@ -5,18 +5,24 @@ import { MioAvatar } from "@/components/MioAvatar/MioAvatar";
 import { NowBannerSeen } from "./NowBannerSeen";
 import "./NowBanner.css";
 
-// The shipped NOW sentence, the one the banner falls back to when Java names a key the copy does not hold: a NOW
-// banner never renders blank, and never words the line itself.
+// The shipped NOW sentence, the one the banner falls back to when Java names a key it cannot read as a NOW sentence: a
+// NOW banner never renders blank, and never words the line itself. Java sends `urgency.now` (NowBannerApiHandler), and
+// types.test.ts holds every committed fixture to a key that resolves without this fallback, so the fallback is a last
+// resort for drift, never the contract. Only an `urgency.now*` key with no `{0}` placeholder is read as the line:
+// another surface's words, or a sentence that would render a raw `{0}`, is not a safety line.
 const SHIPPED_LINE: CopyKey = "urgency.now";
 
 function lineKey(lang: Lang, key: string): CopyKey {
+  if (key !== SHIPPED_LINE && !key.startsWith(`${SHIPPED_LINE}.`)) return SHIPPED_LINE;
   try {
-    t(lang, key as CopyKey);
-    return key as CopyKey;
+    return /\{\d+\}/.test(t(lang, key as CopyKey)) ? SHIPPED_LINE : (key as CopyKey);
   } catch {
     return SHIPPED_LINE;
   }
 }
+
+/** The two fields of a GET /app/api/me patient the banner reads; it depends on nothing else of that shape. */
+export type NowBannerPatient = Pick<MePatient, "id" | "name">;
 
 /**
  * The global NOW banner (plan W2d-b), over GET /app/api/now-banner as Java sent it. Nothing when `show` is false.
@@ -27,7 +33,9 @@ function lineKey(lang: Lang, key: string): CopyKey {
  *
  * Mio is still here, as on every NOW surface. `patients` is GET /app/api/me's list, the only source of a name; a
  * patient it does not hold is not named, and a title with no name left falls back to the attention strip's words.
- * `onSeen` is a function, so it reaches the island only when the caller is itself a client component (W5).
+ * `onSeen` is a function, so it reaches the island only when the caller is itself a client component (W5). It receives
+ * the banner the server answered after the acknowledgement, which the caller renders: a 2xx is not "hidden" (a stale
+ * tap answers `show: true`). Without `onSeen` the button is inert and sends nothing (the catalog).
  */
 export function NowBanner({
   banner,
@@ -36,16 +44,16 @@ export function NowBanner({
   onSeen,
 }: {
   banner: NowBannerJson;
-  patients: MePatient[];
+  patients: NowBannerPatient[];
   lang: Lang;
-  onSeen?: () => void;
+  onSeen?: (next: NowBannerJson) => void;
 }) {
   const titleId = useId();
   if (!banner.show) return null;
 
   const unseen = banner.documents.filter((d) => !d.acked);
   const byId = new Map(patients.map((p) => [p.id, p]));
-  const named: MePatient[] = [];
+  const named: NowBannerPatient[] = [];
   for (const d of unseen) {
     const p = d.patient_id === null ? undefined : byId.get(d.patient_id);
     if (p && !named.includes(p)) named.push(p);
@@ -82,7 +90,12 @@ export function NowBanner({
             {t(lang, "now.call999")}
           </a>
         )}
-        <NowBannerSeen seen={banner.seen} label={t(lang, "now.banner.seen")} onSeen={onSeen} />
+        <NowBannerSeen
+          seen={banner.seen}
+          label={t(lang, "now.banner.seen")}
+          failedLabel={t(lang, "app.err.generic")}
+          onSeen={onSeen}
+        />
       </div>
     </section>
   );

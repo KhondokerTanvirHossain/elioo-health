@@ -81,12 +81,27 @@
   text-decoration: none;
   overflow-wrap: anywhere;
 }
+/* The primary actions sit on the legibility floor's primary target (48 px): the 999 call in Bangladesh, and opening
+   the paper, which is the first thing to do from anywhere, abroad included. The seen button stays at the 44 px floor. */
+.now-banner__open,
+.now-banner__call {
+  min-height: var(--target-primary);
+}
 .now-banner__call {
   font-weight: 700;
   border-width: 3px;
 }
 .now-banner__seen {
   cursor: pointer;
+}
+/* A refused or failed acknowledgement, said in words on its own line: the banner stays. */
+.now-banner__status {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 .now-banner__seen:disabled {
   cursor: progress;

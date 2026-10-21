@@ -1,7 +1,10 @@
 /*
  * The /app/api bodies React reads, written from the fixtures Java's contract tests generate (fixtures/api/<area>/),
  * never from a guess. types.test.ts assigns every committed fixture of an area to its type, so `pnpm typecheck` fails
- * the moment the generated contract and the type drift apart. Fields are snake_case, as Java sends them.
+ * when a field the type names is dropped or retyped, and compares every object's exact key set against lists the
+ * compiler holds equal to the type, so a field Java adds fails the test. Fields are snake_case, as Java sends them.
+ *
+ * The one exception is MePatient: there is no generated fixtures/api/me/ yet, so nothing pins it (see its comment).
  */
 
 /**
@@ -41,7 +44,9 @@ export type NowBannerJson = {
 
 /**
  * One patient of GET /app/api/me (baymax MeApiHandler: PatientJson's fields, then the name forms and the red mark).
- * No generated fixture pins this one yet (there is no fixtures/api/me/); its fields are MeApiHandler's, in its order.
+ * NOT pinned by a fixture: there is no generated fixtures/api/me/ yet (a MeApiContractTest is pending for W4/W5), so
+ * these fields are read off MeApiHandler's source, in its order, and can drift unseen. Depend on the fields actually
+ * read (NowBanner takes `Pick<MePatient, "id" | "name">`) until a fixture pins the rest.
  */
 export type MePatient = {
   id: string;

@@ -11,13 +11,14 @@ const src = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 // A token name ends where an identifier character would continue it, as in the CSS checks: --now, --now-ink and
 // --on-now are NOW tokens, --nowrap is not; --week-soft is THIS_WEEK, a BEM modifier like day-cell--weekend is not.
-// The plain class strings are matched as written, except that `now-banner` after a `/` is a path segment (B3's
-// fixtures/api/now-banner/ and /app/api/now-banner), not the class: a class name never follows a slash.
+// The plain class strings are matched as written, except that `now-banner` right after `api/` is B3's path segment
+// (fixtures/api/now-banner/ and /app/api/now-banner), not the class. Only that segment is exempt: `now-banner` after
+// any other slash (`styles/now-banner`, `x/now-banner__call`) is still reported.
 const RULES: { names: [label: string, pattern: RegExp][]; allowed: RegExp[] }[] = [
   {
     names: [
       ["--now", /--(?:on-)?now(?![A-Za-z0-9_])/],
-      ["now-banner", /(?<!\/)now-banner/],
+      ["now-banner", /(?<!api\/)now-banner/],
       ["verdict-card--now", /verdict-card--now/],
       ["status-chip--crit", /status-chip--crit/],
     ],
@@ -95,6 +96,9 @@ describe("NOW and THIS_WEEK class names in TypeScript", () => {
       "<div className={`x ${y} now-banner--abroad`} />",
       'el.querySelector(".now-banner__line")',
       "<div className={['now-banner'].join(' ')} />",
+      // After a slash that is not B3's `api/` segment, the name is still the class's.
+      'import "../styles/now-banner.css";',
+      "<div className={`${base}/now-banner__call`} />",
     ];
     for (const text of classes) expect(scanFile("src/components/Probe/Probe.tsx", text), text).toEqual(["src/components/Probe/Probe.tsx now-banner"]);
     // A path and a class in one file is still the class.

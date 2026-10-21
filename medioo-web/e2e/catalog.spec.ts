@@ -434,6 +434,60 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
           .toEqual([true, true]);
       });
 
+      test("theNowBannersPrimaryActionsMeetThePrimaryTarget", async ({ page }) => {
+        // The legibility floor: touch targets at least 44 px, primary actions at least 48 px. On the NOW banner the
+        // primary actions are the 999 call (in Bangladesh) and opening the paper (abroad its only way forward).
+        await open(page);
+        const result = await page.evaluate(() => {
+          const heights: Record<string, number[]> = {};
+          for (const section of document.querySelectorAll<HTMLElement>('[data-catalog-state^="NowBanner/"]')) {
+            for (const [kind, selector] of [
+              ["call", ".now-banner__call"],
+              ["open", ".now-banner__open"],
+              ["seen", ".now-banner__seen"],
+            ] as const) {
+              for (const el of section.querySelectorAll(selector)) {
+                const key = `${section.dataset.catalogState} ${kind}`;
+                heights[key] = [...(heights[key] ?? []), el.getBoundingClientRect().height];
+              }
+            }
+          }
+          return heights;
+        });
+        const short = (min: number, kinds: string[]) =>
+          Object.entries(result)
+            .filter(([key]) => kinds.some((k) => key.endsWith(` ${k}`)))
+            .flatMap(([key, hs]) => hs.filter((h) => h < min - 0.5).map((h) => `${key} ${h.toFixed(1)}px`));
+        expect(short(48, ["call", "open"]), "primary actions under 48 px").toEqual([]);
+        expect(short(44, ["seen"]), "the seen button under 44 px").toEqual([]);
+        // Guard: the states that carry each action were measured, so the empty lists are about real buttons.
+        expect(result["NowBanner/one-patient call"]?.length, "999 calls on NowBanner/one-patient").toBe(2);
+        expect(result["NowBanner/abroad open"]?.length, "open links on NowBanner/abroad").toBe(2);
+        expect(result["NowBanner/abroad call"], "no 999 call abroad").toBeUndefined();
+      });
+
+      test("mioIsStillOnEveryNowBanner", async ({ page }) => {
+        // Mio is still on a NOW surface, read from what the browser runs, not from the class names: whatever class or
+        // selector would animate him, the computed animation is none.
+        await open(page);
+        const result = await page.evaluate(() => {
+          const moving: string[] = [];
+          let measured = 0;
+          for (const img of document.querySelectorAll<HTMLElement>('[data-catalog-state^="NowBanner/"] img.mio-avatar')) {
+            measured++;
+            const name = getComputedStyle(img).animationName;
+            if (name !== "none") moving.push(`${img.closest<HTMLElement>("[data-catalog-state]")!.dataset.catalogState}: ${name}`);
+          }
+          // The other direction: the moving Mio of MioAvatar/32 does report an animation, so "none" above is a reading.
+          const hop = document.querySelector<HTMLElement>('[data-catalog-state="MioAvatar/32"] img.mio-avatar');
+          return { moving, measured, hop: hop ? getComputedStyle(hop).animationName : null };
+        });
+        expect(result.moving).toEqual([]);
+        // 5 shown NowBanner states × 2 languages (NowBanner/hidden renders nothing).
+        expect(result.measured, "Mio avatars measured on NowBanner states").toBeGreaterThanOrEqual(10);
+        expect(result.hop, "MioAvatar/32 animates, so the reading can see an animation").toBe("mio-avatar-hop");
+      });
+
       test("noCspViolation", async ({ page }) => {
         await open(page);
         const hooked = await page.evaluate(() => Array.isArray((window as unknown as { __csp?: string[] }).__csp));
