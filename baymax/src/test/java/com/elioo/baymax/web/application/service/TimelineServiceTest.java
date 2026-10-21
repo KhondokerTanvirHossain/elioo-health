@@ -253,6 +253,25 @@ class TimelineServiceTest {
         verify(records, never()).updateChronicFlags(any(), any());
     }
 
+    /**
+     * Plan B5: a list {@code normalizeFlags} refuses (more than 20 flags, or one over 40 characters) is a 400
+     * {@code invalid_flags} signal, never an {@code IllegalArgumentException} thrown inside the chain (which {@code /app/api}
+     * answers 500 and the HTML form answered with an ERROR line), and nothing is written. The message names no flag.
+     */
+    @Test
+    void tooManyOrTooLongChronicFlagsAreA400AndNothingIsWritten() {
+        when(records.visiblePatient(FAMILY_B, PATIENT_B)).thenReturn(Mono.just(new PatientAccess(PATIENT, true)));
+        when(records.updateChronicFlags(any(), any())).thenReturn(Mono.just(PATIENT));
+        List<String> tooMany = java.util.stream.IntStream.rangeClosed(1, 21).mapToObj(i -> "flag" + i).toList();
+        for (List<String> refused : List.of(tooMany, List.of("diabetes", "x".repeat(41)))) {
+            StepVerifier.create(Mono.defer(() -> service.updateChronicFlags(FAMILY_B, PATIENT_B, refused)))
+                    .expectErrorMatches(e -> e instanceof BaymaxException b && b.status().value() == 400
+                            && "invalid_flags".equals(b.reason()) && !b.getMessage().contains("flag1") && !b.getMessage().contains("xxxx"))
+                    .verify();
+        }
+        verify(records, never()).updateChronicFlags(any(), any());
+    }
+
     /** The other direction: the owner's flags are written, normalised. */
     @Test
     void theOwnerChangesTheChronicFlags() {

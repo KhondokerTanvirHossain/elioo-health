@@ -12,11 +12,26 @@
       "terms_date": "2026-09-14"
     },
     "flags_offered": [
-      "diabetes",
-      "hypertension",
-      "kidney",
-      "thyroid",
-      "heart"
+      {
+        "id": "diabetes",
+        "label_key": "flag.diabetes"
+      },
+      {
+        "id": "hypertension",
+        "label_key": "flag.hypertension"
+      },
+      {
+        "id": "kidney",
+        "label_key": "flag.kidney"
+      },
+      {
+        "id": "thyroid",
+        "label_key": "flag.thyroid"
+      },
+      {
+        "id": "heart",
+        "label_key": "flag.heart"
+      }
     ],
     "patients": [
       {

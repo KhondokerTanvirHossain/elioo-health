@@ -1,5 +1,7 @@
 package com.elioo.baymax.web.adapter.in.api;
 
+import com.elioo.baymax.nudge.application.port.in.NudgeOptOutUseCase;
+import com.elioo.baymax.nudge.application.port.out.NudgeDataPort;
 import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
@@ -106,10 +108,8 @@ class AppApiGuardTest {
                 new UploadApiHandler(mock(UploadUseCase.class), properties, new UiCopy()),
                 new PaperStatusApiHandler(results),
                 new PaperDeleteApiHandler(timeline, new DeleteConfirmation(properties, Clock.systemUTC())),
-                new FamilyApiHandler(org.mockito.Mockito.mock(com.elioo.baymax.web.application.port.in.TimelineUseCase.class),
-                        org.mockito.Mockito.mock(com.elioo.baymax.nudge.application.port.out.NudgeDataPort.class),
-                        org.mockito.Mockito.mock(com.elioo.baymax.nudge.application.port.in.NudgeOptOutUseCase.class),
-                        new com.elioo.baymax.web.adapter.in.ui.UiCopy(), properties),
+                new FamilyApiHandler(mock(TimelineUseCase.class), mock(NudgeDataPort.class), mock(NudgeOptOutUseCase.class),
+                        new UiCopy(), properties),
                 guard))).build();
     }
 

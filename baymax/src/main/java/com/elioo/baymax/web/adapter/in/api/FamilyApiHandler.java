@@ -135,9 +135,14 @@ public class FamilyApiHandler {
                 .flatMap(p -> reminders(p).map(r -> FamilyJson.patient(p, r, lang, copy)));
     }
 
-    /** The stored stops of a patient the family sees; a visible patient always has its row, so none reads as on. */
+    /**
+     * The stored stops of a patient the family sees. A visible patient has its row; when it is missing (deleted since
+     * {@code me}, or a JOIN changed later) the state is unknown, and unknown is never said as "on": the patient is gone,
+     * a 404, as on every other route.
+     */
     private Mono<String> reminders(PatientSummary p) {
-        return nudgeData.patient(p.patient().id()).map(FamilyJson::reminders).defaultIfEmpty(FamilyJson.ON);
+        return nudgeData.patient(p.patient().id()).map(FamilyJson::reminders)
+                .switchIfEmpty(Mono.error(() -> BaymaxException.notFound("patient_not_found", "no such patient")));
     }
 
     private static PatientSummary find(FamilyOverview me, UUID patientId) {

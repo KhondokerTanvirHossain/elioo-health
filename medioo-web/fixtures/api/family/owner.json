@@ -9,21 +9,46 @@
       "number": "+880 1700-000533",
       "owner_name": "Tanvir",
       "reminders_stopped": false,
-      "terms_date": "2026-09-14"
+      "terms_date": "2026-09-15"
     },
     "flags_offered": [
-      "diabetes",
-      "hypertension",
-      "kidney",
-      "thyroid",
-      "heart"
+      {
+        "id": "diabetes",
+        "label_key": "flag.diabetes"
+      },
+      {
+        "id": "hypertension",
+        "label_key": "flag.hypertension"
+      },
+      {
+        "id": "kidney",
+        "label_key": "flag.kidney"
+      },
+      {
+        "id": "thyroid",
+        "label_key": "flag.thyroid"
+      },
+      {
+        "id": "heart",
+        "label_key": "flag.heart"
+      }
     ],
     "patients": [
       {
         "age": 64,
         "chronic_flags": [
-          "diabetes",
-          "hypertension"
+          {
+            "label_key": "flag.diabetes",
+            "value": "diabetes"
+          },
+          {
+            "label_key": "flag.hypertension",
+            "value": "hypertension"
+          },
+          {
+            "label_key": null,
+            "value": "asthma"
+          }
         ],
         "consent_date": "2026-09-15",
         "id": "b1813d1a-cb12-36de-9c8c-a15d9a6e3768",

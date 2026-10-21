@@ -26,6 +26,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -62,25 +63,69 @@ class AppApiLogSafetyTest {
     private static final String NAME = "রোকেয়া পরীক্ষা";
     /** An iPhone photo named for the patient (Review Focus 3): never logged, never returned. */
     private static final String FILENAME = NAME + ".jpg";
+    private static final String OWNER = "Tanvir";
+    /** The other family's number and owner: their requests are the 404 branch of every route. */
+    private static final String OTHER_NUMBER = "+8801700000124";
+    private static final String OTHER_OWNER = "Karim";
+    /** A share member's number and owner (plan B5): their requests read and render their own account. */
+    private static final String MEMBER_NUMBER = "+8801700000125";
+    private static final String MEMBER_OWNER = "Selim";
+    /** Every family the test seeds, by its number: the needles are derived from this list, never written per family. */
+    private static final Map<String, String> FAMILIES = Map.of(NUMBER, "the owner's", OTHER_NUMBER, "the other family's",
+            MEMBER_NUMBER, "the share member's");
+
+    /** A needle and what it is, so a leak is reported by its label, never by its text. */
+    record Needle(String label, String text) {
+    }
+
     /**
      * Each needle raw and as it appears in a logged URI: a path or query is logged percent-encoded, so the raw Bangla
      * and the raw {@code +880…} alone would miss a name in a path ({@code %E0%A6%B0…}) or a number ({@code %2B880…}).
+     * Plan B5: the owners' names, and every seeded family's number in every form the পরিবার JSON or a log line could
+     * carry it — E.164 without {@code +}, percent-encoded, the 11- and 10-digit national forms, {@code PhoneDisplay.full},
+     * and each form again in Bangla digits (a Bangla page shows them so).
      */
-    private static final String OWNER = "Tanvir";
-    private static final List<String> NEEDLES = List.of("8801700000123", "01700000123", "%2B8801700000123", NAME,
-            URLEncoder.encode(NAME, StandardCharsets.UTF_8), UriUtils.encodePathSegment(NAME, StandardCharsets.UTF_8),
-            UriUtils.encodeQueryParam(NAME, StandardCharsets.UTF_8), PhoneDisplay.full(NUMBER), "+880 1700",
-            FILENAME, URLEncoder.encode(FILENAME, StandardCharsets.UTF_8),
-            // plan B5: the owner's name, and the number in every form the পরিবার JSON or a log line could carry it — the
-            // 10-digit national form, and each form again in Bangla digits (a Bangla page shows them so)
-            OWNER, "1700000123", bangla("8801700000123"), bangla("01700000123"), bangla("1700000123"),
-            bangla(PhoneDisplay.full(NUMBER)), bangla("00000123"));
+    private static final List<Needle> NEEDLES = needles();
     /**
-     * The number's last eight digits as a token: a UUID, a hash or a duration can hold them by chance, so they are
-     * matched with no hex digit on either side, never as a raw substring (the needle above is the Bangla form, which
+     * Each number's last eight digits as a token: a UUID, a hash or a duration can hold them by chance, so they are
+     * matched with no hex digit on either side, never as a raw substring (the Bangla form is a plain needle, which
      * nothing else a log writes can hold).
      */
-    private static final Pattern LAST_EIGHT = token("00000123");
+    private static final Map<String, Pattern> LAST_EIGHTS = FAMILIES.entrySet().stream().collect(Collectors.toMap(
+            e -> e.getValue() + " number, last eight digits", e -> token(e.getKey().substring(e.getKey().length() - 8))));
+
+    private static List<Needle> needles() {
+        List<Needle> out = new ArrayList<>();
+        out.add(new Needle("the patient's name", NAME));
+        out.add(new Needle("the patient's name, form-encoded", URLEncoder.encode(NAME, StandardCharsets.UTF_8)));
+        out.add(new Needle("the patient's name, path-encoded", UriUtils.encodePathSegment(NAME, StandardCharsets.UTF_8)));
+        out.add(new Needle("the patient's name, query-encoded", UriUtils.encodeQueryParam(NAME, StandardCharsets.UTF_8)));
+        out.add(new Needle("the filename", FILENAME));
+        out.add(new Needle("the filename, form-encoded", URLEncoder.encode(FILENAME, StandardCharsets.UTF_8)));
+        out.add(new Needle("the shown number's prefix", "+880 1700"));
+        out.add(new Needle("the owner's name", OWNER));
+        out.add(new Needle("the other family's owner's name", OTHER_OWNER));
+        out.add(new Needle("the share member's name", MEMBER_OWNER));
+        FAMILIES.forEach((number, whose) -> {
+            String digits = number.substring(1);
+            String national = "0" + digits.substring(3);
+            String ten = digits.substring(3);
+            String shown = PhoneDisplay.full(number);
+            Map<String, String> forms = new LinkedHashMap<>();
+            forms.put("E.164 digits", digits);
+            forms.put("E.164, percent-encoded", "%2B" + digits);
+            forms.put("11-digit national", national);
+            forms.put("10-digit national", ten);
+            forms.put("as shown", shown);
+            forms.put("E.164 digits in Bangla", bangla(digits));
+            forms.put("11-digit national in Bangla", bangla(national));
+            forms.put("10-digit national in Bangla", bangla(ten));
+            forms.put("as shown in Bangla", bangla(shown));
+            forms.put("last eight digits in Bangla", bangla(digits.substring(digits.length() - 8)));
+            forms.forEach((form, text) -> out.add(new Needle(whose + " number, " + form, text)));
+        });
+        return List.copyOf(out);
+    }
     /** Where the minted sign-in code is written, at DEBUG only (DR-39): the second appender reads it from here. */
     private static final String DELIVERY_LOGGER = "com.elioo.baymax.web.adapter.out.delivery";
     private static final Pattern MINTED = Pattern.compile("otp fallback .*code=([0-9]{6})");
@@ -105,16 +150,16 @@ class AppApiLogSafetyTest {
         AppApiContext.runner(POSTGRES, MINIO).withPropertyValues("baymax.auth.web-mints-code=true", "baymax.auth.hmac-secret=log-safety-secret").run(context -> {
             FamilyAccount family = AppApiContext.family(context, NUMBER, OWNER);
             PatientProfile rokeya = AppApiContext.patient(context, family.id(), NAME);
-            PatientProfile karim = AppApiContext.patient(context, family.id(), "Karim");
+            PatientProfile karim = AppApiContext.patient(context, family.id(), OTHER_OWNER);
             UUID paper = AppApiContext.paper(context, POSTGRES, rokeya, "now");
             AppApiContext.value(POSTGRES, rokeya, paper, NAME, "6.9");
             // the paper's page in the bucket and the ledger, so the owner's delete below empties a real prefix
             context.getBean(DocumentStorageUseCase.class).storePage(rokeya.familyId(), rokeya.id(), paper, 1, PaintedPaper.paintedPage()).block();
             String token = AppApiContext.session(context, family.id());
-            FamilyAccount other = AppApiContext.family(context, "+8801700000124", "Karim");
+            FamilyAccount other = AppApiContext.family(context, OTHER_NUMBER, OTHER_OWNER);
             String otherToken = AppApiContext.session(context, other.id());
             // a sibling who sees Karim through a share: their writes on him are the 403 branch of the পরিবার routes
-            FamilyAccount member = AppApiContext.family(context, "+8801700000125", "Selim");
+            FamilyAccount member = AppApiContext.family(context, MEMBER_NUMBER, MEMBER_OWNER);
             AppApiContext.share(context, karim, member.whatsappNumber());
             String memberToken = AppApiContext.session(context, member.id());
             WebTestClient client = WebTestClient.bindToApplicationContext(context).build();
@@ -195,9 +240,10 @@ class AppApiLogSafetyTest {
             });
             exercise.put("PUT /app/api/patients/{id}/flags", (c, t) -> {
                 json(c.put().uri("/app/api/patients/" + rokeya.id() + "/flags"), t, Map.of("chronic_flags", List.of("diabetes", NAME)))
-                        .expectStatus().isOk().expectBody().jsonPath("$.chronic_flags[1]").isEqualTo(NAME);
+                        .expectStatus().isOk().expectBody().jsonPath("$.chronic_flags[1].value").isEqualTo(NAME);
+                refusedByTheGuard(c, "/app/api/patients/" + rokeya.id() + "/flags", t, Map.of("chronic_flags", List.of(NAME, NUMBER)));
                 json(c.put().uri("/app/api/patients/" + rokeya.id() + "/flags"), t,
-                        Map.of("chronic_flags", java.util.Collections.nCopies(21, NAME + NUMBER)))
+                        Map.of("chronic_flags", Collections.nCopies(21, NAME + NUMBER)))
                         .expectStatus().isBadRequest().expectBody().json("{\"reason\":\"INVALID\"}", true);
                 json(c.put().uri("/app/api/patients/" + rokeya.id() + "/flags"), t, Map.of("chronic_flags", List.of(NAME.repeat(4))))
                         .expectStatus().isBadRequest().expectBody().json("{\"reason\":\"INVALID\"}", true);
@@ -211,6 +257,7 @@ class AppApiLogSafetyTest {
             exercise.put("PUT /app/api/patients/{id}/reminders", (c, t) -> {
                 json(c.put().uri("/app/api/patients/" + rokeya.id() + "/reminders"), t, Map.of("on", true))
                         .expectStatus().isBadRequest().expectBody().json("{\"reason\":\"INVALID\"}", true);
+                refusedByTheGuard(c, "/app/api/patients/" + rokeya.id() + "/reminders", t, Map.of("on", false, "name", NAME, "n", NUMBER));
                 json(c.put().uri("/app/api/patients/" + karim.id() + "/reminders"), memberToken, Map.of("on", false))
                         .expectStatus().isForbidden().expectBody().json("{\"reason\":\"VIEW_ONLY\"}", true);
                 json(c.put().uri("/app/api/patients/" + rokeya.id() + "/reminders"), otherToken, Map.of("on", false))
@@ -222,6 +269,7 @@ class AppApiLogSafetyTest {
             exercise.put("PUT /app/api/family/reminders", (c, t) -> {
                 json(c.put().uri("/app/api/family/reminders"), t, Map.of("on", true))
                         .expectStatus().isBadRequest().expectBody().json("{\"reason\":\"INVALID\"}", true);
+                refusedByTheGuard(c, "/app/api/family/reminders", t, Map.of("on", false, "name", NAME, "n", NUMBER));
                 json(c.put().uri("/app/api/family/reminders"), memberToken, Map.of("on", false)).expectStatus().isOk();
                 json(c.put().uri("/app/api/family/reminders"), t, Map.of("on", false)).expectStatus().isOk()
                         .expectBody().jsonPath("$.account.number").isEqualTo(PhoneDisplay.full(NUMBER))
@@ -366,6 +414,18 @@ class AppApiLogSafetyTest {
     }
 
 
+    /**
+     * The guard's two refusals of a PUT carrying the name and the number in its body: no session (401
+     * {@code UNAUTHENTICATED}, both CSRF headers sent, so the session branch is the one reached) and no {@code X-Medioo}
+     * (403 {@code MISSING_HEADER}, with a session).
+     */
+    private static void refusedByTheGuard(WebTestClient c, String uri, String token, Object body) {
+        c.put().uri(uri).header("X-Medioo", "1").header("Origin", AppApiContext.ORIGIN).contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(body).exchange().expectStatus().isUnauthorized().expectBody().json("{\"reason\":\"UNAUTHENTICATED\"}", true);
+        c.put().uri(uri).cookie("baymax_session", token).header("Origin", AppApiContext.ORIGIN).contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(body).exchange().expectStatus().isForbidden().expectBody().json("{\"reason\":\"MISSING_HEADER\"}", true);
+    }
+
     /** A JSON mutation with a session and both CSRF headers. */
     private static WebTestClient.ResponseSpec json(WebTestClient.RequestBodySpec spec, String token, Object body) {
         return spec.cookie("baymax_session", token).header("X-Medioo", "1").header("Origin", AppApiContext.ORIGIN)
@@ -380,13 +440,15 @@ class AppApiLogSafetyTest {
         if (value == null) {
             return;
         }
-        // each needle by its index in NEEDLES, never its text: the report then says which form leaked without echoing it
-        List<String> hits = java.util.stream.IntStream.range(0, NEEDLES.size()).filter(i -> value.contains(NEEDLES.get(i)))
-                .mapToObj(i -> "NEEDLES[" + i + "]").collect(Collectors.toCollection(ArrayList::new));
+        // each needle by its label, never its text: the report then says which form leaked without echoing it
+        List<String> hits = NEEDLES.stream().filter(n -> value.contains(n.text())).map(Needle::label)
+                .collect(Collectors.toCollection(ArrayList::new));
         codeTokens.stream().filter(p -> p.matcher(value).find()).forEach(p -> hits.add("a sign-in code"));
-        if (LAST_EIGHT.matcher(value).find()) {
-            hits.add("the number's last eight digits");
-        }
+        LAST_EIGHTS.forEach((label, p) -> {
+            if (p.matcher(value).find()) {
+                hits.add(label);
+            }
+        });
         if (!hits.isEmpty()) {
             leaks.add(e.getLevel() + " " + e.getLoggerName() + " " + field + " carries " + hits);
         }

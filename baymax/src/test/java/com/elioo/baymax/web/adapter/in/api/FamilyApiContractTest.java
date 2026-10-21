@@ -29,6 +29,8 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -70,7 +72,7 @@ class FamilyApiContractTest {
     private final ObjectMapper json = new ObjectMapper();
     private final UiCopy copy = new UiCopy();
 
-    /** A fictional number in the fixture range, unique per call (the three MSW cases own 533, 534 and 535). */
+    /** A fictional number in the fixture range, unique per call (the MSW cases own 533 to 536). */
     private static String number() {
         return "+88017000006" + String.format("%02d", NUMBERS.incrementAndGet());
     }
@@ -78,18 +80,27 @@ class FamilyApiContractTest {
     // ---- the read -------------------------------------------------------------------------------------------
 
     /**
-     * Field by field against what was seeded. The instants sit near Dhaka midnight on purpose: terms at 18:30Z is the
-     * next Dhaka day, consent at 17:59Z the same one, so a date taken in UTC (or from the wrong column) fails.
+     * Field by field against what was seeded. The instants sit near Dhaka midnight on purpose, in both directions: terms
+     * at 18:30Z and Baba's consent at 18:30Z are the next Dhaka day (a UTC derivation says the day before), Ma's consent
+     * at 17:59Z is the same day (a derivation that always added a day says the day after). Each row's {@code created_at}
+     * is on another Dhaka day again, so a date read from the wrong column fails too; the guard below says so from the
+     * rows themselves.
      */
     @Test
     void theOwnerSeesFlagsConsentRemindersAndLanguage() {
         AppApiContext.runner(POSTGRES).run(context -> {
             String number = number();
-            UUID family = family(number, "Tanvir", "2026-03-01T18:30:00Z");
-            UUID ma = patient(family, "রোকেয়া পরীক্ষা", 64, "female", List.of("diabetes", "hypertension", "asthma"), "2026-04-10T17:59:00Z");
-            UUID baba = patient(family, "Karim", 71, "male", List.of(), "2026-04-11T02:00:00Z");
+            UUID family = family(UUID.randomUUID(), number, "Tanvir", "2026-03-01T18:30:00Z", "2026-02-20T04:00:00Z");
+            UUID ma = patient(UUID.randomUUID(), family, "রোকেয়া পরীক্ষা", 64, "female", List.of("diabetes", "hypertension", "asthma"),
+                    "2026-04-10T17:59:00Z", "2026-04-20T04:00:00Z");
+            UUID baba = patient(UUID.randomUUID(), family, "Karim", 71, "male", List.of(), "2026-04-11T18:30:00Z", "2026-04-21T04:00:00Z");
             String token = AppApiContext.session(context, family);
             WebTestClient client = client(context);
+            // the guard: on every seeded row the column the date is read from and created_at are different Dhaka days
+            assertThat(text("select count(*) from baymax.family_account where id = '" + family + "' and "
+                    + DHAKA_DAY.formatted("terms_accepted_at") + " <> " + DHAKA_DAY.formatted("created_at"))).isEqualTo("1");
+            assertThat(text("select count(*) from baymax.patient_profile where family_id = '" + family + "' and "
+                    + DHAKA_DAY.formatted("proxy_consent_at") + " <> " + DHAKA_DAY.formatted("created_at"))).isEqualTo("2");
 
             JsonNode body = family(client, token, Lang.BN);
             assertThat(names(body)).containsExactlyInAnyOrder("account", "patients", "flags_offered");
@@ -102,7 +113,11 @@ class FamilyApiContractTest {
             assertThat(account.get("language").asText()).isEqualTo("bn");
             assertThat(account.get("reminders_stopped").isBoolean()).isTrue();
             assertThat(account.get("reminders_stopped").asBoolean()).isFalse();
-            assertThat(strings(body.get("flags_offered"))).containsExactlyElementsOf(ProfilePages.FLAGS);
+            assertThat(ids(body.get("flags_offered"))).containsExactlyElementsOf(ProfilePages.FLAGS);
+            body.get("flags_offered").forEach(f -> {
+                assertThat(names(f)).containsExactlyInAnyOrder("id", "label_key");
+                assertThat(f.get("label_key").asText()).isEqualTo("flag." + f.get("id").asText());
+            });
 
             Map<String, JsonNode> byId = patients(body);
             assertThat(byId).containsOnlyKeys(ma.toString(), baba.toString());
@@ -114,14 +129,21 @@ class FamilyApiContractTest {
             assertThat(m.get("age").asInt()).isEqualTo(64);
             assertThat(m.get("sex_key").asText()).isEqualTo("sex.FEMALE");
             assertThat(m.get("owner").asBoolean()).isTrue();
-            assertThat(strings(m.get("chronic_flags"))).containsExactly("diabetes", "hypertension", "asthma");
-            assertThat(m.get("consent_date").asText()).as("the Dhaka day of 17:59Z").isEqualTo("2026-04-10");
+            assertThat(values(m.get("chronic_flags"))).containsExactly("diabetes", "hypertension", "asthma");
+            // an offered flag names its copy; a flag the family typed ("other") has none and is shown as written
+            JsonNode flags = m.get("chronic_flags");
+            assertThat(names(flags.get(0))).containsExactlyInAnyOrder("value", "label_key");
+            assertThat(flags.get(0).get("label_key").asText()).isEqualTo("flag.diabetes");
+            assertThat(flags.get(1).get("label_key").asText()).isEqualTo("flag.hypertension");
+            assertThat(flags.get(2).has("label_key")).as("the key is present for a typed flag too").isTrue();
+            assertThat(flags.get(2).get("label_key").isNull()).as("a typed flag has no copy key").isTrue();
+            assertThat(m.get("consent_date").asText()).as("the Dhaka day of 17:59Z, not created_at's").isEqualTo("2026-04-10");
             assertThat(m.get("reminders").asText()).isEqualTo("on");
             JsonNode b = byId.get(baba.toString());
             assertThat(b.get("age").asInt()).isEqualTo(71);
             assertThat(b.get("sex_key").asText()).isEqualTo("sex.MALE");
-            assertThat(strings(b.get("chronic_flags"))).isEmpty();
-            assertThat(b.get("consent_date").asText()).isEqualTo("2026-04-11");
+            assertThat(values(b.get("chronic_flags"))).isEmpty();
+            assertThat(b.get("consent_date").asText()).as("the Dhaka day of 18:30Z, not the UTC one").isEqualTo("2026-04-12");
 
             // the viewer's language: the cookie, and the possessive in English
             JsonNode en = family(client, token, Lang.EN);
@@ -133,25 +155,44 @@ class FamilyApiContractTest {
         });
     }
 
-    /** Every {@code *_key} the JSON names resolves in both languages (Wave 2 Review Focus 5). */
+    /**
+     * Every {@code *_key} the JSON names resolves in both languages (Wave 2 Review Focus 5): the sexes, every offered
+     * flag and every stored offered flag. A null {@code label_key} (a flag the family typed) names no key and is not
+     * collected; that it is null is asserted on its own, so the walk cannot pass by skipping a key that should be there.
+     */
     @Test
     void everyEmittedKeyResolvesInBothLanguages() {
         AppApiContext.runner(POSTGRES).run(context -> {
             UUID family = family(number(), "Tanvir", "2026-03-01T04:00:00Z");
             for (String sex : List.of("male", "female", "other", "unknown")) {
-                patient(family, "P " + sex, 40, sex, List.of(), "2026-04-01T04:00:00Z");
+                List<String> flags = new ArrayList<>(ProfilePages.FLAGS);
+                flags.add("asthma");
+                patient(family, "P " + sex, 40, sex, sex.equals("male") ? flags : List.of(), "2026-04-01T04:00:00Z");
             }
             JsonNode body = family(client(context), AppApiContext.session(context, family), Lang.BN);
             List<String> keys = new ArrayList<>();
+            List<String> nullKeys = new ArrayList<>();
             Json.walk(body, (path, node) -> {
                 String field = Json.fieldName(path);
                 if (field != null && field.endsWith("_key")) {
-                    keys.add(node.asText());
+                    if (node.isNull()) {
+                        nullKeys.add(path);
+                    } else {
+                        keys.add(node.asText());
+                    }
                 }
             });
-            assertThat(keys).as("one sex_key per patient").hasSize(4);
+            assertThat(keys).as("a sex_key per patient, a label_key per offered flag and per stored offered flag")
+                    .hasSizeGreaterThanOrEqualTo(4 + 2 * ProfilePages.FLAGS.size());
+            assertThat(nullKeys).as("only the typed flag has no key").hasSize(1);
+            // derived from the answer, not from a list written here: every offered flag has its copy in both languages
+            List<String> offered = ids(body.get("flags_offered"));
+            assertThat(offered).isNotEmpty();
             for (Lang lang : Lang.values()) {
                 assertThat(copy.keys(lang)).as("keys of " + lang).containsAll(keys);
+                for (String f : offered) {
+                    assertThat(copy.keys(lang)).as("the copy of the offered flag " + f + " in " + lang).contains("flag." + f);
+                }
             }
         });
     }
@@ -178,7 +219,7 @@ class FamilyApiContractTest {
             assertThat(body.get("account").get("terms_date").asText()).isEqualTo("2026-05-01");
             assertThat(patients(body)).containsOnlyKeys(ma.toString());
             assertThat(patients(body).get(ma.toString()).get("owner").asBoolean()).isFalse();
-            assertThat(strings(patients(body).get(ma.toString()).get("chronic_flags"))).containsExactly("diabetes");
+            assertThat(values(patients(body).get(ma.toString()).get("chronic_flags"))).containsExactly("diabetes");
 
             String flagsBefore = text("select array_to_string(chronic_flags, ',') from baymax.patient_profile where id = '" + ma + "'");
             put(client, token, "/app/api/patients/" + ma + "/flags", Map.of("chronic_flags", List.of("heart")))
@@ -191,12 +232,46 @@ class FamilyApiContractTest {
             assertThat(text("select nudges_opted_out_at::text from baymax.family_account where id = '" + owner + "'")).isNull();
 
             // the member's family stop is theirs: the owner's family, and so the shared patient, keep their reminders
+            // the owner's family first: a stop keyed by a patient the member sees would land there, silencing the shared patient
             JsonNode stopped = json.readTree(put(client, token, "/app/api/family/reminders", Map.of("on", false))
                     .expectStatus().isOk().expectBody(String.class).returnResult().getResponseBody());
-            assertThat(stopped.get("account").get("reminders_stopped").asBoolean()).isTrue();
+            assertThat(text("select nudges_opted_out_at::text from baymax.family_account where id = '" + owner + "'"))
+                    .as("the owner's family stop after the member's own stop").isNull();
             assertThat(text("select nudges_opted_out_at::text from baymax.family_account where id = '" + member + "'")).isNotNull();
-            assertThat(text("select nudges_opted_out_at::text from baymax.family_account where id = '" + owner + "'")).isNull();
+            assertThat(stopped.get("account").get("reminders_stopped").asBoolean()).isTrue();
             assertThat(patients(stopped).get(ma.toString()).get("reminders").asText()).isEqualTo("on");
+        });
+    }
+
+    /**
+     * The other direction of the shared patient's {@code reminders}: the stops that count are the owner's (the patient's
+     * own, then the owner's family's, {@code PatientRef.familyOptedOutAt}), so after the owner stops them the member is
+     * told so, while the member's own account still says their family is not stopped. An answer that ignored stops on a
+     * patient the viewer does not own ("on" always) fails here.
+     */
+    @Test
+    void aShareMemberIsToldTheOwnersStopsOnTheSharedPatient() {
+        AppApiContext.runner(POSTGRES).run(context -> {
+            UUID owner = family(number(), "Tanvir", "2026-03-01T04:00:00Z");
+            UUID ma = patient(owner, "রোকেয়া পরীক্ষা", 64, "female", List.of(), "2026-04-01T04:00:00Z");
+            String memberNumber = number();
+            UUID member = family(memberNumber, "Karim", "2026-05-01T04:00:00Z");
+            share(ma, memberNumber);
+            String ownerToken = AppApiContext.session(context, owner);
+            String memberToken = AppApiContext.session(context, member);
+            WebTestClient client = client(context);
+            assertThat(patients(family(client, memberToken, Lang.BN)).get(ma.toString()).get("reminders").asText()).isEqualTo("on");
+
+            put(client, ownerToken, "/app/api/patients/" + ma + "/reminders", Map.of("on", false)).expectStatus().isOk();
+            JsonNode afterPatientStop = family(client, memberToken, Lang.BN);
+            assertThat(patients(afterPatientStop).get(ma.toString()).get("reminders").asText()).isEqualTo("stopped_for_patient");
+            assertThat(afterPatientStop.get("account").get("reminders_stopped").asBoolean()).as("the member's own family").isFalse();
+
+            put(client, ownerToken, "/app/api/family/reminders", Map.of("on", false)).expectStatus().isOk();
+            JsonNode afterFamilyStop = family(client, memberToken, Lang.BN);
+            assertThat(patients(afterFamilyStop).get(ma.toString()).get("reminders").asText()).isEqualTo("stopped_for_family");
+            assertThat(afterFamilyStop.get("account").get("reminders_stopped").asBoolean()).as("the member's own family").isFalse();
+            assertThat(text("select nudges_opted_out_at::text from baymax.family_account where id = '" + member + "'")).isNull();
         });
     }
 
@@ -270,7 +345,11 @@ class FamilyApiContractTest {
                     Map.of("chronic_flags", List.of("diabetes", " Diabetes ", "Asthma", "heart")))
                     .expectStatus().isOk().expectBody(String.class).returnResult().getResponseBody());
             assertThat(answer.get("id").asText()).isEqualTo(ma.toString());
-            assertThat(strings(answer.get("chronic_flags"))).containsExactly("diabetes", "asthma", "heart");
+            assertThat(values(answer.get("chronic_flags"))).containsExactly("diabetes", "asthma", "heart");
+            assertThat(answer.get("chronic_flags").get(1).get("label_key").isNull()).as("the typed flag, shown as written").isTrue();
+            // the typed flag round-trips through the read the পরিবার tab draws from, not only through the write's answer
+            JsonNode read = patients(family(client(context), token, Lang.BN)).get(ma.toString());
+            assertThat(values(read.get("chronic_flags"))).containsExactly("diabetes", "asthma", "heart");
             assertThat(answer.get("owner").asBoolean()).isTrue();
             assertThat(answer.get("reminders").asText()).isEqualTo("on");
             assertThat(text("select array_to_string(chronic_flags, ',') from baymax.patient_profile where id = '" + ma + "'"))
@@ -342,13 +421,19 @@ class FamilyApiContractTest {
 
     // ---- the language ---------------------------------------------------------------------------------------
 
-    /** The language is the cookie and nothing else: one {@code Set-Cookie}, {@code baymax_lang}, {@code Path=/}; unknown is Bangla. */
+    /**
+     * The language is the cookie and nothing else: one {@code Set-Cookie}, {@code baymax_lang}, {@code Path=/}; unknown is
+     * Bangla. The read that follows each PUT sends back the cookie that PUT set (not one this test builds), so the round
+     * trip is what is asserted; the account row's whole text is the same before and after the four PUTs.
+     */
     @Test
     void languageSetsOnlyTheCookie() {
         AppApiContext.runner(POSTGRES).run(context -> {
             UUID family = family(number(), "Tanvir", "2026-03-01T04:00:00Z");
             String token = AppApiContext.session(context, family);
             WebTestClient client = client(context);
+            String row = "select t::text from baymax.family_account t where id = '" + family + "'";
+            String rowBefore = text(row);
             Map<String, String> expected = new LinkedHashMap<>();
             expected.put("en", "en");
             expected.put("EN", "en");
@@ -363,10 +448,13 @@ class FamilyApiContractTest {
                 ResponseCookie cookie = r.getResponseCookies().getFirst("baymax_lang");
                 assertThat(cookie.getValue()).as("the cookie for " + e.getKey()).isEqualTo(e.getValue());
                 assertThat(cookie.getPath()).isEqualTo("/");
+                JsonNode next = json.readTree(client.get().uri("/app/api/family").cookie("baymax_session", token)
+                        .cookie("baymax_lang", cookie.getValue()).exchange().expectStatus().isOk()
+                        .expectBody(String.class).returnResult().getResponseBody());
+                assertThat(next.get("account").get("language").asText()).as("the read with the cookie " + e.getKey() + " set")
+                        .isEqualTo(e.getValue());
             }
-            // nothing stored but the cookie: the next read in that language says so, the account row is untouched
-            assertThat(family(client, token, Lang.EN).get("account").get("language").asText()).isEqualTo("en");
-            assertThat(family(client, token, Lang.BN).get("account").get("language").asText()).isEqualTo("bn");
+            assertThat(text(row)).as("the account row, whole, after four language PUTs").isEqualTo(rowBefore);
         });
     }
 
@@ -381,9 +469,10 @@ class FamilyApiContractTest {
 
     /**
      * Derived from every committed MSW fixture, by field: the family's number appears as {@code body.account.number} of a
-     * {@code family/*.json} and as no other string value anywhere under {@code fixtures/api/}, in any form a page shows
-     * (E.164, {@code PhoneDisplay.full}, the 11-digit national form) or with Bangla digits. Guards: the patterns see each
-     * form of every {@code account.number} they exempt, and the walk read a file in every fixture area that exists.
+     * {@code family/*.json} and nowhere else under {@code fixtures/api/} — no other string value, no number value
+     * ({@code 8801700000533} as a JSON number) and no field name — in any form a page shows (E.164,
+     * {@code PhoneDisplay.full}, the 11-digit national form) or with Bangla digits. Guards: the patterns see each form of
+     * every {@code account.number} they exempt, and the walk read a file in every fixture area that exists.
      */
     @Test
     void theNumberAppearsOnlyAsTheAccountNumber() throws IOException {
@@ -400,16 +489,23 @@ class FamilyApiContractTest {
             boolean family = area.equals("family");
             JsonNode tree = json.readTree(Files.readString(file, StandardCharsets.UTF_8));
             Json.walk(tree, (path, node) -> {
-                if (!node.isTextual()) {
-                    return;
+                List<String> seen = new ArrayList<>();
+                String field = Json.fieldName(path);
+                if (field != null) {
+                    seen.add(field);
                 }
-                if (family && path.equals(ACCOUNT_NUMBER)) {
-                    accountNumbers.add(node.asText());
-                    return;
+                if (node.isTextual() || node.isNumber()) {
+                    if (family && path.equals(ACCOUNT_NUMBER) && node.isTextual()) {
+                        accountNumbers.add(node.asText());
+                    } else {
+                        seen.add(node.asText());
+                    }
                 }
-                for (Pattern form : NUMBER_FORMS) {
-                    if (form.matcher(node.asText()).find()) {
-                        hits.add(FIXTURES.relativize(file) + " " + path);
+                for (String text : seen) {
+                    for (Pattern form : NUMBER_FORMS) {
+                        if (form.matcher(text).find()) {
+                            hits.add(FIXTURES.relativize(file) + " " + path);
+                        }
                     }
                 }
             });
@@ -464,29 +560,33 @@ class FamilyApiContractTest {
         return UUID.nameUUIDFromBytes(("family-fixture-" + name).getBytes(StandardCharsets.UTF_8));
     }
 
-    /** Two patients: one with flags and her reminders on; one whose own reminders the family stopped. */
+    /**
+     * Two patients: one with an offered and a typed flag and her reminders on; one whose own reminders the family
+     * stopped. Every {@code created_at} is on another Dhaka day than the terms or the consent, so the fixture shows
+     * which column a date is read from; Ma's consent at 18:30Z is the next Dhaka day.
+     */
     private static UUID ownerCase() throws Exception {
-        UUID family = family(id("owner"), "+8801700000533", "Tanvir", "2026-09-14T03:00:00Z");
-        patient(id("owner-ma"), family, "রোকেয়া পরীক্ষা", 64, "female", List.of("diabetes", "hypertension"),
-                "2026-09-14T18:30:00Z", "2026-09-14T18:30:00Z");
-        UUID baba = patient(id("owner-baba"), family, "Baba", 71, "male", List.of(), "2026-09-15T04:00:00Z", "2026-09-15T04:00:00Z");
+        UUID family = family(id("owner"), "+8801700000533", "Tanvir", "2026-09-14T18:30:00Z", "2026-09-01T04:00:00Z");
+        patient(id("owner-ma"), family, "রোকেয়া পরীক্ষা", 64, "female", List.of("diabetes", "hypertension", "asthma"),
+                "2026-09-14T18:30:00Z", "2026-09-05T04:00:00Z");
+        UUID baba = patient(id("owner-baba"), family, "Baba", 71, "male", List.of(), "2026-09-15T04:00:00Z", "2026-09-06T04:00:00Z");
         AppApiContext.sql(POSTGRES, "UPDATE baymax.patient_profile SET nudges_opted_out_at = '2026-10-01T05:00:00Z' WHERE id = '" + baba + "'");
         return family;
     }
 
     /** The sibling's own account, seeing the owner's patient read-only. */
     private static UUID shareMemberCase() throws Exception {
-        UUID owner = family(id("share-owner"), "+8801700000535", "Tanvir", "2026-09-14T03:00:00Z");
-        UUID ma = patient(id("share-ma"), owner, "রোকেয়া পরীক্ষা", 64, "female", List.of("kidney"), "2026-09-14T04:00:00Z", "2026-09-14T04:00:00Z");
-        UUID member = family(id("share-member"), "+8801700000534", "Karim", "2026-09-20T03:00:00Z");
+        UUID owner = family(id("share-owner"), "+8801700000535", "Tanvir", "2026-09-14T03:00:00Z", "2026-09-01T04:00:00Z");
+        UUID ma = patient(id("share-ma"), owner, "রোকেয়া পরীক্ষা", 64, "female", List.of("kidney"), "2026-09-14T04:00:00Z", "2026-09-05T04:00:00Z");
+        UUID member = family(id("share-member"), "+8801700000534", "Karim", "2026-09-20T03:00:00Z", "2026-09-10T04:00:00Z");
         share(ma, "+8801700000534");
         return member;
     }
 
     /** The family stopped every reminder: the account says so and every patient says why. */
     private static UUID remindersOffCase() throws Exception {
-        UUID family = family(id("off"), "+8801700000536", "Tanvir", "2026-09-14T03:00:00Z");
-        patient(id("off-ma"), family, "রোকেয়া পরীক্ষা", 64, "female", List.of(), "2026-09-14T04:00:00Z", "2026-09-14T04:00:00Z");
+        UUID family = family(id("off"), "+8801700000536", "Tanvir", "2026-09-14T03:00:00Z", "2026-09-01T04:00:00Z");
+        patient(id("off-ma"), family, "রোকেয়া পরীক্ষা", 64, "female", List.of(), "2026-09-14T04:00:00Z", "2026-09-05T04:00:00Z");
         AppApiContext.sql(POSTGRES, "UPDATE baymax.family_account SET nudges_opted_out_at = '2026-10-01T05:00:00Z' WHERE id = '" + family + "'");
         return family;
     }
@@ -521,18 +621,30 @@ class FamilyApiContractTest {
 
     // ---- seeding and reading --------------------------------------------------------------------------------
 
-    private static UUID family(String number, String owner, String termsAt) throws Exception {
-        return family(UUID.randomUUID(), number, owner, termsAt);
+    /** The Dhaka day of a column, in SQL: the guard that a seeded row's columns fall on different days. */
+    private static final String DHAKA_DAY = "(%s AT TIME ZONE 'Asia/Dhaka')::date";
+
+    /**
+     * A row's {@code created_at} is never on the day of the instant a date is read from: the family is created nine days
+     * before its terms, a patient ten days before the consent (the order of patients, by {@code created_at}, is kept), so
+     * a date read from {@code created_at} is a different answer, never the same one by chance.
+     */
+    private static String daysBefore(String at, int days) {
+        return Instant.parse(at).minus(Duration.ofDays(days)).toString();
     }
 
-    private static UUID family(UUID id, String number, String owner, String termsAt) throws Exception {
+    private static UUID family(String number, String owner, String termsAt) throws Exception {
+        return family(UUID.randomUUID(), number, owner, termsAt, daysBefore(termsAt, 9));
+    }
+
+    private static UUID family(UUID id, String number, String owner, String termsAt, String createdAt) throws Exception {
         AppApiContext.sql(POSTGRES, "INSERT INTO baymax.family_account (id, whatsapp_number, owner_name, plan, terms_accepted_at, created_at)"
-                + " VALUES ('" + id + "','" + number + "','" + owner + "','family','" + termsAt + "','" + termsAt + "')");
+                + " VALUES ('" + id + "','" + number + "','" + owner + "','family','" + termsAt + "','" + createdAt + "')");
         return id;
     }
 
     private static UUID patient(UUID family, String name, int age, String sex, List<String> flags, String consentAt) throws Exception {
-        return patient(UUID.randomUUID(), family, name, age, sex, flags, consentAt, consentAt);
+        return patient(UUID.randomUUID(), family, name, age, sex, flags, consentAt, daysBefore(consentAt, 10));
     }
 
     private static UUID patient(UUID id, UUID family, String name, int age, String sex, List<String> flags, String consentAt,
@@ -586,9 +698,17 @@ class FamilyApiContractTest {
         return Collections.unmodifiableList(out);
     }
 
-    private static List<String> strings(JsonNode array) {
+    /** The stored values of a {@code chronic_flags} array ({@code [{value, label_key}]}), in order. */
+    private static List<String> values(JsonNode array) {
         List<String> out = new ArrayList<>();
-        array.forEach(n -> out.add(n.asText()));
+        array.forEach(n -> out.add(n.get("value").asText()));
+        return out;
+    }
+
+    /** The ids of a {@code flags_offered} array ({@code [{id, label_key}]}), in order. */
+    private static List<String> ids(JsonNode array) {
+        List<String> out = new ArrayList<>();
+        array.forEach(n -> out.add(n.get("id").asText()));
         return out;
     }
 }

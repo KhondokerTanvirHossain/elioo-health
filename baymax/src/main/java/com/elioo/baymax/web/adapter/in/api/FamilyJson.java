@@ -21,7 +21,9 @@ import java.util.Map;
  * The পরিবার tab as JSON ({@code GET /app/api/family}), the facts the HTML tab ({@code FamilyView}) shows, in
  * {@code PaperJson}'s conventions: snake_case keys, Dhaka days as ISO dates, copy as {@code *_key}, the name forms in the
  * viewer's language ({@link UiCopy#poss}). The offered flags are {@link ProfilePages#FLAGS}, the one list the HTML form
- * ticks.
+ * ticks, each as {@code {id, label_key}}. A stored flag is {@code {value, label_key}}: {@code label_key} names its copy
+ * when the flag is an offered one, and is null for a flag the family typed in the form's "other" field, which React
+ * shows as written. Which is which is decided here, by membership in {@code FLAGS}, never by React.
  *
  * <p>The account's number is here, as {@link PhoneDisplay#full}, and nowhere else in {@code /app/api}: the পরিবার tab
  * is the one page that shows it ({@code FamilyView}). It is never logged.
@@ -57,7 +59,7 @@ final class FamilyJson {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("account", a);
         body.put("patients", patients);
-        body.put("flags_offered", ProfilePages.FLAGS);
+        body.put("flags_offered", ProfilePages.FLAGS.stream().map(FamilyJson::offered).toList());
         return body;
     }
 
@@ -72,10 +74,31 @@ final class FamilyJson {
         m.put("age", profile.age());
         m.put("sex_key", "sex." + sex.name());
         m.put("owner", p.owner());
-        m.put("chronic_flags", profile.chronicFlags() == null ? List.of() : profile.chronicFlags());
+        m.put("chronic_flags", (profile.chronicFlags() == null ? List.<String>of() : profile.chronicFlags()).stream()
+                .map(FamilyJson::stored).toList());
         m.put("consent_date", day(profile.proxyConsentAt()));
         m.put("reminders", reminders);
         return m;
+    }
+
+    /** An offered flag: its id (what the form posts) and its copy. */
+    private static Map<String, Object> offered(String id) {
+        Map<String, Object> f = new LinkedHashMap<>();
+        f.put("id", id);
+        f.put("label_key", labelKey(id));
+        return f;
+    }
+
+    /** A stored flag as written, with its copy when it is an offered one; null (sent, not left out) when typed. */
+    private static Map<String, Object> stored(String value) {
+        Map<String, Object> f = new LinkedHashMap<>();
+        f.put("value", value);
+        f.put("label_key", ProfilePages.FLAGS.contains(value) ? labelKey(value) : null);
+        return f;
+    }
+
+    private static String labelKey(String id) {
+        return "flag." + id;
     }
 
     /**

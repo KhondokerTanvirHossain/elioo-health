@@ -1,5 +1,7 @@
 package com.elioo.baymax.web.adapter.in.api;
 
+import com.elioo.baymax.nudge.application.port.in.NudgeOptOutUseCase;
+import com.elioo.baymax.nudge.application.port.out.NudgeDataPort;
 import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
 import com.elioo.baymax.web.application.port.in.ResultUseCase;
 import com.elioo.baymax.web.adapter.in.ui.UiCopy;
@@ -104,10 +106,8 @@ class UploadApiRealServerTest {
                 new UploadApiHandler(new RecordingUploads(), properties, new com.elioo.baymax.web.adapter.in.ui.UiCopy()),
                 new PaperStatusApiHandler(mock(ResultUseCase.class)),
                 new PaperDeleteApiHandler(mock(TimelineUseCase.class), new DeleteConfirmation(properties, java.time.Clock.systemUTC())),
-                new FamilyApiHandler(org.mockito.Mockito.mock(com.elioo.baymax.web.application.port.in.TimelineUseCase.class),
-                        org.mockito.Mockito.mock(com.elioo.baymax.nudge.application.port.out.NudgeDataPort.class),
-                        org.mockito.Mockito.mock(com.elioo.baymax.nudge.application.port.in.NudgeOptOutUseCase.class),
-                        new com.elioo.baymax.web.adapter.in.ui.UiCopy(), properties),
+                new FamilyApiHandler(mock(TimelineUseCase.class), mock(NudgeDataPort.class), mock(NudgeOptOutUseCase.class),
+                        new UiCopy(), properties),
                 guard);
         HttpHandler app = RouterFunctions.toHttpHandler(router);
         // what the application pulled off the socket, counted below the exchange: the server's own side of the cap
