@@ -1,8 +1,16 @@
 import type { NextConfig } from "next";
 import { SECURITY_HEADERS } from "./src/security/headers";
 
+// The component catalog (/app/catalog-test, plan W2c) exists only in a build made with MEDIOO_CATALOG=1. The value is
+// inlined at build time (src/catalog/flag.ts reads it), so a production build serves the route as a 404 whatever its
+// runtime environment holds; and the catalog build writes to its own directory, so it can never be the .next that
+// the Dockerfile copies into the image.
+const catalog = process.env.MEDIOO_CATALOG === "1";
+
 const nextConfig: NextConfig = {
   output: "standalone",
+  distDir: catalog ? ".next-catalog" : ".next",
+  env: { MEDIOO_CATALOG: catalog ? "1" : "0" },
   poweredByHeader: false,
   reactStrictMode: true,
   // The image optimizer (/_next/image) is never needed — next/image is banned by lint and crops are served by Java —

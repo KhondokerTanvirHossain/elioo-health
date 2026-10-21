@@ -39,7 +39,7 @@ const BANGLA = /[\u0980-\u09FF]/u;
  * directory of the same name deeper down (a route segment `src/app/out/`) is source and is walked. node_modules is
  * skipped at any depth.
  */
-const ROOT_OUTPUT_DIRS = new Set([".next", "out", "test-results", "playwright-report"]);
+const ROOT_OUTPUT_DIRS = new Set([".next", ".next-catalog", "out", "test-results", "playwright-report"]);
 const SKIPPED_EXTENSIONS = new Set([".woff2", ".webp", ".png", ".jpg", ".jpeg", ".ico"]);
 
 /**

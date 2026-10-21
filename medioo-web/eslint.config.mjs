@@ -36,7 +36,7 @@ const SAFETY_LITERAL_SYNTAX = [
 
 const config = [
   {
-    ignores: [".next/**", "node_modules/**", "playwright-report/**", "test-results/**", "next-env.d.ts"],
+    ignores: [".next/**", ".next-catalog/**", "node_modules/**", "playwright-report/**", "test-results/**", "next-env.d.ts"],
   },
   ...compat.extends("next/core-web-vitals", "next/typescript"),
   {

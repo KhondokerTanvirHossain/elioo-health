@@ -3,7 +3,9 @@
 # deploy.sh's deploy_web against a REAL Docker daemon and the REAL medioo-web image, built from medioo-web/Dockerfile
 # here. scripts/test_deploy_sh.sh covers the decisions against fakes; this covers what fakes cannot: that the image
 # builds, that the probe passes against the real Next server, that `docker inspect` of the running container shows the
-# settings deploy.sh claims, and that an image built from another sha is refused and the previous container put back.
+# settings deploy.sh claims, that an image built from another sha is refused and the previous container put back, and
+# that the shipped image has no component catalog (deploy.sh's WEB_CATALOG_PROBE passes in it, and fails against a
+# stand-in that serves one: plan W2c).
 # Runs in CI's build job, so a Dockerfile or probe break fails a PR instead of the first deploy after merge.
 #
 #   bash scripts/test_deploy_web_docker.sh
@@ -21,6 +23,7 @@ SUFFIX="$$-$RANDOM"
 REPO="medioo-web-deploytest"
 NAME="medioo-web-deploytest-$SUFFIX"
 NET="medioo-deploytest-edge-$SUFFIX"
+SERVES="medioo-web-catalogtest-$SUFFIX"  # a throwaway node container that serves a catalog (the able-to-fail direction)
 TAG="a1b2c3d$SUFFIX"   # the sha the image is built from
 OTHER="ffff000$SUFFIX" # the same image under another tag: its baked sha is not this one
 FAILED=0
@@ -28,6 +31,7 @@ fail() { echo "FAIL: $1"; FAILED=1; }
 
 cleanup() {
   "$REAL_DOCKER" rm -f "$NAME" >/dev/null 2>&1
+  "$REAL_DOCKER" rm -f "$SERVES" >/dev/null 2>&1
   "$REAL_DOCKER" network rm "$NET" >/dev/null 2>&1
   "$REAL_DOCKER" rmi "$REPO:$TAG" "$REPO:$OTHER" >/dev/null 2>&1
   rm -rf "$WORK"
@@ -90,6 +94,33 @@ grep -qxF "BUILD_SHA=$TAG" "$WORK/env.image" || fail "the image does not carry B
 HZ=$("$REAL_DOCKER" exec "$NAME" node -e "fetch('http://127.0.0.1:3000/app/healthz').then(r=>r.text()).then(t=>process.stdout.write(t))" 2>&1)
 [ "$HZ" = "{\"service\":\"medioo-web\",\"sha\":\"$TAG\",\"build\":\"$TAG\"}" ] || fail "/app/healthz answered $HZ"
 
+# 1b. (W2c) the component catalog is not in the image that ships: deploy.sh's own catalog probe, run in the real
+#    container, exits 0 (deploy_web above already required it; this runs it on its own so a failure names it)
+CATALOG_PROBE=$(DEPLOY_FUNCTIONS_ONLY=1 bash -c 'source "$1" >/dev/null 2>&1 && printf %s "$WEB_CATALOG_PROBE"' _ "$DEPLOY")
+[ -n "$CATALOG_PROBE" ] || fail "deploy.sh defines no WEB_CATALOG_PROBE"
+"$REAL_DOCKER" exec "$NAME" node -e "$CATALOG_PROBE" \
+  || fail "the catalog probe failed inside the real image: /app/catalog-test is served ($("$REAL_DOCKER" exec "$NAME" node -e "fetch('http://127.0.0.1:3000/app/catalog-test').then(r=>process.stdout.write(String(r.status)))" 2>&1))"
+# ... and the same probe can fail on a real daemon: the image's own base, serving what a catalog build serves on
+# 127.0.0.1:3000 (a 200 whose body renders catalog states), makes it exit non-zero
+BASE=$(awk '$1 == "FROM" && $NF == "run" { print $2 }' "$ROOT/medioo-web/Dockerfile")
+[ -n "$BASE" ] || fail "no run stage base in medioo-web/Dockerfile"
+"$REAL_DOCKER" run -d --name "$SERVES" "$BASE" node -e \
+  "require('http').createServer((q,s)=>{s.writeHead(200,{'content-type':'text/html'});s.end('<main data-catalog-states=\"13\"><section data-catalog-state=\"StatusChip/crit-high\"></section></main>')}).listen(3000,'127.0.0.1')" \
+  >/dev/null || fail "could not start the catalog-serving container"
+# Guard: the stand-in really answers the catalog path with a 200 and a state, or the probe's failure below would be
+# the container's absence (an exec into nothing also exits non-zero) and prove nothing.
+SERVED=""
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  SERVED=$("$REAL_DOCKER" exec "$SERVES" node -e "fetch('http://127.0.0.1:3000/app/catalog-test').then(r=>r.text().then(b=>process.stdout.write(r.status+' '+b.includes('data-catalog-state'))))" 2>/dev/null)
+  [ "$SERVED" = "200 true" ] && break
+  sleep 1
+done
+if [ "$SERVED" != "200 true" ]; then
+  fail "the catalog-serving stand-in never answered /app/catalog-test with 200 and a state (got '$SERVED')"
+elif "$REAL_DOCKER" exec "$SERVES" node -e "$CATALOG_PROBE" >/dev/null 2>&1; then
+  fail "the catalog probe passed against a server that serves the catalog: it cannot fail"
+fi
+
 # 2. the same image under another tag: GIT_SHA says OTHER, the image says TAG. The probe refuses it, and the
 #    previous container (TAG) is put back and healthy
 run_web "$OTHER" WEB_HEALTH_DEADLINE_S=15 > "$WORK/out2.log" 2>&1 && fail "deploy_web $OTHER exited 0 with an image built from $TAG"
@@ -98,4 +129,4 @@ grep -q "previous $NAME ($TAG) is back and healthy" "$WORK/out2.log" || fail "th
 [ "$(insp '{{.Config.Image}}')" = "$REPO:$TAG" ] || fail "after the failed swap the running image is $(insp '{{.Config.Image}}'), expected $REPO:$TAG"
 
 if [ "$FAILED" -ne 0 ]; then exit 1; fi
-echo "deploy-web-docker: 2 cases passed (real image, real daemon)"
+echo "deploy-web-docker: 3 cases passed (real image, real daemon)"

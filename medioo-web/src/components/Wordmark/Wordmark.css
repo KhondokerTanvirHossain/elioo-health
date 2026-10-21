@@ -1,0 +1,28 @@
+/* The wordmark (Wordmark.tsx). With no data-theme the <picture> follows the system scheme; a data-theme on <html>
+   hides it and shows the <img> of that theme instead. The two overrides are display: none until then, and lazy, so
+   the browser never fetches the one it does not show. */
+.wordmark {
+  display: inline-block;
+  max-width: 100%;
+  line-height: 0;
+}
+.wordmark__auto {
+  display: block;
+}
+.wordmark__img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+.wordmark--light,
+.wordmark--dark {
+  display: none;
+}
+:root[data-theme="light"] .wordmark__auto,
+:root[data-theme="dark"] .wordmark__auto {
+  display: none;
+}
+:root[data-theme="light"] .wordmark--light,
+:root[data-theme="dark"] .wordmark--dark {
+  display: block;
+}

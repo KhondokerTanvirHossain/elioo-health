@@ -108,6 +108,13 @@ WEB_PROBE_TIMEOUT_S="${WEB_PROBE_TIMEOUT_S:-5}"        # one try: docker exec, a
 # starts at 1, so a hung server, or a path that reaches neither exit, fails rather than passing or stalling.
 WEB_PROBE="process.exitCode=1;const t=process.argv[1];fetch('http://127.0.0.1:3000/app/healthz',{signal:AbortSignal.timeout(2000)}).then(r=>r.ok?r.json():Promise.reject(r.status)).then(j=>process.exit(t&&j&&j.service==='medioo-web'&&j.sha===t&&j.build===t?0:1)).catch(()=>process.exit(1))"
 
+# The catalog probe (plan W2c), run inside the container as `node -e "$WEB_CATALOG_PROBE"` once WEB_PROBE has passed.
+# The component catalog (/app/catalog-test) exists only in a build made with MEDIOO_CATALOG=1; the image that ships
+# must answer it 404 with no catalog state in the body. Anything else (a 200, a 404 that renders states, no answer
+# within 2 s) fails the deploy and puts the previous medioo-web back, exactly as an unhealthy /app/healthz does. It is
+# measured on the container that ships because that is the only artefact the claim is about.
+WEB_CATALOG_PROBE="process.exitCode=1;fetch('http://127.0.0.1:3000/app/catalog-test',{signal:AbortSignal.timeout(2000)}).then(r=>r.text().then(b=>process.exit(r.status===404&&!b.includes('data-catalog-state')?0:1))).catch(()=>process.exit(1))"
+
 # web_start <tag> <network>: the one place medioo-web's `docker run` arguments are written (new and put-back alike).
 # On <network> with no published port (nothing reaches it except through Caddy), no --env-file and no mounts (Node
 # never holds Java's secrets: it gets the two variables it needs), capped at 320 MB, with rotated logs (the box is
@@ -124,14 +131,19 @@ web_start() {
     "${WEB_IMAGE}:$1" >/dev/null
 }
 
-# web_wait_healthy <tag>: 0 once WEB_PROBE passes for <tag>. Each try is bounded by WEB_PROBE_TIMEOUT_S (a hung exec
-# or node cannot stall it), the whole wait by WEB_HEALTH_DEADLINE_S of wall clock and by 30 tries.
+# web_wait_healthy <tag>: 0 once WEB_PROBE passes for <tag> and then WEB_CATALOG_PROBE passes once. Each try is bounded
+# by WEB_PROBE_TIMEOUT_S (a hung exec or node cannot stall it), the whole wait by WEB_HEALTH_DEADLINE_S of wall clock
+# and by 30 tries. The catalog probe is not retried: a served catalog is a property of the image, not a slow start.
 web_wait_healthy() {
   local tag="$1" i=0 start=$SECONDS
   while [ "$i" -lt 30 ] && [ $((SECONDS - start)) -lt "$WEB_HEALTH_DEADLINE_S" ]; do
     i=$((i + 1))
     if timeout "$WEB_PROBE_TIMEOUT_S" docker exec "$WEB_CONTAINER_NAME" node -e "$WEB_PROBE" "$tag" >/dev/null 2>&1; then
-      log "$WEB_CONTAINER_NAME healthy after $((SECONDS - start))s, try $i (sha ${tag})"
+      if ! timeout "$WEB_PROBE_TIMEOUT_S" docker exec "$WEB_CONTAINER_NAME" node -e "$WEB_CATALOG_PROBE" >/dev/null 2>&1; then
+        log "ERROR: $WEB_CONTAINER_NAME (sha ${tag}) answers /app/catalog-test with something other than a 404 without catalog states: an image built with MEDIOO_CATALOG=1 never ships (catalog probe)"
+        return 1
+      fi
+      log "$WEB_CONTAINER_NAME healthy after $((SECONDS - start))s, try $i (sha ${tag}); /app/catalog-test is a 404"
       return 0
     fi
     sleep 2

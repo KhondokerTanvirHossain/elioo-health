@@ -115,10 +115,10 @@ describe("scanForBangla", () => {
     expect(result.exempt).toEqual([]);
   });
 
-  it.each(["src/app/out/note.css", "src/out/x.css", "src/features/test-results/x.mjs", "src/app/.next/x.css"])(
+  it.each(["src/app/out/note.css", "src/out/x.css", "src/features/test-results/x.mjs", "src/app/.next/x.css", "src/app/.next-catalog/x.css"])(
     "a source directory named like a build output below the root is still walked (%s)",
     (path) => {
-      // Build outputs (out/, .next/, test-results/, playwright-report/) are skipped at the root only, as .gitignore
+      // Build outputs (out/, .next/, .next-catalog/, test-results/, playwright-report/) are skipped at the root only, as .gitignore
       // anchors them; a source directory of the same name deeper down is source.
       const ws = workspace({ "web/src/ok.ts": "export const OK = 1;\n", [`web/${path}`]: `/* ${BN} */\n` });
       expect(scanForBangla(join(ws, "web")).offenders).toEqual([`${path}:1`]);
@@ -130,6 +130,7 @@ describe("scanForBangla", () => {
       "web/src/ok.ts": "export const OK = 1;\n",
       "web/out/x.css": `/* ${BN} */\n`,
       "web/.next/x.js": `// ${BN}\n`,
+      "web/.next-catalog/x.js": `// ${BN}\n`,
       "web/test-results/x.txt": `${BN}\n`,
       "web/playwright-report/x.html": `${BN}\n`,
       "web/src/lib/node_modules/pkg/x.js": `// ${BN}\n`,
@@ -153,12 +154,14 @@ describe("scanForBangla", () => {
 
   it("the real tree: no offenders, and the files that matter were read", () => {
     const result = scanForBangla(join(__dirname, "../.."), {
-      generatedDirs: ["src/copy/generated/", "fixtures/api/"],
+      generatedDirs: ["src/copy/generated/", "fixtures/api/", "fixtures/catalog/"],
       javaTestRoot: "../baymax/src/test/java",
     });
     expect(result.offenders).toEqual([]);
     expect(result.scanned).toEqual(expect.arrayContaining(["src/middleware.ts", "src/app/layout.tsx"]));
     expect(result.exempt).toContain("src/copy/generated/copy.bn.json");
+    // The catalog's names are Java's (CatalogFixturesExportTest), exempt on their _meta, not skipped unread.
+    expect(result.exempt).toContain("fixtures/catalog/names.json");
     // The program half is live: it reached the generated copy, a JSON module only an import brings in.
     expect(result.program.length).toBeGreaterThan(0);
     expect(result.program).toContain("src/copy/generated/copy.bn.json");

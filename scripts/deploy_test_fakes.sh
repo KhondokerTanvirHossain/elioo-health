@@ -39,6 +39,10 @@ write_deploy_fakes() {
 # FAKE_HEALTHZ_STATUS=<code|hang>  that HTTP status, or a server that accepts and never answers
 # FAKE_HEALTHZ_SERVICE / FAKE_HEALTHZ_SHA / FAKE_HEALTHZ_BUILD   override that field of the answer
 # FAKE_HEALTHZ_BODY=<text>   the whole body, verbatim (e.g. not JSON)
+# /app/catalog-test answers 404 "not found" (as every other path) unless:
+# FAKE_CATALOG=200           it answers 200 with a catalog state in the body, as an image built with MEDIOO_CATALOG=1
+# FAKE_CATALOG=404-states    it answers 404 but the body still renders a catalog state
+# FAKE_CATALOG_REF=<ref>     FAKE_CATALOG applies only to a container started from <ref> (e.g. not the one put back)
 # `docker run` writes its arguments, one per line, to run.<name>.args, where <name> is the image's repository
 # basename (run.medscribe-ai.args, run.medioo-web.args), so each container's argument boundaries can be checked.
 printf 'docker %s\n' "$*" >> "$FAKE_DIR/calls.log"
@@ -135,11 +139,13 @@ case "$1" in
     esac
     [ -n "${FAKE_WEB_BAD_REF:-}" ] && [ "$ref" = "$FAKE_WEB_BAD_REF" ] && status=refused
     [ "$status" = 200 ] && [ -n "${FAKE_HEALTHZ_STATUS:-}" ] && status="$FAKE_HEALTHZ_STATUS"
+    catalog="${FAKE_CATALOG:-}"
+    [ -n "${FAKE_CATALOG_REF:-}" ] && [ "$ref" != "$FAKE_CATALOG_REF" ] && catalog=""
     body="${FAKE_HEALTHZ_BODY:-$(printf '{"service":"%s","sha":"%s","build":"%s"}' \
       "${FAKE_HEALTHZ_SERVICE:-medioo-web}" "${FAKE_HEALTHZ_SHA:-${gs:-unknown}}" "${FAKE_HEALTHZ_BUILD:-${ref##*:}}")}"
     # the process sees the container's environment (its -e values and the image's baked BUILD_SHA), not the test's
     exec env -i PATH="$PATH" $(cat "$envf" 2>/dev/null) BUILD_SHA="${ref##*:}" \
-      FAKE_HZ_STATUS="$status" FAKE_HZ_BODY="$body" \
+      FAKE_HZ_STATUS="$status" FAKE_HZ_BODY="$body" FAKE_HZ_CATALOG="$catalog" \
       node --require "$(dirname "$0")/healthz-stub.cjs" -e "$code" "$@" ;;
   logs)
     echo "fake container log line" ;;
@@ -149,13 +155,17 @@ exit 0
 FAKE
   cat > "$bin/healthz-stub.cjs" <<'FAKE'
 // Preloaded by the fake `docker exec ... node -e <probe>`: stands in for the Next server inside the container.
-// fetch of exactly http://127.0.0.1:3000/app/healthz answers FAKE_HZ_STATUS with FAKE_HZ_BODY; any other URL is 404;
+// fetch of exactly http://127.0.0.1:3000/app/healthz answers FAKE_HZ_STATUS with FAKE_HZ_BODY; /app/catalog-test
+// answers per FAKE_HZ_CATALOG (empty: the 404 every other URL gets; 200 or 404-states: a body with a catalog state);
+// any other URL is 404;
 // "refused" is nothing listening; "hang" accepts and never answers (only the caller's AbortSignal ends it, and an
 // interval keeps the event loop alive the way an open socket does).
 const status = process.env.FAKE_HZ_STATUS || "200";
 const body = process.env.FAKE_HZ_BODY || "";
+const catalog = process.env.FAKE_HZ_CATALOG || "";
 delete process.env.FAKE_HZ_STATUS;
 delete process.env.FAKE_HZ_BODY;
+delete process.env.FAKE_HZ_CATALOG;
 globalThis.fetch = (url, opts = {}) => {
   if (status === "refused") return Promise.reject(new TypeError("fetch failed: connect ECONNREFUSED 127.0.0.1:3000"));
   if (status === "hang") {
@@ -163,6 +173,10 @@ globalThis.fetch = (url, opts = {}) => {
       const keepAlive = setInterval(() => {}, 1000);
       opts.signal?.addEventListener("abort", () => { clearInterval(keepAlive); reject(opts.signal.reason); });
     });
+  }
+  if (String(url) === "http://127.0.0.1:3000/app/catalog-test" && catalog) {
+    const states = '<main data-catalog-states="13"><section data-catalog-state="StatusChip/crit-high"></section></main>';
+    return Promise.resolve(new Response(states, { status: catalog === "200" ? 200 : 404, headers: { "content-type": "text/html" } }));
   }
   if (String(url) !== "http://127.0.0.1:3000/app/healthz") return Promise.resolve(new Response("not found", { status: 404 }));
   return Promise.resolve(new Response(body, { status: Number(status), headers: { "content-type": "application/json" } }));

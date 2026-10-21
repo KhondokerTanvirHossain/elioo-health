@@ -1,5 +1,7 @@
 node_modules
 .next
+# the catalog build: COPY . . must never send it into the image context (plan W2c)
+.next-catalog
 playwright-report
 test-results
 e2e

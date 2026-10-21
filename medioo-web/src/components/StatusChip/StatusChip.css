@@ -1,0 +1,44 @@
+/* A value's chip (StatusChip.tsx): colour + shape + word. Red (the NOW tokens) is only for the two critical kinds,
+   which built/now-usage.built.test.ts checks on the shipped CSS. Out of range paints the label on the neutral wash,
+   never amber: amber is THIS_WEEK's (master plan, Global Constraints). The shape strokes in the chip's text colour. */
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  padding: 1px 9px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-bn);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.status-chip__shape {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.status-chip--in {
+  background: var(--tint-soft);
+  color: var(--tint-ink);
+}
+.status-chip--out-high,
+.status-chip--out-low {
+  background: var(--unk-soft);
+  color: var(--label);
+}
+.status-chip--crit-high,
+.status-chip--crit-low {
+  background: var(--now-soft);
+  color: var(--now-ink);
+}
+.status-chip--unk {
+  background: var(--unk-soft);
+  color: var(--label2);
+}

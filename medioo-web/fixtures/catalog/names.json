@@ -1,0 +1,12 @@
+{
+  "_meta": {
+    "generated_by": "baymax CatalogFixturesExportTest",
+    "source": "fictional catalog names; long_unbroken is long without spaces, repeated to at least 40 code points"
+  },
+  "names": {
+    "english": "Ma",
+    "long": "মোছাম্মৎ রোকেয়া বেগম চৌধুরী",
+    "long_unbroken": "মোছাম্মৎরোকেয়াবেগমচৌধুরীমোছাম্মৎরোকেয়াবেগমচৌধুরী",
+    "short": "মা"
+  }
+}

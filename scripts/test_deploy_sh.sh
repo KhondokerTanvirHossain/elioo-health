@@ -18,6 +18,9 @@
 #   medioo-web untouched; unless WEB_IMAGE_REQUIRED=1 (CI, which has just pushed it). Any other pull error (denied,
 #   no space, network) is a fault: exit 1 whatever WEB_IMAGE_REQUIRED says. A tag already on disk is used as is.
 # - medioo-web unhealthy, or its run failing: exit 1, its last 50 log lines printed, the previous medioo-web put back.
+# - medioo-web healthy but serving the component catalog (/app/catalog-test not a 404, or a 404 that renders a catalog
+#   state: an image built with MEDIOO_CATALOG=1): the catalog probe RUNS inside the container once the health probe
+#   passed, and refuses it the same way, at once (plan W2c).
 # - No edge network: exit 1 before the running medioo-web is touched (it would be unreachable both ways).
 # - medioo-web gets no published port and no --env-file: Node never holds Java's secrets.
 # - Both repositories are pruned before the free-space floor is read; the tag being deployed is never pruned, in
@@ -98,7 +101,9 @@ JAVA_RUN_RE="^docker run .* $REPO:$NEW\$"
 WEB_RUN_RE="^docker run .* $WEB:$NEW\$"
 WEB_ANY_RUN_RE="^docker run .* $WEB:[0-9a-f]+\$"
 WEB_RM_RE='^docker rm( -f)? medioo-web$'
-EXEC_RE='^docker exec medioo-web '
+# the two in-container probes, told apart by the path each fetches (deploy.sh's WEB_PROBE and WEB_CATALOG_PROBE)
+EXEC_RE='^docker exec medioo-web node -e .*/app/healthz'
+CATALOG_EXEC_RE='^docker exec medioo-web node -e .*/app/catalog-test'
 JAVA_GONE_RE="^docker (rm|stop|kill)( -f)? medscribe-ai\$"
 READ_ONLY_RE='^docker (ps|images|inspect|logs|(image|network|container) inspect)( |$)'
 
@@ -169,6 +174,10 @@ fi
 java_untouched_after_run
 grep -q "medioo-web healthy" "$FAKE_DIR/out.log" || fail "$CASE: no 'medioo-web healthy' line: $(out)"
 [ "$(count "$EXEC_RE")" = 1 ] || fail "$CASE: $(count "$EXEC_RE") health tries for a healthy medioo-web, expected 1"
+# the catalog probe runs once, inside the new container, after its health probe passed (plan W2c)
+[ "$(count "$CATALOG_EXEC_RE")" = 1 ] || fail "$CASE: $(count "$CATALOG_EXEC_RE") catalog probes, expected 1"
+[ "$(first_line "$EXEC_RE")" -lt "$(first_line "$CATALOG_EXEC_RE")" ] 2>/dev/null \
+  || fail "$CASE: the catalog probe (line $(first_line "$CATALOG_EXEC_RE")) did not follow the health probe (line $(first_line "$EXEC_RE"))"
 
 # 3. (d) the medioo-web run line: no published port, no env file, no mounts; exactly the two env vars it needs
 new_case web-args
@@ -272,6 +281,28 @@ grep -qF "previous medioo-web ($W_RUN) is back and healthy" "$FAKE_DIR/out.log" 
 new_case web-slow
 run_deploy FAKE_NETWORK=1 FAKE_WEB_HEALTH=2 || fail "$CASE: deploy.sh failed although medioo-web became healthy: $(out)"
 [ "$(count "$EXEC_RE")" = 3 ] || fail "$CASE: $(count "$EXEC_RE") health tries, expected 3"
+
+# 11b. (W2c) the shipped image serves the component catalog: a 200 with catalog states (an image built with
+#    MEDIOO_CATALOG=1), or a 404 whose body still renders one. Healthy by /app/healthz, so this is the catalog probe's
+#    own refusal: exit 1 at once (not 30 tries), its message, the previous medioo-web put back healthy, Java untouched.
+for spec in "catalog-200:200" "catalog-404-states:404-states"; do
+  new_case "${spec%%:*}"
+  if run_deploy FAKE_NETWORK=1 FAKE_CATALOG="${spec#*:}" FAKE_CATALOG_REF="$WEB:$NEW"; then
+    fail "$CASE: exited 0 though the new medioo-web serves the catalog (${spec#*:}): $(out)"
+  fi
+  java_untouched_after_run
+  NEW_RUN=$(first_line "$WEB_RUN_RE"); RESTORE_RUN=$(first_line "^docker run .* $WEB:$W_RUN\$")
+  [ "$(count_between "${NEW_RUN:-0}" "$RESTORE_RUN" "$EXEC_RE")" = 1 ] \
+    || fail "$CASE: $(count_between "${NEW_RUN:-0}" "$RESTORE_RUN" "$EXEC_RE") health tries for the new medioo-web, expected 1"
+  [ "$(count_between "${NEW_RUN:-0}" "$RESTORE_RUN" "$CATALOG_EXEC_RE")" = 1 ] \
+    || fail "$CASE: $(count_between "${NEW_RUN:-0}" "$RESTORE_RUN" "$CATALOG_EXEC_RE") catalog probes of the new medioo-web, expected 1"
+  grep -q "medioo-web (sha $NEW) answers /app/catalog-test with something other than a 404 without catalog states.*(catalog probe)" \
+    "$FAKE_DIR/out.log" || fail "$CASE: no catalog probe message: $(out)"
+  grep -q "medioo-web healthy .*(sha $NEW)" "$FAKE_DIR/out.log" && fail "$CASE: medioo-web $NEW reported healthy while serving the catalog"
+  [ -n "$RESTORE_RUN" ] || fail "$CASE: the previous medioo-web ($W_RUN) was not put back: $(out)"
+  web_last_run_is "$W_RUN"
+  grep -qF "previous medioo-web ($W_RUN) is back and healthy" "$FAKE_DIR/out.log" || fail "$CASE: the restored medioo-web was not checked healthy: $(out)"
+done
 
 # 12-16. the probe itself, executed: /app/healthz answers, but not for this deploy. Each is 30 tries and exit 1.
 for spec in "wrong-sha:FAKE_HEALTHZ_SHA=deadbee" "wrong-image:FAKE_HEALTHZ_BUILD=$W_RUN" "wrong-service:FAKE_HEALTHZ_SERVICE=medscribe-ai" \
