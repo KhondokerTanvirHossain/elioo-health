@@ -23,6 +23,8 @@ import com.elioo.baymax.outbound.domain.StoredUrgency;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.storage.application.port.out.StoragePort;
 import com.elioo.baymax.storage.domain.StorageKeys;
+import com.elioo.baymax.testsupport.PaintedPaper;
+import com.elioo.baymax.testsupport.PaintedPaper.Hold;
 import com.elioo.baymax.wa.WaFixtures;
 import com.elioo.baymax.wa.application.port.out.WaMessagingPort;
 import com.elioo.baymax.web.application.port.in.WebAuthUseCase;
@@ -53,14 +55,10 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.publisher.Sinks;
 
 import javax.imageio.ImageIO;
-import java.awt.Color;
-import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -83,6 +81,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static com.elioo.baymax.testsupport.PaintedPaper.PAPER;
+import static com.elioo.baymax.testsupport.PaintedPaper.WORDS;
+import static com.elioo.baymax.testsupport.PaintedPaper.colourAt;
+import static com.elioo.baymax.testsupport.PaintedPaper.paintedPage;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -109,16 +111,8 @@ class WebOnlyJourneyAcceptanceTest {
     @Container
     static final MinIOContainer MINIO = com.elioo.baymax.storage.TestImages.minioContainer();
 
-    /** Synthetic (DR-36): Potassium 11.0 against 3.5–5.1 is ≥ 2× high, the stopgap's NOW. */
-    static final String NOW_REPLY = """
-            {"document_type":"lab_report","document_date":"2026-10-12","facility":"Shapla Diagnostics",
-             "values":[{"name":"Potassium","value":"11.0","unit":"mmol/L","ref_low":"3.5","ref_high":"5.1",
-                        "source_span":{"page":1,"start":0,"end":9}}],
-             "medicines":[],"follow_up":[],
-             "clinical_context":{"chief_complaint":[],"history":[],"examination":[],"diagnosis":[],
-                                 "investigations_advised":[],"advice":[],"referral":null},
-             "confidence":{"overall":0.95,"values":0.95,"medicines":1.0,"follow_up":1.0,"clinical_context":1.0}}
-            """;
+    /** The painted page's reading: Potassium 11.0, the stopgap's NOW ({@link PaintedPaper#NOW_REPLY}). */
+    static final String NOW_REPLY = PaintedPaper.NOW_REPLY;
 
     /** B5: the same paper read badly — overall 0.40, below the gate — so the second extraction is a low_overall retake. */
     static final String RETAKE_REPLY = NOW_REPLY.replace("\"confidence\":{\"overall\":0.95", "\"confidence\":{\"overall\":0.40");
@@ -130,16 +124,7 @@ class WebOnlyJourneyAcceptanceTest {
     private static final String HELD_NUMBER = "+8801700000733";
     private static final String DELIVERY_LOGGER = "com.elioo.baymax.web.adapter.out.delivery";
     /** How long the WhatsApp port must stay silent before J1.2 counts its calls: longer than any retry or follow-up. */
-    private static final Duration SETTLE = Duration.ofSeconds(3);
-
-    /**
-     * The painted page: the top-left quarter (where the stub OCR puts "Potassium 11.0", x 10–140, y 10–40) orange, the
-     * rest blue. A crop of the reading is all orange and smaller than the page; the page is both colours where painted.
-     */
-    private static final int PAGE_W = 400;
-    private static final int PAGE_H = 200;
-    private static final Color WORDS = new Color(255, 140, 0);
-    private static final Color PAPER = new Color(0, 40, 200);
+    private static final Duration SETTLE = PaintedPaper.SETTLE;
 
     /** Routes a family never reaches by browsing the app, each with why it is not a step of this journey. */
     static final Map<String, String> NOT_IN_JOURNEY = Map.ofEntries(
@@ -573,16 +558,6 @@ class WebOnlyJourneyAcceptanceTest {
                 });
     }
 
-    /** The held journey's two signals. */
-    static final class Hold {
-        /** How long the page's own assessment yields for a DONE view: long enough that a view read alongside it wins. */
-        static final Duration YIELD = Duration.ofSeconds(2);
-        final Sinks.Empty<Void> pageDrawn = Sinks.empty();
-        final Sinks.Empty<Void> doneViewRead = Sinks.empty();
-        final AtomicInteger chainWaiting = new AtomicInteger();
-        final AtomicInteger sweeps = new AtomicInteger();
-    }
-
     /**
      * The real writer, with the chain's call held and the page's call yielding. Every caller of the use case reaches it
      * through this bean: the chain ({@code assessAndStore}, held), the page ({@code currentOrAssess}, yielding), and
@@ -838,20 +813,6 @@ class WebOnlyJourneyAcceptanceTest {
         return DriverManager.getConnection(POSTGRES.getJdbcUrl() + "&sslmode=disable", POSTGRES.getUsername(), POSTGRES.getPassword());
     }
 
-    /** The page the family photographs: the words' quarter orange, the paper blue (see {@link #WORDS}). */
-    private static byte[] paintedPage() throws Exception {
-        BufferedImage image = new BufferedImage(PAGE_W, PAGE_H, BufferedImage.TYPE_INT_RGB);
-        Graphics2D g = image.createGraphics();
-        g.setColor(PAPER);
-        g.fillRect(0, 0, PAGE_W, PAGE_H);
-        g.setColor(WORDS);
-        g.fillRect(0, 0, PAGE_W / 2, PAGE_H / 2);
-        g.dispose();
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        ImageIO.write(image, "jpg", out);
-        return out.toByteArray();
-    }
-
     /** The {@code src} of every {@code <img>} on the page pointing at this document's pictures, matching {@code tail}. */
     private static List<String> srcs(String html, String tail) {
         Matcher m = Pattern.compile("<img [^>]*src=\"(/app/documents/[0-9a-f-]{36}" + tail + ")\"").matcher(html);
@@ -879,20 +840,6 @@ class WebOnlyJourneyAcceptanceTest {
         BufferedImage image = ImageIO.read(new ByteArrayInputStream(bytes));
         assertThat(image).as("a decodable image for " + src).isNotNull();
         return image;
-    }
-
-    /** {@link #WORDS} or {@link #PAPER} — whichever the pixel at this fraction of the picture is near (JPEG is lossy). */
-    private static Color colourAt(BufferedImage image, double fx, double fy) {
-        Color c = new Color(image.getRGB((int) (image.getWidth() * fx), (int) (image.getHeight() * fy)));
-        if (near(c, WORDS)) {
-            return WORDS;
-        }
-        return near(c, PAPER) ? PAPER : c;
-    }
-
-    private static boolean near(Color a, Color b) {
-        return Math.abs(a.getRed() - b.getRed()) < 40 && Math.abs(a.getGreen() - b.getGreen()) < 40
-                && Math.abs(a.getBlue() - b.getBlue()) < 40;
     }
 
     /** The sheet, the multipart post, the reading page, then the status poll until DONE; returns the document's path. */

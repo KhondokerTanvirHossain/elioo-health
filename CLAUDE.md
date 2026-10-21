@@ -28,6 +28,7 @@ docker compose up -d                          # Postgres 17 on localhost:5433 (m
 ./gradlew build                               # all 10 modules; unit tests + context test (needs the Docker Postgres)
 RUN_AWS_INTEGRATION_TESTS=true ./gradlew test # + real AWS Comprehend/Textract tests
 RUN_LLM_INTEGRATION_TESTS=true LLM_PROVIDER=groq ./gradlew :elioo-llm:test --tests '*LlmClientIntegrationTest'
+RUN_BROWSER_PROBE=true ./gradlew :baymax:test --tests '*ImageProbeAcceptanceTest'   # real Chromium on every image (D4); needs docker compose up -d + pnpm -C medioo-web exec playwright install chromium
 scripts/check-no-server-mutation.sh && pnpm -C medioo-web install --frozen-lockfile && for s in lint typecheck test build e2e; do pnpm -C medioo-web $s || break; done   # medioo-web, as "Build and test" runs it (Node 22)
 ```
 

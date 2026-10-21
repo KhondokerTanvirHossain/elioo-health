@@ -68,7 +68,7 @@ import static org.mockito.Mockito.when;
 @Testcontainers
 public class ExtractionPipelineAcceptanceTest {
 
-    static final String BUCKET = "baymax";
+    public static final String BUCKET = "baymax";
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
@@ -203,6 +203,16 @@ public class ExtractionPipelineAcceptanceTest {
 
     /** As above, with the model's replies queued: extraction calls take {@link StubReply#replyTo} in turn (B5's retake step). */
     public static ReactiveWebApplicationContextRunner runnerFor(PostgreSQLContainer<?> postgres, MinIOContainer minio, StubReply stub) {
+        return runnerFor(postgres, minio.getS3URL(), minio.getUserName(), minio.getPassword(), stub);
+    }
+
+    /**
+     * As above, against any S3 endpoint holding the {@link #BUCKET} bucket, path-style and with no server-side encryption:
+     * the docker-compose MinIO ({@code http://localhost:9000}, which a browser outside the JVM can reach), for the D4
+     * real-browser probe.
+     */
+    public static ReactiveWebApplicationContextRunner runnerFor(PostgreSQLContainer<?> postgres, String s3Endpoint,
+                                                                String accessKey, String secretKey, StubReply stub) {
         return new ReactiveWebApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(
                         R2dbcAutoConfiguration.class, R2dbcDataAutoConfiguration.class,
@@ -222,11 +232,11 @@ public class ExtractionPipelineAcceptanceTest {
                         "baymax.flyway.url=" + postgres.getJdbcUrl() + "&sslmode=disable",
                         "baymax.flyway.user=" + postgres.getUsername(),
                         "baymax.flyway.password=" + postgres.getPassword(),
-                        "baymax.storage.endpoint=" + minio.getS3URL(),
+                        "baymax.storage.endpoint=" + s3Endpoint,
                         "baymax.storage.region=us-east-1",
                         "baymax.storage.bucket=" + BUCKET,
-                        "baymax.storage.access-key=" + minio.getUserName(),
-                        "baymax.storage.secret-key=" + minio.getPassword(),
+                        "baymax.storage.access-key=" + accessKey,
+                        "baymax.storage.secret-key=" + secretKey,
                         "baymax.storage.path-style=true",
                         "baymax.storage.credentials=static",
                         "baymax.storage.server-side-encryption=");
