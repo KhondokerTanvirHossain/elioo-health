@@ -1,0 +1,119 @@
+{
+  "_meta": {
+    "generated_by": "baymax ThreadApiContractTest",
+    "source": "GET /app/api/patients/{id}/thread over the case default"
+  },
+  "body": {
+    "items": [
+      {
+        "at": "2026-10-20T03:00:00Z",
+        "body": "Ma's follow-up visit is in three days.",
+        "document_id": null,
+        "kind": "message",
+        "message_kind": "nudge"
+      },
+      {
+        "at": "2026-10-18T05:00:00Z",
+        "card": {
+          "banner": {
+            "level": "this_week",
+            "line_key": "urgency.this_week"
+          },
+          "counts": null,
+          "date": "2026-10-18",
+          "date_is_upload_day": false,
+          "date_uncertain": false,
+          "doctor": { },
+          "document_type": "lab_report",
+          "facility": "Shapla Diagnostics",
+          "filed": false,
+          "follow_up": [ ],
+          "gate": "PENDING",
+          "id": "7f115e80-4a7e-3fa4-8d95-a3cf2b81b6b1",
+          "medicines": [ ],
+          "owner": true,
+          "page_count": 1,
+          "pages": [
+            {
+              "n": 1,
+              "src": "/app/documents/7f115e80-4a7e-3fa4-8d95-a3cf2b81b6b1/page/1"
+            }
+          ],
+          "patient": {
+            "age": 64,
+            "id": "2d7a649c-ead0-3fde-aa67-d4705b4d5f7a",
+            "name": "Ma",
+            "name_objective": "Ma-কে",
+            "name_possessive": "Ma-র"
+          },
+          "printed_date": "2026-10-18",
+          "reasons": [ ],
+          "received_at": "2026-10-18T05:00:00Z",
+          "review_hours": 2,
+          "status": "DONE",
+          "unverified": null,
+          "urgency": "this_week",
+          "values": [ ],
+          "viewer": {
+            "bangladesh": true
+          }
+        },
+        "kind": "paper"
+      },
+      {
+        "at": "2026-10-12T04:02:00Z",
+        "body": "Ma's report from Shapla Diagnostics has been read. Every value printed is inside its range.",
+        "document_id": "0426f85b-bc70-326a-8083-1753e8504005",
+        "kind": "message",
+        "message_kind": "explanation"
+      },
+      {
+        "at": "2026-10-12T04:00:00Z",
+        "card": {
+          "banner": null,
+          "counts": null,
+          "date": "2026-10-12",
+          "date_is_upload_day": false,
+          "date_uncertain": false,
+          "doctor": { },
+          "document_type": "lab_report",
+          "facility": "Shapla Diagnostics",
+          "filed": true,
+          "follow_up": [ ],
+          "gate": "RELEASED",
+          "id": "0426f85b-bc70-326a-8083-1753e8504005",
+          "medicines": [ ],
+          "owner": true,
+          "page_count": 1,
+          "pages": [
+            {
+              "n": 1,
+              "src": "/app/documents/0426f85b-bc70-326a-8083-1753e8504005/page/1"
+            }
+          ],
+          "patient": {
+            "age": 64,
+            "id": "2d7a649c-ead0-3fde-aa67-d4705b4d5f7a",
+            "name": "Ma",
+            "name_objective": "Ma-কে",
+            "name_possessive": "Ma-র"
+          },
+          "printed_date": "2026-10-12",
+          "reasons": [ ],
+          "received_at": "2026-10-12T04:00:00Z",
+          "status": "DONE",
+          "unverified": null,
+          "urgency": "routine",
+          "values": [ ],
+          "viewer": {
+            "bangladesh": true
+          },
+          "wording": "Ma's report from Shapla Diagnostics has been read. Every value printed is inside its range."
+        },
+        "kind": "paper"
+      }
+    ],
+    "next_cursor": null
+  },
+  "status": 200
+}

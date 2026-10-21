@@ -1,0 +1,67 @@
+{
+  "_meta": {
+    "generated_by": "baymax ThreadApiContractTest",
+    "source": "GET /app/api/patients/{id}/thread over the case retake"
+  },
+  "body": {
+    "items": [
+      {
+        "at": "2026-10-19T04:01:00Z",
+        "body": "The photo of Ma's paper is too blurred to read. Please send it again in good light.",
+        "document_id": "6167322d-9512-3418-94db-ff72f6ff0673",
+        "kind": "message",
+        "message_kind": "retake"
+      },
+      {
+        "at": "2026-10-19T04:00:00Z",
+        "card": {
+          "banner": null,
+          "counts": null,
+          "date": "2026-10-19",
+          "date_is_upload_day": true,
+          "date_uncertain": false,
+          "doctor": { },
+          "document_type": null,
+          "facility": null,
+          "filed": false,
+          "follow_up": [ ],
+          "gate": "NONE",
+          "id": "6167322d-9512-3418-94db-ff72f6ff0673",
+          "medicines": [ ],
+          "owner": true,
+          "page_count": 1,
+          "pages": [
+            {
+              "n": 1,
+              "src": "/app/documents/6167322d-9512-3418-94db-ff72f6ff0673/page/1"
+            }
+          ],
+          "patient": {
+            "age": 64,
+            "id": "0d4984b4-a5d8-3bd9-abca-73ff0cc820c0",
+            "name": "Ma",
+            "name_objective": "Ma-কে",
+            "name_possessive": "Ma-র"
+          },
+          "printed_date": null,
+          "reasons": [ ],
+          "received_at": "2026-10-19T04:00:00Z",
+          "retake": {
+            "ordinal": 1,
+            "reason_key": "retake.reason.low_overall"
+          },
+          "status": "NEEDS_RETAKE",
+          "unverified": null,
+          "urgency": null,
+          "values": [ ],
+          "viewer": {
+            "bangladesh": true
+          }
+        },
+        "kind": "paper"
+      }
+    ],
+    "next_cursor": null
+  },
+  "status": 200
+}

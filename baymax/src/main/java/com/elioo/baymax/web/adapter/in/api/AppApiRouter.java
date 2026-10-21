@@ -35,6 +35,7 @@ public class AppApiRouter {
                                                              NowBannerApiHandler nowBanner,
                                                              AttentionApiHandler attention, PatientTimelineApiHandler timeline,
                                                              PreferencesApiHandler preferences,
+                                                             ThreadApiHandler thread,
                                                              AppApiGuard guard) {
         return RouterFunctions.route()
                 .GET(BASE + "/me", me::me)
@@ -46,6 +47,8 @@ public class AppApiRouter {
                 .GET(BASE + "/patients/{id}/timeline", timeline::timeline)
                 .GET(BASE + "/patients/{id}/calendar", timeline::calendar)
                 .GET(BASE + "/patients/{id}/follow-ups", timeline::followUps)
+                // plan W5-api: the চ্যাট thread, papers and the messages the provider accepted for this account (S4, S10)
+                .GET(BASE + "/patients/{id}/thread", thread::thread)
                 // the two routes that need no session (AppApiGuard.OPEN); CSRF still applies, Origin required
                 .POST(BASE + "/sign-in/request", signIn::request)
                 .POST(BASE + "/sign-in/verify", signIn::verify)

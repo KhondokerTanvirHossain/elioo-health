@@ -1,0 +1,11 @@
+{
+  "_meta": {
+    "generated_by": "baymax ThreadApiContractTest",
+    "source": "GET /app/api/patients/{id}/thread over the case first-run"
+  },
+  "body": {
+    "items": [ ],
+    "next_cursor": null
+  },
+  "status": 200
+}

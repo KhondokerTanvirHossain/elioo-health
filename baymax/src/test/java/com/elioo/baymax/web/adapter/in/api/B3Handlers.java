@@ -1,8 +1,10 @@
 package com.elioo.baymax.web.adapter.in.api;
 
+import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
 import com.elioo.baymax.web.adapter.in.ui.UiCopy;
 import com.elioo.baymax.web.application.port.in.AttentionUseCase;
 import com.elioo.baymax.web.application.port.in.NowBannerUseCase;
+import com.elioo.baymax.web.application.port.in.ThreadUseCase;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
 
 import java.time.Clock;
@@ -26,6 +28,11 @@ final class B3Handlers {
 
     static AttentionApiHandler attention() {
         return new AttentionApiHandler(mock(AttentionUseCase.class));
+    }
+
+    /** Plan W5-api's thread handler, for the same tests: they never call the thread route, tested in ThreadApiContractTest. */
+    static ThreadApiHandler thread() {
+        return new ThreadApiHandler(mock(ThreadUseCase.class), new UiCopy(), mock(DocumentStorageUseCase.class));
     }
 
     static PatientTimelineApiHandler timeline() {

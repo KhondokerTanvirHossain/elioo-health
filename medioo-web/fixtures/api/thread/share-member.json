@@ -1,0 +1,57 @@
+{
+  "_meta": {
+    "generated_by": "baymax ThreadApiContractTest",
+    "source": "GET /app/api/patients/{id}/thread over the case share-member"
+  },
+  "body": {
+    "items": [
+      {
+        "at": "2026-10-12T04:00:00Z",
+        "card": {
+          "banner": null,
+          "counts": null,
+          "date": "2026-10-12",
+          "date_is_upload_day": false,
+          "date_uncertain": false,
+          "doctor": { },
+          "document_type": "lab_report",
+          "facility": "Shapla Diagnostics",
+          "filed": true,
+          "follow_up": [ ],
+          "gate": "RELEASED",
+          "id": "9a473d16-ea5b-3c6b-820d-b700791680a9",
+          "medicines": [ ],
+          "owner": false,
+          "page_count": 1,
+          "pages": [
+            {
+              "n": 1,
+              "src": "/app/documents/9a473d16-ea5b-3c6b-820d-b700791680a9/page/1"
+            }
+          ],
+          "patient": {
+            "age": 64,
+            "id": "7bed7e58-a42c-3af8-9e15-eb7699d8fe91",
+            "name": "Ma",
+            "name_objective": "Ma-কে",
+            "name_possessive": "Ma-র"
+          },
+          "printed_date": "2026-10-12",
+          "reasons": [ ],
+          "received_at": "2026-10-12T04:00:00Z",
+          "status": "DONE",
+          "unverified": null,
+          "urgency": "routine",
+          "values": [ ],
+          "viewer": {
+            "bangladesh": true
+          },
+          "wording": "Ma's report has been read. This message went to the owner's phone only."
+        },
+        "kind": "paper"
+      }
+    ],
+    "next_cursor": null
+  },
+  "status": 200
+}

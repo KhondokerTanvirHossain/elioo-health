@@ -71,6 +71,8 @@ class AppApiLogSafetyTest {
     /** Plan B6: a medicine as written and a value's printed name, which the health reads return and must never log. */
     private static final String MEDICINE = "Zorvalex-7731";
     private static final String MARKER = "Kalium-8843";
+    /** Plan W5-api: a delivered message's body as sent, which the thread returns and must never log. */
+    private static final String MESSAGE_BODY = "Thread-message-5521 " + NAME;
     private static final String OWNER = "Tanvir";
     /** The other family's number and owner: their requests are the 404 branch of every route. */
     private static final String OTHER_NUMBER = "+8801700000124";
@@ -117,6 +119,8 @@ class AppApiLogSafetyTest {
         out.add(new Needle("the share member's name", MEMBER_OWNER));
         out.add(new Needle("a medicine as written", MEDICINE));
         out.add(new Needle("a value's printed name", MARKER));
+        out.add(new Needle("a delivered message's body (plan W5-api)", MESSAGE_BODY));
+        out.add(new Needle("a delivered message's wamid (plan W5-api)", "wamid.log-safety"));
         FAMILIES.forEach((number, whose) -> {
             String digits = number.substring(1);
             String national = "0" + digits.substring(3);
@@ -300,6 +304,21 @@ class AppApiLogSafetyTest {
                         .expectBody().jsonPath("$.medicines[0].name").isEqualTo(MEDICINE);
                 c.get().uri("/app/api/patients/" + rokeya.id() + "/medicines").cookie("baymax_session", otherToken).exchange().expectStatus().isNotFound();
                 c.get().uri(b -> b.path("/app/api/patients/{id}/medicines").build(NUMBER)).cookie("baymax_session", t).exchange().expectStatus().isNotFound();
+            });
+            // plan W5-api: a message the provider accepted, whose body is the family's text and names the patient; the
+            // thread returns it, so the sweep reads lines written while it was in hand
+            AppApiContext.sql(POSTGRES, "INSERT INTO baymax.outbound_message (family_id, patient_id, document_id, kind, urgency, urgency_reasons,"
+                    + " body, gate_status, sent_at, delivery_status, provider_message_id) VALUES ('" + family.id() + "','" + rokeya.id()
+                    + "',NULL,'nudge','routine','[]','" + MESSAGE_BODY + "','released',now(),'sent','wamid.log-safety')");
+            exercise.put("GET /app/api/patients/{id}/thread", (c, t) -> {
+                c.get().uri("/app/api/patients/" + rokeya.id() + "/thread").cookie("baymax_session", t).exchange().expectStatus().isOk()
+                        .expectBody().jsonPath("$.items[?(@.kind == 'message')].body").isEqualTo(List.of(MESSAGE_BODY))
+                        .jsonPath("$.items[?(@.kind == 'paper')].card.patient.name").isNotEmpty();
+                c.get().uri("/app/api/patients/" + rokeya.id() + "/thread").cookie("baymax_session", otherToken).exchange().expectStatus().isNotFound();
+                c.get().uri(b -> b.path("/app/api/patients/{id}/thread").build(NAME)).cookie("baymax_session", t).exchange().expectStatus().isBadRequest();
+                c.get().uri(b -> b.path("/app/api/patients/" + rokeya.id() + "/thread").queryParam("cursor", NUMBER).build())
+                        .cookie("baymax_session", t).exchange().expectStatus().isBadRequest();
+                c.get().uri("/app/api/patients/" + rokeya.id() + "/thread").exchange().expectStatus().isUnauthorized();
             });
             exercise.put("GET /app/api/documents/{id}/delete-token", (c, t) -> {
                 c.get().uri("/app/api/documents/" + paper + "/delete-token").cookie("baymax_session", t).exchange().expectStatus().isOk();

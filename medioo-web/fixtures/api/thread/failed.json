@@ -1,0 +1,63 @@
+{
+  "_meta": {
+    "generated_by": "baymax ThreadApiContractTest",
+    "source": "GET /app/api/patients/{id}/thread over the case failed"
+  },
+  "body": {
+    "items": [
+      {
+        "at": "2026-10-19T04:05:00Z",
+        "body": "We could not finish reading Ma's paper. Nothing was lost; please send it again.",
+        "document_id": "779e693e-ca29-3a3c-95ce-f57a097f7d8c",
+        "kind": "message",
+        "message_kind": "failure"
+      },
+      {
+        "at": "2026-10-19T04:00:00Z",
+        "card": {
+          "banner": null,
+          "counts": null,
+          "date": "2026-10-19",
+          "date_is_upload_day": true,
+          "date_uncertain": false,
+          "doctor": { },
+          "document_type": null,
+          "facility": null,
+          "filed": false,
+          "follow_up": [ ],
+          "gate": "NONE",
+          "id": "779e693e-ca29-3a3c-95ce-f57a097f7d8c",
+          "medicines": [ ],
+          "owner": true,
+          "page_count": 1,
+          "pages": [
+            {
+              "n": 1,
+              "src": "/app/documents/779e693e-ca29-3a3c-95ce-f57a097f7d8c/page/1"
+            }
+          ],
+          "patient": {
+            "age": 64,
+            "id": "1b9675c6-e840-37c9-921d-81d6dccbe39c",
+            "name": "Ma",
+            "name_objective": "Ma-কে",
+            "name_possessive": "Ma-র"
+          },
+          "printed_date": null,
+          "reasons": [ ],
+          "received_at": "2026-10-19T04:00:00Z",
+          "status": "FAILED",
+          "unverified": null,
+          "urgency": null,
+          "values": [ ],
+          "viewer": {
+            "bangladesh": true
+          }
+        },
+        "kind": "paper"
+      }
+    ],
+    "next_cursor": null
+  },
+  "status": 200
+}

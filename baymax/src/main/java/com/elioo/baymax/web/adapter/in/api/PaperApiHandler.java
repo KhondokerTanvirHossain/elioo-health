@@ -11,6 +11,7 @@ import com.elioo.baymax.web.adapter.in.ui.DocumentPages;
 import com.elioo.baymax.web.adapter.in.ui.Lang;
 import com.elioo.baymax.web.adapter.in.ui.UiCopy;
 import com.elioo.baymax.web.application.port.in.ResultUseCase;
+import com.elioo.baymax.web.domain.ReadingView;
 import com.elioo.baymax.web.domain.ResultView;
 import com.elioo.baymax.web.domain.WebSession;
 import lombok.RequiredArgsConstructor;
@@ -52,12 +53,28 @@ public class PaperApiHandler {
                         : results.reading(session.familyId(), documentId).flatMap(r -> inFlight(Document.Status.valueOf(r.document().status()))
                                 ? Mono.just(PaperJson.reading(r))
                                 : finished(session, documentId)))
-                .flatMap(body -> {
-                    @SuppressWarnings("unchecked")
-                    String name = (String) ((Map<String, Object>) body.get("patient")).get("name");
-                    return ServerResponse.ok().contentType(MediaType.APPLICATION_JSON)
-                            .bodyValue(PaperJson.withNames(body, copy.poss(lang, name), copy.obj(lang, name)));
-                });
+                .flatMap(body -> ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValue(named(body, lang, copy)));
+    }
+
+    /**
+     * Plan W5-api: one paper's body from a view already read ({@code ResultUseCase.card}: a {@link ResultView} or a
+     * {@link ReadingView}), built exactly as this route builds it — the same JSON, the same stored crop sizes, the same
+     * name forms — so the চ্যাট thread's card is this route's body and nothing else. Reads no view and records none.
+     */
+    static Mono<Map<String, Object>> body(Object view, Lang lang, UiCopy copy, DocumentStorageUseCase storage) {
+        Mono<Map<String, Object>> body = switch (view) {
+            case ResultView r -> finishedBody(r, copy, storage);
+            case ReadingView r -> Mono.just(PaperJson.reading(r));
+            default -> Mono.error(new IllegalStateException("not a paper view: " + view.getClass().getSimpleName()));
+        };
+        return body.map(b -> named(b, lang, copy));
+    }
+
+    /** The patient's name forms in the viewer's language ({@link UiCopy#poss}, {@link UiCopy#obj}), added to a built body. */
+    static Map<String, Object> named(Map<String, Object> body, Lang lang, UiCopy copy) {
+        @SuppressWarnings("unchecked")
+        String name = (String) ((Map<String, Object>) body.get("patient")).get("name");
+        return PaperJson.withNames(body, copy.poss(lang, name), copy.obj(lang, name));
     }
 
     /**
@@ -69,11 +86,15 @@ public class PaperApiHandler {
      * after the view was recorded.
      */
     private Mono<Map<String, Object>> finished(WebSession session, UUID documentId) {
-        return results.result(session.familyId(), documentId)
-                .flatMap(r -> sizes(r, documentId).map(sizes -> PaperJson.of(r, code -> DocumentPages.retakeReasonKey(copy, code), sizes)));
+        return results.result(session.familyId(), documentId).flatMap(r -> finishedBody(r, copy, storage));
     }
 
-    private Mono<Map<String, ImageDimensions>> sizes(ResultView r, UUID documentId) {
+    private static Mono<Map<String, Object>> finishedBody(ResultView r, UiCopy copy, DocumentStorageUseCase storage) {
+        UUID documentId = UUID.fromString(r.document().documentId());
+        return sizes(r, documentId, storage).map(sizes -> PaperJson.of(r, code -> DocumentPages.retakeReasonKey(copy, code), sizes));
+    }
+
+    private static Mono<Map<String, ImageDimensions>> sizes(ResultView r, UUID documentId, DocumentStorageUseCase storage) {
         if (!r.done()) {
             return Mono.just(Map.of());
         }

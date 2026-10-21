@@ -559,6 +559,45 @@ class NowBannerApiTest {
         });
     }
 
+    /**
+     * Master Review Focus 3, the Java half (plan W5-api): দেখেছি tapped after the session ended writes nothing. A PUT with
+     * an expired session and one with a signed-out (revoked) token each answer 401 {@code UNAUTHENTICATED}, and the
+     * {@code now_ack} count is unchanged; then the same seen set from a live session writes its row, so the zero above was
+     * not a seen set that could never have been stored.
+     */
+    @Test
+    void anAckWithoutALiveSessionIs401AndWritesNoAck() {
+        runner().run(context -> {
+            WebTestClient client = WebTestClient.bindToApplicationContext(context).build();
+            Holder a = owner(context);
+            UUID paper = NowPapers.nowPaper(context, POSTGRES, a.ma());
+            JsonNode seen = banner(client, a.session()).get("seen");
+            assertThat(seen).as("a real seen set naming the NOW paper").hasSize(1);
+            com.elioo.baymax.web.application.port.out.SessionStorePort store =
+                    context.getBean(com.elioo.baymax.web.application.port.out.SessionStorePort.class);
+            Instant now = Instant.now();
+            String expired = "tok-expired-" + UUID.randomUUID();
+            store.create(com.elioo.baymax.web.application.service.PhoneHasher.sha256(expired), a.family().id(),
+                    now.minus(Duration.ofDays(2)), now.minus(Duration.ofHours(1))).block();
+            String signedOut = "tok-signed-out-" + UUID.randomUUID();
+            store.create(com.elioo.baymax.web.application.service.PhoneHasher.sha256(signedOut), a.family().id(),
+                    now, now.plus(Duration.ofDays(1))).block();
+            store.revoke(com.elioo.baymax.web.application.service.PhoneHasher.sha256(signedOut), now).block();
+            String acks = "SELECT count(*) FROM baymax.now_ack WHERE document_id = '" + paper + "'";
+            long before = count(acks);
+
+            for (Map.Entry<String, String> dead : Map.of("an expired session", expired, "a signed-out token", signedOut).entrySet()) {
+                EntityExchangeResult<byte[]> r = put(client, dead.getValue(), Map.of("seen", seen)).expectBody().returnResult();
+                assertThat(r.getStatus().value()).as("PUT /app/api/now-banner/ack with " + dead.getKey()).isEqualTo(401);
+                assertThat(body(r.getResponseBody())).as("its body").isEqualTo(body("{\"reason\":\"UNAUTHENTICATED\"}".getBytes()));
+                assertThat(count(acks)).as("now_ack rows for the paper after the ack with " + dead.getKey()).isEqualTo(before);
+            }
+            assertThat(before).isZero();
+            ack(client, a.session(), seen);
+            assertThat(count(acks)).as("the same seen set from a live session").isEqualTo(1);
+        });
+    }
+
     @Test
     void anotherFamilysDocumentInSeenIsIgnored() {
         runner().run(context -> {
