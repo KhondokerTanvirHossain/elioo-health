@@ -167,7 +167,7 @@
     "phone.html:light:--bnf: \"Noto Sans Bengali\", -apple-system, BlinkMacSystemFont, sans-serif": "font-bn: self-hosted Noto Sans Bengali, then self-hosted Noto Sans for Latin",
     "desktop.html:light:--bnf: \"Noto Sans Bengali\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif": "font-bn, as phone.html:light:--bnf",
     "phone.html:light:--mono: \"Noto Sans Mono\", ui-monospace, Menlo, monospace": "font-mono: Noto Sans Mono is not self-hosted, so it is not named",
-    "desktop.html:dark:--recv: #2c2c2f": "recv #26252a, the phone's dark value, in both layouts: the NOW band at the top of a paper card sits on recv, and #d93229 on #2c2c2f is 2.94:1, under the 3:1 a fill needs against its surface; on #26252a it is 3.26:1 (Q1)",
+    "desktop.html:dark:--recv: #2c2c2f": "recv #26252a, the phone's dark value, in both layouts: the NOW band at the top of a paper card sits on recv, and #d93229 on #2c2c2f is 2.94:1, under the 3:1 a fill needs against its surface; on #26252a it is 3.22:1 (Q1)",
     "desktop.html:light:--sw: 0px": "sidebar-w stays 256px; the prototype's collapse below 1200 px is the shell layout's job (W3), not a second value of the token",
     "desktop.html:light:--cw: 360px": "conversation-w stays 400px; the prototype's narrower column below 1200 px is the shell layout's job (W3)",
     "color-mix(in srgb, var(--tint) 60%, transparent)": "focus (= tint, the phone prototype's ring) for desktop.html's :focus-visible outline: at 60% the ring is 2.5:1 on white, under WCAG 1.4.11's 3:1 (Q1). The same expression is the first frame of the desktop upload pulse, which the upload sheet (W7) draws with focus or tint-soft",
