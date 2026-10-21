@@ -34,6 +34,7 @@ public class AppApiRouter {
                                                              HealthApiHandler health,
                                                              NowBannerApiHandler nowBanner,
                                                              AttentionApiHandler attention, PatientTimelineApiHandler timeline,
+                                                             PreferencesApiHandler preferences,
                                                              AppApiGuard guard) {
         return RouterFunctions.route()
                 .GET(BASE + "/me", me::me)
@@ -60,6 +61,8 @@ public class AppApiRouter {
                 .PUT(BASE + "/patients/{id}/flags", family::setFlags)
                 .PUT(BASE + "/patients/{id}/reminders", family::patientReminders)
                 .PUT(BASE + "/language", family::language)
+                // the theme (plan W10-api, S12): a cookie under /app, nothing stored
+                .PUT(BASE + "/preferences", preferences::preferences)
                 .GET(BASE + "/patients/{id}/labs", health::labs)
                 .GET(BASE + "/patients/{id}/medicines", health::medicines)
                 .route(RequestPredicates.path(BASE + "/**"), request -> ApiReason.NOT_FOUND.respond())

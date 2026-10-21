@@ -54,3 +54,4 @@ PUT /app/api/language
 PUT /app/api/now-banner/ack
 PUT /app/api/patients/{id}/flags
 PUT /app/api/patients/{id}/reminders
+PUT /app/api/preferences
