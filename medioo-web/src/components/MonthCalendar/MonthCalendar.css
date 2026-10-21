@@ -1,0 +1,110 @@
+/* A month of papers and doctor's dates (MonthCalendar.tsx), the papers-tab calendar of the phone prototype: seven equal
+   columns Saturday → Friday, the day number and its marks under it. Every status is a shape and, where it matters, a
+   word: a paper is a dot, a doctor's date a ring, a NOW paper the critical chip's double arrow with its word. The NOW mark
+   is never red here (the NOW tokens belong to the NOW components, built/now-usage.built.test.ts); its shape and word say
+   it. The caption (the patient's name and the month) wraps anywhere, so a long unbroken name never widens the grid.
+   Raw px are the prototype's optical values with no token (the 2 px cell gutter, the 44 px row, the 10 px dot). */
+.month-calendar {
+  max-width: 560px;
+  font-family: var(--font-bn);
+  color: var(--label);
+}
+.month-calendar__grid {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+.month-calendar__caption {
+  padding-bottom: var(--space-2);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+.month-calendar__wd {
+  padding: 6px 0;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--label2);
+  overflow-wrap: anywhere;
+}
+.month-calendar__wd--fri {
+  font-weight: 700;
+  color: var(--label);
+}
+.month-calendar__day,
+.month-calendar__blank {
+  height: 44px;
+  padding: var(--space-1) 2px;
+  vertical-align: top;
+  text-align: center;
+}
+.month-calendar__day {
+  font-size: var(--text-md);
+  overflow-wrap: anywhere;
+}
+.month-calendar__day--fri .month-calendar__n {
+  font-weight: 700;
+}
+.month-calendar__n {
+  display: block;
+  line-height: 1.4;
+}
+.month-calendar__marks {
+  display: flex;
+  justify-content: center;
+  gap: 2px;
+  min-height: 10px;
+}
+.month-calendar__mark {
+  flex: none;
+  width: 10px;
+  height: 10px;
+}
+.month-calendar__mark--dot {
+  fill: var(--tint);
+  stroke: none;
+}
+.month-calendar__mark--ring {
+  fill: none;
+  stroke: var(--label);
+  stroke-width: 3;
+}
+.month-calendar__mark--crit {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: var(--label);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.month-calendar__alert {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.month-calendar__alert-word {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.month-calendar__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+  color: var(--label2);
+}
+.month-calendar__legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

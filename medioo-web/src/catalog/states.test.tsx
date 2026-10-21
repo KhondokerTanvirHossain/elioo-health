@@ -49,17 +49,32 @@ const paperFixtureNames = () =>
 
 const W2D_A = (): string[] => [...paperFixtureNames().map((name) => `VerdictCard/${name}`), "Toast/default", "Sheet/open"];
 
+/** Plan W2e-b: the calendar over B3's generated months, the trend chart over B6's generated series. */
+const W2E_B: string[] = [
+  "MonthCalendar/empty-month",
+  "MonthCalendar/busy-month",
+  "MonthCalendar/long-name",
+  "MonthCalendar/long-unbroken",
+  "TrendChart/one-point",
+  "TrendChart/rising",
+  "TrendChart/with-unknown",
+];
+
 const ids = () => STATES.map(({ component, state }) => `${component}/${state}`);
 
 describe("catalog states", () => {
   it("theRegistryHoldsExactlyTheShippedStates", () => {
-    expect(ids()).toEqual([...SHIPPED, ...W2D_A()]);
+    expect(ids()).toEqual([...SHIPPED, ...W2D_A(), ...W2E_B]);
   });
 
-  it("onlyTheHiddenBannerIsEmpty", () => {
+  it("onlyTheListedStatesAreEmpty", () => {
     // catalog.spec.ts holds an empty state to painting nothing and excuses it from rendering something, so marking any
-    // other state empty would hide a state that renders nothing.
-    expect(STATES.filter((s) => s.empty).map(({ component, state }) => `${component}/${state}`)).toEqual(["NowBanner/hidden"]);
+    // other state empty would hide a state that renders nothing. The hidden banner (Java's show: false) and one lab
+    // reading (no chart: it is a sentence on the health screen, W9) are the only states whose rendering is nothing.
+    expect(STATES.filter((s) => s.empty).map(({ component, state }) => `${component}/${state}`)).toEqual([
+      "NowBanner/hidden",
+      "TrendChart/one-point",
+    ]);
   });
 
   it("everyPaperFixtureHasAVerdictCardState", () => {

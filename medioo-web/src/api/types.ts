@@ -208,3 +208,57 @@ export type MePatient = {
   name_objective: string;
   urgent: boolean;
 };
+
+// ---- GET /app/api/patients/{id}/calendar (B3) and /labs (B6), plan W2e-b ----------------------------------------------
+//
+// Strings Java owns the vocabulary of here (a chip, a kind, a side) stay `string`: the components map them through one
+// function each and fail closed on a value they do not know. types.test.ts compares every object of these fixtures key
+// for key with the lists there, so a field Java adds, drops or renames fails at test time too.
+
+/** An image the API names: a crop or a page, served by Java (ImageRefs). */
+export type ImageJson = { src: string };
+
+/** A paper filed on a calendar day (B3, TimelineJson.calendar): `chip` is the stored urgency ("now", …) or null. */
+export type CalendarPaperJson = { document_id: string; document_type: string; chip: string | null };
+
+/** A doctor's date due on a calendar day, the instruction as written on the prescription and its crop. */
+export type CalendarFollowUpJson = { document_id: string; instruction: string; crop: ImageJson };
+
+/** One day of `GET /app/api/patients/{id}/calendar`: only the days that hold a paper or a follow-up are sent. */
+export type CalendarDayJson = { date: string; papers: CalendarPaperJson[]; follow_ups: CalendarFollowUpJson[] };
+
+/** `GET /app/api/patients/{id}/calendar?month=YYYY-MM` (B3). */
+export type CalendarJson = { month: string; days: CalendarDayJson[] };
+
+/**
+ * One reading of a lab series (B6, HealthJson): the value as printed, the paper's filing day, the kind and side
+ * PaperDisplay.kindOf drew it with (`chipKindOf` turns them into a chip), the chip key, and the value's own crop.
+ */
+export type TrendPointJson = {
+  document_id: string;
+  observation_id: string;
+  value: string;
+  date: string;
+  date_is_upload_day: boolean;
+  date_uncertain: boolean;
+  kind: string;
+  side: string | null;
+  chip_key: string;
+  crop: ImageJson;
+};
+
+/** One marker's readings across papers, newest first, under the newest point's name and unit. */
+export type LabSeriesJson = { canonical_name: string; name: string; unit: string | null; points: TrendPointJson[] };
+
+/** A blood-pressure reading: the two halves read off one OCR line, each its own point and crop. */
+export type BpPointJson = {
+  document_id: string;
+  date: string;
+  date_is_upload_day: boolean;
+  date_uncertain: boolean;
+  systolic: TrendPointJson;
+  diastolic: TrendPointJson;
+};
+
+/** `GET /app/api/patients/{id}/labs` (B6). */
+export type LabsJson = { series: LabSeriesJson[]; bp: { points: BpPointJson[] } };

@@ -20,13 +20,13 @@ const SCHEMES = ["light", "dark"] as const;
 
 // The registry's floor, derived as states.test.tsx derives the list: W2c's 13 states (Wordmark 1, MioAvatar 3,
 // MessageBubble 3, StatusChip 6), W2e-a's 5 (OtpInput 3, PhoneField 2), W2d-b's 6 (NowBanner), then W2d-a's one
-// VerdictCard state per paper fixture (every 200 body B2's contract test wrote), Toast/default and Sheet/open. Later
-// PRs raise it.
+// VerdictCard state per paper fixture (every 200 body B2's contract test wrote), Toast/default and Sheet/open, and
+// W2e-b's 7 (MonthCalendar 4, TrendChart 3). Later PRs raise it.
 const documentsDir = join(__dirname, "..", "fixtures", "api", "documents");
 const PAPER_FIXTURES = readdirSync(documentsDir)
   .filter((f) => f.endsWith(".json"))
   .filter((f) => (JSON.parse(readFileSync(join(documentsDir, f), "utf8")) as { status: number }).status === 200);
-const MIN_STATES = 13 + 5 + 6 + PAPER_FIXTURES.length + 2;
+const MIN_STATES = 13 + 5 + 6 + PAPER_FIXTURES.length + 2 + 7;
 
 /** Every open modal dialog closed (the Sheet/open states), so a whole-page check is not judging a page made inert. */
 async function closeSheets(page: Page) {
@@ -88,12 +88,19 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
           sections.filter((s) => !s.empty && s.box === 0).map((s) => `${s.state} (${s.lang})`),
           "states that render nothing",
         ).toEqual([]);
-        // A state marked empty (the banner Java says not to show) paints no element at all, in either language.
+        // A state marked empty (the banner Java says not to show, one reading that is no chart) paints no element at all,
+        // in either language.
         expect(
           sections.filter((s) => s.empty && s.elements > 0).map((s) => `${s.state} (${s.lang}): ${s.elements} elements`),
           "empty states that render something",
         ).toEqual([]);
-        expect(sections.filter((s) => s.empty).map((s) => s.state)).toEqual(["NowBanner/hidden", "NowBanner/hidden"]);
+        // The exact list is states.test.tsx's (onlyTheListedStatesAreEmpty); this proves those states were on the page.
+        expect(sections.filter((s) => s.empty).map((s) => s.state)).toEqual([
+          "NowBanner/hidden",
+          "NowBanner/hidden",
+          "TrendChart/one-point",
+          "TrendChart/one-point",
+        ]);
         // The registry's exact list is src/catalog/states.test.tsx's: this page's own count above cannot see a state
         // dropped from the registry, only one the page failed to render.
       });
@@ -208,6 +215,9 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
         expect(result.measured).toContain("MessageBubble/long-unbroken");
         expect(result.measured).toContain("NowBanner/long-name");
         expect(result.measured).toContain("NowBanner/long-unbroken");
+        // W2e-b: the calendar's caption is the one place it names a patient, long and long without a space.
+        expect(result.measured).toContain("MonthCalendar/long-name");
+        expect(result.measured).toContain("MonthCalendar/long-unbroken");
       });
 
       test("onlyNowComponentsPaintTheNowRed", async ({ page }) => {

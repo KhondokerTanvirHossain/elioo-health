@@ -20,7 +20,7 @@ export const CHIP_KEY: Record<ChipKind, CopyKey> = {
   unk: "value.chip.unknown",
 };
 
-type Shape = "circle" | "arrow-up" | "arrow-down" | "double-arrow-up" | "double-arrow-down" | "question";
+export type Shape = "circle" | "arrow-up" | "arrow-down" | "double-arrow-up" | "double-arrow-down" | "question";
 
 /** The shape, so a status is never colour alone (legibility floor): six kinds, six shapes. */
 export const CHIP_SHAPE: Record<ChipKind, Shape> = {
@@ -43,6 +43,29 @@ const DRAWN: Record<Shape, ReactNode> = {
 };
 
 /**
+ * A chip's shape on its own, for a mark whose status is said elsewhere (MonthCalendar's NOW day, TrendChart's points):
+ * the same drawing as the chip, decorative, painted by the caller's class. `x`, `y` and `size` place it inside another
+ * SVG. No colour is named here, and the caller's stylesheet decides it (only the NOW components may paint it red).
+ */
+export function ChipShape({ shape, className, x, y, size }: { shape: Shape; className: string; x?: number; y?: number; size?: number }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      focusable="false"
+      data-shape={shape}
+      x={x}
+      y={y}
+      width={size}
+      height={size}
+    >
+      {DRAWN[shape]}
+    </svg>
+  );
+}
+
+/**
  * The one place an API value becomes a chip kind: a paper's value passes its `display_kind` and `side`, a lab point
  * its `kind` and `side`. Critical (red) exactly when the kind is critical AND a side is set; a sideless critical or
  * outside has no direction to show and is unknown, as Java's PaperDisplay.kindOf makes it. Matching is exact and fails
@@ -62,9 +85,7 @@ export function StatusChip({ kind, lang }: { kind: ChipKind; lang: Lang }) {
   const shape = CHIP_SHAPE[kind];
   return (
     <span className={`status-chip status-chip--${kind}`}>
-      <svg className="status-chip__shape" viewBox="0 0 24 24" aria-hidden="true" focusable="false" data-shape={shape}>
-        {DRAWN[shape]}
-      </svg>
+      <ChipShape shape={shape} className="status-chip__shape" />
       <span className="status-chip__word">{t(lang, CHIP_KEY[kind])}</span>
     </span>
   );

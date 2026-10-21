@@ -133,6 +133,7 @@ class HealthApiContractTest {
         cases.put("labs-some", () -> Case.labs(labsSome()));
         cases.put("labs-none", () -> Case.labs(List.of()));
         cases.put("bp", () -> Case.labs(bpRows()));
+        cases.put("labs-with-unknown", () -> Case.labs(labsWithUnknown()));
         cases.put("medicines-latest", () -> Case.medicines(new LatestPrescription(RX, LocalDate.parse("2026-10-12"), false, true,
                 List.of(medicine("Tab. Demoprol", "50 mg", "1+0+1", "after food", "30 days", 1),
                         medicine("Tab. Fictazide", "25 mg", null, null, null, 2)), Optional.empty())));
@@ -172,6 +173,21 @@ class HealthApiContractTest {
         undated.put("date_is_fallback", true);               // nothing printed: the Dhaka upload day, never uncertain
         rows.add(undated);
         return rows;
+    }
+
+    /**
+     * One series of three papers where the oldest printed no range (plan W2e-b, TrendChart's {@code with-unknown} state):
+     * an inside, an outside-high and an unknown point of the same marker, newest first as the read port serves them. No
+     * other case holds a series of two or more points with an unknown among them, and the chart draws nothing for one.
+     */
+    static List<Map<String, Object>> labsWithUnknown() {
+        Map<String, Object> oct = row(LAB_OCT, 51, "2026-10-12", "HbA1c", "hba1c", "5.4", "%", "4.0", "5.6");
+        oct.put("verdict", "inside");
+        Map<String, Object> aug = row(LAB_AUG, 52, "2026-08-03", "HbA1c", "hba1c", "5.8", "%", "4.0", "5.6");
+        aug.put("verdict", "outside");
+        aug.put("verdict_side", "high");
+        Map<String, Object> jun = row(LAB_UNDATED, 53, "2026-06-20", "HbA1c", "hba1c", "6.1", "%", null, null);
+        return List.of(oct, aug, jun);                       // no printed range and no verdict: drawn unknown
     }
 
     /** One BP : 130 / 80 line read through extraction: two values, two crops, one line. */
