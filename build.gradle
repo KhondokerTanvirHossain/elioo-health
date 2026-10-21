@@ -42,6 +42,14 @@ subprojects {
         }
     }
 
+    // Spring Framework 6.2.19 under Boot 3.4.2. 6.2.2 (Boot 3.4.2's) has spring-framework#34178: MultipartParser never
+    // re-requests when demand arrives after a part was written to disk, so a press of several photos over 256 KB each
+    // can hang forever with no error. Through a real server 19 of 40 presses of 2-3 such files hung on 6.2.2, 0 of 40 on
+    // 6.2.19. Set as a project property, not as a bomProperty on the import below: medscribe-ai applies the Boot plugin,
+    // which imports spring-boot-dependencies a second time and honours only the project property, so a bomProperty
+    // here left the bootJar on 6.2.2 (ShippedSpringFrameworkVersionTest guards the deployable's classpath).
+    ext['spring-framework.version'] = '6.2.19'
+
     // Common dependency management (BOM)
     dependencyManagement {
         imports {
