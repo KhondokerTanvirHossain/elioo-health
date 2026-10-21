@@ -53,7 +53,7 @@ class PatientTimelineApiContractTest {
     static final Path FIXTURES = Path.of("../medioo-web/fixtures/api");
     static final Path WRITTEN = Path.of("build/web-contract");
     static final List<String> TIMELINE = List.of("first-page", "last-page", "empty");
-    static final List<String> CALENDAR = List.of("busy", "empty");
+    static final List<String> CALENDAR = List.of("busy", "empty", "crowded");
     static final List<String> FOLLOW_UPS = List.of("some", "none");
     private static final AtomicInteger NUMBERS = new AtomicInteger(800);
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -348,7 +348,11 @@ class PatientTimelineApiContractTest {
         FixedPapers.runnerAt(POSTGRES, NOW).run(context -> {
             WebTestClient client = WebTestClient.bindToApplicationContext(context).build();
             String k = "fixture-calendar-" + name;
-            Seeded s = "empty".equals(name) ? family(context, k, NOW) : seedBusyMonth(context, k);
+            Seeded s = switch (name) {
+                case "empty" -> family(context, k, NOW);
+                case "crowded" -> seedCrowdedMonth(context, k);
+                default -> seedBusyMonth(context, k);
+            };
             AttentionApiContractTest.write(PatientTimelineApiContractTest.class, FIXTURES.resolve("calendar"), WRITTEN.resolve("calendar"),
                     "calendar", name, "GET /app/api/patients/{id}/calendar?month=2026-10 over the case " + name,
                     get(client, s.session(), "/app/api/patients/" + s.patient().id() + "/calendar?month=2026-10"));
@@ -417,6 +421,27 @@ class PatientTimelineApiContractTest {
         FixedPapers.paper(POSTGRES, FixedPapers.id(k, "nov1"), s.patient(), "lab_report", "DONE", "2026-11-01",
                 Instant.parse("2026-10-20T05:00:00Z"), "routine");
         FixedPapers.followUp(POSTGRES, FixedPapers.id(k, "follow"), s.patient(), rx, "Bring the sugar chart", "2026-10-15");
+        return s;
+    }
+
+    /**
+     * October 2026 with days that hold more than one thing (plan W2e-b, MonthCalendar): on the 8th a NOW lab report, a
+     * routine prescription and a doctor's date set by it (two papers and a follow-up on one day); on the 14th a THIS_WEEK
+     * lab report alone; on the 22nd a THIS_WEEK and a NOW lab report together, where the day's mark is the higher.
+     */
+    static Seeded seedCrowdedMonth(ApplicationContext context, String k) throws Exception {
+        Seeded s = family(context, k, NOW);
+        FixedPapers.paper(POSTGRES, FixedPapers.id(k, "oct8-lab"), s.patient(), "lab_report", "DONE", "2026-10-08",
+                Instant.parse("2026-10-08T04:00:00Z"), "now");
+        UUID rx = FixedPapers.paper(POSTGRES, FixedPapers.id(k, "oct8-rx"), s.patient(), "prescription", "DONE", "2026-10-08",
+                Instant.parse("2026-10-08T05:00:00Z"), "routine");
+        FixedPapers.followUp(POSTGRES, FixedPapers.id(k, "oct8-follow"), s.patient(), rx, "Fasting sugar on the same day", "2026-10-08");
+        FixedPapers.paper(POSTGRES, FixedPapers.id(k, "oct14"), s.patient(), "lab_report", "DONE", "2026-10-14",
+                Instant.parse("2026-10-14T04:00:00Z"), "this_week");
+        FixedPapers.paper(POSTGRES, FixedPapers.id(k, "oct22-week"), s.patient(), "lab_report", "DONE", "2026-10-22",
+                Instant.parse("2026-10-20T04:00:00Z"), "this_week");
+        FixedPapers.paper(POSTGRES, FixedPapers.id(k, "oct22-now"), s.patient(), "lab_report", "DONE", "2026-10-22",
+                Instant.parse("2026-10-20T05:00:00Z"), "now");
         return s;
     }
 

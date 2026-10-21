@@ -1,14 +1,16 @@
 import type { JSX } from "react";
-import type { Json, NowBannerJson, PaperJson } from "@/api/types";
-import { banglaDigits, t, type Lang } from "@/copy";
+import type { CalendarJson, Json, LabSeriesJson, LabsJson, NowBannerJson, PaperJson } from "@/api/types";
+import { banglaDigits, formatMonthYear, t, type Lang } from "@/copy";
 import { MessageBubble } from "@/components/MessageBubble/MessageBubble";
 import { MioAvatar } from "@/components/MioAvatar/MioAvatar";
+import { MonthCalendar } from "@/components/MonthCalendar/MonthCalendar";
 import { OtpInput } from "@/components/OtpInput/OtpInput";
 import { PhoneField } from "@/components/PhoneField/PhoneField";
 import { NowBanner, type NowBannerPatient } from "@/components/safety/NowBanner/NowBanner";
 import { Sheet } from "@/components/Sheet/Sheet";
 import { CHIP_KINDS, StatusChip } from "@/components/StatusChip/StatusChip";
 import { Toast } from "@/components/Toast/Toast";
+import { TrendChart } from "@/components/TrendChart/TrendChart";
 import { VerdictCard } from "@/components/safety/VerdictCard/VerdictCard";
 import { Wordmark } from "@/components/Wordmark/Wordmark";
 // B3's generated GET /app/api/now-banner bodies (baymax NowBannerApiContractTest): each state reads one as Java wrote it.
@@ -25,13 +27,20 @@ import retakeThird from "../../fixtures/api/documents/retake-third.json";
 import routineReleased from "../../fixtures/api/documents/routine-released.json";
 import thisWeekPending from "../../fixtures/api/documents/this-week-pending.json";
 import unassessed from "../../fixtures/api/documents/unassessed.json";
+// B3's and B6's generated calendar and labs bodies (plan W2e-b): a state shows what the API sends, never a hand fixture.
+import busyCalendar from "../../fixtures/api/calendar/busy.json";
+import crowdedCalendar from "../../fixtures/api/calendar/crowded.json";
+import emptyCalendar from "../../fixtures/api/calendar/empty.json";
+import labsSome from "../../fixtures/api/health/labs-some.json";
+import labsWithUnknown from "../../fixtures/api/health/labs-with-unknown.json";
 // Fictional names, written by baymax CatalogFixturesExportTest so no Bangla is typed here (Global Constraints).
 import catalogNames from "../../fixtures/catalog/names.json";
 
 /**
  * One state of one component, as the catalog renders it in each language. `empty` marks a state whose point is that
- * the component renders nothing (NowBanner when Java says `show: false`): catalog.spec.ts holds it to painting no
- * element at all, and holds every other state to rendering something.
+ * the component renders nothing (NowBanner when Java says `show: false`; TrendChart over one reading, which is a
+ * sentence on the health screen, not a chart): catalog.spec.ts holds it to painting no element at all, and holds every
+ * other state to rendering something. states.test.tsx holds the exact list of the states allowed to be empty.
  */
 export type CatalogState = { component: string; state: string; render: (lang: Lang) => JSX.Element; empty?: true };
 
@@ -53,6 +62,21 @@ export const PAPER_FIXTURES: Record<string, Json<PaperJson>> = {
   unassessed: unassessed.body,
 };
 const nameFor = (lang: Lang) => (lang === "bn" ? names.short : names.english);
+
+/** The calendar's caption as the screen passes it: the patient's name and the month (the only name in the component). */
+const monthCaption = (name: string, lang: Lang, month: string) => `${name} · ${formatMonthYear(lang, `${month}-01`)}`;
+
+/** One series of a generated labs body, chosen by its canonical name. */
+function seriesOf(labs: LabsJson, canonical: string): LabSeriesJson {
+  const series = labs.series.find((s) => s.canonical_name === canonical);
+  if (!series) throw new Error(`catalog: no series ${canonical} in the labs fixture`);
+  return series;
+}
+
+/** A month of the calendar from a generated body, captioned with `name` and the month. */
+const calendar = (body: CalendarJson, name: string, lang: Lang) => (
+  <MonthCalendar month={body.month} days={body.days} caption={monthCaption(name, lang, body.month)} lang={lang} />
+);
 
 /**
  * The patients GET /app/api/me would list beside a banner, reduced to the id and the name the banner reads: one per
@@ -186,5 +210,34 @@ export const STATES: CatalogState[] = [
         </ul>
       </Sheet>
     ),
+  },
+
+  { component: "MonthCalendar", state: "empty-month", render: (lang) => calendar(emptyCalendar.body, nameFor(lang), lang) },
+  { component: "MonthCalendar", state: "busy-month", render: (lang) => calendar(busyCalendar.body, nameFor(lang), lang) },
+  // The caption is the one place the calendar names a patient: a long name, and one with no space to wrap at, must
+  // wrap inside the grid's width, never widen it (plan Review Focus 3).
+  { component: "MonthCalendar", state: "long-name", render: (lang) => calendar(busyCalendar.body, names.long, lang) },
+  { component: "MonthCalendar", state: "long-unbroken", render: (lang) => calendar(busyCalendar.body, names.long_unbroken, lang) },
+  // Two papers and a doctor's date on one day, a this-week day alone, and a day where NOW outranks this week.
+  { component: "MonthCalendar", state: "crowded-month", render: (lang) => calendar(crowdedCalendar.body, nameFor(lang), lang) },
+
+  // One reading is no chart (it is a sentence on the health screen, W9): this state renders nothing, on purpose.
+  {
+    component: "TrendChart",
+    state: "one-point",
+    render: (lang) => <TrendChart series={seriesOf(labsSome.body, "potassium")} lang={lang} />,
+    empty: true,
+  },
+  { component: "TrendChart", state: "rising", render: (lang) => <TrendChart series={seriesOf(labsSome.body, "creatinine")} lang={lang} /> },
+  // Every chip kind but critical low, over two calendar years: critical high, outside low, unknown, outside high, inside.
+  {
+    component: "TrendChart",
+    state: "with-unknown",
+    render: (lang) => <TrendChart series={seriesOf(labsWithUnknown.body, "hba1c")} lang={lang} />,
+  },
+  {
+    component: "TrendChart",
+    state: "critical-low",
+    render: (lang) => <TrendChart series={seriesOf(labsWithUnknown.body, "potassium")} lang={lang} />,
   },
 ];

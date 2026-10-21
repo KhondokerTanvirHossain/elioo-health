@@ -82,6 +82,8 @@ class HealthApiContractTest {
     private static final UUID LAB_UNDATED = UUID.fromString("b6b6b6b6-0000-4000-8000-0000000000d3");
     private static final UUID RX = UUID.fromString("b6b6b6b6-0000-4000-8000-0000000000d4");
     private static final UUID RX_READING = UUID.fromString("b6b6b6b6-0000-4000-8000-0000000000d5");
+    private static final UUID LAB_MAR = UUID.fromString("b6b6b6b6-0000-4000-8000-0000000000d6");
+    private static final UUID LAB_DEC = UUID.fromString("b6b6b6b6-0000-4000-8000-0000000000d7");
 
     private final ObjectMapper json = new ObjectMapper();
     private final WebAuthUseCase auth = mock(WebAuthUseCase.class);
@@ -133,6 +135,8 @@ class HealthApiContractTest {
         cases.put("labs-some", () -> Case.labs(labsSome()));
         cases.put("labs-none", () -> Case.labs(List.of()));
         cases.put("bp", () -> Case.labs(bpRows()));
+        cases.put("labs-with-unknown", () -> Case.labs(labsWithUnknown()));
+        cases.put("labs-non-numeric", () -> Case.labs(labsNonNumeric()));
         cases.put("medicines-latest", () -> Case.medicines(new LatestPrescription(RX, LocalDate.parse("2026-10-12"), false, true,
                 List.of(medicine("Tab. Demoprol", "50 mg", "1+0+1", "after food", "30 days", 1),
                         medicine("Tab. Fictazide", "25 mg", null, null, null, 2)), Optional.empty())));
@@ -172,6 +176,57 @@ class HealthApiContractTest {
         undated.put("date_is_fallback", true);               // nothing printed: the Dhaka upload day, never uncertain
         rows.add(undated);
         return rows;
+    }
+
+    /**
+     * Every chip kind a trend can draw, over two series (plan W2e-b, TrendChart's {@code with-unknown} and
+     * {@code critical-low} states): HbA1c over five papers from December 2025 to October 2026 (critical high, outside
+     * low, unknown because the June paper printed no range, outside high, inside) and potassium over two (critical low,
+     * inside). Newest first, as the read port serves them. The HbA1c series spans two calendar years, so the chart dates
+     * every point with its year; and the critical points are where the chart must still not paint the NOW red.
+     */
+    static List<Map<String, Object>> labsWithUnknown() {
+        Map<String, Object> oct = row(LAB_OCT, 51, "2026-10-12", "HbA1c", "hba1c", "5.4", "%", "4.0", "5.6");
+        oct.put("verdict", "inside");
+        Map<String, Object> potassiumOct = row(LAB_OCT, 56, "2026-10-12", "Potassium", "potassium", "4.1", "mmol/L", "3.5", "5.1");
+        potassiumOct.put("verdict", "inside");
+        Map<String, Object> aug = row(LAB_AUG, 52, "2026-08-03", "HbA1c", "hba1c", "5.8", "%", "4.0", "5.6");
+        aug.put("verdict", "outside");
+        aug.put("verdict_side", "high");
+        Map<String, Object> potassiumAug = row(LAB_AUG, 57, "2026-08-03", "Potassium", "potassium", "2.4", "mmol/L", "3.5", "5.1");
+        potassiumAug.put("verdict", "critical");
+        potassiumAug.put("verdict_side", "low");
+        Map<String, Object> jun = row(LAB_UNDATED, 53, "2026-06-20", "HbA1c", "hba1c", "6.1", "%", null, null);
+        Map<String, Object> mar = row(LAB_MAR, 54, "2026-03-02", "HbA1c", "hba1c", "3.6", "%", "4.0", "5.6");
+        mar.put("verdict", "outside");
+        mar.put("verdict_side", "low");
+        Map<String, Object> dec = row(LAB_DEC, 55, "2025-12-01", "HbA1c", "hba1c", "9.8", "%", "4.0", "5.6");
+        dec.put("verdict", "critical");
+        dec.put("verdict_side", "high");
+        return List.of(oct, potassiumOct, aug, potassiumAug, jun, mar, dec); // jun: no printed range, no verdict: unknown
+    }
+
+    /**
+     * Two series whose newest reading is printed as a bound, not a number (plan W2e-b): creatinine over three papers whose
+     * newest is {@code >500}, critical high (two numbers would be left to draw a line that ends on the older reading), and
+     * CRP over two whose newest is {@code <0.5} (one number left, which a count of points still calls a trend). The chart
+     * cannot place either bound on an axis, so it draws neither series ({@code chartable} is false) and the health screen
+     * lists the readings as written.
+     */
+    static List<Map<String, Object>> labsNonNumeric() {
+        Map<String, Object> creatinineOct = row(LAB_OCT, 61, "2026-10-12", "S. Creatinine", "creatinine", ">500", "µmol/L", "59", "104");
+        creatinineOct.put("verdict", "critical");
+        creatinineOct.put("verdict_side", "high");
+        Map<String, Object> crpOct = row(LAB_OCT, 62, "2026-10-12", "CRP", "crp", "<0.5", "mg/L", null, "5");
+        Map<String, Object> creatinineAug = row(LAB_AUG, 63, "2026-08-03", "S. Creatinine", "creatinine", "132", "µmol/L", "59", "104");
+        creatinineAug.put("verdict", "outside");
+        creatinineAug.put("verdict_side", "high");
+        Map<String, Object> crpAug = row(LAB_AUG, 64, "2026-08-03", "CRP", "crp", "12", "mg/L", null, "5");
+        crpAug.put("verdict", "outside");
+        crpAug.put("verdict_side", "high");
+        Map<String, Object> creatinineJun = row(LAB_UNDATED, 65, "2026-06-20", "Creatinine", "creatinine", "98", "µmol/L", "59", "104");
+        creatinineJun.put("verdict", "inside");
+        return List.of(creatinineOct, crpOct, creatinineAug, crpAug, creatinineJun);
     }
 
     /** One BP : 130 / 80 line read through extraction: two values, two crops, one line. */
