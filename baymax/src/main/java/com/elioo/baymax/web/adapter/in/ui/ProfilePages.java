@@ -30,7 +30,7 @@ import static com.elioo.baymax.web.adapter.in.ui.PageChrome.BASE;
 @RequiredArgsConstructor
 public class ProfilePages implements WebPages {
 
-    static final List<String> FLAGS = List.of("diabetes", "hypertension", "kidney", "thyroid", "heart");
+    public static final List<String> FLAGS = List.of("diabetes", "hypertension", "kidney", "thyroid", "heart");
 
     private final TimelineUseCase timeline;
     private final NudgeOptOutUseCase optOut;

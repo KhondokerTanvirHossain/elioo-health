@@ -15,4 +15,13 @@ public interface NudgeOptOutUseCase {
     Mono<Void> optOutPatient(UUID patientId);
 
     Mono<Void> optOutFamily(UUID patientId);
+
+    /**
+     * Stop nudges for the signed-in account's own family, by its id: a share member who owns no patient has no patient
+     * to name, and their stop must never reach the family whose patient they see.
+     */
+    Mono<Void> optOutFamilyById(UUID familyId);
+
+    /** Whether the family's own stop is set; false for a family with no row. */
+    Mono<Boolean> familyOptedOut(UUID familyId);
 }

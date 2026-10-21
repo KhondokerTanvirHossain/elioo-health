@@ -68,4 +68,15 @@ public class NudgeOptOutService implements NudgeOptOutUseCase {
         return data.patient(patientId).flatMap(p -> optOut.optOutFamily(p.familyId(), clock.instant())
                 .doOnSuccess(v -> log.info("[baymax] nudges opted out familyId={}", p.familyId())));
     }
+
+    @Override
+    public Mono<Void> optOutFamilyById(UUID familyId) {
+        return optOut.optOutFamily(familyId, clock.instant())
+                .doOnSuccess(v -> log.info("[baymax] nudges opted out familyId={}", familyId));
+    }
+
+    @Override
+    public Mono<Boolean> familyOptedOut(UUID familyId) {
+        return optOut.familyOptedOut(familyId).defaultIfEmpty(false);
+    }
 }

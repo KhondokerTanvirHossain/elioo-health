@@ -1,0 +1,75 @@
+{
+  "_meta": {
+    "generated_by": "baymax FamilyApiContractTest",
+    "source": "GET /app/api/family over the case owner"
+  },
+  "body": {
+    "account": {
+      "language": "bn",
+      "number": "+880 1700-000533",
+      "owner_name": "Tanvir",
+      "reminders_stopped": false,
+      "terms_date": "2026-09-15"
+    },
+    "flags_offered": [
+      {
+        "id": "diabetes",
+        "label_key": "flag.diabetes"
+      },
+      {
+        "id": "hypertension",
+        "label_key": "flag.hypertension"
+      },
+      {
+        "id": "kidney",
+        "label_key": "flag.kidney"
+      },
+      {
+        "id": "thyroid",
+        "label_key": "flag.thyroid"
+      },
+      {
+        "id": "heart",
+        "label_key": "flag.heart"
+      }
+    ],
+    "patients": [
+      {
+        "age": 64,
+        "chronic_flags": [
+          {
+            "label_key": "flag.diabetes",
+            "value": "diabetes"
+          },
+          {
+            "label_key": "flag.hypertension",
+            "value": "hypertension"
+          },
+          {
+            "label_key": null,
+            "value": "asthma"
+          }
+        ],
+        "consent_date": "2026-09-15",
+        "id": "b1813d1a-cb12-36de-9c8c-a15d9a6e3768",
+        "name": "রোকেয়া পরীক্ষা",
+        "name_possessive": "রোকেয়া পরীক্ষার",
+        "owner": true,
+        "reminders": "on",
+        "sex_key": "sex.FEMALE"
+      },
+      {
+        "age": 71,
+        "chronic_flags": [ ],
+        "consent_date": "2026-09-15",
+        "id": "fc317f3b-bb86-3696-87e1-67300e578932",
+        "name": "Baba",
+        "name_possessive": "Baba-র",
+        "owner": true,
+        "reminders": "stopped_for_patient",
+        "sex_key": "sex.MALE"
+      }
+    ]
+  },
+  "status": 200
+}

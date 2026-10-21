@@ -192,7 +192,13 @@ public class TimelineService implements TimelineUseCase {
         return records.visiblePatient(familyId, patientId)
                 .switchIfEmpty(Mono.error(BaymaxException.notFound("patient_not_found", "no patient with id " + patientId)))
                 .flatMap(access -> access.owner()
-                        ? records.updateChronicFlags(patientId, FamilyAccountService.normalizeFlags(chronicFlags))
+                        // a refusal of normalizeFlags is an error signal, never a throw inside flatMap: thrown, it is an
+                        // IllegalArgumentException, which /app/api rightly answers as a server fault (500). The message
+                        // names no flag (a flag is family-typed text).
+                        ? Mono.fromCallable(() -> FamilyAccountService.normalizeFlags(chronicFlags))
+                                .onErrorMap(IllegalArgumentException.class,
+                                        e -> BaymaxException.badRequest("invalid_flags", "chronic flags too many or too long"))
+                                .flatMap(flags -> records.updateChronicFlags(patientId, flags))
                         : Mono.error(BaymaxException.forbidden("not_owner", "only the family owner can change a profile")));
     }
 }
