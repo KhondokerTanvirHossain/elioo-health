@@ -102,7 +102,7 @@ class DocumentExtractionServiceTest {
         when(records.refreshCost(any())).thenReturn(Mono.just(BigDecimal.ONE));
         when(storage.storeCrop(any(), any(), any(), anyString(), any())).thenAnswer(i -> Mono.just(
                 new StoredObject(UUID.randomUUID(), FAMILY, PATIENT, DOC, ObjectKind.CROP, null,
-                        i.getArgument(3), "key/" + i.getArgument(3, String.class), "image/jpeg", 10, NOW)));
+                        i.getArgument(3), "key/" + i.getArgument(3, String.class), "image/jpeg", 10, NOW, null, null)));
 
         BaymaxProperties.Marker marker = new BaymaxProperties.Marker();
         marker.setCanonical("hba1c");

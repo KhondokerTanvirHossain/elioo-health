@@ -2,13 +2,19 @@ package com.elioo.baymax.web.adapter.in.api;
 
 import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.extraction.domain.Document;
+import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
+import com.elioo.baymax.storage.domain.ImageDimensions;
+import com.elioo.baymax.storage.domain.ObjectKind;
+import com.elioo.baymax.storage.domain.StoredObject;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.adapter.in.ui.DocumentPages;
 import com.elioo.baymax.web.adapter.in.ui.Lang;
 import com.elioo.baymax.web.adapter.in.ui.UiCopy;
 import com.elioo.baymax.web.application.port.in.ResultUseCase;
+import com.elioo.baymax.web.domain.ResultView;
 import com.elioo.baymax.web.domain.WebSession;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.server.ServerRequest;
@@ -28,12 +34,14 @@ import java.util.UUID;
  * milliseconds rather than a second audit path. The name forms are
  * the viewer's language's ({@link UiCopy#poss}, {@link UiCopy#obj}), so an English viewer never gets a Bangla case ending.
  */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class PaperApiHandler {
 
     private final ResultUseCase results;
     private final UiCopy copy;
+    private final DocumentStorageUseCase storage;
 
     public Mono<ServerResponse> paper(ServerRequest request) {
         WebSession session = SessionAuthFilter.session(request);
@@ -52,8 +60,30 @@ public class PaperApiHandler {
                 });
     }
 
+    /**
+     * The result, then (only for DONE, the one state whose JSON carries crops) the paper's stored crop sizes, read after
+     * the result has proved the paper visible to this family, so another family's probe, a retake or a failed paper
+     * never costs a GET or a ledger write. A legacy crop row is measured here, on its paper's first read (D4b), tried once
+     * ever and never when an image is served; pages are not measured. The storage bounds the wait
+     * ({@code DocumentStorageService.READ_BUDGET}); a size read that fails sends the paper without sizes, never a 500
+     * after the view was recorded.
+     */
     private Mono<Map<String, Object>> finished(WebSession session, UUID documentId) {
-        return results.result(session.familyId(), documentId).map(r -> PaperJson.of(r, code -> DocumentPages.retakeReasonKey(copy, code)));
+        return results.result(session.familyId(), documentId)
+                .flatMap(r -> sizes(r, documentId).map(sizes -> PaperJson.of(r, code -> DocumentPages.retakeReasonKey(copy, code), sizes)));
+    }
+
+    private Mono<Map<String, ImageDimensions>> sizes(ResultView r, UUID documentId) {
+        if (!r.done()) {
+            return Mono.just(Map.of());
+        }
+        return storage.measuredObjectsOf(documentId, ObjectKind.CROP)
+                .filter(o -> o.dimensions().isPresent())
+                .collectMap(StoredObject::storageKey, o -> o.dimensions().orElseThrow())
+                .onErrorResume(e -> {
+                    log.warn("[baymax] paper sizes unavailable documentId={} ({})", documentId, e.getClass().getSimpleName());
+                    return Mono.just(Map.of());
+                });
     }
 
     private static boolean inFlight(Document.Status status) {

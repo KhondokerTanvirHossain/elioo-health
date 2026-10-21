@@ -134,7 +134,8 @@ class NoProseInTheJsonApiTest {
         when(reads.retakeOrdinal(DOC)).thenReturn(Mono.just(1));
         ResultService result = new ResultService(records, documents, intake, audit, clock, mock(OutboundMessagePort.class), urgency,
                 new BaymaxProperties(), reads);
-        PaperApiHandler paperApi = new PaperApiHandler(result, new UiCopy());
+        when(storage.measuredObjectsOf(any(), any())).thenReturn(Flux.empty());
+        PaperApiHandler paperApi = new PaperApiHandler(result, new UiCopy(), storage);
 
         RouterFunction<ServerResponse> routes = RouterFunctions.route(GET("/documents/{id}"), documentApi::status)
                 .andRoute(GET("/patients/{id}/timeline"), timelineApi::timeline)

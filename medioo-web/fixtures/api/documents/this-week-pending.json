@@ -53,7 +53,9 @@
       {
         "chip_key": "value.chip.outside.low",
         "crop": {
-          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Sodium.jpg"
+          "height": 30,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Sodium.jpg",
+          "width": 120
         },
         "display_kind": "outside",
         "id": "7e0f2d86-408b-3c71-8ffd-bfd91a5e282b",
@@ -69,7 +71,9 @@
       {
         "chip_key": "value.chip.inside",
         "crop": {
-          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Haemoglobin.jpg"
+          "height": null,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Haemoglobin.jpg",
+          "width": null
         },
         "display_kind": "inside",
         "id": "efae053b-a72a-3298-9d84-a304a320cc9c",

@@ -69,6 +69,15 @@ class S3StorageAdapterTest {
         return cfg;
     }
 
+    /** A missing key is the port's own permanent answer, never the SDK's type, so the layers above can tell it from an outage. */
+    @Test
+    void aMissingKeyIsReportedAsMissing() {
+        StepVerifier.create(adapter.get("missing/a/crop-x.jpg"))
+                .expectErrorSatisfies(e -> assertThat(e).as("the error a missing key gives")
+                        .isInstanceOf(com.elioo.baymax.storage.application.port.out.ObjectMissingException.class))
+                .verify();
+    }
+
     @Test
     void putThenGetRoundTripsAndListsTheKey() {
         byte[] bytes = "hello".getBytes(StandardCharsets.UTF_8);

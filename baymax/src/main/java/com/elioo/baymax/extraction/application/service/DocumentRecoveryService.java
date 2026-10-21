@@ -109,8 +109,8 @@ public class DocumentRecoveryService implements DocumentRecoveryUseCase {
     /**
      * Every page or nothing: a partial page list would extract half a report as if it were whole. Completeness is
      * read from the LEDGER (DocumentStorageService.store writes the row only after the put succeeded), not from a
-     * failed GET: the S3 adapter reports a missing key as an AWS NoSuchKeyException, which nothing above adapter.out
-     * may import — and a transient S3 outage must stay an error (retried next restart, bounded by attempts), never
+     * failed GET: a GET can fail for many reasons (the adapter maps only a missing key to ObjectMissingException) —
+     * and a transient S3 outage must stay an error (retried next restart, bounded by attempts), never
      * be misread as "pages missing" and fail the document for good.
      */
     private Mono<List<byte[]>> storedPages(Document d) {

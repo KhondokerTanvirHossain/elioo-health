@@ -6,6 +6,7 @@ import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.outbound.domain.UrgencyReason;
 import com.elioo.baymax.outbound.domain.ValueVerdict;
+import com.elioo.baymax.storage.domain.ImageDimensions;
 import com.elioo.baymax.web.adapter.in.ImageRefs;
 import com.elioo.baymax.web.domain.GateState;
 import com.elioo.baymax.web.domain.PaperDisplay;
@@ -35,16 +36,23 @@ import java.util.function.Function;
  * for DONE, as the page draws them; a rejected read sends them empty. Medicines carry only the fields as written
  * ({@link PaperDisplay#MEDICINE_FIELDS}). There is no confidence, no model, no developer reason
  * prose, no reason code and no {@code tel:} anywhere in the tree: a call is a boolean, a line is a copy key.
+ *
+ * <p>Every {@code crop} is {@code {src, width, height}} (D4b): the size its ledger row stores, so React can lay the crop
+ * out before it loads; {@code width} and {@code height} are null together when the row has none, never zero.</p>
  */
 public final class PaperJson {
 
     private PaperJson() {
     }
 
-    /** A finished paper: DONE (the result), NEEDS_RETAKE (the retake) or FAILED. {@code retakeKey} maps a stored code to its copy key. */
-    public static Map<String, Object> of(ResultView r, Function<String, String> retakeKey) {
+    /**
+     * A finished paper: DONE (the result), NEEDS_RETAKE (the retake) or FAILED. {@code retakeKey} maps a stored code to its
+     * copy key; {@code sizes} is the paper's stored image sizes by storage key (a crop whose key is absent has no size).
+     */
+    public static Map<String, Object> of(ResultView r, Function<String, String> retakeKey, Map<String, ImageDimensions> sizes) {
         DocumentView v = r.document();
         UUID documentId = UUID.fromString(v.documentId());
+        Function<Map<String, Object>, Map<String, Object>> crop = row -> crop(documentId, String.valueOf(row.get("crop_key")), sizes);
         Map<String, Object> m = head(v, r.patient(), r.owner(), r.viewer(), r.receivedAt());
         m.put("document_type", v.documentType());
         dates(m, v.documentDate(), r.receivedAt());
@@ -82,10 +90,10 @@ public final class PaperJson {
         // shows none of whatever rows it holds, so the JSON never sends a chip or a pin the page withholds
         boolean shown = r.done();
         Set<ValueVerdict.Kind> above = PaperDisplay.shownAbove(level, r.urgencyReasons());
-        m.put("values", !shown ? List.of() : values.stream().filter(PaperJson::hasCrop).map(row -> value(documentId, row, above)).toList());
-        m.put("medicines", !shown ? List.of() : rows(v.medicines()).stream().filter(PaperJson::hasCrop).map(row -> medicine(documentId, row)).toList());
-        m.put("follow_up", !shown ? List.of() : rows(v.followUp()).stream().filter(PaperJson::hasCrop).map(row -> followUp(documentId, row)).toList());
-        m.put("doctor", !shown ? Map.of() : doctor(documentId, v.clinicalContext()));
+        m.put("values", !shown ? List.of() : values.stream().filter(PaperJson::hasCrop).map(row -> value(row, above, crop)).toList());
+        m.put("medicines", !shown ? List.of() : rows(v.medicines()).stream().filter(PaperJson::hasCrop).map(row -> medicine(row, crop)).toList());
+        m.put("follow_up", !shown ? List.of() : rows(v.followUp()).stream().filter(PaperJson::hasCrop).map(row -> followUp(row, crop)).toList());
+        m.put("doctor", !shown ? Map.of() : doctor(v.clinicalContext(), crop));
         m.put("unverified", v.unverified());     // the stored V6 counts, verbatim
         if ("NEEDS_RETAKE".equals(v.status())) {
             m.put("retake", ordered("reason_key", retakeKey.apply(v.reasonCode()), "ordinal", r.retakeOrdinal()));
@@ -155,7 +163,8 @@ public final class PaperJson {
         }
     }
 
-    private static Map<String, Object> value(UUID documentId, Map<String, Object> row, Set<ValueVerdict.Kind> above) {
+    private static Map<String, Object> value(Map<String, Object> row, Set<ValueVerdict.Kind> above,
+                                             Function<Map<String, Object>, Map<String, Object>> crop) {
         ValueVerdict.Kind kind = PaperDisplay.kindOf(row);
         String side = PaperDisplay.drawnSide(kind, row);
         OptionalDouble pin = PaperDisplay.pin(kind, row, side);
@@ -172,11 +181,11 @@ public final class PaperJson {
         // as the bar draws it (one decimal), so the page and the JSON place the pin at the same point
         m.put("pin", pin.isPresent() ? Math.round(pin.getAsDouble() * 10) / 10.0 : null);
         m.put("in_now_block", above.contains(kind));
-        m.put("crop", crop(documentId, row));
+        m.put("crop", crop.apply(row));
         return m;
     }
 
-    private static Map<String, Object> medicine(UUID documentId, Map<String, Object> row) {
+    private static Map<String, Object> medicine(Map<String, Object> row, Function<Map<String, Object>, Map<String, Object>> crop) {
         Map<String, Object> m = new LinkedHashMap<>();
         for (String field : PaperDisplay.MEDICINE_FIELDS) {
             Object written = row.get(field);
@@ -184,21 +193,21 @@ public final class PaperJson {
                 m.put(field, String.valueOf(written));
             }
         }
-        m.put("crop", crop(documentId, row));
+        m.put("crop", crop.apply(row));
         return m;
     }
 
-    private static Map<String, Object> followUp(UUID documentId, Map<String, Object> row) {
+    private static Map<String, Object> followUp(Map<String, Object> row, Function<Map<String, Object>, Map<String, Object>> crop) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("instruction", text(row.get("instruction")));
         Object due = row.get("due_date");
         m.put("due_date", due == null || String.valueOf(due).isBlank() ? null : String.valueOf(due));
-        m.put("crop", crop(documentId, row));
+        m.put("crop", crop.apply(row));
         return m;
     }
 
     /** Every clinical-context section but the referral, each line as written beside its crop; a line with no crop is left out. */
-    private static Map<String, Object> doctor(UUID documentId, Map<String, Object> context) {
+    private static Map<String, Object> doctor(Map<String, Object> context, Function<Map<String, Object>, Map<String, Object>> crop) {
         Map<String, Object> out = new LinkedHashMap<>();
         if (context == null) {
             return out;
@@ -210,7 +219,7 @@ public final class PaperJson {
             List<Map<String, Object>> quoted = new ArrayList<>();
             for (Object line : lines) {
                 if (line instanceof Map<?, ?> l && l.get("text") != null && l.get("crop_key") != null && !String.valueOf(l.get("crop_key")).isBlank()) {
-                    quoted.add(ordered("text", String.valueOf(l.get("text")), "crop", ordered("src", ImageRefs.crop(documentId, String.valueOf(l.get("crop_key"))))));
+                    quoted.add(ordered("text", String.valueOf(l.get("text")), "crop", crop.apply(Map.of("crop_key", l.get("crop_key")))));
                 }
             }
             if (!quoted.isEmpty()) {
@@ -220,8 +229,11 @@ public final class PaperJson {
         return out;
     }
 
-    private static Map<String, Object> crop(UUID documentId, Map<String, Object> row) {
-        return ordered("src", ImageRefs.crop(documentId, String.valueOf(row.get("crop_key"))));
+    /** The crop's href and its stored size, both null when its ledger row has none (D4b). */
+    private static Map<String, Object> crop(UUID documentId, String cropKey, Map<String, ImageDimensions> sizes) {
+        ImageDimensions size = sizes.get(cropKey);
+        return ordered("src", ImageRefs.crop(documentId, cropKey),
+                "width", size == null ? null : size.width(), "height", size == null ? null : size.height());
     }
 
     /** No row without its crop (DR-12); Postgres cannot hold one, so this skip is defensive and changes no count. */

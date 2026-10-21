@@ -15,6 +15,7 @@ public interface StoragePort {
     /** Stores the bytes under the key (server-side encrypted where configured); returns the size stored. */
     Mono<Long> put(String key, byte[] bytes, String contentType);
 
+    /** The object's bytes; {@link ObjectMissingException} when there is no object under the key. */
     Mono<byte[]> get(String key);
 
     /** Keys under the prefix, in key order. */

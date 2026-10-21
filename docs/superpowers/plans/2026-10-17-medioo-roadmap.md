@@ -79,7 +79,8 @@ the gate in production. The gate decision before real families is open (below).
   | **V21** | Web portal D3 (W4.2) | `document_upload_key` |
   | **V22** | Phase 0, PR 8 (C1) | `inbound_message` (F9a) — was V18 until 2026-10-19 (V17 until 2026-10-18) |
   | **V23** | Phase 0, PR 9 (B2) | `outbound_failure_kind` — was V19 until 2026-10-19 (V18 until 2026-10-18) |
-  | V24+ | Phase 2 onward | the next free number when written; the phase sections say "next free `V<n>`" |
+  | **V24** | Web rebuild D4b | `stored_object_dimensions` — provisional: PR #117 (D2) also claims V24 and #118 (D1) V25; whichever merges second renumbers |
+  | V25+ | Phase 2 onward | the next free number when written; the phase sections say "next free `V<n>`" |
 
   Renumbered 2026-10-19 (PO direction 2026-10-19: the web portal first; Phase 0 PRs 7–10 rebase after the web chain).
   F1 + F2 are split over V18 (A10) and V19 (B1), F5 is V20, and the web upload key is V21 (`docs/superpowers/plans/2026-10-19-medioo-web-portal.md`, "Migration allocation"). After the rebase PR 7 reads

@@ -19,7 +19,9 @@
       "diagnosis": [
         {
           "crop": {
-            "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fctx-dx-1.jpg"
+            "height": 33,
+            "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fctx-dx-1.jpg",
+            "width": 150
           },
           "text": "Hyperkalaemia"
         }
@@ -31,7 +33,9 @@
     "follow_up": [
       {
         "crop": {
-          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Ffu-Repeatthetestafter7days.jpg"
+          "height": 34,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Ffu-Repeatthetestafter7days.jpg",
+          "width": 160
         },
         "due_date": "2026-10-19",
         "instruction": "Repeat the test after 7 days"
@@ -42,7 +46,9 @@
     "medicines": [
       {
         "crop": {
-          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fmed-Napa500.jpg"
+          "height": 35,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fmed-Napa500.jpg",
+          "width": 170
         },
         "dose_text": "1+0+1",
         "duration_text": "7 days",
@@ -93,7 +99,9 @@
       {
         "chip_key": "value.chip.outside.low",
         "crop": {
-          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Sodium.jpg"
+          "height": 32,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Sodium.jpg",
+          "width": 140
         },
         "display_kind": "outside",
         "id": "7e0f2d86-408b-3c71-8ffd-bfd91a5e282b",
@@ -109,7 +117,9 @@
       {
         "chip_key": "value.chip.critical.high",
         "crop": {
-          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Potassium.jpg"
+          "height": null,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Potassium.jpg",
+          "width": null
         },
         "display_kind": "critical",
         "id": "7af69ec6-676f-3bb9-b0bb-3e665c36ed57",
@@ -125,7 +135,9 @@
       {
         "chip_key": "value.chip.inside",
         "crop": {
-          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Haemoglobin.jpg"
+          "height": 30,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Haemoglobin.jpg",
+          "width": 120
         },
         "display_kind": "inside",
         "id": "efae053b-a72a-3298-9d84-a304a320cc9c",
@@ -141,7 +153,9 @@
       {
         "chip_key": "value.chip.unknown",
         "crop": {
-          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-LDL.jpg"
+          "height": 31,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-LDL.jpg",
+          "width": 130
         },
         "display_kind": "unknown",
         "id": "4cb575e6-bdf6-36eb-acb9-8693f27a4198",

@@ -13,7 +13,7 @@ import org.springframework.data.relational.core.mapping.Table;
 import java.time.Instant;
 import java.util.UUID;
 
-/** R2DBC row of {@code baymax.stored_object}: keys and sizes, never bytes. */
+/** R2DBC row of {@code baymax.stored_object}: keys, sizes and pixel dimensions, never bytes. */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -41,14 +41,21 @@ public class StoredObjectEntity {
     private long sizeBytes;
     @Column("created_at")
     private Instant createdAt;
+    @Column("width_px")
+    private Integer widthPx;
+    @Column("height_px")
+    private Integer heightPx;
+    @Column("dimensions_checked_at")
+    private Instant dimensionsCheckedAt;
 
     static StoredObjectEntity from(StoredObject o) {
         return new StoredObjectEntity(o.id(), o.familyId(), o.patientId(), o.documentId(), o.kind().dbValue(),
-                o.pageNo(), o.itemId(), o.storageKey(), o.contentType(), o.sizeBytes(), o.createdAt());
+                o.pageNo(), o.itemId(), o.storageKey(), o.contentType(), o.sizeBytes(), o.createdAt(), o.widthPx(), o.heightPx(),
+                o.dimensionsCheckedAt());
     }
 
     StoredObject toRecord() {
         return new StoredObject(id, familyId, patientId, documentId, ObjectKind.fromDbValue(kind), pageNo, itemId,
-                storageKey, contentType, sizeBytes, createdAt);
+                storageKey, contentType, sizeBytes, createdAt, widthPx, heightPx, dimensionsCheckedAt);
     }
 }

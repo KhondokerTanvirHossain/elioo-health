@@ -106,7 +106,7 @@ class TryDocumentsThroughTheWebTest {
         when(documents.createOnce(any(), any())).thenAnswer(i -> Mono.just(new CreatedDocument(((Document) i.getArgument(0)).withId(UUID.randomUUID()), true)));
         when(documents.findByUploadKey(any(), any())).thenReturn(Mono.empty());
         when(storage.storePage(any(), any(), any(), anyInt(), any())).thenAnswer(i -> Mono.just(new StoredObject(UUID.randomUUID(),
-                family, ma.id(), i.getArgument(2), ObjectKind.PAGE, i.getArgument(3), null, "page", "image/jpeg", 10, NOW)));
+                family, ma.id(), i.getArgument(2), ObjectKind.PAGE, i.getArgument(3), null, "page", "image/jpeg", 10, NOW, null, null)));
         client = new WebUiTestKit(new UploadService(timeline, records, freeTier, intake, audit, clock)).client;
 
         Logger baymax = (Logger) LoggerFactory.getLogger("com.elioo.baymax");
