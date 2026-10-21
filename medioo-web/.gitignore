@@ -1,5 +1,7 @@
 /node_modules/
 /.next/
+# the catalog build (pnpm run build:catalog, MEDIOO_CATALOG=1): never shipped, never committed
+/.next-catalog/
 /out/
 /playwright-report/
 /test-results/

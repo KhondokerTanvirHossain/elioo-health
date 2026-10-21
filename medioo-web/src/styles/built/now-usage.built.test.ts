@@ -49,6 +49,19 @@ describe("the built CSS", () => {
     expect(rootProps.has("--now"), "the built CSS defines --now in :root").toBe(true);
     expect(rootProps.has("--week"), "the built CSS defines --week in :root").toBe(true);
 
+    // The second guard (W2c): at least one allowed use ships, StatusChip's critical states, so the check below judged
+    // a real use of the red and not only its definitions.
+    const allowedNowUses: string[] = [];
+    postcss.parse(css).walkDecls((decl) => {
+      if (!/var\(\s*--(now|on-now)\b/.test(decl.value) || decl.parent?.type !== "rule") return;
+      for (const selector of (decl.parent as postcss.Rule).selectors) {
+        if (/^\.status-chip--crit-(high|low)$/.test(selector.trim())) allowedNowUses.push(`${selector.trim()} ${decl.prop}`);
+      }
+    });
+    expect(allowedNowUses, "StatusChip's critical states paint with the NOW tokens in the built CSS").toEqual(
+      expect.arrayContaining([expect.stringMatching(/^\.status-chip--crit-high /)]),
+    );
+
     expect(nowUsageViolations(css, NOW_ALLOWED)).toEqual([]);
     expect(tokenUsageViolations(css, "week", WEEK_ALLOWED)).toEqual([]);
     expect(roleUsageViolations(css, json as unknown as TokenFile)).toEqual([]);
