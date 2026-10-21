@@ -28,16 +28,18 @@
   font-size: var(--text-title);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
+  /* The prototype's number tracking (phone.html:347, .numfield input). */
   letter-spacing: 0.02em;
 }
-/* Invalid draws a second edge outside the boundary; focus, declared after it, replaces that ring while focused. */
+/* Invalid draws a second edge outside the boundary; focus, declared after it, replaces that ring while focused. The
+   ring's width and offset are the prototypes' :focus-visible outline (phone.html:61, desktop.html:62). */
 .phone-field__input[aria-invalid="true"] {
-  outline: 2px solid var(--label2);
-  outline-offset: 2px;
+  outline: var(--focus-width) solid var(--label2);
+  outline-offset: var(--focus-offset);
 }
 .phone-field__input:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
 }
 .phone-field__error {
   margin: 0;
@@ -46,6 +48,11 @@
   font-weight: 600;
   color: var(--label);
   overflow-wrap: anywhere;
+}
+/* The alert is in the page before any refusal (a live region announces a change, not its arrival); while it is empty
+   it takes back the column gap it would otherwise add, so an empty alert moves nothing. */
+.phone-field__error:empty {
+  margin-block-start: calc(var(--space-2) * -1);
 }
 .phone-field__hint {
   margin: 0;

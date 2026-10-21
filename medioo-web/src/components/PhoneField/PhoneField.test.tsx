@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { cleanup, fireEvent, render, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { t } from "@/copy";
 import { PhoneField } from "./PhoneField";
@@ -44,6 +44,37 @@ describe("PhoneField", () => {
       const texts = described.map((id) => container.querySelector(`[id="${id}"]`)?.textContent);
       // The error first, then the hint: both read, the error never in place of the hint.
       expect(texts, `${lang}: described by`).toEqual([t(lang, "login.number.invalid"), t(lang, "login.hint")]);
+      // Said aloud when it appears, as the HTML page says it (SignInPages.numberPage, `<div class="err" role="alert">`):
+      // after a submit focus sits on the button, so aria-describedby alone is never read.
+      expect(within(container).getByRole("alert").textContent, `${lang}: the alert`).toBe(t(lang, "login.number.invalid"));
+      cleanup();
+    }
+  });
+
+  it("anErrorIsASignInRefusalNeverOtherCopy", () => {
+    // Checked by `pnpm typecheck`: the error line under a field is a refusal a number comes back with, never any copy
+    // key (a hint, a NOW sentence, a medicine). If `error` widens back to CopyKey this directive is unused and fails.
+    // @ts-expect-error login.hint is copy, not a refusal
+    const widened = <PhoneField lang="en" name="whatsapp_number" error="login.hint" />;
+    expect(widened.props.error).toBe("login.hint");
+  });
+
+  it("theAlertExistsBeforeTheRefusalArrives", () => {
+    // A React screen sets `error` after the fetch returns INVALID_NUMBER, into a page that is already open. A live
+    // region announces a change to its content, not its own arrival, so it is in the page, empty, before the refusal.
+    for (const lang of ["bn", "en"] as const) {
+      const { container, rerender } = render(<PhoneField lang={lang} name="whatsapp_number" />);
+      const before = within(container).getByRole("alert");
+      expect(before.textContent, `${lang}: empty at rest`).toBe("");
+      const input = container.querySelector("input")!;
+      // An empty alert is not a description: the hint alone is read at rest.
+      expect(input.getAttribute("aria-describedby")?.split(" "), `${lang}: described by at rest`).not.toContain(before.id);
+
+      rerender(<PhoneField lang={lang} name="whatsapp_number" error="login.number.invalid" />);
+      const after = within(container).getByRole("alert");
+      expect(after, `${lang}: the same live region, filled`).toBe(before);
+      expect(after.textContent, `${lang}: the refusal`).toBe(t(lang, "login.number.invalid"));
+      expect(input.getAttribute("aria-describedby")?.split(" ")[0], `${lang}: the error is read first`).toBe(after.id);
       cleanup();
     }
   });

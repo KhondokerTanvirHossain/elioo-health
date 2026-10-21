@@ -3,11 +3,12 @@ import { CHIP_KINDS } from "@/components/StatusChip/StatusChip";
 import { STATES } from "./states";
 
 /*
- * The registry, as an explicit list (plan W2c). catalog.spec.ts reads the registry's length off the page that renders
- * it, so on its own it would accept any registry; this list is independent of the page. A later component PR (W2d,
- * W2e) appends its states here, and removing a state already shipped fails.
+ * The registry, as an explicit list of every state shipped so far (started by plan W2c). catalog.spec.ts reads the
+ * registry's length off the page that renders it, so on its own it would accept any registry; this list is independent
+ * of the page. Each component PR (W2c, W2e-a, W2d, ...) appends its states here, and removing a state already shipped
+ * fails.
  */
-const W2C: string[] = [
+const SHIPPED: string[] = [
   "Wordmark/default",
   "MioAvatar/32",
   "MioAvatar/48-still",
@@ -20,6 +21,7 @@ const W2C: string[] = [
   // W2e-a: the two sign-in fields.
   "OtpInput/empty",
   "OtpInput/filled",
+  "OtpInput/error",
   "PhoneField/empty",
   "PhoneField/error",
 ];
@@ -28,7 +30,7 @@ const ids = () => STATES.map(({ component, state }) => `${component}/${state}`);
 
 describe("catalog states", () => {
   it("theRegistryHoldsExactlyTheShippedStates", () => {
-    expect(ids()).toEqual(W2C);
+    expect(ids()).toEqual(SHIPPED);
   });
 
   it("noStateIsRegisteredTwice", () => {
