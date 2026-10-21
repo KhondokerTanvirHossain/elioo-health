@@ -23,7 +23,9 @@ import java.util.UUID;
  * ({@code DocumentPages.documentPage}): the status first, which records nothing and is 404 for a paper this family cannot
  * see, so a probe of another family's id records no view; then one read that records the one DOCUMENT_VIEW — the
  * reading view while the paper is RECEIVED or PROCESSING, the result otherwise. A paper that finished between the two
- * reads is sent finished, never as a reading that would wait for a change that already happened. The name forms are
+ * reads is sent finished, never as a reading that would wait for a change that already happened; that opening records
+ * two DOCUMENT_VIEW rows (the reading view's and the result's), as the HTML page does, accepted for a window of
+ * milliseconds rather than a second audit path. The name forms are
  * the viewer's language's ({@link UiCopy#poss}, {@link UiCopy#obj}), so an English viewer never gets a Bangla case ending.
  */
 @Component

@@ -31,6 +31,13 @@ public final class PaperDisplay {
     public static final Set<UrgencyReason> NOW_REASONS = EnumSet.of(UrgencyReason.VALUE_CRITICAL, UrgencyReason.UNVERIFIED_VALUE_CRITICAL,
             UrgencyReason.TEXT_EMERGENCY_PHRASE);
 
+    /**
+     * The fields a medicine line was written with, in the order the prescription writes them: what the HTML caption joins
+     * ({@code ValueRows.medicine}) and the only fields the JSON sends ({@code PaperJson}). Nothing derived — never the
+     * extraction's purpose, status or confidence (DR-16).
+     */
+    public static final List<String> MEDICINE_FIELDS = List.of("name", "dose_text", "frequency_text", "timing_text", "duration_text");
+
     private PaperDisplay() {
     }
 

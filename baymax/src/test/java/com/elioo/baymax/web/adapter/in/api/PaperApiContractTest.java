@@ -5,6 +5,7 @@ import com.elioo.baymax.common.text.NameGrammar;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.DocumentView;
+import com.elioo.baymax.extraction.domain.RetakeReason;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.outbound.domain.ValueVerdict;
@@ -205,7 +206,10 @@ class PaperApiContractTest {
     @EnumSource(GateState.class)
     void wordingIsPresentOnlyWhenTheGateIsReleased(GateState gate) throws IOException {
         String wording = gate == GateState.RELEASED ? "Everything printed here is inside its range." : null;
-        serve(PaperFixtures.result(PaperFixtures.routineReleased().document(), Urgency.ROUTINE, List.of(), gate, wording, PaperFixtures.BD));
+        // a review time no default carries, so the JSON is shown to echo the served view's value and nothing else
+        int reviewHours = 7;
+        serve(PaperFixtures.withReviewHours(PaperFixtures.result(PaperFixtures.routineReleased().document(), Urgency.ROUTINE, List.of(), gate,
+                wording, PaperFixtures.BD), reviewHours));
         JsonNode body = get(Lang.BN);
         assertThat(body.path("gate").asText()).isEqualTo(gate.name());
         if (gate == GateState.RELEASED) {
@@ -215,7 +219,7 @@ class PaperApiContractTest {
         }
         if (gate == GateState.PENDING) {
             assertThat(body.path("review_hours").isInt()).isTrue();
-            assertThat(body.path("review_hours").asInt()).isEqualTo(properties.getOutbound().getReviewTypicalHours());
+            assertThat(body.path("review_hours").asInt()).as("$.review_hours").isEqualTo(reviewHours);
         } else {
             assertThat(body.has("review_hours")).as("$.review_hours for " + gate).isFalse();
         }
@@ -303,13 +307,20 @@ class PaperApiContractTest {
 
     @Test
     void aMedicineCarriesOnlyItsVerbatimFieldsAndItsCrop() throws IOException {
-        Map<String, Object> stored = PaperFixtures.medicine("Napa 500", "1+0+1", "7 days");
-        serve(PaperFixtures.nowPaper(PaperFixtures.BD));
+        // every field a prescription writes, beside the extraction's purpose, status, confidence and crop_key
+        Map<String, Object> stored = PaperFixtures.medicine("Napa 500", "1+0+1", "3 times a day", "after meals", "7 days");
+        assertThat(stored.keySet()).as("the stored row carries every written field").containsAll(PaperDisplay.MEDICINE_FIELDS)
+                .contains("purpose", "status", "confidence", "crop_key");
+        serve(PaperFixtures.result(PaperFixtures.prescription(List.of(stored), Map.of(), null), Urgency.ROUTINE, List.of(), GateState.NONE,
+                null, PaperFixtures.BD));
         JsonNode body = get(Lang.BN);
         assertThat(body.path("medicines")).hasSize(1);
         JsonNode m = body.path("medicines").get(0);
-        assertThat(fieldNames(m)).containsExactlyInAnyOrder("name", "dose_text", "duration_text", "crop");
-        for (String field : List.of("name", "dose_text", "duration_text")) {
+        Set<String> expected = new LinkedHashSet<>(PaperDisplay.MEDICINE_FIELDS);
+        expected.add("crop");
+        assertThat(fieldNames(m)).as("the medicine's fields: the written ones (PaperDisplay.MEDICINE_FIELDS) and its crop")
+                .containsExactlyInAnyOrderElementsOf(expected);
+        for (String field : PaperDisplay.MEDICINE_FIELDS) {
             assertThat(m.path(field).asText()).as(field).isEqualTo(stored.get(field));
         }
         assertThat(m.path("crop").path("src").asText()).isEqualTo(ImageRefs.crop(DOC, (String) stored.get("crop_key")));
@@ -324,40 +335,92 @@ class PaperApiContractTest {
         }
     }
 
+    /**
+     * Every key the JSON can emit resolves in both languages — the universe derived from the code, not sampled from the
+     * fixtures: the chip of every kind on every side {@link PaperDisplay#chipKey} accepts, the retake line of every
+     * {@link RetakeReason} on every section the gate can name (served through the route), the NOW keys of both viewers,
+     * the banner of every level and both counts lines.
+     */
     @Test
     void everyEmittedKeyResolvesInBothLanguages() throws IOException {
         Set<String> emitted = new TreeSet<>();
         Set<String> levels = new TreeSet<>();
-        for (String name : cases().keySet()) {
-            serve(cases().get(name).get());
-            JsonNode body = json.readTree(exchange(Lang.BN).getResponseBody());
-            body.path("now").fields().forEachRemaining(f -> {
+
+        for (ValueVerdict.Kind kind : ValueVerdict.Kind.values()) {
+            for (String side : java.util.Arrays.asList("high", "low", null)) {
+                try {
+                    emitted.add(PaperDisplay.chipKey(kind, side));
+                } catch (IllegalStateException sidelessIsNeverDrawn) {
+                    // OUTSIDE or CRITICAL without a side: kindOf has already made it UNKNOWN
+                }
+            }
+        }
+
+        for (String code : retakeCodes()) {
+            serve(PaperFixtures.retake(code, 1, true));
+            String key = get(Lang.BN).path("retake").path("reason_key").asText();
+            assertThat(key).as("reason_key of " + code).isEqualTo(DocumentPages.retakeReasonKey(copy, code));
+            RetakeReason reason = RetakeReason.ofCode(code).orElseThrow();
+            String section = RetakeReason.sectionOf(code);
+            String specific = section == null ? null : "retake.reason." + reason.prefix() + "." + section;
+            boolean bothHold = specific != null && copy.keys(Lang.BN).contains(specific) && copy.keys(Lang.EN).contains(specific);
+            assertThat(key).as("reason_key of " + code + ": the section's own line where both languages hold one")
+                    .isEqualTo(bothHold ? specific : "retake.reason." + reason.prefix());
+            emitted.add(key);
+        }
+        assertThat(emitted).as("a sectioned code reached its section's own line").anyMatch(k -> k.matches("retake\\.reason\\.[a-z_]+\\.[a-z_]+"));
+
+        for (ViewerLocale viewer : List.of(PaperFixtures.BD, PaperFixtures.ABROAD)) {
+            serve(PaperFixtures.nowPaper(viewer));
+            get(Lang.BN).path("now").fields().forEachRemaining(f -> {
                 if (f.getKey().endsWith("_key")) {
                     emitted.add(f.getValue().asText());
                 }
             });
+        }
+
+        for (Urgency level : Urgency.values()) {
+            serve(PaperFixtures.result(PaperFixtures.lab(List.of(PaperFixtures.haemoglobinInside(), PaperFixtures.sodiumLow())), level, List.of(),
+                    GateState.NONE, null, PaperFixtures.BD));
+            JsonNode body = get(Lang.BN);
             if (body.path("banner").isObject()) {
                 emitted.add(body.path("banner").path("line_key").asText());
                 levels.add(body.path("banner").path("level").asText());
             }
-            if (body.path("counts").isObject()) {
-                emitted.add(body.path("counts").path("line_key").asText());
-            }
-            body.path("values").forEach(v -> emitted.add(v.path("chip_key").asText()));
-            if (body.path("retake").isObject()) {
-                emitted.add(body.path("retake").path("reason_key").asText());
-            }
+            emitted.add(body.path("counts").path("line_key").asText());
         }
-        assertThat(emitted).as("keys the fixtures emit").isNotEmpty()
-                .contains("now.notdoctor", "urgency.now", "urgency.this_week", "value.chip.critical.high", "retake.reason.low_overall");
+        serve(PaperFixtures.routineReleased());
+        emitted.add(get(Lang.BN).path("counts").path("line_key").asText());
+
+        assertThat(emitted).as("keys the code can emit").isNotEmpty()
+                .contains("now.notdoctor", "now.flags.go", "now.remote.flags.go", "now.bring", "now.bring.remote", "urgency.now",
+                        "urgency.this_week", "value.chip.critical.low", "value.chip.outside.high", "result.counts", "result.counts.none");
         for (Lang lang : Lang.values()) {
             Set<String> readable = keysReactReads(lang);
             assertThat(readable).as("keys React reads in " + lang).isNotEmpty();
-            assertThat(readable).as("keys React reads in " + lang).containsAll(emitted);
+            assertThat(emitted.stream().filter(k -> !readable.contains(k)).toList()).as("emitted keys React cannot read in " + lang).isEmpty();
             for (String level : levels) {
                 assertThatCode(() -> copy.urgency(lang, Urgency.fromDbValue(level), false)).as(level + " in " + lang).doesNotThrowAnyException();
             }
         }
+    }
+
+    /** Every code a retake can store: each reason, and each sectioned one on every section the gate is configured to name. */
+    static List<String> retakeCodes() {
+        BaymaxProperties.Extract extract = new BaymaxProperties().getExtract();
+        Set<String> sections = new TreeSet<>();
+        extract.getExpectedSections().values().forEach(sections::addAll);
+        extract.getGatingSections().values().forEach(sections::addAll);
+        assertThat(sections).as("the sections the gate names").contains("values", "medicines");
+        List<String> codes = new ArrayList<>();
+        for (RetakeReason reason : RetakeReason.values()) {
+            if (reason.hasSection()) {
+                sections.forEach(section -> codes.add(reason.code(section)));
+            } else {
+                codes.add(reason.code(null));
+            }
+        }
+        return codes;
     }
 
     /** UiCopy's keys, and the urgency lines of messages_{lang}.properties, loaded as UiCopy loads them. */
@@ -433,8 +496,9 @@ class PaperApiContractTest {
     void noConfidenceModelOrDeveloperProseAnywhere() throws IOException {
         Map<String, Object> hb = PaperFixtures.haemoglobinInside();
         hb.put("confidence", 0.81);
+        // the model as production stores it (DocumentExtractionService.finish: provider + "/" + model)
         DocumentView view = new DocumentView(DOC.toString(), "DONE", null, "lab_report", "2026-10-12", "Shapla Diagnostics", 0.93,
-                "claude-opus-5", 1, List.of(hb), List.of(PaperFixtures.medicine("Napa 500", "1+0+1", "7 days")), List.of(), Map.of(), null);
+                "anthropic/claude-opus-5", 1, List.of(hb), List.of(PaperFixtures.medicine("Napa 500", "1+0+1", "7 days")), List.of(), Map.of(), null);
         serve(PaperFixtures.result(view, Urgency.ROUTINE, List.of(), GateState.NONE, null, PaperFixtures.BD));
         JsonNode body = get(Lang.BN);
         List<String> fields = new ArrayList<>();
@@ -447,7 +511,8 @@ class PaperApiContractTest {
             if (Set.of("confidence", "model", "status_reason", "reason_code").contains(field)) {
                 model.add(path);
             }
-            if (node.isTextual() && node.asText().equals("claude-opus-5")) {
+            // a fixed fictional string, not a random id, so a substring is sound: it catches the model under any field name
+            if (node.isTextual() && node.asText().contains("claude-opus-5")) {
                 model.add(path);
             }
         });
@@ -564,14 +629,140 @@ class PaperApiContractTest {
         assertThat(body.path("date").isNull()).as("$.date of a printed date that is not ISO").isTrue();
     }
 
-    @Test
-    void aPaperStillBeingReadCarriesNoResult() throws IOException {
-        serve(PaperFixtures.reading("PROCESSING"));
+    @ParameterizedTest
+    @EnumSource(value = Document.Status.class, names = {"RECEIVED", "PROCESSING"})
+    void aPaperStillBeingReadCarriesNoResult(Document.Status status) throws IOException {
+        serve(PaperFixtures.reading(status.name()));
+        // were the paper sent through the result read, this is what it would give: a result-shaped body for an unread paper
+        when(results.result(FAMILY, DOC)).thenReturn(Mono.just(new ResultView(PaperFixtures.pending(status.name()), PaperFixtures.MA, true,
+                PaperFixtures.BD, null, List.of(), GateState.NONE, null, 0, PaperFixtures.REVIEW_HOURS, PaperFixtures.NOW, PaperFixtures.NOW)));
         JsonNode body = get(Lang.BN);
-        assertThat(fieldNames(body)).containsExactlyInAnyOrder("id", "status", "patient", "owner", "viewer", "received_at", "page_count", "pages");
-        assertThat(body.path("status").asText()).isEqualTo("PROCESSING");
+        assertThat(fieldNames(body)).as("the fields of a " + status + " paper")
+                .containsExactlyInAnyOrder("id", "status", "patient", "owner", "viewer", "received_at", "page_count", "pages");
+        assertThat(body.path("status").asText()).isEqualTo(status.name());
         assertThat(body.path("pages").get(0).path("src").asText()).isEqualTo(ImageRefs.page(DOC, 1));
         verify(results, never()).result(any(), any());
+    }
+
+    /**
+     * The race the handler shares with the HTML page: the status says PROCESSING, then the reading read finds it DONE. It
+     * is sent finished (React would otherwise poll for a change that already happened), from the result read — and that
+     * opening records two DOCUMENT_VIEW rows, the reading view's and the result's, as the HTML page does.
+     */
+    @Test
+    void aPaperThatFinishedBetweenTheTwoReadsIsSentFinished() throws IOException {
+        ResultView done = PaperFixtures.nowPaper(PaperFixtures.BD);
+        when(results.status(FAMILY, DOC)).thenReturn(Mono.just(Document.Status.PROCESSING));
+        when(results.reading(FAMILY, DOC)).thenReturn(Mono.just(new ReadingView(done.document(), PaperFixtures.MA, true, PaperFixtures.BD,
+                done.receivedAt(), done.now())));
+        when(results.result(FAMILY, DOC)).thenReturn(Mono.just(done));
+        JsonNode body = get(Lang.BN);
+        assertThat(fieldNames(body)).as("$.values of a paper that finished between the two reads").contains("values", "urgency", "gate");
+        assertThat(body.path("status").asText()).isEqualTo("DONE");
+        assertThat(body.path("values")).as("$.values").hasSize(done.document().values().size());
+        verify(results).reading(FAMILY, DOC);
+        verify(results).result(FAMILY, DOC);
+    }
+
+    /**
+     * A read the system rejected (FAILED, NEEDS_RETAKE) shows none of its stored rows, whatever was stored: the HTML page
+     * draws them only for DONE, so the JSON sends empty lists. The stored V6 counts stay as stored.
+     */
+    @ParameterizedTest
+    @EnumSource(value = Document.Status.class, names = {"FAILED", "NEEDS_RETAKE"})
+    void aRejectedPaperSendsNoneOfItsStoredRows(Document.Status status) throws IOException {
+        ResultView rejected = PaperFixtures.rejectedWithRows(status.name(), status == Document.Status.NEEDS_RETAKE ? "low_overall" : null);
+        assertThat(rejected.document().values()).as("the stored rows the paper holds").isNotEmpty();
+        serve(rejected);
+        JsonNode body = get(Lang.BN);
+        assertThat(body.path("status").asText()).isEqualTo(status.name());
+        for (String list : List.of("values", "medicines", "follow_up")) {
+            assertThat(body.path(list).isArray()).as("$." + list + " on " + status + " is a list").isTrue();
+            assertThat(body.path(list)).as("$." + list + " on " + status).isEmpty();
+        }
+        assertThat(body.path("doctor").isObject()).as("$.doctor on " + status + " is an object").isTrue();
+        assertThat(fieldNames(body.path("doctor"))).as("$.doctor on " + status).isEmpty();
+        assertThat(body.path("counts").isNull()).as("$.counts on " + status).isTrue();
+        assertThat(json.convertValue(body.path("unverified"), Map.class)).isEqualTo(rejected.document().unverified());
+
+        // the page drawn from the same read shows no crop either: only the whole photos
+        List<String> crops = Dom.parse(page(Lang.BN)).all.stream().filter(e -> e.tag().equals("img") && e.classes().contains("crop"))
+                .map(e -> e.attrs().get("src")).toList();
+        assertThat(crops).as("crops on the HTML page of a " + status + " paper").isEmpty();
+    }
+
+    /**
+     * {@code in_now_block} and {@code pin} against the page drawn from the same read, not against the rule PaperJson calls:
+     * the rows drawn inside the page's NOW reason blocks are exactly the rows the JSON marks, and each row's pin is the
+     * page's own circle. Over a NOW paper for a value, a NOW paper for a phrase only, and a THIS_WEEK paper.
+     */
+    @Test
+    void theNowBlockAndThePinAreThePagesOwn() throws IOException {
+        DocumentView paper = PaperFixtures.paper("2026-10-12",
+                List.of(PaperFixtures.sodiumLow(), PaperFixtures.potassiumCritical(), PaperFixtures.haemoglobinInside(), PaperFixtures.ldlOneSided()),
+                List.of(), List.of(), Map.of(), null);
+        Map<String, ResultView> papers = new LinkedHashMap<>();
+        papers.put("NOW for a value", PaperFixtures.nowPaper(PaperFixtures.BD));
+        papers.put("NOW for a phrase", PaperFixtures.result(paper, Urgency.NOW, List.of("text_emergency_phrase"), GateState.NONE, null, PaperFixtures.BD));
+        papers.put("THIS_WEEK", PaperFixtures.result(paper, Urgency.THIS_WEEK, List.of("value_critical:potassium|threshold:demo"), GateState.NONE,
+                null, PaperFixtures.BD));
+        Set<Boolean> marked = new HashSet<>();
+        int pins = 0;
+        for (Map.Entry<String, ResultView> c : papers.entrySet()) {
+            serve(c.getValue());
+            JsonNode body = get(Lang.BN);
+            Dom page = Dom.parse(page(Lang.BN));
+            List<Dom.Element> nowBlocks = page.all.stream()
+                    .filter(e -> e.tag().equals("section") && e.classes().contains("reason") && e.classes().contains("now")).toList();
+            Set<String> drawnAbove = new TreeSet<>();
+            page.all.stream().filter(e -> e.tag().equals("img") && e.classes().contains("crop") && e.parent() != null
+                            && e.parent().classes().contains("vrow") && nowBlocks.stream().anyMatch(s -> within(e, s)))
+                    .forEach(e -> drawnAbove.add(e.attrs().get("src")));
+            Set<String> markedAbove = new TreeSet<>();
+            body.path("values").forEach(v -> {
+                if (v.path("in_now_block").asBoolean()) {
+                    markedAbove.add(v.path("crop").path("src").asText());
+                }
+            });
+            assertThat(markedAbove).as(c.getKey() + ": the JSON's in_now_block rows are the page's NOW-block rows").isEqualTo(drawnAbove);
+            marked.add(!markedAbove.isEmpty());
+
+            for (JsonNode v : body.path("values")) {
+                String id = v.path("id").asText();
+                List<String> cx = page.all.stream().filter(e -> e.tag().equals("circle") && e.classes().contains("pin")
+                        && rowOf(e) != null && ("v-" + id).equals(rowOf(e).attrs().get("id"))).map(e -> e.attrs().get("cx")).toList();
+                if (v.path("pin").isNull()) {
+                    assertThat(cx).as(c.getKey() + ": the page draws no pin for row " + id).isEmpty();
+                } else {
+                    assertThat(cx).as(c.getKey() + ": the page's pin of row " + id).isNotEmpty()
+                            .containsOnly(String.format(java.util.Locale.ROOT, "%.1f", v.path("pin").asDouble()));
+                    pins++;
+                }
+            }
+        }
+        assertThat(marked).as("both a paper with rows above and one without were compared").containsExactlyInAnyOrder(true, false);
+        assertThat(pins).as("pins compared").isPositive();
+    }
+
+    /** The value row ({@code a.vrow}) an element is drawn inside, or null. */
+    private static Dom.Element rowOf(Dom.Element e) {
+        for (Dom.Element at = e.parent(); at != null; at = at.parent()) {
+            if (at.tag().equals("a") && at.classes().contains("vrow")) {
+                return at;
+            }
+        }
+        return null;
+    }
+
+    /** Both ways: every committed fixture is a current case, so a renamed or removed case leaves no stale body for MSW. */
+    @Test
+    void everyCommittedFixtureIsACurrentCase() throws IOException {
+        List<String> committed;
+        try (Stream<Path> files = java.nio.file.Files.list(COMMITTED)) {
+            committed = files.map(p -> p.getFileName().toString()).filter(n -> n.endsWith(".json")).sorted().toList();
+        }
+        assertThat(committed).as("the committed fixtures in " + COMMITTED.toAbsolutePath()).isNotEmpty();
+        assertThat(committed).as("committed fixtures vs the cases").containsExactlyInAnyOrderElementsOf(caseNames().map(n -> n + ".json").toList());
     }
 
     @Test

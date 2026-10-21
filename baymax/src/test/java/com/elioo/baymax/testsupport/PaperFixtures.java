@@ -78,6 +78,14 @@ public final class PaperFixtures {
         return m;
     }
 
+    /** A medicine line with every field a prescription writes, beside the extraction's own guesses and its crop. */
+    public static Map<String, Object> medicine(String name, String dose, String frequency, String timing, String duration) {
+        Map<String, Object> m = medicine(name, dose, duration);
+        m.put("frequency_text", frequency);
+        m.put("timing_text", timing);
+        return m;
+    }
+
     /** A follow-up as stored, with its crop. */
     public static Map<String, Object> followUp(String instruction, String due) {
         Map<String, Object> m = new LinkedHashMap<>();
@@ -173,6 +181,28 @@ public final class PaperFixtures {
         DocumentView view = new DocumentView(DOC.toString(), "FAILED", null, null, null, null, null, null, 1,
                 null, null, null, null, null);
         return new ResultView(view, MA, true, BD, null, List.of(), GateState.NONE, null, 0, REVIEW_HOURS, NOW.minusSeconds(60), NOW);
+    }
+
+    /**
+     * A FAILED or NEEDS_RETAKE paper that nonetheless holds stored rows — a value, a medicine, a follow-up and a doctor's
+     * line, each with its crop. The pipeline persists none today; a partial persist, a recrop or a later reprocess could.
+     * The page draws none of them for a read the system rejected, and neither may the JSON.
+     */
+    public static ResultView rejectedWithRows(String status, String code) {
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put("diagnosis", List.of(line("Hyperkalaemia", "f/p/d/ctx-dx-1.jpg")));
+        DocumentView view = new DocumentView(DOC.toString(), status, code, "lab_report", "2026-10-12", "Shapla Diagnostics", 0.3,
+                "m", 1, List.of(potassiumCritical()), List.of(medicine("Napa 500", "1+0+1", "7 days")),
+                List.of(followUp("Repeat the test after 7 days", "2026-10-19")), context,
+                Map.of("values", 1, "medicines", 0, "follow_up", 0, "total", 1));
+        return new ResultView(view, MA, true, BD, null, List.of(), GateState.NONE, null, "NEEDS_RETAKE".equals(status) ? 1 : 0,
+                REVIEW_HOURS, NOW.minusSeconds(60), NOW);
+    }
+
+    /** The same view with another typical review time, so a test can tell the served value from a default. */
+    public static ResultView withReviewHours(ResultView r, int hours) {
+        return new ResultView(r.document(), r.patient(), r.owner(), r.viewer(), r.urgency(), r.urgencyReasons(), r.gate(), r.wording(),
+                r.retakeOrdinal(), hours, r.receivedAt(), r.now());
     }
 
     /** A paper still being read ({@code RECEIVED} or {@code PROCESSING}), sent a minute ago, seen by its owner in Bangladesh. */

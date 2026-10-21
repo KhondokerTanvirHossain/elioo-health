@@ -31,13 +31,12 @@ import java.util.function.Function;
  * here, in Java, from the same {@link PaperDisplay} the HTML pages read, and sent as a field React renders and never
  * derives. Snake case. A key that does not apply is absent, never null: {@code now} (only on a NOW paper),
  * {@code wording} (only when the gate is RELEASED), {@code review_hours} (only PENDING), {@code retake} (only
- * NEEDS_RETAKE). Medicines carry only the fields as written. There is no confidence, no model, no developer reason
+ * NEEDS_RETAKE). The paper's items ({@code values}, {@code medicines}, {@code follow_up}, {@code doctor}) are sent only
+ * for DONE, as the page draws them; a rejected read sends them empty. Medicines carry only the fields as written
+ * ({@link PaperDisplay#MEDICINE_FIELDS}). There is no confidence, no model, no developer reason
  * prose, no reason code and no {@code tel:} anywhere in the tree: a call is a boolean, a line is a copy key.
  */
 public final class PaperJson {
-
-    /** The fields a medicine line was written with, in the order the prescription writes them; nothing derived. */
-    static final List<String> MEDICINE_FIELDS = List.of("name", "dose_text", "frequency_text", "timing_text", "duration_text");
 
     private PaperJson() {
     }
@@ -79,11 +78,14 @@ public final class PaperJson {
         long outside = PaperDisplay.outsideCount(values);
         m.put("counts", !r.done() || values.isEmpty() ? null
                 : ordered("values", values.size(), "outside", outside, "line_key", outside == 0 ? "result.counts.none" : "result.counts"));
+        // the paper's items only for DONE, as summaryBody draws them: a read the system rejected (NEEDS_RETAKE, FAILED)
+        // shows none of whatever rows it holds, so the JSON never sends a chip or a pin the page withholds
+        boolean shown = r.done();
         Set<ValueVerdict.Kind> above = PaperDisplay.shownAbove(level, r.urgencyReasons());
-        m.put("values", values.stream().filter(PaperJson::hasCrop).map(row -> value(documentId, row, above)).toList());
-        m.put("medicines", rows(v.medicines()).stream().filter(PaperJson::hasCrop).map(row -> medicine(documentId, row)).toList());
-        m.put("follow_up", rows(v.followUp()).stream().filter(PaperJson::hasCrop).map(row -> followUp(documentId, row)).toList());
-        m.put("doctor", doctor(documentId, v.clinicalContext()));
+        m.put("values", !shown ? List.of() : values.stream().filter(PaperJson::hasCrop).map(row -> value(documentId, row, above)).toList());
+        m.put("medicines", !shown ? List.of() : rows(v.medicines()).stream().filter(PaperJson::hasCrop).map(row -> medicine(documentId, row)).toList());
+        m.put("follow_up", !shown ? List.of() : rows(v.followUp()).stream().filter(PaperJson::hasCrop).map(row -> followUp(documentId, row)).toList());
+        m.put("doctor", !shown ? Map.of() : doctor(documentId, v.clinicalContext()));
         m.put("unverified", v.unverified());     // the stored V6 counts, verbatim
         if ("NEEDS_RETAKE".equals(v.status())) {
             m.put("retake", ordered("reason_key", retakeKey.apply(v.reasonCode()), "ordinal", r.retakeOrdinal()));
@@ -176,7 +178,7 @@ public final class PaperJson {
 
     private static Map<String, Object> medicine(UUID documentId, Map<String, Object> row) {
         Map<String, Object> m = new LinkedHashMap<>();
-        for (String field : MEDICINE_FIELDS) {
+        for (String field : PaperDisplay.MEDICINE_FIELDS) {
             Object written = row.get(field);
             if (written != null && !String.valueOf(written).isBlank()) {
                 m.put(field, String.valueOf(written));

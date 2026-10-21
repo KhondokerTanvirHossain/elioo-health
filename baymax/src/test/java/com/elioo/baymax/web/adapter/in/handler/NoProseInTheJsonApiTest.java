@@ -20,8 +20,11 @@ import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.outbound.application.port.out.OutboundMessagePort;
 import com.elioo.baymax.web.adapter.in.api.AppApiRouter;
 import com.elioo.baymax.web.adapter.in.api.PaperApiHandler;
-import com.elioo.baymax.web.adapter.in.ui.DocumentPages;
+import com.elioo.baymax.extraction.domain.RetakeReason;
+import com.elioo.baymax.testsupport.Json;
+import com.elioo.baymax.web.adapter.in.ui.Lang;
 import com.elioo.baymax.web.adapter.in.ui.UiCopy;
+import java.util.Arrays;
 import com.elioo.baymax.web.application.service.ResultService;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.application.port.in.UploadUseCase;
@@ -186,8 +189,21 @@ class NoProseInTheJsonApiTest {
         assertThat(body.path("status").asText()).as(uri + " $.status").isEqualTo(status);
         assertNoProseAndNoReasonField(uri, body, prose);
         if ("NEEDS_RETAKE".equals(status)) {
+            // the key the bundles say this code reads as: the section's own line where both languages hold one
+            UiCopy copy = new UiCopy();
+            RetakeReason reason = RetakeReason.ofCode(code).orElseThrow();
+            String section = RetakeReason.sectionOf(code);
+            String specific = section == null ? null : "retake.reason." + reason.prefix() + "." + section;
+            boolean bothHold = specific != null && Arrays.stream(Lang.values()).allMatch(l -> copy.keys(l).contains(specific));
             assertThat(body.path("retake").path("reason_key").asText()).as(uri + " $.retake.reason_key")
-                    .isEqualTo(DocumentPages.retakeReasonKey(new UiCopy(), code));
+                    .isEqualTo(bothHold ? specific : "retake.reason." + reason.prefix());
+            List<String> carryingTheCode = new ArrayList<>();
+            Json.walk(body, (path, node) -> {
+                if (node.isTextual() && node.asText().equals(code)) {
+                    carryingTheCode.add(path);
+                }
+            });
+            assertThat(carryingTheCode).as(uri + " scalars that are the stored code " + code).isEmpty();
         } else {
             assertThat(body.has("retake")).as(uri + " $.retake on " + status).isFalse();
         }

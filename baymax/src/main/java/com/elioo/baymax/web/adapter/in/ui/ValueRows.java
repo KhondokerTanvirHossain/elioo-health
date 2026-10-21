@@ -4,7 +4,6 @@ import com.elioo.baymax.outbound.domain.PrintedRange;
 import com.elioo.baymax.outbound.domain.ValueVerdict;
 import com.elioo.baymax.web.domain.PaperDisplay;
 
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -64,7 +63,7 @@ final class ValueRows {
         ValueVerdict.Kind kind = kindOf(v);
         String cls = kind.name().toLowerCase(Locale.ROOT);
         // the stored side belongs to the stored verdict: a demoted INSIDE or an UNKNOWN has none
-        String side = kind == ValueVerdict.Kind.INSIDE || kind == ValueVerdict.Kind.UNKNOWN ? null : storedSide(v);
+        String side = PaperDisplay.drawnSide(kind, v);
         OptionalDouble pin = pin(kind, v, side);
         String chip = copy.t(lang, chipKey(kind, side));
         String range = range(copy, lang, v);
@@ -101,7 +100,7 @@ final class ValueRows {
     static String sheetValue(UiCopy copy, Lang lang, Map<String, Object> v) {
         ValueVerdict.Kind kind = kindOf(v);
         String cls = kind.name().toLowerCase(Locale.ROOT);
-        String side = kind == ValueVerdict.Kind.INSIDE || kind == ValueVerdict.Kind.UNKNOWN ? null : storedSide(v);
+        String side = PaperDisplay.drawnSide(kind, v);
         OptionalDouble pin = pin(kind, v, side);
         String chip = copy.t(lang, chipKey(kind, side));
         String range = range(copy, lang, v);
@@ -126,16 +125,13 @@ final class ValueRows {
                 + "<span class=\"ends\" aria-hidden=\"true\"><span>" + esc(v.get("ref_low")) + "</span><span>" + esc(v.get("ref_high")) + "</span></span>";
     }
 
-    /** The fields a medicine line is captioned with, in the order the prescription writes them. */
-    private static final List<String> MEDICINE_FIELDS = List.of("name", "dose_text", "frequency_text", "timing_text", "duration_text");
-
     /**
      * MedicineRow (spec §9, principle 7): the crop first and large — what a pharmacy is shown — then the line as written,
      * quiet, joining only the fields that were written. No colour, no chip, no status: Medioo says nothing about a medicine.
      */
     static String medicine(UiCopy copy, Lang lang, UUID documentId, Map<String, Object> m) {
         String href = PageChrome.imageHref(documentId, crop(m.get("crop_key"), "a medicine"));
-        String caption = MEDICINE_FIELDS.stream().map(m::get).filter(Objects::nonNull).map(f -> String.valueOf(f).strip())
+        String caption = PaperDisplay.MEDICINE_FIELDS.stream().map(m::get).filter(Objects::nonNull).map(f -> String.valueOf(f).strip())
                 .filter(f -> !f.isEmpty()).map(Html::esc).collect(Collectors.joining(" · "));
         return "<a class=\"med\" href=\"" + href + "\"><img class=\"crop big\" loading=\"lazy\" alt=\"\" src=\"" + href + "\">"
                 + "<span class=\"cap\">" + caption + "</span><span class=\"zoom\">" + copy.t(lang, "crop.zoom") + "</span></a>";

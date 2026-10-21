@@ -112,7 +112,11 @@ class AppApiLogSafetyTest {
             exercise.put("GET /app/api/documents/{id}", (c, t) -> {
                 // the owner's GET carries the patient's name and a value named after her; another family's and a
                 // visitor's are refused before anything is read
-                c.get().uri("/app/api/documents/" + paper).cookie("baymax_session", t).exchange().expectStatus().isOk();
+                // both needles provably reached the handler's output, so the sweep below ran over a response carrying them
+                c.get().uri("/app/api/documents/" + paper).cookie("baymax_session", t).exchange().expectStatus().isOk()
+                        .expectBody().jsonPath("$.patient.name").isEqualTo(NAME)
+                        .jsonPath("$.values.length()").isEqualTo(1)
+                        .jsonPath("$.values[0].name").isEqualTo(NAME);
                 c.get().uri("/app/api/documents/" + paper).cookie("baymax_session", otherToken).exchange().expectStatus().isNotFound();
                 c.get().uri("/app/api/documents/" + paper).exchange().expectStatus().isUnauthorized();
                 c.get().uri(b -> b.path("/app/api/documents/{id}").build(NAME)).cookie("baymax_session", t)

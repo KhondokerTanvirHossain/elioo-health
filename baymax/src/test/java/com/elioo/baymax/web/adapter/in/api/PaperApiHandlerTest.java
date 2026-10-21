@@ -3,6 +3,7 @@ package com.elioo.baymax.web.adapter.in.api;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.testsupport.Json;
+import com.elioo.baymax.web.domain.AuditEvent;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -104,7 +105,16 @@ class PaperApiHandlerTest {
         return json.readTree(r.getResponseBody());
     }
 
+    /**
+     * The DOCUMENT_VIEW rows of this paper, by the kind as the adapter stores it; and every audit row of the paper is one,
+     * so a route that recorded some other kind instead of (or beside) the view is named here, not counted as the view.
+     */
     private static long views(UUID paper) throws Exception {
-        return AppApiContext.count(POSTGRES, "select count(*) from baymax.audit_event where document_id = '" + paper + "'");
+        String kind = AuditEvent.Kind.DOCUMENT_VIEW.dbValue();
+        long views = AppApiContext.count(POSTGRES, "select count(*) from baymax.audit_event where document_id = '" + paper
+                + "' and kind = '" + kind + "'");
+        long all = AppApiContext.count(POSTGRES, "select count(*) from baymax.audit_event where document_id = '" + paper + "'");
+        assertThat(all).as("audit rows of this paper that are not " + kind).isEqualTo(views);
+        return views;
     }
 }
