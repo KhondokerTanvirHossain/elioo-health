@@ -137,9 +137,9 @@ class RecoveredFailureIsToldOnceTest {
 
         List<String> outcomes = recovery.recoverInterrupted(BOOT).map(RecoveryReport::outcome).collectList().block();
 
-        assertThat(outcomes).containsExactly("failed_interrupted_repeatedly");
         assertThat(table.get(d.id()).status()).isEqualTo(Document.Status.FAILED);
-        assertThat(failureRows()).as("the interrupted document must not be failed in silence").hasSize(1);
+        assertThat(failureRows()).as("the interrupted document is told, and told once, in the whole sweep").hasSize(1);
+        assertThat(outcomes).containsExactly("failed_interrupted_repeatedly");
         assertThat(failureRows().get(0).body()).isEqualTo(new Copy().bn("failure.document", Map.of()));
         assertThat(failureRows().get(0).documentId()).isEqualTo(d.id());
         assertThat(messages.rows()).as("the notice and nothing else").hasSize(1);
