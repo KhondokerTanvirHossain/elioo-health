@@ -1161,3 +1161,42 @@ pending the PO's confirmation.
 - Its first rule (keyed to what was seen) and its tests-first rule stand. The exception is its member-B test, which
   (a) keeps and (b) inverts.
 - DR-41's list of prototype contradictions that must not ship is unchanged.
+
+## DR-47 | 2026-10-22 | An upload's `replaces` never refuses: stale is dropped (PO), another patient's paper is dropped (default, pending)
+
+**Ruling (PO, 2026-10-22, D1 finding 16):** "a retake whose original paper was deleted (or is no longer a retake) is
+uploaded as a normal new paper, unlinked, never refused." It is also recorded with the S1–S14 acceptance in DR-46
+(PR #134); this entry records how it is built, so it stands on its own if the two merge in either order.
+
+**What the code does (PR #133), on both upload routes (`POST /app/add`, the HTML retake form and sheet, and
+`POST /app/api/uploads`), in one place (`UploadService.retakeOf`):**
+- A `replaces` naming a paper of the chosen patient that the family can see and that is NEEDS_RETAKE is linked, as before.
+- **Stale is dropped (the ruling):** a paper the family cannot see (deleted) or one of this patient that is no longer
+  NEEDS_RETAKE. The photo is a normal new paper, unlinked: 303 / 200, never 404 `NOT_FOUND` or 400 `NOT_A_RETAKE`.
+- **Engineering choice:** a paper the family cannot see is treated as deleted, whether it was deleted or never the
+  family's (another family's paper): same answer, same INFO line, so an upload never reveals whether an id exists.
+  Asserted on Postgres with another family's live NEEDS_RETAKE paper (`RetakeLinkAcceptanceTest`).
+- **Engineering default, pending the PO's confirmation:** a visible paper of **another patient** is dropped too, and the
+  photo is filed under the patient the press chose. `patient` is the field the family chose; `replaces` is context the
+  client carried. W7's sheet opens at `/app/add?patient=<p>&replaces=<d>` and keeps its patient chooser, so a family that
+  opens Ma's retake and picks Abbu would otherwise get a 400 whose only copy is "try again later", for as long as they
+  try: a refusal contradicting "never refused" in the one place a family can reach it. The other patient's paper, its
+  retake card and every row naming that patient are untouched (asserted by a schema-derived `patient_id` sweep). If the
+  PO wants this case refused instead, it is a one-line change in `retakeOf` plus copy the PO words (never invented in
+  code); the W7 plan already makes the sheet drop `replaces` when the patient changes
+  (`aRetakeDropsReplacesWhenThePatientChanges`).
+- Each drop writes one INFO line with no id: one wording for stale, another for another patient's paper.
+
+**Reason names:** this narrows `NOT_A_RETAKE` to nothing: the upload path no longer raises it. MEDIOO.md's rule is that
+a name keeps its meaning and status once shipped (additive). This change is an **approved exception** under the PO's
+ruling: the name is kept with its status, so a client built on the shipped contract still parses it, and is never
+reused for another meaning. The executed plan's reason table
+(`docs/superpowers/plans/2026-10-22-medioo-wave2b-3-backend.md`) carries a dated note pointing here.
+
+**Pending (PO):** confirm the another-patient default above, or rule that it stays refused (and supply its copy).
+
+**Why:** the family should never be stopped from sending a photo because the paper it was meant to replace changed
+under them; and a hidden field the family did not choose should not override the one they did.
+
+**Supersedes:** D1's refusals for a stale `replaces` (`NOT_FOUND` 404, `NOT_A_RETAKE` 400), in MEDIOO.md and the
+Wave 2b–3 backend plan.

@@ -230,28 +230,37 @@ class AddReportSubmitTest {
     }
 
     /**
-     * D1: a stale retake page (the paper it names no longer waits for a retake) is refused by admission with
-     * {@code not_a_retake}: the sheet comes back at 400 with the generic copy, never a 500 and never the developer
-     * message, and nothing is uploaded. Asserted on the page, not on the REFUSALS map entry.
+     * D1: a retake form whose {@code replaces} admission dropped (stale since the PO ruling of 2026-10-22, or another
+     * patient's paper, DR-47) and whose press is then refused for its file comes back on a sheet that closes to the
+     * patient's papers, never to {@code /app/documents/<that paper>}, which may be a paper the family deleted. The other
+     * direction: a {@code replaces} admission still links keeps the form's own back. Asserted on the page.
      */
     @Test
-    void aStaleRetakeFormGetsTheSheetWithTheGenericCopyAndNothingIsSent() throws IOException {
+    void aRefusedRetakeFormClosesToThePapersOnlyWhenItsReplacesWasDropped() throws IOException {
         var ma = AddReportSheetPageTest.patient("আম্মা", 64, true);
         when(uploads.uploadOptions(family)).thenReturn(Mono.just(new UploadOptions(List.of(ma), List.of(), AddReportSheetPageTest.used(0))));
         UUID stale = UUID.fromString("0f8e2c1a-5d1b-4c7e-9a3f-2b6d8e4c1a71");
-        when(uploads.admit(family, ma.patient().id(), stale)).thenReturn(Mono.error(
-                com.elioo.baymax.common.error.BaymaxException.badRequest("not_a_retake", "replaces names a paper that is not this patient's retake")));
-        MultipartBodyBuilder body = new MultipartBodyBuilder();
-        body.part("patient", ma.patient().id().toString());
-        body.part("replaces", stale.toString());
-        body.part("back", "/app/documents/" + stale);
-        body.part("file", jpeg()).filename("retake.jpg");
-        String html = post(body).expectStatus().isBadRequest().expectHeader().contentTypeCompatibleWith(MediaType.TEXT_HTML)
-                .expectBody(String.class).returnResult().getResponseBody();
-        assertThat(html).contains("কিছু একটা ভুল হয়েছে। একটু পরে আবার চেষ্টা করুন।")
-                .doesNotContain("not this patient's retake").doesNotContain("not_a_retake");
-        verify(uploads).admit(family, ma.patient().id(), stale);
-        verify(uploads, never()).upload(any(), any(), any(), any(), any(), any());
+        UUID waiting = UUID.fromString("0f8e2c1a-5d1b-4c7e-9a3f-2b6d8e4c1a72");
+        when(uploads.admit(family, ma.patient().id(), stale)).thenReturn(Mono.empty());
+        when(uploads.admit(family, ma.patient().id(), waiting)).thenReturn(Mono.just(waiting));
+        when(uploads.upload(any(), any(), any(), any(), any(), any())).thenReturn(Mono.error(
+                com.elioo.baymax.common.error.BaymaxException.badRequest("unsupported_image", "not an image")));
+        String papers = "/app/timeline?patient=" + ma.patient().id();
+        for (UUID replaces : List.of(stale, waiting)) {
+            MultipartBodyBuilder body = new MultipartBodyBuilder();
+            body.part("patient", ma.patient().id().toString());
+            body.part("replaces", replaces.toString());
+            body.part("back", "/app/documents/" + replaces);
+            body.part("file", jpeg()).filename("retake.jpg");
+            String html = post(body).expectStatus().isBadRequest().expectHeader().contentTypeCompatibleWith(MediaType.TEXT_HTML)
+                    .expectBody(String.class).returnResult().getResponseBody();
+            String expected = replaces.equals(stale) ? papers : "/app/documents/" + waiting;
+            assertThat(html).as("replaces=" + replaces).contains("এই ধরনের ফাইল এখনো খুলতে পারি না")
+                    .contains("href=\"" + expected + "\" aria-label=").contains("name=\"back\" value=\"" + expected + "\"");
+            if (replaces.equals(stale)) {
+                assertThat(html).doesNotContain("/app/documents/" + stale);
+            }
+        }
     }
 
     /**

@@ -101,7 +101,7 @@ Inputs no task's main tests exercise, most likely to reach a family first. Each 
 |---|---|---|---|
 | `VIEW_ONLY` (exists) | 403 | add `Map.entry("not_owner", VIEW_ONLY)`: `TimelineService.updateChronicFlags` throws `not_owner` for a share member | B5 |
 | `INVALID` (exists) | 400 | `month=` not `YYYY-MM`, an ack body that is not a list of `{document_id, urgency, reasons_digest, release_state}` (B3); flags that are too many (>20) or too long (>40), and `{"on": true}` on a reminders route before E2 (B5); whether a not-offered flag is refused is open with the PO (Q10, default accept) | B3, B5 |
-| `NOT_A_RETAKE` | 400 | an upload's `replaces` names a paper of this patient that is not NEEDS_RETAKE (`not_a_retake`) | D1 |
+| `NOT_A_RETAKE` | 400 | an upload's `replaces` names a paper of this patient that is not NEEDS_RETAKE (`not_a_retake`). *Update 2026-10-22 (PO ruling, D1 finding 16, PR #133, [DR-47](../../DECISIONS.md)):* a stale `replaces` (deleted / not visible, or no longer NEEDS_RETAKE) is dropped and the photo uploads unlinked, never refused; a visible paper of another patient is dropped too, the photo filed under the patient the press chose (DR-47, pending the PO's confirmation). The upload path no longer raises `NOT_A_RETAKE`; the name is kept, never reused. | D1 |
 
 **Route list after this plan** (each PR adds only its own; `docs/infra/app-routes.txt` is regenerated):
 

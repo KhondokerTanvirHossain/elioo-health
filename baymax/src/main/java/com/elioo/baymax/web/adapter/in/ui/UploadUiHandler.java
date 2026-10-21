@@ -301,9 +301,8 @@ public class UploadUiHandler implements WebPages {
             Map.entry("request_too_large", "upload.err.too_large"),
             Map.entry("shared_patient_read_only", "add.viewonly"),
             // D3: the same sheet sent again for someone else (Back, another patient, পাঠান); the re-drawn sheet has a new key
-            Map.entry("upload_key_reused", "upload.err.key_reused"),
-            // D1: a retake page naming a paper that no longer waits for one (only a stale page can send it): no own copy
-            Map.entry("not_a_retake", "app.err.generic"));
+            Map.entry("upload_key_reused", "upload.err.key_reused"));
+    // D1: no retake refusal; a replaces that is not this patient's retake is dropped and the photo uploads (DR-47)
 
     /** {@code POST /app/add}: the sheet's form, with or without script. The patient is the one the family chose. */
     public Mono<ServerResponse> submit(ServerRequest request) {
@@ -335,20 +334,25 @@ public class UploadUiHandler implements WebPages {
             // D1: the retake page names the paper this photo replaces; the sheet and the legacy form never do
             UUID replaces = MultipartUploads.replacesOrNull(parts);
             // who may send for this patient, and the retake it replaces, are asked before a file is joined into memory
-            return uploads.admit(session.familyId(), patientId, replaces)
-                    .then(MultipartUploads.files(parts, properties, grouping))
-                    .flatMap(pages -> {
-                        long total = pages.stream().mapToLong(u -> u.bytes().length).sum();
-                        return uploads.upload(session.familyId(), patientId, pages, grouping, key, replaces)
-                                .doOnNext(docs -> docs.forEach(d -> log.info("[baymax] web upload documentId={} files={} bytes={} documents={}",
-                                        d.id(), pages.size(), total, docs.size())))
-                                // one document opens; several land on the patient's papers, where each one is
-                                .map(docs -> docs.size() == 1 ? BASE + "/documents/" + docs.get(0).id()
-                                        : Tab.PAPERS.path + "?patient=" + patientId);
+            return uploads.admit(session.familyId(), patientId, replaces).map(Optional::of).defaultIfEmpty(Optional.empty())
+                    .flatMap(linked -> {
+                        String sheetBack = backAfterAdmit(back, replaces, linked.isPresent(), patientId);
+                        return MultipartUploads.files(parts, properties, grouping)
+                                .flatMap(pages -> {
+                                    long total = pages.stream().mapToLong(u -> u.bytes().length).sum();
+                                    return uploads.upload(session.familyId(), patientId, pages, grouping, key, replaces)
+                                            .doOnNext(docs -> docs.forEach(d -> log.info("[baymax] web upload documentId={} files={} bytes={} documents={}",
+                                                    d.id(), pages.size(), total, docs.size())))
+                                            // one document opens; several land on the patient's papers, where each one is
+                                            .map(docs -> docs.size() == 1 ? BASE + "/documents/" + docs.get(0).id()
+                                                    : Tab.PAPERS.path + "?patient=" + patientId);
+                                })
+                                .flatMap(next -> wantsJson(request)
+                                        ? ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValue(Map.of("next", next))
+                                        : Html.redirect(next))
+                                .onErrorResume(BaymaxException.class, e -> refuse(request, e, Optional.of(patientId.toString()), sheetBack, grouping));
                     })
-                    .flatMap(next -> wantsJson(request)
-                            ? ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValue(Map.of("next", next))
-                            : Html.redirect(next))
+                    // admission's own refusal (the patient rule): nothing was decided about replaces, so the form's back
                     .onErrorResume(BaymaxException.class, e -> refuse(request, e, Optional.of(patientId.toString()), back, grouping));
         }).onErrorResume(BaymaxException.class, e -> refuse(request, e, Optional.ofNullable(pathPatient).map(UUID::toString),
                 backOf(request, null, pathPatient), Grouping.ONE));
@@ -395,6 +399,17 @@ public class UploadUiHandler implements WebPages {
         List<MediaType> accept = request.headers().accept();
         return accept.stream().anyMatch(m -> !m.isWildcardType() && !m.isWildcardSubtype() && MediaType.APPLICATION_JSON.isCompatibleWith(m))
                 && accept.stream().noneMatch(m -> !m.isWildcardType() && MediaType.TEXT_HTML.isCompatibleWith(m));
+    }
+
+    /**
+     * D1: a retake form's {@code back} is the page of the paper it replaces. When admission dropped that {@code replaces}
+     * (deleted since the page was drawn, no longer a retake, another patient's: DR-47), a refusal later in the same press
+     * would redraw the sheet closing to that page, which for a deleted paper is a not-found page for a paper the family
+     * deleted themselves; it closes to the chosen patient's papers instead. Any other {@code back} is kept.
+     */
+    static String backAfterAdmit(String back, UUID replaces, boolean linked, UUID patientId) {
+        return replaces != null && !linked && back.equals(BASE + "/documents/" + replaces)
+                ? Tab.PAPERS.path + "?patient=" + patientId : back;
     }
 
     /** Where the sheet's close goes: the form's own {@code back}, else the patient's papers (legacy), else চ্যাট. */
