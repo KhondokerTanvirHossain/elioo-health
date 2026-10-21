@@ -230,17 +230,18 @@ class AddReportSubmitTest {
     }
 
     /**
-     * D1: a stale retake page (the paper it names no longer waits for a retake) is refused by admission with
-     * {@code not_a_retake}: the sheet comes back at 400 with the generic copy, never a 500 and never the developer
-     * message, and nothing is uploaded. Asserted on the page, not on the REFUSALS map entry.
+     * D1: a retake form naming another patient's paper is refused by admission with {@code not_a_retake} (a stale one
+     * is dropped and uploads unlinked since the PO ruling of 2026-10-22, RetakeLinkAcceptanceTest): the sheet comes back
+     * at 400 with the generic copy, never a 500 and never the developer message, and nothing is uploaded. Asserted on the
+     * page, not on the REFUSALS map entry.
      */
     @Test
-    void aStaleRetakeFormGetsTheSheetWithTheGenericCopyAndNothingIsSent() throws IOException {
+    void aRetakeFormNamingAnotherPatientsPaperGetsTheSheetWithTheGenericCopyAndNothingIsSent() throws IOException {
         var ma = AddReportSheetPageTest.patient("আম্মা", 64, true);
         when(uploads.uploadOptions(family)).thenReturn(Mono.just(new UploadOptions(List.of(ma), List.of(), AddReportSheetPageTest.used(0))));
         UUID stale = UUID.fromString("0f8e2c1a-5d1b-4c7e-9a3f-2b6d8e4c1a71");
         when(uploads.admit(family, ma.patient().id(), stale)).thenReturn(Mono.error(
-                com.elioo.baymax.common.error.BaymaxException.badRequest("not_a_retake", "replaces names a paper that is not this patient's retake")));
+                com.elioo.baymax.common.error.BaymaxException.badRequest("not_a_retake", "replaces names another patient's paper")));
         MultipartBodyBuilder body = new MultipartBodyBuilder();
         body.part("patient", ma.patient().id().toString());
         body.part("replaces", stale.toString());
@@ -249,7 +250,7 @@ class AddReportSubmitTest {
         String html = post(body).expectStatus().isBadRequest().expectHeader().contentTypeCompatibleWith(MediaType.TEXT_HTML)
                 .expectBody(String.class).returnResult().getResponseBody();
         assertThat(html).contains("কিছু একটা ভুল হয়েছে। একটু পরে আবার চেষ্টা করুন।")
-                .doesNotContain("not this patient's retake").doesNotContain("not_a_retake");
+                .doesNotContain("another patient's paper").doesNotContain("not_a_retake");
         verify(uploads).admit(family, ma.patient().id(), stale);
         verify(uploads, never()).upload(any(), any(), any(), any(), any(), any());
     }

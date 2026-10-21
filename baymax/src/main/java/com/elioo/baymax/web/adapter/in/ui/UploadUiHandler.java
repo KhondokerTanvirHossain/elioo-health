@@ -302,7 +302,7 @@ public class UploadUiHandler implements WebPages {
             Map.entry("shared_patient_read_only", "add.viewonly"),
             // D3: the same sheet sent again for someone else (Back, another patient, পাঠান); the re-drawn sheet has a new key
             Map.entry("upload_key_reused", "upload.err.key_reused"),
-            // D1: a retake page naming a paper that no longer waits for one (only a stale page can send it): no own copy
+            // D1: a press naming another patient's paper (a stale one is dropped, never refused, PO 2026-10-22): no own copy
             Map.entry("not_a_retake", "app.err.generic"));
 
     /** {@code POST /app/add}: the sheet's form, with or without script. The patient is the one the family chose. */

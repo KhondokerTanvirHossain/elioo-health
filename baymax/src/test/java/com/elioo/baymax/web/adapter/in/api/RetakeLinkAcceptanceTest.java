@@ -11,6 +11,7 @@ import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.testsupport.PaintedPaper;
 import com.elioo.baymax.web.adapter.in.ui.Dom;
 import com.elioo.baymax.web.application.port.in.AttentionUseCase;
+import com.elioo.baymax.web.application.port.in.TimelineUseCase;
 import com.elioo.baymax.web.application.service.UploadService;
 import com.elioo.baymax.web.domain.AttentionItem;
 import org.junit.jupiter.api.Test;
@@ -34,6 +35,7 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,7 +49,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * Plan D1, end to end on Postgres and MinIO: the retake page's form names the paper its photo replaces, the upload links
  * the new paper to it, and the old paper's retake card leaves the চ্যাট stack; the FAILED page's resend names nothing and
- * still uploads; a replayed press links once; and the database itself refuses a link across patients (the retake_replaces trigger).
+ * still uploads; a replayed press links once; a stale {@code replaces} (its paper deleted, or no longer a retake) uploads
+ * unlinked on both routes (PO ruling 2026-10-22); and the database itself refuses a link across patients (the
+ * retake_replaces trigger).
  * Everything is real except OCR and the model, stubbed to read every new photo as the painted NOW page.
  */
 @Testcontainers
@@ -104,6 +108,11 @@ class RetakeLinkAcceptanceTest {
 
     /** Posts the form's hidden fields and a fresh photo to its action; the redirect's location. */
     private static String post(Family f, Map<String, String> form) {
+        return location(send(f, form));
+    }
+
+    /** Posts the form's hidden fields and a fresh photo to its action, and asserts nothing: the answer as it came. */
+    private static EntityExchangeResult<byte[]> send(Family f, Map<String, String> form) {
         MultipartBodyBuilder body = new MultipartBodyBuilder();
         form.forEach((name, value) -> {
             if (!name.startsWith("@")) {
@@ -111,8 +120,12 @@ class RetakeLinkAcceptanceTest {
             }
         });
         body.part("file", PaintedPaper.paintedPage()).filename("page-1.jpg").contentType(MediaType.IMAGE_JPEG);
-        EntityExchangeResult<byte[]> r = f.client().post().uri(form.get("@action")).cookie("baymax_session", f.session())
+        return f.client().post().uri(form.get("@action")).cookie("baymax_session", f.session())
                 .body(BodyInserters.fromMultipartData(body.build())).exchange().expectBody().returnResult();
+    }
+
+    /** The redirect of a form's post that uploaded: 303 to the new paper's page. */
+    private static String location(EntityExchangeResult<byte[]> r) {
         assertThat(r.getStatus().value()).as("the form's post answered " + text(r)).isEqualTo(303);
         String location = r.getResponseHeaders().getFirst(HttpHeaders.LOCATION);
         assertThat(location).as("the upload's redirect").matches("/app/documents/[0-9a-f-]{36}");
@@ -278,16 +291,146 @@ class RetakeLinkAcceptanceTest {
         });
     }
 
-    /** Through the real guard: a press naming a finished paper is 400 {"reason":"NOT_A_RETAKE"}, and nothing is stored. */
+    /**
+     * Every event logged at INFO or above while {@code body} runs, from every logger: the stale path's own line and the
+     * two handlers' upload lines included, so a stale id logged anywhere on the press is caught, not only in UploadService.
+     */
+    private static List<ILoggingEvent> logged(ThrowingRunnable body) throws Exception {
+        ListAppender<ILoggingEvent> events = new ListAppender<>();
+        events.start();
+        Logger root = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
+        root.addAppender(events);
+        try {
+            body.run();
+        } finally {
+            root.detachAppender(events);
+        }
+        return events.list.stream().filter(e -> e.getLevel().isGreaterOrEqual(Level.INFO)).toList();
+    }
+
+    private interface ThrowingRunnable {
+        void run() throws Exception;
+    }
+
+    /** The stale paper's id in no INFO+ line: not in the formatted message, not among the arguments (by value). */
+    private static void noLineCarries(List<ILoggingEvent> events, UUID... ids) {
+        assertThat(events).as("lines were captured at all").isNotEmpty();
+        for (UUID id : ids) {
+            for (ILoggingEvent e : events) {
+                assertThat(e.getFormattedMessage()).as("INFO+ line from %s", e.getLoggerName()).doesNotContain(id.toString());
+                assertThat(e.getArgumentArray() == null ? List.of() : List.of(e.getArgumentArray()))
+                        .as("arguments of an INFO+ line from %s", e.getLoggerName()).doesNotContain(id, id.toString());
+            }
+        }
+    }
+
+    /** The stale path ran, not a link that failed (which leaves the same NULL column): its INFO line once per press, and no WARN. */
+    private static void droppedAsStale(List<ILoggingEvent> events, int presses) {
+        assertThat(events.stream().filter(e -> e.getLevel() == Level.INFO && e.getLoggerName().equals(UploadService.class.getName())
+                && e.getFormattedMessage().contains("replaces is stale")).count()).as("the stale line, once per press").isEqualTo(presses);
+        assertThat(events.stream().filter(e -> e.getLevel().isGreaterOrEqual(Level.WARN)).map(ILoggingEvent::getFormattedMessage).toList())
+                .as("WARN or above").isEmpty();
+    }
+
+    private static String replacesOf(UUID document) throws Exception {
+        return scalar("SELECT coalesce(replaces_document_id::text, 'none') FROM baymax.document WHERE id = '" + document + "'");
+    }
+
+    /**
+     * PO ruling 2026-10-22 (D1 finding 16), the deleted half, on both routes: a retake page left open while its paper is
+     * deleted, then sent ({@code POST /app/add}), and a JSON press naming a paper deleted since. Each photo is a normal new
+     * paper, unlinked, never refused, and no INFO+ line names the deleted paper. The other direction, same family, same
+     * run: a press naming a paper that still waits for its retake links.
+     */
     @Test
-    void aPressNamingAFinishedPaperIsRefusedByName() {
+    void aRetakeWhosePaperWasDeletedIsUploadedUnlinkedOnBothRoutes() {
+        AppApiContext.runner(POSTGRES, MINIO).run(context -> {
+            Family f = family(context, "+8801700000761");
+            UUID a = paper(context, f.patient(), "NEEDS_RETAKE");
+            UUID a2 = paper(context, f.patient(), "NEEDS_RETAKE");
+            UUID waiting = paper(context, f.patient(), "NEEDS_RETAKE");
+            Map<String, String> openPage = form(f, a, "retake-form");
+            assertThat(openPage).containsEntry("replaces", a.toString());
+            TimelineUseCase timeline = context.getBean(TimelineUseCase.class);
+            timeline.deleteDocument(f.patient().familyId(), a).block();
+            timeline.deleteDocument(f.patient().familyId(), a2).block();
+            assertThat(scalar("SELECT count(*) FROM baymax.document WHERE id IN ('" + a + "','" + a2 + "')")).as("both deleted").isEqualTo("0");
+
+            List<EntityExchangeResult<byte[]>> answers = new ArrayList<>();
+            List<ILoggingEvent> events = logged(() -> {
+                answers.add(send(f, openPage));
+                answers.add(apiPress(f, UUID.randomUUID().toString(), a2));
+            });
+            // both routes' answers in one assertion, so a replay against the strict rule shows each route's refusal
+            assertThat(answers.stream().map(r -> r.getStatus().value()).toList())
+                    .as("[POST /app/add, POST /app/api/uploads] answered %s", answers.stream().map(r -> r.getStatus().value() + " " + (text(r).startsWith("{") ? text(r) : "(page)")).toList())
+                    .containsExactly(303, 200);
+            UUID[] made = {idOf(location(answers.get(0))), UUID.fromString(firstId(answers.get(1)))};
+            assertThat(replacesOf(made[0])).as("the HTML retake form's photo").isEqualTo("none");
+            assertThat(replacesOf(made[1])).as("the JSON press's photo").isEqualTo("none");
+            assertThat(scalar("SELECT count(*) FROM baymax.document WHERE patient_id = '" + f.patient().id() + "' AND id <> '" + waiting + "'"))
+                    .as("two new papers, nothing else").isEqualTo("2");
+            noLineCarries(events, a, a2);
+            droppedAsStale(events, 2);
+
+            // the other direction: a paper that still waits links, on the same route
+            EntityExchangeResult<byte[]> valid = apiPress(f, UUID.randomUUID().toString(), waiting);
+            assertThat(valid.getStatus().value()).as(text(valid)).isEqualTo(200);
+            assertThat(replacesOf(UUID.fromString(firstId(valid)))).isEqualTo(waiting.toString());
+        });
+    }
+
+    /**
+     * The same ruling, the no-longer-a-retake half: the paper still exists but no longer waits for a retake (read since,
+     * DONE). The retake page left open, then sent, and a JSON press naming a DONE paper: each a normal new paper,
+     * unlinked, never 400 NOT_A_RETAKE. The other direction on the HTML route: a page whose paper still waits links.
+     */
+    @Test
+    void aRetakeWhosePaperIsNoLongerARetakeIsUploadedUnlinkedOnBothRoutes() {
+        AppApiContext.runner(POSTGRES, MINIO).run(context -> {
+            Family f = family(context, "+8801700000762");
+            UUID a = paper(context, f.patient(), "NEEDS_RETAKE");
+            UUID done = paper(context, f.patient(), "DONE");
+            UUID waiting = paper(context, f.patient(), "NEEDS_RETAKE");
+            Map<String, String> openPage = form(f, a, "retake-form");
+            Map<String, String> waitingPage = form(f, waiting, "retake-form");
+            AppApiContext.sql(POSTGRES, "UPDATE baymax.document SET status = 'DONE', status_reason_code = NULL, status_reason = NULL WHERE id = '" + a + "'");
+
+            List<EntityExchangeResult<byte[]>> answers = new ArrayList<>();
+            List<ILoggingEvent> events = logged(() -> {
+                answers.add(send(f, openPage));
+                answers.add(apiPress(f, UUID.randomUUID().toString(), done));
+            });
+            // both routes' answers in one assertion, so a replay against the strict rule shows each route's refusal
+            assertThat(answers.stream().map(r -> r.getStatus().value()).toList())
+                    .as("[POST /app/add, POST /app/api/uploads] answered %s", answers.stream().map(r -> r.getStatus().value() + " " + (text(r).startsWith("{") ? text(r) : "(page)")).toList())
+                    .containsExactly(303, 200);
+            UUID[] made = {idOf(location(answers.get(0))), UUID.fromString(firstId(answers.get(1)))};
+            assertThat(replacesOf(made[0])).as("the HTML retake form's photo").isEqualTo("none");
+            assertThat(replacesOf(made[1])).as("the JSON press's photo").isEqualTo("none");
+            noLineCarries(events, a, done);
+            droppedAsStale(events, 2);
+
+            UUID linked = idOf(post(f, waitingPage));
+            assertThat(replacesOf(linked)).as("the page whose paper still waits").isEqualTo(waiting.toString());
+        });
+    }
+
+    /**
+     * Not stale, so outside the ruling, and refused as today: a paper the family can see that belongs to ANOTHER patient.
+     * The press contradicts itself (a photo for Ma sent as the retake of Abbu's paper), and taking it would file the photo
+     * under whichever of the two the client got wrong. 400 {"reason":"NOT_A_RETAKE"}, nothing stored.
+     */
+    @Test
+    void aPressNamingAnotherPatientsPaperIsStillRefusedByName() {
         AppApiContext.runner(POSTGRES, MINIO).run(context -> {
             Family f = family(context, "+8801700000754");
-            UUID done = paper(context, f.patient(), "DONE");
-            EntityExchangeResult<byte[]> r = apiPress(f, UUID.randomUUID().toString(), done);
+            PatientProfile abbu = AppApiContext.patient(context, f.patient().familyId(), "Abbu");
+            UUID abbusRetake = paper(context, abbu, "NEEDS_RETAKE");
+            EntityExchangeResult<byte[]> r = apiPress(f, UUID.randomUUID().toString(), abbusRetake);
             assertThat(r.getStatus().value()).isEqualTo(400);
             assertThat(text(r)).isEqualTo("{\"reason\":\"NOT_A_RETAKE\"}");
-            assertThat(scalar("SELECT count(*) FROM baymax.document WHERE patient_id = '" + f.patient().id() + "'")).isEqualTo("1");
+            assertThat(scalar("SELECT count(*) FROM baymax.document WHERE patient_id = '" + f.patient().id() + "'")).isEqualTo("0");
         });
     }
 

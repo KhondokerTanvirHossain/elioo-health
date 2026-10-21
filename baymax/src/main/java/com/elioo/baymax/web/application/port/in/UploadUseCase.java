@@ -19,8 +19,10 @@ public interface UploadUseCase {
      * ({@code patient_not_found}) for a patient it cannot see, 403 ({@code shared_patient_read_only}) for one it may only
      * see (share member, D30), empty otherwise. The free allowance is not asked here: only intake can tell a retry of a
      * press that used the last free paper, which is answered with its document, from a new press. D1: a non-null
-     * {@code replaces} must be a paper of this patient, visible to this family, waiting for a retake: 404
-     * ({@code document_not_found}) for one it cannot see, 400 ({@code not_a_retake}) for any other; null replaces nothing.
+     * {@code replaces} that is a paper of this patient, visible to this family and waiting for a retake, is linked; a
+     * stale one (not visible, so deleted or never this family's, or no longer waiting for a retake) is dropped and the
+     * photo uploads unlinked, never refused (PO ruling 2026-10-22); a visible paper of another patient is 400
+     * ({@code not_a_retake}); null replaces nothing.
      */
     Mono<Void> admit(UUID familyId, UUID patientId, UUID replaces);
 

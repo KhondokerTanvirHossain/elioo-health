@@ -80,7 +80,7 @@ public enum ApiReason {
     FREE_TIER_DOCUMENTS(HttpStatus.PAYMENT_REQUIRED),
     /** A paper delete without a valid confirm token: missing, another paper's, another session's, tampered or expired. */
     CONFIRM_REQUIRED(HttpStatus.BAD_REQUEST),
-    /** Upload (D1): {@code replaces} names a paper of this family that is not this patient's paper waiting for a retake. */
+    /** Upload (D1): {@code replaces} names another patient's paper; a stale one (deleted, or no longer a retake) is dropped, never refused. */
     NOT_A_RETAKE(HttpStatus.BAD_REQUEST);
 
     /**
