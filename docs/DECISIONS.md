@@ -1164,6 +1164,54 @@ pending the PO's confirmation.
   (a) keeps and (b) inverts.
 - DR-41's list of prototype contradictions that must not ship is unchanged.
 
+## DR-46 | 2026-10-22 | Wave 3 screens plan: defaults S1–S14 accepted, and a retake whose paper is gone is a new paper
+
+**Decision (PO, 2026-10-22):** the PO accepted all fourteen defaults S1–S14 exactly as the Wave 3 screens plan's
+"PO decisions this plan needs" table states them
+([`docs/superpowers/plans/2026-10-22-medioo-wave3-screens.md`](superpowers/plans/2026-10-22-medioo-wave3-screens.md)).
+That table is the text of record; this entry does not restate it, so the two cannot drift. In short:
+
+| # | Accepted default |
+|---|---|
+| S1 | The no-JS sign-in fallback is kept, at `/app/basic` (W3-api). |
+| S2 | W3-api's `/app/basic*` HTML routes are added under `/app`; the PR still asks for the snapshot sign-off. |
+| S3 | Cut accepted: `/app/login` stays on Java; F3 flips `GET`/`HEAD` `/app`, `/app/`, `/app/verify` only. |
+| S4 | A share member's chat thread lists only messages delivered to their own `family_account`. |
+| S5 | The family reminder switch is hidden for a viewer who owns no patient. |
+| S6 | Cut accepted: W10 ships theme and language only; sounds land with W12. |
+| S7 | Cut accepted: no delete-family in পরিবার in W10; it follows E1/E2-API with the PO's written yes. |
+| S8 | The plan's copy drafts ship as written, each at its own PR's merge. |
+| S9 | The DR-42 ceilings file holds the two ceilings, the page list is `NEXT_PAGES`, Java-served images are out of a route total. |
+| S10 | The thread lists a message only when its `document_id` is NULL or still has a `document` row; P1's storage question stays open. |
+| S11 | Logged-only history (`sent_at` set, `delivery_status` NULL) is not listed in the thread. |
+| S12 | W10-api adds `PUT /app/api/preferences` for the `baymax_theme` cookie. |
+| S13 | The thread's card for a share member abroad is checked by field (`call_999` false). |
+| S14 | The calendar read records no audit row; the timeline read is the view (W8-api). |
+
+**Retake ruling (PO, 2026-10-22):** a retake upload whose original paper was deleted, or is no longer a retake, is
+uploaded as a normal new paper, unlinked, and is never refused. Before the ruling `POST /app/api/uploads` answered
+`NOT_FOUND` for a `replaces` that is not visible and `NOT_A_RETAKE` 400 for one that does not wait for a retake (D1,
+MEDIOO.md); the ruling changes that outcome. It is built in PR #133, in one place (`UploadService.retakeOf`), with both
+directions asserted: a gone or no-longer-retake `replaces` gives a new, unlinked paper, and a paper still waiting for
+its retake is still linked. How it is built, and the engineering default still pending, is DR-47.
+
+**What this does not release:** the family-facing route flips (F3, F5–F10) wait for the PO's on-device try. "Accepted"
+releases each PR's merge as the table's Blocks column names it, nothing more.
+
+**Open, asked of the PO (W8-api review, PR #131):** S14 as accepted removes the calendar's row, so one render of the
+papers page is one `timeline_view`, not two. The page is server-rendered and every control is a plain link, so each
+month, filter or cursor link is a new render and still records one view through the timeline: from W8 on,
+`timeline_views` counts renders, not opens. If S14 meant "no extra row per month link", the timeline's audit must
+change too, which needs its own ruling.
+
+**Why:** the defaults were written so that each is safe to build on; the PO's acceptance lets each blocked PR merge on
+the default it was built and tested on.
+
+**Alternatives:** each row's alternative is in the plan table (for S1, accepting the no-JS gap; for S12, a
+`document.cookie` the page sets).
+
+**Supersedes:** nothing. DR-42's pending no-JS fallback item is answered by S1 (kept).
+
 ## DR-47 | 2026-10-22 | An upload's `replaces` never refuses: stale is dropped (PO), another patient's paper is dropped (default, pending)
 
 **Ruling (PO, 2026-10-22, D1 finding 16):** "a retake whose original paper was deleted (or is no longer a retake) is
