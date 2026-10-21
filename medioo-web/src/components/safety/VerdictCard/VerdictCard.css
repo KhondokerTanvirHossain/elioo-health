@@ -1,0 +1,90 @@
+/* Medioo's answer to one paper (VerdictCard.tsx), the prototypes' verdict card: the Messages rich-link grammar, the
+   urgency band on top and the title below. The band paints with the NOW tokens only under .verdict-card--now and with
+   the THIS_WEEK tokens only under .verdict-card--week, the one allowed --week use (built/now-usage.built.test.ts);
+   the class is chosen from banner.level alone. The raw px are the prototype's optical values with no token on the
+   spacing or width scale (the card's 300 px width, the band's 9/13 px padding and 7 px gap, the meta block's 10/14 px
+   padding). */
+.verdict-card {
+  display: block;
+  max-width: 300px;
+  overflow: hidden;
+  border-radius: var(--radius-bubble);
+  background: var(--recv);
+  color: var(--recv-ink);
+  font-family: var(--font-bn);
+  overflow-wrap: anywhere;
+}
+.verdict-card__band {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  padding: 9px 13px;
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: 1.35;
+}
+.verdict-card__shape {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.verdict-card--now .verdict-card__band {
+  background: var(--now);
+  color: var(--on-now);
+}
+.verdict-card--week .verdict-card__band {
+  background: var(--week-soft);
+  color: var(--week);
+}
+.verdict-card__meta {
+  padding: 10px 14px 12px;
+}
+.verdict-card__title {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: 700;
+  line-height: 1.3;
+}
+.verdict-card__reason,
+.verdict-card__wording {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-md);
+  line-height: 1.45;
+}
+.verdict-card__reason {
+  color: var(--label2);
+}
+.verdict-card__notdoctor {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  color: var(--label2);
+}
+.verdict-card__call {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--target-primary);
+  margin-top: var(--space-3);
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--tint);
+  color: var(--on-tint);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  text-decoration: none;
+}
+.verdict-card--now .verdict-card__call {
+  background: var(--now);
+  color: var(--on-now);
+}
+.verdict-card__call:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}

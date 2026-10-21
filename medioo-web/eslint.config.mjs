@@ -34,6 +34,21 @@ const SAFETY_LITERAL_SYNTAX = [
   { selector: `CallExpression[callee.name="t"][arguments.1.quasis.0.value.raw=${SAFETY_KEY}]`, message: SAFETY_LITERAL_MESSAGE },
 ];
 
+// A "use client" file is shipped to the browser with everything it imports, so it may not import the copy (all of bn
+// and en) or Sheet.tsx (the server half, which calls t()). A client component takes its words already resolved, as
+// props from a server parent: SheetDialog is the client sheet. A type-only import is erased and allowed. This sees a
+// direct import; built/client-copy.built.test.ts judges what the browser actually receives, transitive imports included.
+const CLIENT_FILE = 'Program:has(> ExpressionStatement[directive="use client"])';
+const CLIENT_BANNED = "/^@\\/copy(\\/.*)?$|(^|\\/)copy(\\/index)?$|(^|\\/)Sheet\\/Sheet$|^\\.\\/Sheet$/";
+const CLIENT_COPY_MESSAGE =
+  'a "use client" file may not import @/copy or Sheet.tsx: take the words as props resolved by a server parent (SheetDialog for a sheet)';
+const CLIENT_COPY_SYNTAX = [
+  { selector: `${CLIENT_FILE} ImportDeclaration[importKind!="type"][source.value=${CLIENT_BANNED}]`, message: CLIENT_COPY_MESSAGE },
+  { selector: `${CLIENT_FILE} ImportExpression[source.value=${CLIENT_BANNED}]`, message: CLIENT_COPY_MESSAGE },
+  { selector: `${CLIENT_FILE} ExportNamedDeclaration[exportKind!="type"][source.value=${CLIENT_BANNED}]`, message: CLIENT_COPY_MESSAGE },
+  { selector: `${CLIENT_FILE} ExportAllDeclaration[source.value=${CLIENT_BANNED}]`, message: CLIENT_COPY_MESSAGE },
+];
+
 const config = [
   {
     ignores: [".next/**", ".next-catalog/**", "node_modules/**", "playwright-report/**", "test-results/**", "next-env.d.ts"],
@@ -53,7 +68,7 @@ const config = [
           patterns: [{ group: ["**/copy/generated/*"], message: GENERATED_COPY_MESSAGE }],
         },
       ],
-      "no-restricted-syntax": ["error", ...GENERATED_COPY_SYNTAX, ...SAFETY_LITERAL_SYNTAX],
+      "no-restricted-syntax": ["error", ...GENERATED_COPY_SYNTAX, ...SAFETY_LITERAL_SYNTAX, ...CLIENT_COPY_SYNTAX],
     },
   },
   {
@@ -64,11 +79,11 @@ const config = [
     },
   },
   {
-    // The one place a safety line may be named. An override replaces the rule's options, so the generated-copy syntax
-    // bans are repeated here or they would lift.
+    // The one place a safety line may be named. An override replaces the rule's options, so the generated-copy and
+    // client-file syntax bans are repeated here or they would lift.
     files: ["src/components/safety/**"],
     rules: {
-      "no-restricted-syntax": ["error", ...GENERATED_COPY_SYNTAX],
+      "no-restricted-syntax": ["error", ...GENERATED_COPY_SYNTAX, ...CLIENT_COPY_SYNTAX],
     },
   },
 ];

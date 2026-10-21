@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CHIP_KINDS } from "@/components/StatusChip/StatusChip";
 import { STATES } from "./states";
@@ -33,17 +35,55 @@ const SHIPPED: string[] = [
   "NowBanner/long-unbroken",
 ];
 
+/**
+ * One VerdictCard state per paper B2's contract test wrote: every 200 body in fixtures/api/documents, named by its file,
+ * read off the directory (as the StatusChip ids are off CHIP_KINDS), so a new fixture needs a state here.
+ */
+const documentsDir = join(__dirname, "..", "..", "fixtures", "api", "documents");
+const paperFixtureNames = () =>
+  readdirSync(documentsDir)
+    .filter((f) => f.endsWith(".json"))
+    .sort()
+    .filter((f) => (JSON.parse(readFileSync(join(documentsDir, f), "utf8")) as { status: number }).status === 200)
+    .map((f) => f.slice(0, -".json".length));
+
+const W2D_A = (): string[] => [...paperFixtureNames().map((name) => `VerdictCard/${name}`), "Toast/default", "Sheet/open"];
+
 const ids = () => STATES.map(({ component, state }) => `${component}/${state}`);
 
 describe("catalog states", () => {
   it("theRegistryHoldsExactlyTheShippedStates", () => {
-    expect(ids()).toEqual(SHIPPED);
+    expect(ids()).toEqual([...SHIPPED, ...W2D_A()]);
   });
 
   it("onlyTheHiddenBannerIsEmpty", () => {
     // catalog.spec.ts holds an empty state to painting nothing and excuses it from rendering something, so marking any
     // other state empty would hide a state that renders nothing.
     expect(STATES.filter((s) => s.empty).map(({ component, state }) => `${component}/${state}`)).toEqual(["NowBanner/hidden"]);
+  });
+
+  it("everyPaperFixtureHasAVerdictCardState", () => {
+    // Asserted directly, not only through the whole-registry list above.
+    const names = paperFixtureNames();
+    const registered = new Set(ids());
+    expect(names.filter((name) => !registered.has(`VerdictCard/${name}`)), "paper fixtures with no VerdictCard state").toEqual([]);
+    // Guard: the directory held papers of each kind the card draws differently, so the derived list is not vacuous.
+    expect(names).toEqual(expect.arrayContaining(["now-bd", "now-abroad", "this-week-pending", "routine-released"]));
+  });
+
+  it("onlyNon200DocumentsFixturesHaveNoState", () => {
+    // The fixtures left out are derived, never counted by hand: each one is a refusal (a non-200 envelope whose body is
+    // exactly {reason}), so a second refusal B2 adds (a 403 view_only) needs no edit here.
+    const names = new Set(paperFixtureNames());
+    const excluded = readdirSync(documentsDir)
+      .filter((f) => f.endsWith(".json") && !names.has(f.slice(0, -".json".length)))
+      .map((f) => ({ f, json: JSON.parse(readFileSync(join(documentsDir, f), "utf8")) as { status: number; body: object } }));
+    const notRefusals = excluded
+      .filter(({ json }) => json.status === 200 || Object.keys(json.body).join(",") !== "reason")
+      .map(({ f, json }) => `${f}: status ${json.status}, body keys ${Object.keys(json.body).join(",")}`);
+    expect(notRefusals, "left-out fixtures that are not refusals").toEqual([]);
+    // Guard: at least one fixture was left out, so the check above judged something.
+    expect(excluded.length, "refusal fixtures").toBeGreaterThan(0);
   });
 
   it("noStateIsRegisteredTwice", () => {

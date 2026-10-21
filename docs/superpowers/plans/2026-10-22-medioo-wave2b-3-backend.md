@@ -28,7 +28,7 @@
 |---|---|---|---|---|
 | W2a | `feat/medioo-web-tokens` | C | now, built on Q1's recommendation; **merge only after Q1 is ruled** | none |
 | W2c | `feat/medioo-web-components-c` | C | W2a merged | none |
-| W2d-a | `feat/medioo-web-components-d` | C | W2c merged | none |
+| W2d-a | `feat/medioo-web-w2d-a` (named `feat/medioo-web-components-d` when planned; PR #127 shipped under the new name) | C | W2c merged | none |
 | W2d-b | `feat/medioo-web-now-banner` | C | W2d-a merged **and B3 merged** (its states read B3's generated `fixtures/api/now-banner/*`) | none |
 | W2e-a | `feat/medioo-web-components-e` | C | W2c merged (parallel with W2d-a) | none |
 | W2e-b | `feat/medioo-web-calendar-trend` | C | W2e-a merged **and B3 and B6 merged** (`fixtures/api/calendar/*`, `fixtures/api/health/*`) | none |
@@ -347,19 +347,19 @@ Branch `feat/medioo-web-components-c`. Lane C. After W2a.
 
 ## Task W2d-a: VerdictCard, Toast, Sheet
 
-Branch `feat/medioo-web-components-d`. Lane C. After W2c. Every component here reads a contract that is already generated (`fixtures/api/documents/*.json`, B2), so nothing is guessed.
+Branch `feat/medioo-web-w2d-a` (planned as `feat/medioo-web-components-d`; PR #127). Lane C. After W2c. Every component here reads a contract that is already generated (`fixtures/api/documents/*.json`, B2), so nothing is guessed.
 
 **Files:**
-- Create: `medioo-web/src/components/safety/VerdictCard/VerdictCard.tsx`, `medioo-web/src/components/safety/VerdictCard/VerdictCard.css`, `medioo-web/src/components/safety/VerdictCard/VerdictCard.test.tsx`, `medioo-web/src/components/Toast/Toast.tsx`, `medioo-web/src/components/Toast/Toast.css`, `medioo-web/src/components/Toast/Toast.test.tsx`, `medioo-web/src/components/Sheet/Sheet.tsx`, `medioo-web/src/components/Sheet/Sheet.css`, `medioo-web/src/components/Sheet/Sheet.test.tsx`.
-- Create: `medioo-web/src/api/types.ts` with `PaperJson` only, written from the committed `fixtures/api/documents/*.json`; `medioo-web/src/api/types.test.ts › everyDocumentsFixtureIsAPaperJson`: each fixture is imported as JSON (`resolveJsonModule`) and assigned to a `PaperJson` variable, so `pnpm typecheck` fails the moment the generated contract and the type drift apart.
-- Modify: `medioo-web/src/catalog/states.tsx`, `medioo-web/src/catalog/states.test.tsx` (the new ids appended to its explicit list), `medioo-web/src/styles/built/now-usage.built.test.ts` (the allowed `--week` use guard).
+- Create: `medioo-web/src/components/safety/VerdictCard/VerdictCard.tsx`, `medioo-web/src/components/safety/VerdictCard/VerdictCard.css`, `medioo-web/src/components/safety/VerdictCard/VerdictCard.test.tsx`, `medioo-web/src/components/Toast/Toast.tsx`, `medioo-web/src/components/Toast/ToastRegion.tsx`, `medioo-web/src/components/Toast/Toast.css`, `medioo-web/src/components/Toast/Toast.test.tsx`, `medioo-web/src/components/Sheet/Sheet.tsx`, `medioo-web/src/components/Sheet/SheetDialog.tsx`, `medioo-web/src/components/Sheet/Sheet.css`, `medioo-web/src/components/Sheet/Sheet.test.tsx`, `medioo-web/src/styles/built/client-copy.built.test.ts` (amended in PR #127: the server/client splits and the built-chunk scan).
+- Create: `medioo-web/src/api/types.ts` with `PaperJson` (amended in PR #127: also `Json<T>`, the JSON-import view that widens literals to `string`; `isReadingPaper`; and the literal arrays `PAPER_STATUSES`, `READING_STATUSES`, `GATES`, `URGENCIES`, `BANNER_LEVELS`, `DISPLAY_KINDS`, `SIDES`, which the runtime fixture checks and the derived tests read), written from the committed `fixtures/api/documents/*.json`; `medioo-web/src/api/types.test.ts › everyDocumentsFixtureIsAPaperJson`: each fixture is imported as JSON (`resolveJsonModule`) and assigned to a `PaperJson` variable, so `pnpm typecheck` fails the moment the generated contract and the type drift apart.
+- Modify: `medioo-web/src/catalog/states.tsx`, `medioo-web/src/catalog/states.test.tsx` (the new ids appended to its explicit list), `medioo-web/src/styles/built/now-usage.built.test.ts` (the allowed `--week` use guard), `medioo-web/e2e/catalog.spec.ts` (Step 3's derived floor, the modal sheet and the toast's live region in a real browser), `medioo-web/eslint.config.mjs` (a `"use client"` file may not import `@/copy` or `Sheet.tsx`), `medioo-web/vitest.built.config.mts` and `.github/workflows/ci-cd.yml` (`test:built` runs after both builds).
 
 **Interfaces:**
-- Consumes: W2a tokens; W2c `MioAvatar`, `StatusChip`; `t`; the paper JSON fields `banner.level`, `banner.line_key`, `now.*_key`, `now.call_999`, `gate`, `wording`, `counts`.
+- Consumes: W2a tokens; `t`; the paper JSON fields `banner.level`, `banner.line_key`, `now.*_key`, `now.call_999`, `gate`, `wording`, `counts`, `status`, `retake.reason_key`. (Amended in PR #127: the card ships without the prototype's preview, source line, value rows with `StatusChip`s and `MioAvatar`, and is not a tap target. W5, the chat thread, adds them when it renders the card in the thread, reading `values[].display_kind` and `chip_key` through `StatusChip`, with a test that each chip is the one Java named.)
 - Produces:
-  - `VerdictCard({ paper, lang }: { paper: PaperJson; lang: Lang })`: the band from `paper.banner` (`.verdict-card--now` only when `banner.level === "now"`, `.verdict-card--week` for `this_week`, no band for anything else), the counts line from `counts.line_key`, the wording only when `paper.gate === "RELEASED"` and `paper.wording` is present, and `now.notdoctor_key` on a NOW card. The `tel:999` link (`.verdict-card__call`) only when `paper.now.call_999 === true`.
-  - `Toast({ messageKey, args, lang })`: `role="status"`, never red, auto-dismiss is the caller's.
-  - `Sheet({ titleKey, open, children, lang })`: a `<dialog>`-based sheet; focus trapped by the platform; `Escape` closes; no inline style.
+  - `VerdictCard({ paper, lang }: { paper: PaperJson; lang: Lang })`: the band from `paper.banner` (`.verdict-card--now` only when `banner.level === "now"`, `.verdict-card--week` for `this_week`, no band for anything else), the counts line from `counts.line_key`, the wording only when `paper.gate === "RELEASED"` and `paper.wording` is present, and `now.notdoctor_key` on a NOW card. The `tel:999` link (`.verdict-card__call`) only when `paper.now.call_999 === true`; its label is the fixed key `now.call999`, gated by that flag. When Java sent no `counts` the title is the status's word (`STATUS_TITLE`: RECEIVED `progress.step.received`, PROCESSING `progress.step.processing`, DONE `status.DONE`, NEEDS_RETAKE `retake.title`, FAILED `failed.title`), and a retake shows `retake.reason_key` (amended in PR #127).
+  - `Toast({ messageKey, args, lang })`: the server convenience; it resolves the words and renders `ToastRegion`. `ToastRegion({ message }: { message: string | null })` is the client API: a `role="status" aria-live="polite"` region that renders empty first and writes the message into the same element after mount and on each change, so the text is announced. A client caller mounts it once and swaps `message`, resolved by its server parent. Never red; auto-dismiss is the caller's (amended in PR #127).
+  - `Sheet({ titleKey, open, children, lang })`: the server convenience, with no function prop (held at the type level); it resolves `title` and `closeLabel` and renders `SheetDialog`. `SheetDialog({ title, closeLabel, open, children, onClose? })` (`"use client"`) is the client API for any caller that owns `open` (W7's upload sheet), with the words resolved by its server parent and passed down. A `<dialog>` opened with `showModal()`; focus trapped by the platform; `Escape` closes only the innermost sheet, and not when a child already handled it (`preventDefault`) or it ends an IME composition; no inline style. A `"use client"` file may not import `@/copy` or `Sheet.tsx` (eslint), and `client-copy.built.test.ts` checks that no client chunk of either build carries a copy value (amended in PR #127).
 - [ ] **Step 1: Write the failing tests:**
   - `VerdictCard.test.tsx`, each over a committed fixture from `fixtures/api/documents/`:
     - `wordingOnlyWhenReleased`: `routine-released.json` shows its wording; `this-week-pending.json` shows none, and no element has the class `verdict-card__wording`.
@@ -378,9 +378,12 @@ Branch `feat/medioo-web-components-d`. Lane C. After W2c. Every component here r
   ```bash
   git add medioo-web/src/components/safety/VerdictCard/VerdictCard.tsx medioo-web/src/components/safety/VerdictCard/VerdictCard.css \
     medioo-web/src/components/safety/VerdictCard/VerdictCard.test.tsx medioo-web/src/components/Toast/Toast.tsx \
-    medioo-web/src/components/Toast/Toast.css medioo-web/src/components/Toast/Toast.test.tsx medioo-web/src/components/Sheet/Sheet.tsx \
+    medioo-web/src/components/Toast/ToastRegion.tsx medioo-web/src/components/Toast/Toast.css medioo-web/src/components/Toast/Toast.test.tsx \
+    medioo-web/src/components/Sheet/Sheet.tsx medioo-web/src/components/Sheet/SheetDialog.tsx \
     medioo-web/src/components/Sheet/Sheet.css medioo-web/src/components/Sheet/Sheet.test.tsx medioo-web/src/api/types.ts \
-    medioo-web/src/api/types.test.ts medioo-web/src/catalog/states.tsx medioo-web/src/catalog/states.test.tsx medioo-web/src/styles/built/now-usage.built.test.ts
+    medioo-web/src/api/types.test.ts medioo-web/src/catalog/states.tsx medioo-web/src/catalog/states.test.tsx medioo-web/src/styles/built/now-usage.built.test.ts \
+    medioo-web/src/styles/built/client-copy.built.test.ts medioo-web/e2e/catalog.spec.ts medioo-web/eslint.config.mjs \
+    medioo-web/vitest.built.config.mts .github/workflows/ci-cd.yml
   git status --short -- medioo-web baymax/src scripts docs .github   # nothing outside the list
   git commit -m "feat(medioo-web): VerdictCard renders only what Java sent; Toast and Sheet (plan W2d-a)" \
     -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
