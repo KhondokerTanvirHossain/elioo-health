@@ -14,6 +14,13 @@ import java.util.UUID;
  * @param unverified   items the model reported that had no resolvable crop, by section
  * @param statusReasonCode F5: why a document needs a retake, as a {@link RetakeReason} code (V20); set on
  *                     NEEDS_RETAKE only, and the only reason a page or the JSON API may carry
+ * @param docDateUncertain D2: the model's {@code document_date_uncertain}, stored as it said it ({@code doc_date_uncertain});
+ *                     false when it said nothing. Written by {@code finish}; never displayed: the mark a display shows
+ *                     is {@link FiledDay#uncertain()}, which is never true on an upload day
+ * @param filed        D2: the day this paper is filed under, read from the generated columns of its row ({@code
+ *                     timeline_date}, {@code timeline_date_is_upload_day}, {@code timeline_date_uncertain}, V25). Null
+ *                     on a record Java wrote and has not read back: unknown, never "the printed date". Never re-derived
+ *                     from {@code docDate}
  */
 public record Document(
         UUID id,
@@ -33,8 +40,32 @@ public record Document(
         Instant updatedAt,
         VerifiedItems.Unverified unverified,
         String clinicalContextJson,
-        String statusReasonCode
+        String statusReasonCode,
+        boolean docDateUncertain,
+        FiledDay filed
 ) {
+    /** Everything Java writes; the generated filing columns are unknown ({@code filed} null) until the row is read back. */
+    public Document(UUID id, UUID patientId, UUID familyId, String documentType, LocalDate docDate,
+                    String facility, String extractionJson, Double confidenceOverall, Status status,
+                    String statusReason, String modelFinal, BigDecimal costUsd, int pageCount,
+                    Instant createdAt, Instant updatedAt, VerifiedItems.Unverified unverified,
+                    String clinicalContextJson, String statusReasonCode, boolean docDateUncertain) {
+        this(id, patientId, familyId, documentType, docDate, facility, extractionJson, confidenceOverall,
+                status, statusReason, modelFinal, costUsd, pageCount, createdAt, updatedAt, unverified,
+                clinicalContextJson, statusReasonCode, docDateUncertain, null);
+    }
+
+    /** Before D2: no uncertain flag (false) and no filing day read. */
+    public Document(UUID id, UUID patientId, UUID familyId, String documentType, LocalDate docDate,
+                    String facility, String extractionJson, Double confidenceOverall, Status status,
+                    String statusReason, String modelFinal, BigDecimal costUsd, int pageCount,
+                    Instant createdAt, Instant updatedAt, VerifiedItems.Unverified unverified,
+                    String clinicalContextJson, String statusReasonCode) {
+        this(id, patientId, familyId, documentType, docDate, facility, extractionJson, confidenceOverall,
+                status, statusReason, modelFinal, costUsd, pageCount, createdAt, updatedAt, unverified,
+                clinicalContextJson, statusReasonCode, false);
+    }
+
     /** Backwards-compatible constructor: nothing unverified. */
     public Document(UUID id, UUID patientId, UUID familyId, String documentType, LocalDate docDate,
                     String facility, String extractionJson, Double confidenceOverall, Status status,
@@ -76,7 +107,7 @@ public record Document(
     public Document withId(UUID newId) {
         return new Document(newId, patientId, familyId, documentType, docDate, facility, extractionJson,
                 confidenceOverall, status, statusReason, modelFinal, costUsd, pageCount, createdAt,
-                updatedAt, unverified, clinicalContextJson, statusReasonCode);
+                updatedAt, unverified, clinicalContextJson, statusReasonCode, docDateUncertain, filed);
     }
 
     /** A status with no retake reason code; the code is cleared (V20: a code only on a retake). */
@@ -84,10 +115,13 @@ public record Document(
         return withStatus(newStatus, reason, null, at);
     }
 
-    /** A status, its developer-facing reason, and its {@link RetakeReason} code (null unless NEEDS_RETAKE). */
+    /**
+     * A status, its developer-facing reason, and its {@link RetakeReason} code (null unless NEEDS_RETAKE). The filing
+     * day depends on the status (D2: a retake is filed under its upload day), so it is unknown again until read back.
+     */
     public Document withStatus(Status newStatus, String reason, String code, Instant at) {
         return new Document(id, patientId, familyId, documentType, docDate, facility, extractionJson,
                 confidenceOverall, newStatus, reason, modelFinal, costUsd, pageCount, createdAt, at,
-                unverified, clinicalContextJson, code);
+                unverified, clinicalContextJson, code, docDateUncertain, null);
     }
 }

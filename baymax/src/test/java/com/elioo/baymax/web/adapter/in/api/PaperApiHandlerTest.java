@@ -98,6 +98,48 @@ class PaperApiHandlerTest {
         });
     }
 
+    /**
+     * D2 (review findings 3, 4, 21): the paper's date fields over real rows, through the entity mapping, ResultService
+     * and PaperJson, with no fixture computing anything. Each row's model flag is set, so both directions of Q6 are on
+     * the wire at once: the DONE printed date is marked; the retake (misread date kept in doc_date, uploaded 00:30 on
+     * 1 November in Dhaka) and the undated paper are filed under their upload days and NOT marked. A mapping that lost
+     * the generated columns fails every case here, not one.
+     */
+    @Test
+    void thePapersDateIsReadFromItsRow() {
+        AppApiContext.runner(POSTGRES).run(context -> {
+            FamilyAccount owner = AppApiContext.family(context, "+8801700000341", "Tanvir");
+            PatientProfile ma = AppApiContext.patient(context, owner.id(), "Ma");
+            UUID retake = context.getBean(com.elioo.baymax.extraction.application.port.out.DocumentRecordPort.class)
+                    .create(com.elioo.baymax.extraction.domain.Document.received(ma.id(), ma.familyId(), 1, java.time.Instant.now())).block().id();
+            AppApiContext.sql(POSTGRES, "UPDATE baymax.document SET status = 'NEEDS_RETAKE', document_type = 'lab_report', "
+                    + "status_reason_code = 'low_overall', status_reason = 'developer prose', "
+                    + "doc_date = '2021-03-04', doc_date_uncertain = true, created_at = '2026-10-31T18:30:00Z' WHERE id = '" + retake + "'");
+            UUID printed = AppApiContext.paper(context, POSTGRES, ma, "routine");
+            AppApiContext.sql(POSTGRES, "UPDATE baymax.document SET doc_date = '2026-07-11', doc_date_uncertain = true WHERE id = '" + printed + "'");
+            UUID undated = AppApiContext.paper(context, POSTGRES, ma, "routine");
+            AppApiContext.sql(POSTGRES, "UPDATE baymax.document SET doc_date = NULL, doc_date_uncertain = true, "
+                    + "created_at = '2026-10-18T19:30:00Z' WHERE id = '" + undated + "'");
+            String token = AppApiContext.session(context, owner.id());
+            WebTestClient client = WebTestClient.bindToApplicationContext(context).build();
+
+            assertDates(get(client, token, retake), "the retake", "2026-11-01", true, null, false);
+            assertDates(get(client, token, printed), "the uncertain printed date", "2026-07-11", false, "2026-07-11", true);
+            assertDates(get(client, token, undated), "the undated paper", "2026-10-19", true, null, false);
+        });
+    }
+
+    private static void assertDates(JsonNode body, String what, String date, boolean uploadDay, String printedDate, boolean uncertain) {
+        assertThat(body.path("date").asText()).as(what + " $.date").isEqualTo(date);
+        assertThat(body.path("date_is_upload_day").isBoolean()).as(what + " $.date_is_upload_day is a boolean").isTrue();
+        assertThat(body.path("date_is_upload_day").booleanValue()).as(what + " $.date_is_upload_day").isEqualTo(uploadDay);
+        assertThat(body.has("printed_date")).as(what + " $.printed_date is present").isTrue();
+        assertThat(body.path("printed_date").isNull() ? null : body.path("printed_date").asText()).as(what + " $.printed_date")
+                .isEqualTo(printedDate);
+        assertThat(body.path("date_uncertain").isBoolean()).as(what + " $.date_uncertain is a boolean").isTrue();
+        assertThat(body.path("date_uncertain").booleanValue()).as(what + " $.date_uncertain").isEqualTo(uncertain);
+    }
+
     private JsonNode get(WebTestClient client, String token, UUID paper) throws Exception {
         EntityExchangeResult<byte[]> r = client.get().uri("/app/api/documents/" + paper).cookie("baymax_session", token)
                 .exchange().expectBody().returnResult();

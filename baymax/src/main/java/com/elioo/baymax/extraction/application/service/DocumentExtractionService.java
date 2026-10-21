@@ -576,7 +576,9 @@ public class DocumentExtractionService implements com.elioo.baymax.extraction.ap
                 attempt == null ? null : attempt.provider() + "/" + attempt.model(),
                 document.costUsd(), document.pageCount(), document.createdAt(), now,
                 items == null ? VerifiedItems.Unverified.none() : items.unverified(),
-                items == null ? null : contextJson(items), code);
+                items == null ? null : contextJson(items), code,
+                // D2: a model that said nothing is false, never a NULL into the NOT NULL column
+                result != null && Boolean.TRUE.equals(result.documentDateUncertain()));
 
         if (items != null && items.unverified().any()) {
             log.info("[baymax] {} item(s) had no resolvable crop documentId={} values={} medicines={} followUp={}",

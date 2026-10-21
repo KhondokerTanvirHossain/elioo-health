@@ -415,6 +415,44 @@ class PaperDeleteApiTest {
     }
 
     /**
+     * D2 (review finding 6): "a prescription dated on or after this paper" is the filed day, in Dhaka, the same order
+     * medicationsOfPatient gives medicine_changed its sides in. The deleted prescription printed 1 November and was
+     * uploaded at 10:00 UTC on 31 October; a later undated prescription was uploaded at 18:30 UTC that day, 00:30 on
+     * 1 November in Dhaka, so both are filed under 1 November, the later upload is the newer paper, and its
+     * medicine_changed quotes this one as its "before". On the UTC day of created_at
+     * ({@code COALESCE(doc_date, created_at::date)}) the newer paper fell on 31 October, before this one, and its held
+     * nudge survived the delete still quoting the deleted paper's medicines.
+     */
+    @Test
+    void aMedicineChangedAcrossADhakaMidnightIsWithdrawnWithThePaperItQuotes() {
+        // the session zone production sends (UTC): on a Dhaka laptop created_at::date would agree with the filed day by accident
+        runner().withPropertyValues("spring.r2dbc.properties.timeZone=UTC").run(context -> {
+            Fixture f = paperOf(context, "+8801700000486");
+            exec("update baymax.document set document_type = 'prescription', doc_date = date '2026-11-01', "
+                    + "created_at = timestamptz '2026-10-31T10:00:00Z' where id = ?", f.document);
+            UUID newer = AppApiContext.paper(context, POSTGRES, f.patient, "routine");
+            exec("update baymax.document set document_type = 'prescription', doc_date = null, "
+                    + "created_at = timestamptz '2026-10-31T18:30:00Z' where id = ?", newer);
+            try (Connection c = connect()) {
+                assertThat(count(c, "select count(*) from baymax.document where id = ? and timeline_date = date '2026-11-01'", newer))
+                        .as("the newer prescription is filed under the Dhaka day").isEqualTo(1);
+                assertThat(count(c, "select count(*) from baymax.medication_event where document_id = ?", f.document))
+                        .as("the deleted paper has the medicines the nudge quotes").isPositive();
+            }
+            UUID changed = seedNudge(f, "medicine_changed", "document:" + newer, "held",
+                    "{\"patient\":\"Ma\",\"changes\":\"" + medicine + " — 10 mg · 1+0+0 → (নতুন প্রেসক্রিপশনে নেই)\","
+                            + "\"date\":\"১ নভেম্বর\"}", null);
+
+            delete(f.client, f.session, f.document, deleteToken(f.client, f.session, f.document)).expectStatus().isOk();
+
+            try (Connection c = connect()) {
+                assertThat(count(c, "select count(*) from baymax.nudge where id = ?", changed))
+                        .as("the medicine_changed of the newer prescription, quoting the deleted one").isZero();
+            }
+        });
+    }
+
+    /**
      * The other direction of the delete rule: what reached the family stays until PO decision P1, and "reached" is read
      * from the message, never from {@code nudge.status} alone. A gated nudge keeps {@code status = 'gated'} after the
      * reviewer approves it and WhatsApp accepts it (approve updates only the message), and that row is the cap ledger

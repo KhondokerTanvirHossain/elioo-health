@@ -332,7 +332,7 @@ class TimelineServiceTest {
      */
     private static TimelineEntry entry(UUID id, Instant createdAt) {
         return new TimelineEntry(id, LocalDate.parse("2026-09-17"), false, "prescription", null, "DONE", 0, 3, 0, 0,
-                "k/" + id + "/page-1.jpg", createdAt, Urgency.THIS_WEEK, 0, "released", null);
+                "k/" + id + "/page-1.jpg", createdAt, Urgency.THIS_WEEK, 0, "released", null, false);
     }
 
     @Test

@@ -21,7 +21,8 @@ import java.util.UUID;
 
 /**
  * The only {@link TimelineReadPort}: one SQL statement per page over stored columns, schema-qualified, read only. The
- * order is V20's {@code timeline_date} (printed date, else the Dhaka upload day), then upload instant, then id, and the
+ * order is {@code timeline_date} (D2: the printed date, else for a retake or an undated paper the Dhaka upload day; generated
+ * by Postgres and read, never re-derived here), then upload instant, then id, and the
  * cursor compares the same triple, so no row is skipped or repeated at a page boundary. The urgency, the verdict
  * counts and the review state are the stored ones; nothing here assesses.
  */
@@ -36,7 +37,7 @@ public class PostgresTimelineReadAdapter implements TimelineReadPort {
             SELECT d.id, d.family_id, d.patient_id, d.document_type, d.facility, d.status, d.status_reason_code,
                    d.timeline_date, d.created_at, d.urgency,
                    d.unverified_values + d.unverified_medicines + d.unverified_follow_up + d.unverified_clinical_context AS unverified,
-                   d.doc_date IS NULL AS date_is_fallback,
+                   d.timeline_date_is_upload_day AS date_is_fallback, d.timeline_date_uncertain AS date_uncertain,
                    (SELECT count(*) FROM %1$s.observation o WHERE o.document_id = d.id) AS values_n,
                    (SELECT count(*) FROM %1$s.observation o WHERE o.document_id = d.id AND o.verdict IN ('outside', 'critical')) AS outside_n,
                    (SELECT count(*) FROM %1$s.medication_event m WHERE m.document_id = d.id) AS medicines_n,
@@ -109,7 +110,8 @@ public class PostgresTimelineReadAdapter implements TimelineReadPort {
                 row.get("created_at", OffsetDateTime.class).toInstant(),
                 urgency == null ? null : Urgency.fromDbValue(urgency), count(row, "outside_n"),
                 row.get("review_state", String.class),
-                "NEEDS_RETAKE".equals(status) ? row.get("status_reason_code", String.class) : null);
+                "NEEDS_RETAKE".equals(status) ? row.get("status_reason_code", String.class) : null,
+                Boolean.TRUE.equals(row.get("date_uncertain", Boolean.class)));
     }
 
     private static int count(Readable row, String column) {

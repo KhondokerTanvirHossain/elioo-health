@@ -67,7 +67,7 @@ class AttentionServiceTest {
 
     private static TimelineEntry entry(String status, Urgency level, Duration ago, LocalDate date) {
         return new TimelineEntry(UUID.randomUUID(), date, false, "lab_report", "Shapla", status, 14, 0, 0, 0, "k",
-                NOW.minus(ago), level, 0, null, null);
+                NOW.minus(ago), level, 0, null, null, false);
     }
 
     @Test

@@ -738,16 +738,13 @@ public class DocumentPages implements WebPages {
     }
 
     /**
-     * The paper's date as unescaped text: its printed date, else its upload day on the patient's calendar marked
-     * "(আপলোডের তারিখ)", as the timeline marks it. Never empty, so no meta line starts or a subtitle sits on " ·  · ".
+     * The paper's date as unescaped text: the day it is filed under (D2, {@code document.timeline_date}, read and never
+     * re-derived here), marked "(আপলোডের তারিখ)" as the timeline marks it when that is its upload day (a retake, or a
+     * paper that printed none). Never empty, so no meta line starts or a subtitle sits on " ·  · ". A {@link ResultView}
+     * always carries a filed day with a date (a row read back has {@code timeline_date}), so there is no other branch.
      */
     private String paperDateText(Lang lang, ResultView r) {
-        String printed = r.document().documentDate();
-        if (printed != null && !printed.isBlank()) {
-            return dueText(lang, printed);
-        }
-        return r.receivedAt() == null ? copy.raw(lang, "timeline.uploaddate")
-                : copy.dateText(lang, PatientCalendar.dayOf(r.receivedAt())) + " " + copy.raw(lang, "timeline.uploaddate");
+        return copy.dateText(lang, r.date().date()) + (r.date().uploadDay() ? " " + copy.raw(lang, "timeline.uploaddate") : "");
     }
 
     /** The result's and the detail's meta line, escaped: the paper's date, then the facility only when one was read. */

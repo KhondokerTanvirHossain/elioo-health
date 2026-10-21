@@ -54,7 +54,7 @@ class BanglaNumbersOnPagesTest {
                 List.of(new PatientSummary(ma, true, 10, NOW)))));
         when(timeline.timeline(eq(FAMILY), eq(PATIENT), any(), any())).thenReturn(Mono.just(new TimelinePage(List.of(
                 new TimelineEntry(UUID.randomUUID(), LocalDate.parse("2026-10-12"), false, "lab_report", null, "DONE",
-                        14, 2, 1, 3, "f/p/d/page-1.jpg", NOW, null, 12, null, null)), null)));
+                        14, 2, 1, 3, "f/p/d/page-1.jpg", NOW, null, 12, null, null, false)), null)));
     }
 
     private String page(String path, String lang) {

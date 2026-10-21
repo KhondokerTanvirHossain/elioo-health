@@ -576,7 +576,11 @@ route calls breaks that route for every family. The first flip is `/app/healthz`
 and monitoring calls.
 
 Migrations do not roll back. A release that adds a column is safe to roll back this way; one that changes the
-meaning of existing data is not, and needs a forward fix. To take Baymax out of service without changing
+meaning of existing data is not, and needs a forward fix. **D2's filed-day migration (plan D2, `filed_day_and_uncertain_date`)
+is one of these:** it redefines `document.timeline_date` so a retake is filed under its Dhaka upload day. An image older
+than it starts against it (Flyway ignores a future migration) but still computes `doc_date IS NULL AS
+date_is_fallback` in the timeline and earlier-readings SQL, so every retake would show under its upload day with no
+"(আপলোডের তারিখ)" mark, an upload day passing as a visit day. Roll forward with a fix, never back past it. To take Baymax out of service without changing
 version, set `BAYMAX_ENABLED=false` and redeploy: routes and migrations stop, MedScribe is untouched.
 
 Restoring configuration: the backups are `~/medscribe.env.bak.*`.

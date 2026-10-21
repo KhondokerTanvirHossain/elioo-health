@@ -46,7 +46,7 @@ public class PostgresDocumentReadAdapter implements DocumentReadPort {
      */
     @Override
     public Flux<Map<String, Object>> readingsOf(UUID patientId, String canonicalName, UUID beforeDocumentId) {
-        return db.sql("SELECT o.id, o.document_id, o.value, o.unit, o.crop_key, d.timeline_date, d.doc_date IS NULL AS date_is_fallback "
+        return db.sql("SELECT o.id, o.document_id, o.value, o.unit, o.crop_key, d.timeline_date, d.timeline_date_is_upload_day AS date_is_fallback "
                         + "FROM " + S + ".observation o JOIN " + S + ".document d ON d.id = o.document_id "
                         + "JOIN " + S + ".document me ON me.id = :before "
                         + "WHERE o.patient_id = :patient AND o.canonical_name = :canonical AND d.status = 'DONE' "

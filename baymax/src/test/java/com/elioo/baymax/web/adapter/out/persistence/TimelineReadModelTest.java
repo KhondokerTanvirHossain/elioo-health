@@ -26,6 +26,7 @@ import java.sql.Statement;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -177,6 +178,105 @@ class TimelineReadModelTest {
             TimelineEntry e = context.getBean(TimelineReadPort.class).page(p, TimelineCursor.FIRST, TimelineFilter.ALL, 10).blockFirst();
             assertThat(e.date()).isEqualTo(LocalDate.parse("2026-10-19"));
             assertThat(e.dateIsFallback()).isTrue();
+        });
+    }
+
+    /**
+     * D2: a retake is a page the model could not read confidently, so the date it read off the page is the least
+     * trustworthy date there is. It is filed under the day it was uploaded, in Dhaka, and says so; the printed date
+     * stays stored (a later reading may confirm it) but is never the paper's date.
+     */
+    @Test
+    void aRetakeIsFiledUnderItsUploadDayNotTheDateReadOffIt() {
+        runner().run(context -> {
+            UUID p = patient(context);
+            UUID retake = doc(context, p, "2026-10-20T04:00:00Z", "2021-03-04", "lab_report", "NEEDS_RETAKE");
+            TimelineEntry e = only(context, p);
+            assertThat(e.documentId()).isEqualTo(retake);
+            assertThat(e.date()).isEqualTo(LocalDate.parse("2026-10-20"));
+            assertThat(e.dateIsFallback()).isTrue();
+            assertThat(scalar("SELECT doc_date FROM baymax.document WHERE id = '" + retake + "'"))
+                    .as("the printed date is kept, only never shown").isEqualTo("2021-03-04");
+        });
+    }
+
+    /** Review Focus 5: 18:30 UTC on 31 October is 00:30 on 1 November in Dhaka, so the retake is in November. */
+    @Test
+    void aRetakeUploadedAfterDhakaMidnightIsInTheNewMonth() {
+        runner().run(context -> {
+            UUID p = patient(context);
+            doc(context, p, "2026-10-31T18:30:00Z", "2026-10-12", "lab_report", "NEEDS_RETAKE");
+            TimelineEntry e = only(context, p);
+            assertThat(e.date()).isEqualTo(LocalDate.parse("2026-11-01"));
+            assertThat(YearMonth.from(e.date())).isEqualTo(YearMonth.parse("2026-11"));
+            assertThat(e.dateIsFallback()).isTrue();
+        });
+    }
+
+    /** The other edge: 17:59:59 UTC is 23:59:59 in Dhaka, still 31 October. */
+    @Test
+    void aRetakeUploadedJustBeforeDhakaMidnightStaysInTheOldMonth() {
+        runner().run(context -> {
+            UUID p = patient(context);
+            doc(context, p, "2026-10-31T17:59:59Z", "2026-10-12", "lab_report", "NEEDS_RETAKE");
+            TimelineEntry e = only(context, p);
+            assertThat(e.date()).isEqualTo(LocalDate.parse("2026-10-31"));
+            assertThat(YearMonth.from(e.date())).isEqualTo(YearMonth.parse("2026-10"));
+        });
+    }
+
+    /** The other direction: a paper read confidently keeps its printed date, whatever day it was uploaded. */
+    @Test
+    void aFinishedPaperKeepsItsPrintedDateAcrossMidnight() {
+        runner().run(context -> {
+            UUID p = patient(context);
+            doc(context, p, "2026-10-31T18:30:00Z", "2026-09-30", "lab_report", "DONE");
+            TimelineEntry e = only(context, p);
+            assertThat(e.date()).isEqualTo(LocalDate.parse("2026-09-30"));
+            assertThat(e.dateIsFallback()).isFalse();
+            assertThat(YearMonth.from(e.date())).isEqualTo(YearMonth.parse("2026-09"));
+        });
+    }
+
+    /** Q6: a printed date the model marked uncertain is filed as printed, and marked; the plain paper beside it is not. */
+    @Test
+    void anUncertainPrintedDateIsFiledAsPrintedAndMarked() {
+        runner().run(context -> {
+            UUID p = patient(context);
+            UUID uncertain = doc(context, p, "2026-10-20T04:00:00Z", "2026-07-11", "lab_report", "DONE");
+            sql("UPDATE baymax.document SET doc_date_uncertain = true WHERE id = '" + uncertain + "'");
+            UUID plain = doc(context, p, "2026-10-20T04:00:00Z", "2026-07-10", "lab_report", "DONE");
+            List<TimelineEntry> rows = context.getBean(TimelineReadPort.class).page(p, TimelineCursor.FIRST, TimelineFilter.ALL, 10)
+                    .collectList().block();
+            assertThat(rows).extracting(TimelineEntry::documentId).containsExactly(uncertain, plain);
+            assertThat(rows.get(0).date()).isEqualTo(LocalDate.parse("2026-07-11"));
+            assertThat(rows.get(0).dateIsFallback()).isFalse();
+            assertThat(rows.get(0).dateUncertain()).isTrue();
+            assertThat(rows.get(1).dateUncertain()).isFalse();
+        });
+    }
+
+    /**
+     * Q6's other direction: the mark is on a printed date the paper is filed under, never on an upload day. The model may
+     * mark the date of a page it could not read (a retake), or mark a date it then returned as null; either paper is
+     * filed under its upload day, which is certain, so it is not marked and a trend keeps its direction for it.
+     */
+    @Test
+    void anUncertainMarkNeverLandsOnAnUploadDay() {
+        runner().run(context -> {
+            UUID p = patient(context);
+            UUID retake = doc(context, p, "2026-10-20T04:00:00Z", "2021-03-04", "lab_report", "NEEDS_RETAKE");
+            UUID undated = doc(context, p, "2026-10-19T04:00:00Z", null, "lab_report", "DONE");
+            sql("UPDATE baymax.document SET doc_date_uncertain = true WHERE id IN ('" + retake + "', '" + undated + "')");
+            List<TimelineEntry> rows = context.getBean(TimelineReadPort.class).page(p, TimelineCursor.FIRST, TimelineFilter.ALL, 10)
+                    .collectList().block();
+            assertThat(rows).extracting(TimelineEntry::documentId).containsExactly(retake, undated);
+            assertThat(rows).allSatisfy(e -> {
+                assertThat(e.dateIsFallback()).as("filed under its upload day").isTrue();
+                assertThat(e.dateUncertain()).as("an upload day is never marked uncertain").isFalse();
+            });
+            assertThat(scalar("SELECT count(*) FROM baymax.document WHERE patient_id = '" + p + "' AND doc_date_uncertain"))
+                    .as("the model's own flag is still stored on both").isEqualTo("2");
         });
     }
 
@@ -428,6 +528,14 @@ class TimelineReadModelTest {
             assertThat(rows).extracting(TimelineEntry::status).containsExactly("PROCESSING", "NEEDS_RETAKE", "RECEIVED");
             assertThat(rows.get(1).retakeReasonCode()).as("the retake keeps its F5 code").isEqualTo("low_overall");
         });
+    }
+
+    /** The patient's one paper, through the timeline read port. */
+    private static TimelineEntry only(ApplicationContext context, UUID patient) {
+        List<TimelineEntry> rows = context.getBean(TimelineReadPort.class).page(patient, TimelineCursor.FIRST, TimelineFilter.ALL, 10)
+                .collectList().block();
+        assertThat(rows).hasSize(1);
+        return rows.get(0);
     }
 
     private static void sql(String statement) throws Exception {

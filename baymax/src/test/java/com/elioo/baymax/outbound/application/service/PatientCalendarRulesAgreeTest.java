@@ -82,7 +82,7 @@ class PatientCalendarRulesAgreeTest {
         when(records.visiblePatient(family, patient)).thenReturn(reactor.core.publisher.Mono.just(new PatientAccess(
                 new PatientProfile(patient, family, "Ma", 64, PatientProfile.Sex.FEMALE, List.of(), Instant.EPOCH, Instant.EPOCH), true)));
         TimelineEntry entry = new TimelineEntry(paper, LocalDate.parse("2026-10-12"), false, "prescription", null, "DONE", 0, 1, 1, 0,
-                "k", Instant.parse("2026-10-12T08:00:00Z"), level, 0, null, null);
+                "k", Instant.parse("2026-10-12T08:00:00Z"), level, 0, null, null, false);
         when(timeline.attention(eq(patient), any(), anyInt())).thenReturn(level == Urgency.ROUTINE
                 ? reactor.core.publisher.Flux.empty() : reactor.core.publisher.Flux.just(entry));
         when(timeline.inFlightAndRetakes(eq(patient), any())).thenReturn(reactor.core.publisher.Flux.empty());

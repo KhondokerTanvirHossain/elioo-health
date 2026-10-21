@@ -103,7 +103,8 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
     private Mono<Long> writeDocument(Document d) {
         var spec = db.sql("""
                         UPDATE %s.document SET
-                            document_type = :type, doc_date = :docDate, facility = :facility,
+                            document_type = :type, doc_date = :docDate, doc_date_uncertain = :dateUncertain,
+                            facility = :facility,
                             extraction_json = CAST(:extraction AS jsonb), confidence_overall = :confidence,
                             status = :status, status_reason = :reason, status_reason_code = :reasonCode,
                             model_final = :model,
@@ -122,6 +123,7 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
                 .bind("unverifiedFollowUp", d.unverified().followUp())
                 .bind("unverifiedContext", d.unverified().clinicalContext())
                 .bind("status", d.status().name())
+                .bind("dateUncertain", d.docDateUncertain())
                 .bind("updatedAt", OffsetDateTime.ofInstant(d.updatedAt(), ZoneOffset.UTC));
         spec = bindOrNull(spec, "type", d.documentType(), String.class);
         spec = bindOrNull(spec, "docDate", d.docDate(), java.time.LocalDate.class);
@@ -370,7 +372,8 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
             + " OR (n.rule = 'medicine_changed' AND EXISTS (SELECT 1 FROM " + S + ".medication_event m WHERE m.document_id = :d)"
             + " AND n.trigger_key IN (SELECT 'document:' || x.id FROM " + S + ".document x JOIN " + S + ".document me ON me.id = :d"
             + " WHERE x.patient_id = me.patient_id AND n.patient_id = me.patient_id AND x.id <> me.id"
-            + " AND COALESCE(x.doc_date, x.created_at::date) >= COALESCE(me.doc_date, me.created_at::date))))";
+            // D2: "dated on or after" is the filed day, the order medicationsOfPatient gives medicine_changed its sides in
+            + " AND x.timeline_date >= me.timeline_date)))";
 
     /**
      * Not delivered: the nudge row says it was not sent AND its message, if any, was never accepted by the provider.

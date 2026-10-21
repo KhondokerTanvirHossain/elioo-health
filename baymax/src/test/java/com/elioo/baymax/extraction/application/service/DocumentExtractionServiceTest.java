@@ -218,6 +218,40 @@ class DocumentExtractionServiceTest {
         assertThat(items.getValue().unverified().any()).isFalse();
     }
 
+    /**
+     * D2: the model's {@code document_date_uncertain} is stored on the document, on a finished paper and on a retake
+     * alike, so the timeline can mark the date and a trend can drop its direction (spec §4.18). A model that says
+     * nothing (the field absent, so null) is {@code false}, never a NULL into a NOT NULL column.
+     */
+    @org.junit.jupiter.params.ParameterizedTest(name = "{0} on {1}")
+    @org.junit.jupiter.params.provider.CsvSource({
+            "true,  DONE", "true,  NEEDS_RETAKE",
+            "false, DONE", "false, NEEDS_RETAKE",
+            "absent, DONE", "absent, NEEDS_RETAKE"})
+    void theUncertainFlagIsStored(String flag, Document.Status status) throws Exception {
+        String reply = GOOD_REPLY.replace("\"document_date\":\"2026-03-14\",",
+                "\"document_date\":\"2026-03-14\"," + ("absent".equals(flag) ? "" : "\"document_date_uncertain\":" + flag + ","));
+        if (status == Document.Status.NEEDS_RETAKE) {
+            reply = reply.replace("\"overall\":0.93", "\"overall\":0.55");
+        }
+        replyWith(reply);
+
+        StepVerifier.create(service.process(received(1), List.of(pageJpeg())))
+                .assertNext(d -> {
+                    assertThat(d.status()).isEqualTo(status);
+                    assertThat(d.docDateUncertain()).isEqualTo("true".equals(flag));
+                })
+                .verifyComplete();
+
+        ArgumentCaptor<Document> written = ArgumentCaptor.forClass(Document.class);
+        if (status == Document.Status.DONE) {
+            verify(records).saveExtraction(written.capture(), any());
+        } else {
+            verify(records, org.mockito.Mockito.atLeastOnce()).update(written.capture());
+        }
+        assertThat(written.getAllValues().get(written.getAllValues().size() - 1).docDateUncertain()).as("the record the adapter writes").isEqualTo("true".equals(flag));
+    }
+
     @Test
     void lowOverallConfidenceNeedsARetakeAndWritesNoItems() throws Exception {
         replyWith(GOOD_REPLY.replace("\"overall\":0.93", "\"overall\":0.55"));

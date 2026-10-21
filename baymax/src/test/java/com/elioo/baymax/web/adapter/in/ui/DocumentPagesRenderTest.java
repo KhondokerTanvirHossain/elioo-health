@@ -79,7 +79,7 @@ class DocumentPagesRenderTest {
         List<java.util.regex.Pattern> templates = ResultFixtures.bundleTemplates(kit.copy, Lang.BN);
         for (var viewer : List.of(ResultFixtures.BD, ResultFixtures.ABROAD)) {
             ResultView r = new ResultView(view, ResultFixtures.MA, true, viewer, level, level == Urgency.NOW ? reasons : List.of("diagnosis_present"),
-                    GateState.RELEASED, wording, 0, 2, ResultFixtures.NOW, ResultFixtures.NOW);
+                    GateState.RELEASED, wording, 0, 2, ResultFixtures.NOW, ResultFixtures.NOW, com.elioo.baymax.testsupport.PaperFixtures.filedAsStored(view, ResultFixtures.NOW));
             String body = ui.summaryBody(Lang.BN, r);
             String banner = ResultFixtures.section(body, "urgency");
             String says = ResultFixtures.section(body, "says");

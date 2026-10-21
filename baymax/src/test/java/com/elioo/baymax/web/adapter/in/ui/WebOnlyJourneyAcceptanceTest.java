@@ -631,8 +631,14 @@ class WebOnlyJourneyAcceptanceTest {
 
         @Override
         public Mono<DocumentView> view(UUID documentId) {
-            return real.view(documentId).doOnNext(v -> {
-                if (Document.Status.DONE.name().equals(v.status())) {
+            return read(documentId).map(DocumentView.Read::view);
+        }
+
+        /** The result page reads the view with its row (D2); the signal is the same: a DONE view was read. */
+        @Override
+        public Mono<DocumentView.Read> read(UUID documentId) {
+            return real.read(documentId).doOnNext(r -> {
+                if (Document.Status.DONE.name().equals(r.view().status())) {
                     hold.doneViewRead.tryEmitEmpty();
                 }
             });

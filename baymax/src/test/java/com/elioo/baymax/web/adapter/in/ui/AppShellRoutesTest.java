@@ -675,7 +675,7 @@ class AppShellRoutesTest {
         String list = Tab.PAPERS.path + "?patient=" + ma.patient().id();
         when(kit.timeline.timeline(eq(WebUiTestKit.FAMILY), eq(ma.patient().id()), any(), any())).thenReturn(Mono.just(new TimelinePage(List.of(
                 new com.elioo.baymax.web.domain.TimelineEntry(UUID.fromString(ROUTINE_DOC), java.time.LocalDate.parse("2026-10-12"), false, "lab_report",
-                        null, "DONE", 3, 0, 0, 0, "k", WebUiTestKit.NOW, com.elioo.baymax.outbound.domain.Urgency.ROUTINE, 0, "released", null)), null)));
+                        null, "DONE", 3, 0, 0, 0, "k", WebUiTestKit.NOW, com.elioo.baymax.outbound.domain.Urgency.ROUTINE, 0, "released", null, false)), null)));
         when(kit.attention.urgent(WebUiTestKit.FAMILY, ma.patient().id())).thenReturn(Mono.just(List.of(
                 urgentPaper(com.elioo.baymax.outbound.domain.Urgency.NOW, NOW_DOC), urgentPaper(com.elioo.baymax.outbound.domain.Urgency.THIS_WEEK, WEEK_DOC))));
         // the whole stack, retake, follow-up and paper being read included, is there to be misused: the strip must not read it

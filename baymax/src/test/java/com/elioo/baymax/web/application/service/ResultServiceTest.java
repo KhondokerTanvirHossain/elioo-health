@@ -78,6 +78,10 @@ class ResultServiceTest {
         when(records.findFamily(FAMILY)).thenReturn(Mono.just(new FamilyAccount(FAMILY, "+8801700000000", "Tanvir", FamilyAccount.Plan.FREE, NOW, NOW)));
         when(audit.record(any())).thenReturn(Mono.empty());
         when(intake.view(DOC)).thenReturn(Mono.just(DocumentView.pending(processing)));
+        // D2: the result reads the view and its row in one read; unless a test says otherwise, that row is the one the
+        // visibility read saw, as read back (with a filed day), and the view is whatever the test stubbed for view()
+        when(intake.read(DOC)).thenAnswer(inv -> Mono.zip(documents.findVisible(FAMILY, DOC), intake.view(DOC))
+                .map(t -> new DocumentView.Read(readBack(t.getT1()), t.getT2())));
         // no message and nothing stored until a test says so: an unstubbed read is an empty row, never a null Mono
         when(messages.latestDeliverable(any())).thenReturn(Mono.empty());
         when(messages.latestOfKind(any(), any())).thenReturn(Mono.empty());
@@ -140,7 +144,7 @@ class ResultServiceTest {
     void modelWordingCannotTravelWithAnyGateStateButReleased(GateState gate) {
         assertThatThrownBy(() -> new ResultView(DocumentView.pending(Document.received(PATIENT, FAMILY, 1, NOW).withId(DOC)
                 .withStatus(Document.Status.DONE, null, NOW)), MA, true, new ViewerLocale(true), Urgency.NOW, List.of(), gate,
-                "body", 0, 2, NOW, NOW))
+                "body", 0, 2, NOW, NOW, new com.elioo.baymax.extraction.domain.FiledDay(java.time.LocalDate.parse("2026-10-20"), true, false)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("F3: model wording only when released");
     }
@@ -149,11 +153,59 @@ class ResultServiceTest {
     @Test
     void releasedWordingTravelsAndUrgencyWaitsForDone() {
         DocumentView done = DocumentView.pending(Document.received(PATIENT, FAMILY, 1, NOW).withId(DOC).withStatus(Document.Status.DONE, null, NOW));
-        assertThat(new ResultView(done, MA, true, new ViewerLocale(true), Urgency.NOW, null, GateState.RELEASED, "body", 0, 2, NOW, NOW)
+        assertThat(new ResultView(done, MA, true, new ViewerLocale(true), Urgency.NOW, null, GateState.RELEASED, "body", 0, 2, NOW, NOW,
+                new com.elioo.baymax.extraction.domain.FiledDay(java.time.LocalDate.parse("2026-10-20"), true, false))
                 .wording()).isEqualTo("body");
         DocumentView reading = DocumentView.pending(Document.received(PATIENT, FAMILY, 1, NOW).withId(DOC));
         assertThatThrownBy(() -> new ResultView(reading, MA, true, new ViewerLocale(true), Urgency.NOW, List.of(), GateState.NONE,
-                null, 0, 2, NOW, NOW)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("from DONE onwards");
+                null, 0, 2, NOW, NOW, new com.elioo.baymax.extraction.domain.FiledDay(java.time.LocalDate.parse("2026-10-20"), true, false))).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("from DONE onwards");
+    }
+
+    /** Upload day of every fixture paper here; a stand-in for the generated column a mocked port never computes. */
+    private static final java.time.LocalDate UPLOAD_DAY = java.time.LocalDate.parse("2026-10-20");
+
+    /** {@code d} as its row reads back: a stand-in filed day (the upload day unless DONE with a printed date). */
+    private static Document readBack(Document d) {
+        com.elioo.baymax.extraction.domain.FiledDay filed = d.status() == Document.Status.DONE && d.docDate() != null
+                ? new com.elioo.baymax.extraction.domain.FiledDay(d.docDate(), false, false)
+                : new com.elioo.baymax.extraction.domain.FiledDay(UPLOAD_DAY, true, false);
+        return new Document(d.id(), d.patientId(), d.familyId(), d.documentType(), d.docDate(), d.facility(), d.extractionJson(),
+                d.confidenceOverall(), d.status(), d.statusReason(), d.modelFinal(), d.costUsd(), d.pageCount(), d.createdAt(),
+                d.updatedAt(), d.unverified(), d.clinicalContextJson(), d.statusReasonCode(), d.docDateUncertain(), filed);
+    }
+
+    /**
+     * D2 (review): the filed day and the view come from ONE read of the row. The visibility read sees the paper still
+     * PROCESSING; by the time the view is read it has finished, DONE with a printed 12 October. The page must be dated as
+     * the DONE row it shows (printed date, not the upload day), never as the PROCESSING row it no longer is.
+     */
+    @Test
+    void theFiledDayComesFromTheSameReadAsTheView() {
+        Document finished = new Document(DOC, PATIENT, FAMILY, "lab_report", java.time.LocalDate.parse("2026-10-12"), null, "{}", 0.9,
+                Document.Status.DONE, null, "m", null, 2, SENT, NOW, null, null, null, false,
+                new com.elioo.baymax.extraction.domain.FiledDay(java.time.LocalDate.parse("2026-10-12"), false, false));
+        DocumentView doneView = new DocumentView(DOC.toString(), "DONE", null, "lab_report", "2026-10-12", null, 0.9, "m", 2,
+                List.of(), List.of(), List.of(), null, null);
+        org.mockito.Mockito.doReturn(Mono.just(new DocumentView.Read(finished, doneView))).when(intake).read(DOC);
+        // the visibility read: the same paper a moment earlier, PROCESSING, read back with its own (upload-day) filed day
+        Document earlier = readBack(Document.received(PATIENT, FAMILY, 2, SENT).withId(DOC).withStatus(Document.Status.PROCESSING, null, NOW));
+        when(documents.findVisible(FAMILY, DOC)).thenReturn(Mono.just(earlier));
+        StepVerifier.create(service.result(FAMILY, DOC)).assertNext(r -> {
+            assertThat(r.document().status()).isEqualTo("DONE");
+            assertThat(r.date().date()).as("the filed day of the DONE row the view was built from").isEqualTo(java.time.LocalDate.parse("2026-10-12"));
+            assertThat(r.date().uploadDay()).as("the DONE row's printed date, not the PROCESSING row's upload day").isFalse();
+        }).verifyComplete();
+    }
+
+    /** A row read back without its filed day is a mapping defect: the result fails loudly, never dates the paper. */
+    @Test
+    void aRowReadWithoutItsFiledDayFailsLoudly() {
+        Document processing = Document.received(PATIENT, FAMILY, 2, SENT).withId(DOC).withStatus(Document.Status.PROCESSING, null, NOW);
+        org.mockito.Mockito.doReturn(Mono.just(new DocumentView.Read(processing, DocumentView.pending(processing)))).when(intake).read(DOC);
+        StepVerifier.create(service.result(FAMILY, DOC))
+                .expectErrorSatisfies(e -> assertThat(e).isInstanceOf(IllegalStateException.class)
+                        .hasMessageContaining("was read without its filed day"))
+                .verify();
     }
 
     private void done() {
