@@ -56,7 +56,16 @@ public sealed interface AttentionItem {
         }
     }
 
-    record Retake(UUID documentId, Instant receivedAt) implements AttentionItem {
+    /**
+     * A paper waiting for a new photo. {@code date} is the day it is filed under ({@code timeline_date}, read, never
+     * derived here) and {@code dateIsFallback} whether that is its Dhaka upload day; {@code receivedAt} orders the stack.
+     */
+    record Retake(UUID documentId, LocalDate date, boolean dateIsFallback, Instant receivedAt) implements AttentionItem {
+        public Retake {
+            Objects.requireNonNull(date, "date");
+            Objects.requireNonNull(receivedAt, "receivedAt");
+        }
+
         public int rank() {
             return 2;
         }
@@ -77,7 +86,13 @@ public sealed interface AttentionItem {
         }
     }
 
-    record Reading(UUID documentId, Instant receivedAt) implements AttentionItem {
+    /** A paper being read, dated as {@link Retake} is. */
+    record Reading(UUID documentId, LocalDate date, boolean dateIsFallback, Instant receivedAt) implements AttentionItem {
+        public Reading {
+            Objects.requireNonNull(date, "date");
+            Objects.requireNonNull(receivedAt, "receivedAt");
+        }
+
         public int rank() {
             return 4;
         }

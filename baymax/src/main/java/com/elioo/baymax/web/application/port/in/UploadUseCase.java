@@ -18,9 +18,11 @@ public interface UploadUseCase {
      * Whether this family may add papers for this patient, asked before a press's files are read into memory: 404
      * ({@code patient_not_found}) for a patient it cannot see, 403 ({@code shared_patient_read_only}) for one it may only
      * see (share member, D30), empty otherwise. The free allowance is not asked here: only intake can tell a retry of a
-     * press that used the last free paper, which is answered with its document, from a new press.
+     * press that used the last free paper, which is answered with its document, from a new press. D1: a non-null
+     * {@code replaces} must be a paper of this patient, visible to this family, waiting for a retake: 404
+     * ({@code document_not_found}) for one it cannot see, 400 ({@code not_a_retake}) for any other; null replaces nothing.
      */
-    Mono<Void> admit(UUID familyId, UUID patientId);
+    Mono<Void> admit(UUID familyId, UUID patientId, UUID replaces);
 
     /** 404 for a patient this family cannot see, 403 for one it may only see (share member, D30). */
     Mono<Document> upload(UUID familyId, UUID patientId, List<Upload> uploads);
@@ -29,7 +31,9 @@ public interface UploadUseCase {
      * D3: one press of "পাঠান" on the sheet. {@link Grouping#ONE} is one document of every file; {@link Grouping#SEPARATE}
      * is one document per file, all or nothing before any exists. A retry with the same {@code uploadKey} and the same
      * files returns the documents the first press made and records no second upload; other files under the key are a new
-     * press. A null key is never a replay. The same 404/403 rules as the three-argument form.
+     * press. A null key is never a replay. The same 404/403 rules as the three-argument form, and {@link #admit}'s rule
+     * for {@code replaces}, asked before intake stores anything. Every document the press returned (a replay's included)
+     * is linked to {@code replaces}; a link that fails is logged and does not fail the upload.
      */
-    Mono<List<Document>> upload(UUID familyId, UUID patientId, List<Upload> uploads, Grouping grouping, String uploadKey);
+    Mono<List<Document>> upload(UUID familyId, UUID patientId, List<Upload> uploads, Grouping grouping, String uploadKey, UUID replaces);
 }

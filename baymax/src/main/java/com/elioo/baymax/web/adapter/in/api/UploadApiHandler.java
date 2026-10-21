@@ -81,10 +81,12 @@ public class UploadApiHandler {
                 // the client's own mistake, not a refusal intake can make: no reason string for the sheet to word
                 return ApiReason.INVALID.respond();
             }
-            // who may send for this patient is asked before a file is joined into memory: a view-only press reads nothing
-            return uploads.admit(session.familyId(), patientId).then(MultipartUploads.files(parts, properties, grouping.get())).flatMap(files -> {
+            UUID replaces = MultipartUploads.replacesOrNull(parts);
+            // who may send for this patient, and the retake it replaces, are asked before a file is joined into memory: a
+            // view-only press, or one naming a paper that is not this patient's retake, reads nothing
+            return uploads.admit(session.familyId(), patientId, replaces).then(MultipartUploads.files(parts, properties, grouping.get())).flatMap(files -> {
                 long bytes = files.stream().mapToLong(u -> u.bytes().length).sum();
-                return uploads.upload(session.familyId(), patientId, files, grouping.get(), key)
+                return uploads.upload(session.familyId(), patientId, files, grouping.get(), key, replaces)
                         .doOnNext(docs -> docs.forEach(d -> log.info("[baymax-api] upload documentId={} files={} bytes={} documents={}",
                                 d.id(), files.size(), bytes, docs.size())))
                         .flatMap(docs -> ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValue(pressed(docs, patientId)));

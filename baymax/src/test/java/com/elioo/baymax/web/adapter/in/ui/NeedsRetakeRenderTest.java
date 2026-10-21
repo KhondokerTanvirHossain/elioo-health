@@ -84,6 +84,24 @@ class NeedsRetakeRenderTest {
         assertThat(retake("no_text", 1, true)).contains(copy.t(Lang.BN, "retake.free")).contains(copy.t(Lang.BN, "retake.nothing_kept"));
     }
 
+    /**
+     * D1, both directions: the retake form names the paper its photo replaces (first and third state alike), so the old
+     * card leaves the চ্যাট stack; the FAILED page's resend names none (a FAILED paper is not a retake, and naming it
+     * would be refused); "অন্য কাগজ পাঠান" is another paper, never a replacement.
+     */
+    @Test
+    void theRetakeFormNamesThePaperItReplacesAndTheFailedFormNone() {
+        String replaces = "<input type=\"hidden\" name=\"replaces\" value=\"" + ResultFixtures.DOC + "\">";
+        for (int ordinal : new int[]{1, 3}) {
+            assertThat(ResultFixtures.section(retake("no_text", ordinal, true), "retake-form")).as("retake " + ordinal).contains(replaces);
+        }
+        String failed = kit.documents.failedBody(Lang.BN, ResultFixtures.failed());
+        assertThat(ResultFixtures.section(failed, "failed-form")).contains("name=\"patient\"").doesNotContain("name=\"replaces\"");
+        String third = retake("no_text", 3, true);
+        assertThat(third.indexOf("name=\"replaces\"")).as("one replaces field, inside the retake form").isEqualTo(third.lastIndexOf("name=\"replaces\""));
+        assertThat(retake("no_text", 1, false)).as("a view-only member has no form at all").doesNotContain("name=\"replaces\"");
+    }
+
     /** "অন্য কাগজ পাঠান" is the add sheet for this patient, which comes back to this paper: every source, still chosen by the family. */
     @Test
     void anotherPaperOpensTheAddSheetForThisPatientAndComesBackHere() {

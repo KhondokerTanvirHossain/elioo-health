@@ -73,7 +73,7 @@ final class WebUiTestKit {
 
     /** The kit's own mock lets the viewer send for anyone; a test that means otherwise stubs {@code admit} itself. */
     private static UploadUseCase admitting(UploadUseCase uploads) {
-        when(uploads.admit(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(Mono.empty());
+        when(uploads.admit(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(Mono.empty());
         return uploads;
     }
 

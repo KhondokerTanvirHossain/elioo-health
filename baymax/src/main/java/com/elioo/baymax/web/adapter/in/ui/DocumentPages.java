@@ -447,9 +447,9 @@ public class DocumentPages implements WebPages {
             b.append("<p class=\"meta\">").append(copy.t(lang, "retake.viewonly")).append("</p>");
         } else if (third) {
             b.append(anotherPaper(lang, patientId, documentId, true))
-                    .append(sendForm(lang, "retake-form", r.patient(), documentId, "retake.again.same", false));
+                    .append(sendForm(lang, "retake-form", r.patient(), documentId, documentId, "retake.again.same", false));
         } else {
-            b.append(sendForm(lang, "retake-form", r.patient(), documentId, "retake.again", true))
+            b.append(sendForm(lang, "retake-form", r.patient(), documentId, documentId, "retake.again", true))
                     .append(anotherPaper(lang, patientId, documentId, false));
         }
         if (third || !r.owner()) {
@@ -469,7 +469,8 @@ public class DocumentPages implements WebPages {
         UUID documentId = PageChrome.uuid(r.document().documentId());
         StringBuilder b = new StringBuilder(header(lang, r, "failed.title", null))
                 .append("<section id=\"failed\" class=\"retake-card\"><p>").append(copy.t(lang, "failed.p")).append("</p>");
-        b.append(r.owner() ? sendForm(lang, "failed-form", r.patient(), documentId, "failed.again", true)
+        // a FAILED paper is not waiting for a retake: a resend of it replaces nothing (and naming it would be refused)
+        b.append(r.owner() ? sendForm(lang, "failed-form", r.patient(), documentId, null, "failed.again", true)
                 : "<p class=\"meta\">" + copy.t(lang, "retake.viewonly") + "</p>");
         b.append("<p class=\"small\">").append(copy.t(lang, "failed.free")).append("</p></section>");
         return b.append(deleteLink(lang, documentId)).toString();
@@ -539,12 +540,14 @@ public class DocumentPages implements WebPages {
 
     /**
      * A new photo of this paper for the same patient: the one upload entry (POST /app/add), camera first, a visible file
-     * input and a submit, so it works without script. {@code back} brings a refusal's sheet back over this paper.
+     * input and a submit, so it works without script. {@code back} brings a refusal's sheet back over this paper. D1:
+     * {@code replaces}, when not null, names the NEEDS_RETAKE paper this photo replaces, so its card leaves the চ্যাট stack.
      */
-    private String sendForm(Lang lang, String id, PatientProfile patient, UUID documentId, String submitKey, boolean primary) {
+    private String sendForm(Lang lang, String id, PatientProfile patient, UUID documentId, UUID replaces, String submitKey, boolean primary) {
         UUID patientId = patient.id();
         return "<form id=\"" + id + "\" class=\"retake-send\" method=\"post\" enctype=\"multipart/form-data\" action=\"" + UploadUiHandler.SHEET + "\">"
                 + "<input type=\"hidden\" name=\"patient\" value=\"" + patientId + "\">"
+                + (replaces == null ? "" : "<input type=\"hidden\" name=\"replaces\" value=\"" + replaces + "\">")
                 + "<input type=\"hidden\" name=\"back\" value=\"" + BASE + "/documents/" + documentId + "\">"
                 + "<label class=\"retake-file\"><span>" + copy.t(lang, "retake.file") + "</span>"
                 + "<input type=\"file\" name=\"file\" accept=\"image/*,application/pdf\" capture=\"environment\" required></label>"

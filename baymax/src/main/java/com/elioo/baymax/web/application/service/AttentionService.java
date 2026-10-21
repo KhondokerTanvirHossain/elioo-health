@@ -51,8 +51,8 @@ public class AttentionService implements AttentionUseCase {
                             urgentRows(patientId, since).map(u -> (AttentionItem) u).collectList(),
                             timeline.inFlightAndRetakes(patientId, since)
                                     .map(e -> "NEEDS_RETAKE".equals(e.status())
-                                            ? (AttentionItem) new AttentionItem.Retake(e.documentId(), e.createdAt())
-                                            : new AttentionItem.Reading(e.documentId(), e.createdAt()))
+                                            ? (AttentionItem) new AttentionItem.Retake(e.documentId(), e.date(), e.dateIsFallback(), e.createdAt())
+                                            : new AttentionItem.Reading(e.documentId(), e.date(), e.dateIsFallback(), e.createdAt()))
                                     .collectList(),
                             nudgeData.openFollowUpsOfPatient(patientId, today, today.plusDays(FOLLOW_UP_DAYS))
                                     .map(f -> (AttentionItem) new AttentionItem.FollowUp(f.documentId(), f.instruction(), f.dueDate(), f.cropKey()))

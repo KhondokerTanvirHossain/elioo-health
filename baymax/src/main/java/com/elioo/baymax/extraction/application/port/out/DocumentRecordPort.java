@@ -29,6 +29,13 @@ public interface DocumentRecordPort {
      */
     Mono<CreatedDocument> createOnce(Document document, String uploadKey);
 
+    /**
+     * D1 (migration retake_replaces): records that {@code documentId} was sent to replace the retake {@code replaces}. The only writer of
+     * {@code replaces_document_id}; idempotent (the same link twice changes nothing). The retake_replaces trigger refuses a link to a
+     * paper of another patient, or to the document itself.
+     */
+    Mono<Void> linkRetake(UUID documentId, UUID replaces);
+
     /** The family's document made by the press with this key; empty when none. */
     Mono<Document> findByUploadKey(UUID familyId, String uploadKey);
 

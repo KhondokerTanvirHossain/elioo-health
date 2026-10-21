@@ -68,6 +68,12 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
     }
 
     @Override
+    public Mono<Void> linkRetake(UUID documentId, UUID replaces) {
+        return db.sql("UPDATE " + S + ".document SET replaces_document_id = :replaces WHERE id = :id")
+                .bind("replaces", replaces).bind("id", documentId).then();
+    }
+
+    @Override
     public Mono<Document> findByUploadKey(UUID familyId, String uploadKey) {
         return documents.findByFamilyIdAndUploadKey(familyId, uploadKey).map(DocumentEntity::toRecord);
     }

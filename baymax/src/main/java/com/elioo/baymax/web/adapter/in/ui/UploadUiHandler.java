@@ -301,7 +301,9 @@ public class UploadUiHandler implements WebPages {
             Map.entry("request_too_large", "upload.err.too_large"),
             Map.entry("shared_patient_read_only", "add.viewonly"),
             // D3: the same sheet sent again for someone else (Back, another patient, পাঠান); the re-drawn sheet has a new key
-            Map.entry("upload_key_reused", "upload.err.key_reused"));
+            Map.entry("upload_key_reused", "upload.err.key_reused"),
+            // D1: a retake page naming a paper that no longer waits for one (only a stale page can send it): no own copy
+            Map.entry("not_a_retake", "app.err.generic"));
 
     /** {@code POST /app/add}: the sheet's form, with or without script. The patient is the one the family chose. */
     public Mono<ServerResponse> submit(ServerRequest request) {
@@ -330,12 +332,14 @@ public class UploadUiHandler implements WebPages {
             }
             Grouping grouping = grouping(parts);
             String key = MultipartUploads.uploadKey(parts);
-            // who may send for this patient is asked before a file is joined into memory
-            return uploads.admit(session.familyId(), patientId)
+            // D1: the retake page names the paper this photo replaces; the sheet and the legacy form never do
+            UUID replaces = MultipartUploads.replacesOrNull(parts);
+            // who may send for this patient, and the retake it replaces, are asked before a file is joined into memory
+            return uploads.admit(session.familyId(), patientId, replaces)
                     .then(MultipartUploads.files(parts, properties, grouping))
                     .flatMap(pages -> {
                         long total = pages.stream().mapToLong(u -> u.bytes().length).sum();
-                        return uploads.upload(session.familyId(), patientId, pages, grouping, key)
+                        return uploads.upload(session.familyId(), patientId, pages, grouping, key, replaces)
                                 .doOnNext(docs -> docs.forEach(d -> log.info("[baymax] web upload documentId={} files={} bytes={} documents={}",
                                         d.id(), pages.size(), total, docs.size())))
                                 // one document opens; several land on the patient's papers, where each one is
