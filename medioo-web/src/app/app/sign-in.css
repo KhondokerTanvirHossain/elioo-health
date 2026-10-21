@@ -1,0 +1,164 @@
+/* The sign-in pages (SignInFrame.tsx, plan W3): phone.html scene `welcome` and desktop.html scene `signin`. Below
+   900 px one column, the welcome over the step; from 900 px the welcome on a tinted panel beside the form, as the
+   desktop prototype lays it out. Every colour, size and space is a token; the primary press is the one 48 px target,
+   every other link and button meets the 44 px floor. Nothing here is red: a refused number or code is said in words. */
+.sign-in {
+  display: grid;
+  align-content: start;
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--label);
+}
+.sign-in__welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-6) var(--space-4) var(--space-4);
+  min-width: 0;
+}
+.sign-in__mio {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 420px;
+}
+.sign-in__side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 100%;
+  max-width: 420px;
+  min-width: 0;
+  margin: 0 auto;
+  padding: var(--space-4) var(--space-4) var(--space-6);
+}
+.sign-in__title {
+  margin: 0;
+  font-family: var(--font-bn);
+  font-size: var(--text-title);
+  font-weight: 700;
+  line-height: 1.3;
+}
+.sign-in__flow,
+.sign-in__step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+.sign-in__primary {
+  min-height: var(--target-primary);
+  padding: var(--space-2) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--tint);
+  color: var(--on-tint);
+  font-family: var(--font-bn);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  cursor: pointer;
+}
+.sign-in__primary:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+.sign-in__primary:focus-visible,
+.sign-in__quiet:focus-visible,
+.sign-in__wa:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+/* A quiet way elsewhere (change the number, another number, a new code): a text-coloured press, never a second primary. */
+.sign-in__quiet {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  min-height: var(--target-min);
+  min-width: var(--target-min);
+  padding: 0 var(--space-2);
+  border: 0;
+  background: none;
+  color: var(--tint-ink);
+  font-family: var(--font-bn);
+  font-size: var(--text-md);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.sign-in__number {
+  margin: 0;
+  font-family: var(--font-sys);
+  font-size: var(--text-title);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.sign-in__question,
+.sign-in__lede {
+  margin: 0;
+  font-family: var(--font-bn);
+  font-size: var(--text-lg);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.sign-in__hint,
+.sign-in__mask {
+  margin: 0;
+  font-family: var(--font-bn);
+  font-size: var(--text-sm);
+  color: var(--label2);
+  overflow-wrap: anywhere;
+}
+/* The one-tap WhatsApp link of the not-sent code page, as the HTML page's `btn wa`: a tinted press with words. */
+.sign-in__wa {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--target-min);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--tint-soft);
+  color: var(--tint-ink);
+  font-family: var(--font-bn);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+}
+/* Empty until something went wrong that is not the number's or the code's own refusal; then said in words. The alert
+   stays in the page while empty (a live region announces a change, not its arrival) and gives back the gap it adds. */
+.sign-in__status {
+  margin: 0;
+  font-family: var(--font-bn);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.sign-in__status:empty {
+  margin-block-start: calc(var(--space-4) * -1);
+}
+
+@media (min-width: 900px) {
+  .sign-in {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+    align-content: stretch;
+  }
+  .sign-in__welcome {
+    align-items: flex-start;
+    justify-content: center;
+    padding: var(--space-6);
+    background: var(--bg2);
+    border-right: 1px solid var(--sep);
+  }
+  .sign-in__mio {
+    align-items: flex-start;
+  }
+  .sign-in__side {
+    justify-content: center;
+    padding: var(--space-6) var(--space-4);
+  }
+}

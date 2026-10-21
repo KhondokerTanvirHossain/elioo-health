@@ -1,6 +1,5 @@
-import { useId } from "react";
 import { banglaDigits, t, type Lang } from "@/copy";
-import "./OtpInput.css";
+import { OtpInputView, type OtpWords } from "./OtpInputView";
 
 /**
  * The refusals a code can come back with, as the copy key the verify page says each in (SignInPages.refusalKey):
@@ -23,6 +22,8 @@ export type CodeRefusal =
  * description. `error` is the refusal the caller received, as PhoneField takes one: it marks the field invalid, is
  * read before the lifetime line, and is said aloud when it arrives, from an alert that is always in the page and empty
  * until there is a refusal (a live region announces a change to its content, not its own arrival).
+ *
+ * The server wrapper over OtpInputView: it resolves the words and renders the copy-free twin a client island uses.
  */
 export function OtpInput({
   length,
@@ -39,37 +40,27 @@ export function OtpInput({
   error?: CodeRefusal;
   ttlMinutes?: number;
 }) {
-  const id = useId();
-  const errorId = `${id}-error`;
-  const hintId = `${id}-hint`;
-  const described = [error ? errorId : null, ttlMinutes === undefined ? null : hintId].filter(Boolean).join(" ");
   return (
-    <div className="otp-input__wrap">
-      <label className="otp-input__label" htmlFor={id}>
-        {t(lang, "login.code")}
-      </label>
-      <input
-        id={id}
-        className="otp-input"
-        type="text"
-        name={name}
-        inputMode="numeric"
-        autoComplete="one-time-code"
-        maxLength={length}
-        pattern={`[0-9${banglaDigits("0")}-${banglaDigits("9")}]{${length}}`}
-        defaultValue={defaultValue}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={described || undefined}
-        required
-      />
-      <p className="otp-input__error" id={errorId} role="alert">
-        {error === undefined ? null : error.key === "login.bad.burned" ? t(lang, error.key, error.attempts) : t(lang, error.key)}
-      </p>
-      {ttlMinutes !== undefined && (
-        <p className="otp-input__hint" id={hintId}>
-          {t(lang, "login.code.ttl", ttlMinutes)}
-        </p>
-      )}
-    </div>
+    <OtpInputView
+      length={length}
+      words={otpWords(lang, ttlMinutes, length)}
+      name={name}
+      defaultValue={defaultValue}
+      error={error === undefined ? undefined : refusalText(lang, error)}
+    />
   );
+}
+
+/** The code field's words: its label, the lifetime line when the minutes are known, and the shape of six numerals. */
+export function otpWords(lang: Lang, ttlMinutes?: number, length: 6 = 6): OtpWords {
+  return {
+    label: t(lang, "login.code"),
+    ...(ttlMinutes === undefined ? {} : { ttl: t(lang, "login.code.ttl", ttlMinutes) }),
+    pattern: `[0-9${banglaDigits("0")}-${banglaDigits("9")}]{${length}}`,
+  };
+}
+
+/** A refused code's line, as the verify page says it: BURNED with the number of wrong tries it took. */
+export function refusalText(lang: Lang, error: CodeRefusal): string {
+  return error.key === "login.bad.burned" ? t(lang, error.key, error.attempts) : t(lang, error.key);
 }

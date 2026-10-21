@@ -1,7 +1,9 @@
 import { cleanup, fireEvent, render, within } from "@testing-library/react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
 import { t } from "@/copy";
-import { PhoneField } from "./PhoneField";
+import { PhoneField, phoneFieldWords } from "./PhoneField";
+import { PhoneFieldView } from "./PhoneFieldView";
 
 afterEach(cleanup);
 
@@ -76,6 +78,26 @@ describe("PhoneField", () => {
       expect(after.textContent, `${lang}: the refusal`).toBe(t(lang, "login.number.invalid"));
       expect(input.getAttribute("aria-describedby")?.split(" ")[0], `${lang}: the error is read first`).toBe(after.id);
       cleanup();
+    }
+  });
+
+  it("theWrapperAndTheViewRenderTheSameMarkup", () => {
+    // A client island (the sign-in number step) renders the copy-free view with words its server parent resolved; the
+    // server wrapper renders the same view, so the two can never drift into two fields.
+    for (const lang of ["bn", "en"] as const) {
+      for (const error of [undefined, "login.number.invalid"] as const) {
+        const wrapper = renderToStaticMarkup(<PhoneField lang={lang} name="whatsapp_number" error={error} defaultValue="017" />);
+        const view = renderToStaticMarkup(
+          <PhoneFieldView
+            words={phoneFieldWords(lang)}
+            name="whatsapp_number"
+            error={error ? t(lang, error) : undefined}
+            defaultValue="017"
+          />,
+        );
+        expect(view, `${lang} ${error ?? "no error"}`).toBe(wrapper);
+        expect(view, "the markup holds the label").toContain(t(lang, "login.number"));
+      }
     }
   });
 });

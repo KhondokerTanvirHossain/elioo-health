@@ -1,6 +1,5 @@
-import { useId } from "react";
 import { t, type Lang } from "@/copy";
-import "./PhoneField.css";
+import { PhoneFieldView, type PhoneFieldWords } from "./PhoneFieldView";
 
 /**
  * The refusals a number can come back with, as the copy key the page says it in: INVALID_NUMBER is
@@ -8,6 +7,11 @@ import "./PhoneField.css";
  * the field as its error line.
  */
 export type NumberRefusal = "login.number.invalid";
+
+/** The field's label and hint, as the HTML sign-in page words them (`login.number`, `login.hint`). */
+export function phoneFieldWords(lang: Lang): PhoneFieldWords {
+  return { label: t(lang, "login.number"), hint: t(lang, "login.hint") };
+}
 
 /**
  * The WhatsApp number. It matches the HTML sign-in page (SignInPages.numberPage) in its label (`login.number`), hint
@@ -20,6 +24,8 @@ export type NumberRefusal = "login.number.invalid";
  * it), and is said aloud when it arrives: the alert is always in the page, empty until there is a refusal, because a
  * React screen fills it after a fetch into a page that is already open, and a live region announces a change to its
  * content, not its own arrival. The HTML page says the same refusal with `role="alert"`.
+ *
+ * The server wrapper over PhoneFieldView: it resolves the words and renders the copy-free twin a client island uses.
  */
 export function PhoneField({
   lang,
@@ -32,32 +38,12 @@ export function PhoneField({
   error?: NumberRefusal;
   defaultValue?: string;
 }) {
-  const id = useId();
-  const hintId = `${id}-hint`;
-  const errorId = `${id}-error`;
   return (
-    <div className="phone-field">
-      <label className="phone-field__label" htmlFor={id}>
-        {t(lang, "login.number")}
-      </label>
-      <input
-        id={id}
-        className="phone-field__input"
-        type="tel"
-        name={name}
-        inputMode="tel"
-        autoComplete="tel"
-        defaultValue={defaultValue}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={error ? `${errorId} ${hintId}` : hintId}
-        required
-      />
-      <p className="phone-field__error" id={errorId} role="alert">
-        {error ? t(lang, error) : null}
-      </p>
-      <p className="phone-field__hint" id={hintId}>
-        {t(lang, "login.hint")}
-      </p>
-    </div>
+    <PhoneFieldView
+      words={phoneFieldWords(lang)}
+      name={name}
+      error={error ? t(lang, error) : undefined}
+      defaultValue={defaultValue}
+    />
   );
 }

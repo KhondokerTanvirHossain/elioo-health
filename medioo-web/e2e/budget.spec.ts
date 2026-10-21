@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { expect, test, type Page, type Response, type TestInfo } from "@playwright/test";
 import { NEXT_PAGES } from "../src/routing/paths";
 import { ceilingMessage, concretePath, fontProblems, isJavaImage, readCeilings, routeTotal } from "./support/budget";
+import { useScenario } from "./support/browser-api";
+import { PAGE_MARKERS, PAGE_SCENARIOS } from "./support/scenarios.mjs";
 
 type Kind = "document" | "script" | "stylesheet" | "font" | "rsc" | "other";
 type Row = {
@@ -183,17 +185,34 @@ test("the framework floor: a cold first load of the probe, within the probe ceil
   }
 });
 
+// A page with no scenario would be measured against whatever stub Java answers by default (an error page, a redirect),
+// and an empty list would measure nothing at all and pass: both fail here, not silently.
+test("every routed page has a scenario and a marker to be measured under", () => {
+  expect(NEXT_PAGES.length, "NEXT_PAGES lists the routed pages").toBeGreaterThan(0);
+  expect(NEXT_PAGES.filter((p) => !Object.hasOwn(PAGE_SCENARIOS, p)), "pages with no PAGE_SCENARIOS entry").toEqual([]);
+  expect(NEXT_PAGES.filter((p) => !Object.hasOwn(PAGE_MARKERS, p)), "pages with no PAGE_MARKERS entry").toEqual([]);
+});
+
 // Every routed page (NEXT_PAGES, held equal to the build's pages by src/routing/built/routes.built.test.ts) against the
-// route ceiling. Its total is every response of the cold load except Java's crop and page images (S9).
+// route ceiling, each under its PAGE_SCENARIOS scenario (W3). Its total is every response of the cold load except
+// Java's crop and page images (S9).
 for (const pattern of NEXT_PAGES) {
   test(`routed page ${pattern}: a cold first load within the route ceiling`, async ({ page, baseURL }, testInfo) => {
     const origin = new URL(baseURL!).origin;
+    const scenario = PAGE_SCENARIOS[pattern];
+    expect(scenario, `PAGE_SCENARIOS[${pattern}]`).toBeDefined();
+    await useScenario(page, scenario!);
     const path = concretePath(pattern);
     const load = await coldLoad(page, origin, path);
     const total = routeTotal(load.rows);
-    record(testInfo, `budget-route${path.replace(/[^a-zA-Z0-9]+/g, "-")}`, baseURL!, load, { path, routeTotal: total });
+    record(testInfo, `budget-route${path.replace(/[^a-zA-Z0-9]+/g, "-")}`, baseURL!, load, { path, scenario, routeTotal: total });
 
     expectAWholeMeasurement(load, origin, path);
+    // The page itself, not an error page that also answered 200: its own marker is in the document Java's stub fed.
+    const marker = PAGE_MARKERS[pattern]!;
+    expect(await load.document!.text(), `${path}: the document holds ${marker}, so it is the page and not an error page`).toContain(
+      marker,
+    );
     const { route } = readCeilings();
     if (await enforcedHere(page, testInfo)) {
       expect(total, ceilingMessage("route", path, total, route)).toBeLessThanOrEqual(route);

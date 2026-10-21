@@ -1,0 +1,141 @@
+import { readFileSync } from "node:fs";
+import { createServer } from "node:http";
+import { basename, join } from "node:path";
+import { FIXTURES, SCENARIOS } from "./scenarios.mjs";
+
+/*
+ * Stub Java for the e2e suite (plan Wave 3, Shared interfaces → e2e support). `next start` reads it as
+ * JAVA_INTERNAL_URL; browser-api.ts answers the browser's own /app/api calls through the same `answer()`. It picks the
+ * scenario from the `e2e_scenario` cookie; `baymax_session` means only "signed in". It refuses mutations as
+ * AppApiGuard.csrf does, in its order: no `X-Medioo: 1` is 403 MISSING_HEADER; a foreign Origin, or none on an open
+ * route, is 403 FORBIDDEN_ORIGIN; no JSON or multipart type (a body-less POST or DELETE included) is 415
+ * UNSUPPORTED_MEDIA_TYPE. Then a route that needs a session and has none is 401 UNAUTHENTICATED, and a route the
+ * scenario does not map is 404 NOT_FOUND. It records every request and serves the log at GET /__requests (DELETE
+ * clears it). It logs nothing.
+ */
+
+/** The routes that need no session (AppApiGuard.OPEN, W3-api). */
+export const OPEN = new Set(["POST /app/api/sign-in/request", "POST /app/api/sign-in/verify", "GET /app/api/sign-in/state"]);
+const MUTATIONS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+/** One cookie's value from a Cookie header. */
+export function cookieValue(header, name) {
+  for (const part of (header ?? "").split(";")) {
+    const at = part.indexOf("=");
+    if (at > 0 && part.slice(0, at).trim() === name) return part.slice(at + 1).trim();
+  }
+  return null;
+}
+
+/** Whether `path` matches the route pattern (a `{name}` segment is any one non-empty segment). */
+function matches(pattern, path) {
+  const want = pattern.split("/");
+  const got = path.split("/");
+  return want.length === got.length && want.every((s, i) => (/^\{\w+\}$/.test(s) ? got[i] !== "" : s === got[i]));
+}
+
+/** The scenario key (`METHOD pattern`) a request is answered from, or null. */
+export function routeKey(scenario, method, path) {
+  for (const key of Object.keys(scenario)) {
+    const [m, pattern] = key.split(" ");
+    if (m === method && matches(pattern, path)) return key;
+  }
+  return null;
+}
+
+function load(value) {
+  if (typeof value === "string") {
+    const fixture = JSON.parse(readFileSync(join(FIXTURES, value), "utf8"));
+    return { status: fixture.status ?? 200, body: fixture.body };
+  }
+  return value;
+}
+
+/**
+ * The answer to one request. `counters` holds how many times each `scenario key` was answered (for answer lists); the
+ * caller owns it, so the stub's is per run and the browser's per test.
+ */
+export function answer({ method, path, headers, origin, counters }) {
+  const name = cookieValue(headers.cookie, "e2e_scenario");
+  const scenario = SCENARIOS[name ?? ""];
+  if (!scenario) return { status: 404, body: { reason: "NOT_FOUND" } };
+  const signature = `${method} ${path}`;
+  if (MUTATIONS.has(method)) {
+    if (headers["x-medioo"] !== "1") return { status: 403, body: { reason: "MISSING_HEADER" } };
+    const from = headers.origin;
+    if ((from !== undefined && from !== origin) || (from === undefined && OPEN.has(signature))) {
+      return { status: 403, body: { reason: "FORBIDDEN_ORIGIN" } };
+    }
+    const type = (headers["content-type"] ?? "").split(";")[0].trim().toLowerCase();
+    if (type !== "application/json" && type !== "multipart/form-data") {
+      return { status: 415, body: { reason: "UNSUPPORTED_MEDIA_TYPE" } };
+    }
+  }
+  if (!OPEN.has(signature) && cookieValue(headers.cookie, "baymax_session") === null) {
+    return { status: 401, body: { reason: "UNAUTHENTICATED" } };
+  }
+  const key = routeKey(scenario, method, path);
+  if (key === null) return { status: 404, body: { reason: "NOT_FOUND" } };
+  const value = scenario[key];
+  if (!Array.isArray(value)) return load(value);
+  const counter = `${name} ${key}`;
+  const n = counters.get(counter) ?? 0;
+  counters.set(counter, n + 1);
+  return load(value[Math.min(n, value.length - 1)]);
+}
+
+/** What the log keeps of one request: never a body, and of the headers only their names and the guard's three. */
+export function record({ method, path, query, headers }) {
+  return {
+    method,
+    path,
+    query,
+    run: cookieValue(headers.cookie, "e2e_run"),
+    headerNames: Object.keys(headers).sort(),
+    "x-medioo": headers["x-medioo"] ?? null,
+    origin: headers.origin ?? null,
+    "content-type": headers["content-type"] ?? null,
+  };
+}
+
+function serve(port, host, origin) {
+  let log = [];
+  const counters = new Map();
+  createServer((req, res) => {
+    const url = new URL(req.url ?? "/", "http://stub.invalid");
+    const send = (status, body) => {
+      const text = typeof body === "string" ? body : JSON.stringify(body);
+      res.writeHead(status, { "content-type": typeof body === "string" ? "text/plain" : "application/json" });
+      res.end(text);
+    };
+    if (url.pathname === "/__requests") {
+      if (req.method === "DELETE") {
+        log = [];
+        counters.clear();
+        return send(200, { cleared: true });
+      }
+      return send(200, log);
+    }
+    req.resume();
+    req.on("end", () => {
+      const entry = { method: req.method ?? "GET", path: url.pathname, query: url.search.slice(1), headers: req.headers };
+      log.push(record(entry));
+      const { status, body } = answer({ ...entry, origin, counters });
+      if (status === 204) {
+        res.writeHead(204);
+        return res.end();
+      }
+      send(status, body);
+    });
+  }).listen(port, host);
+}
+
+// STUB_HOST 0.0.0.0 when it runs as the `java-stub` container on the Caddy replica's network (the image run). Started
+// as a script, never when a test worker imports `answer` (no `import.meta`: those workers load this file as CommonJS).
+if (basename(process.argv[1] ?? "") === "java-stub.mjs") {
+  serve(
+    Number(process.env.STUB_PORT ?? 3290),
+    process.env.STUB_HOST ?? "127.0.0.1",
+    process.env.E2E_ORIGIN ?? "http://127.0.0.1:3217",
+  );
+}

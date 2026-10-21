@@ -72,6 +72,19 @@ const config = [
     },
   },
   {
+    // Playwright, not React: `useScenario` (e2e/support/browser-api.ts) is the plan's name for a test helper.
+    files: ["e2e/**"],
+    rules: { "react-hooks/rules-of-hooks": "off" },
+  },
+  {
+    // No screen text is logged (plan W3): src/api, the pages and the components call no console.* at all, so a Java
+    // body, a name or a typed number can never reach the Next server log or the browser console. Unit tests may print
+    // what they judged (the built-CSS scans do), and run in Vitest, never in the app.
+    files: ["src/**"],
+    ignores: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    rules: { "no-console": "error" },
+  },
+  {
     // src/copy/** is the one door to the generated copy: the same path bans, without the generated-copy pattern.
     files: ["src/copy/**"],
     rules: {

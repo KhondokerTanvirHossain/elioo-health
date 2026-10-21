@@ -204,6 +204,7 @@
   "login.enter": "ঢুকুন",
   "login.hint": "যে নম্বরে WhatsApp চালান, সেটাই দিন",
   "login.next": "পরের ধাপ",
+  "login.nojs": "JavaScript ছাড়া ঢুকতে এখানে চাপুন",
   "login.number": "আপনার WhatsApp নম্বর",
   "login.number.change": "বদলান",
   "login.number.confirm": "ঠিক আছে?",

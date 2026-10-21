@@ -81,6 +81,9 @@ const BANNED: [string, string, string, string?][] = [
     "no-restricted-syntax",
     "src/components/safety/lint-fixture.tsx",
   ],
+  // No screen text is logged (plan W3): src/api, the pages and the components call no console.* at all.
+  ["console.log in src is refused", "export const L = (x: string) => { console.log(x); return null; };\n", "no-console", "src/api/lint-fixture.ts"],
+  ["console.error in a page is refused", "export const L = (x: string) => { console.error(x); return null; };\n", "no-console"],
   // src/copy/** may import the generated copy, but its override must not lift the other bans there.
   ["next/image under src/copy", `import Image from "next/image";\nexport const H = Image;\n`, "no-restricted-imports", "src/copy/lint-fixture.ts"],
   [

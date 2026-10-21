@@ -12,6 +12,9 @@ const nextConfig: NextConfig = {
   distDir: catalog ? ".next-catalog" : ".next",
   env: { MEDIOO_CATALOG: catalog ? "1" : "0" },
   poweredByHeader: false,
+  // `/app` and `/app/` are both the sign-in page (WhatsApp links and Java's redirects use both spellings), so neither
+  // may 308 to the other: Next would otherwise strip the slash with a redirect before the page renders (plan W3).
+  skipTrailingSlashRedirect: true,
   reactStrictMode: true,
   // The image optimizer (/_next/image) is never needed — next/image is banned by lint and crops are served by Java —
   // and it is sharp work plus a recurring CVE surface in a 320m container on a shared box. Unoptimized, it answers
