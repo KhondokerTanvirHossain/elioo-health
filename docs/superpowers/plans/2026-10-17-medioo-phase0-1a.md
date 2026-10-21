@@ -5920,9 +5920,17 @@ class FailedHasOneWriterTest {
 - [ ] **Step 1:** the standard pre-merge (migration check: V22 is the latest on main). PR body: the three silent paths
   closed, the central rule and how it is asserted, the inverted test, the copy drafts, and the plain statement that the
   FAILED and FAILED_SAFETY replies were exercised locally and by Testcontainers only.
-- [ ] **Step 2: Local run (the done for this PR).** With `docker compose up -d` and `.env.local`, start the app with the
-  extraction model overridden to a non-existent id in a local-only property, upload `t1-routine-lab.jpg` on the web, and
-  confirm the log adapter prints the `failure.document` body and an `outbound_message` row of kind `failure` exists.
+- [ ] **Step 2: Local run (the done for this PR; PR 9 stays unmerged until it is done).** With `docker compose up -d`
+  and `.env.local`, start the app with the extraction model overridden to a non-existent id in a local-only property,
+  upload `t1-routine-lab.jpg` on the web, and confirm:
+  - a `[baymax] message delivered (log) … kind=FAILURE … chars=<n>` line, with `n` the length of `failure.document`.
+    **No body is expected in any log**: `LogMessageDelivery` logs ids, kind, urgency and `chars=` only, by design —
+    never add body logging to make this check pass;
+  - against the Docker Postgres: `SELECT kind, body FROM baymax.outbound_message WHERE document_id = '<id>'` returns
+    `failure` with the bundle text of `failure.document`;
+  - for a forced fail-closed (a DONE document whose explanation fails the checklist twice), an
+    `[baymax] explanation fallback … cause=failed_safety` line and, in the same table, a `failed_safety` row with no
+    body followed by an `explanation` row with the fallback body.
   Restore the property.
 
 **Try it on your phone (PR 9)** — production check is "nothing regressed":
