@@ -100,7 +100,7 @@ class AppApiGuardTest {
         return WebTestClient.bindToRouterFunction(probes.and(new AppApiRouter().mediooAppApiRoutes(
                 new MeApiHandler(timeline, attention, properties), new SignInApiHandler(auth, sessions, properties),
                 new PaperApiHandler(mock(ResultUseCase.class), new UiCopy()),
-                new UploadApiHandler(mock(UploadUseCase.class), properties), guard))).build();
+                new UploadApiHandler(mock(UploadUseCase.class), properties, new com.elioo.baymax.web.adapter.in.ui.UiCopy()), guard))).build();
     }
 
     private WebTestClient.RequestBodySpec mutation(WebTestClient c, String uri) {

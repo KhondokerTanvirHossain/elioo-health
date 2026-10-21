@@ -296,6 +296,7 @@ public class UploadUiHandler implements WebPages {
             Map.entry("empty_pdf", "upload.err.pdf"),
             Map.entry("unreadable_pdf", "upload.err.pdf"),
             Map.entry("too_many_pages", "upload.err.too_many_pages"),
+            Map.entry("too_many_files", "upload.err.too_many_files"),
             Map.entry("file_too_large", "upload.err.too_large"),
             Map.entry("request_too_large", "upload.err.too_large"),
             Map.entry("shared_patient_read_only", "add.viewonly"),
@@ -321,7 +322,7 @@ public class UploadUiHandler implements WebPages {
             return refuse(request, declared.get(), Optional.ofNullable(pathPatient).map(UUID::toString),
                     backOf(request, null, pathPatient), Grouping.ONE);
         }
-        return request.multipartData().flatMap(parts -> {
+        return MultipartUploads.withParts(request, properties, parts -> {
             UUID patientId = pathPatient != null ? pathPatient : MultipartUploads.uuidOrNull(MultipartUploads.field(parts, "patient"));
             String back = backOf(request, MultipartUploads.field(parts, "back"), pathPatient);
             if (patientId == null) {
@@ -329,7 +330,9 @@ public class UploadUiHandler implements WebPages {
             }
             Grouping grouping = grouping(parts);
             String key = MultipartUploads.uploadKey(parts);
-            return MultipartUploads.files(parts, caps)
+            // who may send for this patient is asked before a file is joined into memory
+            return uploads.admit(session.familyId(), patientId)
+                    .then(MultipartUploads.files(parts, properties, grouping))
                     .flatMap(pages -> {
                         long total = pages.stream().mapToLong(u -> u.bytes().length).sum();
                         return uploads.upload(session.familyId(), patientId, pages, grouping, key)
@@ -396,7 +399,12 @@ public class UploadUiHandler implements WebPages {
         return LocalPath.or(posted, fallback);
     }
 
-    /** "আলাদা আলাদা" only when the family said so; anything else, or nothing (the legacy form), is one report. */
+    /**
+     * "আলাদা আলাদা" only when the family said so; anything else, or nothing (the legacy form), is one report. Lenient on
+     * purpose, unlike {@code POST /app/api/uploads}, which refuses a value it does not know: this form's values are the
+     * radio buttons the sheet itself draws, so the only other value it can receive is none at all (a page still cached
+     * with the pre-D3 form), and refusing that would turn an old page's paper away.
+     */
     private static Grouping grouping(MultiValueMap<String, Part> parts) {
         return "separate".equals(MultipartUploads.field(parts, "group")) ? Grouping.SEPARATE : Grouping.ONE;
     }

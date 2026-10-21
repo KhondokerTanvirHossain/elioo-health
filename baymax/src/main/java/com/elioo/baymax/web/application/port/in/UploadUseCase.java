@@ -14,6 +14,14 @@ public interface UploadUseCase {
 
     Mono<UploadOptions> uploadOptions(UUID familyId);
 
+    /**
+     * Whether this family may add papers for this patient, asked before a press's files are read into memory: 404
+     * ({@code patient_not_found}) for a patient it cannot see, 403 ({@code shared_patient_read_only}) for one it may only
+     * see (share member, D30), empty otherwise. The free allowance is not asked here: only intake can tell a retry of a
+     * press that used the last free paper, which is answered with its document, from a new press.
+     */
+    Mono<Void> admit(UUID familyId, UUID patientId);
+
     /** 404 for a patient this family cannot see, 403 for one it may only see (share member, D30). */
     Mono<Document> upload(UUID familyId, UUID patientId, List<Upload> uploads);
 

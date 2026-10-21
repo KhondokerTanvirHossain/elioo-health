@@ -203,7 +203,7 @@ class TryDocumentsThroughTheWebTest {
                 .as("the upload path's files were found").contains("PageRenderer.java", "DocumentIntakeService.java", "UploadUiHandler.java", "UploadService.java",
                         "MultipartUploads.java", "UploadApiHandler.java");
         Set<String> reasons = UploadRefusalSweep.reasonsWithStatus().keySet();
-        // shared_patient_read_only is thrown by UploadService; file_too_large and request_too_large by the handler's tooLarge
+        // shared_patient_read_only is thrown by UploadService; file_too_large and request_too_large by MultipartUploads.tooLarge (swept by name, UploadRefusalSweep.NAMED)
         assertThat(reasons).as("the sweep found the refusals; an empty set would pass vacuously").hasSizeGreaterThanOrEqualTo(10);
         assertThat(reasons).as("the size refusals were swept").contains("file_too_large", "request_too_large");
         assertThat(reasons).allSatisfy(r -> assertThat(UploadUiHandler.REFUSALS).as(r).containsKey(r));

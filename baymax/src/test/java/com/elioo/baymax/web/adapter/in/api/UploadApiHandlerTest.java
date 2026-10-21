@@ -8,7 +8,9 @@ import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.Upload;
 import com.elioo.baymax.healthrecord.domain.DocumentAllowance;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
+import com.elioo.baymax.common.text.NameGrammar;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
+import com.elioo.baymax.web.adapter.in.ui.UiCopy;
 import com.elioo.baymax.web.application.port.in.AttentionUseCase;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
 import com.elioo.baymax.web.application.port.in.UploadUseCase;
@@ -26,6 +28,12 @@ import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.web.reactive.function.BodyInserters;
 import reactor.core.publisher.Mono;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import org.slf4j.LoggerFactory;
+
 import java.time.Instant;
 import java.time.YearMonth;
 import java.util.List;
@@ -38,6 +46,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -63,12 +72,14 @@ class UploadApiHandlerTest {
         when(auth.authenticate(anyString())).thenReturn(Mono.empty());
         when(auth.authenticate("tok")).thenReturn(Mono.just(new WebSession(UUID.randomUUID(), FAMILY, NOW, NOW, NOW.plusSeconds(600))));
         properties.getWeb().setPublicOrigin(AppApiGuardTest.ORIGIN);
+        // the viewer may send for every patient here unless a test says otherwise: admission is its own test
+        when(uploads.admit(any(), any())).thenReturn(Mono.empty());
         AppApiGuard guard = new AppApiGuard(new SessionAuthFilter(auth, properties), properties);
         client = WebTestClient.bindToRouterFunction(new AppApiRouter().mediooAppApiRoutes(
                 new MeApiHandler(mock(TimelineUseCase.class), mock(AttentionUseCase.class), properties),
                 new SignInApiHandler(auth, new SessionAuthFilter(auth, properties), properties),
                 new PaperApiHandler(mock(ResultUseCase.class), new UiCopy()),
-                new UploadApiHandler(uploads, properties), guard)).build();
+                new UploadApiHandler(uploads, properties, new UiCopy()), guard)).build();
     }
 
     private WebTestClient.ResponseSpec post(MultipartBodyBuilder body) {
@@ -128,6 +139,8 @@ class UploadApiHandlerTest {
     /** A group the client misspelt is refused, never guessed as one report: "seperate" would merge papers silently. */
     @Test
     void aGroupThatIsNeitherOneNorSeparateIsInvalid() {
+        // intake would accept it: a route that guessed one report would answer 200, not fail on a null
+        when(uploads.upload(any(), any(), any(), any(), any())).thenReturn(Mono.just(List.of(doc(MA))));
         post(press(MA, KEY, "seperate", "p1.jpg")).expectStatus().isBadRequest().expectBody().json("{\"reason\":\"INVALID\"}", true);
         verify(uploads, never()).upload(any(), any(), any(), any(), any());
     }
@@ -154,6 +167,68 @@ class UploadApiHandlerTest {
     @Test
     void aPressWithNoFileIsNoFileAndNothingIsUploaded() {
         post(press(MA, KEY, "one")).expectStatus().isBadRequest().expectBody().json("{\"reason\":\"NO_FILE\"}", true);
+        verify(uploads, never()).upload(any(), any(), any(), any(), any());
+    }
+
+    /**
+     * "আলাদা আলাদা" makes one document, one OCR and one model call per file, so a press may carry no more chosen files
+     * than one paper has pages. Both directions: the limit passes, one more is refused before anything is uploaded, and
+     * an input the family did not use (an empty part with no name, which the sheet posts) is not a file. A press of
+     * thousands of tiny files, the same refusal as the parts arrive, is {@code UploadApiRealServerTest}'s.
+     */
+    @Test
+    void aPressOfMoreFilesThanOnePaperHasPagesIsRefusedBeforeAnyIsUploaded() {
+        properties.getExtract().setMaxPages(3);
+        when(uploads.upload(eq(FAMILY), eq(MA), any(), eq(Grouping.SEPARATE), eq(KEY)))
+                .thenReturn(Mono.just(List.of(doc(MA), doc(MA), doc(MA))));
+
+        MultipartBodyBuilder atTheLimit = press(MA, KEY, "separate", "p1.jpg", "p2.jpg", "p3.jpg");
+        atTheLimit.part("file", new byte[0]).filename("");
+        atTheLimit.part("file", new byte[0]).filename("");
+        post(atTheLimit).expectStatus().isOk();
+
+        post(press(MA, KEY, "separate", "p1.jpg", "p2.jpg", "p3.jpg", "p4.jpg"))
+                .expectStatus().isBadRequest().expectBody().json("{\"reason\":\"TOO_MANY_FILES\"}", true);
+        // one report of four files is four pages: the paper's own limit, by the name intake would give it
+        post(press(MA, KEY, "one", "p1.jpg", "p2.jpg", "p3.jpg", "p4.jpg"))
+                .expectStatus().isBadRequest().expectBody().json("{\"reason\":\"TOO_MANY_PAGES\"}", true);
+        verify(uploads, times(1)).upload(any(), any(), any(), any(), any());
+    }
+
+    /**
+     * Spring's reader refuses a form field over its memory limit with its own exception, which is neither a refusal
+     * nor a bad body: unmapped, it was a bodiless 500 and an ERROR line ("unhandled error"), a client's mistake read
+     * as a server incident. It is TOO_LARGE, and nothing is logged at ERROR.
+     */
+    @Test
+    void aFormFieldOverTheReadersLimitIsTooLargeAndNoServerFault() {
+        Logger root = (Logger) LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
+        ListAppender<ILoggingEvent> logged = new ListAppender<>();
+        logged.start();
+        root.addAppender(logged);
+        try {
+            MultipartBodyBuilder oversized = press(null, KEY, "one", "p1.jpg");
+            oversized.part("patient", "x".repeat(300 * 1024));
+            post(oversized).expectStatus().isEqualTo(413).expectBody().json("{\"reason\":\"TOO_LARGE\"}", true);
+        } finally {
+            root.detachAppender(logged);
+        }
+        assertThat(logged.list).as("lines at ERROR").noneMatch(e -> e.getLevel().isGreaterOrEqual(Level.ERROR));
+        verify(uploads, never()).upload(any(), any(), any(), any(), any());
+    }
+
+    /**
+     * Whether the viewer may send for this patient is asked before a file is joined into memory: a view-only member's
+     * press is refused for what it is, and costs no reading. Shown by order: a view-only press with no file at all is
+     * VIEW_ONLY, never NO_FILE, which only reading the files could have said.
+     */
+    @Test
+    void aViewOnlyPressIsRefusedBeforeItsFilesAreRead() {
+        when(uploads.admit(FAMILY, BABA)).thenReturn(Mono.error(BaymaxException.forbidden("shared_patient_read_only", "view only")));
+        post(press(BABA, KEY, "one")).expectStatus().isForbidden().expectBody().json("{\"reason\":\"VIEW_ONLY\"}", true);
+        post(press(BABA, KEY, "one", "p1.jpg")).expectStatus().isForbidden().expectBody().json("{\"reason\":\"VIEW_ONLY\"}", true);
+        when(uploads.admit(FAMILY, BABA)).thenReturn(Mono.error(BaymaxException.notFound("patient_not_found", "nobody")));
+        post(press(BABA, KEY, "one")).expectStatus().isNotFound().expectBody().json("{\"reason\":\"NOT_FOUND\"}", true);
         verify(uploads, never()).upload(any(), any(), any(), any(), any());
     }
 
@@ -217,6 +292,7 @@ class UploadApiHandlerTest {
                 .jsonPath("$.allowance.remaining").isEqualTo(2)
                 .jsonPath("$.allowance.resets_on").isEqualTo("2026-11-01")
                 .jsonPath("$.limits.max_pages").isEqualTo(7)
+                .jsonPath("$.limits.max_files").isEqualTo(7)
                 .jsonPath("$.limits.max_file_bytes").isEqualTo(25 * 1024 * 1024)
                 .jsonPath("$.limits.max_request_bytes").isEqualTo(60 * 1024 * 1024)
                 .jsonPath("$.limits.downscale_max_edge").isEqualTo(0)
@@ -230,6 +306,25 @@ class UploadApiHandlerTest {
                 .jsonPath("$.allowance.resets_on").isEmpty()
                 .jsonPath("$.can_send").isEmpty()
                 .jsonPath("$.view_only").isEmpty();
+    }
+
+    /**
+     * The name forms are the viewer's language, as the HTML sheet this route replaces writes them ({@code UiCopy.poss}
+     * and {@code obj}): "Ma's" for a {@code baymax_lang=en} viewer, never a Bangla case ending React cannot undo.
+     */
+    @Test
+    void theNameIsDeclinedInTheViewersLanguage() {
+        UploadOptions o = new UploadOptions(List.of(summary(MA, "Ma", true)), List.of(summary(BABA, "আম্মা", false)),
+                DocumentAllowance.unlimited(YearMonth.of(2026, 10)));
+        when(uploads.uploadOptions(FAMILY)).thenReturn(Mono.just(o));
+        client.get().uri("/app/api/upload-options").cookie("baymax_session", "tok").cookie("baymax_lang", "en").exchange()
+                .expectStatus().isOk().expectBody()
+                .jsonPath("$.can_send[0].name_possessive").isEqualTo("Ma's")
+                .jsonPath("$.can_send[0].name_objective").isEqualTo("Ma");
+        client.get().uri("/app/api/upload-options").cookie("baymax_session", "tok").exchange()
+                .expectStatus().isOk().expectBody()
+                .jsonPath("$.view_only[0].name_possessive").isEqualTo(NameGrammar.possessive("আম্মা"))
+                .jsonPath("$.view_only[0].name_objective").isEqualTo(NameGrammar.objective("আম্মা"));
     }
 
     private static PatientSummary summary(UUID id, String name, boolean owner) {

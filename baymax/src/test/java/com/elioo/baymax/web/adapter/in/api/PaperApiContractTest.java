@@ -107,7 +107,7 @@ class PaperApiContractTest {
         client = WebTestClient.bindToRouterFunction(new AppApiRouter().mediooAppApiRoutes(
                 new MeApiHandler(timeline, attention, properties), new SignInApiHandler(auth, sessions, properties),
                 new PaperApiHandler(results, copy),
-                new UploadApiHandler(mock(UploadUseCase.class), properties), guard)).build();
+                new UploadApiHandler(mock(UploadUseCase.class), properties, copy), guard)).build();
         // the HTML page of the same paper, from the same mocked read: what the JSON must agree with
         DocumentPages html = new DocumentPages(timeline, copy, new PageChrome(copy, sessions), results);
         pages = WebTestClient.bindToRouterFunction(html.routes(sessions)).build();

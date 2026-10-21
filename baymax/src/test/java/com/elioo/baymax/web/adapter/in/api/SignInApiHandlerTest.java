@@ -90,7 +90,7 @@ class SignInApiHandlerTest {
         return WebTestClient.bindToRouterFunction(new AppApiRouter().mediooAppApiRoutes(me,
                 new SignInApiHandler(auth, sessions, properties),
                 new PaperApiHandler(mock(ResultUseCase.class), new UiCopy()),
-                new UploadApiHandler(mock(com.elioo.baymax.web.application.port.in.UploadUseCase.class), properties), guard)).build();
+                new UploadApiHandler(mock(com.elioo.baymax.web.application.port.in.UploadUseCase.class), properties, new UiCopy()), guard)).build();
     }
 
     /** The HTML code page, rendered by {@link SignInPages} over the same mocks and properties. */

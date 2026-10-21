@@ -7,6 +7,7 @@ import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.Upload;
 import com.elioo.baymax.family.application.port.in.FreeTierUseCase;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
+import com.elioo.baymax.healthrecord.domain.PatientAccess;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
 import com.elioo.baymax.web.application.port.in.UploadUseCase;
 import com.elioo.baymax.web.application.port.out.AuditPort;
@@ -53,11 +54,21 @@ public class UploadService implements UploadUseCase {
     }
 
     @Override
-    public Mono<List<Document>> upload(UUID familyId, UUID patientId, List<Upload> uploads, Grouping grouping, String uploadKey) {
+    public Mono<Void> admit(UUID familyId, UUID patientId) {
+        return owned(familyId, patientId).then();
+    }
+
+    /** The one place the patient rule of an upload is written: visible to this family, and its own to add to. */
+    private Mono<PatientAccess> owned(UUID familyId, UUID patientId) {
         return records.visiblePatient(familyId, patientId)
                 .switchIfEmpty(Mono.error(BaymaxException.notFound("patient_not_found", "no patient with id " + patientId)))
                 .flatMap(access -> access.owner() ? Mono.just(access) : Mono.error(BaymaxException.forbidden("shared_patient_read_only",
-                        "a shared patient's records can be seen but not added to")))
+                        "a shared patient's records can be seen but not added to")));
+    }
+
+    @Override
+    public Mono<List<Document>> upload(UUID familyId, UUID patientId, List<Upload> uploads, Grouping grouping, String uploadKey) {
+        return owned(familyId, patientId)
                 .flatMap(access -> grouping == Grouping.SEPARATE
                         ? intake.acceptEach(patientId, uploads, uploadKey).collectList()
                         : intake.accept(patientId, uploads, uploadKey).map(List::of))

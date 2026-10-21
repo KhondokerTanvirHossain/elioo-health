@@ -58,7 +58,16 @@ public enum ApiReason {
     UNREADABLE_PDF(HttpStatus.BAD_REQUEST),
     /** Upload: more pages than one paper may have ({@code limits.max_pages} of the upload options). */
     TOO_MANY_PAGES(HttpStatus.BAD_REQUEST),
-    /** Upload: a file over {@code max_file_bytes}, or a press over {@code max_request_bytes}. */
+    /**
+     * Upload: more chosen files in one press than {@code limits.max_files} of the upload options ("আলাদা আলাদা" makes a
+     * document, and a model call, per file).
+     */
+    TOO_MANY_FILES(HttpStatus.BAD_REQUEST),
+    /**
+     * Upload: a file over {@code max_file_bytes}, a press over {@code max_request_bytes} (counted on the bytes as they
+     * arrive, so a chunked press is refused at the cap, not after it was received), or a form field or part headers over
+     * the reader's memory limit.
+     */
     TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE),
     /** A patient this viewer may see but not change (a share member, D30): upload, and later delete. */
     VIEW_ONLY(HttpStatus.FORBIDDEN),
@@ -80,6 +89,7 @@ public enum ApiReason {
             Map.entry("empty_pdf", UNREADABLE_PDF),
             Map.entry("unreadable_pdf", UNREADABLE_PDF),
             Map.entry("too_many_pages", TOO_MANY_PAGES),
+            Map.entry("too_many_files", TOO_MANY_FILES),
             Map.entry("file_too_large", TOO_LARGE),
             Map.entry("request_too_large", TOO_LARGE),
             Map.entry("shared_patient_read_only", VIEW_ONLY),

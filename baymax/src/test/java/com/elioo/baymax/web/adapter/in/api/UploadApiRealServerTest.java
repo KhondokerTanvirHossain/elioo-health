@@ -14,6 +14,7 @@ import com.elioo.baymax.web.domain.Grouping;
 import com.elioo.baymax.web.domain.UploadOptions;
 import com.elioo.baymax.web.domain.WebSession;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,7 +23,9 @@ import org.springframework.core.io.buffer.DefaultDataBufferFactory;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
+import org.springframework.http.server.reactive.HttpHandler;
 import org.springframework.http.server.reactive.ReactorHttpHandlerAdapter;
+import org.springframework.http.server.reactive.ServerHttpRequestDecorator;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.server.RouterFunctions;
 import reactor.core.publisher.Flux;
@@ -32,17 +35,25 @@ import reactor.netty.http.client.HttpClient;
 import reactor.netty.http.server.HttpServer;
 import reactor.netty.resources.LoopResources;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -71,6 +82,8 @@ class UploadApiRealServerTest {
     }
 
     private static final List<Received> RECEIVED = new CopyOnWriteArrayList<>();
+    /** Bytes of request body the application read, over every request of a test. */
+    private static final AtomicLong SERVER_READ = new AtomicLong();
     private static DisposableServer server;
     private static WebClient client;
     private static LoopResources clientLoops;
@@ -87,9 +100,17 @@ class UploadApiRealServerTest {
                 new MeApiHandler(mock(TimelineUseCase.class), mock(AttentionUseCase.class), properties),
                 new SignInApiHandler(auth, new SessionAuthFilter(auth, properties), properties),
                 new PaperApiHandler(mock(ResultUseCase.class), new UiCopy()),
-                new UploadApiHandler(new RecordingUploads(), properties), guard);
+                new UploadApiHandler(new RecordingUploads(), properties, new com.elioo.baymax.web.adapter.in.ui.UiCopy()), guard);
+        HttpHandler app = RouterFunctions.toHttpHandler(router);
+        // what the application pulled off the socket, counted below the exchange: the server's own side of the cap
+        HttpHandler counted = (request, response) -> app.handle(new ServerHttpRequestDecorator(request) {
+            @Override
+            public Flux<DataBuffer> getBody() {
+                return super.getBody().doOnNext(b -> SERVER_READ.addAndGet(b.readableByteCount()));
+            }
+        }, response);
         server = HttpServer.create().host("127.0.0.1").port(0)
-                .handle(new ReactorHttpHandlerAdapter(RouterFunctions.toHttpHandler(router)))
+                .handle(new ReactorHttpHandlerAdapter(counted))
                 .bindNow();
         clientLoops = LoopResources.create("upload-client", 2, true);
         client = WebClient.builder().baseUrl("http://127.0.0.1:" + server.port())
@@ -104,9 +125,36 @@ class UploadApiRealServerTest {
         clientLoops.disposeLater().block(Duration.ofSeconds(10));
     }
 
+    private Set<Path> spooledBefore;
+
     @BeforeEach
-    void forget() {
+    void forget() throws IOException {
         RECEIVED.clear();
+        SERVER_READ.set(0);
+        spooledBefore = spooled();
+    }
+
+    /**
+     * Every part the reader spooled to disk is gone once the press is answered: accepted, refused at the cap, or refused
+     * by its part count. Checked on the spool directory itself, not on a delete call: a photo of a report left in
+     * {@code java.io.tmpdir} is a patient's paper on the shared disk.
+     */
+    @AfterEach
+    void nothingIsLeftOnDisk() throws IOException {
+        assertThat(spooled()).as("spooled parts left in " + System.getProperty("java.io.tmpdir")).isSubsetOf(spooledBefore);
+    }
+
+    /** The files in Spring's multipart spool directories ({@code spring-multipart-*} under {@code java.io.tmpdir}). */
+    private static Set<Path> spooled() throws IOException {
+        Set<Path> files = new HashSet<>();
+        try (DirectoryStream<Path> dirs = Files.newDirectoryStream(Path.of(System.getProperty("java.io.tmpdir")), "spring-multipart-*")) {
+            for (Path dir : dirs) {
+                try (Stream<Path> walk = Files.walk(dir)) {
+                    walk.filter(Files::isRegularFile).forEach(files::add);
+                }
+            }
+        }
+        return files;
     }
 
     /**
@@ -159,6 +207,66 @@ class UploadApiRealServerTest {
         assertThat(RECEIVED).as("nothing reached the upload").isEmpty();
     }
 
+    /**
+     * A chunked press far over the cap is refused while it arrives, never received whole first. 500 MB in 20 MB files,
+     * each under the file cap, so only the count of the body itself can stop it before the end: the 60 MB check on the
+     * joined files ran after Spring had spooled every part to disk (the EC2 root disk, shared with n8n and bddrug), and a
+     * status check alone cannot tell the two apart.
+     *
+     * <p>Two counts, so the test fails on unbounded reading and not only on the status. The server's: what the
+     * application pulled off the socket, at most the cap and the one buffer that crossed it. The client's: what it had
+     * handed the socket when the answer came, which must be short of the whole press. It is not held to the cap itself:
+     * once the application stops reading, reactor-netty discards the rest of the request on the floor (no disk, no heap)
+     * while the 413 is on its way, and on loopback that is ~120 MB in the few milliseconds it takes.
+     */
+    @Test
+    void aChunkedPressFarOverTheCapIsRefusedWhileItArrives() {
+        AtomicLong emitted = new AtomicLong();
+        byte[] megabyte = files(1, MB).get(0);
+        int files = 25;
+        Flux<DataBuffer> body = Flux.concat(
+                        Flux.just(field("patient", MA.toString()), field("upload_key", KEY), field("group", "separate")).map(MultipartWire::wrap),
+                        Flux.range(0, files).concatMap(i -> Flux.concat(
+                                Mono.fromSupplier(() -> MultipartWire.wrap(filePartHeader(i))),
+                                Flux.range(0, 20).map(j -> MultipartWire.wrap(megabyte)),
+                                Mono.fromSupplier(() -> MultipartWire.wrap("\r\n".getBytes(StandardCharsets.US_ASCII))))),
+                        Mono.fromSupplier(() -> MultipartWire.wrap(("--" + BOUNDARY + "--\r\n").getBytes(StandardCharsets.US_ASCII))))
+                .doOnNext(b -> emitted.addAndGet(b.readableByteCount()));
+
+        ResponseEntity<String> r = exchange(body, null, Duration.ofSeconds(60));
+        long atAnswer = emitted.get();
+        long whole = (long) files * 20 * MB;
+
+        // what was read first: a server that read on and then answered 413 has the right status for the wrong reason
+        assertThat(SERVER_READ.get()).as("bytes the server read of a %d-byte press", whole)
+                .isLessThanOrEqualTo(new BaymaxProperties().getUpload().getMaxRequestBytes() + MB);
+        assertThat(atAnswer).as("bytes the client had sent when the 413 came (of %d)", whole).isLessThan(whole);
+        assertThat(r.getStatusCode().value()).as(r.getBody()).isEqualTo(413);
+        assertThat(r.getBody()).isEqualTo("{\"reason\":\"TOO_LARGE\"}");
+        assertThat(RECEIVED).as("nothing reached the upload").isEmpty();
+    }
+
+    /**
+     * A press of two thousand small files ("আলাদা আলাদা" would make a document and a model call of each) is refused as
+     * its parts arrive, by name, and the server reads no further: not parsed to its end, nothing uploaded.
+     */
+    @Test
+    void aPressOfThousandsOfFilesIsRefusedAsItsPartsArrive() {
+        int files = 2000;
+        byte[] small = files(1, 10 * 1024).get(0);
+        Flux<DataBuffer> body = Flux.concat(
+                Flux.just(field("patient", MA.toString()), field("upload_key", KEY), field("group", "separate")).map(MultipartWire::wrap),
+                Flux.range(0, files).concatMap(i -> Flux.just(filePartHeader(i), small, "\r\n".getBytes(StandardCharsets.US_ASCII)).map(MultipartWire::wrap)),
+                Mono.fromSupplier(() -> MultipartWire.wrap(("--" + BOUNDARY + "--\r\n").getBytes(StandardCharsets.US_ASCII))));
+
+        ResponseEntity<String> r = exchange(body, null, Duration.ofSeconds(60));
+
+        assertThat(SERVER_READ.get()).as("bytes the server read of a %d-file press", files).isLessThan(5L * MB);
+        assertThat(r.getStatusCode().value()).as(r.getBody()).isEqualTo(400);
+        assertThat(r.getBody()).isEqualTo("{\"reason\":\"TOO_MANY_FILES\"}");
+        assertThat(RECEIVED).as("nothing reached the upload").isEmpty();
+    }
+
     @Test
     void aSingleFileOverTheFileCapIsTooLarge() throws Exception {
         ResponseEntity<String> r = send(files(1, 26 * MB), true);
@@ -184,31 +292,49 @@ class UploadApiRealServerTest {
      * {@code declared}, else chunked (a {@code Flux} with no length is sent with {@code Transfer-Encoding: chunked}).
      */
     private static ResponseEntity<String> send(List<byte[]> files, boolean declared) {
-        DefaultDataBufferFactory buffers = DefaultDataBufferFactory.sharedInstance;
         List<byte[]> chunks = new ArrayList<>();
         chunks.add(field("patient", MA.toString()));
         chunks.add(field("upload_key", KEY));
         chunks.add(field("group", "one"));
         for (int i = 0; i < files.size(); i++) {
-            chunks.add(("--" + BOUNDARY + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"page-" + (i + 1)
-                    + ".jpg\"\r\nContent-Type: image/jpeg\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
+            chunks.add(filePartHeader(i));
             chunks.add(files.get(i));
             chunks.add("\r\n".getBytes(StandardCharsets.US_ASCII));
         }
         chunks.add(("--" + BOUNDARY + "--\r\n").getBytes(StandardCharsets.US_ASCII));
         long length = chunks.stream().mapToLong(c -> c.length).sum();
         Flux<DataBuffer> body = Flux.fromIterable(chunks).concatMap(c -> Flux.range(0, (c.length + MB - 1) / MB)
-                .map(i -> (DataBuffer) buffers.wrap(ByteBuffer.wrap(c, i * MB, Math.min(MB, c.length - i * MB)).slice())));
+                .map(i -> MultipartWire.wrap(c, i * MB, Math.min(MB, c.length - i * MB))));
+        return exchange(body, declared ? length : null, Duration.ofSeconds(30));
+    }
+
+    private static ResponseEntity<String> exchange(Flux<DataBuffer> body, Long length, Duration deadline) {
         WebClient.RequestBodySpec spec = client.post().uri("/app/api/uploads")
                 .cookie("baymax_session", "tok").header("X-Medioo", "1").header("Origin", AppApiGuardTest.ORIGIN)
                 .contentType(MediaType.parseMediaType("multipart/form-data; boundary=" + BOUNDARY));
-        if (declared) {
+        if (length != null) {
             spec = spec.contentLength(length);
         }
         return spec.body(body, DataBuffer.class).retrieve()
                 .onStatus(s -> true, response -> Mono.empty())
                 .toEntity(String.class)
-                .block(Duration.ofSeconds(30));
+                .block(deadline);
+    }
+
+    private static byte[] filePartHeader(int i) {
+        return ("--" + BOUNDARY + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"page-" + (i + 1)
+                + ".jpg\"\r\nContent-Type: image/jpeg\r\n\r\n").getBytes(StandardCharsets.US_ASCII);
+    }
+
+    /** Buffers over the arrays as they are: no copy, so a 500 MB press costs one megabyte of heap. */
+    private static final class MultipartWire {
+        static DataBuffer wrap(byte[] bytes) {
+            return wrap(bytes, 0, bytes.length);
+        }
+
+        static DataBuffer wrap(byte[] bytes, int offset, int length) {
+            return DefaultDataBufferFactory.sharedInstance.wrap(ByteBuffer.wrap(bytes, offset, length).slice());
+        }
     }
 
     private static byte[] field(String name, String value) {
@@ -225,6 +351,11 @@ class UploadApiRealServerTest {
         @Override
         public Mono<UploadOptions> uploadOptions(UUID familyId) {
             return Mono.error(new UnsupportedOperationException("not in this test"));
+        }
+
+        @Override
+        public Mono<Void> admit(UUID familyId, UUID patientId) {
+            return Mono.empty();
         }
 
         @Override
