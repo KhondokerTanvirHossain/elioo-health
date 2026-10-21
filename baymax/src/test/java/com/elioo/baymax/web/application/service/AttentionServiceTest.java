@@ -168,9 +168,9 @@ class AttentionServiceTest {
     void retakeAndReadingCardsCarryTheFiledDate() {
         // dates that are NOT the upload day in UTC or in Dhaka, so a card that derived its date from the instant fails here
         TimelineEntry retake = new TimelineEntry(UUID.randomUUID(), LocalDate.parse("2026-10-11"), true, "lab_report", null, "NEEDS_RETAKE",
-                0, 0, 0, 0, "k", NOW.minus(Duration.ofDays(2)), null, 0, null, "low_overall");
+                0, 0, 0, 0, "k", NOW.minus(Duration.ofDays(2)), null, 0, null, "low_overall", false);
         TimelineEntry reading = new TimelineEntry(UUID.randomUUID(), LocalDate.parse("2026-09-30"), false, "lab_report", null, "PROCESSING",
-                0, 0, 0, 0, "k", NOW.minus(Duration.ofMinutes(3)), null, 0, null, null);
+                0, 0, 0, 0, "k", NOW.minus(Duration.ofMinutes(3)), null, 0, null, null, false);
         when(timeline.inFlightAndRetakes(eq(MA), any())).thenReturn(Flux.just(retake, reading));
         StepVerifier.create(service.attention(FAMILY, MA)).assertNext(stack -> {
             assertThat(stack).hasSize(2);

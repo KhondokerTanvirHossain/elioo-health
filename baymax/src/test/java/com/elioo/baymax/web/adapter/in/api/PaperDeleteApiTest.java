@@ -251,7 +251,7 @@ class PaperDeleteApiTest {
     @Test
     void deletingAPaperThatARetakeReplacedKeepsTheRetakeUnlinked() {
         runner().run(context -> {
-            Fixture f = paperOf(context, "+8801700000486");
+            Fixture f = paperOf(context, "+8801700000487");
             UUID original = f.document;
             exec("update baymax.document set status = 'NEEDS_RETAKE', status_reason_code = 'low_overall' where id = ?", original);
             UUID retake = context.getBean(DocumentRecordPort.class)

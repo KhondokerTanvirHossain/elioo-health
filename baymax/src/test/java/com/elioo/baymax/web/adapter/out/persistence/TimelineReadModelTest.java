@@ -625,11 +625,9 @@ class TimelineReadModelTest {
      * A retake card is dated by the day it is filed under (D2: a retake's Dhaka upload day), never by the date the model
      * misread off the blurred page. The card is the real one: the service over the real read model, at a fixed clock.
      *
-     * <p>Red on purpose until this branch is rebased on D2: V20's {@code timeline_date} is {@code coalesce(doc_date,
-     * upload day)}, so without D2 the card reads {@code expected: 2026-10-20 but was: 2021-03-04}. It is left enabled, not
-     * disabled, so the required "Build and test" check refuses a merge of this PR before D2 (a disabled guard cannot fail
-     * for the reason it exists). On the rebase, {@code PostgresTimelineReadAdapter.COLUMNS}' fallback flag must read D2's
-     * {@code timeline_date_is_upload_day}, not {@code doc_date IS NULL}: the second assertion below fails otherwise.
+     * <p>Red before D2 (V20's {@code timeline_date} was {@code coalesce(doc_date, upload day)}: {@code expected: 2026-10-20
+     * but was: 2021-03-04}); green on D2's V25, whose {@code timeline_date_is_upload_day} is the fallback flag
+     * {@code PostgresTimelineReadAdapter.COLUMNS} reads, never {@code doc_date IS NULL}.
      */
     @Test
     void aRetakeCardIsNeverDatedByWhatWasMisread() {
