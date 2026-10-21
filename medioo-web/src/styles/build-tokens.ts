@@ -1,7 +1,8 @@
 /**
  * The token renderer (plan W2a). `medioo.tokens.json` is the one source of every colour, font and size the web app
- * paints with; this module resolves it and writes `tokens.css`, the only file in src/ allowed to hold a colour literal.
- * Derived values (`mix`, `alpha`) are resolved here and written as literals, so the CSS never needs color-mix().
+ * paints with; this module resolves it and writes `tokens.css`, the only stylesheet allowed to hold a colour literal
+ * (stylelint). TypeScript outside src/styles/ and outside test files is scanned by src/lint/colour-literal.test.ts;
+ * src/styles/ itself (this renderer, the checkers, the JSON) and the tests hold literals on purpose. Derived values (`mix`, `alpha`) are resolved here and written as literals, so the CSS never needs color-mix().
  *
  * tokens.test.ts renders the CSS on every run and byte-compares it with the committed file.
  */
@@ -22,10 +23,15 @@ export interface ColourToken {
   /** Applies at `@media (min-width: 900px)`; phone values apply below. */
   desktop?: { light?: ColourValue; dark?: ColourValue };
   role: Role;
-  /** The surfaces this token is checked against (contrast.test.ts): 4.5:1 for text, 3:1 for non-text. */
+  /**
+   * The surfaces this token is checked against (contrast.test.ts): 4.5:1 for text, 3:1 for non-text and fill.
+   * `"every-surface"` stands for every `role: "surface"` token without a `notEverySurface`, derived at check time.
+   */
   on?: string[];
-  /** Only for sep, hover, selbg and scrim: the WCAG clause that does not require a contrast, and why. */
+  /** Only for the tokens in contrast.ts's EXEMPTABLE: the WCAG clause that does not require a contrast, and why. */
   exempt?: string;
+  /** Only on a surface: why `every-surface` does not include it (paper: only paper-ink is painted on it). */
+  notEverySurface?: string;
   note?: string;
 }
 
@@ -94,7 +100,8 @@ export function normaliseColour(value: string): string {
   return v.replace(/\s*,\s*/g, ", ");
 }
 
-function valueFor(token: ColourToken, theme: Theme, layout: Layout): ColourValue {
+/** The value a token is written with in one theme and layout: the desktop override where there is one. */
+export function valueFor(token: ColourToken, theme: Theme, layout: Layout): ColourValue {
   return (layout === "desktop" ? token.desktop?.[theme] : undefined) ?? token[theme];
 }
 
@@ -146,9 +153,9 @@ export function resolveTokens(src: TokenFile): Record<Theme, Record<Layout, Reco
 }
 
 const HEADER = `/* GENERATED from medioo.tokens.json by build-tokens.ts (plan W2a). Do not edit: change the JSON and run
-   src/styles/tokens.test.ts, which writes build/tokens.css and prints the cp line. This is the only file in src/ that
-   may hold a colour literal (stylelint, colour-literal.test.ts). Phone values apply below 900 px; the desktop blocks
-   override them from 900 px up. */
+   src/styles/tokens.test.ts, which writes build/tokens.css and prints the cp line. This is the only stylesheet that
+   may hold a colour literal (stylelint); TypeScript outside src/styles/ and test files is scanned by
+   colour-literal.test.ts. Phone values apply below 900 px; the desktop blocks override them from 900 px up. */
 `;
 
 /** tokens.css: light phone on :root, then the desktop overrides, then both dark selectors, each with its overrides. */

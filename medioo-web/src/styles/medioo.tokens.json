@@ -2,7 +2,7 @@
   "_meta": {
     "source": "docs/design/2026-10-21-approved/{phone,desktop}.html, reconciled (plan W2a)",
     "rendered_by": "src/styles/build-tokens.ts into src/styles/tokens.css (committed, byte-compared by tokens.test.ts)",
-    "surfaces": "'every surface' in an on-list is every app surface: bg, bg2, bg3, side, canvas, bar, recv, fill, tint-soft, mio-bg, now-soft, week-soft, unk-soft. paper is not one: only paper-ink is painted on it."
+    "surfaces": "\"every-surface\" in an on-list stands for every role: surface token that has no notEverySurface, derived when the check runs (contrast.ts), so a surface added later is checked against every ink without an edit here. paper opts out on the token. fill is named beside it where text sits on a control's fill, because fill is non-text, not a surface."
   },
   "color": {
     "bg": { "light": "#ffffff", "dark": "#000000", "desktop": { "dark": "#1c1c1e" }, "role": "surface" },
@@ -13,12 +13,12 @@
     "label": {
       "light": "#000000", "dark": "#ffffff", "desktop": { "light": "#1d1d1f", "dark": "#f5f5f7" },
       "role": "text",
-      "on": ["bg", "bg2", "bg3", "side", "canvas", "bar", "recv", "fill", "tint-soft", "mio-bg", "now-soft", "week-soft", "unk-soft"]
+      "on": ["every-surface", "fill"]
     },
     "label2": {
       "light": "rgba(60, 60, 67, 0.82)", "dark": "rgba(235, 235, 245, 0.78)",
       "role": "text",
-      "on": ["bg", "bg2", "bg3", "side", "canvas", "bar", "recv", "fill", "tint-soft", "mio-bg", "now-soft", "week-soft", "unk-soft"],
+      "on": ["every-surface", "fill"],
       "note": "secondary text, and placeholder text (WCAG 1.4.3 counts a placeholder as text)"
     },
     "label3": {
@@ -45,38 +45,49 @@
     },
     "fill": {
       "light": "rgba(120, 120, 128, 0.12)", "dark": "rgba(120, 120, 128, 0.24)",
-      "role": "surface",
-      "note": "a control's fill (a field, a segmented control's track). The plan's table called it non-text on bg/bg2/bg3, but a 12% grey cannot clear 3:1 on white without turning every field dark grey; the control is identified by the text on it, so fill is checked as the surface that text sits on (label and label2 on fill), which is the stricter of the two readings. Pending the PO with Q1."
+      "role": "non-text",
+      "on": ["bg", "bg2", "bg3"],
+      "note": "a control's fill (a field, a segmented control's track): non-text on bg, bg2 and bg3, as the plan's table says. The prototypes' 12% / 24% grey is about 1.1:1 on white, under WCAG 1.4.11's 3:1, so a control shown only by this wash has no checked boundary. The text painted on a fill is checked separately (label, label2, tint-ink, now-ink and week name fill in their on-lists). Q1 asks the PO to choose: a 3:1 boundary token every field and track must carry, or a ruling that fields need none."
     },
-    "recv": { "light": "#e9e9eb", "dark": "#26252a", "desktop": { "dark": "#2c2c2f" }, "role": "surface" },
+    "recv": {
+      "light": "#e9e9eb", "dark": "#26252a", "role": "surface",
+      "note": "a received bubble and the paper card in the chat, whose top band can be the NOW fill. One dark value for both layouts: the desktop prototype's #2c2c2f put the NOW band at 2.94:1 (Q1)."
+    },
     "recv-ink": { "light": "#000000", "dark": "#ffffff", "role": "text", "on": ["recv"] },
-    "sent": { "light": "#06788a", "dark": "#06788a", "role": "fill" },
+    "sent": {
+      "light": "#06788a", "dark": "#06788a", "role": "fill", "on": ["bg"],
+      "note": "the sent bubble and the send button: both prototypes paint them on bg (the thread, and the composer's field)"
+    },
     "sent-ink": { "light": "#ffffff", "dark": "#ffffff", "role": "text", "on": ["sent"] },
-    "tint": { "light": "#06788a", "dark": "#5cc8d6", "role": "fill" },
+    "tint": { "light": "#06788a", "dark": "#5cc8d6", "role": "fill", "on": ["every-surface", "fill"] },
     "tint-ink": {
       "light": "#045f6d", "dark": "#5cc8d6",
       "role": "text",
-      "on": ["bg", "bg2", "bg3", "side", "canvas", "bar", "fill", "tint-soft", "mio-bg"]
+      "on": ["every-surface", "fill"]
     },
     "on-tint": { "light": "#ffffff", "dark": "#062a30", "role": "text", "on": ["tint"] },
     "tint-soft": { "light": "rgba(6, 120, 138, 0.12)", "dark": "rgba(92, 200, 214, 0.16)", "role": "surface" },
-    "mio-bg": { "light": "#dff0f2", "dark": "#1d3b41", "role": "surface" },
+    "mio-bg": {
+      "light": "#dff0f2", "dark": "#1d3b41", "role": "surface",
+      "notEverySurface": "only Mio's head image is painted on it (the chat avatar, the voice orb, the sidebar mark): no text, no wash, no fill"
+    },
     "now": {
       "light": "#d12c24", "dark": "#d93229",
       "role": "fill",
-      "note": "Part B decision 7: the one NOW red. No desktop override: light is #d12c24 in both layouts. Every other now-* token derives from it."
+      "on": ["bg", "bg2", "bg3", "side", "canvas", "recv", "bar"],
+      "note": "Part B decision 7: the one NOW red. Checked at 3:1 against every surface the prototypes put a NOW fill on: the page and its cards (bg, bg2, bg3), the sidebar's status dot (side), the desktop canvas, the paper card in the chat (recv) and the bars; never on a THIS_WEEK, tint or unknown wash. No desktop override: light is #d12c24 in both layouts. Every other now-* token derives from it."
     },
     "on-now": { "light": "#ffffff", "dark": "#ffffff", "role": "text", "on": ["now"] },
     "now-ink": {
-      "light": { "mix": ["now", "#000000", 0.22] }, "dark": { "mix": ["now", "#ffffff", 0.45] },
+      "light": { "mix": ["now", "#000000", 0.22] }, "dark": { "mix": ["now", "#ffffff", 0.55] },
       "role": "text",
-      "on": ["bg", "bg2", "bg3", "side", "canvas", "bar", "recv", "fill", "tint-soft", "mio-bg", "now-soft", "week-soft", "unk-soft"]
+      "on": ["every-surface", "fill"]
     },
     "now-soft": { "light": { "alpha": ["now", 0.12] }, "dark": { "alpha": ["now", 0.18] }, "role": "surface" },
     "week": {
       "light": "#92400e", "dark": "#ffb340",
       "role": "text",
-      "on": ["bg", "bg2", "bg3", "side", "canvas", "bar", "recv", "fill", "tint-soft", "mio-bg", "now-soft", "week-soft", "unk-soft"]
+      "on": ["every-surface", "fill"]
     },
     "week-soft": { "light": "rgba(255, 149, 0, 0.16)", "dark": "rgba(255, 159, 10, 0.2)", "role": "surface" },
     "unk-soft": { "light": "rgba(120, 120, 128, 0.14)", "dark": "rgba(120, 120, 128, 0.26)", "role": "surface" },
@@ -89,6 +100,7 @@
     "paper": {
       "light": "#fffdf8", "dark": "#f4efe4", "desktop": { "light": "#fffefa", "dark": "#f4f0e6" },
       "role": "surface",
+      "notEverySurface": "only paper-ink is painted on it: the paper is the photo's frame, not an app surface",
       "note": "the paper stays light in the dark theme, as paper does"
     },
     "paper-ink": { "light": "#2b2b2b", "dark": "#2b2b2b", "role": "text", "on": ["paper"] },
@@ -122,7 +134,7 @@
     "--sw": "sidebar-w",
     "--cw": "conversation-w",
     "--stage": "dropped: the phone frame's backdrop, a prototype device",
-    "--wordmark": "dropped: the wordmark is the SVG files in docs/design/2026-10-21-approved, chosen per theme by the Wordmark component (W2c), not a CSS url()",
+    "--wordmark": "dropped: the wordmark is medioo-light.svg / medioo-dark.svg (masters in docs/design/2026-10-21-approved, served from medioo-web/public/brand from W2c), chosen per theme by the Wordmark component, not a CSS url()",
     "--shadow": "dropped: desktop elevation; W2a ships no shadow token, and the component that needs elevation adds one here (no colour literal may live outside tokens.css)"
   },
   "_absorbed": {
@@ -130,8 +142,8 @@
     "desktop.html:light:--now-fill: #d93229": "now #d12c24: decision 7, as --now above",
     "phone.html:dark:--now: #ff8a80": "now #d93229: the prototypes' dark --now is an ink, not the fill; the dark fill is their --now-fill #d93229, and the dark ink is now-ink",
     "desktop.html:dark:--now: #ff8a80": "now #d93229: as phone.html:dark:--now",
-    "phone.html:dark:--now-ink: var(--now)": "now-ink #ea8e89, derived as mix(now, #ffffff, 0.45): one red, its ink derived from it",
-    "desktop.html:dark:--now-ink: var(--now)": "now-ink #ea8e89, as phone.html:dark:--now-ink",
+    "phone.html:dark:--now-ink: var(--now)": "now-ink #eea39f, derived as mix(now, #ffffff, 0.55): one red, its ink derived from it. 0.45 (#ea8e89) fell to 4.02:1 on week-soft over a dark desktop bg3 card once washes were composited over every surface they sit on (Q1)",
+    "desktop.html:dark:--now-ink: var(--now)": "now-ink #eea39f, as phone.html:dark:--now-ink",
     "phone.html:light:--now-ink: #a3201a": "now-ink #a3221c, derived as mix(now, #000000, 0.22)",
     "desktop.html:light:--now-ink: #a3201a": "now-ink #a3221c, derived as mix(now, #000000, 0.22)",
     "phone.html:light:--now-soft: rgba(224, 53, 43, 0.12)": "now-soft alpha(now, 0.12): one derived wash in both layouts",
@@ -149,6 +161,7 @@
     "phone.html:light:--bnf: \"Noto Sans Bengali\", -apple-system, BlinkMacSystemFont, sans-serif": "font-bn: self-hosted Noto Sans Bengali, then self-hosted Noto Sans for Latin",
     "desktop.html:light:--bnf: \"Noto Sans Bengali\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif": "font-bn, as phone.html:light:--bnf",
     "phone.html:light:--mono: \"Noto Sans Mono\", ui-monospace, Menlo, monospace": "font-mono: Noto Sans Mono is not self-hosted, so it is not named",
+    "desktop.html:dark:--recv: #2c2c2f": "recv #26252a, the phone's dark value, in both layouts: the NOW band at the top of a paper card sits on recv, and #d93229 on #2c2c2f is 2.94:1, under the 3:1 a fill needs against its surface; on #26252a it is 3.26:1 (Q1)",
     "desktop.html:light:--sw: 0px": "sidebar-w stays 256px; the prototype's collapse below 1200 px is the shell layout's job (W3), not a second value of the token",
     "desktop.html:light:--cw: 360px": "conversation-w stays 400px; the prototype's narrower column below 1200 px is the shell layout's job (W3)",
     "#e0352b": "now (decision 7)",

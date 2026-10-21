@@ -1,12 +1,19 @@
 /**
  * WCAG 2.x contrast over the resolved tokens (plan W2a). The pairs checked are the ones each token declares in its
- * `on` list; a token that paints text or meaning and declares none is itself a failure (coverageProblems), so a check
- * can never be skipped by leaving the list out.
+ * `on` list; a text, non-text or fill token that declares none is itself a failure (coverageProblems), so a check can
+ * never be skipped by leaving the list out. Which check runs is decided by the token's role, and the role is pinned
+ * to the plan's table by contrast.test.ts, so relabelling a token is not a way round it either.
  */
 import { LAYOUTS, THEMES, formatColour, parseColour, resolveTokens, type Role, type TokenFile } from "./build-tokens";
 
 /** The only tokens allowed to opt out of a contrast check: decorative under WCAG 1.4.11. */
 export const EXEMPTABLE = ["sep", "hover", "selbg", "scrim"] as const;
+
+/** In an `on` list: every `role: "surface"` token, except one whose `notEverySurface` says why it is not. */
+export const EVERY_SURFACE = "every-surface";
+
+/** The roles whose tokens are contrast-checked against the surfaces in their `on`. */
+const CHECKED: readonly Role[] = ["text", "non-text", "fill"];
 
 const channel = (c: number) => {
   const s = c / 255;
@@ -39,29 +46,52 @@ export function contrastRatio(fg: string, bg: string): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
+/** What `every-surface` stands for: derived from the file, so a surface added later is checked without an edit. */
+export function everySurface(src: TokenFile): string[] {
+  return Object.entries(src.color)
+    .filter(([, token]) => token.role === "surface" && !token.notEverySurface)
+    .map(([name]) => name);
+}
+
+const surfacesFor = (src: TokenFile, on: string[] | undefined): string[] => [
+  ...new Set((on ?? []).flatMap((s) => (s === EVERY_SURFACE ? everySurface(src) : [s]))),
+];
+
 /**
  * Every declared pair of every token with `role`, in every theme and layout: `theme/layout fg on bg = ratio`. A
- * failure is a pair under `minimum`. A translucent surface is composited over bg of the same theme and layout.
+ * failure is a pair under `minimum`. A translucent surface is composited over every opaque surface of the same theme
+ * and layout it can sit on (the every-surface set), and the lowest ratio is the one reported, as
+ * `theme/layout fg on bg over underlay = ratio`.
  */
-export function contrastChecks(src: TokenFile, role: Extract<Role, "text" | "non-text">, minimum: number) {
+export function contrastChecks(src: TokenFile, role: Extract<Role, "text" | "non-text" | "fill">, minimum: number) {
   const resolved = resolveTokens(src);
   const pairs: string[] = [];
   const failures: string[] = [];
+  const underlays = everySurface(src);
   for (const theme of THEMES) {
     for (const layout of LAYOUTS) {
       const values = resolved[theme][layout];
-      const base = values.bg!;
+      const opaque = underlays.filter((u) => values[u] !== undefined && parseColour(values[u]!).a >= 1);
       for (const [name, token] of Object.entries(src.color)) {
         if (token.role !== role || token.exempt) continue;
-        for (const surface of token.on ?? []) {
+        for (const surface of surfacesFor(src, token.on)) {
           const under = values[surface];
           if (under === undefined) {
             failures.push(`${theme}/${layout} ${name} on ${surface}: no such token`);
             continue;
           }
-          const opaque = composite(under, base);
-          const ratio = contrastRatio(values[name]!, opaque);
-          const line = `${theme}/${layout} ${name} on ${surface} = ${ratio.toFixed(2)}`;
+          let line: string;
+          let ratio: number;
+          if (parseColour(under).a >= 1) {
+            ratio = contrastRatio(values[name]!, under);
+            line = `${theme}/${layout} ${name} on ${surface} = ${ratio.toFixed(2)}`;
+          } else {
+            if (opaque.length === 0) throw new Error(`${theme}/${layout}: no opaque surface to composite ${surface} over`);
+            const each = opaque.map((u) => ({ u, r: contrastRatio(values[name]!, composite(under, values[u]!)) }));
+            const worst = each.reduce((a, b) => (b.r < a.r ? b : a));
+            ratio = worst.r;
+            line = `${theme}/${layout} ${name} on ${surface} over ${worst.u} = ${ratio.toFixed(2)}`;
+          }
           pairs.push(line);
           if (ratio < minimum) failures.push(line);
         }
@@ -71,16 +101,21 @@ export function contrastChecks(src: TokenFile, role: Extract<Role, "text" | "non
   return { pairs, failures };
 }
 
-/** A text or non-text token with no `on` and no `exempt`, or an `exempt` on a token that may not have one. */
+/** A text, non-text or fill token with no `on` and no `exempt`, or an `exempt` on a token that may not have one. */
 export function coverageProblems(src: TokenFile): string[] {
   const problems: string[] = [];
+  if (everySurface(src).length === 0) problems.push(`${EVERY_SURFACE} stands for no token: every on-list using it is empty`);
   for (const [name, token] of Object.entries(src.color)) {
     if (token.exempt !== undefined && !(EXEMPTABLE as readonly string[]).includes(name)) {
       problems.push(`${name}: exempt is allowed only on ${EXEMPTABLE.join(", ")}`);
       continue;
     }
-    if (token.role !== "text" && token.role !== "non-text") continue;
-    const checked = (token.on?.length ?? 0) > 0;
+    if (token.notEverySurface !== undefined && token.role !== "surface") {
+      problems.push(`${name}: notEverySurface is only for a surface`);
+      continue;
+    }
+    if (!CHECKED.includes(token.role)) continue;
+    const checked = surfacesFor(src, token.on).length > 0;
     const exempt = typeof token.exempt === "string" && token.exempt.trim().length > 0;
     if (!checked && !exempt) problems.push(`${name}: a ${token.role} token with no surface to check it on and no exemption`);
   }

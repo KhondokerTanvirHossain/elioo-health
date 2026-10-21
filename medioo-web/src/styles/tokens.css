@@ -1,7 +1,7 @@
 /* GENERATED from medioo.tokens.json by build-tokens.ts (plan W2a). Do not edit: change the JSON and run
-   src/styles/tokens.test.ts, which writes build/tokens.css and prints the cp line. This is the only file in src/ that
-   may hold a colour literal (stylelint, colour-literal.test.ts). Phone values apply below 900 px; the desktop blocks
-   override them from 900 px up. */
+   src/styles/tokens.test.ts, which writes build/tokens.css and prints the cp line. This is the only stylesheet that
+   may hold a colour literal (stylelint); TypeScript outside src/styles/ and test files is scanned by
+   colour-literal.test.ts. Phone values apply below 900 px; the desktop blocks override them from 900 px up. */
 :root {
   color-scheme: light;
   --bg: #ffffff;
@@ -98,7 +98,7 @@
     --mio-bg: #1d3b41;
     --now: #d93229;
     --on-now: #ffffff;
-    --now-ink: #ea8e89;
+    --now-ink: #eea39f;
     --now-soft: rgba(217, 50, 41, 0.18);
     --week: #ffb340;
     --week-soft: rgba(255, 159, 10, 0.2);
@@ -117,7 +117,6 @@
     --bg3: #2a2a2d;
     --label: #f5f5f7;
     --sep: rgba(84, 84, 88, 0.62);
-    --recv: #2c2c2f;
     --paper: #f4f0e6;
     --bar: rgba(36, 36, 38, 0.86);
   }
@@ -147,7 +146,7 @@
   --mio-bg: #1d3b41;
   --now: #d93229;
   --on-now: #ffffff;
-  --now-ink: #ea8e89;
+  --now-ink: #eea39f;
   --now-soft: rgba(217, 50, 41, 0.18);
   --week: #ffb340;
   --week-soft: rgba(255, 159, 10, 0.2);
@@ -165,7 +164,6 @@
     --bg3: #2a2a2d;
     --label: #f5f5f7;
     --sep: rgba(84, 84, 88, 0.62);
-    --recv: #2c2c2f;
     --paper: #f4f0e6;
     --bar: rgba(36, 36, 38, 0.86);
   }

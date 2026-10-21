@@ -175,19 +175,20 @@ Branch `feat/medioo-web-tokens`. Lane C. Decision 7 is the only PO input (Q1); e
 | `label2` | `rgba(60, 60, 67, 0.82)` | `rgba(235, 235, 245, 0.78)` | text, on every surface |
 | `label3` | `rgba(60, 60, 67, 0.60)` (prototypes: `0.36` phone, `0.38` desktop; raised, Q1) | `rgba(235, 235, 245, 0.50)` (prototypes: `0.32`; raised, Q1) | **non-text**, on `bg`, `bg2`, `bg3` (an icon glyph, a disabled glyph); never a `color:` for text and never in `::placeholder` (`roleUsageViolations`). Placeholder text is `label2`. |
 | `sep`, `hover`, `selbg` | from the prototypes | from the prototypes | non-text, `exempt` (decorative, see the shape) |
-| `fill` | from the prototypes | from the prototypes | non-text, on `bg`, `bg2`, `bg3` (a control's fill) |
-| `recv`, `recv-ink` | `#e9e9eb`, `#000000` | `#26252a` / `#2c2c2f`, `#ffffff` | surface; text on `recv` |
-| `sent`, `sent-ink` | `#06788a`, `#ffffff` | `#06788a`, `#ffffff` | fill; text on `sent` |
-| `tint`, `tint-ink`, `on-tint`, `tint-soft` | `#06788a`, `#045f6d`, `#ffffff`, `rgba(6, 120, 138, 0.12)` | `#5cc8d6`, `#5cc8d6`, `#062a30`, `rgba(92, 200, 214, 0.16)` | fill / text / text on `tint` / surface |
-| `mio-bg` | `#dff0f2` | `#1d3b41` | surface |
-| **`now`** | **`#d12c24`** | **`#d93229`** | **fill; note "Part B decision 7: the one NOW red"; no desktop override** |
+| `fill` | from the prototypes | from the prototypes | non-text, on `bg`, `bg2`, `bg3` (a control's fill). The prototypes' wash is about 1.1:1, so it is `exempt` **provisionally, pending Q1** (PR #120): the PO chooses between a 3:1 boundary token every field and track carries, and a ruling that fields need none. Whichever is ruled replaces this row. Text on a fill is checked separately: `label`, `label2`, `tint-ink`, `now-ink` and `week` name `fill` in their `on`. |
+| `focus` | `{"alpha": ["tint", 1]}` | `{"alpha": ["tint", 1]}` | non-text, on `bg`, `bg2`, `bg3` (the focus ring; the phone prototype's full-tint ring, because desktop's 60% tint is 2.5:1 on white, Q1) |
+| `recv`, `recv-ink` | `#e9e9eb`, `#000000` | `#26252a` (both layouts: desktop's `#2c2c2f` put the NOW band at 2.94:1, Q1), `#ffffff` | surface; text on `recv` |
+| `sent`, `sent-ink` | `#06788a`, `#ffffff` | `#06788a`, `#ffffff` | fill, on `bg`; text on `sent` |
+| `tint`, `tint-ink`, `on-tint`, `tint-soft` | `#06788a`, `#045f6d`, `#ffffff`, `rgba(6, 120, 138, 0.12)` | `#5cc8d6`, `#5cc8d6`, `#062a30`, `rgba(92, 200, 214, 0.16)` | fill, on every surface and `fill` / text / text on `tint` / surface |
+| `mio-bg` | `#dff0f2` | `#1d3b41` | surface (`notEverySurface`: only Mio's head image is painted on it) |
+| **`now`** | **`#d12c24`** | **`#d93229`** | **fill, on `bg`, `bg2`, `bg3`, `side`, `canvas`, `recv`, `bar` at 3:1; note "Part B decision 7: the one NOW red"; no desktop override** |
 | `on-now` | `#ffffff` | `#ffffff` | text, on `now` |
-| `now-ink` | `{"mix": ["now", "#000000", 0.22]}` (→ `#a3221c`) | `{"mix": ["now", "#ffffff", 0.45]}` (→ `#ea8e89`) | text, on every surface and `now-soft` |
+| `now-ink` | `{"mix": ["now", "#000000", 0.22]}` (→ `#a3221c`) | `{"mix": ["now", "#ffffff", 0.55]}` (→ `#eea39f`; 0.45 fell to 4.02:1 on `week-soft` over a dark desktop `bg3`, Q1) | text, on every surface and `now-soft` |
 | `now-soft` | `{"alpha": ["now", 0.12]}` | `{"alpha": ["now", 0.18]}` | surface |
 | `week`, `week-soft` | `#92400e`, `rgba(255, 149, 0, 0.16)` | `#ffb340`, `rgba(255, 159, 10, 0.2)` | text on every surface and `week-soft` / surface |
 | `unk-soft` | `rgba(120, 120, 128, 0.14)` | `rgba(120, 120, 128, 0.26)` | surface |
 | `green` | `#248a3d` (prototypes: `#34c759`, 2.2:1 on white; changed, Q1) | `#30d158` | non-text, on `bg`, `bg2`, `bg3` (the follow-up circle carries meaning, so WCAG 1.4.11's 3:1 applies) |
-| `paper`, `paper-ink` | `#fffdf8` / `#fffefa`, `#2b2b2b` | `#f4efe4` / `#f4f0e6`, `#2b2b2b` | surface; text on `paper` |
+| `paper`, `paper-ink` | `#fffdf8` / `#fffefa`, `#2b2b2b` | `#f4efe4` / `#f4f0e6`, `#2b2b2b` | surface (`notEverySurface`); text on `paper` |
 | `bar` | from the prototypes | from the prototypes | surface (translucent) |
 | `scrim` | from the prototypes | from the prototypes | non-text, `exempt` |
 
