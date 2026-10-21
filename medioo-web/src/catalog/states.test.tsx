@@ -63,12 +63,27 @@ describe("catalog states", () => {
   });
 
   it("everyPaperFixtureHasAVerdictCardState", () => {
-    // Guard: the directory held papers of each kind the card draws differently, so the derived list is not vacuous.
+    // Asserted directly, not only through the whole-registry list above.
     const names = paperFixtureNames();
+    const registered = new Set(ids());
+    expect(names.filter((name) => !registered.has(`VerdictCard/${name}`)), "paper fixtures with no VerdictCard state").toEqual([]);
+    // Guard: the directory held papers of each kind the card draws differently, so the derived list is not vacuous.
     expect(names).toEqual(expect.arrayContaining(["now-bd", "now-abroad", "this-week-pending", "routine-released"]));
-    // The documents fixtures left out are exactly the ones that are not papers (a non-200 refusal).
-    const all = readdirSync(documentsDir).filter((f) => f.endsWith(".json"));
-    expect(all.length - names.length, "non-paper documents fixtures").toBe(1);
+  });
+
+  it("onlyNon200DocumentsFixturesHaveNoState", () => {
+    // The fixtures left out are derived, never counted by hand: each one is a refusal (a non-200 envelope whose body is
+    // exactly {reason}), so a second refusal B2 adds (a 403 view_only) needs no edit here.
+    const names = new Set(paperFixtureNames());
+    const excluded = readdirSync(documentsDir)
+      .filter((f) => f.endsWith(".json") && !names.has(f.slice(0, -".json".length)))
+      .map((f) => ({ f, json: JSON.parse(readFileSync(join(documentsDir, f), "utf8")) as { status: number; body: object } }));
+    const notRefusals = excluded
+      .filter(({ json }) => json.status === 200 || Object.keys(json.body).join(",") !== "reason")
+      .map(({ f, json }) => `${f}: status ${json.status}, body keys ${Object.keys(json.body).join(",")}`);
+    expect(notRefusals, "left-out fixtures that are not refusals").toEqual([]);
+    // Guard: at least one fixture was left out, so the check above judged something.
+    expect(excluded.length, "refusal fixtures").toBeGreaterThan(0);
   });
 
   it("noStateIsRegisteredTwice", () => {

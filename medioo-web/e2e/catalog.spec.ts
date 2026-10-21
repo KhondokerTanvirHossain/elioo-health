@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
+import { t } from "../src/copy";
 import { CONTROL_CLASS, FIELD_SELECTOR, NOW_ALLOWED } from "../src/styles/now-usage";
 
 /*
@@ -570,6 +571,56 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
         ]);
         await page.keyboard.press("Escape");
         expect((await state()).map((d) => d.open)).toEqual([false, false]);
+      });
+
+      test("theToastArrivesInARegionAlreadyThere", async ({ page }) => {
+        // A live region inserted with its text already inside is often not announced: the region must be in the page
+        // first and the text a change to it. Every role="status" region is recorded the moment the parser or React
+        // inserts it, with its text at that moment; afterwards the same elements must hold the toast's words.
+        await page.addInitScript(() => {
+          const w = window as unknown as { __regions: { el: Element; first: string }[] };
+          w.__regions = [];
+          // One entry per element: a region is seen both as an added node and inside its added ancestor.
+          const seen = new WeakSet<Element>();
+          new MutationObserver((records) => {
+            for (const r of records) {
+              for (const n of r.addedNodes) {
+                if (!(n instanceof Element)) continue;
+                const found = n.matches('[role="status"]') ? [n] : [...n.querySelectorAll('[role="status"]')];
+                for (const el of found) {
+                  if (seen.has(el)) continue;
+                  seen.add(el);
+                  w.__regions.push({ el, first: el.textContent ?? "" });
+                }
+              }
+            }
+          }).observe(document, { childList: true, subtree: true });
+        });
+        await open(page);
+        const want = { bn: t("bn", "profile.saved"), en: t("en", "profile.saved") };
+        await expect
+          .poll(() =>
+            page.evaluate(() =>
+              [...document.querySelectorAll('[data-catalog-state="Toast/default"] [role="status"]')].map((el) => el.textContent),
+            ),
+          )
+          .toEqual([want.bn, want.en]);
+        const regions = await page.evaluate(() =>
+          (window as unknown as { __regions: { el: Element; first: string }[] }).__regions
+            .filter(({ el }) => el.closest('[data-catalog-state="Toast/default"]'))
+            .map(({ el, first }) => ({
+              lang: el.closest("section")!.getAttribute("lang"),
+              first,
+              connected: el.isConnected,
+              now: el.textContent,
+            })),
+        );
+        // Exactly one region per language was ever inserted (so the text was not delivered in a replacement element),
+        // empty when it arrived, and it is that element that now holds the words.
+        expect(regions).toEqual([
+          { lang: "bn", first: "", connected: true, now: want.bn },
+          { lang: "en", first: "", connected: true, now: want.en },
+        ]);
       });
 
       test("noCspViolation", async ({ page }) => {

@@ -2,8 +2,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { t, type Lang } from "@/copy";
-import { isReadingPaper, type PaperJson, type PaperResultJson } from "@/api/types";
+import { t, type CopyKey, type Lang } from "@/copy";
+import { GATES, isReadingPaper, type Gate, type PaperJson, type PaperResultJson, type PaperStatus } from "@/api/types";
 import { VerdictCard } from "./VerdictCard";
 
 afterEach(cleanup);
@@ -77,6 +77,79 @@ describe("VerdictCard", () => {
     expect(shown, "papers not RELEASED that show wording").toEqual([]);
     // Guard: the held cases include this-week-pending, the one PENDING fixture.
     expect(papers().some(({ file, body }) => file === "this-week-pending.json" && "gate" in body && body.gate === "PENDING")).toBe(true);
+  });
+
+  it("noGateButReleasedShowsWording", () => {
+    // Derived from the type's own list of gates, not from the ones the fixtures happen to carry: REJECTED and
+    // FAILED_SAFETY (wording a reviewer or the safety check refused) are where showing it would be worst.
+    const marker = "a withheld explanation 7f3c";
+    const shown: string[] = [];
+    const exercised: Gate[] = [];
+    for (const gate of GATES.filter((g) => g !== "RELEASED")) {
+      for (const lang of ["bn", "en"] as const) {
+        const held = result("routine-released.json");
+        held.gate = gate;
+        held.wording = marker;
+        const el = card(held, lang);
+        if (el.querySelector(".verdict-card__wording")) shown.push(`${gate} (${lang}): a .verdict-card__wording`);
+        if (el.textContent?.includes(marker)) shown.push(`${gate} (${lang}): the wording as text`);
+        cleanup();
+      }
+      exercised.push(gate);
+    }
+    expect(shown, "gates other than RELEASED that show wording").toEqual([]);
+    // Guard: every gate but RELEASED ran, the two refused ones by name.
+    expect(exercised.length).toBe(GATES.length - 1);
+    expect(exercised).toEqual(expect.arrayContaining(["NONE", "PENDING", "REJECTED", "FAILED_SAFETY"]));
+    // And the same clone with gate RELEASED does show the marker, so the loop's "none shown" is about the gate.
+    const released = result("routine-released.json");
+    released.wording = marker;
+    expect(card(released).querySelector(".verdict-card__wording")?.textContent).toBe(marker);
+  });
+
+  it("aCardWithoutCountsIsTitledByItsStatus", () => {
+    // The spec, restated here rather than read from the component: the word the HTML pages show for each status.
+    const expected: Record<PaperStatus, CopyKey> = {
+      RECEIVED: "progress.step.received",
+      PROCESSING: "progress.step.processing",
+      DONE: "status.DONE",
+      NEEDS_RETAKE: "retake.title",
+      FAILED: "failed.title",
+    };
+    const wrong: string[] = [];
+    const seen = new Set<PaperStatus>();
+    for (const { file, body } of papers()) {
+      if ("counts" in body && body.counts) continue;
+      seen.add(body.status);
+      for (const lang of ["bn", "en"] as const) {
+        const got = card(body, lang).querySelector(".verdict-card__title")?.textContent ?? null;
+        const want = t(lang, expected[body.status]);
+        if (got !== want) wrong.push(`${file} (${lang}, ${body.status}): "${got ?? ""}" != ${expected[body.status]} "${want}"`);
+        cleanup();
+      }
+    }
+    expect(wrong).toEqual([]);
+    // Guard: the counts-less papers the fixtures hold, each titled by a different rule, were all judged.
+    expect([...seen]).toEqual(expect.arrayContaining(["FAILED", "NEEDS_RETAKE", "PROCESSING"]));
+  });
+
+  it("aRetakeShowsItsReason", () => {
+    const retake = result("retake-third.json");
+    expect(retake.retake, "the retake fixture carries a retake block").toBeTruthy();
+    for (const lang of ["bn", "en"] as const) {
+      const reason = card(retake, lang).querySelector(".verdict-card__reason");
+      expect(reason?.textContent, `retake-third (${lang})`).toBe(t(lang, retake.retake!.reason_key));
+      cleanup();
+    }
+    // And no other paper renders a reason line.
+    const others: string[] = [];
+    for (const { file, body } of papers()) {
+      if (file === "retake-third.json") continue;
+      if (card(body).querySelector(".verdict-card__reason")) others.push(file);
+      cleanup();
+    }
+    expect(others).toEqual([]);
+    expect(papers().length, "other papers were judged").toBeGreaterThan(1);
   });
 
   it("noNineNineNineAbroad", () => {

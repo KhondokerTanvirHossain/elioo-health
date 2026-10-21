@@ -43,7 +43,8 @@ const STATUS_TITLE: Record<PaperStatus, CopyKey> = {
  * - the band from `banner` alone (`.verdict-card--now` only for level "now", `.verdict-card--week` for "this_week",
  *   none otherwise), its words from `banner.line_key`; never from the values' chips;
  * - the wording only when `gate` is RELEASED (F3), whatever else the body holds;
- * - the not-a-doctor line from `now.notdoctor_key`, and the tel:999 link only when `now.call_999` is true (F7);
+ * - the not-a-doctor line from `now.notdoctor_key`, and the tel:999 link only when `now.call_999` is true (F7), its
+ *   label the fixed key `now.call999`, which that flag alone gates;
  * - the title from `counts.line_key`, or the status's word when Java sent no counts line.
  */
 export function VerdictCard({ paper, lang }: { paper: PaperJson; lang: Lang }) {

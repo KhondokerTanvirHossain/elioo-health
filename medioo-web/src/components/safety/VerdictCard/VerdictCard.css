@@ -2,7 +2,8 @@
    urgency band on top and the title below. The band paints with the NOW tokens only under .verdict-card--now and with
    the THIS_WEEK tokens only under .verdict-card--week, the one allowed --week use (built/now-usage.built.test.ts);
    the class is chosen from banner.level alone. The raw px are the prototype's optical values with no token on the
-   spacing scale (the band's 9/13 px padding and 7 px gap, the meta block's 10/14 px padding). */
+   spacing or width scale (the card's 300 px width, the band's 9/13 px padding and 7 px gap, the meta block's 10/14 px
+   padding). */
 .verdict-card {
   display: block;
   max-width: 300px;

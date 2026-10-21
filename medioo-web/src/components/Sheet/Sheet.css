@@ -1,7 +1,9 @@
 /* A sheet (Sheet.tsx) on the platform's modal <dialog>: on a phone it rises from the bottom edge, full width, with
    the prototypes' 14 px top corners and 58 px of the page left showing above it; from 900 px up it is a centred
    panel. `display` is set only on [open]: the UA hides a closed dialog, and an author `display` on .sheet would
-   show it. The backdrop is the scrim token. No motion yet (the sheet spring is W12). */
+   show it. The backdrop is the scrim token. No motion yet (the sheet spring is W12). The raw px are the prototype's
+   optical values with no token on the radius or width scale (the phone sheet's 14 px top corners, the 58 px of page
+   left above it, the desktop panel's 560 px width). */
 .sheet {
   box-sizing: border-box;
   width: 100%;

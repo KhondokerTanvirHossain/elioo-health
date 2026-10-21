@@ -172,10 +172,11 @@ jobs:
           pnpm run typecheck
           pnpm exec vitest run
           pnpm run build
-          pnpm run test:built
           # the component catalog's build (MEDIOO_CATALOG=1, into .next-catalog/): served only to Playwright's catalog
           # project below; the image copies .next/standalone and never sees it (plan W2c)
           pnpm run build:catalog
+          # after both builds: client-copy.built.test.ts reads the client chunks of each (plan W2d-a)
+          pnpm run test:built
       # The browser download is cached per Playwright version and the install retried, so a CDN or apt-mirror hiccup
       # does not block every merge (main is protected and every merge deploys).
       - name: medioo-web Playwright version
