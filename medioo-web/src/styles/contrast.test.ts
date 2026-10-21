@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { LAYOUTS, THEMES, resolveTokens, type Role, type TokenFile } from "./build-tokens";
-import { contrastChecks, contrastRatio, coverageProblems, everySurface } from "./contrast";
+import { EXEMPTABLE, contrastChecks, contrastRatio, coverageProblems, everySurface } from "./contrast";
 import json from "./medioo.tokens.json";
 
 // Every pair a token declares (its `on`) is computed from the resolved values, both themes × both layouts. A
@@ -106,6 +106,12 @@ describe("contrast of the declared pairs", () => {
     const exempted = copy();
     exempted.color.green!.exempt = "WCAG 1.4.11: decorative";
     expect(coverageProblems(exempted)).toEqual([expect.stringContaining("green")]);
+    // The exemptions are these and no others: Q1 (A) gave fill a boundary token, not an exemption (PR #120).
+    expect([...EXEMPTABLE]).toEqual(["sep", "hover", "selbg", "scrim"]);
+    expect(src.color.fill!.exempt).toBeUndefined();
+    const fillExempt = copy();
+    fillExempt.color.fill!.exempt = "WCAG 1.4.11: a wash";
+    expect(coverageProblems(fillExempt)).toEqual(["fill: exempt is allowed only on sep, hover, selbg, scrim"]);
     // A fill (the NOW band, a button) is a shape that must be seen against its surface, so it needs an on too.
     const noNowOn = copy();
     delete noNowOn.color.now!.on;
