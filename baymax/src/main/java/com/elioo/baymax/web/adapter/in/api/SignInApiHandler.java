@@ -1,5 +1,6 @@
 package com.elioo.baymax.web.adapter.in.api;
 
+import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.web.adapter.in.LoginCookie;
 import com.elioo.baymax.web.adapter.in.PhoneDisplay;
@@ -13,6 +14,7 @@ import com.elioo.baymax.web.domain.VerifyFailure;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpCookie;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.server.ServerRequest;
@@ -31,14 +33,20 @@ import java.util.Optional;
  *   <li>{@code POST /app/api/sign-in/request}, {@code {"whatsapp_number", "confirmed"?, "next"?}}: the number shown back
  *       for a yes ({@code confirm.number_display}; nothing requested, no cookie), then, with {@code confirmed: true}, the
  *       code requested. {@code sent} is true only for {@code CodeIssue.SENT}, i.e. WhatsApp accepted the message, and
- *       every other outcome answers the same bytes, so the JSON tells a stranger nothing about a number. The
+ *       every other outcome answers the same bytes, so the JSON tells no more about a number than the HTML code page
+ *       does: SENT or not-SENT, which does say whether the number is a family's with an open WhatsApp window. The
  *       {@code baymax_login} cookie carries the HMAC, the last three digits and the {@code .s} mark, never the number;</li>
  *   <li>{@code POST /app/api/sign-in/verify}, {@code {"code"}}: a session cookie and {@code {next}}, the held place
  *       through {@link LoginCookie#nextPage} (it feeds client-side navigation, so it is checked when it is used, not
  *       only when it was held), else {@code /app/home}.</li>
  * </ul>
- * Both routes are in {@link AppApiGuard#OPEN}: no session needed, CSRF still applied, {@code Origin} required. Refused
- * codes are 400 with a {@code CODE_*} name — never 401, which the client reads as "no session". This handler logs
+ * Both routes are in {@link AppApiGuard#OPEN}: no session needed, CSRF still applied, {@code Origin} required. That is
+ * the CSRF rule for a sessionless mutation, not a defence against automation: a non-browser client sets {@code Origin}
+ * and {@code X-Medioo} freely. What bounds abuse is {@code WebAuthService.requestCode}: it never sends for NO_ACCOUNT,
+ * NOT_PERMITTED or OUTSIDE_WINDOW, and mints at most {@code otpMaxLivePerHour} codes per number; there is no per-client
+ * request-rate limit (the same exposure as the HTML {@code /app/login} form). Refused codes are 400 with a
+ * {@code CODE_*} name — never 401, which the client reads as "no session"; any other 401 on verify is {@code CODE_WRONG},
+ * as the HTML page shows it, and the guard answers no 401 on an open route whatever a handler does. This handler logs
  * nothing: the guard's access line (method, pattern, status, duration) is the only line, and the number, the code
  * and the hash stay out of it.
  */
@@ -95,7 +103,11 @@ public class SignInApiHandler {
                         .cookie(LoginCookie.cookie(LoginCookie.NAME, "", Duration.ZERO, secure()))
                         .cookie(LoginCookie.cookie(LoginCookie.NEXT_NAME, "", Duration.ZERO, secure())),
                         Map.of("next", next)))
-                .onErrorResume(CodeRejectedException.class, e -> reason(e.failure()).respond());
+                .onErrorResume(CodeRejectedException.class, e -> reason(e.failure()).respond())
+                // the HTML page's second rule (SignInPages.verify): any other 401 on this path is the wrong-code copy
+                .onErrorResume(BaymaxException.class, e -> e.status() == HttpStatus.UNAUTHORIZED
+                        ? ApiReason.CODE_WRONG.respond()
+                        : Mono.error(e));
     }
 
     /**

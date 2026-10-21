@@ -36,8 +36,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>every route under {@code /app/api}, under every method it answers, refuses a request with no session with 401
  *       {@code {"reason":"UNAUTHENTICATED"}}, no {@code Location} and {@code Cache-Control: no-store}, through the
  *       context's own handler mapping; the list is checked non-empty first. The routes in {@link AppApiGuard#OPEN}
- *       (sign-in) need no session and are skipped there; instead each one, with no session, still refuses every broken
- *       CSRF rule, a missing {@code Origin} included;</li>
+ *       (sign-in) need no session and are skipped there; instead each one, with no session, still refuses each of the
+ *       three CSRF rules broken (header, {@code Origin} foreign or missing, body type);</li>
  *   <li>every one of those under a mutating method (POST, PUT, PATCH, DELETE) refuses a live session that omits
  *       {@code X-Medioo} with 403 {@code MISSING_HEADER}, and one from another {@code Origin} with 403
  *       {@code FORBIDDEN_ORIGIN} — derived the same way, so a DELETE route added later is swept without anyone
@@ -130,9 +130,11 @@ class AppApiRouteContractTest {
     }
 
     /**
-     * The sign-in pair needs no session, so CSRF is all that stands in front of it, and a missing {@code Origin} is
-     * refused there (a server-side caller must not reach a route that sends WhatsApp messages). Derived from the walked
-     * routes: a route added to {@link AppApiGuard#OPEN} later is swept here without anyone remembering to add it.
+     * The sign-in pair needs no session, so CSRF is all that stands in front of it, and all three rules are swept: the
+     * header, the {@code Origin} (foreign, or missing — required on these), and the body type (text/plain and urlencoded,
+     * the two a cross-site form can send). This is CSRF only: a scripted caller can set every one of these, and what
+     * bounds it is {@code WebAuthService.requestCode}. Derived from the walked routes: a route added to
+     * {@link AppApiGuard#OPEN} later is swept here without anyone remembering to add it.
      */
     @Test
     void everyOpenRouteStillRefusesCsrfWithoutASession() {
@@ -159,6 +161,12 @@ class AppApiRouteContractTest {
                             client.method(method).uri(uri).header("X-Medioo", "1")
                                     .contentType(MediaType.APPLICATION_JSON).bodyValue("{}")
                                     .exchange().expectBody().returnResult());
+                    for (MediaType type : List.of(MediaType.TEXT_PLAIN, MediaType.APPLICATION_FORM_URLENCODED)) {
+                        expect(leaks, method + " " + uri + " as " + type, 415, "{\"reason\":\"UNSUPPORTED_MEDIA_TYPE\"}",
+                                client.method(method).uri(uri).header("X-Medioo", "1").header("Origin", AppApiContext.ORIGIN)
+                                        .contentType(type).bodyValue("{}")
+                                        .exchange().expectBody().returnResult());
+                    }
                 }
             }
             assertThat(swept).as("open (method, route) pairs read from the routers; none would make this sweep vacuous").isNotEmpty();

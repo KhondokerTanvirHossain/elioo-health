@@ -30,7 +30,8 @@ import java.util.Set;
  *   <li>the session, resolved by {@link SessionAuthFilter#resolve} (the one resolver: the same {@code Path=/app} cookie,
  *       the same store, the same sliding expiry as the HTML pages). None is a 401 {@code UNAUTHENTICATED} — never the
  *       HTML pages' 303, so a page left open past its session learns why and can send the family to sign in. The
- *       routes in {@link #OPEN} (sign-in) need none: a session that resolves is still put on the request;</li>
+ *       routes in {@link #OPEN} (sign-in) need none: a session that resolves is still put on the request, and they never
+ *       answer 401 at all;</li>
  *   <li>for a mutation (POST, PUT, PATCH, DELETE), CSRF: the header {@code X-Medioo: 1} (403 {@code MISSING_HEADER}); an
  *       {@code Origin} equal to {@code baymax.web.public-origin} (403 {@code FORBIDDEN_ORIGIN}); and a JSON or
  *       multipart body (415 {@code UNSUPPORTED_MEDIA_TYPE}). A cross-site form can set neither the header nor the JSON
@@ -53,9 +54,13 @@ public class AppApiGuard implements HandlerFilterFunction<ServerResponse, Server
     public static final String HEADER = "X-Medioo";
     private static final Set<HttpMethod> MUTATING = Set.of(HttpMethod.POST, HttpMethod.PUT, HttpMethod.PATCH, HttpMethod.DELETE);
     /**
-     * The route patterns that need no session: the two sign-in steps. They are the first mutations that need none, and
-     * {@code sign-in/request} can send a WhatsApp message, so on these a request with no {@code Origin} at all is 403
-     * {@code FORBIDDEN_ORIGIN}: a server-side caller must not reach them. Browsers send {@code Origin} on every fetch POST.
+     * The route patterns that need no session: the two sign-in steps. They are the first mutations that need none, so
+     * on these a request with no {@code Origin} at all is 403 {@code FORBIDDEN_ORIGIN} (browsers send {@code Origin} on
+     * every fetch POST). A present, matching {@code Origin} is the CSRF rule for a sessionless mutation: it blocks
+     * cross-site browsers and naive callers, NOT a scripted caller, which can forge it along with {@code X-Medioo}. Never
+     * lean on it against automation. What bounds abuse of {@code sign-in/request} is {@code WebAuthService.requestCode}:
+     * it never sends for NO_ACCOUNT, NOT_PERMITTED or OUTSIDE_WINDOW, and mints at most {@code otpMaxLivePerHour} codes
+     * per number. An open route never answers 401 (see {@link #filter}).
      */
     static final Set<String> OPEN = Set.of(AppApiRouter.BASE + "/sign-in/request", AppApiRouter.BASE + "/sign-in/verify");
 
@@ -71,6 +76,7 @@ public class AppApiGuard implements HandlerFilterFunction<ServerResponse, Server
                         ? ApiReason.UNAUTHENTICATED.respond()
                         : admitted(request, next, session))
                 .onErrorResume(e -> error(request, e))
+                .flatMap(response -> neverUnauthenticatedWhenOpen(request, response))
                 .doOnNext(response -> log.info("[baymax-api] {} {} {} {}ms", request.method(), route(request),
                         response.statusCode().value(), (System.nanoTime() - started) / 1_000_000));
     }
@@ -82,6 +88,20 @@ public class AppApiGuard implements HandlerFilterFunction<ServerResponse, Server
     static String route(ServerRequest request) {
         Object pattern = request.attributes().get(RouterFunctions.MATCHING_PATTERN_ATTRIBUTE);
         return pattern instanceof PathPattern p ? p.getPatternString() : AppApiRouter.BASE + "/**";
+    }
+
+    /**
+     * The one place "an open route never answers 401" is asserted, after every answer is made (a handler's own 401
+     * response, or a 401 error mapped by {@link #error}): 401 is "no session, go and sign in", and these are the sign-in
+     * routes, so a 401 there would send the family from the sign-in page to the sign-in page. It is a handler defect,
+     * answered {@code SIGN_IN_RESTART} and left as one WARN line with the route pattern.
+     */
+    private static Mono<ServerResponse> neverUnauthenticatedWhenOpen(ServerRequest request, ServerResponse response) {
+        if (response.statusCode().value() != 401 || !open(request)) {
+            return Mono.just(response);
+        }
+        log.warn("[baymax-api] 401 on open route {} {} answered SIGN_IN_RESTART", request.method(), route(request));
+        return ApiReason.SIGN_IN_RESTART.respond();
     }
 
     /** A route matched by one of the {@link #OPEN} patterns (never the catch-all, whose pattern is {@code /app/api/**}). */

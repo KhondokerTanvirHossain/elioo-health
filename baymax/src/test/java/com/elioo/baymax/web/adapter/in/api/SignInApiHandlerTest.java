@@ -1,5 +1,6 @@
 package com.elioo.baymax.web.adapter.in.api;
 
+import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.web.adapter.in.PhoneDisplay;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
@@ -153,7 +154,7 @@ class SignInApiHandlerTest {
             }
         }
         assertThat(notSent).as("the non-SENT issues compared, so the comparison is not vacuous").isGreaterThanOrEqualTo(5);
-        assertThat(notSentBodies).as("every non-SENT answer is the same bytes: the JSON tells a stranger nothing about a number")
+        assertThat(notSentBodies).as("every non-SENT answer is the same bytes: the JSON tells no more than SENT or not-SENT, as the HTML page does")
                 .hasSize(1);
     }
 
@@ -220,6 +221,19 @@ class SignInApiHandlerTest {
         }
     }
 
+    /**
+     * The HTML page's second rule ({@code SignInPages.verify}): any other 401 the use case raises on this path is the
+     * wrong-code copy. In the JSON that is {@code CODE_WRONG}, never the guard's 401, which would send the client from
+     * the sign-in page to the sign-in page.
+     */
+    @Test
+    void anyOther401OnVerifyIsCodeWrongNever401() {
+        when(auth.verify(HASH, "123456")).thenReturn(Mono.error(BaymaxException.unauthorized("x", "y")));
+        EntityExchangeResult<byte[]> r = post(client(), "/app/api/sign-in/verify", Map.of("code", "123456"),
+                Map.of("baymax_login", HASH + ".123"));
+        assertThat(r.getStatus().value() + " " + text(r)).isEqualTo("400 {\"reason\":\"CODE_WRONG\"}");
+    }
+
     @Test
     void verifyWithoutTheLoginCookieAsksToStartAgain() {
         WebTestClient client = client();
@@ -238,8 +252,38 @@ class SignInApiHandlerTest {
         assertThat(r.getStatus().value()).isEqualTo(200);
         assertThat(json(r).get("next").asText()).isEqualTo(HELD);
         assertThat(setCookies(r, "baymax_session")).singleElement().satisfies(c -> assertThat(cookieValue(c)).isEqualTo("tok-new"));
-        assertThat(setCookies(r, "baymax_login")).singleElement().satisfies(c -> assertThat(c).contains("Max-Age=0"));
-        assertThat(setCookies(r, "baymax_next")).singleElement().satisfies(c -> assertThat(c).contains("Max-Age=0"));
+        for (String name : List.of("baymax_login", "baymax_next")) {
+            assertThat(setCookies(r, name)).as(name + " cleared").singleElement().satisfies(c -> {
+                HttpCookie cleared = HttpCookie.parse("set-cookie: " + c).get(0);
+                assertThat(cleared.getMaxAge()).as(name + " Max-Age").isZero();
+                assertThat(cleared.getValue()).as(name + " value").isEmpty();
+            });
+        }
+    }
+
+    /**
+     * Request to verify with the bytes the request itself wrote: the held place survives the round trip as the
+     * {@code baymax_next} the request set, and verify answers exactly it.
+     */
+    @Test
+    void theHeldPlaceTheRequestWritesIsThePlaceVerifyReturns() throws Exception {
+        rightCode();
+        when(auth.requestCode(NUMBER)).thenReturn(Mono.just(new CodeRequest(HASH, CodeIssue.SENT)));
+        WebTestClient client = client();
+        Map<String, Object> body = confirmed(NUMBER);
+        body.put("next", HELD);
+        EntityExchangeResult<byte[]> requested = post(client, "/app/api/sign-in/request", body, Map.of());
+        List<String> login = setCookies(requested, "baymax_login");
+        List<String> next = setCookies(requested, "baymax_next");
+        assertThat(login).as("login cookie set").hasSize(1);
+        assertThat(next).as("next cookie set").hasSize(1);
+        assertThat(cookieValue(next.get(0))).as("the held place, as written").isEqualTo(HELD);
+
+        EntityExchangeResult<byte[]> verified = post(client, "/app/api/sign-in/verify", Map.of("code", "123456"),
+                Map.of("baymax_login", cookieValue(login.get(0)), "baymax_next", cookieValue(next.get(0))));
+        assertThat(verified.getStatus().value()).isEqualTo(200);
+        assertThat(json(verified).get("next").asText()).isEqualTo(HELD);
+        verify(auth).verify(HASH, "123456");
     }
 
     /** {@code $.next} feeds client-side navigation, so every hostile shape is tried on this path, held both ways. */
