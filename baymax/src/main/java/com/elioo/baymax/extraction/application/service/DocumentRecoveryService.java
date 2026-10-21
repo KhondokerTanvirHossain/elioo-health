@@ -60,7 +60,10 @@ public class DocumentRecoveryService implements DocumentRecoveryUseCase {
                         }));
     }
 
-    /** DONE or NEEDS_RETAKE with no message: explained if recent, only counted if older (a late text about an old paper helps nobody). */
+    /**
+     * DONE or NEEDS_RETAKE with no message, or FAILED with no failure notice (PR 9): explained if recent, only counted
+     * if older (a late text about an old paper helps nobody).
+     */
     private Flux<RecoveryReport> unexplained(Instant cutoff) {
         Instant since = clock.instant().minus(properties.getRecovery().getExplainMaxAge());
         return documents.unexplainedSince(since, cutoff)
@@ -74,6 +77,16 @@ public class DocumentRecoveryService implements DocumentRecoveryUseCase {
                         .doOnNext(n -> {
                             if (n > 0) {
                                 log.warn("[baymax] recovery: {} finished document(s) older than {} were never explained", n,
+                                        properties.getRecovery().getExplainMaxAge());
+                            }
+                        })
+                        .thenMany(Flux.<RecoveryReport>empty()))
+                // apart, and at INFO: every FAILED document from before V23 has no notice and never will, so this count
+                // is non-zero on every startup; what an operator watches is whether it grows between restarts
+                .concatWith(documents.countFailedUnnotifiedBefore(since)
+                        .doOnNext(n -> {
+                            if (n > 0) {
+                                log.info("[baymax] recovery: {} FAILED document(s) older than {} have no failure notice", n,
                                         properties.getRecovery().getExplainMaxAge());
                             }
                         })

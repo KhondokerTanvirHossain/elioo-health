@@ -123,10 +123,18 @@ public interface DocumentRecordPort {
 
     /**
      * F9b: DONE or NEEDS_RETAKE documents updated in {@code [since, before)} that have no explanation or retake
-     * message — the process died between extraction and {@code explain()}. Oldest first.
+     * message with a body (a FAILED_SAFETY row alone is no answer, PR 9), and FAILED ones with no failure notice
+     * (PR 9) — the process died between extraction and {@code explain()}. Oldest first.
      */
     Flux<UUID> unexplainedSince(Instant since, Instant before);
 
-    /** How many finished documents updated before {@code since} were never explained; counted, never messaged. */
+    /**
+     * How many DONE or NEEDS_RETAKE documents updated before {@code since} were never explained; counted, never
+     * messaged. FAILED ones are counted apart ({@link #countFailedUnnotifiedBefore}): every FAILED document from before
+     * V23 has no notice and never will, and mixed in here they would hide the one signal this count exists for.
+     */
     Mono<Long> countUnexplainedBefore(Instant since);
+
+    /** How many FAILED documents updated before {@code since} have no failure notice (PR 9); counted, never messaged. */
+    Mono<Long> countFailedUnnotifiedBefore(Instant since);
 }

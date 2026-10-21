@@ -112,8 +112,8 @@ public class DocumentProcessingChain {
                 .thenReturn(done);
     }
 
-    // BMX-6: once the document is DONE or NEEDS_RETAKE, compose the family's message; a failure there is logged and
-    // never undoes the extraction
+    // BMX-6: once the document is DONE, NEEDS_RETAKE or FAILED (PR 9: the failure notice), compose the family's
+    // message; a failure there is logged and never undoes the extraction. run() and fail() both come through here.
     private Mono<Document> explain(Document done) {
         return explainer.explain(done.id())
                 .doOnNext(m -> log.info("[baymax] message composed documentId={} kind={} urgency={} gate={}",

@@ -248,6 +248,11 @@ document page and attached at delivery (BMX-10). Still forbidden, unchanged: say
 schedule, restating dosing, any start/stop/change advice. Deviation to note: the 600-character cap applies to the
 model's text; the verbatim block is added after it, so a long prescription can push the whole body past 600.
 
+*Engineering note (Phase 0 PR 9, 2026-10-21).* "Fails closed" now means the model's text (and the medicine block) is
+withheld and the code-only, value-free `explanation.fallback` is sent in its place — the document type, its date and
+the link, led by the urgency lines — instead of silence. The verification itself is unchanged: a medicine that is not
+verbatim, or an elided dosing line, still never reaches the family as text.
+
 ## DR-17 | 2026-09-19 | Trend markers and directions
 
 **Decision:** Trend markers and directions: hba1c, fasting_glucose, creatinine, bp_systolic, bp_diastolic, ldl — rising is

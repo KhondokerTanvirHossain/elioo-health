@@ -613,18 +613,46 @@ background (the health check does not wait for it):
   cannot crash-loop the container;
 - pages not all in the `stored_object` ledger: failed `pages_missing_after_restart`;
 - otherwise its leftover crops and items are cleared and it is re-run from its stored pages (model cost again);
-- a document that reached DONE / NEEDS_RETAKE but has no explanation or retake message is explained if it was
-  updated in the last 6 hours (`baymax.recovery.explain-max-age`); older ones are only counted, at WARN.
+- a document that is DONE / NEEDS_RETAKE with no explanation or retake message carrying a body (a fail-closed
+  `failed_safety` row alone is no answer), or FAILED with no `failure` notice (PR 9, V23), is answered if it was
+  updated in the last 6 hours (`baymax.recovery.explain-max-age`); older ones are only counted.
 
 ```bash
-docker logs medscribe-ai --since 15m 2>&1 | grep -E 'recovery documentId=|recovery sweep|recovery: .* never explained'
+docker logs medscribe-ai --since 15m 2>&1 | grep -E 'recovery documentId=|recovery sweep|recovery: .* (never explained|no failure notice)'
 ```
 
 One `[baymax] recovery documentId=<uuid> outcome=<code>` line per document (`reprocessed`, `explained`,
 `skipped_too_old`, `failed_interrupted_repeatedly`, `failed_pages_missing`, `error`), then
 `[baymax] recovery sweep done documents=<n>`. `outcome=error` (for example S3 unavailable) leaves the document as it
-was, to be retried at the next start. A WARN `recovery: <n> finished document(s) older than PT6H were never explained`
-is a count only; nothing was sent.
+was, to be retried at the next start. `outcome=explained` on a FAILED document means the failure notice
+(`failure.document`) was sent, up to 6 h after the failure; on a DONE document whose only row was `failed_safety`, it
+was explained again (model cost) and, if that fails closed again, the code-only fallback went.
+
+Two counts, nothing sent for either:
+
+- WARN `recovery: <n> finished document(s) older than PT6H were never explained`: DONE / NEEDS_RETAKE only. Since PR 9
+  it also counts DONE documents whose explanation failed closed before the fallback existed (their only row is
+  `failed_safety`), so it may jump once after the PR 9 deploy and should then hold steady.
+- INFO `recovery: <n> FAILED document(s) older than PT6H have no failure notice`: every FAILED document from before
+  V23 is in it and never gets a notice, so it is non-zero on every start. Watch whether it **grows** between restarts:
+  growth means a FAILED paper after PR 9 went unanswered.
+
+The first start after the PR 9 deploy sends `দুঃখিত — এই কাগজটা এখন পড়া গেল না…` to every family whose paper FAILED
+in the 6 h before it, logged as `outcome=explained`.
+
+Explanation lines since PR 9, and how the standard `grep -cE ' ERROR '` check reads them:
+
+- ERROR `[baymax] explanation threw documentId=… error=<Class> reason=<code>`: composition threw. `reason` is
+  `medicine_elided`, `medicine_not_verbatim`, `diagnosis_not_verbatim` (DR-16/DR-26 transcription defects),
+  `urgency_changed`, `template_checklist`, or `other` (a model or provider error: credits, outage). The exception text
+  is at DEBUG only. Expected to be followed by the INFO fallback line below; an ERROR count above 0 after a deploy is
+  worth one look per document even when the fallback went.
+- INFO `[baymax] explanation fallback documentId=… urgency=… gate=… cause=<failed_safety|reason>`: the code-only,
+  value-free fallback was stored (and delivered unless `gate=pending`). Logged only after it was released, never on
+  an attempt. `grep -c 'explanation fallback'` should stay 0 in normal use.
+- ERROR `[baymax] explanation threw and no fallback exists documentId=… reason=…` (or `explanation failed closed and
+  no fallback exists`): nothing was sent; the original error follows from the processing chain
+  (`explanation failed documentId=…`). Look at the document.
 
 **Crash loop** (the container restarts every few minutes and the log shows a recovery line just before each death):
 back up `~/medscribe.env`, add `BAYMAX_RECOVERY_ENABLED=false`, redeploy at the running tag, then find the document

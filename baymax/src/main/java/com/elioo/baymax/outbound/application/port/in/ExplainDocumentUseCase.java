@@ -14,8 +14,8 @@ public interface ExplainDocumentUseCase {
 
     /**
      * Composes and safety-checks the family's message for a document, and decides its gate status. NEVER saves and
-     * NEVER delivers (F4). EXPLANATION on NEEDS_RETAKE is the retake prompt; DETAIL exists only for DONE. Empty for
-     * any other status. The message may be FAILED_SAFETY with no body.
+     * NEVER delivers (F4). EXPLANATION on NEEDS_RETAKE is the retake prompt and on FAILED the FAILURE notice (PR 9);
+     * DETAIL exists only for DONE. Empty for any other status. The message may be FAILED_SAFETY with no body.
      */
     Mono<OutboundMessage> composeChecked(UUID documentId, OutboundMessage.Kind kind);
 
@@ -28,7 +28,12 @@ public interface ExplainDocumentUseCase {
      */
     Mono<OutboundMessage> deliver(OutboundMessage stored);
 
-    /** The post-extraction message: {@code composeChecked(EXPLANATION)} then {@code release}. */
+    /**
+     * The post-extraction message: {@code composeChecked(EXPLANATION)} then {@code release}. A FAILED document yields a
+     * FAILURE notice, once (empty when one exists). A DONE explanation that failed safety, or whose composition threw,
+     * is replaced by the code-only, value-free fallback (PR 9). When no fallback can be built — it threw as well, or the
+     * status has none — the original error propagates; it is never reported as sent.
+     */
     Mono<OutboundMessage> explain(UUID documentId);
 
     /**
