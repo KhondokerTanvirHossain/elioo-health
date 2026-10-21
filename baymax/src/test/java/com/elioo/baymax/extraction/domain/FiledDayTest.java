@@ -7,7 +7,7 @@ import java.time.LocalDate;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/** D2: what a filed day can be, both directions; V24's generated columns can produce only the first three. */
+/** D2: what a filed day can be, both directions; V25's generated columns can produce only the first three. */
 class FiledDayTest {
 
     private static final LocalDate DAY = LocalDate.parse("2026-10-20");

@@ -18,7 +18,7 @@ import java.util.UUID;
  *                     false when it said nothing. Written by {@code finish}; never displayed: the mark a display shows
  *                     is {@link FiledDay#uncertain()}, which is never true on an upload day
  * @param filed        D2: the day this paper is filed under, read from the generated columns of its row ({@code
- *                     timeline_date}, {@code timeline_date_is_upload_day}, {@code timeline_date_uncertain}, V24). Null
+ *                     timeline_date}, {@code timeline_date_is_upload_day}, {@code timeline_date_uncertain}, V25). Null
  *                     on a record Java wrote and has not read back: unknown, never "the printed date". Never re-derived
  *                     from {@code docDate}
  */

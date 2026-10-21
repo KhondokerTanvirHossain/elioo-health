@@ -134,7 +134,7 @@ class NoProseInTheJsonApiTest {
         // D2: finish keeps the date it read even off a page it could not read; no JSON may show it (MISREAD)
         Document retake = new Document(DOC, PATIENT, FAMILY, null, LocalDate.parse(MISREAD), null, null, 0.4, Document.Status.valueOf(status),
                 prose, null, null, 1, T, T, null, null, code, false,
-                // as the row reads back: a paper that is not DONE (or printed nothing) is filed under its upload day (V24)
+                // as the row reads back: a paper that is not DONE (or printed nothing) is filed under its upload day (V25)
                 new com.elioo.baymax.extraction.domain.FiledDay(LocalDate.parse("2026-10-19"), true, false));
         DocumentRecordPort documents = mock(DocumentRecordPort.class);
         when(documents.find(DOC)).thenReturn(Mono.just(retake));

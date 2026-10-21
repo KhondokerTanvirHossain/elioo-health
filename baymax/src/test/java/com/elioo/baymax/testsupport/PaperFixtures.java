@@ -152,11 +152,11 @@ public final class PaperFixtures {
     // ---- result and reading views -----------------------------------------------------------------------
 
     /**
-     * D2: the filed day the document row would read back for this view, as V24's generated columns define it: a retake
+     * D2: the filed day the document row would read back for this view, as V25's generated columns define it: a retake
      * or a paper with no printed date under its upload day in Dhaka, every other paper under its printed date, never
      * marked uncertain. Test support only — it stands in for the row a mocked read never touches; main code reads the
-     * columns and never this. A copy of V24's rule, so {@code FilingDayOnPostgresTest.theFixturesFileAsPostgresDoes}
-     * holds it equal to the generated columns on real rows: if V24 changes, that test fails before any fixture lies.
+     * columns and never this. A copy of V25's rule, so {@code FilingDayOnPostgresTest.theFixturesFileAsPostgresDoes}
+     * holds it equal to the generated columns on real rows: if V25 changes, that test fails before any fixture lies.
      */
     public static FiledDay filedAsStored(DocumentView view, Instant receivedAt) {
         String printed = view.documentDate();

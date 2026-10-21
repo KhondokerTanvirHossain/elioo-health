@@ -33,9 +33,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * D2 on real Postgres, through the ports every reader uses: a document row comes back with the filed day its generated
- * columns hold (V24's timeline_date, timeline_date_is_upload_day, timeline_date_uncertain), the model's flag survives
+ * columns hold (V25's timeline_date, timeline_date_is_upload_day, timeline_date_uncertain), the model's flag survives
  * both writes, the latest-paper read never returns a retake, a retake's view never carries its misread date, the
- * prescriptions are ordered by the filed day, and the test fixtures' copy of V24's rule agrees with Postgres. Every
+ * prescriptions are ordered by the filed day, and the test fixtures' copy of V25's rule agrees with Postgres. Every
  * expectation is read from the row's own columns AND stated as a literal, so neither a broken mapping nor a changed rule
  * can pass by agreeing with itself.
  */
@@ -59,7 +59,7 @@ class FilingDayOnPostgresTest {
     }
 
     /**
-     * The three shapes V24 files differently, read back through {@link DocumentRecordPort#find}: a retake with a misread
+     * The three shapes V25 files differently, read back through {@link DocumentRecordPort#find}: a retake with a misread
      * printed date uploaded after Dhaka midnight (its upload day, never the misread date, never marked), a DONE paper
      * whose printed date the model marked uncertain (that date, marked), and a DONE paper that printed none (its Dhaka
      * upload day). Each record's filed day equals the generated columns and the literal day; its stored flag equals
@@ -182,10 +182,10 @@ class FilingDayOnPostgresTest {
     }
 
     /**
-     * Review finding 24: {@link PaperFixtures#filedAsStored} is a Java copy of V24's rule that every render and contract
+     * Review finding 24: {@link PaperFixtures#filedAsStored} is a Java copy of V25's rule that every render and contract
      * test takes its filed day from. It must agree with Postgres on the cases that rule separates: a retake whose view
      * still carries a misread printed date, an undated DONE paper just before Dhaka midnight, and a DONE paper uploaded
-     * after Dhaka midnight whose printed date is a month earlier. If V24's rule changes, this fails before any fixture
+     * after Dhaka midnight whose printed date is a month earlier. If V25's rule changes, this fails before any fixture
      * test can agree with a rule production no longer has.
      */
     @Test

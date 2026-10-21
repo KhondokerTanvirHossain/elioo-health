@@ -81,7 +81,7 @@ public class PostgresNudgeDataAdapter implements NudgeDataPort, NudgeOptOutPort 
     public Flux<MedicationRow> medicationsOfPatient(UUID patientId) {
         return db.sql("SELECT " + MED_COLS + " FROM " + S + ".medication_event m JOIN " + S + ".document d ON d.id = m.document_id "
                         + "WHERE m.patient_id = :p AND d.status = 'DONE' AND d.document_type = 'prescription' "
-                        // D2: newest by the day each paper is filed under (V24's timeline_date: the printed date, else
+                        // D2: newest by the day each paper is filed under (V25's timeline_date: the printed date, else
                         // the Dhaka upload day), the one rule NUDGES_OF_THE_PAPER's withdrawal compares with too
                         + "ORDER BY d.timeline_date DESC, d.created_at DESC, m.name")
                 .bind("p", patientId).map((row, meta) -> medication(row)).all();

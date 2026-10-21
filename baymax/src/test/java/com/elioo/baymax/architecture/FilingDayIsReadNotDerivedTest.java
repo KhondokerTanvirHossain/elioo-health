@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * D2: the day a paper is filed under is defined once, by Postgres ({@code document.timeline_date},
- * {@code timeline_date_is_upload_day} and {@code timeline_date_uncertain}, V24), and every reader reads it. Before D2 the
+ * {@code timeline_date_is_upload_day} and {@code timeline_date_uncertain}, V25), and every reader reads it. Before D2 the
  * same rule was restated wherever a paper was described ({@code d.docDate() != null ? d.docDate() : upload day},
  * {@code doc_date IS NULL AS date_is_fallback}, {@code PatientCalendar.dayOf(receivedAt)} beside
  * {@code v.documentDate()}), and each restatement filed a retake under the date misread off its blurred page.
