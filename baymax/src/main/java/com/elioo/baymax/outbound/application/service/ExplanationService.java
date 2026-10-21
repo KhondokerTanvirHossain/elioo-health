@@ -81,9 +81,74 @@ public class ExplanationService implements ExplainDocumentUseCase {
      */
     private final ConcurrentMap<UUID, Mono<OutboundMessage>> composingDetail = new ConcurrentHashMap<>();
 
+    /**
+     * Phase 0, PR 9: every document the family was told "reading it" about ends in a reply, from here. Every FAILED a
+     * document can reach is written by DocumentExtractionService or DocumentProcessingChain.fail, and both lead here
+     * ({@code FailedHasOneWriterTest}): FAILED becomes the FAILURE notice. A DONE explanation that failed safety, or
+     * whose composition threw, becomes the code-only fallback. Only composition is guarded: an error after a message
+     * was stored (a delivery bookkeeping write) propagates as before, so the family is never sent a second message.
+     */
     @Override
     public Mono<OutboundMessage> explain(UUID documentId) {
-        return composeChecked(documentId, OutboundMessage.Kind.EXPLANATION).flatMap(this::release);
+        return composeChecked(documentId, OutboundMessage.Kind.EXPLANATION)
+                // fail-closed still means the MODEL's text never goes: the attempt is stored with no body, as before,
+                // and the family then gets the code-only fallback instead of silence
+                .map(m -> m.gateStatus() == OutboundMessage.GateStatus.FAILED_SAFETY && m.kind() == OutboundMessage.Kind.EXPLANATION
+                        ? store(m).then(fallbackFor(documentId))
+                        : release(m))
+                // an explanation that cannot be composed safely still ends in a reply; the log carries the class only
+                // (the message can name a medicine: MedicineTranscription.elided)
+                .onErrorResume(e -> !(e instanceof BaymaxException), e -> {
+                    log.error("[baymax] explanation threw documentId={} error={} — sending the code-only fallback",
+                            documentId, e.getClass().getSimpleName());
+                    return Mono.just(fallbackFor(documentId));
+                })
+                .flatMap(next -> next);
+    }
+
+    /** The code-only fallback for a DONE document, at its STORED urgency (F1); empty for any other status. */
+    private Mono<OutboundMessage> fallbackFor(UUID documentId) {
+        return Mono.defer(() -> documents.find(documentId))
+                .filter(d -> d.status() == Document.Status.DONE)
+                .flatMap(d -> facts(d).flatMap(f -> storedUrgency.assessAndStore(f)
+                        .flatMap(stored -> fallback(f, stored.asAssessment()))));
+    }
+
+    /** The pipeline ended FAILED: the family was told "reading it" and hears the outcome once, never values. */
+    private OutboundMessage failureNotice(Document document) {
+        return new OutboundMessage(null, document.familyId(), document.patientId(), document.id(),
+                OutboundMessage.Kind.FAILURE, Urgency.ROUTINE, List.of("document_failed"),
+                copy.bn("failure.document", Map.of()), gate.decide(Urgency.ROUTINE), null, null, null, null, clock.instant());
+    }
+
+    /**
+     * Code-only and value-free: the document type, its date, the link to the paper with its crops, led by the
+     * UrgencyLines block at the level the code assessed. Released through the same gate as any explanation and checked
+     * by the same checklist; a template that fails its own checklist is a bug, not a fallback. No "fallback" marker is
+     * added to urgency_reasons: that column carries urgency codes only (the DETAIL cache and F1 read it).
+     */
+    private Mono<OutboundMessage> fallback(DocumentFacts facts, UrgencyAssessment assessed) {
+        String body = fallbackBody(facts, assessed.level());
+        List<String> violations = safety.violations(body, facts, assessed.level());
+        if (!violations.isEmpty()) {
+            return Mono.error(new IllegalStateException("fallback template violated its own checklist: "
+                    + MessageSafetyCheck.forLog(violations)));
+        }
+        log.info("[baymax] explanation fallback documentId={} urgency={}", facts.document().id(), assessed.level().dbValue());
+        Document d = facts.document();
+        return release(new OutboundMessage(null, d.familyId(), d.patientId(), d.id(), OutboundMessage.Kind.EXPLANATION,
+                assessed.level(), assessed.reasons(), body, gate.decide(assessed.level()), null, null, null, null, clock.instant()));
+    }
+
+    /** The fallback's text: the UrgencyLines block, then {@code explanation.fallback}. Package-private for the checklist test. */
+    String fallbackBody(DocumentFacts facts, Urgency level) {
+        Document d = facts.document();
+        Map<String, String> vars = Map.of(
+                "document_type", copy.documentType(d.documentType()),
+                // dates a family reads are Bangla day-and-month, never ISO (PO ruling 2026-09-19)
+                "date", d.docDate() == null ? "" : BanglaDate.format(d.docDate(), LocalDate.now(clock)),
+                "link", facts.link());
+        return UrgencyLines.lead(copy, level, copy.bn("explanation.fallback", vars));
     }
 
     @Override
@@ -99,6 +164,9 @@ public class ExplanationService implements ExplainDocumentUseCase {
                     // F1: composed at the STORED level (max of everything ever assessed), never at a fresh, lower read
                     case DONE -> facts(document).flatMap(facts -> storedUrgency.assessAndStore(facts)
                             .flatMap(stored -> compose(facts, kind, stored.asAssessment())));
+                    // PR 9: the family was told "reading it"; a FAILED document is answered once, by the notice. A
+                    // detail request on it composes nothing (the notice is never sent twice).
+                    case FAILED -> kind == OutboundMessage.Kind.EXPLANATION ? Mono.just(failureNotice(document)) : Mono.<OutboundMessage>empty();
                     default -> Mono.<OutboundMessage>empty();
                 });
     }

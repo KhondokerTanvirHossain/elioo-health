@@ -112,23 +112,115 @@ class ExplanationServiceTest {
     private static final Map<String, Object> CRITICAL = UrgencyServiceTest.value("HbA1c", "11.2", "4.0", "5.6");
     private static final Map<String, Object> NORMAL = UrgencyServiceTest.value("HbA1c", "5.0", "4.0", "5.6");
 
-    /** Acceptance: a body with a number absent from the extraction is rejected, regenerated once, then fails closed and is logged. */
+    private void failed() {
+        when(documents.find(DOC)).thenReturn(Mono.just(new Document(DOC, PATIENT, FAMILY, null, null, null, null, null,
+                Document.Status.FAILED, "llm_error", null, null, 1, NOW, NOW)));
+    }
+
+    private String link() {
+        return properties.getOutbound().getPublicBaseUrl() + "/app/documents/" + DOC;
+    }
+
+    /** Stock-take wa-failure-reply (1): the run that FAILED on Anthropic credits sent nothing after the ack (prod, 2026-10-16). */
     @Test
-    void aBodyWithAForeignNumberIsRegeneratedOnceThenFailsClosed() {
+    void aDocumentThatEndsFailedTellsTheFamily() {
+        failed();
+        service.explain(DOC).block();
+        ArgumentCaptor<OutboundMessage> sent = ArgumentCaptor.forClass(OutboundMessage.class);
+        verify(delivery).deliver(sent.capture());
+        assertThat(sent.getValue().kind().name()).isEqualTo("FAILURE");
+        assertThat(sent.getValue().body()).isEqualTo(new Copy().bn("failure.document", Map.of()));
+        verify(metered, never()).invoke(any(), any(), any(LlmRequest.class));
+    }
+
+    /** The other direction: a detail request on a failed document must not send the notice again. */
+    @Test
+    void aDetailRequestOnAFailedDocumentSendsNothingNew() {
+        failed();
+        StepVerifier.create(service.detail(DOC)).verifyComplete();
+        verify(delivery, never()).deliver(any());
+    }
+
+    /**
+     * Inverted from aBodyWithAForeignNumberIsRegeneratedOnceThenFailsClosed, which asserted delivery never() (stock-take
+     * wa-failure-reply (3)). Fail-closed still means the MODEL's text never goes: the attempt is stored with no body,
+     * as before. What changes is that the family then gets the code-only fallback. Assertions strip the link, because
+     * it carries a random UUID (CLAUDE.md: never substring-match over random ids).
+     */
+    @Test
+    void aBodyThatFailsClosedIsStoredWithoutTextAndTheFamilyGetsTheCodeOnlyFallback() {
         done(CRITICAL);
         replies.push("HbA1c এসেছে 11.2 mmol। এখনই ডাক্তারের কাছে যান। বাকি সব 77।");
         replies.push("HbA1c এসেছে 11.2। এখনই ডাক্তারের কাছে যান। আরও 42 দিন।");
 
-        StepVerifier.create(service.explain(DOC))
-                .assertNext(m -> {
-                    assertThat(m.gateStatus()).isEqualTo(OutboundMessage.GateStatus.FAILED_SAFETY);
-                    assertThat(m.body()).isNull();
-                    assertThat(m.urgency()).isEqualTo(Urgency.NOW);
-                })
-                .verifyComplete();
+        service.explain(DOC).block();
+
         verify(metered, times(2)).invoke(eq(AiCallPurpose.EXPLAIN), any(), any(LlmRequest.class));
-        verify(delivery, never()).deliver(any());
+        ArgumentCaptor<OutboundMessage> sent = ArgumentCaptor.forClass(OutboundMessage.class);
+        verify(delivery).deliver(sent.capture());
+        ArgumentCaptor<OutboundMessage> saved = ArgumentCaptor.forClass(OutboundMessage.class);
+        verify(messages, org.mockito.Mockito.atLeastOnce()).save(saved.capture());
+        assertThat(saved.getAllValues()).anySatisfy(m -> {
+            assertThat(m.gateStatus()).isEqualTo(OutboundMessage.GateStatus.FAILED_SAFETY);
+            assertThat(m.body()).isNull();
+        });
+        String body = sent.getValue().body();
+        assertThat(body).contains(link());
+        assertThat(body.replace(link(), "")).as("none of the rejected model text")
+                .doesNotContain("77").doesNotContain("42").doesNotContain("mmol").doesNotContain("11.2");
+        assertThat(body).contains(new Copy().bn("urgency.now", Map.of())).contains(new Copy().bn("safety.red_flag_line", Map.of()));
+        assertThat(sent.getValue().urgency()).isEqualTo(Urgency.NOW);
         verify(reviewer, never()).notifyPending(any());
+    }
+
+    /** The gate-on direction: under gate=urgency a NOW fallback is parked with the reviewer, never delivered. */
+    @Test
+    void aFailedClosedNowUnderTheUrgencyGateParksTheFallbackNotDeliversIt() {
+        properties.getOutbound().setGateMode("urgency");
+        done(CRITICAL);
+        replies.push("HbA1c এসেছে 11.2 mmol। এখনই ডাক্তারের কাছে যান। বাকি সব 77।");
+        replies.push("HbA1c এসেছে 11.2। এখনই ডাক্তারের কাছে যান। আরও 42 দিন।");
+
+        service.explain(DOC).block();
+
+        ArgumentCaptor<OutboundMessage> parked = ArgumentCaptor.forClass(OutboundMessage.class);
+        verify(reviewer).notifyPending(parked.capture());
+        OutboundMessage fallback = parked.getValue();
+        assertThat(fallback.gateStatus()).isEqualTo(OutboundMessage.GateStatus.PENDING);
+        assertThat(fallback.kind()).isEqualTo(OutboundMessage.Kind.EXPLANATION);
+        assertThat(fallback.urgency()).isEqualTo(Urgency.NOW);
+        assertThat(fallback.body()).contains(link()).contains(new Copy().bn("urgency.now", Map.of()));
+        assertThat(fallback.body().replace(link(), "")).doesNotContain("77").doesNotContain("42").doesNotContain("mmol");
+        verify(delivery, never()).deliver(any());
+    }
+
+    /** Finding 3: an explanation that throws (here an elided dose, DR-16) still reaches the family as the fallback, without the medicine. */
+    @Test
+    void anExplanationThatThrowsStillReachesTheFamilyAsTheFallbackWithoutTheMedicine() {
+        done(NORMAL);
+        when(documents.medicinesOf(DOC)).thenReturn(Flux.just(Map.<String, Object>of(
+                "name", "Cap. DDR", "frequency_text", "১+০+০ ... ১+০+১")));
+
+        service.explain(DOC).onErrorResume(e -> Mono.empty()).block();   // pre-fix it errors; the defect is the silence
+
+        ArgumentCaptor<OutboundMessage> sent = ArgumentCaptor.forClass(OutboundMessage.class);
+        verify(delivery).deliver(sent.capture());
+        assertThat(sent.getValue().body()).doesNotContain("DDR").doesNotContain("১+০+০").contains(link());
+    }
+
+    /** The fallback is code; derived over every level, it passes the same checklist as any template and fits the cap. */
+    @Test
+    void theFallbackPassesTheChecklistAtEveryUrgency() {
+        done(NORMAL);
+        Document d = documents.find(DOC).block();
+        DocumentFacts facts = new DocumentFacts(d, "Ma", List.of(NORMAL), List.of(), Map.of(), link());
+        for (Urgency level : Urgency.values()) {
+            String body = service.fallbackBody(facts, level);
+            assertThat(new MessageSafetyCheck(properties).violations(body, facts, level)).as(level.name()).isEmpty();
+            assertThat(body.length()).as(level.name()).isLessThanOrEqualTo(properties.getOutbound().getMaxChars());
+            assertThat(body.contains(new Copy().bn("urgency.now", Map.of()))).as(level.name()).isEqualTo(level == Urgency.NOW);
+            assertThat(body.contains(new Copy().bn("urgency.this_week", Map.of()))).as(level.name()).isEqualTo(level == Urgency.THIS_WEEK);
+        }
     }
 
     /** Acceptance: gate mode=urgency and a NOW message → nothing sends until approve. */
