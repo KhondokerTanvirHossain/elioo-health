@@ -74,13 +74,15 @@ public class TimelineService implements TimelineUseCase {
         YearMonth shown = month != null ? month : YearMonth.from(PatientCalendar.today(clock));
         LocalDate first = shown.atDay(1);
         LocalDate last = shown.atEndOfMonth();
+        // S14: no audit row here. The papers page reads the timeline and this calendar for one open, and the timeline's
+        // read is the TIMELINE_VIEW; a row here as well would double the weekly export's timeline_views, and every month
+        // link would add one more for no open at all.
         return visiblePatient(familyId, patientId)
-                .flatMap(access -> audit.record(AuditEvent.family(AuditEvent.Kind.TIMELINE_VIEW, familyId, patientId, null, clock.instant()))
-                        .then(Mono.zip(
-                                timelineRead.month(patientId, first, last).collectList(),
-                                nudgeData.openFollowUpsOfPatient(patientId, first, last)
-                                        .map(f -> new AttentionItem.FollowUp(f.documentId(), f.instruction(), f.dueDate(), f.cropKey()))
-                                        .collectList())))
+                .flatMap(access -> Mono.zip(
+                        timelineRead.month(patientId, first, last).collectList(),
+                        nudgeData.openFollowUpsOfPatient(patientId, first, last)
+                                .map(f -> new AttentionItem.FollowUp(f.documentId(), f.instruction(), f.dueDate(), f.cropKey()))
+                                .collectList()))
                 .map(t -> new CalendarMonth(shown, t.getT1(), t.getT2()));
     }
 

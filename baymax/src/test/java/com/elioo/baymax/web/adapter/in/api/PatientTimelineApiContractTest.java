@@ -241,11 +241,12 @@ class PatientTimelineApiContractTest {
     }
 
     /**
-     * The calendar records a {@code timeline_view}, as the timeline does, and only for a patient this family can see:
-     * the owner's GET adds exactly one row naming the family and the patient; another family's GET is 404 and adds none.
+     * PO decision S14 (plan W8-api): the calendar records no audit row; the timeline read is the papers page's one
+     * TIMELINE_VIEW ({@code TimelineAuditTest} counts the open). Another family's GET is still 404 and adds nothing; the
+     * owner's GET answers 200 with the month's papers and adds nothing either.
      */
     @Test
-    void theCalendarRecordsOneTimelineViewForTheOwnerAndNoneFor404() {
+    void theCalendarRecordsNoAuditRowForTheOwnerAndIs404ForAnotherFamily() {
         FixedPapers.runnerAt(POSTGRES, NOW).run(context -> {
             WebTestClient client = WebTestClient.bindToApplicationContext(context).build();
             Seeded theirs = seedBusyMonth(context, "calendar-audit-theirs");
@@ -259,12 +260,14 @@ class PatientTimelineApiContractTest {
             assertThat(JSON.readTree(other.getResponseBody())).isEqualTo(JSON.readTree("{\"reason\":\"NOT_FOUND\"}"));
             assertThat(FixedPapers.count(POSTGRES, rows)).as("audit rows for the other family's patient after its 404").isZero();
 
-            ok(client, theirs.session(), uri);
+            JsonNode body = ok(client, theirs.session(), uri);
+            // the read reached the patient's month: "no row" below is the rule, not a read that found nothing
+            assertThat(body.get("month").asText()).as("$.month").isEqualTo("2026-10");
+            assertThat(body.get("days").size()).as("$.days of the busy month").isPositive();
             List<List<String>> audit = FixedPapers.rows(POSTGRES,
                     "SELECT kind, family_id::text, patient_id::text, coalesce(document_id::text, '-') FROM baymax.audit_event"
                             + " WHERE patient_id = '" + theirs.patient().id() + "'");
-            assertThat(audit).as("audit_event (kind, family_id, patient_id, document_id) after the owner's calendar read")
-                    .containsExactly(List.of("timeline_view", theirs.patient().familyId().toString(), theirs.patient().id().toString(), "-"));
+            assertThat(audit).as("audit_event (kind, family_id, patient_id, document_id) after the owner's calendar read").isEmpty();
         });
     }
 
