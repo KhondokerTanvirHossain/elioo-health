@@ -94,7 +94,7 @@ class AppApiGuardTest {
                 .filter(guard)
                 .build();
         return WebTestClient.bindToRouterFunction(probes.and(new AppApiRouter().mediooAppApiRoutes(
-                new MeApiHandler(timeline, attention, properties), guard))).build();
+                new MeApiHandler(timeline, attention, properties), new SignInApiHandler(auth, sessions, properties), guard))).build();
     }
 
     private WebTestClient.RequestBodySpec mutation(WebTestClient c, String uri) {
@@ -234,6 +234,25 @@ class AppApiGuardTest {
                 .contentType(MediaType.APPLICATION_JSON).bodyValue(Map.of("patient_id", MA.toString()))
                 .exchange()
                 .expectStatus().isNoContent();
+    }
+
+    /**
+     * Wave 2 B4a: the sign-in pair is open — a visitor with no session reaches it through the CSRF rules — and opening
+     * it opened nothing else: a read with no session is still the 401.
+     */
+    @Test
+    void anOpenRouteNeedsNoSessionButAClosedOneStillDoes() {
+        var open = client.post().uri("/app/api/sign-in/request").header("X-Medioo", "1").header("Origin", ORIGIN)
+                .contentType(MediaType.APPLICATION_JSON).bodyValue(Map.of("whatsapp_number", "01700000123"))
+                .exchange().expectBody(String.class).returnResult();
+        if (open.getStatus().value() == 401) {
+            org.assertj.core.api.Assertions.fail("expected not 401 but was 401 " + open.getResponseBody());
+        }
+        assertThat(open.getStatus().value()).as("the unconfirmed number, shown back").isEqualTo(200);
+        assertThat(open.getResponseBody()).contains("\"number_display\"");
+        client.get().uri("/app/api/me").exchange()
+                .expectStatus().isUnauthorized()
+                .expectBody().json("{\"reason\":\"UNAUTHENTICATED\"}", true);
     }
 
     @Test

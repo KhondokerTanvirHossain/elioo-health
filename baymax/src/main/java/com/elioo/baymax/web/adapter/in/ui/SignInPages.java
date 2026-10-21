@@ -1,8 +1,12 @@
 package com.elioo.baymax.web.adapter.in.ui;
 
 import com.elioo.baymax.common.error.BaymaxException;
+import com.elioo.baymax.web.adapter.in.LoginCookie;
+import com.elioo.baymax.web.adapter.in.PhoneDisplay;
+import com.elioo.baymax.web.adapter.in.WaLink;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.application.port.in.WebAuthUseCase;
+import com.elioo.baymax.web.domain.VerifyFailure;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpCookie;
 import org.springframework.http.HttpHeaders;
@@ -38,19 +42,11 @@ import static com.elioo.baymax.web.adapter.in.ui.PageChrome.BASE;
 @RequiredArgsConstructor
 public class SignInPages implements WebPages {
 
-    static final String LOGIN_COOKIE = "baymax_login";
-    /** The login cookie's mark for "WhatsApp accepted the code" (DR-39 amended); absent for every other outcome. */
-    static final String SENT_MARK = "s";
-    /**
-     * How long the code page remembers which number it is for. 30 minutes, up from BMX-5's 10, for the button path
-     * (PO 2026-10-18): the family leaves the browser, opens WhatsApp, sends কোড, waits for the reply and comes back,
-     * and only then does the 10-minute code TTL start. The cookie holds the HMAC and the last three digits, nothing a
-     * longer life exposes; the code itself still expires on its own TTL.
-     */
-    static final Duration LOGIN_COOKIE_TTL = Duration.ofMinutes(30);
-    /** The page to open after sign-in ({@code ?next=}), held for the same 30 minutes as the login cookie. */
-    static final String NEXT_COOKIE = "baymax_next";
-    static final String HOME = BASE + "/home";
+    /** {@link LoginCookie}'s names, kept here for the page tests that set them. */
+    static final String LOGIN_COOKIE = LoginCookie.NAME;
+    static final String SENT_MARK = LoginCookie.SENT_MARK;
+    static final String NEXT_COOKIE = LoginCookie.NEXT_NAME;
+    static final String HOME = LoginCookie.HOME;
 
     private final WebAuthUseCase auth;
     private final SessionAuthFilter sessions;
@@ -77,37 +73,16 @@ public class SignInPages implements WebPages {
 
     public Mono<ServerResponse> loginPage(ServerRequest request) {
         Lang lang = Lang.of(request);
-        Optional<String> next = request.queryParam("next").flatMap(SignInPages::nextPage);
+        Optional<String> next = request.queryParam("next").flatMap(LoginCookie::nextPage);
         return sessions.resolve(request).flatMap(s -> Html.redirect(next.orElse(HOME)))
                 .switchIfEmpty(Mono.defer(() -> {
-                    next.ifPresent(n -> request.exchange().getResponse().addCookie(nextCookie(n, LOGIN_COOKIE_TTL)));
+                    next.ifPresent(n -> request.exchange().getResponse().addCookie(nextCookie(n, LoginCookie.TTL)));
                     return numberPage(lang, "", null);
                 }));
     }
 
-    /**
-     * A page under {@code /app} to open after sign-in: {@link LocalPath}'s rule (no other host, no backslash, no dot
-     * segment, raw or decoded), minus {@code /} and the JSON namespace {@code /app/api}, raw or decoded. Empty for
-     * anything else, which opens {@link #HOME}.
-     */
-    static Optional<String> nextPage(String raw) {
-        String safe = LocalPath.or(raw, null);
-        if (safe == null || !safe.startsWith(BASE)) {
-            return Optional.empty();
-        }
-        String decoded = java.net.URLDecoder.decode(safe, java.nio.charset.StandardCharsets.UTF_8);
-        for (String p : new String[]{safe, decoded}) {
-            String path = p.contains("?") ? p.substring(0, p.indexOf('?')) : p;
-            if (path.equals(BASE + "/api") || path.startsWith(BASE + "/api/")) {
-                return Optional.empty();
-            }
-        }
-        return Optional.of(safe);
-    }
-
     private ResponseCookie nextCookie(String value, Duration maxAge) {
-        return ResponseCookie.from(NEXT_COOKIE, value).httpOnly(true).secure(sessions.cookie("x").isSecure())
-                .sameSite("Lax").path(BASE).maxAge(maxAge).build();
+        return LoginCookie.cookie(NEXT_COOKIE, value, maxAge, properties.getAuth().isCookieSecure());
     }
 
     /**
@@ -154,8 +129,8 @@ public class SignInPages implements WebPages {
             }
             return auth.requestCode(number.get())
                     .flatMap(requested -> ServerResponse.seeOther(URI.create(BASE + "/verify"))
-                            .header(HttpHeaders.SET_COOKIE, loginCookie(requested.phoneHash() + "." + PhoneDisplay.last3(number.get())
-                                    + (requested.sent() ? "." + SENT_MARK : ""), LOGIN_COOKIE_TTL).toString())
+                            .header(HttpHeaders.SET_COOKIE, loginCookie(LoginCookie.value(requested.phoneHash(),
+                                    PhoneDisplay.last3(number.get()), requested.sent()), LoginCookie.TTL).toString())
                             .build());
         });
     }
@@ -176,12 +151,13 @@ public class SignInPages implements WebPages {
      * No script: the 5-second poll waits for the phase-1b CSP.
      */
     private Mono<ServerResponse> verifyPage(ServerRequest request, String error) {
-        if (loginHash(request).isEmpty()) {
+        Optional<LoginCookie.Login> login = LoginCookie.read(request);
+        if (login.isEmpty()) {
             return Html.redirect(BASE + "/");
         }
         Lang lang = Lang.of(request);
-        boolean sent = loginSent(request);
-        String link = waLink(lang);
+        boolean sent = login.get().sent();
+        String link = Optional.ofNullable(WaLink.of(lang, properties.getWa().getPublicNumber())).map(Html::esc).orElse(null);
         StringBuilder b = new StringBuilder(chrome.top(lang, null, false));
         b.append("<h1>").append(copy.t(lang, "login.title")).append("</h1>");
         if (sent) {
@@ -194,7 +170,7 @@ public class SignInPages implements WebPages {
                         .append("<p class=\"small\">").append(copy.t(lang, "login.wa.hint")).append("</p>");
             }
         }
-        loginTail(request).ifPresent(tail -> b.append("<p class=\"mask\">")
+        Optional.ofNullable(login.get().tail()).ifPresent(tail -> b.append("<p class=\"mask\">")
                 .append(copy.t(lang, "login.code.number", "••••••••" + tail)).append("</p>"));
         if (error != null) {
             b.append("<div class=\"err\" role=\"alert\">").append(error).append("</div>");
@@ -212,18 +188,8 @@ public class SignInPages implements WebPages {
         return chrome.app(lang, b.toString());
     }
 
-    /** D37: the wa.me deep link to Medioo's own number with the word typed in; null when no public number is set. */
-    private String waLink(Lang lang) {
-        String number = properties.getWa().getPublicNumber() == null ? "" : properties.getWa().getPublicNumber().trim();
-        if (number.isEmpty()) {
-            return null;
-        }
-        String word = lang == Lang.BN ? "কোড" : "code";
-        return "https://wa.me/" + esc(number) + "?text=" + java.net.URLEncoder.encode(word, java.nio.charset.StandardCharsets.UTF_8);
-    }
-
     public Mono<ServerResponse> verify(ServerRequest request) {
-        Optional<String> hash = loginHash(request);
+        Optional<String> hash = LoginCookie.read(request).map(LoginCookie.Login::hash);
         if (hash.isEmpty()) {
             return Html.redirect(BASE + "/");
         }
@@ -232,7 +198,7 @@ public class SignInPages implements WebPages {
                 .map(form -> Optional.ofNullable(form.getFirst("code")).orElse("").trim())
                 .flatMap(code -> auth.verify(hash.get(), code))
                 .flatMap(issued -> ServerResponse.seeOther(URI.create(Optional.ofNullable(request.cookies().getFirst(NEXT_COOKIE))
-                                .map(HttpCookie::getValue).flatMap(SignInPages::nextPage).orElse(HOME)))
+                                .map(HttpCookie::getValue).flatMap(LoginCookie::nextPage).orElse(HOME)))
                         .header(HttpHeaders.SET_COOKIE, sessions.cookie(issued.token()).toString())
                         .header(HttpHeaders.SET_COOKIE, loginCookie("", Duration.ZERO).toString())
                         .header(HttpHeaders.SET_COOKIE, nextCookie("", Duration.ZERO).toString())
@@ -245,12 +211,22 @@ public class SignInPages implements WebPages {
     }
 
     /** What happened, and the way to a new code (which is on the page whatever the state). */
-    private String refusal(Lang lang, com.elioo.baymax.web.domain.VerifyFailure failure) {
+    private String refusal(Lang lang, VerifyFailure failure) {
+        String key = refusalKey(failure);
+        return failure == VerifyFailure.BURNED ? copy.t(lang, key, properties.getAuth().getOtpMaxAttempts()) : copy.t(lang, key);
+    }
+
+    /**
+     * The copy each refused code is shown with. WRONG and NO_CODE share one: the page does not tell a guess at a
+     * number that has no live code from a wrong guess. The sign-in JSON names a refusal exactly as finely as this
+     * ({@code SignInApiHandlerTest.everyJsonCodeRefusalIsTheHtmlPagesRefusal}), so it reveals nothing the page does not.
+     */
+    public static String refusalKey(VerifyFailure failure) {
         return switch (failure) {
-            case WRONG, NO_CODE -> copy.t(lang, "login.bad.wrong");
-            case EXPIRED -> copy.t(lang, "login.bad.expired");
-            case BURNED -> copy.t(lang, "login.bad.burned", properties.getAuth().getOtpMaxAttempts());
-            case FORMAT -> copy.t(lang, "login.bad.format");
+            case WRONG, NO_CODE -> "login.bad.wrong";
+            case EXPIRED -> "login.bad.expired";
+            case BURNED -> "login.bad.burned";
+            case FORMAT -> "login.bad.format";
         };
     }
 
@@ -260,33 +236,7 @@ public class SignInPages implements WebPages {
                         .header(HttpHeaders.SET_COOKIE, sessions.clearedCookie().toString()).build());
     }
 
-    /**
-     * {@code <hmac>[.<last three digits>][.s]}. The bare-hash form is still accepted: a cookie from before this release
-     * may be in flight for its ten minutes after the deploy.
-     */
-    private static final java.util.regex.Pattern LOGIN_VALUE =
-            java.util.regex.Pattern.compile("^([0-9a-f]{64})(?:\\.([0-9]{3}))?(?:\\.(" + SENT_MARK + "))?$");
-
-    private Optional<java.util.regex.Matcher> loginValue(ServerRequest request) {
-        HttpCookie c = request.cookies().getFirst(LOGIN_COOKIE);
-        return Optional.ofNullable(c).map(HttpCookie::getValue).map(LOGIN_VALUE::matcher).filter(java.util.regex.Matcher::matches);
-    }
-
-    private Optional<String> loginHash(ServerRequest request) {
-        return loginValue(request).map(m -> m.group(1));
-    }
-
-    private Optional<String> loginTail(ServerRequest request) {
-        return loginValue(request).map(m -> m.group(2));
-    }
-
-    /** True only when the code request behind this cookie came back SENT: WhatsApp accepted the message. */
-    private boolean loginSent(ServerRequest request) {
-        return loginValue(request).map(m -> m.group(3) != null).orElse(false);
-    }
-
     private ResponseCookie loginCookie(String value, Duration maxAge) {
-        return ResponseCookie.from(LOGIN_COOKIE, value).httpOnly(true).secure(sessions.cookie("x").isSecure())
-                .sameSite("Lax").path(BASE).maxAge(maxAge).build();
+        return LoginCookie.cookie(LOGIN_COOKIE, value, maxAge, properties.getAuth().isCookieSecure());
     }
 }

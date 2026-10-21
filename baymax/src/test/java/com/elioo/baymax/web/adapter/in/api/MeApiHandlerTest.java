@@ -153,7 +153,7 @@ class MeApiHandlerTest {
 
     /** {@code PhoneDisplay.full}, the rendering the sign-in page shows back, read from the class itself. */
     private static String phoneDisplay(String e164) throws Exception {
-        var full = Class.forName("com.elioo.baymax.web.adapter.in.ui.PhoneDisplay").getDeclaredMethod("full", String.class);
+        var full = Class.forName("com.elioo.baymax.web.adapter.in.PhoneDisplay").getDeclaredMethod("full", String.class);
         full.setAccessible(true);
         return (String) full.invoke(null, e164);
     }

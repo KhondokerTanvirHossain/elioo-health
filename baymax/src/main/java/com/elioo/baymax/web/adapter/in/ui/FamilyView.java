@@ -3,6 +3,7 @@ package com.elioo.baymax.web.adapter.in.ui;
 import com.elioo.baymax.common.time.PatientCalendar;
 import com.elioo.baymax.web.adapter.in.ActivePatient;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
+import com.elioo.baymax.web.adapter.in.PhoneDisplay;
 import com.elioo.baymax.web.domain.FamilyOverview;
 import com.elioo.baymax.web.domain.PatientSummary;
 

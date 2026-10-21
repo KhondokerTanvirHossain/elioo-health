@@ -10,14 +10,14 @@ import java.util.regex.Pattern;
  * resolves "." and ".." path segments (and "%2e" spelled ones) before it requests, so "/app/../api" is not under /app
  * and is refused too. A malformed escape is the fallback, never an exception.
  */
-final class LocalPath {
+public final class LocalPath {
 
     private static final Pattern SAFE = Pattern.compile("/|/app(/[A-Za-z0-9._~%/-]*)?(\\?[A-Za-z0-9._~%=&/-]*)?");
 
     private LocalPath() {
     }
 
-    static String or(String raw, String fallback) {
+    public static String or(String raw, String fallback) {
         if (raw == null || raw.indexOf('\\') >= 0 || !SAFE.matcher(raw).matches()) {
             return fallback;
         }

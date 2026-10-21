@@ -27,6 +27,7 @@ import com.elioo.baymax.testsupport.PaintedPaper;
 import com.elioo.baymax.testsupport.PaintedPaper.Hold;
 import com.elioo.baymax.wa.WaFixtures;
 import com.elioo.baymax.wa.application.port.out.WaMessagingPort;
+import com.elioo.baymax.web.adapter.in.PhoneDisplay;
 import com.elioo.baymax.web.application.port.in.WebAuthUseCase;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;

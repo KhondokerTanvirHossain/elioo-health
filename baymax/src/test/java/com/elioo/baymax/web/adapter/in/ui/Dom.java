@@ -16,14 +16,14 @@ import java.util.regex.Pattern;
  * lists every close tag that matched no open element and every element still open at the end, so a test can refuse a
  * tree built from broken markup instead of measuring the wrong nesting.
  */
-final class Dom {
+public final class Dom {
 
     private static final Pattern TOKEN = Pattern.compile(
             "<!--.*?-->|<!(?i:doctype)[^>]*>|<(/?)([a-zA-Z][a-zA-Z0-9-]*)((?:[^>\"']|\"[^\"]*\"|'[^']*')*)>|([^<]+)", Pattern.DOTALL);
     private static final Pattern ATTR = Pattern.compile("([a-zA-Z_:][-a-zA-Z0-9_:.]*)(?:\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s\"'>]+)))?");
     private static final Set<String> VOID = Set.of("area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr");
 
-    static final class Element {
+    public static final class Element {
         private final String tag;
         private final Map<String, String> attrs;
         private final Element parent;
@@ -36,11 +36,11 @@ final class Dom {
             this.parent = parent;
         }
 
-        String tag() {
+        public String tag() {
             return tag;
         }
 
-        Map<String, String> attrs() {
+        public Map<String, String> attrs() {
             return attrs;
         }
 
@@ -52,7 +52,7 @@ final class Dom {
             return children;
         }
 
-        Set<String> classes() {
+        public Set<String> classes() {
             String c = attrs.getOrDefault("class", "").trim();
             return c.isEmpty() ? Set.of() : new java.util.LinkedHashSet<>(List.of(c.split("\\s+")));
         }
@@ -83,13 +83,13 @@ final class Dom {
     }
 
     final Element root = new Element("#document", Map.of(), null);
-    final List<Element> all = new ArrayList<>();
+    public final List<Element> all = new ArrayList<>();
     final List<String> unclosed = new ArrayList<>();
 
     private Dom() {
     }
 
-    static Dom parse(String html) {
+    public static Dom parse(String html) {
         Dom dom = new Dom();
         Deque<Element> open = new ArrayDeque<>();
         open.push(dom.root);
