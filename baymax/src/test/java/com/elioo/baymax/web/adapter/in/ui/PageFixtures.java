@@ -290,10 +290,10 @@ final class PageFixtures {
                     new com.elioo.baymax.web.domain.AttentionItem.Urgent(DONE_DOC, Urgency.NOW, "lab_report", LocalDate.parse("2026-10-12"), false, sent),
                     new com.elioo.baymax.web.domain.AttentionItem.Urgent(UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100031"), Urgency.THIS_WEEK,
                             null, LocalDate.parse("2026-10-15"), true, sent),
-                    new com.elioo.baymax.web.domain.AttentionItem.Retake(UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100032"), sent),
+                    new com.elioo.baymax.web.domain.AttentionItem.Retake(UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100032"), java.time.LocalDate.parse("2026-10-20"), true, sent),
                     new com.elioo.baymax.web.domain.AttentionItem.FollowUp(EARLIER_DOC, "Next visit: 20/10/26", LocalDate.parse("2026-10-20"),
                             "f/p/" + EARLIER_DOC + "/crop-f.jpg"),
-                    new com.elioo.baymax.web.domain.AttentionItem.Reading(PROCESSING_DOC, sent))));
+                    new com.elioo.baymax.web.domain.AttentionItem.Reading(PROCESSING_DOC, java.time.LocalDate.parse("2026-10-20"), true, sent))));
             when(k.attention.urgent(WebUiTestKit.FAMILY, WebUiTestKit.MA_ID)).thenReturn(Mono.just(List.of(
                     new com.elioo.baymax.web.domain.AttentionItem.Urgent(DONE_DOC, Urgency.NOW, "lab_report", LocalDate.parse("2026-10-12"), false, sent),
                     new com.elioo.baymax.web.domain.AttentionItem.Urgent(UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100031"), Urgency.THIS_WEEK,
@@ -349,7 +349,7 @@ final class PageFixtures {
             familyOfMa(k);
             List<com.elioo.baymax.web.domain.AttentionItem> stack = new java.util.ArrayList<>(fullUrgentStrip());
             for (int i = 0; i < 3; i++) {
-                stack.add(new com.elioo.baymax.web.domain.AttentionItem.Retake(UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a41003%02d".formatted(i)),
+                stack.add(new com.elioo.baymax.web.domain.AttentionItem.Retake(UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a41003%02d".formatted(i)), java.time.LocalDate.parse("2026-10-20"), true,
                         WebUiTestKit.NOW.minusSeconds(600L * i)));
             }
             for (int i = 0; i < 3; i++) {
@@ -358,7 +358,7 @@ final class PageFixtures {
                         LocalDate.parse("2026-10-20").plusDays(i), "f/p/" + d + "/crop-f.jpg"));
             }
             for (int i = 0; i < 3; i++) {
-                stack.add(new com.elioo.baymax.web.domain.AttentionItem.Reading(UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a41005%02d".formatted(i)),
+                stack.add(new com.elioo.baymax.web.domain.AttentionItem.Reading(UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a41005%02d".formatted(i)), java.time.LocalDate.parse("2026-10-20"), true,
                         WebUiTestKit.NOW.minusSeconds(30L * i)));
             }
             when(k.attention.attention(WebUiTestKit.FAMILY, WebUiTestKit.MA_ID)).thenReturn(Mono.just(List.copyOf(stack)));
@@ -642,13 +642,13 @@ final class PageFixtures {
         }
 
         static void acceptsUpload(WebUiTestKit k) {
-            when(k.uploads.upload(eq(WebUiTestKit.FAMILY), eq(WebUiTestKit.MA_ID), anyList(), any(), any())).thenReturn(Mono.just(List.of(
+            when(k.uploads.upload(eq(WebUiTestKit.FAMILY), eq(WebUiTestKit.MA_ID), anyList(), any(), any(), any())).thenReturn(Mono.just(List.of(
                     Document.received(WebUiTestKit.MA_ID, WebUiTestKit.FAMILY, 1, WebUiTestKit.NOW).withId(WebUiTestKit.DOC_ID))));
         }
 
         static void refusesUpload(WebUiTestKit k) {
             sheetForMa(k);
-            when(k.uploads.upload(eq(WebUiTestKit.FAMILY), eq(WebUiTestKit.MA_ID), anyList(), any(), any())).thenReturn(Mono.error(
+            when(k.uploads.upload(eq(WebUiTestKit.FAMILY), eq(WebUiTestKit.MA_ID), anyList(), any(), any(), any())).thenReturn(Mono.error(
                     com.elioo.baymax.common.error.BaymaxException.badRequest("unsupported_image", "could not read page-1.jpg; send a JPEG, PNG or PDF")));
         }
 

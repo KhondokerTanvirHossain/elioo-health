@@ -160,6 +160,35 @@ class AttentionServiceTest {
                 })).verifyComplete();
     }
 
+    /**
+     * D1: a retake card and a reading card carry the day the paper is filed under and whether that is the upload day, as
+     * the read model gives them — never re-derived here — beside the upload instant they always had.
+     */
+    @Test
+    void retakeAndReadingCardsCarryTheFiledDate() {
+        // dates that are NOT the upload day in UTC or in Dhaka, so a card that derived its date from the instant fails here
+        TimelineEntry retake = new TimelineEntry(UUID.randomUUID(), LocalDate.parse("2026-10-11"), true, "lab_report", null, "NEEDS_RETAKE",
+                0, 0, 0, 0, "k", NOW.minus(Duration.ofDays(2)), null, 0, null, "low_overall", false);
+        TimelineEntry reading = new TimelineEntry(UUID.randomUUID(), LocalDate.parse("2026-09-30"), false, "lab_report", null, "PROCESSING",
+                0, 0, 0, 0, "k", NOW.minus(Duration.ofMinutes(3)), null, 0, null, null, false);
+        when(timeline.inFlightAndRetakes(eq(MA), any())).thenReturn(Flux.just(retake, reading));
+        StepVerifier.create(service.attention(FAMILY, MA)).assertNext(stack -> {
+            assertThat(stack).hasSize(2);
+            assertThat(stack.get(0)).isInstanceOfSatisfying(AttentionItem.Retake.class, r -> {
+                assertThat(r.documentId()).isEqualTo(retake.documentId());
+                assertThat(r.date()).isEqualTo(LocalDate.parse("2026-10-11"));
+                assertThat(r.dateIsFallback()).isTrue();
+                assertThat(r.receivedAt()).isEqualTo(retake.createdAt());
+            });
+            assertThat(stack.get(1)).isInstanceOfSatisfying(AttentionItem.Reading.class, r -> {
+                assertThat(r.documentId()).isEqualTo(reading.documentId());
+                assertThat(r.date()).isEqualTo(LocalDate.parse("2026-09-30"));
+                assertThat(r.dateIsFallback()).isFalse();
+                assertThat(r.receivedAt()).isEqualTo(reading.createdAt());
+            });
+        }).verifyComplete();
+    }
+
     /** Nothing needs attention: an empty stack, not an error and not a placeholder card. */
     @Test
     void nothingToAttendToIsAnEmptyStack() {

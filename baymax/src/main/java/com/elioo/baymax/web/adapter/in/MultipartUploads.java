@@ -70,11 +70,11 @@ public final class MultipartUploads {
     static final int IN_MEMORY_BYTES = 256 * 1024;
 
     /**
-     * Parts a press may carry besides its chosen files: {@code patient}, {@code upload_key}, {@code group}, {@code back}
-     * and the sheet's three file inputs, an unused one of which posts an empty part with no name. Room to spare, never
-     * room for a document.
+     * Parts a press may carry besides its chosen files: {@code patient}, {@code upload_key}, {@code group}, {@code back},
+     * {@code replaces} (D1) and the sheet's three file inputs, an unused one of which posts an empty part with no name.
+     * Room to spare, never room for a document.
      */
-    static final int OTHER_PARTS = 8;
+    static final int OTHER_PARTS = 9;
 
     private static final ResolvableType PART = ResolvableType.forClass(Part.class);
     private static final Map<List<Long>, DefaultPartHttpMessageReader> READERS = new ConcurrentHashMap<>();
@@ -230,6 +230,27 @@ public final class MultipartUploads {
     /** The press's key, or null for a value that is not our shape (the legacy form sends none). */
     public static String uploadKey(MultiValueMap<String, Part> parts) {
         return Optional.ofNullable(field(parts, "upload_key")).filter(k -> UPLOAD_KEY.matcher(k).matches()).orElse(null);
+    }
+
+    /**
+     * D1: the NEEDS_RETAKE paper this press was sent to replace (the retake page's hidden {@code replaces} field, or the
+     * JSON upload's), or null when the press names none or names something that is not an id (the JSON route refuses the
+     * latter first, {@link #replacesMalformed}). Whether it may be replaced is {@code UploadUseCase}'s to say, never this
+     * reader's.
+     */
+    public static UUID replacesOrNull(MultiValueMap<String, Part> parts) {
+        return uuidOrNull(field(parts, "replaces"));
+    }
+
+    /**
+     * D1: a {@code replaces} that is present, not blank and not an id ({@code undefined}, a truncated id). The JSON route
+     * answers it INVALID, as it does a misspelt {@code group}: read as "replaces nothing" it would be a 200 with an
+     * unlinked paper and the stale card back, a client bug with no signal. The HTML sheet stays lenient
+     * ({@link #replacesOrNull}): its value is the page's own hidden field.
+     */
+    public static boolean replacesMalformed(MultiValueMap<String, Part> parts) {
+        String raw = field(parts, "replaces");
+        return raw != null && uuidOrNull(raw) == null;
     }
 
     /** A form field's trimmed value; null when absent, blank or a file. */

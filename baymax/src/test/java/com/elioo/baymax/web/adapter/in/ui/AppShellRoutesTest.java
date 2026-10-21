@@ -639,11 +639,11 @@ class AppShellRoutesTest {
     @Test
     void theChatTabReloadsItselfOnlyWhileAPaperIsBeingRead() {
         kit.familyWith(kit.patient("আম্মা", true, 1));
-        attentionOfMa(new com.elioo.baymax.web.domain.AttentionItem.Reading(UUID.fromString(NOW_DOC), WebUiTestKit.NOW));
+        attentionOfMa(new com.elioo.baymax.web.domain.AttentionItem.Reading(UUID.fromString(NOW_DOC), java.time.LocalDate.parse("2026-10-20"), true, WebUiTestKit.NOW));
         assertThat(kit.page(Tab.CHAT.path, "bn")).contains("<meta http-equiv=\"refresh\" content=\"10\">");
         attentionOfMa(urgentPaper(com.elioo.baymax.outbound.domain.Urgency.NOW, NOW_DOC));
         assertThat(kit.page(Tab.CHAT.path, "bn")).as("a NOW paper only").doesNotContain("http-equiv=\"refresh\"");
-        attentionOfMa(new com.elioo.baymax.web.domain.AttentionItem.Retake(UUID.fromString(WEEK_DOC), WebUiTestKit.NOW));
+        attentionOfMa(new com.elioo.baymax.web.domain.AttentionItem.Retake(UUID.fromString(WEEK_DOC), java.time.LocalDate.parse("2026-10-20"), true, WebUiTestKit.NOW));
         assertThat(kit.page(Tab.CHAT.path, "bn")).as("a retake only").doesNotContain("http-equiv=\"refresh\"");
         attentionOfMa();
         assertThat(kit.page(Tab.CHAT.path, "bn")).as("nothing to attend to").doesNotContain("http-equiv=\"refresh\"");
@@ -682,9 +682,9 @@ class AppShellRoutesTest {
         UUID rx = UUID.randomUUID();
         attentionOfMa(urgentPaper(com.elioo.baymax.outbound.domain.Urgency.NOW, NOW_DOC),
                 urgentPaper(com.elioo.baymax.outbound.domain.Urgency.THIS_WEEK, WEEK_DOC),
-                new com.elioo.baymax.web.domain.AttentionItem.Retake(UUID.randomUUID(), WebUiTestKit.NOW),
+                new com.elioo.baymax.web.domain.AttentionItem.Retake(UUID.randomUUID(), java.time.LocalDate.parse("2026-10-20"), true, WebUiTestKit.NOW),
                 new com.elioo.baymax.web.domain.AttentionItem.FollowUp(rx, "Next visit", java.time.LocalDate.parse("2026-10-20"), "f/p/x/crop.jpg"),
-                new com.elioo.baymax.web.domain.AttentionItem.Reading(UUID.randomUUID(), WebUiTestKit.NOW));
+                new com.elioo.baymax.web.domain.AttentionItem.Reading(UUID.randomUUID(), java.time.LocalDate.parse("2026-10-20"), true, WebUiTestKit.NOW));
         String html = kit.page(list, "bn");
         verify(kit.attention).urgent(WebUiTestKit.FAMILY, ma.patient().id());
         verify(kit.attention, never()).attention(any(), any());

@@ -61,11 +61,18 @@ public class PostgresTimelineReadAdapter implements TimelineReadPort {
             LIMIT :limit
             """;
 
-    /** C4: the papers not finished yet — being read, or waiting for a retake — newest upload first. Never DONE or FAILED. */
+    /**
+     * C4: the papers not finished yet — being read, or waiting for a retake — newest upload first. Never DONE or FAILED.
+     * D1 (migration retake_replaces): a retake whose new photo was sent from its page ({@code replaces_document_id}) is no longer waiting, unless
+     * that photo FAILED on our side: then the family still owes a readable one. The new photo is its own card (being read,
+     * or a retake itself), so the stack holds one card per paper the family is asked about, never the stale one beside it.
+     */
     private static final String IN_FLIGHT = COLUMNS + """
             WHERE d.patient_id = :patient AND d.status IN ('RECEIVED', 'PROCESSING', 'NEEDS_RETAKE') AND d.created_at >= :since
+              AND NOT (d.status = 'NEEDS_RETAKE' AND EXISTS (SELECT 1 FROM %1$s.document r
+                                                             WHERE r.replaces_document_id = d.id AND r.status <> 'FAILED'))
             ORDER BY d.created_at DESC, d.id DESC
-            """;
+            """.formatted(S);
 
     private final DatabaseClient db;
 

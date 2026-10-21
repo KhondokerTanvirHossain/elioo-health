@@ -76,7 +76,9 @@ public enum ApiReason {
     /** Upload: this month's free papers are used up ({@code allowance} of the upload options says until when). */
     FREE_TIER_DOCUMENTS(HttpStatus.PAYMENT_REQUIRED),
     /** A paper delete without a valid confirm token: missing, another paper's, another session's, tampered or expired. */
-    CONFIRM_REQUIRED(HttpStatus.BAD_REQUEST);
+    CONFIRM_REQUIRED(HttpStatus.BAD_REQUEST),
+    /** Upload (D1): {@code replaces} names a paper of this family that is not this patient's paper waiting for a retake. */
+    NOT_A_RETAKE(HttpStatus.BAD_REQUEST);
 
     /**
      * The application's own reasons ({@link BaymaxException#reason()}) that have a name. Each maps to a name whose status
@@ -97,7 +99,8 @@ public enum ApiReason {
             Map.entry("shared_patient_read_only", VIEW_ONLY),
             Map.entry("upload_key_reused", UPLOAD_KEY_REUSED),
             Map.entry(FreeTierExceededException.DOCUMENTS, FREE_TIER_DOCUMENTS),
-            Map.entry("confirm_required", CONFIRM_REQUIRED));
+            Map.entry("confirm_required", CONFIRM_REQUIRED),
+            Map.entry("not_a_retake", NOT_A_RETAKE));
 
     private final HttpStatus status;
 

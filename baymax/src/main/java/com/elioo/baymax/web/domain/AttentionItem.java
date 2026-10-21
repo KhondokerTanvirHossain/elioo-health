@@ -56,7 +56,19 @@ public sealed interface AttentionItem {
         }
     }
 
-    record Retake(UUID documentId, Instant receivedAt) implements AttentionItem {
+    /**
+     * A paper waiting for a new photo. {@code date} is the day it is filed under ({@code timeline_date}, read, never
+     * derived here) and {@code dateIsFallback} the entry's fallback flag; {@code receivedAt} orders the stack. Until this
+     * branch is rebased on plan D2 the flag is {@code doc_date IS NULL} (PostgresTimelineReadAdapter.COLUMNS), so a retake
+     * with a misread printed date reads {@code false}; from D2 it is {@code timeline_date_is_upload_day}, "filed under its
+     * Dhaka upload day". TimelineReadModelTest.aRetakeCardIsNeverDatedByWhatWasMisread is red until then, on purpose.
+     */
+    record Retake(UUID documentId, LocalDate date, boolean dateIsFallback, Instant receivedAt) implements AttentionItem {
+        public Retake {
+            Objects.requireNonNull(date, "date");
+            Objects.requireNonNull(receivedAt, "receivedAt");
+        }
+
         public int rank() {
             return 2;
         }
@@ -77,7 +89,13 @@ public sealed interface AttentionItem {
         }
     }
 
-    record Reading(UUID documentId, Instant receivedAt) implements AttentionItem {
+    /** A paper being read, dated as {@link Retake} is. */
+    record Reading(UUID documentId, LocalDate date, boolean dateIsFallback, Instant receivedAt) implements AttentionItem {
+        public Reading {
+            Objects.requireNonNull(date, "date");
+            Objects.requireNonNull(receivedAt, "receivedAt");
+        }
+
         public int rank() {
             return 4;
         }

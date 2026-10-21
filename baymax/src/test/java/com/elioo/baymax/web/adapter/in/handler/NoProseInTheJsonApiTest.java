@@ -139,6 +139,8 @@ class NoProseInTheJsonApiTest {
         DocumentRecordPort documents = mock(DocumentRecordPort.class);
         when(documents.find(DOC)).thenReturn(Mono.just(retake));
         when(documents.findVisible(FAMILY, DOC)).thenReturn(Mono.just(retake));
+        // D1: a FAILED paper's page asks which retake it was sent to replace; this one replaces none
+        when(documents.replacedRetakeOf(DOC)).thenReturn(Mono.empty());
         // the read model's row for this paper: the code on a retake (the adapter reads it only then), never the prose
         TimelineReadPort timelineRead = mock(TimelineReadPort.class);
         when(timelineRead.page(eq(PATIENT), any(), any(), anyInt())).thenReturn(Flux.just(new TimelineEntry(DOC,

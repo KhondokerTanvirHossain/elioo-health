@@ -82,13 +82,13 @@ public class ResultService implements ResultUseCase {
                                 .switchIfEmpty(Mono.error(BaymaxException.notFound("patient_not_found", "no patient with id " + d.patientId()))),
                         viewer(familyId),
                         intake.read(documentId),
-                        gate(d), retakeOrdinal(d))
+                        gate(d), retakeOrdinal(d), replacedRetake(d))
                 // D2: the filed day comes from the row the view was built from, never from the earlier visibility read:
                 // a paper that finished in between would otherwise be dated as it stood before it was read
                 .map(t -> new ResultView(t.getT3().view(), t.getT1().patient(), t.getT1().owner(), t.getT2(),
                         level.map(StoredUrgency::level).orElse(null), level.map(StoredUrgency::reasons).orElse(List.of()),
                         t.getT4().state(), t.getT4().wording(), t.getT5(), properties.getOutbound().getReviewTypicalHours(),
-                        d.createdAt(), clock.instant(), filedDayOf(t.getT3().document())))));
+                        d.createdAt(), clock.instant(), filedDayOf(t.getT3().document()), t.getT6().orElse(null)))));
     }
 
     /** The row's generated filed day; a row read back always has one, so its absence is a mapping defect, said loudly. */
@@ -97,6 +97,16 @@ public class ResultService implements ResultUseCase {
             throw new IllegalStateException("D2: document " + read.id() + " was read without its filed day (timeline_date)");
         }
         return read.filed();
+    }
+
+    /**
+     * D1: for a FAILED paper, the retake it was itself sent to replace (still waiting for one), so its page's resend names
+     * that retake and the photo that finally reads clears its card. Every other status: none, without a query.
+     */
+    private Mono<Optional<UUID>> replacedRetake(Document d) {
+        return d.status() == Document.Status.FAILED
+                ? documents.replacedRetakeOf(d.id()).map(Optional::of).defaultIfEmpty(Optional.empty())
+                : Mono.just(Optional.empty());
     }
 
     /** How many earlier readings the value sheet lists (s13 draws two; ten is a page, not a trend). */

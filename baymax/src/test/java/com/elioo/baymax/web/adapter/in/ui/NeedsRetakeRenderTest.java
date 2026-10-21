@@ -84,6 +84,30 @@ class NeedsRetakeRenderTest {
         assertThat(retake("no_text", 1, true)).contains(copy.t(Lang.BN, "retake.free")).contains(copy.t(Lang.BN, "retake.nothing_kept"));
     }
 
+    /**
+     * D1, both directions: the retake form names the paper its photo replaces (first and third state alike), so the old
+     * card leaves the চ্যাট stack; the FAILED page's resend never names the FAILED paper (it is not a retake, and naming
+     * it would be refused), only the retake that paper was itself sent to replace, when there is one;
+     * "অন্য কাগজ পাঠান" is another paper, never a replacement.
+     */
+    @Test
+    void theRetakeFormNamesThePaperItReplacesAndTheFailedFormNone() {
+        String replaces = "<input type=\"hidden\" name=\"replaces\" value=\"" + ResultFixtures.DOC + "\">";
+        for (int ordinal : new int[]{1, 3}) {
+            assertThat(ResultFixtures.section(retake("no_text", ordinal, true), "retake-form")).as("retake " + ordinal).contains(replaces);
+        }
+        String failed = kit.documents.failedBody(Lang.BN, ResultFixtures.failed());
+        assertThat(ResultFixtures.section(failed, "failed-form")).contains("name=\"patient\"").doesNotContain("name=\"replaces\"");
+        // a FAILED paper that was itself sent to replace a retake: its resend carries that link, never its own id
+        java.util.UUID owed = java.util.UUID.fromString("0f8e2c1a-5d1b-4c7e-9a3f-2b6d8e4c1a72");
+        String failedRetake = ResultFixtures.section(kit.documents.failedBody(Lang.BN, ResultFixtures.failed().withReplaces(owed)), "failed-form");
+        assertThat(failedRetake).contains("<input type=\"hidden\" name=\"replaces\" value=\"" + owed + "\">")
+                .doesNotContain("name=\"replaces\" value=\"" + ResultFixtures.DOC + "\"");
+        String third = retake("no_text", 3, true);
+        assertThat(third.indexOf("name=\"replaces\"")).as("one replaces field, inside the retake form").isEqualTo(third.lastIndexOf("name=\"replaces\""));
+        assertThat(retake("no_text", 1, false)).as("a view-only member has no form at all").doesNotContain("name=\"replaces\"");
+    }
+
     /** "অন্য কাগজ পাঠান" is the add sheet for this patient, which comes back to this paper: every source, still chosen by the family. */
     @Test
     void anotherPaperOpensTheAddSheetForThisPatientAndComesBackHere() {

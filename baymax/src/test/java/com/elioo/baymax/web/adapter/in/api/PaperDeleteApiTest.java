@@ -5,6 +5,8 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.extraction.ExtractionPipelineAcceptanceTest;
+import com.elioo.baymax.extraction.application.port.out.DocumentRecordPort;
+import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.nudge.application.port.in.NudgeUseCase;
@@ -237,6 +239,36 @@ class PaperDeleteApiTest {
                         .as("a nudge composed from the deleted paper's medicine").isZero();
                 assertThat(DeletionSweep.textStillHolding(c, List.of(medicine, ids.medication.toString())))
                         .as("text still holding the deleted paper's medicine").isEmpty();
+            }
+        });
+    }
+
+    /**
+     * D1 (migration retake_replaces): deleting the blurred paper a retake replaced keeps the retake, unlinked. {@code ON DELETE SET NULL} is an
+     * UPDATE OF {@code replaces_document_id} to NULL, which the retake_replaces migration's same-patient trigger must let through: without its NULL
+     * pass this delete is a 500 carrying the trigger's message.
+     */
+    @Test
+    void deletingAPaperThatARetakeReplacedKeepsTheRetakeUnlinked() {
+        runner().run(context -> {
+            Fixture f = paperOf(context, "+8801700000487");
+            UUID original = f.document;
+            exec("update baymax.document set status = 'NEEDS_RETAKE', status_reason_code = 'low_overall' where id = ?", original);
+            UUID retake = context.getBean(DocumentRecordPort.class)
+                    .create(Document.received(f.patient.id(), f.patient.familyId(), 1, Instant.now())).block().id();
+            context.getBean(DocumentRecordPort.class).linkRetake(retake, original).block();
+            try (Connection c = connect()) {
+                assertThat(one(c, "select replaces_document_id from baymax.document where id = ?", retake))
+                        .as("the retake names the paper before the delete").isEqualTo(original);
+            }
+
+            delete(f.client, f.session, original, deleteToken(f.client, f.session, original)).expectStatus().isOk();
+
+            try (Connection c = connect()) {
+                assertThat(count(c, "select count(*) from baymax.document where id = ?", retake)).as("the retake survives").isEqualTo(1);
+                assertThat(count(c, "select count(*) from baymax.document where id = ? and replaces_document_id is null", retake))
+                        .as("the retake, unlinked").isEqualTo(1);
+                assertThat(DeletionSweep.tablesStillHolding(c, original)).as("tables still holding the deleted paper").isEmpty();
             }
         });
     }

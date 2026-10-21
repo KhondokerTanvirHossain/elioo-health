@@ -22,8 +22,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Two halves:
  * <ul>
- *   <li><b>by column</b> ({@link #tablesStillHolding}): every {@code baymax} table information_schema says has a
- *       {@code document_id} column, plus {@code document} itself by {@code id};</li>
+ *   <li><b>by column</b> ({@link #tablesStillHolding}): every column the catalog says can hold a paper's id
+ *       ({@link #documentReferences}: a foreign key to {@code document(id)}, or a {@code document_id}-named column),
+ *       plus {@code document} itself by {@code id};</li>
  *   <li><b>by content</b> ({@link #textStillHolding}): every {@code text}, {@code character varying} and {@code jsonb}
  *       column in the schema, scanned for needles the paper put there (its words, its id, its rows' ids). This is the
  *       half that sees {@code nudge}, which names a paper only in {@code trigger_key} and copies its words into
@@ -62,9 +63,54 @@ public final class DeletionSweep {
         return tables;
     }
 
+    /** A column that can hold a paper's id: {@code table.column}. */
+    public record DocumentReference(String table, String column) {
+        @Override
+        public String toString() {
+            return table + "." + column;
+        }
+    }
+
     /**
-     * {@code table=count} (or {@code table[others]=count} for a survivor's table) for every table still holding this
-     * document outside {@link #SURVIVES}. Empty means the paper is gone.
+     * Every column of the schema that can hold a paper's id, from the catalog: each column with a foreign key to
+     * {@code baymax.document(id)} (pg_constraint, pairing each key column with the column it references, so a composite
+     * key's {@code patient_id} half is not mistaken for a paper), plus every column named {@code document_id} and every
+     * uuid column whose name ends in {@code document_id}, keyed or not (a later column added without its key still holds
+     * the id). Guarded both against emptiness and against a half that silently stopped matching: the self-reference
+     * {@code document.replaces_document_id} (D1, uuid) is invisible to a by-name-only or a text-only sweep.
+     */
+    public static List<DocumentReference> documentReferences(Connection c) throws SQLException {
+        List<DocumentReference> refs = new ArrayList<>();
+        try (Statement s = c.createStatement(); ResultSet rs = s.executeQuery("""
+                select t.relname, a.attname
+                  from pg_constraint k
+                  join pg_class t on t.oid = k.conrelid
+                  join pg_namespace n on n.oid = t.relnamespace
+                  cross join lateral unnest(k.conkey, k.confkey) as pair(col, refcol)
+                  join pg_attribute a on a.attrelid = k.conrelid and a.attnum = pair.col
+                  join pg_attribute r on r.attrelid = k.confrelid and r.attnum = pair.refcol
+                 where k.contype = 'f' and n.nspname = 'baymax' and k.confrelid = 'baymax.document'::regclass and r.attname = 'id'
+                union
+                select table_name, column_name from information_schema.columns
+                 where table_schema = 'baymax'
+                   and (column_name = 'document_id' or (data_type = 'uuid' and column_name like '%document\\_id'))
+                order by 1, 2
+                """)) {
+            while (rs.next()) {
+                refs.add(new DocumentReference(rs.getString(1), rs.getString(2)));
+            }
+        }
+        assertThat(refs).as("the catalog returned the columns naming a paper — else the sweep would pass vacuously")
+                .contains(new DocumentReference("document", "replaces_document_id"),
+                        new DocumentReference("stored_object", "document_id"), new DocumentReference("observation", "document_id"),
+                        new DocumentReference("outbound_message", "document_id"), new DocumentReference("audit_event", "document_id"));
+        return refs;
+    }
+
+    /**
+     * {@code table=count} (or {@code table[others]=count} for a survivor's table, {@code table.column=count} for a column
+     * not named {@code document_id}) for every column of {@link #documentReferences} still holding this document outside
+     * {@link #SURVIVES}. Empty means the paper is gone.
      */
     public static List<String> tablesStillHolding(Connection c, UUID documentId) throws SQLException {
         List<String> offenders = new ArrayList<>();
@@ -72,15 +118,17 @@ public final class DeletionSweep {
         if (left != 0) {
             offenders.add("document=" + left);
         }
-        for (String table : documentIdTables(c)) {
+        for (DocumentReference ref : documentReferences(c)) {
+            String table = ref.table();
             Optional<Survivor> kept = survivor(table);
             if (kept.isPresent() && kept.get().others() == null) {
                 continue;
             }
             String where = kept.map(k -> " and not (" + k.predicate() + ")").orElse("");
-            long n = count(c, "select count(*) from baymax." + table + " where document_id = ?" + where, documentId);
+            long n = count(c, "select count(*) from baymax." + table + " where " + ref.column() + " = ?" + where, documentId);
             if (n != 0) {
-                offenders.add(kept.map(k -> table + "[" + k.others() + "]").orElse(table) + "=" + n);
+                String name = "document_id".equals(ref.column()) ? table : ref.toString();
+                offenders.add(kept.map(k -> name + "[" + k.others() + "]").orElse(name) + "=" + n);
             }
         }
         return offenders;

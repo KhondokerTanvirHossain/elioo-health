@@ -101,12 +101,12 @@ class ChatViewTest {
     @Test
     void theRetakeAndReadingCardsSayWhereThePaperIsWithOneActionAndNoLevel() {
         UUID bad = UUID.randomUUID();
-        String retake = view.card(Lang.BN, new AttentionItem.Retake(bad, T), "আম্মা");
+        String retake = view.card(Lang.BN, new AttentionItem.Retake(bad, java.time.LocalDate.parse("2026-10-20"), true, T), "আম্মা");
         assertThat(retake).contains("class=\"attn retake\"").contains(copy.t(Lang.BN, "attn.retake.title"))
                 .contains(copy.t(Lang.BN, "timeline.sent", "১৮ অক্টোবর"))
                 .contains("<a class=\"btn outlined\" href=\"/app/documents/" + bad + "\">" + copy.t(Lang.BN, "attn.open") + "</a>");
         UUID reading = UUID.randomUUID();
-        String card = view.card(Lang.BN, new AttentionItem.Reading(reading, T), "আম্মা");
+        String card = view.card(Lang.BN, new AttentionItem.Reading(reading, java.time.LocalDate.parse("2026-10-20"), true, T), "আম্মা");
         assertThat(card).contains("class=\"attn reading\"").contains(copy.t(Lang.BN, "attn.reading.title"))
                 .contains("<a class=\"btn quiet\" href=\"/app/documents/" + reading + "\">" + copy.t(Lang.BN, "attn.reading.action") + "</a>");
         for (String c : List.of(retake, card)) {
@@ -121,7 +121,7 @@ class ChatViewTest {
     void theStackNamesThePatientAndKeepsTheOrderItWasGiven() {
         AttentionItem.Urgent now = urgent(Urgency.NOW);
         AttentionItem.Urgent week = urgent(Urgency.THIS_WEEK);
-        String stack = view.stack(Lang.BN, List.of(now, week, new AttentionItem.Reading(UUID.randomUUID(), T)), "আম্মা");
+        String stack = view.stack(Lang.BN, List.of(now, week, new AttentionItem.Reading(UUID.randomUUID(), java.time.LocalDate.parse("2026-10-20"), true, T)), "আম্মা");
         assertThat(stack).startsWith("<h2>" + "আম্মার জন্য এখন যা দেখার" + "</h2><div class=\"attn-stack\">");
         assertThat(stack.indexOf(now.documentId().toString())).isLessThan(stack.indexOf(week.documentId().toString()));
         assertThat(stack.indexOf("attn soon")).isLessThan(stack.indexOf("attn reading"));

@@ -6,9 +6,12 @@ import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.nudge.adapter.out.persistence.PostgresNudgeAdapterTest;
+import com.elioo.baymax.nudge.application.port.out.NudgeDataPort;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.storage.domain.StorageKeys;
 import com.elioo.baymax.web.application.port.out.TimelineReadPort;
+import com.elioo.baymax.web.application.service.AttentionService;
+import com.elioo.baymax.web.domain.AttentionItem;
 import com.elioo.baymax.web.domain.TimelineCursor;
 import com.elioo.baymax.web.domain.TimelineEntry;
 import com.elioo.baymax.web.domain.TimelineFilter;
@@ -23,10 +26,12 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -536,6 +541,108 @@ class TimelineReadModelTest {
                 .collectList().block();
         assertThat(rows).hasSize(1);
         return rows.get(0);
+    }
+
+    // ---- D1: a retake names the paper it replaces, and the old card leaves the stack --------------------------------
+
+    /** {@code retake} replaces {@code original}: the column the upload's {@code replaces} field writes. */
+    private static void replaces(UUID retake, UUID original) throws Exception {
+        sql("UPDATE baymax.document SET replaces_document_id = '" + original + "' WHERE id = '" + retake + "'");
+    }
+
+    /**
+     * The stale duplicate: the family sent the new photo from the retake page, it was read, and the old paper's retake
+     * card must not stay on the চ্যাট stack for 30 days asking for a photo they already sent.
+     */
+    @Test
+    void aRetakeReplacedByANewPhotoLeavesTheStack() {
+        runner().run(context -> {
+            UUID p = patient(context);
+            UUID a = doc(context, p, "2026-10-19T04:00:00Z", null, "lab_report", "NEEDS_RETAKE");
+            UUID b = doc(context, p, "2026-10-20T03:00:00Z", "2026-10-12", "lab_report", "DONE");
+            replaces(b, a);
+            assertThat(context.getBean(TimelineReadPort.class).inFlightAndRetakes(p, NOW.minus(Duration.ofDays(30))).collectList().block())
+                    .isEmpty();
+        });
+    }
+
+    /** The other direction: the new photo could not be read on our side, so the family still owes a readable one. */
+    @Test
+    void aRetakeWhoseReplacementFailedStaysOnTheStack() {
+        runner().run(context -> {
+            UUID p = patient(context);
+            UUID a = doc(context, p, "2026-10-19T04:00:00Z", null, "lab_report", "NEEDS_RETAKE");
+            UUID b = doc(context, p, "2026-10-20T03:00:00Z", null, null, "FAILED");
+            replaces(b, a);
+            assertThat(context.getBean(TimelineReadPort.class).inFlightAndRetakes(p, NOW.minus(Duration.ofDays(30)))
+                    .map(TimelineEntry::documentId).collectList().block()).containsExactly(a);
+        });
+    }
+
+    /** The new photo is being read: one card, the reading one, never the reading card and the old retake card both. */
+    @Test
+    void aRetakeWhoseReplacementIsBeingReadIsOneCard() {
+        runner().run(context -> {
+            UUID p = patient(context);
+            UUID a = doc(context, p, "2026-10-19T04:00:00Z", null, "lab_report", "NEEDS_RETAKE");
+            UUID b = doc(context, p, "2026-10-20T03:00:00Z", null, null, "PROCESSING");
+            replaces(b, a);
+            assertThat(context.getBean(TimelineReadPort.class).inFlightAndRetakes(p, NOW.minus(Duration.ofDays(30)))
+                    .map(TimelineEntry::documentId).collectList().block()).containsExactly(b);
+        });
+    }
+
+    /** The new photo needs a retake too: one card, asking for the newest photo. */
+    @Test
+    void aRetakeWhoseReplacementNeedsARetakeIsOneCard() {
+        runner().run(context -> {
+            UUID p = patient(context);
+            UUID a = doc(context, p, "2026-10-19T04:00:00Z", null, "lab_report", "NEEDS_RETAKE");
+            UUID b = doc(context, p, "2026-10-20T03:00:00Z", null, "lab_report", "NEEDS_RETAKE");
+            replaces(b, a);
+            assertThat(context.getBean(TimelineReadPort.class).inFlightAndRetakes(p, NOW.minus(Duration.ofDays(30)))
+                    .map(TimelineEntry::documentId).collectList().block()).containsExactly(b);
+        });
+    }
+
+    /**
+     * The direction the fix must not break: the stack's window is the upload, never the printed date. A NOW paper sent
+     * today whose printed date is seven months old is on the stack, dated by what is printed on it.
+     */
+    @Test
+    void aNowPaperUploadedTodayWithAnOldPrintedDateIsOnTheStack() {
+        runner().run(context -> {
+            UUID p = patient(context);
+            UUID now = doc(context, p, "2026-10-20T03:00:00Z", "2026-03-02", "lab_report", "DONE");
+            urgency(now, "now");
+            List<TimelineEntry> stack = context.getBean(TimelineReadPort.class).attention(p, NOW.minus(Duration.ofDays(30)), 10).collectList().block();
+            assertThat(stack).extracting(TimelineEntry::documentId).contains(now);
+            assertThat(stack.get(0).date()).isEqualTo(LocalDate.parse("2026-03-02"));
+        });
+    }
+
+    /**
+     * A retake card is dated by the day it is filed under (D2: a retake's Dhaka upload day), never by the date the model
+     * misread off the blurred page. The card is the real one: the service over the real read model, at a fixed clock.
+     *
+     * <p>Red before D2 (V20's {@code timeline_date} was {@code coalesce(doc_date, upload day)}: {@code expected: 2026-10-20
+     * but was: 2021-03-04}); green on D2's V25, whose {@code timeline_date_is_upload_day} is the fallback flag
+     * {@code PostgresTimelineReadAdapter.COLUMNS} reads, never {@code doc_date IS NULL}.
+     */
+    @Test
+    void aRetakeCardIsNeverDatedByWhatWasMisread() {
+        runner().run(context -> {
+            UUID p = patient(context);
+            UUID family = UUID.fromString(scalar("SELECT family_id FROM baymax.patient_profile WHERE id = '" + p + "'"));
+            UUID a = doc(context, p, "2026-10-19T19:00:00Z", "2021-03-04", "lab_report", "NEEDS_RETAKE");   // 01:00 on 20 October in Dhaka
+            List<AttentionItem> stack = new AttentionService(context.getBean(HealthRecordPort.class), context.getBean(TimelineReadPort.class),
+                    context.getBean(NudgeDataPort.class), Clock.fixed(NOW, ZoneOffset.UTC)).attention(family, p).block();
+            assertThat(stack).singleElement().isInstanceOfSatisfying(AttentionItem.Retake.class, r -> {
+                assertThat(r.documentId()).isEqualTo(a);
+                assertThat(r.date()).isEqualTo(LocalDate.parse("2026-10-20"));
+                assertThat(r.dateIsFallback()).isTrue();
+            });
+        });
     }
 
     private static void sql(String statement) throws Exception {

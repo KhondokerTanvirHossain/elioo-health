@@ -45,6 +45,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -74,7 +75,7 @@ class UploadApiHandlerTest {
         when(auth.authenticate("tok")).thenReturn(Mono.just(new WebSession(UUID.randomUUID(), FAMILY, NOW, NOW, NOW.plusSeconds(600))));
         properties.getWeb().setPublicOrigin(AppApiGuardTest.ORIGIN);
         // the viewer may send for every patient here unless a test says otherwise: admission is its own test
-        when(uploads.admit(any(), any())).thenReturn(Mono.empty());
+        when(uploads.admit(any(), any(), any())).thenReturn(Mono.empty());
         AppApiGuard guard = new AppApiGuard(new SessionAuthFilter(auth, properties), properties);
         client = WebTestClient.bindToRouterFunction(new AppApiRouter().mediooAppApiRoutes(
                 new MeApiHandler(mock(TimelineUseCase.class), mock(AttentionUseCase.class), properties),
@@ -116,7 +117,7 @@ class UploadApiHandlerTest {
     void aPressReturnsItsDocumentIdsAndWhereToGo() {
         Document one = doc(MA);
         @SuppressWarnings("unchecked") ArgumentCaptor<List<Upload>> sent = ArgumentCaptor.forClass(List.class);
-        when(uploads.upload(eq(FAMILY), eq(MA), sent.capture(), eq(Grouping.ONE), eq(KEY))).thenReturn(Mono.just(List.of(one)));
+        when(uploads.upload(eq(FAMILY), eq(MA), sent.capture(), eq(Grouping.ONE), eq(KEY), any())).thenReturn(Mono.just(List.of(one)));
         post(press(MA, KEY, "one", "p1.jpg", "p2.jpg"))
                 .expectStatus().isOk()
                 .expectHeader().valueEquals("Cache-Control", "no-store")
@@ -125,7 +126,7 @@ class UploadApiHandlerTest {
 
         Document a = doc(MA);
         Document b = doc(MA);
-        when(uploads.upload(eq(FAMILY), eq(MA), any(), eq(Grouping.SEPARATE), eq(KEY))).thenReturn(Mono.just(List.of(a, b)));
+        when(uploads.upload(eq(FAMILY), eq(MA), any(), eq(Grouping.SEPARATE), eq(KEY), any())).thenReturn(Mono.just(List.of(a, b)));
         post(press(MA, KEY, "separate", "p1.jpg", "p2.jpg"))
                 .expectStatus().isOk()
                 .expectBody().json("{\"documents\":[{\"id\":\"" + a.id() + "\"},{\"id\":\"" + b.id() + "\"}],"
@@ -136,7 +137,7 @@ class UploadApiHandlerTest {
     @Test
     void aPressWithoutAGroupIsOneReport() {
         Document one = doc(MA);
-        when(uploads.upload(eq(FAMILY), eq(MA), any(), eq(Grouping.ONE), eq(KEY))).thenReturn(Mono.just(List.of(one)));
+        when(uploads.upload(eq(FAMILY), eq(MA), any(), eq(Grouping.ONE), eq(KEY), any())).thenReturn(Mono.just(List.of(one)));
         post(press(MA, KEY, null, "p1.jpg")).expectStatus().isOk().expectBody().jsonPath("$.documents[0].id").isEqualTo(one.id().toString());
     }
 
@@ -144,9 +145,9 @@ class UploadApiHandlerTest {
     @Test
     void aGroupThatIsNeitherOneNorSeparateIsInvalid() {
         // intake would accept it: a route that guessed one report would answer 200, not fail on a null
-        when(uploads.upload(any(), any(), any(), any(), any())).thenReturn(Mono.just(List.of(doc(MA))));
+        when(uploads.upload(any(), any(), any(), any(), any(), any())).thenReturn(Mono.just(List.of(doc(MA))));
         post(press(MA, KEY, "seperate", "p1.jpg")).expectStatus().isBadRequest().expectBody().json("{\"reason\":\"INVALID\"}", true);
-        verify(uploads, never()).upload(any(), any(), any(), any(), any());
+        verify(uploads, never()).upload(any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -156,7 +157,7 @@ class UploadApiHandlerTest {
         MultipartBodyBuilder named = press(null, KEY, "one", "p1.jpg");
         named.part("patient", "Ma");
         post(named).expectStatus().isBadRequest().expectBody().json("{\"reason\":\"CHOOSE_PATIENT\"}", true);
-        verify(uploads, never()).upload(any(), any(), any(), any(), any());
+        verify(uploads, never()).upload(any(), any(), any(), any(), any(), any());
         verify(uploads, never()).upload(any(), any(), any());
     }
 
@@ -164,14 +165,14 @@ class UploadApiHandlerTest {
     void aPressWithoutAValidUploadKeyIsInvalid() {
         post(press(MA, null, "one", "p1.jpg")).expectStatus().isBadRequest().expectBody().json("{\"reason\":\"INVALID\"}", true);
         post(press(MA, "x", "one", "p1.jpg")).expectStatus().isBadRequest().expectBody().json("{\"reason\":\"INVALID\"}", true);
-        verify(uploads, never()).upload(any(), any(), any(), any(), any());
+        verify(uploads, never()).upload(any(), any(), any(), any(), any(), any());
         verify(uploads, never()).upload(any(), any(), any());
     }
 
     @Test
     void aPressWithNoFileIsNoFileAndNothingIsUploaded() {
         post(press(MA, KEY, "one")).expectStatus().isBadRequest().expectBody().json("{\"reason\":\"NO_FILE\"}", true);
-        verify(uploads, never()).upload(any(), any(), any(), any(), any());
+        verify(uploads, never()).upload(any(), any(), any(), any(), any(), any());
     }
 
     /**
@@ -183,7 +184,7 @@ class UploadApiHandlerTest {
     @Test
     void aPressOfMoreFilesThanOnePaperHasPagesIsRefusedBeforeAnyIsUploaded() {
         properties.getExtract().setMaxPages(3);
-        when(uploads.upload(eq(FAMILY), eq(MA), any(), eq(Grouping.SEPARATE), eq(KEY)))
+        when(uploads.upload(eq(FAMILY), eq(MA), any(), eq(Grouping.SEPARATE), eq(KEY), any()))
                 .thenReturn(Mono.just(List.of(doc(MA), doc(MA), doc(MA))));
 
         MultipartBodyBuilder atTheLimit = press(MA, KEY, "separate", "p1.jpg", "p2.jpg", "p3.jpg");
@@ -196,7 +197,7 @@ class UploadApiHandlerTest {
         // one report of four files is four pages: the paper's own limit, by the name intake would give it
         post(press(MA, KEY, "one", "p1.jpg", "p2.jpg", "p3.jpg", "p4.jpg"))
                 .expectStatus().isBadRequest().expectBody().json("{\"reason\":\"TOO_MANY_PAGES\"}", true);
-        verify(uploads, times(1)).upload(any(), any(), any(), any(), any());
+        verify(uploads, times(1)).upload(any(), any(), any(), any(), any(), isNull());
     }
 
     /**
@@ -218,7 +219,7 @@ class UploadApiHandlerTest {
             root.detachAppender(logged);
         }
         assertThat(logged.list).as("lines at ERROR").noneMatch(e -> e.getLevel().isGreaterOrEqual(Level.ERROR));
-        verify(uploads, never()).upload(any(), any(), any(), any(), any());
+        verify(uploads, never()).upload(any(), any(), any(), any(), any(), any());
     }
 
     /**
@@ -228,12 +229,50 @@ class UploadApiHandlerTest {
      */
     @Test
     void aViewOnlyPressIsRefusedBeforeItsFilesAreRead() {
-        when(uploads.admit(FAMILY, BABA)).thenReturn(Mono.error(BaymaxException.forbidden("shared_patient_read_only", "view only")));
+        when(uploads.admit(FAMILY, BABA, null)).thenReturn(Mono.error(BaymaxException.forbidden("shared_patient_read_only", "view only")));
         post(press(BABA, KEY, "one")).expectStatus().isForbidden().expectBody().json("{\"reason\":\"VIEW_ONLY\"}", true);
         post(press(BABA, KEY, "one", "p1.jpg")).expectStatus().isForbidden().expectBody().json("{\"reason\":\"VIEW_ONLY\"}", true);
-        when(uploads.admit(FAMILY, BABA)).thenReturn(Mono.error(BaymaxException.notFound("patient_not_found", "nobody")));
+        when(uploads.admit(FAMILY, BABA, null)).thenReturn(Mono.error(BaymaxException.notFound("patient_not_found", "nobody")));
         post(press(BABA, KEY, "one")).expectStatus().isNotFound().expectBody().json("{\"reason\":\"NOT_FOUND\"}", true);
-        verify(uploads, never()).upload(any(), any(), any(), any(), any());
+        verify(uploads, never()).upload(any(), any(), any(), any(), any(), any());
+    }
+
+    /**
+     * D1: {@code replaces} present but not an id ({@code undefined}, a truncated id) is the client's own mistake, INVALID
+     * like a misspelt {@code group}, and never guessed as "replaces nothing": a 200 with an unlinked paper would bring the
+     * stale retake card back with no signal. Refused before admission, so nothing is looked up or read.
+     */
+    @Test
+    void aReplacesThatIsNotAnIdIsInvalidAndNothingIsAdmittedOrUploaded() {
+        // the wrong path answers too (200, an unlinked paper), so taking it fails on the status, not on a mock's null
+        when(uploads.upload(eq(FAMILY), eq(MA), any(), any(), eq(KEY), any())).thenReturn(Mono.just(List.of(doc(MA))));
+        for (String bad : List.of("undefined", "5e9edf6d-0a2a-4913", "null")) {
+            MultipartBodyBuilder body = press(MA, KEY, "one", "p1.jpg");
+            body.part("replaces", bad);
+            post(body).expectStatus().isBadRequest().expectBody().json("{\"reason\":\"INVALID\"}", true);
+        }
+        verify(uploads, never()).admit(any(), any(), any());
+        verify(uploads, never()).upload(any(), any(), any(), any(), any(), any());
+
+        // the other direction: a blank replaces is the same as none
+        Document one = doc(MA);
+        when(uploads.upload(eq(FAMILY), eq(MA), any(), eq(Grouping.ONE), eq(KEY), isNull())).thenReturn(Mono.just(List.of(one)));
+        MultipartBodyBuilder blank = press(MA, KEY, "one", "p1.jpg");
+        blank.part("replaces", " ");
+        post(blank).expectStatus().isOk();
+        verify(uploads).admit(FAMILY, MA, null);
+    }
+
+    /** D1: a replaces the use case refuses ({@code not_a_retake}) is NOT_A_RETAKE, asked before any file is read. */
+    @Test
+    void aReplacesThatIsNotThisPatientsRetakeIsRefusedBeforeItsFilesAreRead() {
+        UUID finished = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4210009");
+        when(uploads.admit(FAMILY, MA, finished)).thenReturn(Mono.error(BaymaxException.badRequest("not_a_retake", "finished")));
+        MultipartBodyBuilder body = press(MA, KEY, "one", "p1.jpg");
+        body.part("replaces", finished.toString());
+        post(body).expectStatus().isBadRequest().expectBody().json("{\"reason\":\"NOT_A_RETAKE\"}", true);
+        verify(uploads).admit(FAMILY, MA, finished);
+        verify(uploads, never()).upload(any(), any(), any(), any(), any(), any());
     }
 
     static Stream<String> namedReasons() {
@@ -244,7 +283,7 @@ class UploadApiHandlerTest {
     @MethodSource("namedReasons")
     void aRefusalIsItsNameAndNothingElse(String reason) {
         ApiReason name = ApiReason.BY_REASON.get(reason);
-        when(uploads.upload(eq(FAMILY), eq(MA), any(), any(), eq(KEY)))
+        when(uploads.upload(eq(FAMILY), eq(MA), any(), any(), eq(KEY), any()))
                 .thenReturn(Mono.error(new BaymaxException(name.status(), reason, "Ma's report.jpg is bad")));
         post(press(MA, KEY, "one", "Ma's report.jpg"))
                 .expectStatus().isEqualTo(name.status())

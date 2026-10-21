@@ -68,6 +68,22 @@ public class PostgresDocumentRecordAdapter implements DocumentRecordPort {
     }
 
     @Override
+    public Mono<Boolean> linkRetake(UUID documentId, UUID replaces) {
+        // first link wins: a replay naming another retake must not move it (the first retake's stale card would come back,
+        // and the other's would leave the stack with no photo of it sent). The same link again is a match, so it is true.
+        return db.sql("UPDATE " + S + ".document SET replaces_document_id = :replaces WHERE id = :id"
+                        + " AND (replaces_document_id IS NULL OR replaces_document_id = :replaces)")
+                .bind("replaces", replaces).bind("id", documentId).fetch().rowsUpdated().map(n -> n > 0);
+    }
+
+    @Override
+    public Mono<UUID> replacedRetakeOf(UUID documentId) {
+        return db.sql("SELECT r.id FROM " + S + ".document d JOIN " + S + ".document r ON r.id = d.replaces_document_id"
+                        + " WHERE d.id = :id AND r.status = 'NEEDS_RETAKE'")
+                .bind("id", documentId).map((row, meta) -> row.get("id", UUID.class)).one();
+    }
+
+    @Override
     public Mono<Document> findByUploadKey(UUID familyId, String uploadKey) {
         return documents.findByFamilyIdAndUploadKey(familyId, uploadKey).map(DocumentEntity::toRecord);
     }

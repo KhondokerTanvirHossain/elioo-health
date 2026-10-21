@@ -2,6 +2,7 @@ package com.elioo.baymax.web.application.service;
 
 import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.extraction.application.port.in.DocumentIntakeUseCase;
+import com.elioo.baymax.extraction.application.port.out.DocumentRecordPort;
 import com.elioo.baymax.extraction.domain.CreatedDocument;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.Upload;
@@ -52,12 +53,13 @@ class UploadServiceTest {
     private final FreeTierUseCase freeTier = mock(FreeTierUseCase.class);
     private final DocumentIntakeUseCase intake = mock(DocumentIntakeUseCase.class);
     private final AuditPort audit = mock(AuditPort.class);
+    private final DocumentRecordPort documents = mock(DocumentRecordPort.class);
     private UploadService service;
     private final FamilyAccount family = new FamilyAccount(FAMILY, "+8801700000000", "Tanvir", FamilyAccount.Plan.FREE, NOW, NOW);
 
     @BeforeEach
     void wire() {
-        service = new UploadService(timeline, records, freeTier, intake, audit, Clock.fixed(NOW, ZoneOffset.UTC));
+        service = new UploadService(timeline, records, freeTier, intake, documents, audit, Clock.fixed(NOW, ZoneOffset.UTC));
         when(audit.record(any())).thenReturn(Mono.empty());
     }
 
@@ -102,11 +104,11 @@ class UploadServiceTest {
         when(records.visiblePatient(FAMILY, shared.id())).thenReturn(Mono.just(new PatientAccess(shared, false)));
         when(records.visiblePatient(FAMILY, nobody)).thenReturn(Mono.empty());
 
-        StepVerifier.create(service.admit(FAMILY, ma.id())).verifyComplete();
-        StepVerifier.create(service.admit(FAMILY, shared.id()))
+        StepVerifier.create(service.admit(FAMILY, ma.id(), null)).verifyComplete();
+        StepVerifier.create(service.admit(FAMILY, shared.id(), null))
                 .expectErrorMatches(e -> e instanceof BaymaxException b && b.status().value() == 403
                         && "shared_patient_read_only".equals(b.reason())).verify();
-        StepVerifier.create(service.admit(FAMILY, nobody))
+        StepVerifier.create(service.admit(FAMILY, nobody, null))
                 .expectErrorMatches(e -> e instanceof BaymaxException b && b.status().value() == 404
                         && "patient_not_found".equals(b.reason())).verify();
         org.mockito.Mockito.verifyNoInteractions(freeTier);
@@ -146,6 +148,8 @@ class UploadServiceTest {
         StepVerifier.create(service.upload(FAMILY, ma.id(), pages)).expectNext(received).verifyComplete();
         verify(intake).accept(ma.id(), pages, null);   // no key: the JSON API is never a replay
         verify(audit).record(argThat(e -> e.kind() == AuditEvent.Kind.DOCUMENT_UPLOAD && received.id().equals(e.documentId())));
+        verify(documents, never()).linkRetake(any(), any());   // replaces nothing: nothing is linked, nothing is looked up
+        verify(documents, never()).findVisible(any(), any());
     }
 
     // --- D3: the grouping and the key ------------------------------------------------------------------------------
@@ -161,7 +165,7 @@ class UploadServiceTest {
         when(intake.acceptEach(ma.id(), pages, "k-sep00010")).thenReturn(Flux.just(new CreatedDocument(one, true), new CreatedDocument(two, true)));
         // the wrong path answers too, so taking it fails on what comes back rather than on a mock's null
         when(intake.accept(any(), any(), any())).thenReturn(Mono.just(new CreatedDocument(Document.received(ma.id(), FAMILY, 2, NOW).withId(UUID.randomUUID()), true)));
-        StepVerifier.create(service.upload(FAMILY, ma.id(), pages, Grouping.SEPARATE, "k-sep00010"))
+        StepVerifier.create(service.upload(FAMILY, ma.id(), pages, Grouping.SEPARATE, "k-sep00010", null))
                 .expectNext(List.of(one, two)).verifyComplete();
         verify(intake, never()).accept(any(), any(), any());
         verify(audit).record(argThat(e -> e.kind() == AuditEvent.Kind.DOCUMENT_UPLOAD && one.id().equals(e.documentId())));
@@ -178,7 +182,7 @@ class UploadServiceTest {
         when(intake.accept(eq(ma.id()), eq(pages), isNull())).thenReturn(Mono.just(new CreatedDocument(Document.received(ma.id(), FAMILY, 2, NOW).withId(UUID.randomUUID()), true)));
         when(intake.acceptEach(any(), any(), any())).thenReturn(Flux.just(new CreatedDocument(both, true), new CreatedDocument(both, true)));
         when(intake.accept(ma.id(), pages, "k-one00010")).thenReturn(Mono.just(new CreatedDocument(both, true)));
-        StepVerifier.create(service.upload(FAMILY, ma.id(), pages, Grouping.ONE, "k-one00010"))
+        StepVerifier.create(service.upload(FAMILY, ma.id(), pages, Grouping.ONE, "k-one00010", null))
                 .expectNext(List.of(both)).verifyComplete();
         verify(intake, never()).acceptEach(any(), any(), any());
         verify(audit, times(1)).record(any());
@@ -195,7 +199,7 @@ class UploadServiceTest {
         Document earlier = Document.received(ma.id(), FAMILY, 1, NOW).withId(UUID.randomUUID());
         when(records.visiblePatient(FAMILY, ma.id())).thenReturn(Mono.just(new PatientAccess(ma, true)));
         when(intake.accept(ma.id(), pages, "k-replay01")).thenReturn(Mono.just(new CreatedDocument(earlier, false)));
-        StepVerifier.create(service.upload(FAMILY, ma.id(), pages, Grouping.ONE, "k-replay01")).expectNext(List.of(earlier)).verifyComplete();
+        StepVerifier.create(service.upload(FAMILY, ma.id(), pages, Grouping.ONE, "k-replay01", null)).expectNext(List.of(earlier)).verifyComplete();
         verify(audit, never()).record(any());
     }
 
@@ -208,7 +212,7 @@ class UploadServiceTest {
         Document made = Document.received(ma.id(), FAMILY, 1, NOW).withId(UUID.randomUUID());
         when(records.visiblePatient(FAMILY, ma.id())).thenReturn(Mono.just(new PatientAccess(ma, true)));
         when(intake.acceptEach(ma.id(), pages, "k-replay02")).thenReturn(Flux.just(new CreatedDocument(landed, false), new CreatedDocument(made, true)));
-        StepVerifier.create(service.upload(FAMILY, ma.id(), pages, Grouping.SEPARATE, "k-replay02")).expectNext(List.of(landed, made)).verifyComplete();
+        StepVerifier.create(service.upload(FAMILY, ma.id(), pages, Grouping.SEPARATE, "k-replay02", null)).expectNext(List.of(landed, made)).verifyComplete();
         verify(audit, times(1)).record(argThat(e -> e.kind() == AuditEvent.Kind.DOCUMENT_UPLOAD && made.id().equals(e.documentId())));
         verify(audit, never()).record(argThat(e -> landed.id().equals(e.documentId())));
     }
@@ -217,7 +221,7 @@ class UploadServiceTest {
     void separatePagesForAPatientTheFamilyMayOnlySeeAreRefusedAndIntakeIsNeverCalled() {
         PatientProfile shared = summary("খালা", false).patient();
         when(records.visiblePatient(FAMILY, shared.id())).thenReturn(Mono.just(new PatientAccess(shared, false)));
-        StepVerifier.create(service.upload(FAMILY, shared.id(), List.of(new Upload("a.jpg", new byte[]{1})), Grouping.SEPARATE, "k-share001"))
+        StepVerifier.create(service.upload(FAMILY, shared.id(), List.of(new Upload("a.jpg", new byte[]{1})), Grouping.SEPARATE, "k-share001", null))
                 .expectErrorMatches(e -> e instanceof BaymaxException b && b.status().value() == 403).verify();
         verify(intake, never()).acceptEach(any(), any(), any());
         verify(intake, never()).accept(any(), any(), any());
@@ -227,8 +231,177 @@ class UploadServiceTest {
     void separatePagesForAnotherFamilysPatientAre404() {
         UUID other = UUID.randomUUID();
         when(records.visiblePatient(FAMILY, other)).thenReturn(Mono.empty());
-        StepVerifier.create(service.upload(FAMILY, other, List.of(new Upload("a.jpg", new byte[]{1})), Grouping.SEPARATE, "k-other002"))
+        StepVerifier.create(service.upload(FAMILY, other, List.of(new Upload("a.jpg", new byte[]{1})), Grouping.SEPARATE, "k-other002", null))
                 .expectErrorMatches(e -> e instanceof BaymaxException b && b.status().value() == 404).verify();
         verify(intake, never()).acceptEach(any(), any(), any());
+    }
+
+    // --- D1: a retake names the paper it replaces ------------------------------------------------------------------
+
+    private PatientProfile owned(String name) {
+        PatientProfile p = summary(name, true).patient();
+        when(records.visiblePatient(FAMILY, p.id())).thenReturn(Mono.just(new PatientAccess(p, true)));
+        return p;
+    }
+
+    private static Document paper(PatientProfile patient, Document.Status status) {
+        Document d = Document.received(patient.id(), FAMILY, 1, NOW).withId(UUID.randomUUID());
+        return status == Document.Status.RECEIVED ? d : d.withStatus(status, null, NOW);
+    }
+
+    /**
+     * {@code replaces} must name a paper of THIS patient that is waiting for a retake: a finished paper and another
+     * patient's retake (one the family can see) are 400 {@code not_a_retake}, a paper the family cannot see is 404. Each
+     * refusal comes before intake: nothing is stored, nothing is created, nothing is linked.
+     */
+    @Test
+    void aRetakeNamesOnlyAPaperOfThisPatientThatNeedsARetake() {
+        PatientProfile ma = owned("আম্মা");
+        PatientProfile abbu = owned("আব্বু");
+        Document done = paper(ma, Document.Status.DONE);
+        Document abbusRetake = paper(abbu, Document.Status.NEEDS_RETAKE);
+        UUID unseen = UUID.randomUUID();
+        when(documents.findVisible(FAMILY, done.id())).thenReturn(Mono.just(done));
+        when(documents.findVisible(FAMILY, abbusRetake.id())).thenReturn(Mono.just(abbusRetake));
+        when(documents.findVisible(FAMILY, unseen)).thenReturn(Mono.empty());
+        List<Upload> pages = List.of(new Upload("a.jpg", new byte[]{1}));
+        // the wrong path answers too, so taking it fails on what comes back rather than on a mock's null
+        when(intake.accept(any(), any(), any())).thenReturn(Mono.just(new CreatedDocument(paper(ma, Document.Status.RECEIVED), true)));
+        when(documents.linkRetake(any(), any())).thenReturn(Mono.just(true));
+
+        for (UUID refused : List.of(done.id(), abbusRetake.id())) {
+            StepVerifier.create(service.upload(FAMILY, ma.id(), pages, Grouping.ONE, null, refused))
+                    .expectErrorMatches(e -> e instanceof BaymaxException b && b.status().value() == 400 && "not_a_retake".equals(b.reason()))
+                    .verify();
+            StepVerifier.create(service.admit(FAMILY, ma.id(), refused))
+                    .expectErrorMatches(e -> e instanceof BaymaxException b && b.status().value() == 400 && "not_a_retake".equals(b.reason()))
+                    .verify();
+        }
+        StepVerifier.create(service.upload(FAMILY, ma.id(), pages, Grouping.ONE, null, unseen))
+                .expectErrorMatches(e -> e instanceof BaymaxException b && b.status().value() == 404 && "document_not_found".equals(b.reason()))
+                .verify();
+        StepVerifier.create(service.admit(FAMILY, ma.id(), unseen))
+                .expectErrorMatches(e -> e instanceof BaymaxException b && b.status().value() == 404 && "document_not_found".equals(b.reason()))
+                .verify();
+        verify(intake, never()).accept(any(), any(), any());
+        verify(intake, never()).acceptEach(any(), any(), any());
+        verify(audit, never()).record(any());   // nor an upload recorded for a press that was refused
+        verify(documents, never()).linkRetake(any(), any());
+    }
+
+    /** The patient rule comes first: for a patient the family may only see, the paper named is never even looked up. */
+    @Test
+    void aViewOnlyPressNamingARetakeIsRefusedBeforeThePaperIsLookedUp() {
+        PatientProfile shared = summary("খালা", false).patient();
+        when(records.visiblePatient(FAMILY, shared.id())).thenReturn(Mono.just(new PatientAccess(shared, false)));
+        when(documents.findVisible(any(), any())).thenReturn(Mono.just(paper(shared, Document.Status.NEEDS_RETAKE)));
+        StepVerifier.create(service.admit(FAMILY, shared.id(), UUID.randomUUID()))
+                .expectErrorMatches(e -> e instanceof BaymaxException b && "shared_patient_read_only".equals(b.reason())).verify();
+        verify(documents, never()).findVisible(any(), any());
+    }
+
+    /** The other direction: this patient's retake is admitted, and every document the press made names it. */
+    @Test
+    void aPressThatReplacesLinksEveryDocumentItMade() {
+        PatientProfile ma = owned("আম্মা");
+        Document retake = paper(ma, Document.Status.NEEDS_RETAKE);
+        when(documents.findVisible(FAMILY, retake.id())).thenReturn(Mono.just(retake));
+        List<Upload> pages = List.of(new Upload("a.jpg", new byte[]{1}), new Upload("b.jpg", new byte[]{2}));
+        Document one = paper(ma, Document.Status.RECEIVED);
+        Document two = paper(ma, Document.Status.RECEIVED);
+        when(intake.acceptEach(ma.id(), pages, "k-retake01")).thenReturn(Flux.just(new CreatedDocument(one, true), new CreatedDocument(two, true)));
+        when(documents.linkRetake(any(), any())).thenReturn(Mono.just(true));
+
+        StepVerifier.create(service.admit(FAMILY, ma.id(), retake.id())).verifyComplete();
+        StepVerifier.create(service.upload(FAMILY, ma.id(), pages, Grouping.SEPARATE, "k-retake01", retake.id()))
+                .expectNext(List.of(one, two)).verifyComplete();
+        verify(documents).linkRetake(one.id(), retake.id());
+        verify(documents).linkRetake(two.id(), retake.id());
+        verify(documents, times(2)).linkRetake(any(), any());
+    }
+
+    /**
+     * A replayed press (the same key, made nothing new) is linked again: the press that made it may have died between the
+     * document and the link. The write is first-wins (PostgresDocumentRecordAdapter.linkRetake), so this relinks only a
+     * paper left unlinked; RetakeLinkAcceptanceTest shows both directions on Postgres.
+     */
+    @Test
+    void aReplayedPressThatReplacesIsLinkedAgain() {
+        PatientProfile ma = owned("আম্মা");
+        Document retake = paper(ma, Document.Status.NEEDS_RETAKE);
+        when(documents.findVisible(FAMILY, retake.id())).thenReturn(Mono.just(retake));
+        List<Upload> pages = List.of(new Upload("a.jpg", new byte[]{1}));
+        Document earlier = paper(ma, Document.Status.RECEIVED);
+        when(intake.accept(ma.id(), pages, "k-retake02")).thenReturn(Mono.just(new CreatedDocument(earlier, false)));
+        when(documents.linkRetake(any(), any())).thenReturn(Mono.just(true));
+        StepVerifier.create(service.upload(FAMILY, ma.id(), pages, Grouping.ONE, "k-retake02", retake.id()))
+                .expectNext(List.of(earlier)).verifyComplete();
+        verify(documents).linkRetake(earlier.id(), retake.id());
+    }
+
+    /**
+     * A replay whose paper already names another retake (a replay of the key with a different {@code replaces}): the
+     * first link stands, the port says so ({@code false}), and the upload is answered as any replay is. One INFO line
+     * with exactly the two ids, no WARN: it is not a failure, and the paper the family still owes stays on its stack.
+     */
+    @Test
+    void aReplayWhosePaperAlreadyNamesAnotherRetakeKeepsTheFirstLink() {
+        PatientProfile ma = owned("আম্মা");
+        Document other = paper(ma, Document.Status.NEEDS_RETAKE);
+        when(documents.findVisible(FAMILY, other.id())).thenReturn(Mono.just(other));
+        List<Upload> pages = List.of(new Upload("a.jpg", new byte[]{1}));
+        Document earlier = paper(ma, Document.Status.RECEIVED);
+        when(intake.accept(ma.id(), pages, "k-retake03")).thenReturn(Mono.just(new CreatedDocument(earlier, false)));
+        when(documents.linkRetake(earlier.id(), other.id())).thenReturn(Mono.just(false));
+
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(UploadService.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> events = new ch.qos.logback.core.read.ListAppender<>();
+        events.start();
+        logger.addAppender(events);
+        try {
+            StepVerifier.create(service.upload(FAMILY, ma.id(), pages, Grouping.ONE, "k-retake03", other.id()))
+                    .expectNext(List.of(earlier)).verifyComplete();
+        } finally {
+            logger.detachAppender(events);
+        }
+        assertThat(events.list.stream().filter(e -> e.getLevel().isGreaterOrEqual(ch.qos.logback.classic.Level.WARN)).toList()).isEmpty();
+        assertThat(events.list.stream().filter(e -> e.getLevel() == ch.qos.logback.classic.Level.INFO).toList())
+                .singleElement().satisfies(i -> assertThat(i.getArgumentArray()).containsExactly(earlier.id(), other.id()));
+        verify(audit, never()).record(any());
+    }
+
+    /**
+     * A link that fails does not fail the upload: the photo is stored and read either way, and the worst case is today's
+     * stale card. The one WARN line carries exactly the two ids, nothing else (no exception text, which could carry a
+     * value), asserted on the event's arguments, not on a substring of the message.
+     */
+    @Test
+    void aLinkThatFailsStillStoresTheUpload() {
+        PatientProfile ma = owned("আম্মা");
+        Document retake = paper(ma, Document.Status.NEEDS_RETAKE);
+        when(documents.findVisible(FAMILY, retake.id())).thenReturn(Mono.just(retake));
+        List<Upload> pages = List.of(new Upload("a.jpg", new byte[]{1}));
+        Document made = paper(ma, Document.Status.RECEIVED);
+        when(intake.accept(ma.id(), pages, null)).thenReturn(Mono.just(new CreatedDocument(made, true)));
+        when(documents.linkRetake(made.id(), retake.id())).thenReturn(Mono.error(new IllegalStateException("Potassium 11.0 boom")));
+
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(UploadService.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> events = new ch.qos.logback.core.read.ListAppender<>();
+        events.start();
+        logger.addAppender(events);
+        try {
+            StepVerifier.create(service.upload(FAMILY, ma.id(), pages, Grouping.ONE, null, retake.id()))
+                    .expectNext(List.of(made)).verifyComplete();
+        } finally {
+            logger.detachAppender(events);
+        }
+        verify(intake).accept(ma.id(), pages, null);
+        verify(audit).record(argThat(e -> e.kind() == AuditEvent.Kind.DOCUMENT_UPLOAD && made.id().equals(e.documentId())));
+        List<ch.qos.logback.classic.spi.ILoggingEvent> warns = events.list.stream()
+                .filter(e -> e.getLevel() == ch.qos.logback.classic.Level.WARN).toList();
+        assertThat(warns).singleElement().satisfies(w -> {
+            assertThat(w.getArgumentArray()).containsExactly(made.id(), retake.id());
+            assertThat(w.getThrowableProxy()).as("no exception (and its message) on the line").isNull();
+        });
     }
 }

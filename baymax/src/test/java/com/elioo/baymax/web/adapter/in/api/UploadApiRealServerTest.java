@@ -358,7 +358,7 @@ class UploadApiRealServerTest {
         }
 
         @Override
-        public Mono<Void> admit(UUID familyId, UUID patientId) {
+        public Mono<Void> admit(UUID familyId, UUID patientId, UUID replaces) {
             return Mono.empty();
         }
 
@@ -368,7 +368,7 @@ class UploadApiRealServerTest {
         }
 
         @Override
-        public Mono<List<Document>> upload(UUID familyId, UUID patientId, List<Upload> uploads, Grouping grouping, String uploadKey) {
+        public Mono<List<Document>> upload(UUID familyId, UUID patientId, List<Upload> uploads, Grouping grouping, String uploadKey, UUID replaces) {
             return Mono.fromCallable(() -> {
                 for (Upload u : uploads) {
                     RECEIVED.add(new Received(u.bytes().length, sha256(u.bytes())));

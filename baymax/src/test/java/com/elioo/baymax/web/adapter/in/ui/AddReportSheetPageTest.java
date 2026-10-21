@@ -317,9 +317,9 @@ class AddReportSheetPageTest {
         return List.of(
                 new com.elioo.baymax.web.domain.AttentionItem.Urgent(UUID.randomUUID(), com.elioo.baymax.outbound.domain.Urgency.NOW, "lab_report", day, false, NOW),
                 new com.elioo.baymax.web.domain.AttentionItem.Urgent(UUID.randomUUID(), com.elioo.baymax.outbound.domain.Urgency.THIS_WEEK, "lab_report", day, false, NOW),
-                new com.elioo.baymax.web.domain.AttentionItem.Retake(UUID.randomUUID(), NOW),
+                new com.elioo.baymax.web.domain.AttentionItem.Retake(UUID.randomUUID(), java.time.LocalDate.parse("2026-10-20"), true, NOW),
                 new com.elioo.baymax.web.domain.AttentionItem.FollowUp(rx, "Next visit", day.plusDays(8), "f/p/" + rx + "/crop-f.jpg"),
-                new com.elioo.baymax.web.domain.AttentionItem.Reading(UUID.randomUUID(), NOW));
+                new com.elioo.baymax.web.domain.AttentionItem.Reading(UUID.randomUUID(), java.time.LocalDate.parse("2026-10-20"), true, NOW));
     }
 
     // --- D4 ---------------------------------------------------------------------------------------------------------
