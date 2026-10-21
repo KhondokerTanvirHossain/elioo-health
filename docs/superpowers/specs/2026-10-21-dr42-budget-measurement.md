@@ -4,6 +4,10 @@
 Part B, decision 1). This file does not decide it, and sets no interim policy: what the W budget tests do before
 DR-42 is listed under "Decisions for the PO" as a proposal.
 
+*Decided 2026-10-21 (PO): [DR-42](../../DECISIONS.md) accepts items 1–5 of the proposal below as written: the no-JS
+scope, ≤ 265,409 B per routed page, the probe ceiling of 214,167 B, both ceilings in one committed file. The interim
+proposal (record without enforcing) is moot. The measurement below is left as it was taken.*
+
 **Measured:** 2026-10-21, on branch `feat/medioo-web-skeleton` (PR W1a), re-measured after the review fixes. Every
 number in the tables below comes from the runs named beside it; nothing is carried over from an earlier session.
 

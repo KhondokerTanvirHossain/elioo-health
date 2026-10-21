@@ -17,7 +17,7 @@
 - `CLAUDE.md`: its flattering-failure rules govern every test below.
 
 **In scope:** B2, B4a, B4b, B4c, D4 (as D4a and D4b) and W2b. **Out of scope:**
-- W2a and W2c–W2e wait for PO decision 7 (the NOW red).
+- W2a and W2c–W2e: PO decision 7 (the NOW red) is answered (`#d12c24` light, `#d93229` dark; DR-45 item 5), so they are no longer held, but they are planned outside this wave file.
 - B3, B5 and B6 belong to Wave 3.
 - Earlier readings on a value sheet (`/values/{obs}`) are not in B2. W6's plan adds an additive `GET /app/api/documents/{id}/values/{obs}`.
 
@@ -1016,7 +1016,7 @@ Branch: `feat/baymax-stored-image-dimensions`. **Start only when** `git log orig
 
 ## Task W2b: Copy codegen, the Bangla-literal lint, Bangla digit and date golden vectors
 
-Branch: `feat/medioo-web-copy-codegen`. It depends on W1a (merged). Lane C. It can run in parallel with W2c once PO decision 7 frees W2c.
+Branch: `feat/medioo-web-copy-codegen`. It depends on W1a (merged). Lane C. It can run in parallel with W2c (PO decision 7, which held W2c, is answered: DR-45 item 5).
 
 **Files:**
 - Create: `baymax/src/test/java/com/elioo/baymax/web/adapter/in/ui/WebCopyExportTest.java`. It lives in the `ui` package because it reads `UiCopy.PARTS` and `UiCopy`'s bundles.

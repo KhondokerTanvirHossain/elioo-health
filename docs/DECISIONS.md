@@ -836,3 +836,175 @@ Messages grammar above rather than warm paper surfaces, and the wordmark asset i
 are unchanged. Records the direction contract's 2026-10-21 amendments in
 `docs/design/2026-10-21-approved/direction-contract.md`: the first replaces its OWN-WORLD line; the second records
 দেখেছি and the in-folder wordmark files.
+
+## DR-42 | 2026-10-21 | Next pages: reading works without JavaScript, mutations need it, and a measured first-load wire budget
+
+**Decision (PO, 2026-10-21; rebuild plan Part B, decision 1):** for every page served by `medioo-web`:
+
+1. **No-JS scope (DR-40 A4, now in force).** Reading pages are server-rendered and readable with JavaScript off: the
+   timeline, a paper, a NOW result and the opt-out confirmation. Every mutation needs JavaScript: sign-in, upload,
+   delete, settings and দেখেছি. This releases W3 (sign-in). Caddy moves `/app/`, `/app/login` and `/app/verify` to
+   `medioo-web` only when W3's routes flip, after its on-device step, as for any other route.
+2. **First-load wire budget per routed page: ≤ 265,409 B.** That is the measured probe, 203,969 B, plus 60 KB
+   (61,440 B). Every routed page is measured exactly as `medioo-web/e2e/budget.spec.ts` measured the probe: a cold first
+   load on the phone profile (Pixel 7, 390×844), both self-hosted Noto subsets fetched and counted, behind Caddy's
+   `encode zstd gzip`, counting encoded body bytes from the browser's network stack (`responseBodySize`), headers not
+   counted. The route's own code, CSS, copy and data get the 60 KB above the framework floor.
+3. **Framework floor ceiling: the probe ≤ 214,167 B** (203,969 B + 5%, rounded down). A Next or React upgrade that
+   grows the runtime fails the probe instead of silently eating every route's margin, and becomes a PO decision.
+4. **Both ceilings live in one committed file, read by the budget tests.** The tests assert against that file, never
+   against a probe measured in the same run (which would move with the framework). The file changes only with PO
+   sign-off, and the PR that changes it says so in its body.
+5. **"JS ≤ 40 KB" is replaced, for Next pages, by the total in item 2.** The framework's JavaScript alone is
+   102,164 B on the wire, about 2.5× the old limit, before any Medioo code.
+
+The numbers come from [the W1a measurement](superpowers/specs/2026-10-21-dr42-budget-measurement.md) (2026-10-21):
+three cold runs of `/app/probe` against the `medioo-web` image (`--memory=320m`) behind a local Caddy carrying the
+production `medioo.eliooo.org` block gave totals of 203,953, 203,973 and **203,969 B** (the median, the reference). By
+class: document 3,352 B, stylesheet 805 B, script (4 requests) 102,164 B, fonts (2) 97,648 B, no RSC requests;
+458,314 B decoded. Run-to-run noise was 20 B, far inside the 5% floor tolerance. Today's Java sign-in page is
+112,400 B on the wire, so a Next page starts about 92 KB heavier, nearly all of it framework JavaScript.
+
+**Consequences:**
+- The measurement's interim proposal (budget tests record without enforcing until DR-42 exists) is moot. From the PR
+  that adds the ceilings file, the probe test and every W budget test enforce against it.
+- Java pages keep spec principle 14's limit (200 KB excluding crops, JS ≤ 40 KB) and `FirstLoadBudgetTest`, including
+  its open `KNOWN_OVER` entry for a 58-value `/all`, until each route flips and its W-del PR removes the Java page.
+- A client-side navigation (`next/link`, RSC flight requests) is not covered by this budget; the probe did not measure
+  one. A navigation budget, if wanted, is a separate number for the PO.
+
+**Why:** a React app cannot meet "JS ≤ 40 KB, works without JS"; the framework alone costs more. A budget set from a
+real over-the-wire measurement, with the floor guarded on its own, keeps principle 14's reader in view (a BDT 15,000
+Android on a slow network, where 203,969 B is about 1.0 s of transfer at 1.6 Mbit/s) without pretending the old number
+still holds. Reading without JavaScript is kept because opening a WhatsApp link on a weak phone is what a family does
+most. Mutations need JavaScript because a plain form post cannot carry the `X-Medioo` header and JSON body that the
+CSRF rule requires, and DR-40 A3 forbids Next from mutating on the browser's behalf.
+
+**Alternatives:**
+- *Keep principle 14 unchanged for Next pages.* Not achievable with React; it would block every route.
+- *A JavaScript-only limit raised to the framework's size.* Rejected: fonts are half the bytes, the same cost the Java
+  pages pay, and a JS-only number would not see a route that grows its HTML or data.
+- *No-JS mutations through Next forms or server actions.* Rejected by DR-40 A3: a server-side call from Node carries
+  no `Origin`, so it would pass Java's Origin check by construction.
+
+**Supersedes:** spec principle 14's "works without JS" and "JS ≤ 40 KB" for pages served by `medioo-web` only; the
+200 KB limit stays for Java pages. Puts DR-40 A4 in force.
+
+## DR-43 | 2026-10-21 | Voice: typed commands first; the speech-to-text provider is chosen by a measured bake-off
+
+**Decision (PO, 2026-10-21; rebuild plan Part B, decision 2):**
+
+1. **Typed commands ship first** (W11a): the command palette with the patient lexicon, navigation-only intents, and
+   "ask" intents answered "এখনো উত্তর দিতে পারি না" until D11.
+2. **Voice comes later** (W11b), with the speech-to-text provider chosen by a **measured bake-off** of ElevenLabs,
+   Soniox and GCP Speech-to-Text `bn-BD` on Bangla health phrases. Chrome's Web Speech API is not a candidate: it sends
+   the audio to Google with no setting Medioo controls.
+3. **The bake-off measures** accuracy on the phrase set, latency and cost per utterance, for each candidate. Cost comes
+   from the provider's API where it publishes one, otherwise from its pricing terms, each with its source and the date
+   fetched (the CLAUDE.md price rule).
+4. **Every candidate, and the shipped voice, must also meet three rules. A candidate that cannot is out, whatever it
+   scores:**
+   - **No audio retention.** The provider does not keep or train on the audio, by its terms and by the request settings
+     Medioo sends, each recorded with its source and date.
+   - **Consent on first use.** The first time a member uses voice, an explicit consent step says where the audio goes.
+     No audio is sent before it is accepted.
+   - **No transcript in logs.** No transcript or audio in any log above DEBUG, in Java, in the Next server or in the
+     browser `console` (W11b's proof).
+
+The bake-off's result, the provider it picks and the measured numbers are recorded as an amendment to this DR before
+W11b merges. The phrase set and its recordings are fictional (no real patient's voice or name), and the bake-off's
+spend is put to the PO before it runs.
+
+**Why:** typed commands give the palette and its grammar a test bed with no privacy cost, so voice can be judged on its
+own evidence later. The plan recommended GCP `bn-BD` because the key already exists; the PO chose to measure three
+providers rather than assume one, as with the model choices in this repo (DR-9, DR-10).
+
+**Alternatives:**
+- *GCP `bn-BD` without a bake-off* (the plan's recommendation). Replaced by the bake-off; GCP stays a candidate.
+- *Chrome Web Speech.* Rejected: Medioo cannot control where the audio goes or how long it is kept.
+- *Voice first.* Rejected: typed commands first.
+
+**Supersedes:** none. DR-37 D13 (a WhatsApp voice note gets a fixed reply plus the red-flag line; Bangla
+speech-to-text later) is unchanged. This DR is about web voice commands; whether WhatsApp voice notes later use the
+same provider is a separate decision.
+
+## DR-44 | 2026-10-21 | MVP scope: web voice, sounds and the স্বাস্থ্য tab; keepmd-parity features are later tickets
+
+**Decision (PO, 2026-10-21; rebuild plan Part B, decision 10):** three additions from the approved design are MVP
+scope:
+
+1. **Voice** on the web, under DR-43 (typed commands first, W11a; voice after the bake-off, W11b);
+2. **Sounds:** the synthesized sound bank, off by default until the first tap unlocks WebAudio, with Mio's states and
+   the sheet spring (W12), under the reduced-motion rules;
+3. **The স্বাস্থ্য tab** (W9, with B6): the lab list, the trend chart (one reading gives a sentence, not a chart) and
+   the medicines as written on the latest prescription (DR-45 item 7).
+
+**keepmd-parity features are not in the rebuild and not in this scope:** reminders (beyond the nudges of DR-18 to
+DR-22), devices, an emergency card, a doctor summary PDF and FHIR. Each gets its own BMX ticket later, with its own
+decision.
+
+**Why:** the PO approved the design with these three in it. The keepmd features carry their own safety and data
+questions (an emergency card and a doctor summary are documents that leave the app; FHIR is DR-1's question), and
+folding them into a UI rebuild would hide those questions inside screen work.
+
+**Alternatives:**
+- *Rebuild only what the Java UI has today.* Rejected: the approved design includes these three.
+- *Include keepmd parity in the rebuild.* Rejected: each feature gets its own ticket.
+
+**Amends:** PRODUCT §4 "MVP in" (web voice commands, sounds and the স্বাস্থ্য tab added). DR-1 is unchanged; FHIR
+stays a later decision. "Voice" here is speech input on the web; PRODUCT's Bangla voice-note explanations
+(text-to-speech) are not changed by this DR.
+
+## DR-45 | 2026-10-21 | Rebuild plan Part B decisions 3–9: the PO's 2026-10-21 answers
+
+**Decision (PO, 2026-10-21):** the PO's answers to the rebuild plan's Part B decisions 3 to 9. Each releases the PR
+it names; nothing else in the plan changes.
+
+1. **The NOW line (decision 3; W5, W6).** The shipped `urgency.now` sentence is kept **verbatim**, with no name inside
+   it. The patient's name goes in the NOW card's title. The prototype's "এখনই <name>কে ডাক্তারের কাছে নিয়ে যান" does
+   not ship (DR-41).
+2. **Old stale THIS_WEEK rows (decision 4; D3).** The cause is fixed going forward: past follow-ups stop raising
+   prescriptions to THIS_WEEK. Rows already raised stay raised and are tagged "আগের কাগজ". Urgency is never lowered
+   (hard constraint 2, V18). D3 still needs its clinical ruling before it merges, as the plan says, and the tag's copy
+   goes through the copy bundles.
+3. **The same paper sent twice (decision 5; D5).** An exact duplicate (the same image bytes) warns
+   "এই কাগজটা আগেও পাঠিয়েছেন", and the family keeps it or drops it. Never a silent merge. A re-photographed, different
+   paper with the same date does not warn (D5's other direction).
+4. **The landing page (decision 6; W13).** It stays in Java and is ported last, after the app screens.
+5. **The one NOW red (decision 7; W2a, W2c–W2e).** `#d12c24` in light, `#d93229` in dark. Red stays reserved for NOW,
+   CRITICAL values and the emergency call; W2a's token file carries these two values and its contrast test checks them.
+6. **দেখেছি scope (decision 8; B3).** The acknowledgement is stored **per family** on the server: one member's tap
+   hides the NOW banner for every member of that family, on every device. Read against this schema, where each
+   WhatsApp number is its own `family_account` and a share member is a different account from the owner (wave 2b–3
+   plan, Global Constraints), "per family" means the family that owns the patient: an acknowledgement by the owner or
+   by any share member who sees that patient hides the banner, for those documents, for all of them.
+7. **"Current medicines" (decision 9; B6, W9).** Medicines are shown "as written on the latest prescription", with that
+   prescription's date, never as "current", and with no active or stopped state. The exact words come from the copy
+   bundles (the plan proposed "প্রেসক্রিপশনে যেমন লেখা — সর্বশেষ, তারিখসহ").
+
+**The দেখেছি trade-off, recorded as DR-41 item 5 requires before B3 merges.** The plan and DR-41 recommended per
+account holder. Per family, member A's tap also hides the banner from member B, including a member B who never saw it.
+What limits that is unchanged and still binding: the acknowledgement covers only the exact set of NOW documents visible
+at the tap, as `(document_id, urgency_assessed_at, release state)`, so a new NOW upload, a `this_week` → `now` raise,
+an A11 sweep assessment or a later gate release shows the banner again **for every member**; stored urgency, the
+paper's NOW block and WhatsApp delivery are untouched; and the patient keeps the red mark. B3's two-direction tests
+change in one place, inverted rather than deleted: "after member A acks, member B in the same family still gets the
+banner" becomes "after the owner acks, a share member of the same patient has the banner hidden for exactly the
+documents the owner acked, and the other way round". Every other ack test stands, including that an ack hides nothing
+it did not see.
+
+**To confirm with the PO before B3 merges.** In this schema `family_id` names the viewer's own account, so "stored
+per family" could also be read as "per `family_account`", which is the plan's per-account-holder recommendation. If
+that is what the PO meant, B3's member-B tests stand as written and item 6 is corrected by an amendment to this DR.
+B3's merge step quotes the PO's confirmation of the meaning in its PR body.
+
+**Why:** these are product calls on copy, colour, scope and order, made by the PO on the plan's evidence. Six of the
+seven follow the plan's recommendation. দেখেছি per family departs from it; the keyed-set rule above is what makes a
+hidden banner come back for everyone whenever what was seen changes.
+
+**Alternatives:** the plan's recommendations, each adopted except দেখেছি per account holder (member id), which the PO
+did not choose.
+
+**Supersedes:** DR-41 item 5's second engineering rule ("per account holder, never per family") for B3. Its first rule
+(keyed to what was seen) and its tests-first rule stand. DR-41's list of prototype contradictions that must not ship is
+unchanged.
