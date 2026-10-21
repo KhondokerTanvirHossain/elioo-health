@@ -45,14 +45,17 @@ public class StoredObjectEntity {
     private Integer widthPx;
     @Column("height_px")
     private Integer heightPx;
+    @Column("dimensions_checked_at")
+    private Instant dimensionsCheckedAt;
 
     static StoredObjectEntity from(StoredObject o) {
         return new StoredObjectEntity(o.id(), o.familyId(), o.patientId(), o.documentId(), o.kind().dbValue(),
-                o.pageNo(), o.itemId(), o.storageKey(), o.contentType(), o.sizeBytes(), o.createdAt(), o.widthPx(), o.heightPx());
+                o.pageNo(), o.itemId(), o.storageKey(), o.contentType(), o.sizeBytes(), o.createdAt(), o.widthPx(), o.heightPx(),
+                o.dimensionsCheckedAt());
     }
 
     StoredObject toRecord() {
         return new StoredObject(id, familyId, patientId, documentId, ObjectKind.fromDbValue(kind), pageNo, itemId,
-                storageKey, contentType, sizeBytes, createdAt, widthPx, heightPx);
+                storageKey, contentType, sizeBytes, createdAt, widthPx, heightPx, dimensionsCheckedAt);
     }
 }

@@ -19,9 +19,9 @@
       "diagnosis": [
         {
           "crop": {
-            "height": 34,
+            "height": 33,
             "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fctx-dx-1.jpg",
-            "width": 160
+            "width": 150
           },
           "text": "Hyperkalaemia"
         }
@@ -33,9 +33,9 @@
     "follow_up": [
       {
         "crop": {
-          "height": 35,
+          "height": 34,
           "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Ffu-Repeatthetestafter7days.jpg",
-          "width": 170
+          "width": 160
         },
         "due_date": "2026-10-19",
         "instruction": "Repeat the test after 7 days"
@@ -46,9 +46,9 @@
     "medicines": [
       {
         "crop": {
-          "height": null,
+          "height": 35,
           "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fmed-Napa500.jpg",
-          "width": null
+          "width": 170
         },
         "dose_text": "1+0+1",
         "duration_text": "7 days",
@@ -99,9 +99,9 @@
       {
         "chip_key": "value.chip.outside.low",
         "crop": {
-          "height": 33,
+          "height": 32,
           "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Sodium.jpg",
-          "width": 150
+          "width": 140
         },
         "display_kind": "outside",
         "id": "7e0f2d86-408b-3c71-8ffd-bfd91a5e282b",
@@ -117,9 +117,9 @@
       {
         "chip_key": "value.chip.critical.high",
         "crop": {
-          "height": 32,
+          "height": null,
           "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Potassium.jpg",
-          "width": 140
+          "width": null
         },
         "display_kind": "critical",
         "id": "7af69ec6-676f-3bb9-b0bb-3e665c36ed57",

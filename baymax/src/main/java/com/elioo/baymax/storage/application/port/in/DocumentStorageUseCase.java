@@ -1,6 +1,7 @@
 package com.elioo.baymax.storage.application.port.in;
 
 import com.elioo.baymax.storage.domain.DeletionReport;
+import com.elioo.baymax.storage.domain.ObjectKind;
 import com.elioo.baymax.storage.domain.StoredObject;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -24,11 +25,13 @@ public interface DocumentStorageUseCase {
     Flux<StoredObject> objectsOf(UUID documentId);
 
     /**
-     * The document's ledger rows, each with its pixel size: a row stored without one (written before the columns
-     * existed) is measured from its object's header once, recorded, and returned with it. A row whose object is missing
-     * or does not read is returned as it is, without a size, never with zero.
+     * The document's ledger rows of this kind, each with its pixel size where it has one. A row never tried (written
+     * before the dimension columns existed) is fetched, measured from its header and recorded, at most once ever: an
+     * object that is missing, does not decode or is over the upload cap is recorded as tried and comes back without a
+     * size, never with zero, and is never fetched again. A store that is slow or down leaves the row untried (it is tried
+     * on a later read) and never holds the answer past a short budget. Never errors for a measurement.
      */
-    Flux<StoredObject> measuredObjectsOf(UUID documentId);
+    Flux<StoredObject> measuredObjectsOf(UUID documentId, ObjectKind kind);
 
     Mono<Long> bytesStored(UUID documentId);
 

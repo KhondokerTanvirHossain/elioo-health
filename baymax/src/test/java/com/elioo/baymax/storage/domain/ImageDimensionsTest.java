@@ -9,9 +9,6 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
-import java.lang.management.MemoryPoolMXBean;
-import java.lang.management.MemoryType;
-import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -25,21 +22,23 @@ class ImageDimensionsTest {
     private static final long CAP = 25L * 1024 * 1024;
     private static final long HEAP_BOUND = 16L * 1024 * 1024;
 
+    /**
+     * The bytes this thread allocates during the call, read from the JVM's own per-thread allocation counter: what the call
+     * itself allocates, a raster allocated and dropped inside it included, whenever (or whether) a GC runs.
+     */
     @Test
     void aLargePageIsMeasuredWithoutDecoding() throws IOException {
         byte[] page = jpeg(6000, 6000);
-        List<MemoryPoolMXBean> heap = ManagementFactory.getMemoryPoolMXBeans().stream()
-                .filter(p -> p.getType() == MemoryType.HEAP && p.isValid()).toList();
+        com.sun.management.ThreadMXBean threads = (com.sun.management.ThreadMXBean) ManagementFactory.getThreadMXBean();
+        assertThat(threads.isThreadAllocatedMemorySupported() && threads.isThreadAllocatedMemoryEnabled())
+                .as("this JVM counts the bytes a thread allocates").isTrue();
 
-        System.gc();
-        long before = heap.stream().mapToLong(p -> p.getUsage().getUsed()).sum();
-        heap.forEach(MemoryPoolMXBean::resetPeakUsage);
+        long before = threads.getCurrentThreadAllocatedBytes();
         Optional<ImageDimensions> measured = ImageDimensions.of(page, CAP);
-        // the peak of every heap pool during the call, so a raster allocated and dropped inside it still counts
-        long peak = heap.stream().mapToLong(p -> p.getPeakUsage().getUsed()).sum();
+        long allocated = threads.getCurrentThreadAllocatedBytes() - before;
 
         assertThat(measured).contains(new ImageDimensions(6000, 6000));
-        assertThat(peak - before).as("heap growth while measuring a 6000×6000 page (a full decode is ~108 MB)")
+        assertThat(allocated).as("bytes allocated while measuring a 6000×6000 page (a full decode is ~108 MB)")
                 .isLessThan(HEAP_BOUND);
     }
 

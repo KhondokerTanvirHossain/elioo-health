@@ -1,6 +1,7 @@
 package com.elioo.baymax.storage.adapter.out.s3;
 
 import com.elioo.baymax.config.BaymaxProperties;
+import com.elioo.baymax.storage.application.port.out.ObjectMissingException;
 import com.elioo.baymax.storage.application.port.out.StoragePort;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.util.StringUtils;
@@ -22,6 +23,7 @@ import software.amazon.awssdk.services.s3.model.Delete;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Object;
@@ -129,6 +131,7 @@ public class S3StorageAdapter implements StoragePort, Closeable {
     public Mono<byte[]> get(String key) {
         return Mono.fromCallable(() -> s3.getObjectAsBytes(
                 GetObjectRequest.builder().bucket(bucket).key(key).build()).asByteArray())
+                .onErrorMap(NoSuchKeyException.class, ObjectMissingException::new)
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
