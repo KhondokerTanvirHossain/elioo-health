@@ -416,6 +416,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://medioo.eliooo.org/             
 curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' https://baymax.eliooo.org/app/home                  # 301 → https://medioo.eliooo.org/app/home (old public name, path preserved)
 curl -s -o /dev/null -w '%{http_code}\n' https://medioo.eliooo.org/app/                                      # 200, login page
 curl -s -D - https://medioo.eliooo.org/app/api/me                                                            # 401 {"reason":"UNAUTHENTICATED"}, Cache-Control: no-store, no Location (never a 303)
+curl -s -D - -X POST https://medioo.eliooo.org/app/api/sign-in/request -H 'X-Medioo: 1' -H 'Content-Type: application/json' -d '{}'  # 403 {"reason":"FORBIDDEN_ORIGIN"}, Cache-Control: no-store: the sessionless sign-in refuses a request with no Origin, and Caddy sends it to Java; sends nothing
 curl -s -o /dev/null -w '%{http_code}\n' https://medioo.eliooo.org/baymax/home                               # 301 → /app/home
 curl -s -o /dev/null -w '%{http_code}\n' https://medioo.eliooo.org/medscribeai/                              # 200, MedScribe PoC UI
 curl -s -o /dev/null -w '%{http_code}\n' https://medioo.eliooo.org/api/v1/baymax/admin/storage/selftest  # 401 without the token

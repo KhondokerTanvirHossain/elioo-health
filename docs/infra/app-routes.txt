@@ -24,6 +24,8 @@ GET /app/verify
 GET /baymax
 GET /baymax/{*rest}
 POST /app/add
+POST /app/api/sign-in/request
+POST /app/api/sign-in/verify
 POST /app/documents/{id}/delete
 POST /app/login
 POST /app/logout

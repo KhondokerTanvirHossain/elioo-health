@@ -7,6 +7,7 @@ import ch.qos.logback.core.read.ListAppender;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.testsupport.LoggedText;
+import com.elioo.baymax.web.adapter.in.PhoneDisplay;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -23,7 +24,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -53,11 +57,22 @@ class AppApiLogSafetyTest {
      */
     private static final List<String> NEEDLES = List.of("8801700000123", "01700000123", "%2B8801700000123", NAME,
             URLEncoder.encode(NAME, StandardCharsets.UTF_8), UriUtils.encodePathSegment(NAME, StandardCharsets.UTF_8),
-            UriUtils.encodeQueryParam(NAME, StandardCharsets.UTF_8));
+            UriUtils.encodeQueryParam(NAME, StandardCharsets.UTF_8), PhoneDisplay.full(NUMBER), "+880 1700");
+    /** Where the minted sign-in code is written, at DEBUG only (DR-39): the second appender reads it from here. */
+    private static final String DELIVERY_LOGGER = "com.elioo.baymax.web.adapter.out.delivery";
+    private static final Pattern MINTED = Pattern.compile("otp fallback .*code=([0-9]{6})");
+
+    /**
+     * A sign-in code as a token, never a substring: INFO lines carry UUIDs, 64-hex phone hashes and durations, any of
+     * which can hold six given digits by chance, so a raw {@code contains} would fail for the wrong reason.
+     */
+    static Pattern token(String code) {
+        return Pattern.compile("(?<![0-9A-Fa-f])" + Pattern.quote(code) + "(?![0-9A-Fa-f])");
+    }
 
     @Test
     void noApiRouteLogsTheOwnersNumberOrThePatientsNameAtInfoOrAbove() {
-        AppApiContext.runner(POSTGRES).run(context -> {
+        AppApiContext.runner(POSTGRES).withPropertyValues("baymax.auth.web-mints-code=true", "baymax.auth.hmac-secret=log-safety-secret").run(context -> {
             FamilyAccount family = AppApiContext.family(context, NUMBER, "Tanvir");
             PatientProfile rokeya = AppApiContext.patient(context, family.id(), NAME);
             AppApiContext.patient(context, family.id(), "Karim");
@@ -103,6 +118,24 @@ class AppApiLogSafetyTest {
                         .exchange().expectStatus().isNotFound();
                 c.get().uri(b -> b.path("/app/api/{n}/{name}").build(NUMBER, NAME)).exchange().expectStatus().isUnauthorized();
             });
+            // sign-in needs no session (the token is not sent): the number in the body, then the code it minted
+            ListAppender<ILoggingEvent> codes = new ListAppender<>();
+            AtomicReference<String> login = new AtomicReference<>();
+            exercise.put("POST /app/api/sign-in/request", (c, t) -> {
+                signIn(c, Map.of("whatsapp_number", NUMBER)).expectStatus().isOk();
+                login.set(signIn(c, Map.of("whatsapp_number", "0" + NUMBER.substring(4), "confirmed", true, "next", "/app/home"))
+                        .expectStatus().isOk().returnResult(String.class).getResponseCookies().getFirst("baymax_login").getValue());
+                signIn(c, Map.of("whatsapp_number", "12", "confirmed", true)).expectStatus().isBadRequest();
+                c.post().uri("/app/api/sign-in/request").header("X-Medioo", "1").header("Origin", "https://evil.example")
+                        .contentType(MediaType.APPLICATION_JSON).bodyValue(Map.of("whatsapp_number", NUMBER, "confirmed", true))
+                        .exchange().expectStatus().isForbidden();
+            });
+            exercise.put("POST /app/api/sign-in/verify", (c, t) -> {
+                String code = minted(codes).stream().reduce((a, b) -> b).orElseThrow(() -> new AssertionError("no code was minted"));
+                String wrong = code.equals("000000") ? "111111" : "000000";
+                verifyCode(c, login.get(), wrong).expectStatus().isBadRequest().expectBody().json("{\"reason\":\"CODE_WRONG\"}", true);
+                verifyCode(c, login.get(), code).expectStatus().isOk();
+            });
 
             List<String> apiRoutes = AppApiRouteContractTest.routes(context).stream()
                     .filter(r -> r.pattern().startsWith(AppApiRouter.BASE + "/")).map(RouteWalk.Route::line).sorted().toList();
@@ -115,31 +148,70 @@ class AppApiLogSafetyTest {
             appender.start();
             root.addAppender(appender);
             root.setLevel(Level.INFO);
+            Logger delivery = (Logger) LoggerFactory.getLogger(DELIVERY_LOGGER);
+            Level deliveryBefore = delivery.getLevel();
+            codes.start();
+            delivery.addAppender(codes);
+            delivery.setLevel(Level.DEBUG);   // the log fallback writes the code at DEBUG only
             try {
                 exercise.values().forEach(requests -> requests.accept(client, token));
             } finally {
                 root.detachAppender(appender);
                 root.setLevel(before);
+                delivery.detachAppender(codes);
+                delivery.setLevel(deliveryBefore);
             }
+
+            // the code is a needle only if it is real: minted, and seen at DEBUG by the same token pattern
+            List<String> minted = minted(codes);
+            assertThat(minted).as("the confirmed sign-in request minted a code").isNotEmpty();
+            for (String code : minted) {
+                assertThat(codes.list).as("the DEBUG appender saw the code as a token")
+                        .anyMatch(e -> e.getLevel() == Level.DEBUG && token(code).matcher(e.getFormattedMessage()).find());
+            }
+            List<Pattern> codeTokens = minted.stream().map(AppApiLogSafetyTest::token).toList();
 
             List<ILoggingEvent> events = appender.list.stream().filter(e -> e.getLevel().isGreaterOrEqual(Level.INFO)).toList();
             assertThat(events.stream().map(ILoggingEvent::getFormattedMessage).filter(m -> m.startsWith("[baymax-api]")))
                     .as("the requests logged their access lines, so the sweep below reads something").isNotEmpty();
             List<String> leaks = new ArrayList<>();
             for (ILoggingEvent e : events) {
-                check(leaks, e, "message", e.getFormattedMessage());
-                check(leaks, e, "message+throwable", LoggedText.of(e));
-                e.getMDCPropertyMap().forEach((k, v) -> check(leaks, e, "mdc." + k, v));
+                check(leaks, e, "message", e.getFormattedMessage(), codeTokens);
+                check(leaks, e, "message+throwable", LoggedText.of(e), codeTokens);
+                e.getMDCPropertyMap().forEach((k, v) -> check(leaks, e, "mdc." + k, v, codeTokens));
             }
-            assertThat(leaks).as("log fields at INFO or above carrying the number or the name").isEmpty();
+            assertThat(leaks).as("log fields at INFO or above carrying the number, the name or a sign-in code").isEmpty();
         });
     }
 
-    private static void check(List<String> leaks, ILoggingEvent e, String field, String value) {
+    private static WebTestClient.ResponseSpec signIn(WebTestClient c, Map<String, Object> body) {
+        return c.post().uri("/app/api/sign-in/request").header("X-Medioo", "1").header("Origin", AppApiContext.ORIGIN)
+                .contentType(MediaType.APPLICATION_JSON).bodyValue(body).exchange();
+    }
+
+    private static WebTestClient.ResponseSpec verifyCode(WebTestClient c, String login, String code) {
+        return c.post().uri("/app/api/sign-in/verify").header("X-Medioo", "1").header("Origin", AppApiContext.ORIGIN)
+                .cookie("baymax_login", login).contentType(MediaType.APPLICATION_JSON).bodyValue(Map.of("code", code)).exchange();
+    }
+
+    /** The codes the log fallback wrote, in order. */
+    private static List<String> minted(ListAppender<ILoggingEvent> codes) {
+        List<String> out = new ArrayList<>();
+        for (ILoggingEvent e : List.copyOf(codes.list)) {
+            Matcher m = MINTED.matcher(e.getFormattedMessage());
+            if (m.find()) {
+                out.add(m.group(1));
+            }
+        }
+        return out;
+    }
+
+    private static void check(List<String> leaks, ILoggingEvent e, String field, String value, List<Pattern> codeTokens) {
         if (value == null) {
             return;
         }
-        List<String> hits = NEEDLES.stream().filter(value::contains).collect(Collectors.toList());
+        List<String> hits = NEEDLES.stream().filter(value::contains).collect(Collectors.toCollection(ArrayList::new));
+        codeTokens.stream().filter(p -> p.matcher(value).find()).forEach(p -> hits.add("a sign-in code"));
         if (!hits.isEmpty()) {
             leaks.add(e.getLevel() + " " + e.getLoggerName() + " " + field + " carries " + hits.size() + " needle(s)");
         }

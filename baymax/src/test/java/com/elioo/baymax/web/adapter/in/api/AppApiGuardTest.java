@@ -23,6 +23,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.web.reactive.function.BodyInserters;
+import org.springframework.web.reactive.function.server.HandlerFunction;
 import org.springframework.web.reactive.function.server.RouterFunction;
 import org.springframework.web.reactive.function.server.RouterFunctions;
 import org.springframework.web.reactive.function.server.ServerResponse;
@@ -94,7 +95,7 @@ class AppApiGuardTest {
                 .filter(guard)
                 .build();
         return WebTestClient.bindToRouterFunction(probes.and(new AppApiRouter().mediooAppApiRoutes(
-                new MeApiHandler(timeline, attention, properties), guard))).build();
+                new MeApiHandler(timeline, attention, properties), new SignInApiHandler(auth, sessions, properties), guard))).build();
     }
 
     private WebTestClient.RequestBodySpec mutation(WebTestClient c, String uri) {
@@ -234,6 +235,81 @@ class AppApiGuardTest {
                 .contentType(MediaType.APPLICATION_JSON).bodyValue(Map.of("patient_id", MA.toString()))
                 .exchange()
                 .expectStatus().isNoContent();
+    }
+
+    /**
+     * Wave 2 B4a: the sign-in pair is open — a visitor with no session reaches it through the CSRF rules — and opening
+     * it opened nothing else: a read with no session is still the 401.
+     */
+    @Test
+    void anOpenRouteNeedsNoSessionButAClosedOneStillDoes() {
+        var open = client.post().uri("/app/api/sign-in/request").header("X-Medioo", "1").header("Origin", ORIGIN)
+                .contentType(MediaType.APPLICATION_JSON).bodyValue(Map.of("whatsapp_number", "01700000123"))
+                .exchange().expectBody(String.class).returnResult();
+        if (open.getStatus().value() == 401) {
+            org.assertj.core.api.Assertions.fail("expected not 401 but was 401 " + open.getResponseBody());
+        }
+        assertThat(open.getStatus().value()).as("the unconfirmed number, shown back").isEqualTo(200);
+        assertThat(open.getResponseBody()).contains("\"number_display\"");
+        client.get().uri("/app/api/me").exchange()
+                .expectStatus().isUnauthorized()
+                .expectBody().json("{\"reason\":\"UNAUTHENTICATED\"}", true);
+    }
+
+    /**
+     * A probe router whose routes sit on the {@link AppApiGuard#OPEN} patterns, behind the real guard and nothing else,
+     * so what the guard does on an open route is asserted apart from what the sign-in handler does there.
+     */
+    private WebTestClient openProbes(HandlerFunction<ServerResponse> request, HandlerFunction<ServerResponse> verify) {
+        BaymaxProperties properties = new BaymaxProperties();
+        properties.getWeb().setPublicOrigin(ORIGIN);
+        AppApiGuard guard = new AppApiGuard(new SessionAuthFilter(auth, properties), properties);
+        assertThat(AppApiGuard.OPEN).as("the probes stand on the open patterns")
+                .containsExactlyInAnyOrder("/app/api/sign-in/request", "/app/api/sign-in/verify");
+        return WebTestClient.bindToRouterFunction(RouterFunctions.route()
+                .POST("/app/api/sign-in/request", request)
+                .POST("/app/api/sign-in/verify", verify)
+                .filter(guard)
+                .build()).build();
+    }
+
+    private static WebTestClient.ResponseSpec openPost(WebTestClient c, String uri) {
+        return c.post().uri(uri).header("X-Medioo", "1").header("Origin", ORIGIN)
+                .contentType(MediaType.APPLICATION_JSON).bodyValue("{}").exchange();
+    }
+
+    /**
+     * The invariant, once, where every open route meets it: an open route never answers 401, whoever produced it — a
+     * handler that raised a 401 error or one that returned a 401 response. 401 means "no session, go and sign in",
+     * and these are the sign-in routes; the guard answers {@code SIGN_IN_RESTART} instead.
+     */
+    @Test
+    void anOpenRouteNeverAnswers401WhoeverProducedIt() {
+        WebTestClient c = openProbes(
+                request -> Mono.error(BaymaxException.unauthorized("x", "y")),
+                request -> ApiReason.UNAUTHENTICATED.respond());
+        for (String uri : List.of("/app/api/sign-in/request", "/app/api/sign-in/verify")) {
+            var r = openPost(c, uri).expectBody(String.class).returnResult();
+            assertThat(r.getStatus().value() + " " + r.getResponseBody()).as(uri)
+                    .isEqualTo("400 {\"reason\":\"SIGN_IN_RESTART\"}");
+            assertThat(r.getResponseHeaders().getCacheControl()).as(uri + " Cache-Control").isEqualTo("no-store");
+        }
+    }
+
+    /** An open route needs no session, but one that resolves is on the request for the handler, as on every route. */
+    @Test
+    void aSessionThatResolvesOnAnOpenRouteIsPutOnTheRequest() {
+        HandlerFunction<ServerResponse> reads = request -> {
+            WebSession s = SessionAuthFilter.session(request);
+            return ServerResponse.ok().bodyValue(s == null ? "none" : s.familyId().toString());
+        };
+        WebTestClient c = openProbes(reads, reads);
+        assertThat(c.post().uri("/app/api/sign-in/request").cookie("baymax_session", "tok").header("X-Medioo", "1")
+                .header("Origin", ORIGIN).contentType(MediaType.APPLICATION_JSON).bodyValue("{}").exchange()
+                .expectStatus().isOk().expectBody(String.class).returnResult().getResponseBody())
+                .as("with a live session").isEqualTo(FAMILY.toString());
+        assertThat(openPost(c, "/app/api/sign-in/request").expectStatus().isOk().expectBody(String.class).returnResult()
+                .getResponseBody()).as("with none").isEqualTo("none");
     }
 
     @Test

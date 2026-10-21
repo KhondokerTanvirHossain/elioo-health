@@ -9,15 +9,19 @@ import java.util.regex.Pattern;
  * fallback. A browser reads "/\host" (and "/%5Chost") as "//host", another site, so a backslash anywhere is refused; it
  * resolves "." and ".." path segments (and "%2e" spelled ones) before it requests, so "/app/../api" is not under /app
  * and is refused too. A malformed escape is the fallback, never an exception.
+ *
+ * <p>Not HTML-only: {@code web.adapter.in.LoginCookie#nextPage}, and through it the {@code /app/api/sign-in} JSON, depend
+ * on this class (Wave 2 B4a). When the HTML {@code ui} pages are deleted (rebuild plan W-del-n) this class stays, or
+ * moves to {@code web.adapter.in} beside {@code LoginCookie} as B1 moved {@code ActivePatient}.
  */
-final class LocalPath {
+public final class LocalPath {
 
     private static final Pattern SAFE = Pattern.compile("/|/app(/[A-Za-z0-9._~%/-]*)?(\\?[A-Za-z0-9._~%=&/-]*)?");
 
     private LocalPath() {
     }
 
-    static String or(String raw, String fallback) {
+    public static String or(String raw, String fallback) {
         if (raw == null || raw.indexOf('\\') >= 0 || !SAFE.matcher(raw).matches()) {
             return fallback;
         }

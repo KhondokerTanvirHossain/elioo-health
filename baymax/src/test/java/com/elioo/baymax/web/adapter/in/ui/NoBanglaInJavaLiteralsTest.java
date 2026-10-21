@@ -24,7 +24,7 @@ class NoBanglaInJavaLiteralsTest {
     private static final Map<String, String> ALLOWED = Map.of(
             "SignInPages.java#[0-9০-৯+ \\\\-]{8,24}", "the number field's pattern accepts Bangla digits (input, not copy)",
             "SignInPages.java#[0-9০-৯]{6}", "the code field's pattern accepts Bangla digits (input, not copy)",
-            "SignInPages.java#\"কোড\"", "the WhatsApp keyword WaTextRouter matches; the link pre-fills it",
+            "WaLink.java#\"কোড\"", "the WhatsApp keyword WaTextRouter matches; the link pre-fills it",
             "AuthHandler.java#send the word কোড", "the JSON API's machine message names the WhatsApp keyword");
 
     /**

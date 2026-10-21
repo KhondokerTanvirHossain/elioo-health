@@ -26,7 +26,20 @@ public enum ApiReason {
     FORBIDDEN_ORIGIN(HttpStatus.FORBIDDEN),
     UNSUPPORTED_MEDIA_TYPE(HttpStatus.UNSUPPORTED_MEDIA_TYPE),
     NOT_FOUND(HttpStatus.NOT_FOUND),
-    INVALID(HttpStatus.BAD_REQUEST);
+    INVALID(HttpStatus.BAD_REQUEST),
+    /** Sign-in request: the typed number is not one {@code PhoneDisplay.normalise} accepts. */
+    INVALID_NUMBER(HttpStatus.BAD_REQUEST),
+    /** Sign-in verify with no valid {@code baymax_login} cookie: start again from the number. */
+    SIGN_IN_RESTART(HttpStatus.BAD_REQUEST),
+    /**
+     * The code refusals, 400 and never 401: 401 means "no session" and sends the client to sign-in, which must never
+     * fire on a code typed on the sign-in page itself. Exactly as fine as the HTML page's copy: WRONG and NO_CODE are
+     * both {@code CODE_WRONG}, as both are {@code login.bad.wrong} there.
+     */
+    CODE_WRONG(HttpStatus.BAD_REQUEST),
+    CODE_EXPIRED(HttpStatus.BAD_REQUEST),
+    CODE_BURNED(HttpStatus.BAD_REQUEST),
+    CODE_FORMAT(HttpStatus.BAD_REQUEST);
 
     private final HttpStatus status;
 

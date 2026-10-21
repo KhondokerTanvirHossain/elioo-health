@@ -2,6 +2,7 @@ package com.elioo.baymax.web.adapter.in.ui;
 
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.nudge.application.port.out.NudgeDataPort;
+import com.elioo.baymax.web.adapter.in.PhoneDisplay;
 import com.elioo.baymax.web.domain.PatientSummary;
 import com.elioo.baymax.web.domain.TimelinePage;
 import org.junit.jupiter.api.Test;

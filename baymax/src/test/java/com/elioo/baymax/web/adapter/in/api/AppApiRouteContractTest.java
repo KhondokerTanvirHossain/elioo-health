@@ -35,7 +35,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <ul>
  *   <li>every route under {@code /app/api}, under every method it answers, refuses a request with no session with 401
  *       {@code {"reason":"UNAUTHENTICATED"}}, no {@code Location} and {@code Cache-Control: no-store}, through the
- *       context's own handler mapping; the list is checked non-empty first;</li>
+ *       context's own handler mapping; the list is checked non-empty first. The routes in {@link AppApiGuard#OPEN}
+ *       (sign-in) need no session and are skipped there; instead each one, with no session, still refuses each of the
+ *       three CSRF rules broken (header, {@code Origin} foreign or missing, body type);</li>
  *   <li>every one of those under a mutating method (POST, PUT, PATCH, DELETE) refuses a live session that omits
  *       {@code X-Medioo} with 403 {@code MISSING_HEADER}, and one from another {@code Origin} with 403
  *       {@code FORBIDDEN_ORIGIN} — derived the same way, so a DELETE route added later is swept without anyone
@@ -128,6 +130,64 @@ class AppApiRouteContractTest {
     }
 
     /**
+     * The sign-in pair needs no session, so CSRF is all that stands in front of it, and all three rules are swept: the
+     * header, the {@code Origin} (foreign, or missing — required on these), and the body type (text/plain and urlencoded,
+     * the two a cross-site form can send). This is CSRF only: a scripted caller can set every one of these, and what
+     * bounds it is {@code WebAuthService.requestCode}. Derived from the walked routes: a route added to
+     * {@link AppApiGuard#OPEN} later is swept here without anyone remembering to add it.
+     */
+    @Test
+    void everyOpenRouteStillRefusesCsrfWithoutASession() {
+        AppApiContext.runner(POSTGRES).run(context -> {
+            WebTestClient client = WebTestClient.bindToApplicationContext(context).build();
+            List<String> swept = new ArrayList<>();
+            List<String> leaks = new ArrayList<>();
+            for (RouteWalk.Route route : api(routes(context))) {
+                if (!AppApiGuard.OPEN.contains(route.pattern())) {
+                    continue;
+                }
+                for (HttpMethod method : methods(route)) {
+                    String uri = concrete(route.pattern());
+                    swept.add(method + " " + route.pattern());
+                    expect(leaks, method + " " + uri + " without X-Medioo", 403, "{\"reason\":\"MISSING_HEADER\"}",
+                            client.method(method).uri(uri).header("Origin", AppApiContext.ORIGIN)
+                                    .contentType(MediaType.APPLICATION_JSON).bodyValue("{}")
+                                    .exchange().expectBody().returnResult());
+                    expect(leaks, method + " " + uri + " from another Origin", 403, "{\"reason\":\"FORBIDDEN_ORIGIN\"}",
+                            client.method(method).uri(uri).header("X-Medioo", "1").header("Origin", "https://evil.example")
+                                    .contentType(MediaType.APPLICATION_JSON).bodyValue("{}")
+                                    .exchange().expectBody().returnResult());
+                    expect(leaks, method + " " + uri + " with no Origin at all", 403, "{\"reason\":\"FORBIDDEN_ORIGIN\"}",
+                            client.method(method).uri(uri).header("X-Medioo", "1")
+                                    .contentType(MediaType.APPLICATION_JSON).bodyValue("{}")
+                                    .exchange().expectBody().returnResult());
+                    for (MediaType type : List.of(MediaType.TEXT_PLAIN, MediaType.APPLICATION_FORM_URLENCODED)) {
+                        expect(leaks, method + " " + uri + " as " + type, 415, "{\"reason\":\"UNSUPPORTED_MEDIA_TYPE\"}",
+                                client.method(method).uri(uri).header("X-Medioo", "1").header("Origin", AppApiContext.ORIGIN)
+                                        .contentType(type).bodyValue("{}")
+                                        .exchange().expectBody().returnResult());
+                    }
+                }
+            }
+            assertThat(swept).as("open (method, route) pairs read from the routers; none would make this sweep vacuous").isNotEmpty();
+            assertThat(leaks).as("open /app/api requests without a session that were not refused for the CSRF rule they broke").isEmpty();
+        });
+    }
+
+    /** {@link AppApiGuard#OPEN} names routes the routers publish, and only mutations: a GET is never sessionless here. */
+    @Test
+    void theOpenRoutesAreRoutesThatExistAndAreMutations() {
+        AppApiContext.runner(POSTGRES).run(context -> {
+            List<RouteWalk.Route> api = api(routes(context));
+            assertThat(AppApiGuard.OPEN).as("the open set").isNotEmpty();
+            assertThat(api.stream().map(RouteWalk.Route::pattern).toList()).as("patterns the routers publish")
+                    .containsAll(AppApiGuard.OPEN);
+            assertThat(api.stream().filter(r -> AppApiGuard.OPEN.contains(r.pattern())).map(RouteWalk.Route::method).toList())
+                    .as("the methods of the open routes").isNotEmpty().allMatch("POST"::equals);
+        });
+    }
+
+    /**
      * The precedence claim, made falsifiable: an HTML-style catch-all over {@code /app/{*rest}} that answers 303 to
      * sign-in, registered at default order, must not see a single {@code /app/api} request.
      */
@@ -160,6 +220,9 @@ class AppApiRouteContractTest {
         WebTestClient client = WebTestClient.bindToApplicationContext(context).build();
         List<String> leaks = new ArrayList<>();
         for (RouteWalk.Route route : api) {
+            if (AppApiGuard.OPEN.contains(route.pattern())) {
+                continue;   // needs no session; everyOpenRouteStillRefusesCsrfWithoutASession sweeps it instead
+            }
             for (HttpMethod method : methods(route)) {
                 String uri = concrete(route.pattern());
                 expect(leaks, method + " " + uri, 401, "{\"reason\":\"UNAUTHENTICATED\"}",
