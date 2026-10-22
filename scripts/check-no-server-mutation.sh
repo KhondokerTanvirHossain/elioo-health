@@ -14,10 +14,12 @@
 #   2. a mutating route handler: an exported POST, PUT, PATCH or DELETE (function or const);
 #   3. in any file that names JAVA_INTERNAL_URL, a `method` that is not the literal GET or HEAD — including a method
 #      held in a variable, which cannot be shown to be safe;
-#   4. a scan of zero files: a guard that read nothing passes vacuously, which is the same defect one level up.
+#   4. a scan of zero files: a guard that read nothing passes vacuously, which is the same defect one level up;
+#   5. any file but api/java.ts (relative to the scanned dir) that names JAVA_INTERNAL_URL: every Java read lives in
+#      that one module (plan W3), so rule 3 sees every method Next sends Java. A unit test (*.test.ts[x]) may name it
+#      to stub it; it runs in Vitest, never in the server.
 #
-# Rule 3 is a heuristic over the file that names the URL. Keep every Java call in the module that reads
-# JAVA_INTERNAL_URL, so the method is visible where the URL is.
+# Rule 3 is a heuristic over the file that names the URL; rule 5 makes that file the only one.
 #
 # No mapfile/readarray and no grep -P: macOS ships bash 3.2 and BSD grep, and a guard that only runs on the CI runner
 # is a guard that lets a contributor commit the thing locally and find out later.
@@ -49,6 +51,11 @@ while IFS= read -r f; do
     [ -n "$hit" ] && add "$f:$hit: mutating route handler (POST/PUT/PATCH/DELETE) — Next serves GET only (DR-40 A3)"
   done < <(grep -nE 'export[[:space:]]+((async[[:space:]]+)?function|const|let|var)[[:space:]]+(POST|PUT|PATCH|DELETE)([^A-Za-z0-9_$]|$)' "$f" | cut -d: -f1)
   if grep -q 'JAVA_INTERNAL_URL' "$f"; then
+    rel="${f#"$DIR"/}"
+    # A unit test (Vitest, never the server) may name the variable to stub it, as api/java.test.ts does.
+    if [ "$rel" != "api/java.ts" ] && [[ "$rel" != *.test.ts ]] && [[ "$rel" != *.test.tsx ]]; then
+      add "$f:$(grep -n 'JAVA_INTERNAL_URL' "$f" | head -1 | cut -d: -f1): names JAVA_INTERNAL_URL outside api/java.ts — every Java read goes through that one module (rule 5)"
+    fi
     while IFS= read -r line; do
       [ -z "$line" ] && continue
       n=${line%%:*}

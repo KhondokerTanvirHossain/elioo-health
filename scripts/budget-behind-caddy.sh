@@ -11,10 +11,18 @@
 # included), with only two kinds of change, each checked below:
 #   - the site address becomes `http://:8080` (plain http inside the Caddy container);
 #   - every `reverse_proxy` upstream becomes medioo-web:3000. The Java upstream (medscribe-ai:8086) is pointed at the
-#     web container too, so the pages it would send to Java today reach the Next build under test, as W1a's
-#     single-upstream replica did. (W3 points it at the e2e Java stub instead, per the screens plan.)
+#     web container too, so the pages it would send to Java today (every page until its flip, the probe included)
+#     reach the Next build under test, as W1a's single-upstream replica did.
 # The spec then requires Strict-Transport-Security on every measured document, which only that header block sets:
 # a run that bypassed Caddy cannot pass.
+#
+# Java is the e2e stub (plan W3, Shared interfaces → the W1d image run): medioo-web/e2e/support/java-stub.mjs in a
+# node:22 container named java-stub on the run's network, answering from medioo-web/fixtures/api, and the web container
+# reads it as JAVA_INTERNAL_URL=http://java-stub:8086. So /app and /app/verify are measured as the sign-in pages they
+# are, not as the error page a missing Java would make. Before the spec, the run asks Caddy for /app under a signed-out
+# scenario and stops unless the number field comes back. The replica's Java upstream stays on medioo-web (above): a
+# page Caddy sent to the stub would be the stub's 404, never the Next page whose budget this run exists to enforce.
+# The browser's own /app/api calls never leave the browser (browser-api.ts answers them from the same table).
 #
 # Env: BUDGET_WEB_IMAGE=<image> uses an image already built instead of building medioo-web/Dockerfile here.
 #      BUDGET_REPLICA_ONLY=1 prints the replica Caddyfile and exits (BUDGET_CADDYFILE=<file> reads another source);
@@ -28,16 +36,21 @@ CADDYFILE="${BUDGET_CADDYFILE:-$ROOT/docs/infra/Caddyfile.medioo}"
 SITE="medioo.eliooo.org"
 # Caddy v2.11.7, the version the W1a reference was measured behind; pinned by digest (a tag can be moved).
 CADDY_IMAGE="caddy:2.11.7-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f"
+# The stub's Node: the same pinned node:22 image medioo-web/Dockerfile builds on.
+STUB_IMAGE="node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402"
+STUB_ALIAS="java-stub"
+STUB_PORT=8086
 SUFFIX="$$-$RANDOM"
 SHA="budget$SUFFIX"
 NET="medioo-budget-$SUFFIX"
 WEB="medioo-web-budget-$SUFFIX"
 CADDY="medioo-caddy-budget-$SUFFIX"
+STUB="medioo-java-stub-budget-$SUFFIX"
 WORK="$(mktemp -d)"
 BUILT=""
 
 cleanup() {
-  docker rm -f "$CADDY" "$WEB" >/dev/null 2>&1 || true
+  docker rm -f "$CADDY" "$WEB" "$STUB" >/dev/null 2>&1 || true
   docker network rm "$NET" >/dev/null 2>&1 || true
   [ -n "$BUILT" ] && docker rmi "$BUILT" >/dev/null 2>&1 || true
   rm -rf "$WORK"
@@ -82,9 +95,11 @@ else
   BUILT="$IMAGE"
 fi
 
-# 3. medioo-web as production runs it (320m, no published port), and Caddy in front, on a private network.
+# 3. medioo-web as production runs it (320m, no published port), reading stub Java, and Caddy in front, on a private
+#    network.
 docker network create "$NET" >/dev/null
-docker run -d --name "$WEB" --network "$NET" --network-alias medioo-web --memory=320m -e "GIT_SHA=$SHA" "$IMAGE" >/dev/null \
+docker run -d --name "$WEB" --network "$NET" --network-alias medioo-web --memory=320m -e "GIT_SHA=$SHA" \
+  -e "JAVA_INTERNAL_URL=http://$STUB_ALIAS:$STUB_PORT" "$IMAGE" >/dev/null \
   || die "could not start $IMAGE"
 docker create --name "$CADDY" --network "$NET" -p 127.0.0.1::8080 "$CADDY_IMAGE" >/dev/null || die "could not create Caddy"
 docker cp "$WORK/Caddyfile" "$CADDY:/etc/caddy/Caddyfile" >/dev/null
@@ -105,6 +120,26 @@ if [ -z "$ready" ]; then
   die "$BASE/app/healthz never answered with sha $SHA through Caddy"
 fi
 echo "budget-behind-caddy: $IMAGE behind Caddy at $BASE"
+
+# 3b. Stub Java (e2e/support/java-stub.mjs), the fixtures Java's contract tests wrote, on the same network under the
+#     name the web container reads. E2E_ORIGIN is the origin the browser runs at (Caddy's), as the suite's own stub has.
+docker run -d --name "$STUB" --network "$NET" --network-alias "$STUB_ALIAS" \
+  -v "$ROOT/medioo-web/e2e/support:/stub/support:ro" -v "$ROOT/medioo-web/fixtures/api:/stub/fixtures:ro" \
+  -e STUB_HOST=0.0.0.0 -e "STUB_PORT=$STUB_PORT" -e E2E_FIXTURES=/stub/fixtures -e "E2E_ORIGIN=$BASE" \
+  "$STUB_IMAGE" node /stub/support/java-stub.mjs >/dev/null || die "could not start stub Java ($STUB_IMAGE)"
+# Ready when Caddy serves the sign-in page itself under a signed-out scenario: the web container read the stub's 401
+# for the held place and rendered the number field. Anything else (stub Java unreachable, an error page) stops here.
+signin=""
+for _ in $(seq 1 30); do
+  page=$(curl -sS --max-time 5 -b "e2e_scenario=signed-out" "$BASE/app" 2>/dev/null || true)
+  case "$page" in *'name="whatsapp_number"'*) signin=1; break ;; esac
+  sleep 1
+done
+if [ -z "$signin" ]; then
+  docker logs --tail 20 "$STUB" >&2 || true
+  die "$BASE/app never rendered the number field from stub Java at http://$STUB_ALIAS:$STUB_PORT"
+fi
+echo "budget-behind-caddy: stub Java at http://$STUB_ALIAS:$STUB_PORT; /app renders the sign-in page through Caddy"
 
 # 4. The budget spec against Caddy. E2E_CATALOG_URL is set so the config starts no server of its own.
 rc=0

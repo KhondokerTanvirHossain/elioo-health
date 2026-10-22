@@ -55,5 +55,68 @@ java_block=$'reverse_proxy medscribe-ai:8086 {\n\t\t\tflush_interval -1\n\t\t}'
 refused java-block "still sends a path to Java" "${good/reverse_proxy medscribe-ai:8086/$java_block}"
 refused java-two-upstreams "still sends a path to Java" "${good/reverse_proxy medscribe-ai:8086/reverse_proxy medscribe-ai:8086 medscribe-ai:8087}"
 
+# 3. The run's containers (plan W3: stub Java for the image run), with docker, curl and pnpm faked on PATH: every
+#    docker call is recorded, curl answers healthz with the run's own sha and /app with what $FAKE_SIGNIN says, pnpm
+#    passes. The real script must start stub Java on the network as java-stub, from the repo's e2e support and
+#    fixtures, and give the web container JAVA_INTERNAL_URL pointing at it; and it must stop when /app does not render
+#    the sign-in page through Caddy. A copy of the script without the web container's JAVA_INTERNAL_URL is shown to
+#    fail the same checks, so they are not green for another reason.
+FAKE="$WORK/fake"; mkdir -p "$FAKE"
+cat > "$FAKE/docker" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FAKE_LOG"
+case "$1" in
+  port) echo "127.0.0.1:43210" ;;
+  run|create) echo "fake-container-id" ;;
+esac
+exit 0
+EOF
+cat > "$FAKE/curl" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+  */app/healthz*) sha=$(grep -o 'GIT_SHA=[^ ]*' "$FAKE_LOG" | head -n 1 | cut -d= -f2); printf '{"sha":"%s"}' "$sha" ;;
+  */app*) printf '%s' "$FAKE_SIGNIN" ;;
+esac
+exit 0
+EOF
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "$FAKE_LOG.pnpm"\nexit 0\n' > "$FAKE/pnpm"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$FAKE/sleep"
+chmod +x "$FAKE"/*
+run_faked() { # <script> <signin page> -> output; the docker calls in $WORK/docker.log
+  : > "$WORK/docker.log"; : > "$WORK/docker.log.pnpm"
+  PATH="$FAKE:$PATH" FAKE_LOG="$WORK/docker.log" FAKE_SIGNIN="$2" BUDGET_WEB_IMAGE=fake/medioo-web:1 \
+    BUDGET_CADDYFILE="$ROOT/docs/infra/Caddyfile.medioo" bash "$1" 2>&1
+}
+SIGNIN_PAGE='<input name="whatsapp_number">'
+# The checks on the recorded docker calls; prints each problem.
+stub_wiring_problems() { # <docker.log> <repo root the script ran from>
+  local log="$1" root="$2" stub web
+  stub=$(grep '^run .*--network-alias java-stub ' "$log" || true)
+  web=$(grep '^run .*--network-alias medioo-web ' "$log" || true)
+  [ -n "$stub" ] || echo "no container started as java-stub on the network"
+  case "$stub" in *"-v $root/medioo-web/e2e/support:/stub/support:ro"*) ;; *) echo "stub Java does not mount e2e/support" ;; esac
+  case "$stub" in *"-v $root/medioo-web/fixtures/api:/stub/fixtures:ro"*) ;; *) echo "stub Java does not mount fixtures/api" ;; esac
+  for env in "STUB_HOST=0.0.0.0" "STUB_PORT=8086" "E2E_FIXTURES=/stub/fixtures" "E2E_ORIGIN=http://127.0.0.1:43210"; do
+    case "$stub" in *"-e $env "*) ;; *) echo "stub Java lacks $env" ;; esac
+  done
+  case "$stub" in *" node /stub/support/java-stub.mjs") ;; *) echo "stub Java does not run java-stub.mjs" ;; esac
+  case "$web" in *"-e JAVA_INTERNAL_URL=http://java-stub:8086 "*) ;; *) echo "the web container does not read stub Java" ;; esac
+}
+out=$(run_faked "$SCRIPT" "$SIGNIN_PAGE") || fail "the run with stub Java answering failed: $out"
+problems=$(stub_wiring_problems "$WORK/docker.log" "$ROOT")
+[ -z "$problems" ] || fail "stub wiring: $problems"
+grep -q '^rm -f .*medioo-java-stub-budget-' "$WORK/docker.log" || fail "the run does not remove its stub container"
+# An error page through Caddy (stub Java unreachable) stops the run before the spec, naming why.
+out=$(run_faked "$SCRIPT" '<h1>Internal Server Error</h1>') && fail "a run whose /app is an error page was accepted"
+case "$out" in *"never rendered the number field from stub Java"*) ;; *) fail "an error-page run failed for another reason: $out" ;; esac
+grep -q 'playwright' "$WORK/docker.log.pnpm" && fail "the spec ran although /app was an error page"
+# The checks fail on a script that does not hand the web container JAVA_INTERNAL_URL.
+mkdir -p "$WORK/broken/scripts"
+sed 's|-e "JAVA_INTERNAL_URL=http://$STUB_ALIAS:$STUB_PORT" ||' "$SCRIPT" > "$WORK/broken/scripts/budget-behind-caddy.sh"
+cmp -s "$SCRIPT" "$WORK/broken/scripts/budget-behind-caddy.sh" && fail "test setup: the broken copy is the script"
+run_faked "$WORK/broken/scripts/budget-behind-caddy.sh" "$SIGNIN_PAGE" >/dev/null 2>&1
+problems=$(stub_wiring_problems "$WORK/docker.log" "$WORK/broken")
+case "$problems" in *"the web container does not read stub Java"*) ;; *) fail "a script without JAVA_INTERNAL_URL passed the wiring checks: [$problems]" ;; esac
+
 [ "$FAILED" = 0 ] && echo "test_budget_replica: all cases passed"
 exit "$FAILED"

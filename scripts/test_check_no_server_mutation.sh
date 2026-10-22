@@ -38,9 +38,9 @@ CLEAN_PAGE='export default function Page() { return null; }'
 GET_FETCH='const r = await fetch(`${process.env.JAVA_INTERNAL_URL}/app/api/me`, { method: "GET", headers: { cookie } });'
 
 case_ clean pass "OK:" app/page.tsx="$CLEAN_PAGE" app/healthz/route.ts='export function GET() { return Response.json({}); }'
-case_ java-get pass "OK:" lib/java.ts="$GET_FETCH"
-case_ java-head pass "OK:" lib/java.ts='await fetch(process.env.JAVA_INTERNAL_URL + "/x", { method: "HEAD" });'
-case_ java-default-method pass "OK:" lib/java.ts='await fetch(process.env.JAVA_INTERNAL_URL + "/x");'
+case_ java-get pass "OK:" api/java.ts="$GET_FETCH"
+case_ java-head pass "OK:" api/java.ts='await fetch(process.env.JAVA_INTERNAL_URL + "/x", { method: "HEAD" });'
+case_ java-default-method pass "OK:" api/java.ts='await fetch(process.env.JAVA_INTERNAL_URL + "/x");'
 
 case_ empty fail "scanned zero source files"
 case_ only-css fail "scanned zero source files" app/globals.css='body { margin: 0 }'
@@ -50,10 +50,17 @@ case_ use-server-double fail "app/actions.ts:2" app/actions.ts='export async fun
 }'
 case_ post-handler fail "app/api/x/route.ts:1" app/api/x/route.ts='export async function POST(req: Request) { return new Response(null); }'
 case_ delete-const fail "app/api/x/route.ts:1" app/api/x/route.ts='export const DELETE = async () => new Response(null);'
-case_ java-post fail "lib/java.ts:1" lib/java.ts='await fetch(`${process.env.JAVA_INTERNAL_URL}/app/api/x`, { method: "POST" });'
-case_ java-lowercase-put fail "lib/java.ts:1" lib/java.ts="await fetch(process.env.JAVA_INTERNAL_URL + '/x', { method: 'put' });"
-case_ java-variable-method fail "lib/java.ts:2" lib/java.ts='const m = verb;
+case_ java-post fail "api/java.ts:1" api/java.ts='await fetch(`${process.env.JAVA_INTERNAL_URL}/app/api/x`, { method: "POST" });'
+case_ java-lowercase-put fail "api/java.ts:1" api/java.ts="await fetch(process.env.JAVA_INTERNAL_URL + '/x', { method: 'put' });"
+case_ java-variable-method fail "api/java.ts:2" api/java.ts='const m = verb;
 await fetch(process.env.JAVA_INTERNAL_URL + "/x", { method: m });'
+
+# Rule 5: only api/java.ts names JAVA_INTERNAL_URL, so rule 3 sees every Java call in one file.
+case_ onlyJavaTsNamesTheUrl pass "OK:" api/java.ts="$GET_FETCH" app/page.tsx="$CLEAN_PAGE"
+case_ aSecondFileNamingTheUrlFails fail "app/x.ts" api/java.ts="$GET_FETCH" app/x.ts='export const u = process.env.JAVA_INTERNAL_URL;'
+case_ aJavaTsElsewhereFails fail "lib/java.ts" lib/java.ts="$GET_FETCH"
+case_ aUnitTestMayStubTheUrl pass "OK:" api/java.ts="$GET_FETCH" api/java.test.ts='vi.stubEnv("JAVA_INTERNAL_URL", "http://java.test");'
+case_ aTestLookingNameIsNotATest fail "api/java.testing.ts" api/java.ts="$GET_FETCH" api/java.testing.ts='export const u = process.env.JAVA_INTERNAL_URL;'
 
 # A method on a fetch that does not name Java (the browser's own call, say) is not this rule's business.
 case_ other-post pass "OK:" lib/browser.ts='await fetch("/app/api/x", { method: "POST" });'

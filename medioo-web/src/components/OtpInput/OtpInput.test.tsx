@@ -1,7 +1,9 @@
 import { cleanup, fireEvent, render, within } from "@testing-library/react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
 import { banglaDigits, t } from "@/copy";
-import { OtpInput } from "./OtpInput";
+import { OtpInput, otpWords } from "./OtpInput";
+import { OtpInputView } from "./OtpInputView";
 
 afterEach(cleanup);
 
@@ -135,6 +137,29 @@ describe("OtpInput", () => {
       expect(after.textContent, `${lang}: the refusal`).toBe(t(lang, "login.bad.wrong"));
       expect(input.getAttribute("aria-describedby"), `${lang}: described by the refusal`).toBe(after.id);
       cleanup();
+    }
+  });
+
+  it("theWrapperAndTheViewRenderTheSameMarkup", () => {
+    // The code step's client island renders the copy-free view with words resolved on the server (the lifetime line
+    // and BURNED's count already filled in); the server wrapper renders that same view.
+    for (const lang of ["bn", "en"] as const) {
+      for (const [error, words] of [
+        [undefined, undefined],
+        [{ key: "login.bad.wrong" }, t(lang, "login.bad.wrong")],
+        [{ key: "login.bad.burned", attempts: 5 }, t(lang, "login.bad.burned", 5)],
+      ] as const) {
+        for (const ttlMinutes of [undefined, 10]) {
+          const wrapper = renderToStaticMarkup(
+            <OtpInput length={6} lang={lang} name="code" error={error} ttlMinutes={ttlMinutes} />,
+          );
+          const view = renderToStaticMarkup(
+            <OtpInputView length={6} words={otpWords(lang, ttlMinutes)} name="code" error={words} />,
+          );
+          expect(view, `${lang} ${error?.key ?? "no error"} ttl=${ttlMinutes}`).toBe(wrapper);
+          expect(view, "the markup holds the label").toContain(t(lang, "login.code"));
+        }
+      }
     }
   });
 });

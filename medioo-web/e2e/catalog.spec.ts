@@ -1,9 +1,19 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { t } from "../src/copy";
-import { CONTROL_CLASS, FIELD_SELECTOR, NOW_ALLOWED } from "../src/styles/now-usage";
+import {
+  axeReport,
+  boundaryReport,
+  BRAND,
+  cspViolations,
+  expectSchemeIsPainted,
+  imagesReport,
+  installCspHook,
+  nowRedReport,
+  overflowReport,
+  smallTextReport,
+} from "./support/screen-checks";
 
 /*
  * The component catalog (/app/catalog-test, catalog build only), in the `catalog` project: every registered state, in
@@ -28,36 +38,6 @@ const PAPER_FIXTURES = readdirSync(documentsDir)
   .filter((f) => (JSON.parse(readFileSync(join(documentsDir, f), "utf8")) as { status: number }).status === 200);
 const MIN_STATES = 13 + 5 + 6 + PAPER_FIXTURES.length + 2 + 9;
 
-/**
- * Every text node of every state with the size it is painted at. getComputedStyle reports an SVG <text>'s font-size in
- * user units, before the viewBox is scaled to the box it is drawn in, so for text inside an SVG the size is multiplied
- * by the element's screen transform: a 12 px label in a 320-unit viewBox drawn 296 px wide is painted at 11.1 px.
- */
-async function smallText(page: Page) {
-  return page.evaluate(() => {
-    const small: string[] = [];
-    let texts = 0;
-    let svgTexts = 0;
-    for (const section of document.querySelectorAll<HTMLElement>("[data-catalog-state]")) {
-      const walker = document.createTreeWalker(section, NodeFilter.SHOW_TEXT);
-      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-        if (!node.textContent?.trim()) continue;
-        texts++;
-        const parent = node.parentElement!;
-        let size = parseFloat(getComputedStyle(parent).fontSize);
-        if (parent instanceof SVGGraphicsElement) {
-          svgTexts++;
-          const ctm = parent.getScreenCTM();
-          if (ctm) size *= Math.hypot(ctm.a, ctm.b);
-        }
-        // 1e-3 absorbs float error in the transform only; a 12 px floor is not loosened by it.
-        if (size < 12 - 1e-3) small.push(`${section.dataset.catalogState}: "${node.textContent.trim().slice(0, 20)}" ${size.toFixed(2)}px`);
-      }
-    }
-    return { small, texts, svgTexts };
-  });
-}
-
 /** Every open modal dialog closed (the Sheet/open states), so a whole-page check is not judging a page made inert. */
 async function closeSheets(page: Page) {
   await page.evaluate(() => document.querySelectorAll("dialog").forEach((d) => d.close()));
@@ -65,13 +45,7 @@ async function closeSheets(page: Page) {
 
 /** Loads the catalog with the CSP-violation hook installed from the first byte, every eager image loaded. */
 async function open(page: Page) {
-  await page.addInitScript(() => {
-    const w = window as unknown as { __csp: string[] };
-    w.__csp = [];
-    document.addEventListener("securitypolicyviolation", (e) => {
-      w.__csp.push(`${e.violatedDirective} blocked ${e.blockedURI || "inline"}`);
-    });
-  });
+  await installCspHook(page);
   const response = await page.goto("/app/catalog-test");
   expect(response?.status(), "the catalog build serves /app/catalog-test").toBe(200);
   await page.waitForLoadState("load");
@@ -139,24 +113,8 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
         // A box with a width says nothing about an image: an <img width=48> whose file 404s or fails to decode still
         // has one. So every visible image is checked by its content: loaded, decoded, and one of the approved files.
         await open(page);
-        const BRAND = ["/brand/medioo-light.svg", "/brand/medioo-dark.svg", "/brand/mio.webp", "/brand/mio-head.webp"];
-        // Mio's eager images can sit below the fold; scroll each into view so the check waits on every one of them.
-        await page.$$eval("[data-catalog-state] img", (imgs) => imgs.forEach((i) => i.scrollIntoView()));
-        await page.waitForFunction(() =>
-          [...document.querySelectorAll<HTMLImageElement>("[data-catalog-state] img")]
-            .filter((i) => i.checkVisibility())
-            .every((i) => i.complete),
-        );
-        const images = await page.$$eval("[data-catalog-state] img", (imgs) =>
-          (imgs as HTMLImageElement[])
-            .filter((i) => i.checkVisibility())
-            .map((i) => ({
-              state: i.closest<HTMLElement>("[data-catalog-state]")!.dataset.catalogState!,
-              path: i.currentSrc ? new URL(i.currentSrc).pathname : "",
-              complete: i.complete,
-              natural: i.naturalWidth,
-            })),
-        );
+        // Mio's eager images can sit below the fold; the report scrolls each into view and waits on every one of them.
+        const images = await imagesReport(page, "[data-catalog-state]");
         const bad = images
           .filter((i) => !i.complete || i.natural === 0 || !BRAND.includes(i.path))
           .map((i) => `${i.state}: ${i.path || "no currentSrc"} complete=${i.complete} naturalWidth=${i.natural}`);
@@ -178,65 +136,33 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
         await open(page);
         // The theme under test is the one painted (reading.spec.ts's guard): the body paints the active scheme's --bg,
         // and the other scheme paints a different one.
-        const paint = () =>
-          page.evaluate(() => {
-            const swatch = document.createElement("div");
-            swatch.style.setProperty("background-color", "var(--bg)");
-            document.body.append(swatch);
-            const token = getComputedStyle(swatch).backgroundColor;
-            swatch.remove();
-            return { dark: matchMedia("(prefers-color-scheme: dark)").matches, token, body: getComputedStyle(document.body).backgroundColor };
-          });
-        const active = await paint();
-        expect(active.dark, "prefers-color-scheme is emulated").toBe(colorScheme === "dark");
-        expect(active.body, "the body paints the active scheme's --bg").toBe(active.token);
-        const other = colorScheme === "dark" ? "light" : "dark";
-        await page.emulateMedia({ colorScheme: other });
-        expect((await paint()).body, `the ${other} theme paints a different background`).not.toBe(active.body);
-        await page.emulateMedia({ colorScheme });
+        await expectSchemeIsPainted(page, colorScheme);
 
         // A modal sheet makes the rest of the page inert, which an accessibility check must not judge as the page the
         // family meets: the whole page is judged with the sheets closed, then each open sheet on its own, in the top layer.
         await closeSheets(page);
-        const results = await new AxeBuilder({ page }).analyze();
-        expect(results.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
+        const results = await axeReport(page);
+        expect(results.violations).toEqual([]);
         // An analysis that checked nothing would also report nothing.
-        expect(results.passes.length).toBeGreaterThan(0);
+        expect(results.passes).toBeGreaterThan(0);
 
         for (const lang of ["bn", "en"]) {
           const sheet = `[data-catalog-state="Sheet/open"][lang="${lang}"] dialog`;
           await page.evaluate((selector) => document.querySelector<HTMLDialogElement>(selector)!.showModal(), sheet);
-          const sheetResults = await new AxeBuilder({ page }).include(sheet).analyze();
-          expect(sheetResults.violations.map((v) => `Sheet/open (${lang}) ${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
-          expect(sheetResults.passes.length, `axe checked the open sheet (${lang})`).toBeGreaterThan(0);
+          const sheetResults = await axeReport(page, sheet);
+          expect(sheetResults.violations.map((v) => `Sheet/open (${lang}) ${v}`)).toEqual([]);
+          expect(sheetResults.passes, `axe checked the open sheet (${lang})`).toBeGreaterThan(0);
           await closeSheets(page);
         }
       });
 
       test("noElementOverflowsItsBox", async ({ page }) => {
         await open(page);
-        const result = await page.evaluate(() => {
-          const sections = [...document.querySelectorAll<HTMLElement>("[data-catalog-state]")];
-          const over: string[] = [];
-          const measured: string[] = [];
-          const empty: string[] = [];
-          for (const section of sections) {
-            const state = section.dataset.catalogState!;
-            measured.push(state);
-            // The heading and at least one element of the state itself, or the inner loop measured nothing there. A
-            // state marked empty renders nothing by design, and everyRegisteredStateRenders holds it to that.
-            if (!section.hasAttribute("data-catalog-empty") && section.querySelectorAll("*").length < 2) empty.push(state);
-            for (const el of [section, ...section.querySelectorAll("*")]) {
-              if (el.scrollWidth > el.clientWidth + 1) {
-                over.push(`${state} <${el.tagName.toLowerCase()} class="${el.getAttribute("class") ?? ""}"> ${el.scrollWidth} > ${el.clientWidth}`);
-              }
-            }
-          }
-          const root = document.documentElement;
-          return { over, measured, empty, page: [root.scrollWidth, root.clientWidth] };
-        });
+        // Each section: the heading and at least one element of the state itself, or the inner loop measured nothing
+        // there. A state marked empty renders nothing by design, and everyRegisteredStateRenders holds it to that.
+        const result = await overflowReport(page, "[data-catalog-state]");
         expect(result.over).toEqual([]);
-        expect(result.page[0], "the page itself scrolls sideways").toBeLessThanOrEqual(result.page[1]! + 1);
+        expect(result.page[0], "the page itself scrolls sideways").toBeLessThanOrEqual(result.page[1] + 1);
         // Guards: every section measured at least one element of its state, the floor of sections was walked
         // (the derived floor × 2 languages; states.test.tsx holds the exact list), and the long names among them: the
         // unbroken bubble (W2c) and the NOW banner's title with a long name, spaced and unbroken (W2d-b).
@@ -252,51 +178,7 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
 
       test("onlyNowComponentsPaintTheNowRed", async ({ page }) => {
         await open(page);
-        const result = await page.evaluate((allowSource) => {
-          const allow = new RegExp(allowSource);
-          // The active theme's NOW tokens, resolved by the browser to the spelling getComputedStyle reports.
-          const swatch = document.createElement("div");
-          document.body.append(swatch);
-          const resolved = (prop: string, token: string) => {
-            swatch.style.setProperty(prop, `var(${token})`);
-            const value = getComputedStyle(swatch).getPropertyValue(prop);
-            swatch.style.removeProperty(prop);
-            return value;
-          };
-          const tokens = ["--now", "--now-ink", "--now-soft"];
-          const now = new Set(tokens.flatMap((t) => [resolved("color", t), resolved("background-color", t)]));
-          swatch.remove();
-          const PROPS = [
-            "color",
-            "background-color",
-            "fill",
-            "stroke",
-            "border-top-color",
-            "border-right-color",
-            "border-bottom-color",
-            "border-left-color",
-            "outline-color",
-          ];
-          const allowed = (el: Element | null): boolean => {
-            for (let e = el; e; e = e.parentElement) if ([...e.classList].some((c) => allow.test(`.${c}`))) return true;
-            return false;
-          };
-          const bad: string[] = [];
-          const painted: string[] = [];
-          for (const section of document.querySelectorAll<HTMLElement>("[data-catalog-state]")) {
-            const state = section.dataset.catalogState!;
-            for (const el of [section, ...section.querySelectorAll("*")]) {
-              const style = getComputedStyle(el);
-              for (const prop of PROPS) {
-                const value = style.getPropertyValue(prop);
-                if (!now.has(value)) continue;
-                painted.push(state);
-                if (!allowed(el)) bad.push(`${state} <${el.tagName.toLowerCase()} class="${el.getAttribute("class") ?? ""}"> ${prop}: ${value}`);
-              }
-            }
-          }
-          return { bad: [...new Set(bad)], painted: [...new Set(painted)], now: [...now] };
-        }, NOW_ALLOWED.source);
+        const result = await nowRedReport(page, "[data-catalog-state]");
         expect(result.now.length, "the NOW tokens resolved").toBeGreaterThanOrEqual(3);
         expect(result.bad).toEqual([]);
         // Guard: the red was found where it belongs (the critical chips, the NOW banner and the NOW verdict cards), so
@@ -324,26 +206,7 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
         await open(page);
         // The open sheets make the page behind them inert, so no field there could be hovered or focused.
         await closeSheets(page);
-        const controls = await page.evaluate(
-          ({ fields, controlClass }) => {
-            const re = new RegExp(controlClass);
-            const found = [...document.querySelectorAll<HTMLElement>("[data-catalog-state] *")].filter(
-              (el) => el.matches(fields) || [...el.classList].some((c) => re.test(`.${c}`)),
-            );
-            return found.map((el, i) => {
-              el.setAttribute("data-boundary-check", String(i));
-              return {
-                state: el.closest<HTMLElement>("[data-catalog-state]")!.dataset.catalogState!,
-                tag: el.tagName.toLowerCase(),
-                classes: [...el.classList],
-                // Whether the built-CSS scan can see this element at all: it judges a component's field only by a
-                // class on the element itself that CONTROL_CLASS matches.
-                scanned: [...el.classList].some((c) => re.test(`.${c}`)),
-              };
-            });
-          },
-          { fields: FIELD_SELECTOR, controlClass: CONTROL_CLASS.source },
-        );
+        const { controls, bad } = await boundaryReport(page, "[data-catalog-state]");
 
         // The CSS scan's coverage, derived from what the DOM holds rather than from a list of the classes the author
         // remembered: a field whose own element carries no CONTROL_CLASS class is a field built/now-usage never judges.
@@ -353,83 +216,6 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
             .map((c) => `${c.state} ${c.tag}.${c.classes.join(".")} carries no CONTROL_CLASS class, so built/now-usage cannot judge it`),
           "fields the built-CSS scan cannot see",
         ).toEqual([]);
-
-        const bad: string[] = [];
-        for (const theme of [null, "light", "dark"] as const) {
-          const themeName = theme ?? "(system)";
-          await page.evaluate((t) => {
-            if (t === null) document.documentElement.removeAttribute("data-theme");
-            else document.documentElement.setAttribute("data-theme", t);
-          }, theme);
-          // The theme's --fill and --boundary as getComputedStyle spells a colour, read off a swatch.
-          const tokens = await page.evaluate(() => {
-            const swatch = document.createElement("div");
-            document.body.append(swatch);
-            const resolved = (token: string) => {
-              const raw = getComputedStyle(document.documentElement).getPropertyValue(token).trim();
-              swatch.style.setProperty("background-color", raw);
-              const value = raw === "" ? "" : getComputedStyle(swatch).backgroundColor;
-              swatch.style.removeProperty("background-color");
-              return value;
-            };
-            const out = { fill: resolved("--fill"), boundary: resolved("--boundary") };
-            swatch.remove();
-            return out;
-          });
-          const themed = await page.evaluate(() => document.documentElement.getAttribute("data-theme"));
-          expect(themed, `data-theme is ${themeName}`).toBe(theme);
-          expect(tokens.fill, `--fill resolves under data-theme=${themeName}`).not.toBe("");
-          expect(tokens.boundary, `--boundary resolves under data-theme=${themeName}`).not.toBe("");
-
-          for (const mode of ["rest", "hover", "focus"] as const) {
-            for (const [i, control] of controls.entries()) {
-              const el = page.locator(`[data-boundary-check="${i}"]`);
-              await page.mouse.move(0, 0);
-              await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-              if (mode === "hover") await el.hover();
-              if (mode === "focus") await el.focus();
-              const problems = await el.evaluate(
-                (node, { fill, boundary, mode }) => {
-                  const cs = getComputedStyle(node);
-                  const visible = (style: string) => style !== "none" && style !== "hidden";
-                  const out: string[] = [];
-                  // Each pass is measured in the state it claims, or it silently re-measures rest: an overlay, pointer
-                  // emulation or a scroll race can leave el.hover() landing without :hover matching.
-                  if (mode === "rest" && (node.matches(":hover") || node.matches(":focus"))) out.push("not at rest");
-                  if (mode === "hover" && !node.matches(":hover")) out.push("not hovered");
-                  if (mode === "focus" && !node.matches(":focus-visible")) out.push("not focus-visible");
-                  if (cs.backgroundColor !== fill) out.push(`background-color ${cs.backgroundColor}, not --fill ${fill}`);
-                  const sides = ["top", "right", "bottom", "left"];
-                  const border = sides.some(
-                    (side) =>
-                      parseFloat(cs.getPropertyValue(`border-${side}-width`)) > 0 &&
-                      visible(cs.getPropertyValue(`border-${side}-style`)) &&
-                      cs.getPropertyValue(`border-${side}-color`) === boundary,
-                  );
-                  const outline = parseFloat(cs.outlineWidth) > 0 && visible(cs.outlineStyle) && cs.outlineColor === boundary;
-                  // A ring: the boundary's colour, offsets and blur 0, a spread of at least 1px ("<colour> 0px 0px 0px 1px").
-                  const shadows = cs.boxShadow === "none" ? [] : cs.boxShadow.split(/,(?![^(]*\))/);
-                  const ring = shadows.some((shadow) => {
-                    const m = /^\s*(rgba?\([^)]*\))\s+(.*)$/.exec(shadow);
-                    if (!m || m[1] !== boundary) return false;
-                    const px = m[2]!.split(/\s+/).filter((w) => w.endsWith("px")).map(parseFloat);
-                    return px.length === 4 && px[0] === 0 && px[1] === 0 && px[2] === 0 && px[3]! >= 1;
-                  });
-                  if (!border && !outline && !ring) {
-                    const edges = sides.map(
-                      (side) =>
-                        `${side} ${cs.getPropertyValue(`border-${side}-width`)} ${cs.getPropertyValue(`border-${side}-style`)} ${cs.getPropertyValue(`border-${side}-color`)}`,
-                    );
-                    out.push(`draws no --boundary ${boundary} (border ${edges.join(", ")}; outline ${cs.outlineWidth} ${cs.outlineStyle} ${cs.outlineColor})`);
-                  }
-                  return out;
-                },
-                { ...tokens, mode },
-              );
-              for (const p of problems) bad.push(`${control.state} .${control.classes.join(".")} ${mode} data-theme=${themeName}: ${p}`);
-            }
-          }
-        }
         expect(bad).toEqual([]);
         // Guards: fields were checked at this layout and scheme, so the empty lists above are not vacuous, and the
         // W2e-a fields, invalid included, were among them. A later PR that ships a field or a segmented track adds its
@@ -471,7 +257,7 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
 
       test("noTextUnderTwelvePixels", async ({ page }) => {
         await open(page);
-        const result = await smallText(page);
+        const result = await smallTextReport(page, "[data-catalog-state]");
         expect(result.small).toEqual([]);
         expect(result.texts, "text nodes measured").toBeGreaterThan(0);
       });
@@ -652,9 +438,9 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
 
       test("noCspViolation", async ({ page }) => {
         await open(page);
-        const hooked = await page.evaluate(() => Array.isArray((window as unknown as { __csp?: string[] }).__csp));
-        expect(hooked, "the violation hook is installed").toBe(true);
-        expect(await page.evaluate(() => (window as unknown as { __csp: string[] }).__csp)).toEqual([]);
+        const violations = await cspViolations(page);
+        expect(violations, "the violation hook is installed").not.toBeNull();
+        expect(violations).toEqual([]);
       });
     });
   }
@@ -668,7 +454,7 @@ test.describe("narrowest box 288", () => {
 
   test("noTextUnderTwelvePixelsAtTheNarrowestPhone", async ({ page }) => {
     await open(page);
-    const result = await smallText(page);
+    const result = await smallTextReport(page, "[data-catalog-state]");
     expect(result.small).toEqual([]);
     expect(result.texts, "text nodes measured").toBeGreaterThan(0);
     // Guard: the charts were on the page and measured, so their words were judged at this width.

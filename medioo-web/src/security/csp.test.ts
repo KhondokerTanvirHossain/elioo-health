@@ -64,3 +64,50 @@ describe("buildCsp", () => {
     expect(() => buildCsp("")).toThrow();
   });
 });
+
+describe("middleware", () => {
+  /** The request headers the middleware hands the page: Next carries overrides as x-middleware-request-<name>. */
+  function forwarded(response: Response): Map<string, string> {
+    const names = (response.headers.get("x-middleware-override-headers") ?? "").split(",").filter(Boolean);
+    return new Map(names.map((n) => [n, response.headers.get(`x-middleware-request-${n}`) ?? ""]));
+  }
+  const call = async (path: string, headers: Record<string, string> = {}) => {
+    const { NextRequest } = await import("next/server");
+    const { middleware } = await import("../middleware");
+    return middleware(new NextRequest(new URL(path, "http://127.0.0.1:3000"), { headers }));
+  };
+
+  it("aPreviewPathIsRewrittenAndMarked", async () => {
+    const response = await call("/app/preview/home?patient=p1");
+    const target = new URL(response.headers.get("x-middleware-rewrite") ?? "http://unset/");
+    expect(target.pathname).toBe("/app/home");
+    expect(target.search).toBe("?patient=p1");
+    const headers = forwarded(response);
+    expect(headers.get("x-medioo-preview")).toBe("1");
+    // The place the browser asked for, preview prefix included, so a sign-in hop returns to the preview.
+    expect(headers.get("x-medioo-path")).toBe("/app/preview/home?patient=p1");
+    expect(directives(response.headers.get("content-security-policy") ?? "").get("default-src")).toBe("'none'");
+    expect(response.headers.get("x-frame-options")).toBe("DENY");
+  });
+
+  it("theBarePreviewPathIsRewrittenToo", async () => {
+    const bare = await call("/app/preview");
+    expect(new URL(bare.headers.get("x-middleware-rewrite") ?? "http://unset/").pathname).toBe("/app");
+    expect(forwarded(bare).get("x-medioo-preview")).toBe("1");
+    const slash = await call("/app/preview/");
+    expect(new URL(slash.headers.get("x-middleware-rewrite") ?? "http://unset/").pathname).toBe("/app/");
+    // A look-alike is not the preview.
+    const lookalike = await call("/app/previewer");
+    expect(lookalike.headers.get("x-middleware-rewrite")).toBeNull();
+    expect(forwarded(lookalike).has("x-medioo-preview")).toBe(false);
+  });
+
+  it("anIncomingPreviewMarkIsDropped", async () => {
+    const response = await call("/app/home", { "x-medioo-preview": "1", "x-medioo-path": "/app/elsewhere" });
+    expect(response.headers.get("x-middleware-rewrite")).toBeNull();
+    const headers = forwarded(response);
+    expect(headers.has("x-medioo-preview"), "x-medioo-preview reaches the page").toBe(false);
+    expect(headers.get("x-medioo-path")).toBe("/app/home");
+    expect(response.headers.get("content-security-policy")).not.toBeNull();
+  });
+});

@@ -204,6 +204,7 @@
   "login.enter": "Sign in",
   "login.hint": "Use the number you use WhatsApp on",
   "login.next": "Next",
+  "login.nojs": "Sign in without JavaScript",
   "login.number": "Your WhatsApp number",
   "login.number.change": "Change",
   "login.number.confirm": "Is this right?",
