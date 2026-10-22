@@ -1,0 +1,1118 @@
+{
+  "_meta": {
+    "generated_by": "baymax PaperApiContractTest",
+    "source": "GET /app/api/documents/{id} over the PaperFixtures case fifty-eight-values-multipage"
+  },
+  "body": {
+    "banner": {
+      "level": "now",
+      "line_key": "urgency.now"
+    },
+    "counts": {
+      "line_key": "result.counts",
+      "outside": 5,
+      "values": 58
+    },
+    "date": "2026-10-12",
+    "date_is_upload_day": false,
+    "date_uncertain": false,
+    "doctor": { },
+    "document_type": "lab_report",
+    "facility": "Shapla Diagnostics",
+    "filed": false,
+    "follow_up": [ ],
+    "gate": "RELEASED",
+    "id": "5e9edf6d-0a2a-4913-8675-9d07a4100003",
+    "medicines": [ ],
+    "now": {
+      "bring_key": "now.bring",
+      "call_999": true,
+      "flags_go_key": "now.flags.go",
+      "notdoctor_key": "now.notdoctor",
+      "remote_share": false
+    },
+    "owner": true,
+    "page_count": 3,
+    "pages": [
+      {
+        "n": 1,
+        "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/page/1"
+      },
+      {
+        "n": 2,
+        "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/page/2"
+      },
+      {
+        "n": 3,
+        "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/page/3"
+      }
+    ],
+    "patient": {
+      "age": 64,
+      "id": "5e9edf6d-0a2a-4913-8675-9d07a4100002",
+      "name": "Ma",
+      "name_objective": "Ma-কে",
+      "name_possessive": "Ma-র"
+    },
+    "printed_date": "2026-10-12",
+    "reasons": [
+      "value_critical",
+      "value_outside_range"
+    ],
+    "received_at": "2026-10-20T03:59:00Z",
+    "status": "DONE",
+    "unverified": null,
+    "urgency": "now",
+    "values": [
+      {
+        "chip_key": "value.chip.critical.high",
+        "crop": {
+          "height": 85,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Potassium.jpg",
+          "width": 670
+        },
+        "display_kind": "critical",
+        "id": "7af69ec6-676f-3bb9-b0bb-3e665c36ed57",
+        "in_now_block": true,
+        "name": "Potassium",
+        "pin": 98.0,
+        "ref_high": "5.1",
+        "ref_low": "3.5",
+        "side": "high",
+        "unit": "mmol/L",
+        "value": "6.9"
+      },
+      {
+        "chip_key": "value.chip.outside.low",
+        "crop": {
+          "height": null,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Sodium.jpg",
+          "width": null
+        },
+        "display_kind": "outside",
+        "id": "7e0f2d86-408b-3c71-8ffd-bfd91a5e282b",
+        "in_now_block": false,
+        "name": "Sodium",
+        "pin": 2.0,
+        "ref_high": "145",
+        "ref_low": "135",
+        "side": "low",
+        "unit": "mmol/L",
+        "value": "128"
+      },
+      {
+        "chip_key": "value.chip.outside.high",
+        "crop": {
+          "height": 32,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Glucosefasting.jpg",
+          "width": 140
+        },
+        "display_kind": "outside",
+        "id": "0893ac7f-4edd-3313-bb02-f26e9e7c105d",
+        "in_now_block": false,
+        "name": "Glucose fasting",
+        "pin": 98.0,
+        "ref_high": "6.1",
+        "ref_low": "3.9",
+        "side": "high",
+        "unit": "mmol/L",
+        "value": "7.8"
+      },
+      {
+        "chip_key": "value.chip.outside.low",
+        "crop": {
+          "height": 30,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Calcium.jpg",
+          "width": 120
+        },
+        "display_kind": "outside",
+        "id": "ab53b32f-8d8c-37d9-8a30-15cd102ae21a",
+        "in_now_block": false,
+        "name": "Calcium",
+        "pin": 7.5,
+        "ref_high": "2.55",
+        "ref_low": "2.15",
+        "side": "low",
+        "unit": "mmol/L",
+        "value": "2.01"
+      },
+      {
+        "chip_key": "value.chip.outside.high",
+        "crop": {
+          "height": 31,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Creatinine.jpg",
+          "width": 130
+        },
+        "display_kind": "outside",
+        "id": "06c311a8-a024-3775-9e90-4f3f4426408d",
+        "in_now_block": false,
+        "name": "Creatinine",
+        "pin": 98.0,
+        "ref_high": "104",
+        "ref_low": "59",
+        "side": "high",
+        "unit": "µmol/L",
+        "value": "131"
+      },
+      {
+        "chip_key": "value.chip.unknown",
+        "crop": {
+          "height": 34,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-LDL.jpg",
+          "width": 160
+        },
+        "display_kind": "unknown",
+        "id": "4cb575e6-bdf6-36eb-acb9-8693f27a4198",
+        "in_now_block": false,
+        "name": "LDL",
+        "pin": null,
+        "ref_high": "100",
+        "ref_low": null,
+        "side": null,
+        "unit": "mg/dL",
+        "value": "90"
+      },
+      {
+        "chip_key": "value.chip.unknown",
+        "crop": {
+          "height": 86,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Triglycerides.jpg",
+          "width": 680
+        },
+        "display_kind": "unknown",
+        "id": "c167f613-d360-3370-8fb4-ee9c4c39fc93",
+        "in_now_block": false,
+        "name": "Triglycerides",
+        "pin": null,
+        "ref_high": "150",
+        "ref_low": null,
+        "side": null,
+        "unit": "mg/dL",
+        "value": "140"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 33,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Haemoglobin.jpg",
+          "width": 150
+        },
+        "display_kind": "inside",
+        "id": "efae053b-a72a-3298-9d84-a304a320cc9c",
+        "in_now_block": false,
+        "name": "Haemoglobin",
+        "pin": 40.7,
+        "ref_high": "15.5",
+        "ref_low": "12.0",
+        "side": null,
+        "unit": "g/dL",
+        "value": "13.1"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 35,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker01.jpg",
+          "width": 170
+        },
+        "display_kind": "inside",
+        "id": "28a20d09-2672-3214-a67e-ec440c570a6c",
+        "in_now_block": false,
+        "name": "Marker 01",
+        "pin": 29.0,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "11"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 36,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker02.jpg",
+          "width": 180
+        },
+        "display_kind": "inside",
+        "id": "0e30970c-0f83-3aa0-af44-4c7acb40223e",
+        "in_now_block": false,
+        "name": "Marker 02",
+        "pin": 29.7,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "12"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 37,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker03.jpg",
+          "width": 190
+        },
+        "display_kind": "inside",
+        "id": "2b3c0b93-ec46-3516-8abb-1bdfee1da477",
+        "in_now_block": false,
+        "name": "Marker 03",
+        "pin": 30.3,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "13"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 38,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker04.jpg",
+          "width": 200
+        },
+        "display_kind": "inside",
+        "id": "9fe7b2c4-39dd-3489-9c7d-3c189c5172a1",
+        "in_now_block": false,
+        "name": "Marker 04",
+        "pin": 31.0,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "14"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 39,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker05.jpg",
+          "width": 210
+        },
+        "display_kind": "inside",
+        "id": "20895365-559d-36fe-ba29-2afe632bc566",
+        "in_now_block": false,
+        "name": "Marker 05",
+        "pin": 31.7,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "15"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 40,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker06.jpg",
+          "width": 220
+        },
+        "display_kind": "inside",
+        "id": "9c88e9ea-7910-371c-9caf-f02043356a19",
+        "in_now_block": false,
+        "name": "Marker 06",
+        "pin": 32.3,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "16"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 41,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker07.jpg",
+          "width": 230
+        },
+        "display_kind": "inside",
+        "id": "4f2c6f3e-1f34-3382-b2f9-ed3936696395",
+        "in_now_block": false,
+        "name": "Marker 07",
+        "pin": 33.0,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "17"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 42,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker08.jpg",
+          "width": 240
+        },
+        "display_kind": "inside",
+        "id": "8d1e2733-bef4-3a25-9ccf-e517b6485990",
+        "in_now_block": false,
+        "name": "Marker 08",
+        "pin": 33.7,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "18"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 43,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker09.jpg",
+          "width": 250
+        },
+        "display_kind": "inside",
+        "id": "29ddb763-94ff-3ac2-a599-4ca8de147612",
+        "in_now_block": false,
+        "name": "Marker 09",
+        "pin": 34.3,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "19"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 44,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker10.jpg",
+          "width": 260
+        },
+        "display_kind": "inside",
+        "id": "b4a1d228-9a4b-35f6-8e79-ea75a24b6f4c",
+        "in_now_block": false,
+        "name": "Marker 10",
+        "pin": 35.0,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "20"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 45,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker11.jpg",
+          "width": 270
+        },
+        "display_kind": "inside",
+        "id": "52bdfc47-4bc5-3113-acc7-ea7c9f46950d",
+        "in_now_block": false,
+        "name": "Marker 11",
+        "pin": 35.7,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "21"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 46,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker12.jpg",
+          "width": 280
+        },
+        "display_kind": "inside",
+        "id": "7a7cda98-530c-3cb7-b419-14bf228719f2",
+        "in_now_block": false,
+        "name": "Marker 12",
+        "pin": 36.3,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "22"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 47,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker13.jpg",
+          "width": 290
+        },
+        "display_kind": "inside",
+        "id": "b3f523f3-4578-3eaa-a91f-c3f4cb53f8d8",
+        "in_now_block": false,
+        "name": "Marker 13",
+        "pin": 37.0,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "23"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 48,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker14.jpg",
+          "width": 300
+        },
+        "display_kind": "inside",
+        "id": "ab31856a-cc19-3740-989a-9a243e2a15b1",
+        "in_now_block": false,
+        "name": "Marker 14",
+        "pin": 37.7,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "24"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 49,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker15.jpg",
+          "width": 310
+        },
+        "display_kind": "inside",
+        "id": "9f794247-0249-3a4f-b255-b30d92c3babc",
+        "in_now_block": false,
+        "name": "Marker 15",
+        "pin": 38.3,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "25"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 50,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker16.jpg",
+          "width": 320
+        },
+        "display_kind": "inside",
+        "id": "3e53ca24-6da2-3764-93a7-f0024dee8901",
+        "in_now_block": false,
+        "name": "Marker 16",
+        "pin": 39.0,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "26"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 51,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker17.jpg",
+          "width": 330
+        },
+        "display_kind": "inside",
+        "id": "bd7f8242-82fe-3d40-bfa0-66dca7a1c9b4",
+        "in_now_block": false,
+        "name": "Marker 17",
+        "pin": 39.7,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "27"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 52,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker18.jpg",
+          "width": 340
+        },
+        "display_kind": "inside",
+        "id": "aa343ecc-492f-3315-b3ae-9bce36e6985d",
+        "in_now_block": false,
+        "name": "Marker 18",
+        "pin": 40.3,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "28"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 53,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker19.jpg",
+          "width": 350
+        },
+        "display_kind": "inside",
+        "id": "c85e6bd5-761e-3576-a094-e0d0e6e1a947",
+        "in_now_block": false,
+        "name": "Marker 19",
+        "pin": 41.0,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "29"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 54,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker20.jpg",
+          "width": 360
+        },
+        "display_kind": "inside",
+        "id": "80bdaeda-36ca-3464-bbcc-f487b3f07d53",
+        "in_now_block": false,
+        "name": "Marker 20",
+        "pin": 41.7,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "30"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 55,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker21.jpg",
+          "width": 370
+        },
+        "display_kind": "inside",
+        "id": "ea9d9cf9-33ee-3ae4-bb87-9e204134adf1",
+        "in_now_block": false,
+        "name": "Marker 21",
+        "pin": 42.3,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "31"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 56,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker22.jpg",
+          "width": 380
+        },
+        "display_kind": "inside",
+        "id": "232788c5-5668-3307-835b-1feb75786145",
+        "in_now_block": false,
+        "name": "Marker 22",
+        "pin": 43.0,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "32"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 57,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker23.jpg",
+          "width": 390
+        },
+        "display_kind": "inside",
+        "id": "fbbfc331-a496-3d61-b4df-46b6c36bf10a",
+        "in_now_block": false,
+        "name": "Marker 23",
+        "pin": 43.7,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "33"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 58,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker24.jpg",
+          "width": 400
+        },
+        "display_kind": "inside",
+        "id": "e22a7691-2496-3003-9176-a7bcb9597b33",
+        "in_now_block": false,
+        "name": "Marker 24",
+        "pin": 44.3,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "34"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 59,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker25.jpg",
+          "width": 410
+        },
+        "display_kind": "inside",
+        "id": "921e5dfd-11cf-3bd5-a932-909869fcec76",
+        "in_now_block": false,
+        "name": "Marker 25",
+        "pin": 45.0,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "35"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 60,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker26.jpg",
+          "width": 420
+        },
+        "display_kind": "inside",
+        "id": "0d30d1f2-fb2f-3f59-bb7b-101d41de4106",
+        "in_now_block": false,
+        "name": "Marker 26",
+        "pin": 45.7,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "36"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 61,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker27.jpg",
+          "width": 430
+        },
+        "display_kind": "inside",
+        "id": "4a5294fb-7363-33be-91a8-0c6c358b35a7",
+        "in_now_block": false,
+        "name": "Marker 27",
+        "pin": 46.3,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "37"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 62,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker28.jpg",
+          "width": 440
+        },
+        "display_kind": "inside",
+        "id": "6d77f162-e9f1-3e74-a165-c6b2f478c854",
+        "in_now_block": false,
+        "name": "Marker 28",
+        "pin": 47.0,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "38"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 63,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker29.jpg",
+          "width": 450
+        },
+        "display_kind": "inside",
+        "id": "a270d558-029e-36a5-a1f7-85df77f1d1dc",
+        "in_now_block": false,
+        "name": "Marker 29",
+        "pin": 47.7,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "39"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 64,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker30.jpg",
+          "width": 460
+        },
+        "display_kind": "inside",
+        "id": "d3880f49-4081-358c-8683-2c15f7caf42b",
+        "in_now_block": false,
+        "name": "Marker 30",
+        "pin": 48.3,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "40"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 65,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker31.jpg",
+          "width": 470
+        },
+        "display_kind": "inside",
+        "id": "07191dc2-d64d-3374-b9b2-c133b170db96",
+        "in_now_block": false,
+        "name": "Marker 31",
+        "pin": 49.0,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "41"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 66,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker32.jpg",
+          "width": 480
+        },
+        "display_kind": "inside",
+        "id": "41c325a8-4e5f-32d0-a41f-ee83533f7689",
+        "in_now_block": false,
+        "name": "Marker 32",
+        "pin": 49.7,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "42"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 67,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker33.jpg",
+          "width": 490
+        },
+        "display_kind": "inside",
+        "id": "a42c5d18-692f-33c6-a223-3d822cb7c19c",
+        "in_now_block": false,
+        "name": "Marker 33",
+        "pin": 50.3,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "43"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 68,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker34.jpg",
+          "width": 500
+        },
+        "display_kind": "inside",
+        "id": "638f520b-3712-3e40-a8dd-dda0305a12de",
+        "in_now_block": false,
+        "name": "Marker 34",
+        "pin": 51.0,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "44"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 69,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker35.jpg",
+          "width": 510
+        },
+        "display_kind": "inside",
+        "id": "28b7dde0-ea82-3cbf-9cad-b499dac09662",
+        "in_now_block": false,
+        "name": "Marker 35",
+        "pin": 51.7,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "45"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 70,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker36.jpg",
+          "width": 520
+        },
+        "display_kind": "inside",
+        "id": "6e4015b2-f394-3ef1-893b-33967b77a496",
+        "in_now_block": false,
+        "name": "Marker 36",
+        "pin": 52.3,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "46"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 71,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker37.jpg",
+          "width": 530
+        },
+        "display_kind": "inside",
+        "id": "595dc66b-55d9-3311-a228-415ce7f28424",
+        "in_now_block": false,
+        "name": "Marker 37",
+        "pin": 53.0,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "47"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 72,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker38.jpg",
+          "width": 540
+        },
+        "display_kind": "inside",
+        "id": "c67cf6e6-6df0-36ba-a798-834dc124ba21",
+        "in_now_block": false,
+        "name": "Marker 38",
+        "pin": 53.7,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "48"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 73,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker39.jpg",
+          "width": 550
+        },
+        "display_kind": "inside",
+        "id": "e153745a-d000-3e35-822b-5849370ff2d9",
+        "in_now_block": false,
+        "name": "Marker 39",
+        "pin": 54.3,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "49"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 74,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker40.jpg",
+          "width": 560
+        },
+        "display_kind": "inside",
+        "id": "1d0366e5-3622-352f-963f-b9c74a873ee6",
+        "in_now_block": false,
+        "name": "Marker 40",
+        "pin": 55.0,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "50"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 75,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker41.jpg",
+          "width": 570
+        },
+        "display_kind": "inside",
+        "id": "3274e241-abfe-3cc2-b15a-3f5882b96290",
+        "in_now_block": false,
+        "name": "Marker 41",
+        "pin": 55.7,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "51"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 76,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker42.jpg",
+          "width": 580
+        },
+        "display_kind": "inside",
+        "id": "81417134-8ee3-3ff6-9ba1-4843ad3ffef9",
+        "in_now_block": false,
+        "name": "Marker 42",
+        "pin": 56.3,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "52"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 77,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker43.jpg",
+          "width": 590
+        },
+        "display_kind": "inside",
+        "id": "301fcd99-37e3-32cf-8396-f6a530416040",
+        "in_now_block": false,
+        "name": "Marker 43",
+        "pin": 57.0,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "53"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 78,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker44.jpg",
+          "width": 600
+        },
+        "display_kind": "inside",
+        "id": "b8f73545-958d-3af0-ae6f-8689fbd74727",
+        "in_now_block": false,
+        "name": "Marker 44",
+        "pin": 57.7,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "54"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 79,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker45.jpg",
+          "width": 610
+        },
+        "display_kind": "inside",
+        "id": "f21c2acc-707f-3a8b-bae2-718c700471a6",
+        "in_now_block": false,
+        "name": "Marker 45",
+        "pin": 58.3,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "55"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 80,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker46.jpg",
+          "width": 620
+        },
+        "display_kind": "inside",
+        "id": "935b864c-a3d1-301e-91f1-552047e59a34",
+        "in_now_block": false,
+        "name": "Marker 46",
+        "pin": 59.0,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "56"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 81,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker47.jpg",
+          "width": 630
+        },
+        "display_kind": "inside",
+        "id": "d7367a68-9efb-3517-a69c-bf65e908bed0",
+        "in_now_block": false,
+        "name": "Marker 47",
+        "pin": 59.7,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "57"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 82,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker48.jpg",
+          "width": 640
+        },
+        "display_kind": "inside",
+        "id": "023d44ee-a690-36e6-9d58-063aa8ba6a73",
+        "in_now_block": false,
+        "name": "Marker 48",
+        "pin": 60.3,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "58"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 83,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker49.jpg",
+          "width": 650
+        },
+        "display_kind": "inside",
+        "id": "24417de7-df70-33d4-85c5-92ad11564909",
+        "in_now_block": false,
+        "name": "Marker 49",
+        "pin": 61.0,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "59"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": 84,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Marker50.jpg",
+          "width": 660
+        },
+        "display_kind": "inside",
+        "id": "5be92a00-e17f-3355-a2dd-6286d9541ae4",
+        "in_now_block": false,
+        "name": "Marker 50",
+        "pin": 61.7,
+        "ref_high": "80",
+        "ref_low": "5",
+        "side": null,
+        "unit": "U/L",
+        "value": "60"
+      }
+    ],
+    "viewer": {
+      "bangladesh": true
+    },
+    "wording": "Potassium is far above the printed range."
+  },
+  "status": 200
+}

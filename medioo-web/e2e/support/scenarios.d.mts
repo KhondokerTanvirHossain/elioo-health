@@ -18,6 +18,8 @@ export const PAGE_SCENARIOS: Record<string, string>;
 export const PAGE_MARKERS: Record<string, string>;
 export const PAGE_PATHS: Record<string, string>;
 export function familyPatientId(fixture: string, index?: number): string;
+export const PAPER_ID: string;
+export const SHEET_OBS: string;
 export const LONGEST: Record<string, string>;
 export function patientName(fixture: string): string;
 export function numberShown(fixture: string): string;

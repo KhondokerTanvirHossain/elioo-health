@@ -1,0 +1,41 @@
+/* Deleting a paper (DeletePaper.tsx): a quiet button at the foot of the paper, and the confirm inside the sheet. Never
+   red: the red is reserved for NOW (R2), and a delete is not urgency; the sheet's words carry the weight. */
+.delete-paper__open,
+.delete-paper__yes,
+.delete-paper__no {
+  min-height: var(--target-min);
+  padding: var(--space-2) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-md);
+  font-family: var(--font-bn);
+  font-size: var(--text-md);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.delete-paper__open,
+.delete-paper__no {
+  background: var(--bg3);
+  color: var(--label);
+}
+.delete-paper__yes {
+  background: var(--tint);
+  color: var(--on-tint);
+}
+.delete-paper__yes:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.delete-paper__open:focus-visible,
+.delete-paper__yes:focus-visible,
+.delete-paper__no:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.delete-paper__warn {
+  margin: 0 0 var(--space-4);
+}
+.delete-paper__actions {
+  display: grid;
+  gap: var(--space-2);
+}

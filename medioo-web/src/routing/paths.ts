@@ -43,6 +43,10 @@ export const NEXT_PAGES: readonly string[] = [
   "/app/patients/{id}/profile",
   "/app/health",
   "/app/timeline",
+  // W6: a paper, everything on it, and one value's sheet.
+  "/app/documents/{id}",
+  "/app/documents/{id}/all",
+  "/app/documents/{id}/values/{obs}",
 ];
 
 /** The `GET /app…` page patterns Java serves, as docs/infra/app-routes.txt lists them (routes.test.ts). */

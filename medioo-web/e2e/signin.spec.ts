@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { t, type CopyKey } from "../src/copy";
+import { previewPath } from "../src/routing/paths";
 import { useScenario } from "./support/browser-api";
 import { FIXTURES } from "./support/scenarios.mjs";
 import { screenChecks } from "./support/screen-checks";
@@ -267,8 +268,8 @@ test.describe("the preview gate", () => {
     const recorder = await useScenario(page, "preview-signed-in");
     const response = await page.request.get("/app/preview?next=%2Fapp%2Fdocuments%2Fx", { maxRedirects: 0 });
     expect(response.status()).toBe(307);
-    // The held paper is Java's page, so the preview does not wrap it.
-    expect(response.headers()["location"]).toBe(body<{ next: string }>("sign-in/next-held.json").next);
+    // The held paper is a Next page since W6, so a preview family is sent to it inside the preview (paths.href).
+    expect(response.headers()["location"]).toBe(previewPath(body<{ next: string }>("sign-in/next-held.json").next));
     expect((await recorder.java()).map((r) => r.path)).toEqual(["/app/api/me", "/app/api/sign-in/next"]);
   });
 });

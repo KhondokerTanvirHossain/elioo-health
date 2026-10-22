@@ -145,7 +145,46 @@ class PaperApiContractTest {
         cases.put("failed", () -> Served.result(PaperFixtures.failed()));
         cases.put("processing", () -> Served.reading(PaperFixtures.reading("PROCESSING")));
         cases.put("not-found", Served::notFound);
+        // plan W6: the two withheld gates, and the longest paper the screens are judged on
+        cases.put("withheld-rejected", () -> Served.result(withheld(GateState.REJECTED)));
+        cases.put("failed-safety", () -> Served.result(withheld(GateState.FAILED_SAFETY)));
+        cases.put("fifty-eight-values-multipage", () -> Served.result(fiftyEightValues()));
         return cases;
+    }
+
+    /**
+     * Plan W6: a THIS_WEEK paper whose explanation the gate withheld ({@code gate} REJECTED or FAILED_SAFETY), so no
+     * wording is sent, carrying an outside value, an inside one, a medicine and a follow-up, each with its crop.
+     */
+    static ResultView withheld(GateState gate) {
+        DocumentView view = PaperFixtures.paper("2026-10-12", List.of(PaperFixtures.sodiumLow(), PaperFixtures.haemoglobinInside()),
+                List.of(PaperFixtures.medicine("Napa 500", "1+0+1", "3 times a day", "after meals", "7 days")),
+                List.of(PaperFixtures.followUp("Come back in a week", "2026-10-19")), Map.of(), null);
+        return PaperFixtures.result(view, Urgency.THIS_WEEK, List.of("value_outside_range:sodium|stopgap"), gate, null, PaperFixtures.BD);
+    }
+
+    /**
+     * Plan W6: the longest paper a screen is judged on (the `/all` page's budget and its crop check): fifty-eight values
+     * on three pages, two outside on each side, one critical, two one-sided (unknown), the rest inside, each its own row
+     * and its own crop key.
+     */
+    static ResultView fiftyEightValues() {
+        List<Map<String, Object>> values = new ArrayList<>();
+        values.add(PaperFixtures.potassiumCritical());
+        values.add(PaperFixtures.sodiumLow());
+        values.add(value("Glucose fasting", "7.8", "mmol/L", "3.9", "6.1", "outside", "high"));
+        values.add(value("Calcium", "2.01", "mmol/L", "2.15", "2.55", "outside", "low"));
+        values.add(value("Creatinine", "131", "µmol/L", "59", "104", "outside", "high"));
+        values.add(PaperFixtures.ldlOneSided());
+        values.add(value("Triglycerides", "140", "mg/dL", null, "150", "inside"));
+        values.add(PaperFixtures.haemoglobinInside());
+        for (int n = 1; values.size() < 58; n++) {
+            values.add(value(String.format(java.util.Locale.ROOT, "Marker %02d", n), String.valueOf(10 + n), "U/L", "5", "80", "inside"));
+        }
+        DocumentView view = new DocumentView(DOC.toString(), "DONE", null, "lab_report", "2026-10-12", "Shapla Diagnostics", 0.9,
+                "m", 3, values, List.of(), List.of(), Map.of(), null);
+        return PaperFixtures.result(view, Urgency.NOW, List.of("value_critical:potassium|threshold:demo",
+                "value_outside_range:sodium|stopgap"), GateState.RELEASED, "Potassium is far above the printed range.", PaperFixtures.BD);
     }
 
     static Stream<String> caseNames() {

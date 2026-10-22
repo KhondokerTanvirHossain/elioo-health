@@ -20,6 +20,8 @@ import nowBannerOne from "../../fixtures/api/now-banner/one.json";
 import nowBannerTwoPatients from "../../fixtures/api/now-banner/two-patients.json";
 // The papers B2's PaperApiContractTest wrote from Java's PaperJson (fixtures/api/documents, the 200 bodies).
 import failed from "../../fixtures/api/documents/failed.json";
+import failedSafety from "../../fixtures/api/documents/failed-safety.json";
+import fiftyEightValues from "../../fixtures/api/documents/fifty-eight-values-multipage.json";
 import nowAbroad from "../../fixtures/api/documents/now-abroad.json";
 import nowBd from "../../fixtures/api/documents/now-bd.json";
 import processing from "../../fixtures/api/documents/processing.json";
@@ -27,6 +29,7 @@ import retakeThird from "../../fixtures/api/documents/retake-third.json";
 import routineReleased from "../../fixtures/api/documents/routine-released.json";
 import thisWeekPending from "../../fixtures/api/documents/this-week-pending.json";
 import unassessed from "../../fixtures/api/documents/unassessed.json";
+import withheldRejected from "../../fixtures/api/documents/withheld-rejected.json";
 // B3's and B6's generated calendar and labs bodies (plan W2e-b): a state shows what the API sends, never a hand fixture.
 import busyCalendar from "../../fixtures/api/calendar/busy.json";
 import crowdedCalendar from "../../fixtures/api/calendar/crowded.json";
@@ -53,7 +56,9 @@ const names = catalogNames.names;
  * the literals a JSON import widens included, which is what makes the cast below true.
  */
 export const PAPER_FIXTURES: Record<string, Json<PaperJson>> = {
+  "failed-safety": failedSafety.body,
   failed: failed.body,
+  "fifty-eight-values-multipage": fiftyEightValues.body,
   "now-abroad": nowAbroad.body,
   "now-bd": nowBd.body,
   processing: processing.body,
@@ -61,6 +66,7 @@ export const PAPER_FIXTURES: Record<string, Json<PaperJson>> = {
   "routine-released": routineReleased.body,
   "this-week-pending": thisWeekPending.body,
   unassessed: unassessed.body,
+  "withheld-rejected": withheldRejected.body,
 };
 const nameFor = (lang: Lang) => (lang === "bn" ? names.short : names.english);
 
