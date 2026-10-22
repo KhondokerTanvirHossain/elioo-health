@@ -104,7 +104,7 @@ public class PaperApiHandler {
                         .flatMap(status -> status != Document.Status.DONE ? Mono.<ResultView>error(notFound())
                                 : results.result(family, documentId))
                         .flatMap(r -> !r.done() ? Mono.error(notFound())
-                                : Mono.zip(sizes(r, documentId), earlierSizes(history.sameUnit()))
+                                : Mono.zip(sizes(r, documentId, storage), earlierSizes(history.sameUnit()))
                                         .map(s -> PaperJson.valueSheet(r, observationId, history, s.getT1(), s.getT2(),
                                                 copy.poss(lang, r.patient().name())))))
                 .flatMap(body -> ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValue(body));
