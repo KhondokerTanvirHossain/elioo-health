@@ -87,7 +87,20 @@ public final class HealthJson {
         m.put("side", p.side());
         m.put("chip_key", PaperDisplay.chipKey(kind, p.side()));
         m.put("crop", ordered("src", ImageRefs.crop(p.documentId(), p.cropKey())));
+        // PO ruling R3 (DR-48), added after every shipped field (A2): the range this paper printed, numbers only where they
+        // agree with the chip (PaperDisplay.drawnBand), all three null when it printed none
+        m.put("ref_low", number(p.range().low()));
+        m.put("ref_high", number(p.range().high()));
+        m.put("ref_text", p.range().text());
         return m;
+    }
+
+    /** A bound as a JSON number: {@code 200}, not {@code 200.0}, for a whole one; null stays null. */
+    private static Number number(Double d) {
+        if (d == null) {
+            return null;
+        }
+        return d == Math.rint(d) && Math.abs(d) < 1e15 ? (Number) d.longValue() : d;
     }
 
     /**

@@ -138,6 +138,7 @@ class HealthApiContractTest {
         cases.put("bp", () -> Case.labs(bpRows()));
         cases.put("labs-with-unknown", () -> Case.labs(labsWithUnknown()));
         cases.put("labs-non-numeric", () -> Case.labs(labsNonNumeric()));
+        cases.put("labs-printed-range", () -> Case.labs(labsPrintedRange()));
         cases.put("medicines-latest", () -> Case.medicines(new LatestPrescription(RX, LocalDate.parse("2026-10-12"), false, true,
                 List.of(medicine("Tab. Demoprol", "50 mg", "1+0+1", "after food", "30 days", 1),
                         medicine("Tab. Fictazide", "25 mg", null, null, null, 2)), Optional.empty())));
@@ -228,6 +229,47 @@ class HealthApiContractTest {
         Map<String, Object> creatinineJun = row(LAB_UNDATED, 65, "2026-06-20", "Creatinine", "creatinine", "98", "µmol/L", "59", "104");
         creatinineJun.put("verdict", "inside");
         return List.of(creatinineOct, crpOct, creatinineAug, crpAug, creatinineJun);
+    }
+
+    /**
+     * PO ruling R3 (2026-10-22, DR-48): every shape a printed range is stored in, over five series, each verdict one the
+     * production rule can store. Creatinine on three papers: two labs printed two different two-sided ranges (59–104,
+     * 62–106), and the third printed none. Total cholesterol printed one-sided high ({@code <200}) and HDL one-sided low
+     * ({@code >40}): the stopgap stores {@code unknown} for a value beside a one-sided range whichever side of it the value
+     * sits ({@code UrgencyService.criticalKind} needs both bounds), so the October and August points are UNKNOWN above,
+     * below and inside their bound. Fasting glucose's newer paper put the whole range in one column ({@code 3.9-6.1}),
+     * which the band cannot place; its older paper printed it in two. Potassium is the band that contradicts its chip.
+     *
+     * <p><b>The threshold path</b>, named because only a signed-off per-marker threshold ({@code perMarkerVerdict}, which
+     * never reads the printed range) can store these: June's creatinine 150 OUTSIDE high with no printed range, June's
+     * cholesterol 240 OUTSIDE high above {@code <200}, June's HDL 35 OUTSIDE low below {@code >40}, and October's
+     * potassium 5.0 CRITICAL high inside its printed 3.5–5.1. August's potassium is a legacy row with a NULL verdict
+     * inside its band.</p>
+     */
+    static List<Map<String, Object>> labsPrintedRange() {
+        Map<String, Object> creatinineOct = verdict(row(LAB_OCT, 71, "2026-10-12", "S. Creatinine", "creatinine", "132", "µmol/L", "59", "104"), "outside", "high");
+        Map<String, Object> cholesterolOct = verdict(row(LAB_OCT, 72, "2026-10-12", "Total Cholesterol", "total_cholesterol", "210", "mg/dL", null, "<200"), "unknown", null);
+        Map<String, Object> hdlOct = verdict(row(LAB_OCT, 73, "2026-10-12", "HDL Cholesterol", "hdl", "38", "mg/dL", ">40", null), "unknown", null);
+        Map<String, Object> glucoseOct = verdict(row(LAB_OCT, 74, "2026-10-12", "Fasting Glucose", "fasting_glucose", "6.4", "mmol/L", "3.9-6.1", null), "unknown", null);
+        Map<String, Object> potassiumOct = verdict(row(LAB_OCT, 82, "2026-10-12", "Potassium", "potassium", "5.0", "mmol/L", "3.5", "5.1"), "critical", "high");
+        Map<String, Object> creatinineAug = verdict(row(LAB_AUG, 75, "2026-08-03", "Creatinine", "creatinine", "98", "umol/L", "62", "106"), "inside", null);
+        Map<String, Object> cholesterolAug = verdict(row(LAB_AUG, 76, "2026-08-03", "Total Cholesterol", "total_cholesterol", "180", "mg/dL", null, "<200"), "unknown", null);
+        Map<String, Object> hdlAug = verdict(row(LAB_AUG, 77, "2026-08-03", "HDL Cholesterol", "hdl", "45", "mg/dL", ">40", null), "unknown", null);
+        Map<String, Object> glucoseAug = verdict(row(LAB_AUG, 78, "2026-08-03", "Fasting Glucose", "fasting_glucose", "5.2", "mmol/L", "3.9", "6.1"), "inside", null);
+        Map<String, Object> potassiumAug = row(LAB_AUG, 83, "2026-08-03", "Potassium", "potassium", "4.2", "mmol/L", "3.5", "5.1");
+        Map<String, Object> creatinineJun = verdict(row(LAB_UNDATED, 79, "2026-06-20", "Creatinine", "creatinine", "150", "umol/L", null, null), "outside", "high");
+        Map<String, Object> cholesterolJun = verdict(row(LAB_UNDATED, 80, "2026-06-20", "Total Cholesterol", "total_cholesterol", "240", "mg/dL", null, "<200"), "outside", "high");
+        Map<String, Object> hdlJun = verdict(row(LAB_UNDATED, 81, "2026-06-20", "HDL Cholesterol", "hdl", "35", "mg/dL", ">40", null), "outside", "low");
+        return List.of(creatinineOct, cholesterolOct, hdlOct, glucoseOct, potassiumOct, creatinineAug, cholesterolAug, hdlAug, glucoseAug,
+                potassiumAug, creatinineJun, cholesterolJun, hdlJun);
+    }
+
+    private static Map<String, Object> verdict(Map<String, Object> row, String verdict, String side) {
+        row.put("verdict", verdict);
+        if (side != null) {
+            row.put("verdict_side", side);
+        }
+        return row;
     }
 
     /** One BP : 130 / 80 line read through extraction: two values, two crops, one line. */
@@ -373,7 +415,7 @@ class HealthApiContractTest {
 
     private static void assertPoint(JsonNode j, com.elioo.baymax.web.domain.LabSeries.Point p) {
         assertThat(fieldNames(j)).containsExactly("document_id", "observation_id", "value", "date", "date_is_upload_day", "date_uncertain",
-                "kind", "side", "chip_key", "crop");
+                "kind", "side", "chip_key", "crop", "ref_low", "ref_high", "ref_text");
         assertThat(j.path("document_id").asText()).isEqualTo(p.documentId().toString());
         assertThat(j.path("observation_id").asText()).isEqualTo(p.observationId().toString());
         assertThat(j.path("value").asText()).isEqualTo(p.value());
@@ -385,6 +427,133 @@ class HealthApiContractTest {
         assertThat(j.path("chip_key").asText()).isEqualTo(PaperDisplay.chipKey(p.kind(), p.side()));
         assertThat(fieldNames(j.path("crop"))).containsExactly("src");
         assertThat(j.path("crop").path("src").asText()).isEqualTo(ImageRefs.crop(p.documentId(), p.cropKey()));
+        assertThat(j.path("ref_low").isNull() ? null : j.path("ref_low").asDouble()).isEqualTo(p.range().low());
+        assertThat(j.path("ref_high").isNull() ? null : j.path("ref_high").asDouble()).isEqualTo(p.range().high());
+        assertThat(j.path("ref_text").isNull() ? null : j.path("ref_text").asText()).isEqualTo(p.range().text());
+    }
+
+    // ---- R3: the printed range, per point ------------------------------------------------------------------------
+
+    /** The points of {@code labs-printed-range}, by observation id. */
+    private Map<String, JsonNode> printedRangePoints() throws IOException {
+        JsonNode body = get(cases().get("labs-printed-range").get());
+        Map<String, JsonNode> byId = new HashMap<>();
+        for (JsonNode s : body.path("series")) {
+            for (JsonNode p : s.path("points")) {
+                byId.put(p.path("observation_id").asText(), p);
+            }
+        }
+        assertThat(byId).as("the points of labs-printed-range").hasSize(labsPrintedRange().size());
+        return byId;
+    }
+
+    private static String observation(int n) {
+        return String.format("b6b6b6b6-0000-4000-8000-0000000001%02d", n);
+    }
+
+    /** {@code ref_low} and {@code ref_high} are JSON numbers or JSON null and {@code ref_text} text or null: never absent. */
+    private static void assertRange(JsonNode point, Double low, Double high, String text) {
+        String id = point.path("observation_id").asText();
+        for (String field : List.of("ref_low", "ref_high", "ref_text")) {
+            assertThat(point.has(field)).as(field + " of " + id + " is sent, null when not printed").isTrue();
+        }
+        Double[] expected = {low, high};
+        String[] fields = {"ref_low", "ref_high"};
+        for (int i = 0; i < 2; i++) {
+            JsonNode n = point.path(fields[i]);
+            if (expected[i] == null) {
+                assertThat(n.isNull()).as(fields[i] + " of " + id + " is null, was " + n).isTrue();
+            } else {
+                assertThat(n.isNumber()).as(fields[i] + " of " + id + " is a number, was " + n).isTrue();
+                assertThat(n.asDouble()).as(fields[i] + " of " + id).isEqualTo(expected[i]);
+            }
+        }
+        if (text == null) {
+            assertThat(point.path("ref_text").isNull()).as("ref_text of " + id + " is null, was " + point.path("ref_text")).isTrue();
+        } else {
+            assertThat(point.path("ref_text").asText()).as("ref_text of " + id).isEqualTo(text);
+        }
+    }
+
+    @Test
+    void aTwoSidedPrintedRangeIsSentWithBothNumbersAndItsText() throws IOException {
+        Map<String, JsonNode> points = printedRangePoints();
+        assertRange(points.get(observation(71)), 59.0, 104.0, "59–104");
+        assertRange(points.get(observation(78)), 3.9, 6.1, "3.9–6.1");
+    }
+
+    @Test
+    void eachPointCarriesItsOwnPapersRange() throws IOException {
+        Map<String, JsonNode> points = printedRangePoints();
+        assertRange(points.get(observation(71)), 59.0, 104.0, "59–104");
+        assertRange(points.get(observation(75)), 62.0, 106.0, "62–106");
+        JsonNode creatinine = null;
+        for (JsonNode series : get(cases().get("labs-printed-range").get()).path("series")) {
+            if (series.path("canonical_name").asText().equals("creatinine")) {
+                creatinine = series;
+            }
+        }
+        assertThat(creatinine).as("the creatinine series").isNotNull();
+        assertThat(creatinine.path("points")).as("two printed ranges, still one series").hasSize(3);
+    }
+
+    /** A one-sided range carries only that side, beside a point the chip places beyond it (the threshold path). */
+    @Test
+    void aOneSidedPrintedRangeCarriesOnlyThatSide() throws IOException {
+        Map<String, JsonNode> points = printedRangePoints();
+        assertRange(points.get(observation(80)), null, 200.0, "<200");
+        assertRange(points.get(observation(81)), 40.0, null, ">40");
+    }
+
+    /**
+     * What the stopgap stores beside a one-sided range is UNKNOWN, above (210 by {@code <200}), below (38 by {@code >40})
+     * or within the bound (180, 45). A one-sided range is never INSIDE (D35), so a region from the axis to 200 behind 180
+     * would say "normal" where the chip says unknown: those points carry the words and no number at all.
+     */
+    @Test
+    void aOneSidedBoundBesideAnUnknownPointIsTextOnly() throws IOException {
+        Map<String, JsonNode> points = printedRangePoints();
+        for (int n : new int[] {72, 76}) {
+            assertThat(points.get(observation(n)).path("kind").asText()).isEqualTo("unknown");
+            assertRange(points.get(observation(n)), null, null, "<200");
+        }
+        for (int n : new int[] {73, 77}) {
+            assertThat(points.get(observation(n)).path("kind").asText()).isEqualTo("unknown");
+            assertRange(points.get(observation(n)), null, null, ">40");
+        }
+    }
+
+    /**
+     * The band agrees with the point's chip or carries no number, by the paper page's pin rule (PaperDisplay.drawnBand),
+     * so React never judges it. Potassium 5.0 is CRITICAL by a threshold inside its printed 3.5–5.1: a red point inside
+     * the pale "normal" band. Potassium 4.2 has a NULL verdict inside it: an UNKNOWN chip the band would contradict.
+     */
+    @Test
+    void aBandThatContradictsThePointsChipIsSentAsTextOnly() throws IOException {
+        Map<String, JsonNode> points = printedRangePoints();
+        assertThat(points.get(observation(82)).path("kind").asText()).isEqualTo("critical");
+        assertRange(points.get(observation(82)), null, null, "3.5–5.1");
+        assertThat(points.get(observation(83)).path("kind").asText()).isEqualTo("unknown");
+        assertRange(points.get(observation(83)), null, null, "3.5–5.1");
+    }
+
+    /**
+     * The other direction: a paper that printed no range sends all three null, never a default or a table's range, nor
+     * its neighbour's. June's creatinine is OUTSIDE high (150), so a leaked 59–104 or August's 62–106 would agree with its
+     * chip and be sent: this guard can fail on that leak.
+     */
+    @Test
+    void aPointWithNoPrintedRangeSendsAllThreeNull() throws IOException {
+        Map<String, JsonNode> points = printedRangePoints();
+        assertRange(points.get(observation(79)), null, null, null);
+        JsonNode bp = get(Case.labs(bpRows())).path("bp").path("points").get(0);
+        assertRange(bp.path("systolic"), null, null, null);
+        assertRange(bp.path("diastolic"), null, null, null);
+    }
+
+    @Test
+    void printedTextTheBandCannotPlaceIsSentAsTextWithNoNumber() throws IOException {
+        assertRange(printedRangePoints().get(observation(74)), null, null, "3.9-6.1");
     }
 
     @Test

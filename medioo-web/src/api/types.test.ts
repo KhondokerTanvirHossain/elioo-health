@@ -26,6 +26,7 @@ import empty from "../../fixtures/api/calendar/empty.json";
 import bp from "../../fixtures/api/health/bp.json";
 import labsNonNumeric from "../../fixtures/api/health/labs-non-numeric.json";
 import labsNone from "../../fixtures/api/health/labs-none.json";
+import labsPrintedRange from "../../fixtures/api/health/labs-printed-range.json";
 import labsSome from "../../fixtures/api/health/labs-some.json";
 import labsWithUnknown from "../../fixtures/api/health/labs-with-unknown.json";
 // B1's generated GET /app/api/me bodies (baymax MeApiContractTest), plan W4: the shell reads every field it renders here.
@@ -276,6 +277,9 @@ const POINT_KEYS = [
   "document_id",
   "kind",
   "observation_id",
+  "ref_high",
+  "ref_low",
+  "ref_text",
   "side",
   "value",
 ] as const;
@@ -332,6 +336,7 @@ describe("the API types are the generated fixtures", () => {
       ["labs-none", labsNone.body],
       ["labs-with-unknown", labsWithUnknown.body],
       ["labs-non-numeric", labsNonNumeric.body],
+      ["labs-printed-range", labsPrintedRange.body],
       ["bp", bp.body],
     ];
     // Every committed labs fixture is assigned above, so a case B6 or W9 adds fails here until it is listed.
@@ -357,6 +362,49 @@ describe("the API types are the generated fixtures", () => {
     for (const p of points) expect(keys(p), p.observation_id).toEqual([...POINT_KEYS]);
     expect(points.length, "points walked").toBeGreaterThan(0);
     expect(pairs, "blood-pressure pairs walked").toBeGreaterThan(0);
+
+    // PO ruling R3: the printed range, both ways, over every generated point. A number comes only with the words it was
+    // read from, so a point whose paper printed nothing carries no number: never a default range.
+    for (const p of points) {
+      const id = p.observation_id;
+      expect(p.ref_low === null || typeof p.ref_low === "number", `${id} ref_low`).toBe(true);
+      expect(p.ref_high === null || typeof p.ref_high === "number", `${id} ref_high`).toBe(true);
+      expect(p.ref_text === null || typeof p.ref_text === "string", `${id} ref_text`).toBe(true);
+      if (p.ref_text === null) expect([p.ref_low, p.ref_high], `${id}: nothing printed, no number`).toEqual([null, null]);
+      if (p.ref_low !== null && p.ref_high !== null) expect(p.ref_low, `${id}: low below high`).toBeLessThan(p.ref_high);
+      expect(bandAgreesWithChip(p), `${id}: a band that contradicts the ${p.kind} chip is never sent`).toBe(true);
+    }
+  });
+
+  it("theLabsPrintedRangeFixtureHoldsEveryShapeOfAPrintedRange", () => {
+    const points = labsPrintedRange.body.series.flatMap((s) => s.points as TrendPointJson[]);
+    const at = (n: number) => points.find((p) => p.observation_id === observation(n));
+    const shape = (p: TrendPointJson) =>
+      p.ref_text === null
+        ? "none"
+        : p.ref_low !== null && p.ref_high !== null
+          ? "two-sided"
+          : p.ref_low !== null
+            ? "low-only"
+            : p.ref_high !== null
+              ? "high-only"
+              : "text-only";
+    // Nothing printed is all three null — asserted on the point itself, not through ref_text (a default that also set
+    // ref_text would pass "ref_text null ⇒ numbers null" vacuously).
+    expect(at(179)).toMatchObject({ kind: "outside", ref_low: null, ref_high: null, ref_text: null });
+    expect(new Set(points.map(shape))).toEqual(new Set(["two-sided", "low-only", "high-only", "none", "text-only"]));
+    // The one-sided edges, kept only beside an OUTSIDE beyond them (the threshold path).
+    expect(at(180)).toMatchObject({ kind: "outside", side: "high", ref_low: null, ref_high: 200, ref_text: "<200" });
+    expect(at(181)).toMatchObject({ kind: "outside", side: "low", ref_low: 40, ref_high: null, ref_text: ">40" });
+    // What the stopgap stores beside a one-sided range is UNKNOWN, above, below or within it: words, no number.
+    for (const n of [172, 173, 176, 177]) expect(at(n), `${n}`).toMatchObject({ kind: "unknown", ref_low: null, ref_high: null });
+    expect(at(174)).toMatchObject({ ref_low: null, ref_high: null, ref_text: "3.9-6.1" });
+    // A band contradicting its chip: CRITICAL by a threshold inside 3.5–5.1, and a NULL verdict inside it.
+    expect(at(182)).toMatchObject({ kind: "critical", ref_low: null, ref_high: null, ref_text: "3.5–5.1" });
+    expect(at(183)).toMatchObject({ kind: "unknown", ref_low: null, ref_high: null, ref_text: "3.5–5.1" });
+    // Ranges differ across the points of one series: two labs printed two ranges for creatinine.
+    const creatinine = labsPrintedRange.body.series.find((s) => s.canonical_name === "creatinine");
+    expect(creatinine?.points.map((p) => p.ref_text)).toEqual(["59–104", "62–106", null]);
   });
 });
 
@@ -424,3 +472,26 @@ describe("GET /app/api/me", () => {
     expect(bodies.some(([, me]) => me.patients.some((p) => p.urgent)), "an urgent patient").toBe(true);
   });
 });
+
+/** The id HealthApiContractTest gives observation n of a labs case. */
+function observation(n: number): string {
+  return `b6b6b6b6-0000-4000-8000-000000000${n}`;
+}
+
+/**
+ * R3's contract, judged from the fixture alone: Java sends a number only where the picture agrees with the point's chip
+ * (PaperDisplay.drawnBand). Never beside an UNKNOWN; two numbers in the band for INSIDE, beyond it on the side for
+ * OUTSIDE/CRITICAL; one number only beside an OUTSIDE/CRITICAL beyond that bound on its own side.
+ */
+function bandAgreesWithChip(p: TrendPointJson): boolean {
+  const { ref_low: low, ref_high: high } = p;
+  if (low === null && high === null) return true;
+  const v = Number(p.value);
+  if (p.kind === "unknown" || !Number.isFinite(v)) return false;
+  if (low !== null && high !== null) {
+    if (p.kind === "inside") return v >= low && v <= high;
+    return p.side === "high" ? v > high : p.side === "low" ? v < low : false;
+  }
+  if (p.kind !== "outside" && p.kind !== "critical") return false;
+  return high !== null ? p.side === "high" && v > high : p.side === "low" && low !== null && v < low;
+}

@@ -1116,6 +1116,52 @@ Branch `feat/medioo-web-health`. Lane C. After W2e-b. DR-44 item 3, DR-45 item 7
 
 ---
 
+## Task RANGE-api: Each labs point carries the range its own paper printed (PO ruling R3, DR-48)
+
+*Added 2026-10-22, after the PO's ruling R3 (recorded as DR-48 in PR #144): "the TrendChart shows the lab's PRINTED
+normal range as a pale band behind the line, using only what the paper printed; a paper that printed no range gets no
+band."* Branch `feat/baymax-web-api-labs-printed-range` (PR #143). Lane B. Before RANGE-web.
+
+**Files:**
+- Create: `baymax/src/main/java/com/elioo/baymax/web/domain/PrintedBand.java` (pure: the stored `ref_low`/`ref_high` as numbers and text), `baymax/src/test/java/com/elioo/baymax/web/domain/PrintedBandTest.java`
+- Modify: `web/domain/PaperDisplay.java` (`bandAgrees`, the pin's agreement rule moved out of `pin` and shared; `drawnBand`, the numbers a point may send), `web/domain/LabSeries.java` (`Point.range`), `web/application/service/HealthService.java` (each point's `drawnBand`), `web/adapter/in/api/HealthJson.java` (`ref_low`, `ref_high`, `ref_text` after every shipped field, A2)
+- Modify (tests): `PaperDisplayTest.java`, `HealthServiceTest.java`, `HealthReadModelTest.java` (Testcontainers), `HealthApiContractTest.java` (case `labs-printed-range`)
+- Generated: `medioo-web/fixtures/api/health/labs-printed-range.json`; regenerated (additions only against `main`) `labs-some.json`, `labs-with-unknown.json`, `labs-non-numeric.json`, `bp.json`
+- Modify: `medioo-web/src/api/types.ts` (`TrendPointJson`), `src/api/types.test.ts`, `src/components/TrendChart/TrendChart.test.tsx` (the new fixture in "every generated labs body"), `docs/MEDIOO.md`
+
+**Interfaces:**
+- Produces, per `TrendPointJson` (series points and both blood-pressure halves): `ref_low: number | null`, `ref_high: number | null`, `ref_text: string | null`.
+  - Only the point's own stored row, never a table, a default or a neighbouring point. Nothing printed: all three null.
+  - Numbers only where the picture agrees with the point's chip (`PaperDisplay.drawnBand`, the paper page's pin rule): both numbers for a two-sided range that agrees with `kind`; one number for a one-sided bound beside an OUTSIDE/CRITICAL beyond it on `side`; none beside an UNKNOWN or when the band would contradict the chip.
+  - A lone signed bound is placed by its sign whichever column holds it; a lone bare number has no number (its side would rest on the unchecked column).
+  - `ref_text` is the stored sides, joined by Java with an en dash when both are stored: not a transcription of the paper.
+
+**Tests:** `PrintedBandTest` (both directions: every placeable shape and every unplaceable one, a bare one-sided number in each column), `PaperDisplayTest` (a band that agrees is drawn, one that contradicts is text only, one-sided only beyond its bound on the chip's side, the pin is drawn exactly when the band agrees), `HealthServiceTest` and `HealthReadModelTest` (each point its own paper's range; a point with none, flagged OUTSIDE so a leaked range would agree and be drawn, carries none), `HealthApiContractTest` (by field, over `labs-printed-range`), `types.test.ts` (over every generated point, a sent number agrees with the chip).
+
+**Replays:** `PrintedBand.of` stubbed to `NONE`; `PrintedBand.of` returning a fixed `59–104` when nothing is stored; `HealthService` carrying the previous point's range onto a point with none; the TS agreement check over the pre-agreement fixtures. Each red on the defect, quoted in the PR.
+
+---
+
+## Task RANGE-web: TrendChart draws the printed range as a pale band (PO ruling R3, DR-48)
+
+*Added 2026-10-22.* Branch `feat/medioo-web-trend-band`. Lane C. After RANGE-api.
+
+**Files:**
+- Modify: `medioo-web/src/components/TrendChart/TrendChart.tsx`, `TrendChart.css`, `TrendChart.test.tsx` (replaces `noReadingStandsOnABand`), the TrendChart catalog states (a `printed-range` state over `labs-printed-range.json`)
+
+**Rules (from `TrendPointJson`'s contract; React judges nothing):**
+- A FILLED pale band only behind a point that carries both `ref_low` and `ref_high`, per point (two labs print two ranges).
+- A point with one number: at most an UNFILLED edge line at that bound, labelled with `ref_text`, never a region that contains a point.
+- A point with neither number: no band and no edge, whatever `ref_text` says.
+- `ref_text` only as the band's accessible label beside the value's crop, never as quoted paper text, until the PO accepts its form (PR #143).
+- The band is a pale neutral token, never the NOW red; colour is never the only signal.
+
+**Tests:** `aFilledBandIsDrawnOnlyWhereBothNumbersAreSent` (over every generated labs body), `aOneSidedBoundIsAnEdgeNeverARegion`, `anUnknownPointStandsOnNoBand` (the `labs-printed-range` points 172, 173, 176, 177, 183), `aPointWithNoRangeHasNoBand` (point 179). Replay: a band drawn from the series' newest range behind every point; expected red naming point 179.
+
+**Board:** TrendChart printed-range, two ranges in one series, one-sided edges, a band withheld beside a critical and an unknown; copied to `~/medioo-design/boards/trend-band/`.
+
+---
+
 ## Task W10-api: The theme preference — `PUT /app/api/preferences`
 
 Branch `feat/baymax-web-api-preferences`. Lane B. S12 applies (blocks the merge).

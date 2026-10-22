@@ -22,9 +22,13 @@ public record LabSeries(String canonicalName, String unitFold, String name, Stri
     /**
      * One reading. {@code kind} is {@code PaperDisplay.kindOf} over the stored row (a one-sided INSIDE is UNKNOWN), and
      * {@code side} its drawn side; the date and its two marks are the paper's filing day as Postgres defines it (D2).
+     * {@code range} is the range this paper printed beside this reading as the point may draw it
+     * ({@link PaperDisplay#drawnBand}: {@link PrintedBand#of} the stored {@code ref_low} and {@code ref_high}, numbers
+     * only where they agree with the chip; PO ruling R3, DR-48), {@link PrintedBand#NONE} when it printed none: never a
+     * reference table's.
      */
     public record Point(UUID documentId, UUID observationId, String value, LocalDate date, boolean dateIsUploadDay,
-                        boolean dateUncertain, ValueVerdict.Kind kind, String side, String cropKey) {
+                        boolean dateUncertain, ValueVerdict.Kind kind, String side, String cropKey, PrintedBand range) {
     }
 
     /** The paired blood-pressure readings, newest first. */

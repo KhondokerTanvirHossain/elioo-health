@@ -6,6 +6,7 @@ import { CHIP_SHAPE, StatusChip, chipKindOf, type ChipKind } from "@/components/
 import bp from "../../../fixtures/api/health/bp.json";
 import labsNonNumeric from "../../../fixtures/api/health/labs-non-numeric.json";
 import labsNone from "../../../fixtures/api/health/labs-none.json";
+import labsPrintedRange from "../../../fixtures/api/health/labs-printed-range.json";
 import labsSome from "../../../fixtures/api/health/labs-some.json";
 import labsWithUnknown from "../../../fixtures/api/health/labs-with-unknown.json";
 import { TrendChart, chartable } from "./TrendChart";
@@ -31,6 +32,7 @@ const ALL: Array<[string, LabSeriesJson]> = [
   ["labs-with-unknown", labsWithUnknown.body],
   ["labs-non-numeric", labsNonNumeric.body],
   ["labs-none", labsNone.body],
+  ["labs-printed-range", labsPrintedRange.body],
   ["bp", bp.body],
 ].flatMap(([name, body]) => (body as LabsJson).series.map((s): [string, LabSeriesJson] => [`${name}/${s.canonical_name}`, s]));
 
@@ -155,8 +157,8 @@ describe("TrendChart", () => {
   });
 
   it("noReadingStandsOnABand", () => {
-    // B6's point carries no printed range, so a band could only be a shape that looks like a range and encodes nothing:
-    // an out-of-range reading inside it reads as within range. No band is drawn until the point carries the range.
+    // B6 carries the printed range since RANGE-api (PR 143, PO ruling R3, DR-48); the band is drawn in RANGE-web, which
+    // replaces this test with one that draws a filled band only where both numbers are sent. Until then no band is drawn.
     const banded: string[] = [];
     for (const [name, s] of ALL) {
       const root = draw(s);

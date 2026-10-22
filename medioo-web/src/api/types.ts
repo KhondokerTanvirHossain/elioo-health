@@ -247,6 +247,28 @@ export type CalendarJson = { month: string; days: CalendarDayJson[] };
 /**
  * One reading of a lab series (B6, HealthJson): the value as printed, the paper's filing day, the kind and side
  * PaperDisplay.kindOf drew it with (`chipKindOf` turns them into a chip), the chip key, and the value's own crop.
+ *
+ * `ref_low`, `ref_high` and `ref_text` (PO ruling R3, DR-48; Java's PrintedBand and PaperDisplay.drawnBand) are the
+ * range stored for THIS paper's reading, read only off its own stored extraction, never a reference table's and never a
+ * neighbouring point's. All three are null when the paper printed none — never a default. Ranges differ from point to
+ * point: two labs print two ranges for one marker.
+ *
+ * - `ref_low` / `ref_high` are PARSED NUMBERS, unlike `PaperJson` values' `ref_low` / `ref_high` of the same name, which
+ *   are the stored strings. Java sends a number only where the picture agrees with this point's chip, by the paper
+ *   page's pin rule, so React never judges it:
+ *   - both set: a two-sided range that agrees with `kind` (an `inside` value in it; an `outside`/`critical` value
+ *     beyond it on `side`). Only then may the chart draw a FILLED pale band.
+ *   - one set: a one-sided bound (`<200` is `ref_high` 200), sent only beside an `outside`/`critical` value beyond it
+ *     on `side`. It may be drawn only as an UNFILLED edge line labelled with `ref_text`, never as a region that
+ *     contains a point. A one-sided range is never INSIDE (D35).
+ *   - both null with `ref_text` set: draw nothing. The stored text cannot be placed (`3.9-6.1` in one column,
+ *     `Up to 200`, a lone bare number), or the band would contradict the chip (`unknown` is never banded; a `critical`
+ *     by threshold inside its printed range is not).
+ * - `ref_text` is NOT a transcription of the paper. One stored side, or a whole range stored in one column, is the
+ *   stored string unchanged; two stored sides are joined BY JAVA with an en dash (`59–104`), whatever the paper's own
+ *   characters were (`59 - 104`). Use it only as the band's accessible label beside the value's crop, never as quoted
+ *   paper text and never in place of the crop. Showing it to families as text waits for the PO's acceptance of that
+ *   form (PR 143).
  */
 export type TrendPointJson = {
   document_id: string;
@@ -259,6 +281,9 @@ export type TrendPointJson = {
   side: string | null;
   chip_key: string;
   crop: ImageJson;
+  ref_low: number | null;
+  ref_high: number | null;
+  ref_text: string | null;
 };
 
 /** One marker's readings across papers, newest first, under the newest point's name and unit. */
