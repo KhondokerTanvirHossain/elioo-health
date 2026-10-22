@@ -255,6 +255,26 @@ BOARD_SCENES.push(
   chat("now-past-the-page", "chat-now-past-the-page", "phone.html", "now"),
 );
 
+// The papers page (plan W8), beside phone.html scene `papers`: no paper, one month, a busy month (the strip, the
+// doctor's dates due and overdue, the calendar, two pages), forty-five papers, the forty-five under the longest name,
+// the lab filter, and a share member's empty file (no send link).
+const papers = (state: string, scenario: string, route = "/app/timeline"): Scene => ({
+  screen: "papers",
+  state,
+  route,
+  scenario,
+  proto: { file: "phone.html", scene: "papers" },
+});
+BOARD_SCENES.push(
+  papers("empty", "papers-empty"),
+  papers("one-month", "papers-one-month"),
+  papers("busy-month", "papers-busy"),
+  papers("forty-five", "papers-forty-five"),
+  papers("forty-five-long-name", "papers-forty-five-long"),
+  papers("filter-lab", "papers-busy", "/app/timeline?type=lab"),
+  papers("empty-share-member", "papers-empty-member", "/app/timeline?patient=5e9edf6d-0a2a-4913-8675-9d07a4100012"),
+);
+
 const VIEWPORTS = { phone: { width: 390, height: 844 }, desktop: { width: 1280, height: 800 } } as const;
 // The catalog build's server (playwright.config.ts starts it on the port after the production one).
 const CATALOG_URL = process.env.E2E_CATALOG_URL ?? `http://127.0.0.1:${Number(process.env.E2E_PORT ?? 3217) + 1}`;

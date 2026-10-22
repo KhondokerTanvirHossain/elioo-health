@@ -10,8 +10,9 @@ import { FIXTURES, SCENARIOS } from "./scenarios.mjs";
  * route that needs a session and has none is 401 UNAUTHENTICATED, whatever its headers; then a mutation is refused as
  * AppApiGuard.csrf does, in its order: no `X-Medioo: 1` is 403 MISSING_HEADER; a foreign Origin, or none on an open
  * route, is 403 FORBIDDEN_ORIGIN; no JSON or multipart type (a body-less POST or DELETE included) is 415
- * UNSUPPORTED_MEDIA_TYPE. Then a route the scenario does not map is 404 NOT_FOUND. It records every request and serves the log at GET /__requests (DELETE
- * clears it). It logs nothing.
+ * UNSUPPORTED_MEDIA_TYPE. Then a route the scenario does not map is 404 NOT_FOUND; a mapped one answers for the
+ * request's query (`forQuery`). It records every request and serves the log at GET /__requests (DELETE clears it). It
+ * logs nothing.
  */
 
 /** The routes that need no session (AppApiGuard.OPEN, W3-api). */
@@ -43,6 +44,18 @@ export function routeKey(scenario, method, path) {
   return null;
 }
 
+/**
+ * The value a scenario key answers for this request's query. A `{ byQuery, otherwise }` value answers with the first
+ * `byQuery` entry whose every `when` parameter the query carries with exactly that value (a page's `?type=lab`, a
+ * `?cursor=`, a `?month=`), else with `otherwise`; any other value answers every query alike.
+ */
+export function forQuery(value, query) {
+  if (value === null || typeof value !== "object" || Array.isArray(value) || !("byQuery" in value)) return value;
+  const params = new URLSearchParams(query ?? "");
+  const hit = value.byQuery.find(({ when }) => Object.entries(when).every(([k, v]) => params.get(k) === v));
+  return hit ? hit.answer : value.otherwise;
+}
+
 function load(value) {
   if (typeof value === "string") {
     const fixture = JSON.parse(readFileSync(join(FIXTURES, value), "utf8"));
@@ -55,9 +68,9 @@ function load(value) {
  * The answer to one request. `counters` holds how many times each `scenario key` was answered (for answer lists); the
  * caller owns it, so the stub's is per run and the browser's per test.
  */
-export function answer({ method, path, headers, origin, counters }) {
+export function answer({ method, path, query = "", headers, origin, counters, scenarios = SCENARIOS }) {
   const name = cookieValue(headers.cookie, "e2e_scenario");
-  const scenario = SCENARIOS[name ?? ""];
+  const scenario = scenarios[name ?? ""];
   if (!scenario) return { status: 404, body: { reason: "NOT_FOUND" } };
   const signature = `${method} ${path}`;
   // AppApiGuard.filter's order: the session first, then (inside admitted()) CSRF for a mutation, then the route.
@@ -77,7 +90,7 @@ export function answer({ method, path, headers, origin, counters }) {
   }
   const key = routeKey(scenario, method, path);
   if (key === null) return { status: 404, body: { reason: "NOT_FOUND" } };
-  const value = scenario[key];
+  const value = forQuery(scenario[key], query);
   if (!Array.isArray(value)) return load(value);
   const counter = `${name} ${key}`;
   const n = counters.get(counter) ?? 0;

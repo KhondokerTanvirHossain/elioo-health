@@ -46,3 +46,47 @@ describe("stub Java's guard order", () => {
     ).toEqual({ status: 404, body: { reason: "NOT_FOUND" } });
   });
 });
+
+describe("stub Java answers for the query (plan W8)", () => {
+  // A synthetic table, so the rule is judged on answers that cannot be confused with one another.
+  const lit = (n: number) => ({ status: 200, body: { n } });
+  const TABLE = {
+    paged: {
+      "GET /app/api/patients/{id}/timeline": {
+        byQuery: [
+          { when: { type: "lab" }, answer: lit(1) },
+          { when: { cursor: "c2" }, answer: lit(2) },
+          { when: { type: "rx", cursor: "c2" }, answer: lit(3) },
+        ],
+        otherwise: lit(0),
+      },
+    },
+  };
+  const get = (query: string) =>
+    answer({
+      method: "GET",
+      path: "/app/api/patients/5e9edf6d-0a2a-4913-8675-9d07a4100002/timeline",
+      query,
+      headers: { cookie: "e2e_scenario=paged; baymax_session=e2e" },
+      origin: ORIGIN,
+      counters: new Map(),
+      scenarios: TABLE,
+    });
+
+  it("theFirstEntryWhoseEveryParameterTheQueryCarriesAnswers", () => {
+    expect(get("type=lab")).toEqual(lit(1));
+    expect(get("cursor=c2")).toEqual(lit(2));
+    // Both entries match `type=rx&cursor=c2` on cursor; the first listed wins, so order in the table is the rule.
+    expect(get("cursor=c2&type=rx")).toEqual(lit(2));
+    expect(get("type=lab&cursor=c2")).toEqual(lit(1));
+  });
+
+  it("aQueryNoEntryMatchesIsAnsweredByOtherwise", () => {
+    // The dangerous direction: a parameter's value must match exactly, never as a prefix or by its presence alone.
+    expect(get("")).toEqual(lit(0));
+    expect(get("type=labx")).toEqual(lit(0));
+    expect(get("type=")).toEqual(lit(0));
+    expect(get("cursor=c")).toEqual(lit(0));
+    expect(get("month=2026-09")).toEqual(lit(0));
+  });
+});

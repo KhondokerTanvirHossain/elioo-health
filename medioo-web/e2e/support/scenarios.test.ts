@@ -33,24 +33,47 @@ export function snapshotRoutes(text: string): Set<string> {
   );
 }
 
-/** Each fixture path a scenario value names (a string, or each string of a list), with the key it answers. */
-export function fixturesOf(scenarios: Record<string, Record<string, unknown>>): { scenario: string; key: string; file: string }[] {
-  const out: { scenario: string; key: string; file: string }[] = [];
+type Named = { scenario: string; key: string; file: string; when?: Record<string, string> };
+
+/**
+ * Each fixture path a scenario value names (a string, each string of a list, each `byQuery` answer with the query it
+ * is served for, and `otherwise`), with the key it answers.
+ */
+export function fixturesOf(scenarios: Record<string, Record<string, unknown>>): Named[] {
+  const out: Named[] = [];
+  const plain = (scenario: string, key: string, value: unknown, when?: Record<string, string>) => {
+    for (const v of Array.isArray(value) ? value : [value]) if (typeof v === "string") out.push({ scenario, key, file: v, ...(when ? { when } : {}) });
+  };
   for (const [scenario, table] of Object.entries(scenarios)) {
     for (const [key, value] of Object.entries(table)) {
-      for (const v of Array.isArray(value) ? value : [value]) if (typeof v === "string") out.push({ scenario, key, file: v });
+      if (value !== null && typeof value === "object" && "byQuery" in value) {
+        const q = value as { byQuery: { when: Record<string, string>; answer: unknown }[]; otherwise: unknown };
+        for (const { when, answer } of q.byQuery) plain(scenario, key, answer, when);
+        plain(scenario, key, q.otherwise);
+      } else plain(scenario, key, value);
     }
   }
   return out;
 }
 
-/** What is wrong with a fixture for a key: missing, or written by Java for another method or route. */
-export function fixtureProblem(key: string, file: string, fixtures: string = FIXTURES): string | null {
+/**
+ * What is wrong with a fixture for a key: missing, written by Java for another method or route, or, when it is served
+ * for a query (`when`), written for another value of a parameter that query names. A source spells its route, then
+ * optionally the query it was read with (`GET …/timeline?type=lab over the case lab-only`).
+ */
+export function fixtureProblem(key: string, file: string, fixtures: string = FIXTURES, when?: Record<string, string>): string | null {
   const path = join(fixtures, file);
   if (!existsSync(path)) return `${file} does not exist`;
   const source = (JSON.parse(readFileSync(path, "utf8")) as { _meta?: { source?: unknown } })._meta?.source;
   if (typeof source !== "string") return `${file} has no _meta.source`;
-  return source.startsWith(`${key} `) ? null : `${file} was written for "${source}", not "${key}"`;
+  if (!source.startsWith(`${key} `) && !source.startsWith(`${key}?`)) return `${file} was written for "${source}", not "${key}"`;
+  const read = new URLSearchParams(source.startsWith(`${key}?`) ? source.slice(key.length + 1).split(" ", 1)[0] : "");
+  for (const [k, v] of Object.entries(when ?? {})) {
+    // A parameter the source names must have the value it is served for; one it does not name (a cursor Java minted at
+    // run time) is not judged here.
+    if (read.has(k) && read.get(k) !== v) return `${file} was written for ${k}=${read.get(k)}, served for ${k}=${v}`;
+  }
+  return null;
 }
 
 /** The body a scenario value answers first: a fixture file's, or a literal's. */
@@ -80,7 +103,7 @@ describe("the scenario table is Java's", () => {
     const named = fixturesOf(SCENARIOS);
     expect(named.length, "fixtures named by the scenarios").toBeGreaterThan(0);
     const problems = named
-      .map(({ scenario, key, file }) => ({ scenario, problem: fixtureProblem(key, file) }))
+      .map(({ scenario, key, file, when }) => ({ scenario, problem: fixtureProblem(key, file, FIXTURES, when) }))
       .filter((p) => p.problem !== null)
       .map((p) => `${p.scenario}: ${p.problem}`);
     expect(problems).toEqual([]);
@@ -95,6 +118,36 @@ describe("the scenario table is Java's", () => {
     expect(fixtureProblem("GET /app/api/me", "me/nope.json")).toBe("me/nope.json does not exist");
     // A prefix of another route is not that route: "GET /app/api/me" must not accept a "GET /app/api/meX" fixture.
     expect(fixtureProblem("GET /app/api/m", "me/one-patient.json")).not.toBeNull();
+  });
+
+  it("aFixtureReadWithAQueryIsItsRoutesAndOnlyForThatQuery", () => {
+    // The calendar's source names its month after the route: the route still matches, and a prefix still does not.
+    expect(fixtureProblem("GET /app/api/patients/{id}/calendar", "calendar/busy.json")).toBeNull();
+    expect(fixtureProblem("GET /app/api/patients/{id}/calenda", "calendar/busy.json")).not.toBeNull();
+    // Served for the query it was read with, it passes; for another value of the same parameter, it is refused.
+    const timeline = "GET /app/api/patients/{id}/timeline";
+    expect(fixtureProblem(timeline, "timeline/lab-only.json", FIXTURES, { type: "lab" })).toBeNull();
+    expect(fixtureProblem(timeline, "timeline/lab-only.json", FIXTURES, { type: "rx" })).toBe(
+      "timeline/lab-only.json was written for type=lab, served for type=rx",
+    );
+    expect(fixtureProblem("GET /app/api/patients/{id}/calendar", "calendar/busy.json", FIXTURES, { month: "2026-09" })).toBe(
+      "calendar/busy.json was written for month=2026-10, served for month=2026-09",
+    );
+  });
+
+  it("everyByQueryWalksEveryAnswerAndHasAnOtherwise", () => {
+    const named = fixturesOf({ s: { "GET /x": { byQuery: [{ when: { a: "1" }, answer: "a.json" }], otherwise: "b.json" } } });
+    expect(named).toEqual([
+      { scenario: "s", key: "GET /x", file: "a.json", when: { a: "1" } },
+      { scenario: "s", key: "GET /x", file: "b.json" },
+    ]);
+    // Every byQuery value in the real table answers something when no entry matches.
+    const missing = Object.entries(SCENARIOS).flatMap(([name, table]) =>
+      Object.entries(table)
+        .filter(([, v]) => v !== null && typeof v === "object" && "byQuery" in v && (v as { otherwise?: unknown }).otherwise === undefined)
+        .map(([key]) => `${name} ${key}`),
+    );
+    expect(missing).toEqual([]);
   });
 
   it("signedOutIsJudgedOnMesAnswerNotItsFileName", () => {

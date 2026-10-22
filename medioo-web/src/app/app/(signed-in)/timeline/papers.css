@@ -1,0 +1,224 @@
+/* The papers page (timeline/page.tsx): phone.html scene `papers`. One column up to 720 px wide: the title with the owner's
+   send link, the attention strip, the doctor's dates, the month's two neighbours as links over the wall calendar, the
+   type filter, the month list and its "more" link. Every link meets the 44 px floor and the send link, the page's one
+   primary press, 48 px. Nothing here is red or amber; the levels are shape and word (safety/UrgencyTag). */
+.papers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--space-4) var(--space-4) var(--space-6);
+  font-family: var(--font-bn);
+  color: var(--label);
+}
+.papers__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.papers__heading {
+  min-width: 0;
+}
+.papers__title {
+  margin: 0;
+  font-size: var(--text-xxl);
+  font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.papers__sub,
+.papers__note,
+.papers__foot {
+  margin: 0;
+  color: var(--label2);
+  font-size: var(--text-md);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.papers__foot {
+  font-size: var(--text-sm);
+}
+.papers__h2 {
+  margin: 0;
+  padding: 0 var(--space-1);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.papers__add {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--target-primary);
+  max-width: 100%;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-pill);
+  background: var(--tint-soft);
+  color: var(--tint-ink);
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: 1.4;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.papers__camera,
+.papers__chevron,
+.papers__check {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.papers__strip {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.papers__strip-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.papers__strip-item {
+  min-width: 0;
+}
+.papers__urgent {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  min-height: var(--target-min);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--sep);
+  border-radius: var(--radius-lg);
+  background: var(--bg3);
+  color: var(--label);
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: 1.45;
+  text-decoration: none;
+}
+.papers__urgent-what {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.papers__calendar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.papers__months {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-2);
+  max-width: 560px;
+}
+.papers__month {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--target-min);
+  min-width: var(--target-min);
+  max-width: 100%;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  color: var(--tint-ink);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1.4;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.papers__month--next {
+  margin-inline-start: auto;
+}
+.papers__filters {
+  min-width: 0;
+}
+.papers__filter-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.papers__filter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--target-min);
+  max-width: 100%;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--sep);
+  border-radius: var(--radius-pill);
+  background: var(--bg3);
+  color: var(--label);
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: 1.4;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.papers__filter[aria-current="true"] {
+  border-color: var(--tint);
+  background: var(--tint-soft);
+  color: var(--tint-ink);
+}
+.papers__more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  min-height: var(--target-min);
+  padding: var(--space-2) var(--space-5);
+  border-radius: var(--radius-pill);
+  background: var(--bg3);
+  color: var(--tint-ink);
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: 1.4;
+  text-decoration: none;
+}
+.papers__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-5) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--bg3);
+}
+.papers__add:hover,
+.papers__urgent:hover,
+.papers__month:hover,
+.papers__filter:hover,
+.papers__more:hover {
+  background: var(--hover);
+}
+.papers__add:focus-visible,
+.papers__urgent:focus-visible,
+.papers__month:focus-visible,
+.papers__filter:focus-visible,
+.papers__more:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}

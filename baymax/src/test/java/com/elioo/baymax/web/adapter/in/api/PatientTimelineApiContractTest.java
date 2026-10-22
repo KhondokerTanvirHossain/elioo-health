@@ -2,6 +2,7 @@ package com.elioo.baymax.web.adapter.in.api;
 
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.testsupport.Json;
+import com.elioo.baymax.web.application.service.TimelineService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -52,8 +53,12 @@ class PatientTimelineApiContractTest {
     static final Instant DHAKA_PAST_MIDNIGHT = Instant.parse("2026-10-21T19:00:00Z");
     static final Path FIXTURES = Path.of("../medioo-web/fixtures/api");
     static final Path WRITTEN = Path.of("build/web-contract");
-    static final List<String> TIMELINE = List.of("first-page", "last-page", "empty");
-    static final List<String> CALENDAR = List.of("busy", "empty", "crowded");
+    static final List<String> TIMELINE = List.of("first-page", "last-page", "empty", "forty-five-first-page", "lab-only", "rx-only");
+    static final List<String> CALENDAR = List.of("busy", "empty", "crowded", "forty-five", "september");
+    /** A paper count above any one page (plan W8, master Review Focus 1): forty-five papers in one month. */
+    static final int FORTY_FIVE = 45;
+    /** A facility printed at real length, so a row is judged on a long line (Review Focus 1). Fictional. */
+    static final String LONG_FACILITY = "Shapla Diagnostic and Consultation Centre, Mirpur Section 10 Branch";
     static final List<String> FOLLOW_UPS = List.of("some", "none");
     private static final AtomicInteger NUMBERS = new AtomicInteger(800);
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -271,6 +276,54 @@ class PatientTimelineApiContractTest {
         });
     }
 
+    /**
+     * Plan W8 (master Review Focus 1): the forty-five-paper month the papers page is judged on holds what its fixtures
+     * claim, read by field: all forty-five on October's calendar (days with two and three papers among them, NOW and
+     * THIS_WEEK days, doctor's dates), the first timeline page full with a cursor, and the long facility on that page.
+     * Without this, a seed that wrote fewer papers would still produce two fixtures, and the overflow check would judge a
+     * quiet month.
+     */
+    @Test
+    void theFortyFivePaperMonthHoldsFortyFivePapers() {
+        FixedPapers.runnerAt(POSTGRES, NOW).run(context -> {
+            WebTestClient client = WebTestClient.bindToApplicationContext(context).build();
+            Seeded s = seedFortyFive(context, "forty-five");
+            JsonNode days = ok(client, s.session(), "/app/api/patients/" + s.patient().id() + "/calendar?month=2026-10").get("days");
+            int papers = 0;
+            int most = 0;
+            int follows = 0;
+            Set<String> chips = new HashSet<>();
+            for (JsonNode day : days) {
+                papers += day.get("papers").size();
+                most = Math.max(most, day.get("papers").size());
+                follows += day.get("follow_ups").size();
+                day.get("papers").forEach(p -> chips.add(p.get("chip").isNull() ? "-" : p.get("chip").asText()));
+            }
+            assertThat(papers).as("papers on October's calendar").isEqualTo(FORTY_FIVE);
+            assertThat(most).as("the most papers on one day").isEqualTo(3);
+            assertThat(follows).as("doctor's dates on October's calendar").isPositive();
+            assertThat(chips).as("the chips on the calendar").contains("now", "this_week", "-");
+
+            JsonNode first = ok(client, s.session(), timeline(s.patient()));
+            assertThat(first.get("entries")).as("$.entries of the first page").hasSize(TimelineService.PAGE_SIZE);
+            assertThat(first.get("next_cursor").isTextual()).as("$.next_cursor of the first page").isTrue();
+            assertThat(field(first.get("entries"), "facility")).as("$.entries[*].facility").contains(LONG_FACILITY);
+        });
+    }
+
+    /** {@code ?type=lab} and {@code ?type=rx} (the page's filter links) answer only that type, read by field. */
+    @Test
+    void aTypeFilterAnswersOnlyThatType() {
+        FixedPapers.runnerAt(POSTGRES, NOW).run(context -> {
+            WebTestClient client = WebTestClient.bindToApplicationContext(context).build();
+            Seeded s = seedTwentyFive(context, "type-filter");
+            List<String> lab = field(ok(client, s.session(), timeline(s.patient()) + "?type=lab").get("entries"), "document_type");
+            List<String> rx = field(ok(client, s.session(), timeline(s.patient()) + "?type=rx").get("entries"), "document_type");
+            assertThat(lab).as("$.entries[*].document_type for ?type=lab").hasSize(20).containsOnly("lab_report");
+            assertThat(rx).as("$.entries[*].document_type for ?type=rx").hasSize(5).containsOnly("prescription");
+        });
+    }
+
     // ---- the follow-ups -------------------------------------------------------------------------------------------
 
     @Test
@@ -332,13 +385,24 @@ class PatientTimelineApiContractTest {
         FixedPapers.runnerAt(POSTGRES, NOW).run(context -> {
             WebTestClient client = WebTestClient.bindToApplicationContext(context).build();
             String k = "fixture-timeline-" + name;
-            Seeded s = "empty".equals(name) ? family(context, k, NOW) : seedTwentyFive(context, k);
+            Seeded s = switch (name) {
+                case "empty" -> family(context, k, NOW);
+                case "forty-five-first-page" -> seedFortyFive(context, k);
+                default -> seedTwentyFive(context, k);
+            };
             String uri = timeline(s.patient());
+            // the filter the case asks with, named in the fixture's source (the e2e table serves it for that query)
+            String query = switch (name) {
+                case "lab-only" -> "?type=lab";
+                case "rx-only" -> "?type=rx";
+                default -> "";
+            };
             if ("last-page".equals(name)) {
                 uri += "?cursor=" + ok(client, s.session(), uri).get("next_cursor").asText();
             }
             AttentionApiContractTest.write(PatientTimelineApiContractTest.class, FIXTURES.resolve("timeline"), WRITTEN.resolve("timeline"),
-                    "timeline", name, "GET /app/api/patients/{id}/timeline over the case " + name, get(client, s.session(), uri));
+                    "timeline", name, "GET /app/api/patients/{id}/timeline" + query + " over the case " + name,
+                    get(client, s.session(), uri + query));
         });
     }
 
@@ -351,11 +415,15 @@ class PatientTimelineApiContractTest {
             Seeded s = switch (name) {
                 case "empty" -> family(context, k, NOW);
                 case "crowded" -> seedCrowdedMonth(context, k);
+                case "forty-five" -> seedFortyFive(context, k);
+                case "september" -> seedTwentyFive(context, k);
                 default -> seedBusyMonth(context, k);
             };
+            // the month before October (plan W8: the page's previous-month link lands on a month Java answered)
+            String month = "september".equals(name) ? "2026-09" : "2026-10";
             AttentionApiContractTest.write(PatientTimelineApiContractTest.class, FIXTURES.resolve("calendar"), WRITTEN.resolve("calendar"),
-                    "calendar", name, "GET /app/api/patients/{id}/calendar?month=2026-10 over the case " + name,
-                    get(client, s.session(), "/app/api/patients/" + s.patient().id() + "/calendar?month=2026-10"));
+                    "calendar", name, "GET /app/api/patients/{id}/calendar?month=" + month + " over the case " + name,
+                    get(client, s.session(), "/app/api/patients/" + s.patient().id() + "/calendar?month=" + month));
         });
     }
 
@@ -406,6 +474,35 @@ class PatientTimelineApiContractTest {
                         + "VALUES (?, ?, 'Zorvalex 10 mg', ?, ?)", s.patient().id(), id, s.patient().familyId() + "/" + s.patient().id()
                         + "/" + id + "/crop-m1.jpg", java.sql.Timestamp.from(uploaded));
                 FixedPapers.followUp(POSTGRES, FixedPapers.id(k, "follow-" + i), s.patient(), id, "Review after the course", printed.plusDays(30).toString());
+            }
+        }
+        return s;
+    }
+
+    /**
+     * Forty-five papers in October 2026 up to the fixed today (the 21st), newest first (plan W8, master Review Focus 1):
+     * two a day, three on the 19th to the 21st; every ninth NOW from the first, every ninth THIS_WEEK from the fifth, the
+     * rest routine; every fifth from the third a prescription with a medicine and a doctor's date a week on (in October);
+     * every fourth from the second printed by {@link #LONG_FACILITY}.
+     */
+    static Seeded seedFortyFive(ApplicationContext context, String k) throws Exception {
+        Seeded s = family(context, k, NOW);
+        for (int i = 0; i < FORTY_FIVE; i++) {
+            int day = 21 - (i % 21);
+            LocalDate printed = LocalDate.of(2026, 10, day);
+            Instant uploaded = printed.atStartOfDay().toInstant(java.time.ZoneOffset.UTC).plus(Duration.ofHours(4)).plus(Duration.ofMinutes(i));
+            String level = i % 9 == 0 ? "now" : i % 9 == 4 ? "this_week" : "routine";
+            String type = i % 5 == 2 ? "prescription" : "lab_report";
+            UUID id = FixedPapers.paper(POSTGRES, FixedPapers.id(k, "paper-" + i), s.patient(), type, "DONE", printed.toString(), uploaded, level);
+            if (i % 4 == 1) {
+                FixedPapers.exec(POSTGRES, "UPDATE baymax.document SET facility = ? WHERE id = ?", LONG_FACILITY, id);
+            }
+            if ("prescription".equals(type)) {
+                FixedPapers.exec(POSTGRES, "INSERT INTO baymax.medication_event (patient_id, document_id, name, crop_key, at) "
+                        + "VALUES (?, ?, 'Zorvalex 10 mg', ?, ?)", s.patient().id(), id, s.patient().familyId() + "/" + s.patient().id()
+                        + "/" + id + "/crop-m1.jpg", java.sql.Timestamp.from(uploaded));
+                FixedPapers.followUp(POSTGRES, FixedPapers.id(k, "follow-" + i), s.patient(), id, "Review after the course",
+                        LocalDate.of(2026, 10, Math.min(day + 7, 31)).toString());
             }
         }
         return s;

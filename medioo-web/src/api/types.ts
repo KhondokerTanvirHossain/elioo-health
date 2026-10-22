@@ -244,6 +244,92 @@ export type CalendarDayJson = { date: string; papers: CalendarPaperJson[]; follo
 /** `GET /app/api/patients/{id}/calendar?month=YYYY-MM` (B3). */
 export type CalendarJson = { month: string; days: CalendarDayJson[] };
 
+// ---- GET /app/api/patients/{id}/timeline, /follow-ups and /attention (B3), plan W8 ------------------------------------
+
+/** What a timeline row counts (C2's read model): the paper's values, how many are outside, its medicines, its dates. */
+export type TimelineCountsJson = { values: number; outside: number; medicines: number; follow_ups: number; unverified: number };
+
+/**
+ * One paper of the timeline (B3, TimelineJson.entry), in the read model's order. `month` is the key the page groups by,
+ * Java's `YearMonth.from(date)` (D2's filing day), never parsed out of `date` here; `chip` is the stored urgency
+ * ("now", "this_week") or null; `retake_reason_key` names the retake's line for a NEEDS_RETAKE paper, else null.
+ */
+export type TimelineEntryJson = {
+  document_id: string;
+  document_type: string | null;
+  date: string;
+  date_is_upload_day: boolean;
+  date_uncertain: boolean;
+  month: string;
+  status: string;
+  chip: string | null;
+  counts: TimelineCountsJson;
+  facility: string | null;
+  page_one: ImageJson;
+  retake_reason_key: string | null;
+  review_pending: boolean;
+};
+
+/** `GET /app/api/patients/{id}/timeline?cursor=&type=lab|rx` (B3): one page, and the cursor of the next (null at the end). */
+export type TimelineJson = { entries: TimelineEntryJson[]; next_cursor: string | null };
+
+/** One doctor's date (B3, TimelineJson.followUps): the instruction as written, its day, Java's `overdue`, its crop. */
+export type FollowUpItemJson = { document_id: string; instruction: string; due_date: string; overdue: boolean; crop: ImageJson };
+
+/** `GET /app/api/patients/{id}/follow-ups` (B3): soonest first, inside Java's window. */
+export type FollowUpsJson = { items: FollowUpItemJson[] };
+
+/** An urgent paper of the attention stack (B3): a stored NOW or THIS_WEEK, with the day it is filed under. */
+export type AttentionUrgentJson = {
+  kind: "urgent";
+  document_id: string;
+  document_type: string | null;
+  level: string;
+  date: string;
+  date_is_upload_day: boolean;
+  date_uncertain: boolean;
+  received_at: string;
+  action_key: string;
+};
+
+/** A paper to send again (B3): the day it came, and the line Java names. */
+export type AttentionRetakeJson = {
+  kind: "retake";
+  document_id: string;
+  date: string;
+  date_is_upload_day: boolean;
+  received_at: string;
+  title_key: string;
+  action_key: string;
+};
+
+/** A doctor's date due soon (B3): the instruction as written and its crop. */
+export type AttentionFollowUpJson = {
+  kind: "follow_up";
+  document_id: string;
+  instruction: string;
+  due_date: string;
+  crop: ImageJson;
+  title_key: string;
+  action_key: string;
+};
+
+/** A paper still being read (B3). */
+export type AttentionReadingJson = {
+  kind: "reading";
+  document_id: string;
+  date: string;
+  date_is_upload_day: boolean;
+  received_at: string;
+  title_key: string;
+  action_key: string;
+};
+
+export type AttentionItemJson = AttentionUrgentJson | AttentionRetakeJson | AttentionFollowUpJson | AttentionReadingJson;
+
+/** `GET /app/api/patients/{id}/attention` (B3): the stack in Java's order; the papers page shows its urgent items. */
+export type AttentionJson = { items: AttentionItemJson[] };
+
 /**
  * One reading of a lab series (B6, HealthJson): the value as printed, the paper's filing day, the kind and side
  * PaperDisplay.kindOf drew it with (`chipKindOf` turns them into a chip), the chip key, and the value's own crop.

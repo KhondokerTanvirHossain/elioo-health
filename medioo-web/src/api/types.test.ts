@@ -23,6 +23,20 @@ import twoPatients from "../../fixtures/api/now-banner/two-patients.json";
 import busy from "../../fixtures/api/calendar/busy.json";
 import crowded from "../../fixtures/api/calendar/crowded.json";
 import empty from "../../fixtures/api/calendar/empty.json";
+import fortyFive from "../../fixtures/api/calendar/forty-five.json";
+import september from "../../fixtures/api/calendar/september.json";
+// B3's generated timeline pages, doctor's dates and attention stacks (plan W8).
+import attentionEmpty from "../../fixtures/api/attention/empty.json";
+import attentionFull from "../../fixtures/api/attention/full-stack.json";
+import attentionNow from "../../fixtures/api/attention/now-only.json";
+import followsNone from "../../fixtures/api/follow-ups/none.json";
+import followsSome from "../../fixtures/api/follow-ups/some.json";
+import timelineEmpty from "../../fixtures/api/timeline/empty.json";
+import timelineFirst from "../../fixtures/api/timeline/first-page.json";
+import timelineFortyFive from "../../fixtures/api/timeline/forty-five-first-page.json";
+import timelineLab from "../../fixtures/api/timeline/lab-only.json";
+import timelineLast from "../../fixtures/api/timeline/last-page.json";
+import timelineRx from "../../fixtures/api/timeline/rx-only.json";
 import bp from "../../fixtures/api/health/bp.json";
 import labsNonNumeric from "../../fixtures/api/health/labs-non-numeric.json";
 import labsNone from "../../fixtures/api/health/labs-none.json";
@@ -76,6 +90,16 @@ import {
   type CalendarFollowUpJson,
   type CalendarJson,
   type CalendarPaperJson,
+  type AttentionFollowUpJson,
+  type AttentionJson,
+  type AttentionReadingJson,
+  type AttentionRetakeJson,
+  type AttentionUrgentJson,
+  type FollowUpItemJson,
+  type FollowUpsJson,
+  type TimelineCountsJson,
+  type TimelineEntryJson,
+  type TimelineJson,
   type Json,
   type LabSeriesJson,
   type LabsJson,
@@ -334,6 +358,8 @@ describe("the API types are the generated fixtures", () => {
       ["busy", busy.body],
       ["crowded", crowded.body],
       ["empty", empty.body],
+      ["forty-five", fortyFive.body],
+      ["september", september.body],
     ];
     // Every committed calendar fixture is assigned above, so a new case cannot go unchecked.
     expect(readdirSync(join(fixtures, "calendar")).filter((f) => f.endsWith(".json")).sort()).toEqual(
@@ -435,6 +461,123 @@ describe("the API types are the generated fixtures", () => {
     // Ranges differ across the points of one series: two labs printed two ranges for creatinine.
     const creatinine = labsPrintedRange.body.series.find((s) => s.canonical_name === "creatinine");
     expect(creatinine?.points.map((p) => p.ref_text)).toEqual(["59–104", "62–106", null]);
+  });
+});
+
+/*
+ * The papers page's reads (plan W8): every committed timeline, follow-ups and attention body assigned to its type and
+ * compared key for key, by kind for the attention stack, whose items differ by kind. Each directory is read, so a case
+ * Java adds fails here until it is listed.
+ */
+const TIMELINE_KEYS = ["entries", "next_cursor"] as const;
+const ENTRY_KEYS = [
+  "chip",
+  "counts",
+  "date",
+  "date_is_upload_day",
+  "date_uncertain",
+  "document_id",
+  "document_type",
+  "facility",
+  "month",
+  "page_one",
+  "retake_reason_key",
+  "review_pending",
+  "status",
+] as const;
+const COUNT_KEYS = ["follow_ups", "medicines", "outside", "unverified", "values"] as const;
+const FOLLOWS_KEYS = ["items"] as const;
+const FOLLOW_ITEM_KEYS = ["crop", "document_id", "due_date", "instruction", "overdue"] as const;
+const ATTENTION_KEYS: { [K in AttentionJson["items"][number]["kind"]]: readonly string[] } = {
+  urgent: ["action_key", "date", "date_is_upload_day", "date_uncertain", "document_id", "document_type", "kind", "level", "received_at"],
+  retake: ["action_key", "date", "date_is_upload_day", "document_id", "kind", "received_at", "title_key"],
+  follow_up: ["action_key", "crop", "document_id", "due_date", "instruction", "kind", "title_key"],
+  reading: ["action_key", "date", "date_is_upload_day", "document_id", "kind", "received_at", "title_key"],
+};
+const papersKeyListsAreTheTypes: [
+  Equal<(typeof TIMELINE_KEYS)[number], keyof TimelineJson>,
+  Equal<(typeof ENTRY_KEYS)[number], keyof TimelineEntryJson>,
+  Equal<(typeof COUNT_KEYS)[number], keyof TimelineCountsJson>,
+  Equal<(typeof FOLLOWS_KEYS)[number], keyof FollowUpsJson>,
+  Equal<(typeof FOLLOW_ITEM_KEYS)[number], keyof FollowUpItemJson>,
+] = [true, true, true, true, true];
+// The attention lists are typed by kind; each is held to its type by the compiler through these.
+const URGENT_KEYS: readonly (keyof AttentionUrgentJson)[] = ATTENTION_KEYS.urgent as (keyof AttentionUrgentJson)[];
+const RETAKE_KEYS: readonly (keyof AttentionRetakeJson)[] = ATTENTION_KEYS.retake as (keyof AttentionRetakeJson)[];
+const FOLLOW_ATTN_KEYS: readonly (keyof AttentionFollowUpJson)[] = ATTENTION_KEYS.follow_up as (keyof AttentionFollowUpJson)[];
+const READING_KEYS: readonly (keyof AttentionReadingJson)[] = ATTENTION_KEYS.reading as (keyof AttentionReadingJson)[];
+
+describe("the papers page's reads are the generated fixtures", () => {
+  it("everyTimelineFixtureIsATimelineJson", () => {
+    expect(papersKeyListsAreTheTypes.every(Boolean)).toBe(true);
+    const pages: Array<[string, TimelineJson]> = [
+      ["empty", timelineEmpty.body],
+      ["first-page", timelineFirst.body],
+      ["forty-five-first-page", timelineFortyFive.body],
+      ["lab-only", timelineLab.body],
+      ["last-page", timelineLast.body],
+      ["rx-only", timelineRx.body],
+    ];
+    expect(readdirSync(join(fixtures, "timeline")).filter((f) => f.endsWith(".json")).sort()).toEqual(
+      pages.map(([name]) => `${name}.json`).sort(),
+    );
+    let entries = 0;
+    for (const [name, page] of pages) {
+      expect(keys(page), name).toEqual([...TIMELINE_KEYS]);
+      for (const e of page.entries) {
+        expect(keys(e), `${name} ${e.document_id}`).toEqual([...ENTRY_KEYS]);
+        expect(keys(e.counts), `${name} ${e.document_id} counts`).toEqual([...COUNT_KEYS]);
+        expect(keys(e.page_one), `${name} ${e.document_id} page_one`).toEqual(["src"]);
+        // On Java's real output the month is the date's (TimelineJson): MonthList groups by `month` and never re-derives it.
+        expect(e.month, `${name} ${e.document_id} month`).toBe(e.date.slice(0, 7));
+        entries++;
+      }
+    }
+    expect(entries, "entries walked").toBeGreaterThan(0);
+  });
+
+  it("everyFollowUpsFixtureIsAFollowUpsJson", () => {
+    const bodies: Array<[string, FollowUpsJson]> = [
+      ["none", followsNone.body],
+      ["some", followsSome.body],
+    ];
+    expect(readdirSync(join(fixtures, "follow-ups")).filter((f) => f.endsWith(".json")).sort()).toEqual(
+      bodies.map(([name]) => `${name}.json`).sort(),
+    );
+    let items = 0;
+    for (const [name, b] of bodies) {
+      expect(keys(b), name).toEqual([...FOLLOWS_KEYS]);
+      for (const i of b.items) {
+        expect(keys(i), `${name} ${i.due_date}`).toEqual([...FOLLOW_ITEM_KEYS]);
+        expect(keys(i.crop), `${name} ${i.due_date} crop`).toEqual(["src"]);
+        items++;
+      }
+    }
+    expect(items, "items walked").toBeGreaterThan(0);
+  });
+
+  it("everyAttentionFixtureIsAnAttentionJson", () => {
+    expect([URGENT_KEYS, RETAKE_KEYS, FOLLOW_ATTN_KEYS, READING_KEYS].every((l) => l.length > 0)).toBe(true);
+    const bodies: Array<[string, Json<AttentionJson>]> = [
+      ["empty", attentionEmpty.body],
+      ["full-stack", attentionFull.body],
+      ["now-only", attentionNow.body],
+    ];
+    expect(readdirSync(join(fixtures, "attention")).filter((f) => f.endsWith(".json")).sort()).toEqual(
+      bodies.map(([name]) => `${name}.json`).sort(),
+    );
+    const kinds = new Set<string>();
+    for (const [name, b] of bodies) {
+      expect(keys(b), name).toEqual(["items"]);
+      for (const item of b.items) {
+        const want = ATTENTION_KEYS[item.kind as keyof typeof ATTENTION_KEYS];
+        expect(want, `${name}: a kind the type names (${item.kind})`).toBeDefined();
+        expect(keys(item), `${name} ${item.kind} ${item.document_id}`).toEqual([...want!].sort());
+        kinds.add(item.kind);
+      }
+    }
+    // Guard: every kind the type names was met, so each key list was compared with something.
+    expect([...kinds].sort()).toEqual(Object.keys(ATTENTION_KEYS).sort());
   });
 });
 
