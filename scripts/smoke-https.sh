@@ -15,6 +15,20 @@
 # UNAUTHENTICATED), and the Next rows through the W1d Caddy replica against the deployed sha's medioo-web image (stub
 # Java signed out). Signed out, the preview path is not a page: the preview gate reads `me`, gets the 401 and sends the
 # visitor to the sign-in page holding the preview (307 to /app/?next=%2Fapp%2Fpreview), not the 200 the plan guessed.
+# KNOWN GAP, not the expected behaviour: the plan expects `/app/preview|200|next|html:name="whatsapp_number"`. With
+# the gate as merged in W3, no viewer in any state reaches a Next screen through the preview (signed out: this 307 to
+# Java's sign-in; signed in and allowlisted: the sign-in pages send them on to /app/home, which is Java's; signed in
+# and not allowlisted: Next's 404). The two 307 rows pin what the code does today so a change is seen; they return to
+# the plan's 200 row once the gate lets the two sign-in reads through for a signed-out visitor (a PO ruling, W3
+# follow-up), replayed red against the image of that day.
+# A POST to the preview (measured 2026-10-22 through the same replica, signed out) answers as the GET does: 307 to
+# /app/?next=..., medioo-web's nonce CSP, for /app/preview and /app/preview/verify alike. The preview block does not
+# restrict the method (plan F0 row); this table asks GET only.
+# Just outside each F0 matcher the answer is still Java's JSON 404 (production, 2026-10-22, read-only GET):
+# /app/previewx (outside the preview matcher; `/app/preview*` would take it), /_next/image (outside /_next/static/*;
+# `/_next/*` would take it) and /app/preview/probe (excluded from the preview matcher: the DR-42 budget probe page
+# reads nothing from Java, so the preview gate never runs on it, and routed it rendered 200 to any visitor through the
+# replica). These rows are the routing's other direction: a matcher that reaches too far fails one of them.
 # Next's 404 for a missing chunk is text/plain and Java's is JSON, and both carry the four headers, so that row reads
 # the Content-Type: on status and headers alone it would pass on Java's answer, the one thing it exists to tell apart.
 #
@@ -31,8 +45,9 @@
 # so an upstream or a Caddy edit that appends instead of replacing fails the row whatever the last value says.
 #
 # Routing stops at the F0 paths for now (plan Wave 3, Task F): /app/healthz, the preview path (/app/preview and
-# /app/preview/*) and the assets (/_next/static/*, /fonts/*, /brand/*). Every page is still Java's, and Java still owns
-# the API: /app/api/me must be Java's JSON 401, so a route that sent /app/api/* to Next fails here. Each flip PR moves
+# /app/preview/*, less /app/preview/probe) and the assets (/_next/static/*, /fonts/*, /brand/*). Every page is still
+# Java's, and Java still owns the API: /app/api/me must be Java's JSON 401, so a route that sent /app/api/* to Next
+# fails here, as does a matcher wider than its row (the three boundary rows above). Each flip PR moves
 # its own page's rows. scripts/caddy-route-probe.sh sends this same table through a local Caddy running the repo's
 # Caddyfile.medioo and checks that each row reaches the upstream its class names: the routing is derived from this
 # table, not from a second list.
@@ -95,6 +110,9 @@ TABLE='/app/healthz|200|next|json:service=medioo-web
 /brand/mio-head.webp|200|static|type:image/webp
 /app/preview|307|next|location:/app/?next=%2Fapp%2Fpreview
 /app/preview/|307|next|location:/app/?next=%2Fapp%2Fpreview%2F
+/app/previewx|404|-|json:statusCode=400
+/_next/image|404|-|json:statusCode=400
+/app/preview/probe|404|-|json:statusCode=400
 {old}/app/home|301|-|location:https://medioo.eliooo.org/app/home'
 
 # header <file> <lower-case name>: the last value of that header, CR stripped (empty when absent)

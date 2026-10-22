@@ -71,22 +71,39 @@ reaches the box. A web build failure stops the job with production untouched; th
 Dockerfile on the PR (`scripts/test_deploy_web_docker.sh`).
 After the deploy job, CI runs the https upstream table, `scripts/smoke-https.sh https://medioo.eliooo.org`
 (tested by `scripts/test_smoke_https.sh`), through Caddy, the path every user takes. One row per path class, each
-with its status and, for the Next page, the Java pages and the API, the security headers (`content-security-policy`
-present and carrying a nonce on Next's path, `x-frame-options: DENY`, `x-content-type-options: nosniff`,
-`referrer-policy: strict-origin-when-cross-origin`, `strict-transport-security` present). The expected values are
-what production answered on 2026-10-21:
+with its status and, for the Next pages, the Java pages and the API, the security headers (`content-security-policy`
+present and carrying a nonce on Next's paths, `x-frame-options: DENY`, `x-content-type-options: nosniff`,
+`referrer-policy: strict-origin-when-cross-origin`, `strict-transport-security` present). The `static` class
+(medioo-web's assets) needs the same four headers, each once, and no CSP: the hashed chunks skip medioo-web's
+middleware, so they carry none. The expected values were measured on 2026-10-22 (the Java rows and the old-name row
+against production; the medioo-web rows through the W1d Caddy replica in front of the deployed sha's medioo-web image,
+with Java signed out), the W1c rows first on 2026-10-21:
 
 | Path | Expected | Served by |
 |---|---|---|
-| `/app/healthz` | 200, JSON `service == "medioo-web"`, nonce CSP | medioo-web (the only routed path) |
+| `/app/healthz` | 200, JSON `service == "medioo-web"`, nonce CSP | medioo-web |
 | `/actuator/health` | 200, JSON top-level `status == "UP"` | Java |
+| `/app/api/me` | 401, JSON `reason == "UNAUTHENTICATED"` (no session) | Java (Java owns every `/app/api/**` path) |
 | `/app/` | 200, the login page (`name="whatsapp_number"`) | Java |
 | `/` | 200 | Java (landing) |
 | `/medscribeai`, `/medscribeai/` | 200 | Java (MedScribe) |
 | `/baymax`, `/baymax/` | 301, `Location: /app` and `/app/` | Java |
 | `/api/v1/baymax/wa/webhook` (GET, no parameters) | 403 (Meta verification refused) | Java |
-| `/_next/static/x.js` | 404, JSON `statusCode == 400` (Java's error body, not Next's HTML 404) | Java, until `/_next/*` is routed |
+| `/_next/static/x.js` | 404, `Content-Type: text/plain`, no CSP (`static`) | medioo-web (Next's 404 for a missing chunk; Java's JSON 404 here is the failure) |
+| `/fonts/noto-sans-latin.woff2` | 200, `Content-Type: font/woff2` (`static`) | medioo-web |
+| `/brand/mio-head.webp` | 200, `Content-Type: image/webp` (`static`) | medioo-web |
+| `/app/preview`, `/app/preview/` | 307 to `/app/?next=%2Fapp%2Fpreview` and `...%2Fapp%2Fpreview%2F`, nonce CSP | medioo-web (signed out; a known gap, see below) |
+| `/app/previewx` | 404, JSON `statusCode == 400` | Java (outside the preview matcher; Next here means a matcher like `/app/preview*`) |
+| `/_next/image` | 404, JSON `statusCode == 400` | Java (outside `/_next/static/*`; Next here means a matcher like `/_next/*`) |
+| `/app/preview/probe` | 404, JSON `statusCode == 400` | Java (kept off the preview; see below) |
 | `https://baymax.eliooo.org/app/home` | 301, `Location: https://medioo.eliooo.org/app/home` (DR-15) | Caddy's old-name block |
+
+The two `/app/preview` rows are a **known gap, not the expected behaviour**. The plan expects
+`200`, the number form (`name="whatsapp_number"`). With the preview gate as merged in W3, the gate reads `me` before
+every other read, so a signed-out visitor is sent to Java's sign-in (the 307), a signed-in allowlisted one is sent on by
+the sign-in pages to `/app/home` (Java's), and a signed-in visitor not on the allowlist gets Next's 404. No viewer
+reaches a Next screen through the preview until a W3 follow-up (a PO ruling: let the two sign-in reads through for a
+signed-out visitor) lands; the rows then go back to the plan's 200.
 
 Each of `x-frame-options`, `x-content-type-options`, `referrer-policy` and `strict-transport-security` must arrive
 **exactly once** on the header rows: a browser acts on every copy (two conflicting `X-Frame-Options` are ignored, so
@@ -496,9 +513,16 @@ the n8n and bddrug sites (one reload touches all three tenants). From W1c the re
 medioo/baymax blocks are pasted from it. Routed today: `/app/healthz` (W1c); the preview path `/app/preview` and
 `/app/preview/*`, and the assets `/_next/static/*`, `/fonts/*` and `/brand/*` (plan Wave 3, F0). Every page is still
 Java's, and so is every `/app/api/**` path; each screen's own paths come in its flip PR (F3, F5–F10) after the PO's
-on-device try. A preview page reads nothing from Java but `GET /app/api/me` until that answer says `preview: true`, so
-routing the preview shows the new screens to the families in `BAYMAX_WEB_PREVIEW_FAMILIES` only; signed out, it is a
-307 to the sign-in page holding the preview.
+on-device try. Every preview page that reads Java reads nothing but `GET /app/api/me` until that answer says
+`preview: true`, so for those pages routing the preview shows the new screens to the families in
+`BAYMAX_WEB_PREVIEW_FAMILIES` only; signed out, it is a 307 to the sign-in page holding the preview. The gate lives in
+those reads, so a page that reads nothing from Java is not gated at all: the DR-42 budget probe (`/app/probe`) is one,
+and it rendered 200 to any visitor at `/app/preview/probe` until Caddy's preview matcher kept that path on Java
+(`not path`). `routes.built.test.ts` derives the list from the build: a page the build serves but does not route fails
+it until the matcher excludes its preview path. A family that does reach medioo-web on a path it does not serve
+(`/app/preview/<unknown>`, a missing `/fonts/...` or `/brand/...` file, or a signed-in visitor not on the allowlist at
+`/app/preview`) sees Next's built-in 404, which is English and unstyled under the CSP until medioo-web has its own
+`not-found.tsx` (open, listed in the F0 PR).
 
 Before the box edit, run the route probe against the PR's file:
 `bash scripts/caddy-route-probe.sh docs/infra/Caddyfile.medioo scripts/smoke-https.sh`. It runs the medioo block in a

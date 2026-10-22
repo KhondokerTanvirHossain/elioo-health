@@ -47,7 +47,9 @@ jobs:
           git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
           bash scripts/test_check_migration_order.sh
           bash scripts/check-migration-order.sh origin/main
-      # Five scripts, under a minute, nothing beyond 127.0.0.1. test_deploy_is_tip.sh: the deploy job's tip check (below), tested
+      # Seven scripts. Every request goes only to 127.0.0.1; the route probe test also pulls the pinned Caddy image
+      # (caddy:2.11.4-alpine, by digest) from Docker Hub and runs it locally, seven short-lived containers, each
+      # waited for up to 30 s. test_deploy_is_tip.sh: the deploy job's tip check (below), tested
       # both ways against a throwaway repository. test_deploy_prune.sh: deploy.sh against a fake docker/curl/df/sleep
       # (scripts/deploy_test_fakes.sh) — the prune (only our repository, newest 3 by time, never the tag being
       # deployed or a running image, before the pull), the free-space floor, the function-only mode and the
@@ -62,8 +64,9 @@ jobs:
       # against fixture Caddyfiles, both ways (formatting ignored, unterminated blocks refused without a diff).
       # test_budget_replica.sh: the Caddy replica of the DR-42 enforcing run (W1d), only the address and upstreams
       # changed, and a source without production's encode or HSTS lines refused.
-      # The route probe test runs the repo's Caddyfile.medioo in a real Caddy of the box's version against every row of
-      # the smoke table (plan Wave 3, F0), so a Caddy edit that sends a row to the wrong upstream fails on the PR.
+      # test_caddy_route_probe.sh: scripts/caddy-route-probe.sh runs the repo's Caddyfile.medioo in a real Caddy of the
+      # box's version against every row of the smoke table (plan Wave 3, F0), both ways: a Caddy edit that sends a row
+      # to the wrong upstream, or a matcher that reaches past its row (/app/preview*, /_next/*), fails on the PR.
       - name: Deploy script tests (tip check, prune, two containers, https smoke, Caddy drift, budget replica, route probe)
         run: |
           scripts/test_deploy_is_tip.sh

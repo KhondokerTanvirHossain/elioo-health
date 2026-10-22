@@ -16,8 +16,11 @@
 #   marker, and each security header on each path class (the nonce CSP on the Next path); every row has a break;
 # - a security header sent twice fails, whatever the last value says (a browser sees both: conflicting
 #   X-Frame-Options are ignored, so SAMEORIGIN then DENY allows framing);
-# - routing stopped at the F0 paths: Java still owns the API (/app/api/me answered by Next fails), and a missing chunk
-#   is told apart by its Content-Type, since Java's JSON 404 carries the same status and the same four headers;
+# - routing stopped at the F0 paths, in both directions: Java still owns the API (/app/api/me answered by Next fails),
+#   and the paths just outside each new matcher are still Java's JSON 404 (/app/previewx, outside the preview matcher;
+#   /_next/image, outside /_next/static/*; /app/preview/probe, excluded because the budget probe never runs the preview
+#   gate): Java's answer passes each, and Next's answer fails each, naming the row. A missing chunk is told apart by its
+#   Content-Type, since Java's JSON 404 carries the same status and the same four headers;
 # - the static class needs no CSP (the hashed chunks skip medioo-web's middleware) but still needs the four headers,
 #   each once;
 # - the old hostname still redirects every path to the new one (DR-15: links already sent to families);
@@ -34,9 +37,9 @@ trap cleanup EXIT
 FAILED=0
 CASES=0
 # the table's size: /app/healthz /actuator/health /app/api/me /app/ / /medscribeai /medscribeai/ /baymax /baymax/
-# webhook /_next/static/x.js /fonts/noto-sans-latin.woff2 /brand/mio-head.webp /app/preview /app/preview/ and the old
-# host's /app/home
-ROWS=16
+# webhook /_next/static/x.js /fonts/noto-sans-latin.woff2 /brand/mio-head.webp /app/preview /app/preview/
+# /app/previewx /_next/image /app/preview/probe and the old host's /app/home
+ROWS=19
 
 fail() { echo "FAIL: $1"; FAILED=1; }
 
@@ -151,6 +154,18 @@ const server = http.createServer((req, res) => {
     case "/app/preview/":
       if (javaOwns("preview-slash")) return send(res, path, 404, "application/json", JAVA_404);
       return send(res, path, 307, "text/html", "", NEXT_CSP, { Location: "/app/?next=%2Fapp%2Fpreview%2F" });
+    // Just outside the F0 matchers, still Java's (measured on production 2026-10-22: Java's JSON 404 on each). A matcher
+    // that reached too far (`/app/preview*`, `/_next/*`, the preview block without its probe exclusion) gives Next's
+    // answer: its HTML 404 for the first two, and the budget probe's 200 page for the third.
+    case "/app/previewx":
+      if (brk === "previewx-next") return send(res, path, 404, "text/html; charset=utf-8", html("404: This page could not be found."), NEXT_CSP);
+      return send(res, path, 404, "application/json", JAVA_404);
+    case "/_next/image":
+      if (brk === "next-image-next") return send(res, path, 404, "text/html; charset=utf-8", html("404: This page could not be found."), NEXT_CSP);
+      return send(res, path, 404, "application/json", JAVA_404);
+    case "/app/preview/probe":
+      if (brk === "preview-probe-next") return send(res, path, 200, "text/html; charset=utf-8", html('<nav class="tabs"><a href="/app/probe">x</a></nav>'), NEXT_CSP);
+      return send(res, path, 404, "application/json", JAVA_404);
     // Java owns the API: a Caddy route that sent /app/api/* to Next would answer Next's HTML 404 here
     case "/app/api/me":
       if (brk === "me-next") return send(res, path, 404, "text/html", html("404: This page could not be found."), NEXT_CSP);
@@ -194,6 +209,10 @@ if smoke; then :; else fail "flipped: exited non-zero on a healthy table: $(out)
 [ "$(passes)" = "$ROWS" ] || fail "flipped: $(passes) PASS rows, expected $ROWS: $(out)"
 [ "$(fails)" = 0 ] || fail "flipped: $(fails) FAIL rows: $(out)"
 grep -q 'DISK-DETAIL-NEVER-PRINTED' "$WORK/out.log" && fail "flipped: a response body reached the output"
+# the boundary rows pass on Java's JSON 404 (the other direction, Next's answer failing each, is in the break table)
+for row in /app/previewx /_next/image /app/preview/probe; do
+  grep -qxF "PASS $row HTTP 404" "$WORK/out.log" || fail "flipped: no 'PASS $row HTTP 404' line on Java's answer: $(out)"
+done
 
 # 2. today (before F0): Java answers the preview path and the three asset prefixes with its JSON 404; those five rows
 #    fail, each saying why, and every other row passes
@@ -257,6 +276,9 @@ preview-java|/app/preview|HTTP 404, expected 307
 preview-location|/app/preview|location is [/app/], expected [/app/?next=%2Fapp%2Fpreview]
 preview-no-nonce|/app/preview|content-security-policy has no nonce
 preview-slash-java|/app/preview/|HTTP 404, expected 307
+previewx-next|/app/previewx|statusCode is [], expected [400]
+next-image-next|/_next/image|statusCode is [], expected [400]
+preview-probe-next|/app/preview/probe|HTTP 200, expected 404
 me-next|/app/api/me|HTTP 404, expected 401
 me-reason|/app/api/me|reason is [NOT_FOUND], expected [UNAUTHENTICATED]
 old-host-location|http://127.0.0.1:[0-9]+/old-host/app/home|location is [https://medioo.eliooo.org/], expected [https://medioo.eliooo.org/app/home]

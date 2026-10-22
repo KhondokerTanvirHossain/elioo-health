@@ -29,7 +29,10 @@ SITE="medioo.eliooo.org"
 JAVA_UPSTREAM="reverse_proxy medscribe-ai:8086"
 NEXT_UPSTREAM="reverse_proxy medioo-web:3000"
 # The box's Caddy (`docker exec n8n-caddy-1 caddy version` read v2.11.4 on 2026-10-22), pinned by its index digest so
-# the same version runs on an arm64 laptop and the amd64 CI runner. Move it when the box's Caddy moves.
+# the same version runs on an arm64 laptop and the amd64 CI runner. Move it when the box's Caddy moves. There is a
+# second Caddy pin in the repo, scripts/budget-behind-caddy.sh (the W1d replica of DR-42's enforcing run), which still
+# runs 2.11.7, the version the W1a reference was measured behind; the two disagree until a follow-up aligns them or
+# records why they differ, so check both when the box moves.
 CADDY_IMAGE="caddy:2.11.4-alpine@sha256:6aeddd44c3078b0f9a35206472a11420648a79c184603ef95957d0a20044cb2b"
 PORT=8080
 NAME="medioo-route-probe-$$-$RANDOM"
