@@ -11,7 +11,7 @@ and this file should be fixed.
 | Host | EC2 `i-0215d6b600b251455`, `ec2-13-205-14-249.ap-south-1.compute.amazonaws.com`, user `ec2-user`, region ap-south-1 |
 | Shared with | an n8n stack; its Caddy terminates HTTPS for `medioo.eliooo.org` (and answers `baymax.eliooo.org` with a permanent redirect to it, path preserved — DR-15) and reaches the app as `medscribe-ai:8086` on the docker network `n8n_edge` |
 | DNS | `medioo.eliooo.org` **and** `baymax.eliooo.org` are each an **A record** pointing at the EC2 IP (`13.205.14.249`) in Hostinger (zone on `dns-parking.com`), TTL 14400. They are *not* CNAMEs, so **moving the box means changing both records** — updating only `medioo` leaves the old hostname resolving to a dead IP. `baymax` was added 2026-09-19; before that the documented redirect had never worked, because only `medioo` existed. **Negative caching: a newly added record can keep reading NXDOMAIN on a machine that looked it up while it was still missing — up to the zone's negative TTL (4h here) after the record is live.** `curl`, `host` and `getent` then fail while `dig @8.8.8.8 <name>` answers correctly, because `dig` bypasses the system resolver. That is a stale local cache, **not** a failed deploy: confirm from the EC2 box (`ssh … 'curl -sS -o /dev/null -w "%{http_code} %{redirect_url}\n" https://baymax.eliooo.org/app/home'`) before treating it as one |
-| Containers | `medscribe-ai` (Java), image `ghcr.io/khondokertanvirhossain/elioo-health/medscribe-ai:<git sha>`, published on the box's `127.0.0.1:8086` only (W1c; Caddy reaches it as `medscribe-ai:8086` on `n8n_edge`), `--env-file`; and `medioo-web` (Next.js, DR-40, from W1b), image `ghcr.io/khondokertanvirhossain/elioo-health/medioo-web:<git sha>`, same sha, on `n8n_edge` only (no host port), no env file, 320 MB cap. **Caddy sends it only the paths listed in `docs/infra/Caddyfile.medioo`** (from W1c: `/app/healthz` alone; see [Routing a path to medioo-web](#routing-a-path-to-medioo-web)) |
+| Containers | `medscribe-ai` (Java), image `ghcr.io/khondokertanvirhossain/elioo-health/medscribe-ai:<git sha>`, published on the box's `127.0.0.1:8086` only (W1c; Caddy reaches it as `medscribe-ai:8086` on `n8n_edge`), `--env-file`; and `medioo-web` (Next.js, DR-40, from W1b), image `ghcr.io/khondokertanvirhossain/elioo-health/medioo-web:<git sha>`, same sha, on `n8n_edge` only (no host port), no env file, 320 MB cap. **Caddy sends it only the paths listed in `docs/infra/Caddyfile.medioo`** (`/app/healthz` from W1c; from F0 also the preview path `/app/preview`, `/app/preview/*` and the assets `/_next/static/*`, `/fonts/*`, `/brand/*`; every page and `/app/api/**` still Java's; see [Routing a path to medioo-web](#routing-a-path-to-medioo-web)) |
 | Runtime config | `/home/ec2-user/medscribe.env`, mode 600, passed to `docker run --env-file` |
 | Database | Supabase `niramoy-rx`, session pooler, schemas `medscribe` and `baymax` |
 | Object storage | AWS S3 `elioo-baymax-prod` (ap-south-1, private, SSE-S3) via the EC2 instance role (DR-5) |
@@ -71,22 +71,39 @@ reaches the box. A web build failure stops the job with production untouched; th
 Dockerfile on the PR (`scripts/test_deploy_web_docker.sh`).
 After the deploy job, CI runs the https upstream table, `scripts/smoke-https.sh https://medioo.eliooo.org`
 (tested by `scripts/test_smoke_https.sh`), through Caddy, the path every user takes. One row per path class, each
-with its status and, for the Next page, the Java pages and the API, the security headers (`content-security-policy`
-present and carrying a nonce on Next's path, `x-frame-options: DENY`, `x-content-type-options: nosniff`,
-`referrer-policy: strict-origin-when-cross-origin`, `strict-transport-security` present). The expected values are
-what production answered on 2026-10-21:
+with its status and, for the Next pages, the Java pages and the API, the security headers (`content-security-policy`
+present and carrying a nonce on Next's paths, `x-frame-options: DENY`, `x-content-type-options: nosniff`,
+`referrer-policy: strict-origin-when-cross-origin`, `strict-transport-security` present). The `static` class
+(medioo-web's assets) needs the same four headers, each once, and no CSP: the hashed chunks skip medioo-web's
+middleware, so they carry none. The expected values were measured on 2026-10-22 (the Java rows and the old-name row
+against production; the medioo-web rows through the W1d Caddy replica in front of the deployed sha's medioo-web image,
+with Java signed out), the W1c rows first on 2026-10-21:
 
 | Path | Expected | Served by |
 |---|---|---|
-| `/app/healthz` | 200, JSON `service == "medioo-web"`, nonce CSP | medioo-web (the only routed path) |
+| `/app/healthz` | 200, JSON `service == "medioo-web"`, nonce CSP | medioo-web |
 | `/actuator/health` | 200, JSON top-level `status == "UP"` | Java |
+| `/app/api/me` | 401, JSON `reason == "UNAUTHENTICATED"` (no session) | Java (Java owns every `/app/api/**` path) |
 | `/app/` | 200, the login page (`name="whatsapp_number"`) | Java |
 | `/` | 200 | Java (landing) |
 | `/medscribeai`, `/medscribeai/` | 200 | Java (MedScribe) |
 | `/baymax`, `/baymax/` | 301, `Location: /app` and `/app/` | Java |
 | `/api/v1/baymax/wa/webhook` (GET, no parameters) | 403 (Meta verification refused) | Java |
-| `/_next/static/x.js` | 404, JSON `statusCode == 400` (Java's error body, not Next's HTML 404) | Java, until `/_next/*` is routed |
+| `/_next/static/x.js` | 404, `Content-Type: text/plain`, no CSP (`static`) | medioo-web (Next's 404 for a missing chunk; Java's JSON 404 here is the failure) |
+| `/fonts/noto-sans-latin.woff2` | 200, `Content-Type: font/woff2` (`static`) | medioo-web |
+| `/brand/mio-head.webp` | 200, `Content-Type: image/webp` (`static`) | medioo-web |
+| `/app/preview`, `/app/preview/` | 307 to `/app/?next=%2Fapp%2Fpreview` and `...%2Fapp%2Fpreview%2F`, nonce CSP | medioo-web (signed out; a known gap, see below) |
+| `/app/previewx` | 404, JSON `statusCode == 400` | Java (outside the preview matcher; Next here means a matcher like `/app/preview*`) |
+| `/_next/image` | 404, JSON `statusCode == 400` | Java (outside `/_next/static/*`; Next here means a matcher like `/_next/*`) |
+| `/app/preview/probe` | 404, JSON `statusCode == 400` | Java (kept off the preview; see below) |
 | `https://baymax.eliooo.org/app/home` | 301, `Location: https://medioo.eliooo.org/app/home` (DR-15) | Caddy's old-name block |
+
+The two `/app/preview` rows are a **known gap, not the expected behaviour**. The plan expects
+`200`, the number form (`name="whatsapp_number"`). With the preview gate as merged in W3, the gate reads `me` before
+every other read, so a signed-out visitor is sent to Java's sign-in (the 307), a signed-in allowlisted one is sent on by
+the sign-in pages to `/app/home` (Java's), and a signed-in visitor not on the allowlist gets Next's 404. No viewer
+reaches a Next screen through the preview until a W3 follow-up (a PO ruling: let the two sign-in reads through for a
+signed-out visitor) lands; the rows then go back to the plan's 200.
 
 Each of `x-frame-options`, `x-content-type-options`, `referrer-policy` and `strict-transport-security` must arrive
 **exactly once** on the header rows: a browser acts on every copy (two conflicting `X-Frame-Options` are ignored, so
@@ -442,7 +459,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://medioo.eliooo.org/api/v1/baymax
 Baymax health returning 404 in production means the module did not load: `BAYMAX_ENABLED` is not `true`.
 
 The second container (from W1b), on the box. From outside, it answers only the paths Caddy routes to it
-(`docs/infra/Caddyfile.medioo`; from W1c, `/app/healthz`):
+(`docs/infra/Caddyfile.medioo`; from W1c, `/app/healthz`; from F0, also the preview path and the assets):
 
 ```bash
 docker ps --format '{{.Names}} {{.Image}} {{.Status}}' | grep -E '^(medscribe-ai|medioo-web) '   # both, same sha, medioo-web "(healthy)"
@@ -493,8 +510,25 @@ SELECT version, description, success FROM baymax.flyway_schema_history ORDER BY 
 DR-40 A1: Java is the default upstream. A path reaches `medioo-web:3000` only once it is listed in
 `docs/infra/Caddyfile.medioo` **and** applied in the box's Caddyfile, `/home/ec2-user/n8n/Caddyfile`, which also holds
 the n8n and bddrug sites (one reload touches all three tenants). From W1c the repo file is the source; the box's
-medioo/baymax blocks are pasted from it. Routed today: `/app/healthz` (W1c). `/_next/*` and `/fonts/*` come with the
-first HTML route.
+medioo/baymax blocks are pasted from it. Routed today: `/app/healthz` (W1c); the preview path `/app/preview` and
+`/app/preview/*`, and the assets `/_next/static/*`, `/fonts/*` and `/brand/*` (plan Wave 3, F0). Every page is still
+Java's, and so is every `/app/api/**` path; each screen's own paths come in its flip PR (F3, F5–F10) after the PO's
+on-device try. Every preview page that reads Java reads nothing but `GET /app/api/me` until that answer says
+`preview: true`, so for those pages routing the preview shows the new screens to the families in
+`BAYMAX_WEB_PREVIEW_FAMILIES` only; signed out, it is a 307 to the sign-in page holding the preview. The gate lives in
+those reads, so a page that reads nothing from Java is not gated at all: the DR-42 budget probe (`/app/probe`) is one,
+and it rendered 200 to any visitor at `/app/preview/probe` until Caddy's preview matcher kept that path on Java
+(`not path`). `routes.built.test.ts` derives the list from the build: a page the build serves but does not route fails
+it until the matcher excludes its preview path. A family that does reach medioo-web on a path it does not serve
+(`/app/preview/<unknown>`, a missing `/fonts/...` or `/brand/...` file, or a signed-in visitor not on the allowlist at
+`/app/preview`) sees Next's built-in 404, which is English and unstyled under the CSP until medioo-web has its own
+`not-found.tsx` (open, listed in the F0 PR).
+
+Before the box edit, run the route probe against the PR's file:
+`bash scripts/caddy-route-probe.sh docs/infra/Caddyfile.medioo scripts/smoke-https.sh`. It runs the medioo block in a
+local Caddy of the box's version, with Java and medioo-web replaced by fixed answers, and sends every row of the smoke
+table (`PROBE` rows included): each `next` or `static` row must reach medioo-web and every other row Java. Every row
+PASS, or the file is not applied.
 
 To flip a route (or flip one back, which is the same procedure with the block removed):
 

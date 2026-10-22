@@ -30,8 +30,11 @@
 #
 # DR-40 A1: Java is the default. A path goes to medioo-web:3000 only once it is listed here and applied on the box.
 # Flipping a route back is a one-line edit plus the procedure above, and the routes floor (RUNBOOK -> Rollback).
-# The handle blocks are mutually exclusive: the most specific path matcher wins, and the bare `handle` is Java. Only
-# /app/healthz is routed so far (W1c); /_next/* and /fonts/* come with the first HTML route.
+# The handle blocks are mutually exclusive: the most specific path matcher wins, and the bare `handle` is Java. Routed
+# so far: /app/healthz (W1c); the preview path /app/preview and /app/preview/* (less /app/preview/probe, which stays
+# Java's), and the assets /_next/static/*, /fonts/* and /brand/* (plan Wave 3, F0). Every page and every /app/api/**
+# path is still Java's; each screen's own paths come in its flip PR. scripts/caddy-route-probe.sh runs this file in a
+# local Caddy and checks every row of scripts/smoke-https.sh reaches the upstream its class names.
 #
 # Referrer-Policy stays strict-origin-when-cross-origin, the value production has sent since before the rebuild
 # (noted for the PO in the W1c PR): medioo-web's own headers send the same value, and Caddy overwrites it anyway.
@@ -47,6 +50,35 @@ medioo.eliooo.org {
 	}
 
 	handle /app/healthz {
+		reverse_proxy medioo-web:3000
+	}
+
+	# F0: the assets every Next page loads (Next's hashed chunks, the two Noto subsets, Mio and the wordmark). Next has
+	# no other files under these prefixes and Java has none at all, so a whole prefix is safe to send.
+	handle /_next/static/* {
+		reverse_proxy medioo-web:3000
+	}
+
+	handle /fonts/* {
+		reverse_proxy medioo-web:3000
+	}
+
+	handle /brand/* {
+		reverse_proxy medioo-web:3000
+	}
+
+	# F0: the preview path. Both spellings, because `/app/preview/*` alone does not match `/app/preview`, and nothing
+	# wider: `/app/preview*` would also take /app/previewx. Every preview page that reads Java reads nothing but `me`
+	# until `me` says preview (BAYMAX_WEB_PREVIEW_FAMILIES), so for those pages routing shows the new screens to the
+	# allowlisted families only. The DR-42 budget probe reads nothing from Java, so the gate never runs on it: it stays
+	# on Java here (the `not path` line), or /app/preview/probe would render to any visitor. The method is unrestricted,
+	# per the plan's F0 row: a preview page posts nothing itself (each write is a browser fetch to /app/api/**, which
+	# stays on Java); what a POST here answers is measured in the smoke-https.sh header.
+	@medioo_preview {
+		path /app/preview /app/preview/*
+		not path /app/preview/probe /app/preview/probe/*
+	}
+	handle @medioo_preview {
 		reverse_proxy medioo-web:3000
 	}
 
