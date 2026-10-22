@@ -313,6 +313,44 @@ class UploadApiHandlerTest {
         preselected(List.of(), List.of(shared)).isEmpty();
     }
 
+    /**
+     * Plan W7 review (finding 15): whose paper the sheet opens on is Java's one rule, {@link UploadOptions#chosen}, the
+     * rule the HTML sheet draws its checked chip by ({@code UploadUiHandler.chosen}). The page hands Java its
+     * {@code ?patient=}; React renders {@code chosen_patient_id} and derives nothing. Both directions: the asked patient
+     * is chosen only when the viewer may send for them, and the one preselect wins over any ask, a view-only one
+     * included (the HTML sheet's behaviour, kept until the PO rules otherwise for both sheets at once).
+     */
+    @Test
+    void optionsChooseThePatientAsTheHtmlSheetDoes() {
+        PatientSummary ma = summary(MA, "Ma", true);
+        PatientSummary baba = summary(BABA, "Baba", true);
+        UUID nani = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4210004");
+        PatientSummary shared = summary(nani, "Nani", false);
+        record Ask(List<PatientSummary> canSend, List<PatientSummary> viewOnly, String asked, String chosen) {
+        }
+        List<Ask> asks = List.of(
+                new Ask(List.of(ma), List.of(), null, MA.toString()),
+                new Ask(List.of(ma, baba), List.of(), null, null),
+                new Ask(List.of(ma, baba), List.of(), BABA.toString(), BABA.toString()),
+                new Ask(List.of(ma, baba), List.of(), BABA.toString().toUpperCase(), BABA.toString()),
+                new Ask(List.of(ma, baba), List.of(shared), nani.toString(), null),
+                new Ask(List.of(ma, baba), List.of(), "not-an-id", null),
+                new Ask(List.of(ma), List.of(shared), nani.toString(), MA.toString()),
+                new Ask(List.of(), List.of(shared), nani.toString(), null));
+        for (Ask a : asks) {
+            UploadOptions o = new UploadOptions(a.canSend(), a.viewOnly(), DocumentAllowance.unlimited(YearMonth.of(2026, 10)));
+            when(uploads.uploadOptions(FAMILY)).thenReturn(Mono.just(o));
+            String uri = a.asked() == null ? "/app/api/upload-options" : "/app/api/upload-options?patient=" + a.asked();
+            byte[] body = client.get().uri(uri).cookie("baymax_session", "tok").exchange()
+                    .expectStatus().isOk().expectBody().returnResult().getResponseBody();
+            String chosen = com.jayway.jsonpath.JsonPath.read(new String(body, java.nio.charset.StandardCharsets.UTF_8), "$.chosen_patient_id");
+            assertThat(chosen).as(a.toString()).isEqualTo(a.chosen());
+            assertThat(chosen).as("the HTML sheet's checked chip for " + a)
+                    .isEqualTo(com.elioo.baymax.web.adapter.in.ui.UploadUiHandler.chosen(o, java.util.Optional.ofNullable(a.asked()))
+                            .map(UUID::toString).orElse(null));
+        }
+    }
+
     private WebTestClient.BodyContentSpec options(UploadOptions o) {
         when(uploads.uploadOptions(FAMILY)).thenReturn(Mono.just(o));
         return client.get().uri("/app/api/upload-options").cookie("baymax_session", "tok").exchange()

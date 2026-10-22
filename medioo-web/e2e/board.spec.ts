@@ -148,7 +148,7 @@ const threePages = async (page: Page) => {
   await page.locator('input[type=file][data-src="gallery"]').setInputFiles(
     [120, 200, 280].map((w, i) => ({ name: `page-${i + 1}.png`, mimeType: "image/png", buffer: pngFor({ crop: { src: `p${i}`, width: w, height: 160 } }) })),
   );
-  await page.locator(".page-tray__item").nth(2).waitFor();
+  await page.locator(".upload-tray__item").nth(2).waitFor();
 };
 const oneReport = async (page: Page) => page.getByRole("radio", { name: t("bn", "add.group.one") }).check();
 const press = async (page: Page) => {
@@ -170,7 +170,7 @@ BOARD_SCENES.push(
   upload("sheet", "upload-owner-one"),
   upload("chooser", "upload-owner-two"),
   upload("tray-three-pages", "upload-owner-one", { act: threePages, proto: { file: "phone.html", scene: "chat", click: '[data-action="pages"]' } }),
-  upload("drop-zone", "upload-owner-one", {
+  upload("upload-drop", "upload-owner-one", {
     viewports: { desktop: { width: 1280, height: 800 } },
     proto: { file: "desktop.html", scene: "app", show: "#drop" },
     act: async (page) => {

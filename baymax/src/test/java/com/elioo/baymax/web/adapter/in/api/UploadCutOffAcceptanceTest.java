@@ -4,12 +4,19 @@ import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.testsupport.PaintedPaper;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.http.server.reactive.HttpHandler;
 import org.springframework.http.server.reactive.ReactorHttpHandlerAdapter;
+import org.springframework.http.server.reactive.ServerHttpRequest;
+import org.springframework.http.server.reactive.ServerHttpRequestDecorator;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.server.ServerWebExchange;
+import org.springframework.web.server.WebFilter;
+import org.springframework.web.server.WebFilterChain;
 import org.springframework.web.server.adapter.WebHttpHandlerBuilder;
+import reactor.core.publisher.Flux;
 import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -36,6 +43,8 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -72,7 +81,8 @@ class UploadCutOffAcceptanceTest {
             String token = AppApiContext.session(context, family.id());
             byte[] body = press(ma.id(), List.of(PaintedPaper.paintedPage(), page(new Color(20, 160, 60)), page(new Color(120, 120, 120))));
 
-            HttpHandler app = WebHttpHandlerBuilder.applicationContext(context).build();
+            BodyWatch watch = new BodyWatch();
+            HttpHandler app = WebHttpHandlerBuilder.applicationContext(context).filters(f -> f.add(0, watch)).build();
             DisposableServer server = HttpServer.create().host("127.0.0.1").port(0).handle(new ReactorHttpHandlerAdapter(app)).bindNow();
             LoopResources loops = LoopResources.create("cut-off-client", 1, true);
             try {
@@ -87,6 +97,11 @@ class UploadCutOffAcceptanceTest {
                 Thread.sleep(1500);
                 assertThat(count("select count(*) from baymax.document where patient_id = '" + ma.id() + "'"))
                         .as("documents after the cut-off attempt").isZero();
+                // Falsifiable (W7 review): the cut-off request got past the guard and into the multipart reader (its body
+                // was subscribed), and its body ended without completing. A request refused at the guard, rejected for a
+                // malformed head or never read would leave no row as well, and fails here instead.
+                assertThat(watch.first()).as("the cut-off request on the upload route: its body read, then cut")
+                        .isIn("read,error", "read,cancel");
 
                 WebClient client = WebClient.builder().baseUrl("http://127.0.0.1:" + server.port())
                         .clientConnector(new ReactorClientHttpConnector(HttpClient.create().runOn(loops))).build();
@@ -105,6 +120,37 @@ class UploadCutOffAcceptanceTest {
                 loops.disposeLater().block(Duration.ofSeconds(10));
             }
         });
+    }
+
+    /**
+     * What happened to the first request on {@code POST /app/api/uploads}'s body: {@code read} once the handler (past the
+     * guard) subscribed to it, then how it ended ({@code complete}, {@code error} or {@code cancel}), comma-joined.
+     */
+    static final class BodyWatch implements WebFilter {
+        private final AtomicInteger seen = new AtomicInteger();
+        private final List<String> events = new CopyOnWriteArrayList<>();
+
+        @Override
+        public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
+            if (!exchange.getRequest().getPath().value().equals("/app/api/uploads") || seen.getAndIncrement() > 0) {
+                return chain.filter(exchange);
+            }
+            ServerHttpRequest watched = new ServerHttpRequestDecorator(exchange.getRequest()) {
+                @Override
+                public Flux<DataBuffer> getBody() {
+                    return super.getBody()
+                            .doOnSubscribe(s -> events.add("read"))
+                            .doOnComplete(() -> events.add("complete"))
+                            .doOnError(e -> events.add("error"))
+                            .doOnCancel(() -> events.add("cancel"));
+                }
+            };
+            return chain.filter(exchange.mutate().request(watched).build());
+        }
+
+        String first() {
+            return String.join(",", events);
+        }
     }
 
     private static byte[] head(String token, int length) {

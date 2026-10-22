@@ -43,7 +43,7 @@ function choose(container: HTMLElement, src: "camera" | "gallery" | "pdf", files
 }
 
 const send = () => screen.getByRole("button", { name: t("bn", "add.send") });
-const thumbs = (container: HTMLElement) => [...container.querySelectorAll<HTMLImageElement>(".page-tray__thumb")].map((i) => i.getAttribute("src"));
+const thumbs = (container: HTMLElement) => [...container.querySelectorAll<HTMLImageElement>(".upload-tray__thumb")].map((i) => i.getAttribute("src"));
 
 describe("the add sheet", () => {
   it("theSheetNeverGuessesThePatient", () => {
@@ -71,15 +71,35 @@ describe("the add sheet", () => {
     expect(checked.map((r) => r.value)).toEqual([only.id]);
   });
 
+  it("theSheetRendersJavasChoiceAndDerivesNone", () => {
+    // Java chose (owner-two-asked: two to send for, the page opened for Ma): that one is checked, and the hint is
+    // "choose", as the HTML sheet says it when nobody was preselected.
+    const two = options(ownerTwo);
+    const [ma, baba] = two.can_send;
+    const asked = { body: { ...two, chosen_patient_id: ma!.id } };
+    const { container } = sheet(asked, { asked: ma!.id });
+    const checked = () => [...container.querySelectorAll<HTMLInputElement>("input[type=radio][name=patient]")].filter((r) => r.checked);
+    expect(checked().map((r) => r.value)).toEqual([ma!.id]);
+    expect(screen.getByText(t("bn", "add.choose"))).toBeTruthy();
+    cleanup();
+
+    // The other direction: the field is rendered, never recomputed from `?patient=`. Java's answer names Baba while the
+    // page was asked for Ma: Baba is checked, because only Java decides.
+    const { container: c2 } = sheet({ body: { ...two, chosen_patient_id: baba!.id } }, { asked: ma!.id });
+    const checked2 = [...c2.querySelectorAll<HTMLInputElement>("input[type=radio][name=patient]")].filter((r) => r.checked);
+    expect(checked2.map((r) => r.value)).toEqual([baba!.id]);
+  });
+
   it("aViewOnlyPatientCannotBeSentFor", () => {
     const o = options(viewOnly);
     const shared = o.view_only[0]!;
-    // Opened from the shared patient's paper: the sheet says it cannot send for them, and chooses nobody else instead.
+    // Opened from the shared patient's paper: the sheet says it cannot send for them and never offers them; whom it opens
+    // on is Java's choice (the one patient the viewer may send for, as the HTML sheet checks it), never the sheet's.
     const { container } = sheet(viewOnly, { asked: shared.id });
     expect(screen.getByText(t("bn", "add.viewonly"))).toBeTruthy();
     const radios = [...container.querySelectorAll<HTMLInputElement>("input[type=radio][name=patient]")];
     expect(radios.map((r) => r.value), "the shared patient is not offered").not.toContain(shared.id);
-    expect(radios.filter((r) => r.checked)).toEqual([]);
+    expect(radios.filter((r) => r.checked).map((r) => r.value)).toEqual(o.chosen_patient_id === null ? [] : [o.chosen_patient_id]);
     cleanup();
 
     // A viewer who may send for nobody: the line, and no control at all.
@@ -103,7 +123,7 @@ describe("the add sheet", () => {
     const { container } = sheet(ownerOne);
     choose(container, "gallery", [jpeg("p1.jpg"), jpeg("p2.jpg"), jpeg("p3.jpg")]);
     expect(thumbs(container)).toEqual(["blob:p1.jpg#1", "blob:p2.jpg#2", "blob:p3.jpg#3"]);
-    const tray = within(container.querySelector<HTMLElement>(".page-tray")!);
+    const tray = within(container.querySelector<HTMLElement>(".upload-tray")!);
     fireEvent.click(tray.getByRole("button", { name: t("bn", "tray.up").replace("{n}", digits(2)) }));
     expect(thumbs(container), "page 2 moved up").toEqual(["blob:p2.jpg#2", "blob:p1.jpg#1", "blob:p3.jpg#3"]);
     fireEvent.click(tray.getByRole("button", { name: t("bn", "tray.down").replace("{n}", digits(2)) }));
@@ -121,11 +141,67 @@ describe("the add sheet", () => {
     const limit = t("bn", "tray.limit").replace("{max}", digits(o.limits.max_pages)).replace("{n}", digits(o.limits.max_pages));
     expect(screen.getByText(limit)).toBeTruthy();
     // A page past the cap (a drop, or a picker that ignores the disabled button) is not taken in: the tray stays at the
-    // cap, and the line saying the cap is still there.
+    // cap, and the sheet says the cap aloud (role=alert) at the point it stops taking pages, as upload.js does.
+    expect(alertText(container), "nothing said before").toBe("");
     choose(container, "gallery", [jpeg("over.jpg")]);
     expect(thumbs(container)).toHaveLength(o.limits.max_pages);
     expect(thumbs(container).filter((src) => src!.startsWith("blob:over.jpg"))).toEqual([]);
-    expect(screen.getByText(limit)).toBeTruthy();
+    expect(alertText(container), "the pages left out are said").toBe(limit);
+  });
+
+  it("twelvePagesChosenAtTheCapOfTenAreSaid", () => {
+    const o = options(ownerOne);
+    const { container } = sheet(ownerOne);
+    choose(container, "gallery", Array.from({ length: o.limits.max_pages + 2 }, (_, i) => jpeg(`r${i}.jpg`)));
+    expect(thumbs(container)).toHaveLength(o.limits.max_pages);
+    const limit = t("bn", "tray.limit").replace("{max}", digits(o.limits.max_pages)).replace("{n}", digits(o.limits.max_pages));
+    expect(alertText(container)).toBe(limit);
+  });
+
+  it("aKindJavaDoesNotReadNeverReachesTheTray", () => {
+    const { container } = sheet(ownerOne);
+    const docx = new File([new Uint8Array([0x50, 0x4b, 3, 4])], "report.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+    choose(container, "pdf", [docx]);
+    expect(container.querySelectorAll(".upload-tray__item"), "a DOCX never leaves the phone").toHaveLength(0);
+    expect(alertText(container)).toBe(t("bn", "upload.err.unsupported"));
+    // Beside a photo, the photo is taken and the DOCX is said.
+    choose(container, "gallery", [jpeg("ok.jpg"), docx]);
+    expect(thumbs(container)).toEqual(["blob:ok.jpg#1"]);
+    expect(alertText(container)).toBe(t("bn", "upload.err.unsupported"));
+  });
+
+  it("theTrayKeepsKeyboardFocusOnEveryMove", () => {
+    const { container } = sheet(ownerOne);
+    choose(container, "gallery", [jpeg("p1.jpg"), jpeg("p2.jpg"), jpeg("p3.jpg")]);
+    const tray = () => within(container.querySelector<HTMLElement>(".upload-tray")!);
+    // The tray opening takes focus (on a phone it may open below the fold), as upload.js focuses #tray-title.
+    expect(document.activeElement?.classList.contains("upload-tray__title"), "the tray took focus").toBe(true);
+    const row = (el: Element | null) => el?.closest("[data-page-id]")?.getAttribute("data-page-id");
+    const p1 = container.querySelector("[data-page]")!.getAttribute("data-page-id");
+
+    const down = tray().getByRole("button", { name: t("bn", "tray.down").replace("{n}", digits(1)) });
+    down.focus();
+    fireEvent.click(down);
+    // Moved to second: focus is still on that page's "down", now on its new row.
+    expect({ page: row(document.activeElement), control: document.activeElement?.getAttribute("data-control") }).toEqual({ page: p1, control: "down" });
+
+    fireEvent.click(document.activeElement as HTMLElement);
+    // Now last, its "down" is off: focus goes to that row's remove, never to body.
+    expect({ page: row(document.activeElement), control: document.activeElement?.getAttribute("data-control") }).toEqual({ page: p1, control: "remove" });
+
+    fireEvent.click(document.activeElement as HTMLElement);
+    // Removed: focus goes to the remove button of the page now in its place (the new last).
+    expect(document.activeElement?.getAttribute("data-control")).toBe("remove");
+    expect(row(document.activeElement)).not.toBe(p1);
+    expect(document.activeElement).not.toBe(document.body);
+
+    fireEvent.click(document.activeElement as HTMLElement);
+    fireEvent.click(document.activeElement as HTMLElement);
+    // The tray emptied: focus goes back to the ways in (the camera), never to body.
+    expect(container.querySelectorAll(".upload-tray__item")).toHaveLength(0);
+    expect(document.activeElement?.textContent).toContain(t("bn", "add.camera"));
   });
 
   it("groupIsAskedNotGuessed", () => {
@@ -142,7 +218,17 @@ describe("the add sheet", () => {
     expect(send(), "two pages and no answer: nothing to send").toHaveProperty("disabled", true);
     fireEvent.click(groups[1]!);
     expect(send()).toHaveProperty("disabled", false);
+
+    // 2 → 1 → 2: the answer was for two pages that may not be these. Asked again, neither answer chosen.
+    fireEvent.click(screen.getByRole("button", { name: t("bn", "tray.remove").replace("{n}", digits(2)) }));
+    expect(screen.queryByText(t("bn", "add.group.q"))).toBeNull();
+    choose(container, "camera", [jpeg("three.jpg")]);
+    const again = [...container.querySelectorAll<HTMLInputElement>("input[type=radio][name=group]")];
+    expect(again.filter((g) => g.checked), "asked again, not answered from before").toEqual([]);
+    expect(send(), "two pages again and no answer").toHaveProperty("disabled", true);
   });
 });
 
 const digits = (n: number) => banglaDigits(String(n));
+/** The sheet's own refusal line (role=alert), as a screen reader would hear it. */
+const alertText = (container: HTMLElement) => container.querySelector(".upload-sheet__alert")?.textContent ?? "";

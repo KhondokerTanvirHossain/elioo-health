@@ -128,55 +128,78 @@ class UploadApiContractTest {
         cases.put("owner-one", new UploadOptions(List.of(MeApiContractTest.ma()), List.of(), free(4)));
         // two the family owns: nobody preselected, the sheet asks
         cases.put("owner-two", new UploadOptions(List.of(MeApiContractTest.ma(), MeApiContractTest.baba()), List.of(), free(4)));
+        // the same two, the page opened for Ma (a retake link, the chat's camera): Java chooses her, React only renders it
+        cases.put("owner-two-asked", new UploadOptions(List.of(MeApiContractTest.ma(), MeApiContractTest.baba()), List.of(), free(4)));
         // me/two-patients' family: Ma is theirs, the sibling's mother is shared with them to see only
         cases.put("view-only", new UploadOptions(List.of(MeApiContractTest.ma()), List.of(MeApiContractTest.shared()), free(4)));
         // this month's free papers are read: the sheet says until when, and offers no press
         cases.put("cap-reached", new UploadOptions(List.of(MeApiContractTest.ma()), List.of(), free(30)));
-        // the area's longest: me/long-name's patient on the sheet's chip and title
-        cases.put("long-name", new UploadOptions(List.of(MeApiContractTest.maLong()), List.of(), free(4)));
+        // owner-one with the server's downscale on (limits.downscale_max_edge 800): the sheet scales a big photo itself
+        cases.put("downscale-on", new UploadOptions(List.of(MeApiContractTest.ma()), List.of(), free(4)));
+        // the area's longest: owner-two with only Ma's name lengthened (me/two-owned-long), so the long name is measured
+        // inside the two-chip chooser the routed state draws, not on a one-patient sheet
+        cases.put("long-name", new UploadOptions(List.of(MeApiContractTest.maLong(), MeApiContractTest.baba()), List.of(), free(4)));
         return cases;
     }
+
+    /** The {@code ?patient=} a case's page was opened with (none for the others). */
+    static final Map<String, UUID> ASKED = Map.of("owner-two-asked", PaperFixtures.MA_ID);
 
     static Stream<String> optionCaseNames() {
         return optionCases().keySet().stream();
     }
 
-    private EntityExchangeResult<byte[]> options(UploadOptions o) {
-        when(uploads.uploadOptions(FAMILY)).thenReturn(Mono.just(o));
-        return client().get().uri("/app/api/upload-options").cookie("baymax_session", "tok").exchange().expectBody().returnResult();
+    private EntityExchangeResult<byte[]> options(String name) {
+        when(uploads.uploadOptions(FAMILY)).thenReturn(Mono.just(optionCases().get(name)));
+        // the server turned downscaling on (D5): the edge the browser scales a photo to before it leaves the phone
+        properties.getUpload().setDownscaleMaxEdge(name.equals("downscale-on") ? 800 : 0);
+        UUID asked = ASKED.get(name);
+        String uri = "/app/api/upload-options" + (asked == null ? "" : "?patient=" + asked);
+        return client().get().uri(uri).cookie("baymax_session", "tok").exchange().expectBody().returnResult();
     }
 
     @ParameterizedTest
     @MethodSource("optionCaseNames")
     void eachOptionsCaseIsItsCommittedMswFixture(String name) throws IOException {
-        EntityExchangeResult<byte[]> r = options(optionCases().get(name));
+        EntityExchangeResult<byte[]> r = options(name);
         assertThat(r.getStatus().value()).as(name).isEqualTo(200);
         write("upload-options", name, "GET /app/api/upload-options over the UploadApiContractTest case " + name, r);
     }
 
     @Test
     void theOptionsCasesShowWhatTheirNamesSay() throws IOException {
-        Map<String, UploadOptions> cases = optionCases();
-        JsonNode one = body(options(cases.get("owner-one")));
+        JsonNode one = body(options("owner-one"));
         assertThat(one.at("/can_send").size()).isEqualTo(1);
         assertThat(one.at("/preselected_patient_id").asText()).isEqualTo(PaperFixtures.MA_ID.toString());
+        assertThat(one.at("/chosen_patient_id").asText()).as("the only one is the one chosen").isEqualTo(PaperFixtures.MA_ID.toString());
         assertThat(one.at("/allowance/remaining").asInt()).isEqualTo(26);
 
-        JsonNode two = body(options(cases.get("owner-two")));
+        JsonNode two = body(options("owner-two"));
         assertThat(two.at("/can_send").size()).isEqualTo(2);
         assertThat(two.at("/preselected_patient_id").isNull()).as("two to send for: nobody is chosen for the family").isTrue();
+        assertThat(two.at("/chosen_patient_id").isNull()).as("two to send for and no ask: nobody is chosen").isTrue();
 
-        JsonNode viewOnly = body(options(cases.get("view-only")));
+        JsonNode asked = body(options("owner-two-asked"));
+        assertThat(asked.at("/preselected_patient_id").isNull()).as("still two: no preselect").isTrue();
+        assertThat(asked.at("/chosen_patient_id").asText()).as("the page asked for Ma, whom the viewer may send for")
+                .isEqualTo(PaperFixtures.MA_ID.toString());
+
+        JsonNode viewOnly = body(options("view-only"));
         assertThat(viewOnly.at("/view_only/0/id").asText()).isEqualTo(MeApiContractTest.shared().patient().id().toString());
         assertThat(viewOnly.at("/view_only/0/owner").asBoolean()).isFalse();
 
-        JsonNode cap = body(options(cases.get("cap-reached")));
+        JsonNode cap = body(options("cap-reached"));
         assertThat(cap.at("/allowance/limited").asBoolean()).isTrue();
         assertThat(cap.at("/allowance/remaining").asInt()).isZero();
         assertThat(cap.at("/allowance/resets_on").asText()).isEqualTo("2026-11-01");
 
-        JsonNode longest = body(options(cases.get("long-name")));
+        assertThat(one.at("/limits/downscale_max_edge").asInt()).as("off by default").isZero();
+        assertThat(body(options("downscale-on")).at("/limits/downscale_max_edge").asInt()).isEqualTo(800);
+
+        JsonNode longest = body(options("long-name"));
         assertThat(longest.at("/can_send/0/name").asText()).isEqualTo(MeApiContractTest.longName());
+        assertThat(longest.at("/can_send").size()).as("the long name inside the two-chip chooser").isEqualTo(2);
+        assertThat(longest.at("/chosen_patient_id").isNull()).as("owner-two's state: nobody chosen").isTrue();
         // the limits the sheet holds the tray to, never restated in TypeScript
         assertThat(one.at("/limits/max_pages").asInt()).isEqualTo(properties.getExtract().getMaxPages());
         assertThat(one.at("/limits/max_files").asInt()).isPositive();

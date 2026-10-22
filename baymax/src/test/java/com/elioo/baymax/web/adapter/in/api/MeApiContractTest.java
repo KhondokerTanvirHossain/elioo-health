@@ -161,6 +161,8 @@ class MeApiContractTest {
         cases.put("long-name", Case.of(true, maLong()));
         // two patients the family owns and no remembered choice: the add sheet (W7) asks whose paper it is
         cases.put("two-owned", Case.of(true, ma(), baba()));
+        // the same two with Ma's name the longest (the add sheet's longest twin, W7): two-owned with one thing changed
+        cases.put("two-owned-long", Case.of(true, maLong(), baba()));
         cases.put("unauthenticated", new Case(List.of(), List.of(), false, false));
         return cases;
     }

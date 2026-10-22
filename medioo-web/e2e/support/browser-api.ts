@@ -23,8 +23,11 @@ export type BrowserRequest = {
   body: unknown;
   /** A multipart body's parts in the order sent, repeated names kept (every `file` of a press); null otherwise. */
   parts: Part[] | null;
-  /** What the browser was answered: the status, or "aborted" when the scenario cut the request on the wire. */
-  answered: number | "aborted";
+  /**
+   * What the browser was answered: the status, "aborted" when the scenario cut the request on the wire, or "held" when
+   * it never answered (the network went quiet).
+   */
+  answered: number | "aborted" | "held";
   /** The `{"reason"}` of a refusal (the guard's MISSING_HEADER, a route's VIEW_ONLY), else null. */
   reason: string | null;
 };
@@ -155,6 +158,12 @@ export async function useScenario(
     const result = answer({ method: request.method(), path: url.pathname, headers, origin: base.origin, counters });
     // `{ abort: "<reason>" }`: the network dies under the request (a phone losing signal mid-press), after the guard
     // let it through, so what reaches the route is a request Java would have accepted.
+    // `{ hold: true }`: the network goes quiet (no RST, no error, no answer), the usual way a phone loses its signal.
+    // The route is never answered; only the page's own watchdog ends the request.
+    if ("hold" in result) {
+      entry.answered = "held";
+      return;
+    }
     if ("abort" in result) {
       entry.answered = "aborted";
       return route.abort(result.abort);

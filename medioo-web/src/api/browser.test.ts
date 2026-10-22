@@ -125,7 +125,11 @@ class FakeXhr {
   status = 0;
   responseText = "";
   body: unknown = undefined;
-  upload: { onprogress: ((e: { loaded: number; total: number; lengthComputable: boolean }) => void) | null } = { onprogress: null };
+  upload: {
+    onprogress: ((e: { loaded: number; total: number; lengthComputable: boolean }) => void) | null;
+    onload: (() => void) | null;
+  } = { onprogress: null, onload: null };
+  aborted = 0;
   onload: (() => void) | null = null;
   onerror: (() => void) | null = null;
   onabort: (() => void) | null = null;
@@ -142,6 +146,11 @@ class FakeXhr {
   }
   send(body: unknown) {
     this.body = body;
+  }
+  /** As a browser does: abort() fires `abort` on a request still open. */
+  abort() {
+    this.aborted++;
+    this.onabort?.();
   }
   answer(status: number, body?: unknown) {
     this.status = status;
@@ -204,5 +213,59 @@ describe("apiUpload", () => {
     FakeXhr.made[1]!.onabort?.();
     expect(await aborted).toEqual({ kind: "offline" });
     expect(assign).not.toHaveBeenCalled();
+  });
+
+  /*
+   * A phone that loses its signal usually gets no RST and no `error`: the request just goes quiet (W7 review). This is
+   * upload.js's watchdog, ported: 30 s with no byte moving, or 120 s once every byte has gone (the server is storing the
+   * pages), and the request is aborted, so the sheet reaches stuck and its same-key retry. One test per clock, and one
+   * for an answer stopping it.
+   */
+  describe("the quiet watchdog", () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it("aSilentUploadIsOfflineAfterThirtySeconds", async () => {
+      let settled: unknown = "pending";
+      void apiUpload(form(), () => {}).then((r) => (settled = r));
+      const xhr = FakeXhr.made[0]!;
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect({ aborted: xhr.aborted, settled }).toEqual({ aborted: 0, settled: "pending" });
+      await vi.advanceTimersByTimeAsync(1);
+      expect({ aborted: xhr.aborted, settled }).toEqual({ aborted: 1, settled: { kind: "offline" } });
+    });
+
+    it("aByteMovingReArmsTheThirtySeconds", async () => {
+      let settled: unknown = "pending";
+      void apiUpload(form(), () => {}).then((r) => (settled = r));
+      const xhr = FakeXhr.made[0]!;
+      await vi.advanceTimersByTimeAsync(20_000);
+      xhr.upload.onprogress?.({ loaded: 50, total: 100, lengthComputable: true });
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect({ aborted: xhr.aborted, settled }, "30 s from the last byte, not from the start").toEqual({ aborted: 0, settled: "pending" });
+      await vi.advanceTimersByTimeAsync(1);
+      expect({ aborted: xhr.aborted, settled }).toEqual({ aborted: 1, settled: { kind: "offline" } });
+    });
+
+    it("onceEveryByteHasGoneTheServerHasTwoMinutes", async () => {
+      let settled: unknown = "pending";
+      void apiUpload(form(), () => {}).then((r) => (settled = r));
+      const xhr = FakeXhr.made[0]!;
+      xhr.upload.onprogress?.({ loaded: 100, total: 100, lengthComputable: true });
+      xhr.upload.onload?.();
+      await vi.advanceTimersByTimeAsync(119_999);
+      expect({ aborted: xhr.aborted, settled }, "the server storing the pages is not a stall").toEqual({ aborted: 0, settled: "pending" });
+      await vi.advanceTimersByTimeAsync(1);
+      expect({ aborted: xhr.aborted, settled }).toEqual({ aborted: 1, settled: { kind: "offline" } });
+    });
+
+    it("anAnswerStopsTheWatchdog", async () => {
+      const pending = apiUpload(form(), () => {});
+      const xhr = FakeXhr.made[0]!;
+      xhr.answer(200, { documents: [{ id: "d1" }], next: "/app/documents/d1" });
+      await vi.advanceTimersByTimeAsync(300_000);
+      expect(xhr.aborted, "an answered request is never aborted").toBe(0);
+      expect((await pending).kind).toBe("ok");
+    });
   });
 });

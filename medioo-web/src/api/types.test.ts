@@ -36,13 +36,16 @@ import meOnePatient from "../../fixtures/api/me/one-patient.json";
 import mePreviewOff from "../../fixtures/api/me/preview-off.json";
 import mePreviewOn from "../../fixtures/api/me/preview-on.json";
 import meTwoOwned from "../../fixtures/api/me/two-owned.json";
+import meTwoOwnedLong from "../../fixtures/api/me/two-owned-long.json";
 import meTwoPatients from "../../fixtures/api/me/two-patients.json";
 import meUnauthenticated from "../../fixtures/api/me/unauthenticated.json";
 // W7's generated add-sheet bodies (baymax UploadApiContractTest).
 import uploadCapReached from "../../fixtures/api/upload-options/cap-reached.json";
+import uploadDownscaleOn from "../../fixtures/api/upload-options/downscale-on.json";
 import uploadLongName from "../../fixtures/api/upload-options/long-name.json";
 import uploadOwnerOne from "../../fixtures/api/upload-options/owner-one.json";
 import uploadOwnerTwo from "../../fixtures/api/upload-options/owner-two.json";
+import uploadOwnerTwoAsked from "../../fixtures/api/upload-options/owner-two-asked.json";
 import uploadViewOnly from "../../fixtures/api/upload-options/view-only.json";
 import uploadedOne from "../../fixtures/api/uploads/one-document.json";
 import uploadedSeparate from "../../fixtures/api/uploads/separate.json";
@@ -455,6 +458,7 @@ describe("GET /app/api/me", () => {
       ["preview-off.json", mePreviewOff.body, mePreviewOff.status],
       ["preview-on.json", mePreviewOn.body, mePreviewOn.status],
       ["two-owned.json", meTwoOwned.body, meTwoOwned.status],
+      ["two-owned-long.json", meTwoOwnedLong.body, meTwoOwnedLong.status],
       ["two-patients.json", meTwoPatients.body, meTwoPatients.status],
     ];
     const refusals: Array<[string, { reason: string }, number]> = [
@@ -511,7 +515,7 @@ function bandAgreesWithChip(p: TrendPointJson): boolean {
 
 // ---- GET /app/api/upload-options, POST /app/api/uploads (plan W7) -------------------------------------------------
 
-const OPTIONS_KEYS = ["allowance", "can_send", "limits", "preselected_patient_id", "view_only"] as const;
+const OPTIONS_KEYS = ["allowance", "can_send", "chosen_patient_id", "limits", "preselected_patient_id", "view_only"] as const;
 const ALLOWANCE_KEYS = ["limited", "max", "remaining", "resets_on"] as const;
 const LIMITS_KEYS = [
   "downscale_max_edge",
@@ -538,8 +542,10 @@ describe("the add sheet's JSON", () => {
     // Each assignment is the type check: a fixture that is not an UploadOptionsJson does not compile.
     const options: Array<[string, UploadOptionsJson, number]> = [
       ["cap-reached.json", uploadCapReached.body, uploadCapReached.status],
+      ["downscale-on.json", uploadDownscaleOn.body, uploadDownscaleOn.status],
       ["long-name.json", uploadLongName.body, uploadLongName.status],
       ["owner-one.json", uploadOwnerOne.body, uploadOwnerOne.status],
+      ["owner-two-asked.json", uploadOwnerTwoAsked.body, uploadOwnerTwoAsked.status],
       ["owner-two.json", uploadOwnerTwo.body, uploadOwnerTwo.status],
       ["view-only.json", uploadViewOnly.body, uploadViewOnly.status],
     ];
@@ -556,11 +562,15 @@ describe("the add sheet's JSON", () => {
       }
       // Java preselects only the one patient there is to send for; never one of several, never one only to see.
       if (o.preselected_patient_id !== null) expect(o.can_send.map((p) => p.id), file).toEqual([o.preselected_patient_id]);
+      // Java chooses only a patient the viewer may send for, and the one preselect whenever there is one.
+      if (o.chosen_patient_id !== null) expect(o.can_send.map((p) => p.id), file).toContain(o.chosen_patient_id);
+      if (o.preselected_patient_id !== null) expect(o.chosen_patient_id, file).toBe(o.preselected_patient_id);
     }
     expect(patients, "patients walked").toBeGreaterThan(0);
     // Guards: the cases the sheet branches on are all here.
     expect(options.some(([, o]) => o.can_send.length > 1 && o.preselected_patient_id === null), "two and none chosen").toBe(true);
     expect(options.some(([, o]) => o.view_only.length > 0), "a patient only to see").toBe(true);
+    expect(options.some(([, o]) => o.preselected_patient_id === null && o.chosen_patient_id !== null), "two, one asked for").toBe(true);
     expect(options.some(([, o]) => o.allowance.limited && o.allowance.remaining === 0), "the cap reached").toBe(true);
 
     const answers: Array<[string, UploadAnswerJson]> = [

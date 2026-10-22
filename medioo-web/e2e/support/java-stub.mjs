@@ -126,6 +126,11 @@ function serve(port, host, origin) {
         log.push({ ...record(entry), status: 0 });
         return req.socket.destroy();
       }
+      // `{ hold }`: the network goes quiet; nothing is ever answered (the browser's own watchdog ends it).
+      if ("hold" in result) {
+        log.push({ ...record(entry), status: 0 });
+        return;
+      }
       const { status, body } = result;
       // The status it answered, beside what it received, so a test can see which side of the guard a read fell on.
       log.push({ ...record(entry), status });

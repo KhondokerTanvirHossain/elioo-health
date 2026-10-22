@@ -34,6 +34,7 @@
         "sex": "male"
       }
     ],
+    "chosen_patient_id": null,
     "limits": {
       "downscale_max_edge": 0,
       "downscale_quality": 0.92,

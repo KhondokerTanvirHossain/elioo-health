@@ -319,7 +319,8 @@ export type UploadPatientJson = {
 
 /**
  * `GET /app/api/upload-options` (fixtures/api/upload-options/*.json): whom the viewer may send for, whom they may only
- * see, the one patient to preselect when there is nobody else it could be (never a guess), this month's allowance (a
+ * see, the one patient to preselect when there is nobody else it could be (never a guess), whose paper the page opens
+ * on (`?patient=` passed through, judged by Java), this month's allowance (a
  * paying family: `limited` false and every number null), and every limit Java refuses a press by. A refusal's copy
  * reads its numbers from here, never from the error body.
  */
@@ -327,6 +328,11 @@ export type UploadOptionsJson = {
   can_send: UploadPatientJson[];
   view_only: UploadPatientJson[];
   preselected_patient_id: string | null;
+  /**
+   * Whose paper the sheet opens on (plan W7 review, additive): Java's one rule, `UploadOptions.chosen`, the one the HTML
+   * sheet checks its chip by, over the page's own `?patient=`. The sheet renders it and derives nothing.
+   */
+  chosen_patient_id: string | null;
   allowance: { limited: boolean; max: number | null; remaining: number | null; resets_on: string | null };
   limits: {
     max_pages: number;

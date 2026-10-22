@@ -253,13 +253,12 @@ public class UploadUiHandler implements WebPages {
         return java.util.Collections.unmodifiableMap(m);
     }
 
-    /** The only one the viewer may send for, else the one the link names if the viewer may send for it, else nobody. */
-    static Optional<UUID> chosen(UploadOptions o, Optional<String> asked) {
-        if (o.preselected().isPresent()) {
-            return o.preselected().map(p -> p.patient().id());
-        }
-        return asked.flatMap(raw -> o.canSend().stream().map(p -> p.patient().id())
-                .filter(id -> id.toString().equalsIgnoreCase(raw)).findFirst());
+    /**
+     * The chip drawn checked: {@link UploadOptions#chosen}, the one rule both sheets choose by (the JSON's
+     * {@code chosen_patient_id}, which the Next sheet renders, is the same call).
+     */
+    public static Optional<UUID> chosen(UploadOptions o, Optional<String> asked) {
+        return o.chosen(asked);
     }
 
     private String row(Lang lang, String src, String attrs, String icon) {

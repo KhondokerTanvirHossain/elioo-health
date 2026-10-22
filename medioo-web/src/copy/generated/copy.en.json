@@ -405,7 +405,6 @@
   "up.stuck": "Stuck — kept on the phone",
   "up.title": "Sending the paper",
   "up.title.for": "Sending {0} paper",
-  "upload.drop": "Drop the paper here",
   "upload.err.empty_file": "That file is empty — please choose it again.",
   "upload.err.key_reused": "This form was already sent once. Choose the paper again and send.",
   "upload.err.no_file": "No photo or PDF was chosen.",

@@ -64,22 +64,45 @@ function judged<T>(status: number, text: string): ApiResult<T> {
  * (Next never sees the body). An XMLHttpRequest, not a fetch, because only it reports how much of the body has gone
  * (`onProgress(sent, total)`). The rules are apiSend's: `X-Medioo: 1`; no Content-Type of its own (the browser writes
  * multipart/form-data with its boundary); a relative, same-origin URL, so the session cookie goes and no cross-origin
- * credential mode is asked for; the 401 rule; and `offline` when the request dies (`error`, `abort`, `timeout`), which
- * the sheet answers with a retry of the same press under the same key.
+ * credential mode is asked for; the 401 rule; and `offline` when the request dies (`error` or `abort`), which the sheet
+ * answers with a retry of the same press under the same key.
+ *
+ * A request that only goes quiet is dead too: a phone losing its signal usually gets no RST and no `error`. upload.js's
+ * watchdog (`post()`/`wait()`), ported: no byte moving for `STALL_MS`, or `SERVER_MS` once every byte has gone (the
+ * server is storing the pages), and the request is aborted, which resolves `offline`. No `xhr.timeout` is set: the
+ * watchdog is the only clock.
  */
 export function apiUpload<T = unknown>(form: FormData, onProgress: (sent: number, total: number) => void): Promise<ApiResult<T>> {
   return new Promise((resolve) => {
     const xhr = new XMLHttpRequest();
+    let quiet: ReturnType<typeof setTimeout> | undefined;
+    const wait = (ms: number) => {
+      clearTimeout(quiet);
+      quiet = setTimeout(() => xhr.abort(), ms);
+    };
     xhr.open("POST", "/app/api/uploads");
     xhr.setRequestHeader("X-Medioo", "1");
     xhr.upload.onprogress = (e) => {
+      wait(e.lengthComputable && e.loaded >= e.total ? SERVER_MS : STALL_MS);
       if (e.lengthComputable) onProgress(e.loaded, e.total);
     };
-    xhr.onload = () => resolve(judged<T>(xhr.status, xhr.responseText));
-    const offline = () => resolve({ kind: "offline" });
+    xhr.upload.onload = () => wait(SERVER_MS);
+    xhr.onload = () => {
+      clearTimeout(quiet);
+      resolve(judged<T>(xhr.status, xhr.responseText));
+    };
+    const offline = () => {
+      clearTimeout(quiet);
+      resolve({ kind: "offline" });
+    };
     xhr.onerror = offline;
     xhr.onabort = offline;
-    xhr.ontimeout = offline;
+    wait(STALL_MS);
     xhr.send(form);
   });
 }
+
+/** No byte has moved for this long: the network is gone (upload.js: 30 s). */
+export const STALL_MS = 30_000;
+/** Every byte has gone and the server has not answered for this long: given up on (upload.js: 120 s). */
+export const SERVER_MS = 120_000;

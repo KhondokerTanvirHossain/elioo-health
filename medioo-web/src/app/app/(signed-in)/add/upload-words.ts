@@ -52,8 +52,6 @@ export type UploadWords = {
   };
   /** The sending lines (s09), their slots ({n}, {total}) unfilled. */
   up: { title: string; count: string; sent: string; stuck: string; slow: string; retry: string; after: string; keep: string };
-  /** upload.drop: the desktop drop target. */
-  drop: string;
   /** Every refusal Java names, in words (UPLOAD_REASON_COPY, with the options' numbers). */
   reasons: Record<string, string>;
   /** app.err.generic: an answer the sheet has no words for. */
@@ -118,7 +116,6 @@ export function uploadWords(lang: Lang, options: UploadOptionsJson): UploadWords
       after: t(lang, "up.after"),
       keep: t(lang, "up.keep"),
     },
-    drop: t(lang, "upload.drop"),
     reasons,
     generic: t(lang, "app.err.generic"),
     digits: lang === "bn" ? banglaDigits("0123456789") : "0123456789",
