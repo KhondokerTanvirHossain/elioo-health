@@ -39,9 +39,19 @@ describe("paths", () => {
     expect(NEXT_PAGES).toContain("/app/timeline");
     expect(href("/app/timeline?patient=x&type=lab", true)).toBe("/app/preview/timeline?patient=x&type=lab");
     expect(href("/app/timeline?patient=x", false)).toBe("/app/timeline?patient=x");
+    // W6: a paper is a Next page, so a preview page links to it inside the preview; its Java sub-paths (the crop and
+    // page images, the status, the delete) are not pages of this build and stay on Java.
     expect(href("/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003", true)).toBe(
+      "/app/preview/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003",
+    );
+    expect(href("/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003", false)).toBe(
       "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003",
     );
+    for (const sub of ["/image?key=x", "/page/1", "/status", "/delete"]) {
+      expect(href(`/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003${sub}`, true)).toBe(
+        `/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003${sub}`,
+      );
+    }
   });
 
   it("aDynamicNextPageMatchesARealIdInsideThePreview", () => {

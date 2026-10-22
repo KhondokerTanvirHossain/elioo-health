@@ -551,3 +551,46 @@ export type FamilyAccountJson = {
 
 /** `GET /app/api/family` (B5; fixtures/api/family/*.json): the viewer's account, the offered flags, `me`'s patients in its order. */
 export type FamilyJson = { account: FamilyAccountJson; flags_offered: OfferedFlagJson[]; patients: FamilyPatientJson[] };
+// ---- GET /app/api/documents/{id}/values/{obs} (PaperApiHandler.valueSheet, W6-api) ----------------------------------
+
+/** The heading line the earlier readings are drawn under, as Java decided it; null draws no line at all. */
+export const EARLIER_LINE_KEYS = ["sheet.earlier.none", "sheet.earlier", "sheet.earlier.nounit"] as const;
+export type EarlierLineKey = (typeof EARLIER_LINE_KEYS)[number];
+
+/** One earlier reading of the same marker in the same unit, on its own paper, beside its own crop (newest first). */
+export type EarlierReadingJson = {
+  document_id: string;
+  observation_id: string;
+  value: string;
+  unit: string | null;
+  crop: CropJson;
+  date: string | null;
+  date_is_upload_day: boolean;
+};
+
+/**
+ * One value's sheet (fixtures/api/value-sheet/*.json): the paper it is on, the value row exactly as the paper's own
+ * JSON draws it, the earlier readings, and `earlier_line_key`. The heading renders that key and nothing else: it is never
+ * derived from `earlier.length`, so an empty `earlier` with a null key says nothing about history (R1).
+ */
+export type ValueSheetJson = {
+  paper: {
+    id: string;
+    document_type: string | null;
+    date: string;
+    date_is_upload_day: boolean;
+    date_uncertain: boolean;
+    patient: { id: string; name: string; name_possessive: string };
+  };
+  value: PaperValueJson;
+  earlier: EarlierReadingJson[];
+  earlier_line_key: EarlierLineKey | null;
+};
+
+// ---- The delete token and the delete (B4c); the status the reading page polls is PaperStatusJson, above ------------
+
+/** GET /app/api/documents/{id}/delete-token: a confirm token for this paper in this session, ten minutes long. */
+export type DeleteTokenJson = { confirm_token: string; expires_at: string };
+
+/** DELETE /app/api/documents/{id}: what the delete removed. */
+export type DeleteReportJson = { objects_deleted: number; rows_deleted: number };
