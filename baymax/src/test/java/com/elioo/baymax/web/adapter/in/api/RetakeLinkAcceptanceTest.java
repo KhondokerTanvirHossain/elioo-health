@@ -335,7 +335,7 @@ class RetakeLinkAcceptanceTest {
         for (UUID id : ids) {
             for (ILoggingEvent e : events) {
                 assertThat(e.getFormattedMessage()).as("INFO+ line from %s", e.getLoggerName()).doesNotContain(id.toString());
-                assertThat(e.getArgumentArray() == null ? List.of() : List.of(e.getArgumentArray()))
+                assertThat(e.getArgumentArray() == null ? List.of() : Arrays.asList(e.getArgumentArray()))
                         .as("arguments of an INFO+ line from %s", e.getLoggerName()).doesNotContain(id, id.toString());
             }
         }
