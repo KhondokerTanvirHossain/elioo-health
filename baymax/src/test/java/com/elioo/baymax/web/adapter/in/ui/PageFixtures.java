@@ -459,7 +459,7 @@ final class PageFixtures {
                 earlier.add(new com.elioo.baymax.web.domain.EarlierReading(d, UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a41008%02d".formatted(i)),
                         "7." + i, "%", "f/p/" + d + "/crop-1.jpg", LocalDate.parse("2026-09-12").minusMonths(i), i % 2 == 0));
             }
-            when(k.results.earlierReadings(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID, HBA1C)).thenReturn(reactor.core.publisher.Flux.fromIterable(earlier));
+            sheet(k, HBA1C, earlier);
         }
 
         static void maNoPapers(WebUiTestKit k) {
@@ -520,10 +520,21 @@ final class PageFixtures {
         /** B6: {@link #doneLab}, with one earlier HbA1c (upload-day date) and no earlier Creatinine. */
         static void valueSheet(WebUiTestKit k) {
             doneLab(k);
-            when(k.results.earlierReadings(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID, HBA1C)).thenReturn(reactor.core.publisher.Flux.just(
+            sheet(k, HBA1C, List.of(
                     new com.elioo.baymax.web.domain.EarlierReading(EARLIER_DOC, UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100024"),
                             "7.9", "%", "f/p/" + EARLIER_DOC + "/crop-1.jpg", LocalDate.parse("2026-07-12"), true)));
-            when(k.results.earlierReadings(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID, CREATININE)).thenReturn(reactor.core.publisher.Flux.empty());
+            sheet(k, CREATININE, List.of());
+        }
+
+        /**
+         * W6-fix: the sheet's one read ({@code ResultUseCase.valueSheet}) over the result already stubbed (so a test that
+         * counts {@code result} reads still counts the sheet's), with these earlier readings and none in another unit. The
+         * gate itself is the service's, held by {@code ResultServiceTest} and {@code ValueSheetGatesAcceptanceTest}.
+         */
+        static void sheet(WebUiTestKit k, UUID observation, List<com.elioo.baymax.web.domain.EarlierReading> earlier) {
+            when(k.results.valueSheet(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID, observation)).thenAnswer(inv -> k.results
+                    .result(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID)
+                    .map(r -> new com.elioo.baymax.web.domain.ValueSheetView(r, new com.elioo.baymax.web.domain.EarlierHistory(earlier, false))));
         }
 
         /**

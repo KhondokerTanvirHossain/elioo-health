@@ -13,6 +13,7 @@ import com.elioo.baymax.web.adapter.in.ImageRefs;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.application.port.in.ResultUseCase;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
+import com.elioo.baymax.web.domain.EarlierHistory;
 import com.elioo.baymax.web.domain.EarlierReading;
 import com.elioo.baymax.web.domain.PaperDisplay;
 import com.elioo.baymax.web.domain.ReadingView;
@@ -583,9 +584,10 @@ public class DocumentPages implements WebPages {
     }
 
     /**
-     * GET /app/documents/{id}/values/{obs}?from=summary|all: one value's sheet as a plain URL, over the কাগজপত্র tab. The
-     * observation is resolved through {@code earlierReadings} first, which is 404 for another family and for an id that is
-     * not one of THIS paper's values — before the result is read, so a probe records no view.
+     * GET /app/documents/{id}/values/{obs}?from=summary|all: one value's sheet as a plain URL, over the কাগজপত্র tab. Read
+     * through {@code ResultUseCase.valueSheet}, the same read as the JSON sheet (plan W6-fix): 404 for another family, for
+     * a paper that is not DONE and for an id that is not one of THIS paper's values, each before the result is read, so a
+     * probe records no view.
      */
     public Mono<ServerResponse> valueSheetPage(ServerRequest request) {
         WebSession session = SessionAuthFilter.session(request);
@@ -593,9 +595,9 @@ public class DocumentPages implements WebPages {
         UUID documentId = PageChrome.uuid(request.pathVariable("id"));
         UUID observationId = PageChrome.uuid(request.pathVariable("obs"));
         String from = request.queryParam("from").filter(ValueRows.FROM_ALL::equals).orElse(ValueRows.FROM_SUMMARY);
-        return results.earlierReadings(session.familyId(), documentId, observationId).collectList()
-                .flatMap(earlier -> results.result(session.familyId(), documentId).flatMap(r -> Html.html(HttpStatus.OK,
-                        new AppShell(copy).sheet(lang, Tab.PAPERS, "detail.seg.values", valueSheet(lang, r, observationId, earlier, from)))));
+        return results.valueSheet(session.familyId(), documentId, observationId)
+                .flatMap(sheet -> Html.html(HttpStatus.OK, new AppShell(copy).sheet(lang, Tab.PAPERS, "detail.seg.values",
+                        valueSheet(lang, sheet.result(), observationId, sheet.history(), from))));
     }
 
     /**
@@ -717,7 +719,7 @@ public class DocumentPages implements WebPages {
      * {@link ValueRows#pin} ({@link ValueRows#sheetValue}); the "could not match" sentence for an UNKNOWN; then the earlier
      * readings in the same unit, each beside its own crop on its own paper. No glossary until D3 is signed.
      */
-    String valueSheet(Lang lang, ResultView r, UUID observationId, List<EarlierReading> earlier, String from) {
+    String valueSheet(Lang lang, ResultView r, UUID observationId, EarlierHistory earlier, String from) {
         DocumentView doc = r.document();
         UUID documentId = PageChrome.uuid(doc.documentId());
         Map<String, Object> v = (doc.values() == null ? List.<Map<String, Object>>of() : doc.values()).stream()
@@ -769,22 +771,25 @@ public class DocumentPages implements WebPages {
     }
 
     /**
-     * আগের রিপোর্টে: one compact row per earlier reading, its date on the patient's calendar, or "first time". A value whose
-     * name did not canonicalise has no history Medioo could look up (ResultService returns none), so the sheet claims
-     * neither earlier readings nor a first time. Each row opens its own paper's sheet from the detail ({@code from=all}),
-     * which draws every row, so that sheet's close lands on a row that is on the page.
+     * আগের রিপোর্টে: one compact row per earlier reading, its date on the patient's calendar, or "first time". The line is
+     * {@link EarlierHistory#lineKey}, the rule the JSON sheet sends too (ruling R1): no block at all for a value whose name
+     * did not canonicalise (no history Medioo could look up) and for a marker read before only in another unit ("the first
+     * time" would be false); the first time only when no earlier reading exists in any unit. Each row opens its own
+     * paper's sheet from the detail ({@code from=all}), which draws every row, so that sheet's close lands on a row that is
+     * on the page.
      */
-    private String earlierReadings(Lang lang, Map<String, Object> v, List<EarlierReading> earlier) {
-        if (v.get("canonical_name") == null) {
+    private String earlierReadings(Lang lang, Map<String, Object> v, EarlierHistory history) {
+        String line = history.lineKey(v.get("canonical_name"), v.get("unit"));
+        if (line == null) {
             return "";
         }
         StringBuilder b = new StringBuilder("<section id=\"earlier\" class=\"earlier\">");
-        if (earlier.isEmpty()) {
-            return b.append("<p>").append(copy.t(lang, "sheet.earlier.none")).append("</p></section>").toString();
+        if (history.sameUnit().isEmpty()) {
+            return b.append("<p>").append(copy.t(lang, line)).append("</p></section>").toString();
         }
-        b.append("<h2>").append(v.get("unit") == null ? copy.t(lang, "sheet.earlier.nounit") : copy.t(lang, "sheet.earlier", String.valueOf(v.get("unit"))))
+        b.append("<h2>").append(v.get("unit") == null ? copy.t(lang, line) : copy.t(lang, line, String.valueOf(v.get("unit"))))
                 .append("</h2>");
-        for (EarlierReading e : earlier) {
+        for (EarlierReading e : history.sameUnit()) {
             String src = PageChrome.imageHref(e.documentId(), ValueRows.crop(e.cropKey(), "an earlier value"));
             b.append("<a class=\"erow\" href=\"").append(ValueRows.sheetHref(e.documentId(), e.observationId(), ValueRows.FROM_ALL)).append("\">")
                     .append("<span class=\"vhead\"><span class=\"edate\">").append(e.date() == null ? "" : copy.date(lang, e.date()))

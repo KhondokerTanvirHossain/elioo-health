@@ -21,10 +21,10 @@ import com.elioo.baymax.web.domain.EarlierReading;
 import com.elioo.baymax.web.domain.GateState;
 import com.elioo.baymax.web.domain.ReadingView;
 import com.elioo.baymax.web.domain.ResultView;
+import com.elioo.baymax.web.domain.ValueSheetView;
 import com.elioo.baymax.web.domain.ViewerLocale;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Clock;
@@ -152,25 +152,41 @@ public class ResultService implements ResultUseCase {
     public static final int EARLIER_READINGS = 10;
 
     /**
-     * The document through {@link #visibleDocument} (404 for another family), then the observation among THAT document's
-     * values (404 for an id from another paper), then the patient's history of the marker, kept only where the unit
-     * folds to this one's ({@link MarkerThreshold#sameUnit}: MICRO SIGN, GREEK MU and "u" are one; mg/dL and µmol/L
-     * are two). A value with no canonical name has no history: the marker is not known, so nothing is "the same".
+     * Plan W6-fix: the sheet's one read (see {@link ResultUseCase#valueSheet}). The status is the visibility read's own, so
+     * a paper that is not DONE is refused before its values, its history or its result are read: nothing is recorded for
+     * it. Today the intake's view of such a paper carries no rows either (D2, {@code DocumentIntakeService.read}), so the
+     * observation would not be found; this gate does not lean on that, it states the rule where both routes meet it.
+     * The result's own status is checked again, for a paper that changed between the two reads.
      */
     @Override
-    public Flux<EarlierReading> earlierReadings(UUID familyId, UUID documentId, UUID observationId) {
-        return earlierHistory(familyId, documentId, observationId).flatMapIterable(EarlierHistory::sameUnit);
+    public Mono<ValueSheetView> valueSheet(UUID familyId, UUID documentId, UUID observationId) {
+        return visibleDocument(familyId, documentId)
+                .flatMap(d -> d.status() != Document.Status.DONE ? Mono.<EarlierHistory>error(noSheet())
+                        : historyOf(d, documentId, observationId))
+                .flatMap(history -> result(familyId, documentId)
+                        .flatMap(r -> !r.done() ? Mono.<ValueSheetView>error(noSheet()) : Mono.just(new ValueSheetView(r, history))));
+    }
+
+    private static BaymaxException noSheet() {
+        return BaymaxException.notFound("observation_not_found", "no sheet for a paper that is not read");
     }
 
     /**
-     * {@link #earlierReadings}' read, keeping the one fact its unit filter drops: whether any earlier reading of the marker
-     * (this patient, finished papers before this one) is in a unit that does not fold to this one. One scan of the history
-     * ({@code DocumentReadPort.readingsOf}) answers both, so the two halves cannot disagree about which rows they saw.
+     * The value's history, NOT on the port (a history read without {@link #valueSheet}'s status gate is how the HTML sheet
+     * came to differ from the JSON): the document through {@link #visibleDocument} (404 for another family), then the
+     * observation among THAT document's values (404 for an id from another paper), then the patient's history of the
+     * marker, kept only where the unit folds to this one's ({@link MarkerThreshold#sameUnit}: MICRO SIGN, GREEK MU and "u"
+     * are one; mg/dL and µmol/L are two), plus whether any earlier reading is in a unit that does not fold to this one.
+     * One scan of the history ({@code DocumentReadPort.readingsOf}) answers both, so the two halves cannot disagree about
+     * which rows they saw. A value with no canonical name has no history: the marker is not known, so nothing is "the same".
+     * Records nothing. Public for {@code EarlierReadingsTest}, which holds the scan on Postgres.
      */
-    @Override
     public Mono<EarlierHistory> earlierHistory(UUID familyId, UUID documentId, UUID observationId) {
-        return visibleDocument(familyId, documentId)
-                .flatMap(d -> intake.view(documentId).map(v -> observationOf(v.values(), observationId)).map(o -> Map.entry(d, o)))
+        return visibleDocument(familyId, documentId).flatMap(d -> historyOf(d, documentId, observationId));
+    }
+
+    private Mono<EarlierHistory> historyOf(Document document, UUID documentId, UUID observationId) {
+        return intake.view(documentId).map(v -> observationOf(v.values(), observationId)).map(o -> Map.entry(document, o))
                 .flatMap(found -> {
                     Object canonical = found.getValue().get("canonical_name");
                     if (canonical == null) {

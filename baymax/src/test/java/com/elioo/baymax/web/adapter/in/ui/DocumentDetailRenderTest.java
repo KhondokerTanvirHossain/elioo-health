@@ -2,6 +2,7 @@ package com.elioo.baymax.web.adapter.in.ui;
 
 import com.elioo.baymax.extraction.domain.DocumentView;
 import com.elioo.baymax.outbound.domain.Urgency;
+import com.elioo.baymax.web.domain.EarlierHistory;
 import com.elioo.baymax.web.domain.EarlierReading;
 import com.elioo.baymax.web.domain.GateState;
 import com.elioo.baymax.web.domain.ResultView;
@@ -137,7 +138,7 @@ class DocumentDetailRenderTest {
         for (Map<String, Object> v : unknowns) {
             assertThat(ValueRows.kindOf(v)).as(v.get("name") + " is drawn UNKNOWN").isEqualTo(com.elioo.baymax.outbound.domain.ValueVerdict.Kind.UNKNOWN);
             String html = kit.documents.valueSheet(Lang.BN, ResultFixtures.result(ResultFixtures.lab(List.of(v)), Urgency.ROUTINE,
-                    List.of(), GateState.NONE, null, ResultFixtures.BD), (UUID) v.get("id"), List.of(), "summary");
+                    List.of(), GateState.NONE, null, ResultFixtures.BD), (UUID) v.get("id"), EarlierHistory.NONE, "summary");
             assertThat(html).as(String.valueOf(v.get("name"))).contains(copy.t(Lang.BN, "sheet.unknown.why")).contains(copy.t(Lang.BN, "sheet.earlier.none"))
                     .contains("<span class=\"chip unknown\">")
                     .doesNotContain("<svg class=\"bar\"").doesNotContain("এই পরীক্ষা কী মাপে").doesNotContain("সাধারণ তথ্য");
@@ -156,14 +157,30 @@ class DocumentDetailRenderTest {
         Map<String, Object> unnamed = ResultFixtures.value("Serum Zeta", "4.2", "mg/dL", "3.0", "5.0", "inside");
         unnamed.remove("canonical_name");
         String html = kit.documents.valueSheet(Lang.BN, ResultFixtures.result(ResultFixtures.lab(List.of(unnamed)), Urgency.ROUTINE,
-                List.of(), GateState.NONE, null, ResultFixtures.BD), (UUID) unnamed.get("id"), List.of(), "summary");
+                List.of(), GateState.NONE, null, ResultFixtures.BD), (UUID) unnamed.get("id"), EarlierHistory.NONE, "summary");
         assertThat(html).doesNotContain(copy.t(Lang.BN, "sheet.earlier.none")).doesNotContain("id=\"earlier\"")
                 .contains("<span class=\"val big\">4.2</span>");
 
         Map<String, Object> named = ResultFixtures.value("Creatinine", "1.0", "mg/dL", "0.7", "1.3", "inside");
         String first = kit.documents.valueSheet(Lang.BN, ResultFixtures.result(ResultFixtures.lab(List.of(named)), Urgency.ROUTINE,
-                List.of(), GateState.NONE, null, ResultFixtures.BD), (UUID) named.get("id"), List.of(), "summary");
+                List.of(), GateState.NONE, null, ResultFixtures.BD), (UUID) named.get("id"), EarlierHistory.NONE, "summary");
         assertThat(ResultFixtures.section(first, "earlier")).contains(copy.t(Lang.BN, "sheet.earlier.none"));
+    }
+
+    /**
+     * W6-fix (ruling R1): a known marker with no reading in this unit but one in another (µmol/L before, mg/dL now) is
+     * NOT the first time, so the sheet draws no history line at all, as for a marker Medioo does not know. The other
+     * direction is {@link #aValueWithNoCanonicalNameClaimsNoHistoryEitherWay}'s named value: no reading in any unit, the
+     * first time.
+     */
+    @Test
+    void aMarkerReadBeforeOnlyInAnotherUnitIsNotTheFirstTime() {
+        Map<String, Object> named = ResultFixtures.value("Creatinine", "1.0", "mg/dL", "0.7", "1.3", "inside");
+        String html = kit.documents.valueSheet(Lang.BN, ResultFixtures.result(ResultFixtures.lab(List.of(named)), Urgency.ROUTINE,
+                List.of(), GateState.NONE, null, ResultFixtures.BD), (UUID) named.get("id"), new EarlierHistory(List.of(), true), "summary");
+        assertThat(html).contains("<span class=\"val big\">1.0</span>");
+        assertThat(html.contains("id=\"earlier\"")).as("an #earlier block for a marker read before only in another unit").isFalse();
+        assertThat(html).doesNotContain(copy.t(Lang.BN, "sheet.earlier.none"));
     }
 
     /**
@@ -186,9 +203,9 @@ class DocumentDetailRenderTest {
         assertThat(firstMeta(kit.documents.detail(Lang.BN, printed))).isEqualTo(copy.date(Lang.BN, "2026-10-12") + " · Diagnostic Centre, Mirpur")
                 .doesNotContain(copy.t(Lang.BN, "timeline.uploaddate"));
 
-        String sheet = kit.documents.valueSheet(Lang.BN, noFacility, (UUID) v.get("id"), List.of(), "summary");
+        String sheet = kit.documents.valueSheet(Lang.BN, noFacility, (UUID) v.get("id"), EarlierHistory.NONE, "summary");
         assertThat(sheet).contains(copy.t(Lang.BN, "sheet.of", "Ma", uploadDay, copy.raw(Lang.BN, "type.lab_report"))).doesNotContain("·  ·");
-        assertThat(kit.documents.valueSheet(Lang.BN, printed, (UUID) v.get("id"), List.of(), "summary"))
+        assertThat(kit.documents.valueSheet(Lang.BN, printed, (UUID) v.get("id"), EarlierHistory.NONE, "summary"))
                 .contains(copy.t(Lang.BN, "sheet.of", "Ma", copy.dateText(Lang.BN, LocalDate.of(2026, 10, 12)), copy.raw(Lang.BN, "type.lab_report")));
     }
 
@@ -219,7 +236,7 @@ class DocumentDetailRenderTest {
     void aValueSheetShowsTheCropLargeTheValueAsPrintedTheRangeTheChipAndTheBar() {
         Map<String, Object> v = ResultFixtures.value("Creatinine", "1.0", "mg/dL", "0.7", "1.3", "inside");
         String html = kit.documents.valueSheet(Lang.BN, ResultFixtures.result(ResultFixtures.lab(List.of(v)), Urgency.ROUTINE,
-                List.of(), GateState.NONE, null, ResultFixtures.BD), (UUID) v.get("id"), List.of(), "all");
+                List.of(), GateState.NONE, null, ResultFixtures.BD), (UUID) v.get("id"), EarlierHistory.NONE, "all");
         String key = "key=" + URLEncoder.encode((String) v.get("crop_key"), StandardCharsets.UTF_8);
         assertThat(html).contains("<img class=\"crop big\"").contains(key).contains(copy.t(Lang.BN, "crop.zoom"))
                 .contains("<span class=\"val big\">1.0</span>").contains("mg/dL")
@@ -246,7 +263,7 @@ class DocumentDetailRenderTest {
                 new EarlierReading(earlierDoc, earlierObs, "140", "μmol/L", "f/p/" + earlierDoc + "/crop-1.jpg", LocalDate.of(2026, 7, 12), true),
                 new EarlierReading(printedDoc, printedObs, "131", "µmol/L", "f/p/" + printedDoc + "/crop-1.jpg", LocalDate.of(2026, 4, 10), false));
         String html = kit.documents.valueSheet(Lang.BN, ResultFixtures.result(ResultFixtures.lab(List.of(v)), Urgency.THIS_WEEK,
-                List.of(), GateState.NONE, null, ResultFixtures.BD), (UUID) v.get("id"), earlier, "summary");
+                List.of(), GateState.NONE, null, ResultFixtures.BD), (UUID) v.get("id"), new EarlierHistory(earlier, false), "summary");
         String list = ResultFixtures.section(html, "earlier");
         assertThat(list).contains(copy.t(Lang.BN, "sheet.earlier", "µmol/L")).doesNotContain(copy.t(Lang.BN, "sheet.earlier.none"));
         List<String> rows = Pattern.compile("<a class=\"erow\".*?</a>", Pattern.DOTALL).matcher(list).results().map(MatchResult::group).toList();
@@ -270,7 +287,7 @@ class DocumentDetailRenderTest {
         List<EarlierReading> earlier = List.of(new EarlierReading(earlierDoc, UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100046"),
                 "Nil", null, "f/p/" + earlierDoc + "/crop-1.jpg", LocalDate.of(2026, 7, 12), false));
         String list = ResultFixtures.section(kit.documents.valueSheet(Lang.BN, ResultFixtures.result(ResultFixtures.lab(List.of(v)),
-                Urgency.ROUTINE, List.of(), GateState.NONE, null, ResultFixtures.BD), (UUID) v.get("id"), earlier, "summary"), "earlier");
+                Urgency.ROUTINE, List.of(), GateState.NONE, null, ResultFixtures.BD), (UUID) v.get("id"), new EarlierHistory(earlier, false), "summary"), "earlier");
         assertThat(list).contains("<h2>" + copy.t(Lang.BN, "sheet.earlier.nounit") + "</h2>").doesNotContain("null")
                 .doesNotContain("<span class=\"unit\">");
     }

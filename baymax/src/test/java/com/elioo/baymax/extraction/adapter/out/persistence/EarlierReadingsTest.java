@@ -7,7 +7,7 @@ import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.nudge.adapter.out.persistence.PostgresNudgeAdapterTest;
-import com.elioo.baymax.web.application.port.in.ResultUseCase;
+import com.elioo.baymax.web.application.service.ResultService;
 import com.elioo.baymax.web.domain.EarlierHistory;
 import com.elioo.baymax.web.domain.EarlierReading;
 import org.junit.jupiter.api.Test;
@@ -34,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * The value sheet's history (B6, s13). Same marker AND same unit (a mg/dL reading beside a µmol/L one is a different
  * number), where "same unit" survives MICRO SIGN vs GREEK MU (CLAUDE.md: 8 of 9 "misses" in batch 2 were that fold),
  * never crosses patients, and is "earlier": a paper dated after this one is not an earlier reading. Through
- * {@link ResultUseCase}, so the 404s for another document's observation and another family are on the real path.
+ * {@link ResultService}, so the 404s for another document's observation and another family are on the real path.
  * Each test makes its own family, so they run in any order.
  */
 @Testcontainers
@@ -87,8 +87,8 @@ class EarlierReadingsTest {
             f.doneWith(f.ma(), T.plusSeconds(100), "creatinine", "Creatinine", "1.6", "mg/dL");                     // another unit
             f.doneWith(f.baba(), T.plusSeconds(150), "creatinine", "Creatinine", "150", "µmol/L");                  // another patient
 
-            List<EarlierReading> rows = context.getBean(ResultUseCase.class)
-                    .earlierReadings(f.familyId(), now, f.observationIn(now)).collectList().block();
+            List<EarlierReading> rows = context.getBean(ResultService.class)
+                    .earlierHistory(f.familyId(), now, f.observationIn(now)).map(EarlierHistory::sameUnit).block();
 
             assertThat(rows).extracting(EarlierReading::documentId).containsExactly(earlier);
             assertThat(rows).extracting(EarlierReading::value).containsExactly("140");
@@ -112,7 +112,7 @@ class EarlierReadingsTest {
     void earlierHistoryKnowsTheMarkerWasReadInAnotherUnit() {
         runner().run(context -> {
             Fixture f = fixture(context, "+8801700000719");
-            ResultUseCase results = context.getBean(ResultUseCase.class);
+            ResultService results = context.getBean(ResultService.class);
             f.printed(f.doneWith(f.ma(), T, "creatinine", "Creatinine", "140", "µmol/L"), LocalDate.of(2026, 7, 1));
             UUID mgdl = f.printed(f.doneWith(f.ma(), T.plusSeconds(60), "creatinine", "Creatinine", "1.6", "mg/dL"), LocalDate.of(2026, 8, 1));
             UUID later = f.printed(f.doneWith(f.ma(), T.plusSeconds(120), "creatinine", "Creatinine", "1.4", "mg/dL"), LocalDate.of(2026, 9, 1));
@@ -146,11 +146,11 @@ class EarlierReadingsTest {
             UUID second = f.doneWith(f.ma(), T.plusSeconds(60), "hba1c", "HbA1c", "7.9", "%");
             UUID third = f.doneWith(f.ma(), T.plusSeconds(120), "hba1c", "HbA1c", "7.1", "%");
             f.docWith(Document.Status.PROCESSING, f.ma(), T.plusSeconds(90), "hba1c", "HbA1c", "6.6", "%");
-            ResultUseCase results = context.getBean(ResultUseCase.class);
+            ResultService results = context.getBean(ResultService.class);
 
-            assertThat(results.earlierReadings(f.familyId(), third, f.observationIn(third)).collectList().block())
+            assertThat(results.earlierHistory(f.familyId(), third, f.observationIn(third)).map(EarlierHistory::sameUnit).block())
                     .extracting(EarlierReading::documentId).as("newest first, the paper being read left out").containsExactly(second, first);
-            assertThat(results.earlierReadings(f.familyId(), first, f.observationIn(first)).collectList().block())
+            assertThat(results.earlierHistory(f.familyId(), first, f.observationIn(first)).map(EarlierHistory::sameUnit).block())
                     .as("nothing came before the first paper").isEmpty();
         });
     }
@@ -171,8 +171,8 @@ class EarlierReadingsTest {
             UUID datedEarlierSentLater = f.printed(f.doneWith(f.ma(), T.plusSeconds(120), "potassium", "Potassium", "4.1", "mmol/L"),
                     LocalDate.of(2026, 10, 14));
 
-            List<EarlierReading> rows = context.getBean(ResultUseCase.class)
-                    .earlierReadings(f.familyId(), viewed, f.observationIn(viewed)).collectList().block();
+            List<EarlierReading> rows = context.getBean(ResultService.class)
+                    .earlierHistory(f.familyId(), viewed, f.observationIn(viewed)).map(EarlierHistory::sameUnit).block();
 
             assertThat(rows).extracting(EarlierReading::documentId).as("dated 14 Oct, sent after the 16 Oct paper: earlier; "
                     + "dated 18 Oct, sent before it: later; newest by printed date first, 15 Oct before 14 Oct though sent first")
@@ -200,8 +200,8 @@ class EarlierReadingsTest {
             }
             UUID viewed = f.doneWith(f.ma(), T.plusSeconds(1000), "creatinine", "Creatinine", "160", "µmol/L");
 
-            List<EarlierReading> rows = context.getBean(ResultUseCase.class)
-                    .earlierReadings(f.familyId(), viewed, f.observationIn(viewed)).collectList().block();
+            List<EarlierReading> rows = context.getBean(ResultService.class)
+                    .earlierHistory(f.familyId(), viewed, f.observationIn(viewed)).map(EarlierHistory::sameUnit).block();
 
             List<UUID> newestTen = new java.util.ArrayList<>(sameUnit.subList(2, 12));
             java.util.Collections.reverse(newestTen);
@@ -219,11 +219,11 @@ class EarlierReadingsTest {
             UUID withUnit = f.doneWith(f.ma(), T.plusSeconds(60), "urine albumin", "Urine Albumin", "30", "mg/L");
             UUID viewedUnitless = f.doneWith(f.ma(), T.plusSeconds(120), "urine albumin", "Urine Albumin", "Trace", null);
             UUID viewedWithUnit = f.doneWith(f.ma(), T.plusSeconds(180), "urine albumin", "Urine Albumin", "45", "mg/L");
-            ResultUseCase results = context.getBean(ResultUseCase.class);
+            ResultService results = context.getBean(ResultService.class);
 
-            assertThat(results.earlierReadings(f.familyId(), viewedUnitless, f.observationIn(viewedUnitless)).collectList().block())
+            assertThat(results.earlierHistory(f.familyId(), viewedUnitless, f.observationIn(viewedUnitless)).map(EarlierHistory::sameUnit).block())
                     .extracting(EarlierReading::documentId).as("unitless beside unitless").containsExactly(unitless);
-            assertThat(results.earlierReadings(f.familyId(), viewedWithUnit, f.observationIn(viewedWithUnit)).collectList().block())
+            assertThat(results.earlierHistory(f.familyId(), viewedWithUnit, f.observationIn(viewedWithUnit)).map(EarlierHistory::sameUnit).block())
                     .extracting(EarlierReading::documentId).as("mg/L beside mg/L, never the unitless one").containsExactly(withUnit);
         });
     }
@@ -235,7 +235,7 @@ class EarlierReadingsTest {
             Fixture f = fixture(context, "+8801700000704");
             UUID a = f.doneWith(f.ma(), T, "hba1c", "HbA1c", "8.4", "%");
             UUID b = f.doneWith(f.ma(), T.plusSeconds(60), "hba1c", "HbA1c", "7.9", "%");
-            StepVerifier.create(context.getBean(ResultUseCase.class).earlierReadings(f.familyId(), a, f.observationIn(b)).collectList())
+            StepVerifier.create(context.getBean(ResultService.class).earlierHistory(f.familyId(), a, f.observationIn(b)).map(EarlierHistory::sameUnit))
                     .expectErrorSatisfies(e -> assertThat(((BaymaxException) e).status()).isEqualTo(HttpStatus.NOT_FOUND)).verify();
         });
     }
@@ -247,7 +247,7 @@ class EarlierReadingsTest {
             Fixture mine = fixture(context, "+8801700000705");
             Fixture theirs = fixture(context, "+8801700000706");
             UUID doc = mine.doneWith(mine.ma(), T, "hba1c", "HbA1c", "8.4", "%");
-            StepVerifier.create(context.getBean(ResultUseCase.class).earlierReadings(theirs.familyId(), doc, mine.observationIn(doc)).collectList())
+            StepVerifier.create(context.getBean(ResultService.class).earlierHistory(theirs.familyId(), doc, mine.observationIn(doc)).map(EarlierHistory::sameUnit))
                     .expectErrorSatisfies(e -> assertThat(((BaymaxException) e).status()).isEqualTo(HttpStatus.NOT_FOUND)).verify();
         });
     }
