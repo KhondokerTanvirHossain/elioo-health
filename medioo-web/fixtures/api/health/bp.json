@@ -21,6 +21,9 @@
             "document_id": "b6b6b6b6-0000-4000-8000-0000000000d1",
             "kind": "unknown",
             "observation_id": "b6b6b6b6-0000-4000-8000-000000000142",
+            "ref_high": null,
+            "ref_low": null,
+            "ref_text": null,
             "side": null,
             "value": "80"
           },
@@ -36,6 +39,9 @@
             "document_id": "b6b6b6b6-0000-4000-8000-0000000000d1",
             "kind": "unknown",
             "observation_id": "b6b6b6b6-0000-4000-8000-000000000141",
+            "ref_high": null,
+            "ref_low": null,
+            "ref_text": null,
             "side": null,
             "value": "130"
           }

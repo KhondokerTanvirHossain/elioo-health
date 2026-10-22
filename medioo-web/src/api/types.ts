@@ -247,6 +247,12 @@ export type CalendarJson = { month: string; days: CalendarDayJson[] };
 /**
  * One reading of a lab series (B6, HealthJson): the value as printed, the paper's filing day, the kind and side
  * PaperDisplay.kindOf drew it with (`chipKindOf` turns them into a chip), the chip key, and the value's own crop.
+ *
+ * `ref_low`, `ref_high` and `ref_text` (PO ruling R3, Java's PrintedBand) are the range THIS paper printed beside this
+ * reading, read only off the stored extraction, never a reference table's: both numbers for a two-sided range, only its
+ * side for a one-sided one (`<200` is `ref_high` 200), both null with the words kept in `ref_text` when the printed text
+ * cannot be placed (`3.9-6.1` in one column, `Up to 200`), and all three null when the paper printed none — never a
+ * default. Ranges differ from point to point: two labs print two ranges for one marker.
  */
 export type TrendPointJson = {
   document_id: string;
@@ -259,6 +265,9 @@ export type TrendPointJson = {
   side: string | null;
   chip_key: string;
   crop: ImageJson;
+  ref_low: number | null;
+  ref_high: number | null;
+  ref_text: string | null;
 };
 
 /** One marker's readings across papers, newest first, under the newest point's name and unit. */

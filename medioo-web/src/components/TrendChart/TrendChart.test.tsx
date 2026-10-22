@@ -6,6 +6,7 @@ import { CHIP_SHAPE, StatusChip, chipKindOf, type ChipKind } from "@/components/
 import bp from "../../../fixtures/api/health/bp.json";
 import labsNonNumeric from "../../../fixtures/api/health/labs-non-numeric.json";
 import labsNone from "../../../fixtures/api/health/labs-none.json";
+import labsPrintedRange from "../../../fixtures/api/health/labs-printed-range.json";
 import labsSome from "../../../fixtures/api/health/labs-some.json";
 import labsWithUnknown from "../../../fixtures/api/health/labs-with-unknown.json";
 import { TrendChart, chartable } from "./TrendChart";
@@ -31,6 +32,7 @@ const ALL: Array<[string, LabSeriesJson]> = [
   ["labs-with-unknown", labsWithUnknown.body],
   ["labs-non-numeric", labsNonNumeric.body],
   ["labs-none", labsNone.body],
+  ["labs-printed-range", labsPrintedRange.body],
   ["bp", bp.body],
 ].flatMap(([name, body]) => (body as LabsJson).series.map((s): [string, LabSeriesJson] => [`${name}/${s.canonical_name}`, s]));
 

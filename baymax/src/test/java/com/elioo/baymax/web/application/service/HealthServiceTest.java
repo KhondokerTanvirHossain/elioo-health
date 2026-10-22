@@ -9,6 +9,7 @@ import com.elioo.baymax.web.application.port.in.HealthUseCase;
 import com.elioo.baymax.web.application.port.out.HealthReadPort;
 import com.elioo.baymax.web.domain.LabSeries;
 import com.elioo.baymax.web.domain.LatestPrescription;
+import com.elioo.baymax.web.domain.PrintedBand;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -88,6 +89,30 @@ class HealthServiceTest {
             assertThat(s.points().get(0).value()).as("the point of the " + s.unit() + " series is its own row's").isEqualTo(own.get("value"));
             assertThat(s.points().get(0).observationId()).isEqualTo(own.get("id"));
         }
+    }
+
+    /**
+     * PO ruling R3: each point carries the range its own paper printed, read off its own stored row, both ways. Two
+     * papers printing two ranges keep two ranges in one series; a paper that printed none carries none, not its
+     * neighbour's.
+     */
+    @Test
+    void eachPointCarriesTheRangeItsOwnPaperPrinted() {
+        Map<String, Object> oct = row(doc(), "2026-10-01", "Creatinine", "creatinine", "132", "umol/L");
+        oct.put("ref_low", "59");
+        oct.put("ref_high", "104");
+        Map<String, Object> aug = row(doc(), "2026-08-01", "Creatinine", "creatinine", "98", "umol/L");
+        aug.put("ref_low", "62");
+        aug.put("ref_high", "106");
+        Map<String, Object> jun = row(doc(), "2026-06-01", "Creatinine", "creatinine", "90", "umol/L");
+        Map<String, Object> cholesterol = row(doc(), "2026-06-01", "Total Cholesterol", "total_cholesterol", "180", "mg/dL");
+        cholesterol.put("ref_high", "<200");
+        HealthUseCase.HealthLabs labs = labs(oct, aug, jun, cholesterol);
+        LabSeries creatinine = labs.series().stream().filter(s -> s.canonicalName().equals("creatinine")).findFirst().orElseThrow();
+        assertThat(creatinine.points()).extracting(LabSeries.Point::range).containsExactly(
+                new PrintedBand(59.0, 104.0, "59–104"), new PrintedBand(62.0, 106.0, "62–106"), PrintedBand.NONE);
+        LabSeries total = labs.series().stream().filter(s -> s.canonicalName().equals("total_cholesterol")).findFirst().orElseThrow();
+        assertThat(total.points().get(0).range()).isEqualTo(new PrintedBand(null, 200.0, "<200"));
     }
 
     @Test

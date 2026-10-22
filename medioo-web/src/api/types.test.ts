@@ -26,6 +26,7 @@ import empty from "../../fixtures/api/calendar/empty.json";
 import bp from "../../fixtures/api/health/bp.json";
 import labsNonNumeric from "../../fixtures/api/health/labs-non-numeric.json";
 import labsNone from "../../fixtures/api/health/labs-none.json";
+import labsPrintedRange from "../../fixtures/api/health/labs-printed-range.json";
 import labsSome from "../../fixtures/api/health/labs-some.json";
 import labsWithUnknown from "../../fixtures/api/health/labs-with-unknown.json";
 // B1's generated GET /app/api/me bodies (baymax MeApiContractTest), plan W4: the shell reads every field it renders here.
@@ -276,6 +277,9 @@ const POINT_KEYS = [
   "document_id",
   "kind",
   "observation_id",
+  "ref_high",
+  "ref_low",
+  "ref_text",
   "side",
   "value",
 ] as const;
@@ -332,6 +336,7 @@ describe("the API types are the generated fixtures", () => {
       ["labs-none", labsNone.body],
       ["labs-with-unknown", labsWithUnknown.body],
       ["labs-non-numeric", labsNonNumeric.body],
+      ["labs-printed-range", labsPrintedRange.body],
       ["bp", bp.body],
     ];
     // Every committed labs fixture is assigned above, so a case B6 or W9 adds fails here until it is listed.
@@ -357,6 +362,38 @@ describe("the API types are the generated fixtures", () => {
     for (const p of points) expect(keys(p), p.observation_id).toEqual([...POINT_KEYS]);
     expect(points.length, "points walked").toBeGreaterThan(0);
     expect(pairs, "blood-pressure pairs walked").toBeGreaterThan(0);
+
+    // PO ruling R3: the printed range, both ways, over every generated point. A number comes only with the words it was
+    // read from, so a point whose paper printed nothing carries no number: never a default range.
+    for (const p of points) {
+      const id = p.observation_id;
+      expect(p.ref_low === null || typeof p.ref_low === "number", `${id} ref_low`).toBe(true);
+      expect(p.ref_high === null || typeof p.ref_high === "number", `${id} ref_high`).toBe(true);
+      expect(p.ref_text === null || typeof p.ref_text === "string", `${id} ref_text`).toBe(true);
+      if (p.ref_text === null) expect([p.ref_low, p.ref_high], `${id}: nothing printed, no number`).toEqual([null, null]);
+      if (p.ref_low !== null && p.ref_high !== null) expect(p.ref_low, `${id}: low below high`).toBeLessThan(p.ref_high);
+    }
+  });
+
+  it("theLabsPrintedRangeFixtureHoldsEveryShapeOfAPrintedRange", () => {
+    const points = labsPrintedRange.body.series.flatMap((s) => s.points as TrendPointJson[]);
+    const shape = (p: TrendPointJson) =>
+      p.ref_text === null
+        ? "none"
+        : p.ref_low !== null && p.ref_high !== null
+          ? "two-sided"
+          : p.ref_low !== null
+            ? "low-only"
+            : p.ref_high !== null
+              ? "high-only"
+              : "text-only";
+    expect(new Set(points.map(shape))).toEqual(new Set(["two-sided", "low-only", "high-only", "none", "text-only"]));
+    expect(points.find((p) => p.ref_text === "<200")).toMatchObject({ ref_low: null, ref_high: 200 });
+    expect(points.find((p) => p.ref_text === ">40")).toMatchObject({ ref_low: 40, ref_high: null });
+    expect(points.find((p) => p.ref_text === "3.9-6.1")).toMatchObject({ ref_low: null, ref_high: null });
+    // Ranges differ across the points of one series: two labs printed two ranges for creatinine.
+    const creatinine = labsPrintedRange.body.series.find((s) => s.canonical_name === "creatinine");
+    expect(creatinine?.points.map((p) => p.ref_text)).toEqual(["59–104", "62–106", null]);
   });
 });
 

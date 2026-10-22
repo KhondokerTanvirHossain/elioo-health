@@ -23,6 +23,9 @@
             "document_id": "b6b6b6b6-0000-4000-8000-0000000000d1",
             "kind": "critical",
             "observation_id": "b6b6b6b6-0000-4000-8000-000000000161",
+            "ref_high": 104,
+            "ref_low": 59,
+            "ref_text": "59–104",
             "side": "high",
             "value": ">500"
           },
@@ -37,6 +40,9 @@
             "document_id": "b6b6b6b6-0000-4000-8000-0000000000d2",
             "kind": "outside",
             "observation_id": "b6b6b6b6-0000-4000-8000-000000000163",
+            "ref_high": 104,
+            "ref_low": 59,
+            "ref_text": "59–104",
             "side": "high",
             "value": "132"
           },
@@ -51,6 +57,9 @@
             "document_id": "b6b6b6b6-0000-4000-8000-0000000000d3",
             "kind": "inside",
             "observation_id": "b6b6b6b6-0000-4000-8000-000000000165",
+            "ref_high": 104,
+            "ref_low": 59,
+            "ref_text": "59–104",
             "side": null,
             "value": "98"
           }
@@ -72,6 +81,9 @@
             "document_id": "b6b6b6b6-0000-4000-8000-0000000000d1",
             "kind": "unknown",
             "observation_id": "b6b6b6b6-0000-4000-8000-000000000162",
+            "ref_high": 5,
+            "ref_low": null,
+            "ref_text": "5",
             "side": null,
             "value": "<0.5"
           },
@@ -86,6 +98,9 @@
             "document_id": "b6b6b6b6-0000-4000-8000-0000000000d2",
             "kind": "outside",
             "observation_id": "b6b6b6b6-0000-4000-8000-000000000164",
+            "ref_high": 5,
+            "ref_low": null,
+            "ref_text": "5",
             "side": "high",
             "value": "12"
           }

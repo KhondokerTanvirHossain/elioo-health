@@ -10,6 +10,7 @@ import com.elioo.baymax.web.application.port.out.HealthReadPort;
 import com.elioo.baymax.web.domain.LabSeries;
 import com.elioo.baymax.web.domain.LatestPrescription;
 import com.elioo.baymax.web.domain.PaperDisplay;
+import com.elioo.baymax.web.domain.PrintedBand;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
@@ -38,6 +39,8 @@ import java.util.UUID;
  *       production gives every value its own crop, even two cut from one line. Anything else stays in its own series.</li>
  * </ul>
  * The kind each point is drawn as is {@link PaperDisplay#kindOf}, so a one-sided INSIDE is UNKNOWN here as on the paper.
+ * Each point's band is {@link PrintedBand#of} its own row's printed range (PO ruling R3): a series joins readings, never
+ * their ranges, so two labs that printed two ranges keep two, and a paper that printed none carries none.
  */
 @Service
 @RequiredArgsConstructor
@@ -128,7 +131,8 @@ public class HealthService implements HealthUseCase {
         ValueVerdict.Kind kind = PaperDisplay.kindOf(row);
         return new LabSeries.Point((UUID) row.get("document_id"), (UUID) row.get("id"), (String) row.get("value"),
                 (LocalDate) row.get("date"), Boolean.TRUE.equals(row.get("date_is_fallback")), Boolean.TRUE.equals(row.get("date_uncertain")),
-                kind, PaperDisplay.drawnSide(kind, row), (String) row.get("crop_key"));
+                kind, PaperDisplay.drawnSide(kind, row), (String) row.get("crop_key"),
+                PrintedBand.of(row.get("ref_low"), row.get("ref_high")));
     }
 
     /** Only the fields a medicine line was written with, and its crop: never action, purpose, status or anything derived. */

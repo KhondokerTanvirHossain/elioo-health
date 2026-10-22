@@ -122,6 +122,39 @@ class HealthReadModelTest {
         });
     }
 
+    /**
+     * PO ruling R3 on real Postgres: the range a point's band is drawn from is the stored extraction's printed range
+     * ({@code observation.ref_low}, {@code ref_high}) as stored, one side or both, through the real labs use case. A
+     * value whose paper printed none carries none.
+     */
+    @Test
+    void eachPointCarriesItsStoredPrintedRange() {
+        runner().run(context -> {
+            UUID ma = patient(context);
+            UUID family = UUID.fromString(scalar("SELECT family_id FROM baymax.patient_profile WHERE id = '" + ma + "'"));
+            UUID d = doc(context, ma, "2026-10-01T08:00:00Z", "2026-10-01", "lab_report", "DONE");
+            value(d, "Creatinine", "creatinine", "132", "umol/L");
+            value(d, "Total Cholesterol", "total_cholesterol", "180", "mg/dL");
+            value(d, "TSH", "tsh", "2.1", "mIU/L");
+            sql("UPDATE baymax.observation SET ref_low = '59', ref_high = '104' WHERE canonical_name = 'creatinine' AND document_id = '" + d + "'");
+            sql("UPDATE baymax.observation SET ref_high = '<200' WHERE canonical_name = 'total_cholesterol' AND document_id = '" + d + "'");
+
+            List<Map<String, Object>> points = context.getBean(HealthReadPort.class).labPoints(ma).collectList().block();
+            Map<Object, Map<String, Object>> byName = new java.util.HashMap<>();
+            points.forEach(p -> byName.put(p.get("canonical_name"), p));
+            assertThat(byName.get("creatinine")).containsEntry("ref_low", "59").containsEntry("ref_high", "104");
+            assertThat(byName.get("total_cholesterol")).doesNotContainKey("ref_low").containsEntry("ref_high", "<200");
+            assertThat(byName.get("tsh")).doesNotContainKeys("ref_low", "ref_high");
+
+            var labs = context.getBean(com.elioo.baymax.web.application.port.in.HealthUseCase.class).labs(family, ma).block();
+            Map<String, com.elioo.baymax.web.domain.PrintedBand> band = new java.util.HashMap<>();
+            labs.series().forEach(s -> band.put(s.canonicalName(), s.points().get(0).range()));
+            assertThat(band.get("creatinine")).isEqualTo(new com.elioo.baymax.web.domain.PrintedBand(59.0, 104.0, "59–104"));
+            assertThat(band.get("total_cholesterol")).isEqualTo(new com.elioo.baymax.web.domain.PrintedBand(null, 200.0, "<200"));
+            assertThat(band.get("tsh")).as("no printed range: none, never a default").isEqualTo(com.elioo.baymax.web.domain.PrintedBand.NONE);
+        });
+    }
+
     @Test
     void aRowWithoutACanonicalNameIsNoPoint() {
         runner().run(context -> {

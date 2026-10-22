@@ -23,6 +23,9 @@
             "document_id": "b6b6b6b6-0000-4000-8000-0000000000d1",
             "kind": "inside",
             "observation_id": "b6b6b6b6-0000-4000-8000-000000000151",
+            "ref_high": 5.6,
+            "ref_low": 4,
+            "ref_text": "4.0–5.6",
             "side": null,
             "value": "5.4"
           },
@@ -37,6 +40,9 @@
             "document_id": "b6b6b6b6-0000-4000-8000-0000000000d2",
             "kind": "outside",
             "observation_id": "b6b6b6b6-0000-4000-8000-000000000152",
+            "ref_high": 5.6,
+            "ref_low": 4,
+            "ref_text": "4.0–5.6",
             "side": "high",
             "value": "5.8"
           },
@@ -51,6 +57,9 @@
             "document_id": "b6b6b6b6-0000-4000-8000-0000000000d3",
             "kind": "unknown",
             "observation_id": "b6b6b6b6-0000-4000-8000-000000000153",
+            "ref_high": null,
+            "ref_low": null,
+            "ref_text": null,
             "side": null,
             "value": "6.1"
           },
@@ -65,6 +74,9 @@
             "document_id": "b6b6b6b6-0000-4000-8000-0000000000d6",
             "kind": "outside",
             "observation_id": "b6b6b6b6-0000-4000-8000-000000000154",
+            "ref_high": 5.6,
+            "ref_low": 4,
+            "ref_text": "4.0–5.6",
             "side": "low",
             "value": "3.6"
           },
@@ -79,6 +91,9 @@
             "document_id": "b6b6b6b6-0000-4000-8000-0000000000d7",
             "kind": "critical",
             "observation_id": "b6b6b6b6-0000-4000-8000-000000000155",
+            "ref_high": 5.6,
+            "ref_low": 4,
+            "ref_text": "4.0–5.6",
             "side": "high",
             "value": "9.8"
           }
@@ -100,6 +115,9 @@
             "document_id": "b6b6b6b6-0000-4000-8000-0000000000d1",
             "kind": "inside",
             "observation_id": "b6b6b6b6-0000-4000-8000-000000000156",
+            "ref_high": 5.1,
+            "ref_low": 3.5,
+            "ref_text": "3.5–5.1",
             "side": null,
             "value": "4.1"
           },
@@ -114,6 +132,9 @@
             "document_id": "b6b6b6b6-0000-4000-8000-0000000000d2",
             "kind": "critical",
             "observation_id": "b6b6b6b6-0000-4000-8000-000000000157",
+            "ref_high": 5.1,
+            "ref_low": 3.5,
+            "ref_text": "3.5–5.1",
             "side": "low",
             "value": "2.4"
           }
