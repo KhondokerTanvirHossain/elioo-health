@@ -8,8 +8,6 @@ import com.elioo.baymax.web.domain.AuditEvent;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.test.web.reactive.server.EntityExchangeResult;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -21,6 +19,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -75,67 +74,75 @@ class ValueSheetGatesAcceptanceTest {
     }
 
     // ---- rule 1: a paper that is not DONE opens no sheet --------------------------------------------------------
+    //
+    // One application context per rule, not per case: each context run holds Flyway, R2DBC and Netty, and the module's
+    // test JVM runs at Gradle's default heap; seven contexts here pushed the suite's last class (ArchUnit's import) over it.
 
     /**
      * A NEEDS_RETAKE or FAILED paper's stored row, and a row of a paper still being read, open no sheet on either route,
      * and no view is recorded for the probe. The paper's own JSON never shows such a paper's rows, so neither may a sheet.
+     * The other direction first, in the same context: the same row on a DONE paper opens its sheet on each route, each
+     * recording exactly one view (so a 404 below is the gate's, not a route that answers nothing).
      */
-    @ParameterizedTest
-    @ValueSource(strings = {"NEEDS_RETAKE", "FAILED", "PROCESSING"})
-    void aPaperThatIsNotDoneOpensNoSheetOnEitherRoute(String status) {
-        AppApiContext.runner(POSTGRES).run(context -> {
-            Sheet s = donePaperWithCreatinine(context, "mg/dL");
-            AppApiContext.sql(POSTGRES, "UPDATE baymax.document SET status = '" + status + "'"
-                    + ("NEEDS_RETAKE".equals(status) ? ", status_reason_code = 'low_overall'" : "") + " WHERE id = '" + s.paper() + "'");
-            WebTestClient c = WebTestClient.bindToApplicationContext(context).build();
-
-            EntityExchangeResult<byte[]> html = html(c, s);
-            assertThat(html.getStatus().value()).as("the HTML sheet of a " + status + " paper's stored row").isEqualTo(404);
-            assertThat(views(s.paper())).as("DOCUMENT_VIEW rows after the HTML sheet of a " + status + " paper").isZero();
-
-            EntityExchangeResult<byte[]> api = api(c, s);
-            assertThat(api.getStatus().value()).as("the JSON sheet of a " + status + " paper's stored row").isEqualTo(404);
-            assertThat(json.readTree(api.getResponseBody())).isEqualTo(json.readTree("{\"reason\":\"NOT_FOUND\"}"));
-            assertThat(views(s.paper())).as("DOCUMENT_VIEW rows after both sheets of a " + status + " paper").isZero();
-        });
-    }
-
-    /** The other direction: the same row on a DONE paper opens its sheet on each route, each recording exactly one view. */
     @Test
-    void aDonePapersValueOpensOneSheetOnEachRoute() {
+    void aPaperThatIsNotDoneOpensNoSheetOnEitherRouteAndADoneOneOpensOne() {
         AppApiContext.runner(POSTGRES).run(context -> {
-            Sheet s = donePaperWithCreatinine(context, "mg/dL");
             WebTestClient c = WebTestClient.bindToApplicationContext(context).build();
 
-            EntityExchangeResult<byte[]> html = html(c, s);
-            assertThat(html.getStatus().value()).as("the HTML sheet of a DONE paper's value").isEqualTo(200);
-            assertThat(body(html)).as("the HTML sheet is the sheet").contains("id=\"sheet-title\"");
-            assertThat(views(s.paper())).as("DOCUMENT_VIEW rows after one HTML sheet").isEqualTo(1);
+            Sheet done = donePaperWithCreatinine(context, "mg/dL");
+            EntityExchangeResult<byte[]> doneHtml = html(c, done);
+            assertThat(doneHtml.getStatus().value()).as("the HTML sheet of a DONE paper's value").isEqualTo(200);
+            assertThat(body(doneHtml)).as("the HTML sheet is the sheet").contains("id=\"sheet-title\"");
+            assertThat(views(done.paper())).as("DOCUMENT_VIEW rows after one HTML sheet").isEqualTo(1);
+            EntityExchangeResult<byte[]> doneApi = api(c, done);
+            assertThat(doneApi.getStatus().value()).as("the JSON sheet of a DONE paper's value").isEqualTo(200);
+            assertThat(json.readTree(doneApi.getResponseBody()).path("value").path("id").asText()).isEqualTo(done.observation().toString());
+            assertThat(views(done.paper())).as("DOCUMENT_VIEW rows after one HTML and one JSON sheet").isEqualTo(2);
 
-            EntityExchangeResult<byte[]> api = api(c, s);
-            assertThat(api.getStatus().value()).as("the JSON sheet of a DONE paper's value").isEqualTo(200);
-            assertThat(json.readTree(api.getResponseBody()).path("value").path("id").asText()).isEqualTo(s.observation().toString());
-            assertThat(views(s.paper())).as("DOCUMENT_VIEW rows after one HTML and one JSON sheet").isEqualTo(2);
+            int refused = 0;
+            for (String status : List.of("NEEDS_RETAKE", "FAILED", "PROCESSING")) {
+                Sheet s = donePaperWithCreatinine(context, "mg/dL");
+                AppApiContext.sql(POSTGRES, "UPDATE baymax.document SET status = '" + status + "'"
+                        + ("NEEDS_RETAKE".equals(status) ? ", status_reason_code = 'low_overall'" : "") + " WHERE id = '" + s.paper() + "'");
+
+                EntityExchangeResult<byte[]> html = html(c, s);
+                assertThat(html.getStatus().value()).as("the HTML sheet of a " + status + " paper's stored row").isEqualTo(404);
+                assertThat(views(s.paper())).as("DOCUMENT_VIEW rows after the HTML sheet of a " + status + " paper").isZero();
+
+                EntityExchangeResult<byte[]> api = api(c, s);
+                assertThat(api.getStatus().value()).as("the JSON sheet of a " + status + " paper's stored row").isEqualTo(404);
+                assertThat(json.readTree(api.getResponseBody())).isEqualTo(json.readTree("{\"reason\":\"NOT_FOUND\"}"));
+                assertThat(views(s.paper())).as("DOCUMENT_VIEW rows after both sheets of a " + status + " paper").isZero();
+                refused++;
+            }
+            assertThat(refused).as("statuses probed").isEqualTo(3);
         });
     }
 
     // ---- rule 2: "the first time" only when the marker was never read, in any unit ------------------------------
 
     /**
-     * The dangerous direction: creatinine read last month in µmol/L, now in mg/dL. There is no earlier reading in THIS
-     * unit, but "this is the first time" would be false, so neither route draws a history line: the HTML has no
-     * {@code #earlier} block, the JSON's {@code earlier_line_key} is null.
+     * Three patients, one context, each sheet asserted on both routes:
+     * <ul>
+     *   <li>the dangerous direction: creatinine read last month in µmol/L, now in mg/dL. There is no earlier reading in
+     *       THIS unit, but "this is the first time" would be false, so neither route draws a history line: the HTML has
+     *       no {@code #earlier} block, the JSON's {@code earlier_line_key} is null;</li>
+     *   <li>the safe direction: a marker never read before, in any unit, is the first time on both routes;</li>
+     *   <li>readings in this unit AND in another: both routes head the history with this unit, and list only its row.</li>
+     * </ul>
      */
     @Test
-    void aMarkerReadBeforeOnlyInAnotherUnitIsNeverTheFirstTime() {
+    void theFirstTimeIsSaidOnlyWhenTheMarkerWasNeverReadInAnyUnit() {
         AppApiContext.runner(POSTGRES).run(context -> {
-            Sheet s = donePaperWithCreatinine(context, "mg/dL");
-            UUID older = AppApiContext.paper(context, POSTGRES, s.patient(), "routine");
-            AppApiContext.sql(POSTGRES, "UPDATE baymax.document SET doc_date = '2026-09-02' WHERE id = '" + older + "'");
-            creatinine(s.patient(), older, "97", "µmol/L");
             WebTestClient c = WebTestClient.bindToApplicationContext(context).build();
 
-            EntityExchangeResult<byte[]> html = html(c, s);
+            // read before only in another unit
+            Sheet otherUnit = donePaperWithCreatinine(context, "mg/dL");
+            UUID older = AppApiContext.paper(context, POSTGRES, otherUnit.patient(), "routine");
+            AppApiContext.sql(POSTGRES, "UPDATE baymax.document SET doc_date = '2026-09-02' WHERE id = '" + older + "'");
+            creatinine(otherUnit.patient(), older, "97", "µmol/L");
+
+            EntityExchangeResult<byte[]> html = html(c, otherUnit);
             assertThat(html.getStatus().value()).as("the HTML sheet").isEqualTo(200);
             String page = body(html);
             assertThat(page).as("the HTML sheet is the sheet").contains("id=\"sheet-title\"");
@@ -143,52 +150,36 @@ class ValueSheetGatesAcceptanceTest {
                     .isFalse();
             assertThat(page).as("the first-time line on the HTML sheet of a marker read before in µmol/L")
                     .doesNotContain(copy.t(Lang.BN, "sheet.earlier.none"));
-
-            JsonNode body = json.readTree(api(c, s).getResponseBody());
+            JsonNode body = json.readTree(api(c, otherUnit).getResponseBody());
             assertThat(body.has("earlier_line_key")).as("$.earlier_line_key is present").isTrue();
             assertThat(body.path("earlier_line_key").isNull()).as("$.earlier_line_key of a marker read before in µmol/L").isTrue();
             assertThat(body.path("earlier").size()).as("$.earlier: no reading in mg/dL").isZero();
-        });
-    }
 
-    /** The safe direction: a marker never read before, in any unit, is the first time on both routes. */
-    @Test
-    void aMarkerNeverReadBeforeIsTheFirstTimeOnBothRoutes() {
-        AppApiContext.runner(POSTGRES).run(context -> {
-            Sheet s = donePaperWithCreatinine(context, "mg/dL");
-            WebTestClient c = WebTestClient.bindToApplicationContext(context).build();
+            // never read before, in any unit
+            Sheet never = donePaperWithCreatinine(context, "mg/dL");
+            assertThat(section(body(html(c, never)), "earlier")).as("the HTML #earlier block of a marker never read")
+                    .contains("<p>" + copy.t(Lang.BN, "sheet.earlier.none") + "</p>");
+            assertThat(json.readTree(api(c, never).getResponseBody()).path("earlier_line_key").asText())
+                    .as("$.earlier_line_key of a marker never read").isEqualTo("sheet.earlier.none");
 
-            String earlier = section(body(html(c, s)), "earlier");
-            assertThat(earlier).as("the HTML #earlier block of a marker never read").contains("<p>" + copy.t(Lang.BN, "sheet.earlier.none") + "</p>");
-
-            JsonNode body = json.readTree(api(c, s).getResponseBody());
-            assertThat(body.path("earlier_line_key").asText()).as("$.earlier_line_key of a marker never read").isEqualTo("sheet.earlier.none");
-        });
-    }
-
-    /** Readings in this unit AND in another: both routes head the history with this unit, and list only this unit's. */
-    @Test
-    void aMarkerReadInBothUnitsIsHeadedWithThisUnit() {
-        AppApiContext.runner(POSTGRES).run(context -> {
-            Sheet s = donePaperWithCreatinine(context, "mg/dL");
-            UUID other = AppApiContext.paper(context, POSTGRES, s.patient(), "routine");
+            // read before in this unit and in another
+            Sheet both = donePaperWithCreatinine(context, "mg/dL");
+            UUID other = AppApiContext.paper(context, POSTGRES, both.patient(), "routine");
             AppApiContext.sql(POSTGRES, "UPDATE baymax.document SET doc_date = '2026-09-02' WHERE id = '" + other + "'");
-            creatinine(s.patient(), other, "97", "µmol/L");
-            UUID same = AppApiContext.paper(context, POSTGRES, s.patient(), "routine");
+            creatinine(both.patient(), other, "97", "µmol/L");
+            UUID same = AppApiContext.paper(context, POSTGRES, both.patient(), "routine");
             AppApiContext.sql(POSTGRES, "UPDATE baymax.document SET doc_date = '2026-07-11' WHERE id = '" + same + "'");
-            UUID sameObservation = creatinine(s.patient(), same, "1.0", "mg/dL");
-            WebTestClient c = WebTestClient.bindToApplicationContext(context).build();
+            UUID sameObservation = creatinine(both.patient(), same, "1.0", "mg/dL");
 
-            String earlier = section(body(html(c, s)), "earlier");
+            String earlier = section(body(html(c, both)), "earlier");
             assertThat(earlier).as("the HTML #earlier heading").contains("<h2>" + copy.t(Lang.BN, "sheet.earlier", "mg/dL") + "</h2>");
             assertThat(earlier).as("the HTML #earlier row of the mg/dL reading")
                     .contains("href=\"/app/documents/" + same + "/values/" + sameObservation + "?from=all\"");
             assertThat(earlier).as("the HTML #earlier rows never link the µmol/L paper").doesNotContain("/app/documents/" + other + "/");
-
-            JsonNode body = json.readTree(api(c, s).getResponseBody());
-            assertThat(body.path("earlier_line_key").asText()).isEqualTo("sheet.earlier");
-            assertThat(body.path("earlier").size()).isEqualTo(1);
-            assertThat(body.path("earlier").get(0).path("observation_id").asText()).isEqualTo(sameObservation.toString());
+            JsonNode bothBody = json.readTree(api(c, both).getResponseBody());
+            assertThat(bothBody.path("earlier_line_key").asText()).isEqualTo("sheet.earlier");
+            assertThat(bothBody.path("earlier").size()).isEqualTo(1);
+            assertThat(bothBody.path("earlier").get(0).path("observation_id").asText()).isEqualTo(sameObservation.toString());
         });
     }
 
