@@ -45,8 +45,9 @@ function dateText(lang: Lang, p: TrendPointJson, withYear: boolean): string {
  * is what a screen reader reads, one `trend.point` sentence per reading, in date order, named by the series; the drawing
  * is decorative.
  *
- * Not drawn: a band. B6's point carries no printed range, and a band that encodes no range would put an out-of-range
- * reading inside what looks like one. Nothing is drawn unless `chartable` holds. Colours are tokens through classes
+ * Not drawn yet: a band. B6's point carries the printed range since RANGE-api (PR 143, PO ruling R3, DR-48:
+ * `ref_low`, `ref_high`, `ref_text`, numbers sent only where they agree with the chip); the band is drawn in RANGE-web.
+ * Until then none is drawn: a band that encodes no range would put an out-of-range reading inside what looks like one. Nothing is drawn unless `chartable` holds. Colours are tokens through classes
  * (TrendChart.css), no inline style, and the critical shape is never red here: the red belongs to the NOW components.
  */
 export function TrendChart({ series, lang }: { series: LabSeriesJson; lang: Lang }) {

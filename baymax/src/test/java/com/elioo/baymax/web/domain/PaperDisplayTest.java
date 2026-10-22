@@ -83,4 +83,83 @@ class PaperDisplayTest {
         assertThat(PaperDisplay.outsideCount(rows)).isEqualTo(2);
         assertThat(PaperDisplay.outsideCount(List.of())).isZero();
     }
+
+    // ---- R3 (DR-48): the printed band a trend point may draw agrees with its chip, as the pin does -------------------
+
+    private static PrintedBand drawn(Map<String, Object> row) {
+        ValueVerdict.Kind kind = PaperDisplay.kindOf(row);
+        return PaperDisplay.drawnBand(kind, row, PaperDisplay.drawnSide(kind, row));
+    }
+
+    /** The direction that keeps a proven picture: a band that agrees with the chip is drawn with both numbers. */
+    @Test
+    void aBandThatAgreesWithTheChipIsDrawn() {
+        assertThat(drawn(value("Na", "140", "mmol/L", "135", "145", "inside", null))).isEqualTo(new PrintedBand(135.0, 145.0, "135–145"));
+        assertThat(drawn(value("Creatinine", "132", "umol/L", "59", "104", "outside", "high"))).isEqualTo(new PrintedBand(59.0, 104.0, "59–104"));
+        assertThat(drawn(value("K", "2.4", "mmol/L", "3.5", "5.1", "critical", "low"))).isEqualTo(new PrintedBand(3.5, 5.1, "3.5–5.1"));
+    }
+
+    /**
+     * The direction that withholds: a band that would tell a different story from the chip sends no number, only the
+     * text. A CRITICAL by a signed-off threshold (which never looks at the printed range) inside its printed band would
+     * put a red point inside the pale "normal"; an UNKNOWN chip on a point inside the band reads as the reassurance the
+     * verdict withheld; an OUTSIDE high under the band contradicts its side.
+     */
+    @Test
+    void aBandThatContradictsTheChipIsTextOnly() {
+        assertThat(drawn(value("Creatinine", "90", "umol/L", "59", "104", "critical", "high")))
+                .as("CRITICAL by threshold inside the printed band").isEqualTo(new PrintedBand(null, null, "59–104"));
+        assertThat(drawn(value("Creatinine", "90", "umol/L", "59", "104", null, null)))
+                .as("a NULL verdict inside the band").isEqualTo(new PrintedBand(null, null, "59–104"));
+        assertThat(drawn(value("Creatinine", "50", "umol/L", "59", "104", "outside", "high")))
+                .as("OUTSIDE high below the band").isEqualTo(new PrintedBand(null, null, "59–104"));
+        assertThat(drawn(value("Na", "150", "mmol/L", "135", "145", "outside", null)))
+                .as("a sideless OUTSIDE is UNKNOWN").isEqualTo(new PrintedBand(null, null, "135–145"));
+    }
+
+    /**
+     * A one-sided bound is never INSIDE (D35), so an UNKNOWN point beside it gets no number: an open region from the axis
+     * to 200 behind 180 would say "normal" where the chip says unknown. Only an OUTSIDE or CRITICAL beyond the bound on
+     * its own side keeps it, as an edge.
+     */
+    @Test
+    void aOneSidedBoundIsKeptOnlyBesideAPointBeyondItOnTheChipsSide() {
+        assertThat(drawn(value("Total Cholesterol", "180", "mg/dL", null, "<200", "inside", null)))
+                .as("a one-sided INSIDE is UNKNOWN").isEqualTo(new PrintedBand(null, null, "<200"));
+        assertThat(drawn(value("Total Cholesterol", "210", "mg/dL", null, "<200", null, null)))
+                .as("the stopgap stores UNKNOWN above a one-sided bound").isEqualTo(new PrintedBand(null, null, "<200"));
+        assertThat(drawn(value("HDL", "45", "mg/dL", ">40", null, null, null))).isEqualTo(new PrintedBand(null, null, ">40"));
+        assertThat(drawn(value("Total Cholesterol", "240", "mg/dL", null, "<200", "outside", "high")))
+                .as("OUTSIDE high above its high edge").isEqualTo(new PrintedBand(null, 200.0, "<200"));
+        assertThat(drawn(value("HDL", "35", "mg/dL", ">40", null, "outside", "low")))
+                .as("OUTSIDE low below its low edge").isEqualTo(new PrintedBand(40.0, null, ">40"));
+        assertThat(drawn(value("Total Cholesterol", "190", "mg/dL", null, "<200", "outside", "high")))
+                .as("OUTSIDE high under its high edge").isEqualTo(new PrintedBand(null, null, "<200"));
+        assertThat(drawn(value("HDL", "210", "mg/dL", ">40", null, "outside", "high")))
+                .as("OUTSIDE high beside a low edge says nothing the chip says").isEqualTo(new PrintedBand(null, null, ">40"));
+    }
+
+    /** Nothing printed is nothing drawn, whatever the chip: never a default. */
+    @Test
+    void noPrintedRangeDrawsNothingWhateverTheChip() {
+        assertThat(drawn(value("Creatinine", "150", "umol/L", null, null, "outside", "high"))).isEqualTo(PrintedBand.NONE);
+        assertThat(drawn(value("Creatinine", "90", "umol/L", null, null, null, null))).isEqualTo(PrintedBand.NONE);
+    }
+
+    /** The pin and the band read one agreement rule, so the paper page's bar and the trend's band can never disagree. */
+    @Test
+    void thePinIsDrawnExactlyWhenTheBandAgrees() {
+        List<Map<String, Object>> rows = List.of(
+                value("Na", "140", "mmol/L", "135", "145", "inside", null),
+                value("Creatinine", "132", "umol/L", "59", "104", "outside", "high"),
+                value("Creatinine", "90", "umol/L", "59", "104", "critical", "high"),
+                value("Creatinine", "90", "umol/L", "59", "104", null, null),
+                value("Creatinine", "50", "umol/L", "59", "104", "outside", "high"));
+        for (Map<String, Object> row : rows) {
+            ValueVerdict.Kind kind = PaperDisplay.kindOf(row);
+            String side = PaperDisplay.drawnSide(kind, row);
+            assertThat(PaperDisplay.pin(kind, row, side).isPresent()).as(String.valueOf(row))
+                    .isEqualTo(PaperDisplay.bandAgrees(kind, row, side));
+        }
+    }
 }

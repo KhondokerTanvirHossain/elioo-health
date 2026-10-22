@@ -47,7 +47,7 @@
             "value": "98"
           },
           {
-            "chip_key": "value.chip.unknown",
+            "chip_key": "value.chip.outside.high",
             "crop": {
               "src": "/app/documents/b6b6b6b6-0000-4000-8000-0000000000d3/image?key=f%2Fp%2Fb6b6b6b6-0000-4000-8000-0000000000d3%2Fcrop-v79.jpg"
             },
@@ -55,13 +55,13 @@
             "date_is_upload_day": false,
             "date_uncertain": false,
             "document_id": "b6b6b6b6-0000-4000-8000-0000000000d3",
-            "kind": "unknown",
+            "kind": "outside",
             "observation_id": "b6b6b6b6-0000-4000-8000-000000000179",
             "ref_high": null,
             "ref_low": null,
             "ref_text": null,
-            "side": null,
-            "value": "90"
+            "side": "high",
+            "value": "150"
           }
         ],
         "unit": "µmol/L"
@@ -71,7 +71,7 @@
         "name": "Total Cholesterol",
         "points": [
           {
-            "chip_key": "value.chip.outside.high",
+            "chip_key": "value.chip.unknown",
             "crop": {
               "src": "/app/documents/b6b6b6b6-0000-4000-8000-0000000000d1/image?key=f%2Fp%2Fb6b6b6b6-0000-4000-8000-0000000000d1%2Fcrop-v72.jpg"
             },
@@ -79,12 +79,12 @@
             "date_is_upload_day": false,
             "date_uncertain": false,
             "document_id": "b6b6b6b6-0000-4000-8000-0000000000d1",
-            "kind": "outside",
+            "kind": "unknown",
             "observation_id": "b6b6b6b6-0000-4000-8000-000000000172",
-            "ref_high": 200,
+            "ref_high": null,
             "ref_low": null,
             "ref_text": "<200",
-            "side": "high",
+            "side": null,
             "value": "210"
           },
           {
@@ -98,11 +98,28 @@
             "document_id": "b6b6b6b6-0000-4000-8000-0000000000d2",
             "kind": "unknown",
             "observation_id": "b6b6b6b6-0000-4000-8000-000000000176",
-            "ref_high": 200,
+            "ref_high": null,
             "ref_low": null,
             "ref_text": "<200",
             "side": null,
             "value": "180"
+          },
+          {
+            "chip_key": "value.chip.outside.high",
+            "crop": {
+              "src": "/app/documents/b6b6b6b6-0000-4000-8000-0000000000d3/image?key=f%2Fp%2Fb6b6b6b6-0000-4000-8000-0000000000d3%2Fcrop-v80.jpg"
+            },
+            "date": "2026-06-20",
+            "date_is_upload_day": false,
+            "date_uncertain": false,
+            "document_id": "b6b6b6b6-0000-4000-8000-0000000000d3",
+            "kind": "outside",
+            "observation_id": "b6b6b6b6-0000-4000-8000-000000000180",
+            "ref_high": 200,
+            "ref_low": null,
+            "ref_text": "<200",
+            "side": "high",
+            "value": "240"
           }
         ],
         "unit": "mg/dL"
@@ -112,7 +129,7 @@
         "name": "HDL Cholesterol",
         "points": [
           {
-            "chip_key": "value.chip.outside.low",
+            "chip_key": "value.chip.unknown",
             "crop": {
               "src": "/app/documents/b6b6b6b6-0000-4000-8000-0000000000d1/image?key=f%2Fp%2Fb6b6b6b6-0000-4000-8000-0000000000d1%2Fcrop-v73.jpg"
             },
@@ -120,12 +137,12 @@
             "date_is_upload_day": false,
             "date_uncertain": false,
             "document_id": "b6b6b6b6-0000-4000-8000-0000000000d1",
-            "kind": "outside",
+            "kind": "unknown",
             "observation_id": "b6b6b6b6-0000-4000-8000-000000000173",
             "ref_high": null,
-            "ref_low": 40,
+            "ref_low": null,
             "ref_text": ">40",
-            "side": "low",
+            "side": null,
             "value": "38"
           },
           {
@@ -140,10 +157,27 @@
             "kind": "unknown",
             "observation_id": "b6b6b6b6-0000-4000-8000-000000000177",
             "ref_high": null,
-            "ref_low": 40,
+            "ref_low": null,
             "ref_text": ">40",
             "side": null,
             "value": "45"
+          },
+          {
+            "chip_key": "value.chip.outside.low",
+            "crop": {
+              "src": "/app/documents/b6b6b6b6-0000-4000-8000-0000000000d3/image?key=f%2Fp%2Fb6b6b6b6-0000-4000-8000-0000000000d3%2Fcrop-v81.jpg"
+            },
+            "date": "2026-06-20",
+            "date_is_upload_day": false,
+            "date_uncertain": false,
+            "document_id": "b6b6b6b6-0000-4000-8000-0000000000d3",
+            "kind": "outside",
+            "observation_id": "b6b6b6b6-0000-4000-8000-000000000181",
+            "ref_high": null,
+            "ref_low": 40,
+            "ref_text": ">40",
+            "side": "low",
+            "value": "35"
           }
         ],
         "unit": "mg/dL"
@@ -185,6 +219,47 @@
             "ref_text": "3.9–6.1",
             "side": null,
             "value": "5.2"
+          }
+        ],
+        "unit": "mmol/L"
+      },
+      {
+        "canonical_name": "potassium",
+        "name": "Potassium",
+        "points": [
+          {
+            "chip_key": "value.chip.critical.high",
+            "crop": {
+              "src": "/app/documents/b6b6b6b6-0000-4000-8000-0000000000d1/image?key=f%2Fp%2Fb6b6b6b6-0000-4000-8000-0000000000d1%2Fcrop-v82.jpg"
+            },
+            "date": "2026-10-12",
+            "date_is_upload_day": false,
+            "date_uncertain": false,
+            "document_id": "b6b6b6b6-0000-4000-8000-0000000000d1",
+            "kind": "critical",
+            "observation_id": "b6b6b6b6-0000-4000-8000-000000000182",
+            "ref_high": null,
+            "ref_low": null,
+            "ref_text": "3.5–5.1",
+            "side": "high",
+            "value": "5.0"
+          },
+          {
+            "chip_key": "value.chip.unknown",
+            "crop": {
+              "src": "/app/documents/b6b6b6b6-0000-4000-8000-0000000000d2/image?key=f%2Fp%2Fb6b6b6b6-0000-4000-8000-0000000000d2%2Fcrop-v83.jpg"
+            },
+            "date": "2026-08-03",
+            "date_is_upload_day": false,
+            "date_uncertain": false,
+            "document_id": "b6b6b6b6-0000-4000-8000-0000000000d2",
+            "kind": "unknown",
+            "observation_id": "b6b6b6b6-0000-4000-8000-000000000183",
+            "ref_high": null,
+            "ref_low": null,
+            "ref_text": "3.5–5.1",
+            "side": null,
+            "value": "4.2"
           }
         ],
         "unit": "mmol/L"

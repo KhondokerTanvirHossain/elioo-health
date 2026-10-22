@@ -3,8 +3,8 @@
    and its date), centred under its marker because the drawing places reading i at the centre of column i. Out of range
    and critical are told apart by the shape (an arrow, a double arrow) and the word, never by colour alone and never by
    the NOW red, which belongs to the NOW components (built/now-usage.built.test.ts). The drawing holds no text, so no
-   SVG scaling can take a word under the 12 px floor. No band: B6 sends no printed range to draw one from. The 3 / 4
-   dash is the prototype's. */
+   SVG scaling can take a word under the 12 px floor. No band yet: B6 carries the printed range since RANGE-api
+   (PR 143, PO ruling R3, DR-48); the band is drawn in RANGE-web. The 3 / 4 dash is the prototype's. */
 .trend-chart {
   max-width: 480px;
   font-family: var(--font-sys);

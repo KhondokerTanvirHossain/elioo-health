@@ -232,32 +232,44 @@ class HealthApiContractTest {
     }
 
     /**
-     * PO ruling R3 (2026-10-22): every shape a printed range is stored in, over four series. Creatinine on three papers:
-     * two labs printed two different two-sided ranges (59–104, 62–106), and the third printed none. Total cholesterol
-     * printed one-sided high ({@code <200}) and HDL one-sided low ({@code >40}). Fasting glucose's newer paper put the
-     * whole range in one column ({@code 3.9-6.1}), which the band cannot place; its older paper printed it in two.
+     * PO ruling R3 (2026-10-22, DR-48): every shape a printed range is stored in, over five series, each verdict one the
+     * production rule can store. Creatinine on three papers: two labs printed two different two-sided ranges (59–104,
+     * 62–106), and the third printed none. Total cholesterol printed one-sided high ({@code <200}) and HDL one-sided low
+     * ({@code >40}): the stopgap stores {@code unknown} for a value beside a one-sided range whichever side of it the value
+     * sits ({@code UrgencyService.criticalKind} needs both bounds), so the October and August points are UNKNOWN above,
+     * below and inside their bound. Fasting glucose's newer paper put the whole range in one column ({@code 3.9-6.1}),
+     * which the band cannot place; its older paper printed it in two. Potassium is the band that contradicts its chip.
+     *
+     * <p><b>The threshold path</b>, named because only a signed-off per-marker threshold ({@code perMarkerVerdict}, which
+     * never reads the printed range) can store these: June's creatinine 150 OUTSIDE high with no printed range, June's
+     * cholesterol 240 OUTSIDE high above {@code <200}, June's HDL 35 OUTSIDE low below {@code >40}, and October's
+     * potassium 5.0 CRITICAL high inside its printed 3.5–5.1. August's potassium is a legacy row with a NULL verdict
+     * inside its band.</p>
      */
     static List<Map<String, Object>> labsPrintedRange() {
-        Map<String, Object> creatinineOct = row(LAB_OCT, 71, "2026-10-12", "S. Creatinine", "creatinine", "132", "µmol/L", "59", "104");
-        creatinineOct.put("verdict", "outside");
-        creatinineOct.put("verdict_side", "high");
-        Map<String, Object> cholesterolOct = row(LAB_OCT, 72, "2026-10-12", "Total Cholesterol", "total_cholesterol", "210", "mg/dL", null, "<200");
-        cholesterolOct.put("verdict", "outside");
-        cholesterolOct.put("verdict_side", "high");
-        Map<String, Object> hdlOct = row(LAB_OCT, 73, "2026-10-12", "HDL Cholesterol", "hdl", "38", "mg/dL", ">40", null);
-        hdlOct.put("verdict", "outside");
-        hdlOct.put("verdict_side", "low");
-        Map<String, Object> glucoseOct = row(LAB_OCT, 74, "2026-10-12", "Fasting Glucose", "fasting_glucose", "6.4", "mmol/L", "3.9-6.1", null);
-        Map<String, Object> creatinineAug = row(LAB_AUG, 75, "2026-08-03", "Creatinine", "creatinine", "98", "umol/L", "62", "106");
-        creatinineAug.put("verdict", "inside");
-        Map<String, Object> cholesterolAug = row(LAB_AUG, 76, "2026-08-03", "Total Cholesterol", "total_cholesterol", "180", "mg/dL", null, "<200");
-        cholesterolAug.put("verdict", "inside");
-        Map<String, Object> hdlAug = row(LAB_AUG, 77, "2026-08-03", "HDL Cholesterol", "hdl", "45", "mg/dL", ">40", null);
-        hdlAug.put("verdict", "inside");
-        Map<String, Object> glucoseAug = row(LAB_AUG, 78, "2026-08-03", "Fasting Glucose", "fasting_glucose", "5.2", "mmol/L", "3.9", "6.1");
-        glucoseAug.put("verdict", "inside");
-        Map<String, Object> creatinineJun = row(LAB_UNDATED, 79, "2026-06-20", "Creatinine", "creatinine", "90", "umol/L", null, null);
-        return List.of(creatinineOct, cholesterolOct, hdlOct, glucoseOct, creatinineAug, cholesterolAug, hdlAug, glucoseAug, creatinineJun);
+        Map<String, Object> creatinineOct = verdict(row(LAB_OCT, 71, "2026-10-12", "S. Creatinine", "creatinine", "132", "µmol/L", "59", "104"), "outside", "high");
+        Map<String, Object> cholesterolOct = verdict(row(LAB_OCT, 72, "2026-10-12", "Total Cholesterol", "total_cholesterol", "210", "mg/dL", null, "<200"), "unknown", null);
+        Map<String, Object> hdlOct = verdict(row(LAB_OCT, 73, "2026-10-12", "HDL Cholesterol", "hdl", "38", "mg/dL", ">40", null), "unknown", null);
+        Map<String, Object> glucoseOct = verdict(row(LAB_OCT, 74, "2026-10-12", "Fasting Glucose", "fasting_glucose", "6.4", "mmol/L", "3.9-6.1", null), "unknown", null);
+        Map<String, Object> potassiumOct = verdict(row(LAB_OCT, 82, "2026-10-12", "Potassium", "potassium", "5.0", "mmol/L", "3.5", "5.1"), "critical", "high");
+        Map<String, Object> creatinineAug = verdict(row(LAB_AUG, 75, "2026-08-03", "Creatinine", "creatinine", "98", "umol/L", "62", "106"), "inside", null);
+        Map<String, Object> cholesterolAug = verdict(row(LAB_AUG, 76, "2026-08-03", "Total Cholesterol", "total_cholesterol", "180", "mg/dL", null, "<200"), "unknown", null);
+        Map<String, Object> hdlAug = verdict(row(LAB_AUG, 77, "2026-08-03", "HDL Cholesterol", "hdl", "45", "mg/dL", ">40", null), "unknown", null);
+        Map<String, Object> glucoseAug = verdict(row(LAB_AUG, 78, "2026-08-03", "Fasting Glucose", "fasting_glucose", "5.2", "mmol/L", "3.9", "6.1"), "inside", null);
+        Map<String, Object> potassiumAug = row(LAB_AUG, 83, "2026-08-03", "Potassium", "potassium", "4.2", "mmol/L", "3.5", "5.1");
+        Map<String, Object> creatinineJun = verdict(row(LAB_UNDATED, 79, "2026-06-20", "Creatinine", "creatinine", "150", "umol/L", null, null), "outside", "high");
+        Map<String, Object> cholesterolJun = verdict(row(LAB_UNDATED, 80, "2026-06-20", "Total Cholesterol", "total_cholesterol", "240", "mg/dL", null, "<200"), "outside", "high");
+        Map<String, Object> hdlJun = verdict(row(LAB_UNDATED, 81, "2026-06-20", "HDL Cholesterol", "hdl", "35", "mg/dL", ">40", null), "outside", "low");
+        return List.of(creatinineOct, cholesterolOct, hdlOct, glucoseOct, potassiumOct, creatinineAug, cholesterolAug, hdlAug, glucoseAug,
+                potassiumAug, creatinineJun, cholesterolJun, hdlJun);
+    }
+
+    private static Map<String, Object> verdict(Map<String, Object> row, String verdict, String side) {
+        row.put("verdict", verdict);
+        if (side != null) {
+            row.put("verdict_side", side);
+        }
+        return row;
     }
 
     /** One BP : 130 / 80 line read through extraction: two values, two crops, one line. */
@@ -475,21 +487,61 @@ class HealthApiContractTest {
         Map<String, JsonNode> points = printedRangePoints();
         assertRange(points.get(observation(71)), 59.0, 104.0, "59–104");
         assertRange(points.get(observation(75)), 62.0, 106.0, "62–106");
-        JsonNode creatinine = get(cases().get("labs-printed-range").get()).path("series").get(0);
-        assertThat(creatinine.path("canonical_name").asText()).isEqualTo("creatinine");
+        JsonNode creatinine = null;
+        for (JsonNode series : get(cases().get("labs-printed-range").get()).path("series")) {
+            if (series.path("canonical_name").asText().equals("creatinine")) {
+                creatinine = series;
+            }
+        }
+        assertThat(creatinine).as("the creatinine series").isNotNull();
         assertThat(creatinine.path("points")).as("two printed ranges, still one series").hasSize(3);
     }
 
+    /** A one-sided range carries only that side, beside a point the chip places beyond it (the threshold path). */
     @Test
     void aOneSidedPrintedRangeCarriesOnlyThatSide() throws IOException {
         Map<String, JsonNode> points = printedRangePoints();
-        assertRange(points.get(observation(72)), null, 200.0, "<200");
-        assertRange(points.get(observation(76)), null, 200.0, "<200");
-        assertRange(points.get(observation(73)), 40.0, null, ">40");
-        assertRange(points.get(observation(77)), 40.0, null, ">40");
+        assertRange(points.get(observation(80)), null, 200.0, "<200");
+        assertRange(points.get(observation(81)), 40.0, null, ">40");
     }
 
-    /** The other direction: a paper that printed no range sends all three null, never a default or a table's range. */
+    /**
+     * What the stopgap stores beside a one-sided range is UNKNOWN, above (210 by {@code <200}), below (38 by {@code >40})
+     * or within the bound (180, 45). A one-sided range is never INSIDE (D35), so a region from the axis to 200 behind 180
+     * would say "normal" where the chip says unknown: those points carry the words and no number at all.
+     */
+    @Test
+    void aOneSidedBoundBesideAnUnknownPointIsTextOnly() throws IOException {
+        Map<String, JsonNode> points = printedRangePoints();
+        for (int n : new int[] {72, 76}) {
+            assertThat(points.get(observation(n)).path("kind").asText()).isEqualTo("unknown");
+            assertRange(points.get(observation(n)), null, null, "<200");
+        }
+        for (int n : new int[] {73, 77}) {
+            assertThat(points.get(observation(n)).path("kind").asText()).isEqualTo("unknown");
+            assertRange(points.get(observation(n)), null, null, ">40");
+        }
+    }
+
+    /**
+     * The band agrees with the point's chip or carries no number, by the paper page's pin rule (PaperDisplay.drawnBand),
+     * so React never judges it. Potassium 5.0 is CRITICAL by a threshold inside its printed 3.5–5.1: a red point inside
+     * the pale "normal" band. Potassium 4.2 has a NULL verdict inside it: an UNKNOWN chip the band would contradict.
+     */
+    @Test
+    void aBandThatContradictsThePointsChipIsSentAsTextOnly() throws IOException {
+        Map<String, JsonNode> points = printedRangePoints();
+        assertThat(points.get(observation(82)).path("kind").asText()).isEqualTo("critical");
+        assertRange(points.get(observation(82)), null, null, "3.5–5.1");
+        assertThat(points.get(observation(83)).path("kind").asText()).isEqualTo("unknown");
+        assertRange(points.get(observation(83)), null, null, "3.5–5.1");
+    }
+
+    /**
+     * The other direction: a paper that printed no range sends all three null, never a default or a table's range, nor
+     * its neighbour's. June's creatinine is OUTSIDE high (150), so a leaked 59–104 or August's 62–106 would agree with its
+     * chip and be sent: this guard can fail on that leak.
+     */
     @Test
     void aPointWithNoPrintedRangeSendsAllThreeNull() throws IOException {
         Map<String, JsonNode> points = printedRangePoints();

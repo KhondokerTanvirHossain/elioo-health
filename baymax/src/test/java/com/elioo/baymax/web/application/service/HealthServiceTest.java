@@ -92,27 +92,60 @@ class HealthServiceTest {
     }
 
     /**
-     * PO ruling R3: each point carries the range its own paper printed, read off its own stored row, both ways. Two
-     * papers printing two ranges keep two ranges in one series; a paper that printed none carries none, not its
-     * neighbour's.
+     * PO ruling R3 (DR-48): each point carries the range its own paper printed, read off its own stored row, both ways.
+     * Two papers printing two ranges keep two ranges in one series; a paper that printed none carries none, not its
+     * neighbour's. The June point is flagged OUTSIDE high by a signed-off threshold with no printed range, so a range
+     * leaked onto it — a default, or August's 62–106 carried down the series — would agree with its chip and be drawn:
+     * this guard can see that leak, which an UNKNOWN point (whose numbers are withheld anyway) could not.
      */
     @Test
     void eachPointCarriesTheRangeItsOwnPaperPrinted() {
         Map<String, Object> oct = row(doc(), "2026-10-01", "Creatinine", "creatinine", "132", "umol/L");
         oct.put("ref_low", "59");
         oct.put("ref_high", "104");
+        verdict(oct, "outside", "high");
         Map<String, Object> aug = row(doc(), "2026-08-01", "Creatinine", "creatinine", "98", "umol/L");
         aug.put("ref_low", "62");
         aug.put("ref_high", "106");
-        Map<String, Object> jun = row(doc(), "2026-06-01", "Creatinine", "creatinine", "90", "umol/L");
-        Map<String, Object> cholesterol = row(doc(), "2026-06-01", "Total Cholesterol", "total_cholesterol", "180", "mg/dL");
+        verdict(aug, "inside", null);
+        Map<String, Object> jun = row(doc(), "2026-06-01", "Creatinine", "creatinine", "150", "umol/L");
+        verdict(jun, "outside", "high");
+        Map<String, Object> cholesterol = row(doc(), "2026-06-01", "Total Cholesterol", "total_cholesterol", "240", "mg/dL");
         cholesterol.put("ref_high", "<200");
+        verdict(cholesterol, "outside", "high");
         HealthUseCase.HealthLabs labs = labs(oct, aug, jun, cholesterol);
         LabSeries creatinine = labs.series().stream().filter(s -> s.canonicalName().equals("creatinine")).findFirst().orElseThrow();
         assertThat(creatinine.points()).extracting(LabSeries.Point::range).containsExactly(
                 new PrintedBand(59.0, 104.0, "59–104"), new PrintedBand(62.0, 106.0, "62–106"), PrintedBand.NONE);
         LabSeries total = labs.series().stream().filter(s -> s.canonicalName().equals("total_cholesterol")).findFirst().orElseThrow();
         assertThat(total.points().get(0).range()).isEqualTo(new PrintedBand(null, 200.0, "<200"));
+    }
+
+    /**
+     * The point's band agrees with its chip or carries no number (PaperDisplay.drawnBand, the pin's rule): React never
+     * judges it. A CRITICAL by threshold inside its printed band, and a NULL verdict inside it, keep only the text.
+     */
+    @Test
+    void aBandThatContradictsThePointsChipIsSentAsTextOnly() {
+        Map<String, Object> critical = row(doc(), "2026-10-01", "Potassium", "potassium", "5.0", "mmol/L");
+        critical.put("ref_low", "3.5");
+        critical.put("ref_high", "5.1");
+        verdict(critical, "critical", "high");
+        Map<String, Object> legacy = row(doc(), "2026-08-01", "Potassium", "potassium", "4.2", "mmol/L");
+        legacy.put("ref_low", "3.5");
+        legacy.put("ref_high", "5.1");
+        LabSeries potassium = labs(critical, legacy).series().get(0);
+        assertThat(potassium.points()).extracting(LabSeries.Point::kind)
+                .containsExactly(com.elioo.baymax.outbound.domain.ValueVerdict.Kind.CRITICAL, com.elioo.baymax.outbound.domain.ValueVerdict.Kind.UNKNOWN);
+        assertThat(potassium.points()).extracting(LabSeries.Point::range)
+                .containsExactly(new PrintedBand(null, null, "3.5–5.1"), new PrintedBand(null, null, "3.5–5.1"));
+    }
+
+    private static void verdict(Map<String, Object> row, String verdict, String side) {
+        row.put("verdict", verdict);
+        if (side != null) {
+            row.put("verdict_side", side);
+        }
     }
 
     @Test

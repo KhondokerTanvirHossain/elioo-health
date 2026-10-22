@@ -82,20 +82,69 @@ public final class PaperDisplay {
      * not drawn; the chip keeps the stored verdict either way.
      */
     public static OptionalDouble pin(ValueVerdict.Kind kind, Map<String, Object> v, String storedSide) {
+        return bandAgrees(kind, v, storedSide) ? PrintedRange.pinPercent(v) : OptionalDouble.empty();
+    }
+
+    /**
+     * Whether a picture of the row's two-sided printed range agrees with its verdict: the one rule the paper page's
+     * range bar ({@link #pin}) and the trend's band ({@link #drawnBand}) both read, so they can never tell two stories.
+     * UNKNOWN never agrees; INSIDE must sit in the band; OUTSIDE and CRITICAL outside it on the stored side. False
+     * whenever {@link PrintedRange#pinPercent} cannot place the value (a bound, a unit, an inverted range...).
+     */
+    public static boolean bandAgrees(ValueVerdict.Kind kind, Map<String, Object> v, String storedSide) {
         if (kind == ValueVerdict.Kind.UNKNOWN) {
-            return OptionalDouble.empty();
+            return false;
         }
         OptionalDouble p = PrintedRange.pinPercent(v);
         if (p.isEmpty()) {
-            return p;
+            return false;
         }
         double at = p.getAsDouble();
         boolean inBand = at >= 25 && at <= 75;
         if (inBand != (kind == ValueVerdict.Kind.INSIDE)) {
-            return OptionalDouble.empty();
+            return false;
         }
         boolean otherSide = ("high".equals(storedSide) && at < 25) || ("low".equals(storedSide) && at > 75);
-        return otherSide ? OptionalDouble.empty() : p;
+        return !otherSide;
+    }
+
+    /**
+     * The printed range a trend point sends (PO ruling R3, DR-48): {@link PrintedBand#of} the row, with its numbers kept
+     * only when the picture agrees with the point's chip, else {@link PrintedBand#textOnly}. React draws what this
+     * leaves and never judges it.
+     * <ul>
+     *   <li>Both numbers: kept when {@link #bandAgrees}, the paper page's pin rule. A CRITICAL by a signed-off threshold
+     *       (which never reads the printed range) inside its printed band, or an UNKNOWN inside it, sends no number.</li>
+     *   <li>One number (a one-sided range, never INSIDE by D35): kept only beside an OUTSIDE or CRITICAL beyond that
+     *       bound on the stored side (above a high, below a low). An UNKNOWN point beside it sends no number, so no region
+     *       from the axis to the bound can read as "normal" where the chip says unknown.</li>
+     *   <li>No number, or nothing printed: unchanged, so nothing printed stays all three null.</li>
+     * </ul>
+     */
+    public static PrintedBand drawnBand(ValueVerdict.Kind kind, Map<String, Object> v, String storedSide) {
+        PrintedBand printed = PrintedBand.of(v.get("ref_low"), v.get("ref_high"));
+        if (printed.low() == null && printed.high() == null) {
+            return printed;
+        }
+        boolean agrees = printed.low() != null && printed.high() != null
+                ? bandAgrees(kind, v, storedSide)
+                : edgeAgrees(kind, v, storedSide, printed);
+        return agrees ? printed : printed.textOnly();
+    }
+
+    /** A lone bound beside an OUTSIDE or CRITICAL value strictly beyond it, on the stored side. */
+    private static boolean edgeAgrees(ValueVerdict.Kind kind, Map<String, Object> v, String storedSide, PrintedBand edge) {
+        if (kind != ValueVerdict.Kind.OUTSIDE && kind != ValueVerdict.Kind.CRITICAL) {
+            return false;
+        }
+        Optional<Double> value = PrintedRange.number(v.get("value"));
+        if (value.isEmpty()) {
+            return false;
+        }
+        if (edge.high() != null) {
+            return "high".equals(storedSide) && value.get() > edge.high();
+        }
+        return "low".equals(storedSide) && value.get() < edge.low();
     }
 
     /**

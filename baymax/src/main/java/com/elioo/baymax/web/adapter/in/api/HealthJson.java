@@ -87,7 +87,8 @@ public final class HealthJson {
         m.put("side", p.side());
         m.put("chip_key", PaperDisplay.chipKey(kind, p.side()));
         m.put("crop", ordered("src", ImageRefs.crop(p.documentId(), p.cropKey())));
-        // PO ruling R3, added after every shipped field (A2): the range this paper printed, null when it printed none
+        // PO ruling R3 (DR-48), added after every shipped field (A2): the range this paper printed, numbers only where they
+        // agree with the chip (PaperDisplay.drawnBand), all three null when it printed none
         m.put("ref_low", number(p.range().low()));
         m.put("ref_high", number(p.range().high()));
         m.put("ref_text", p.range().text());

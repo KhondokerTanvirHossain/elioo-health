@@ -157,8 +157,8 @@ describe("TrendChart", () => {
   });
 
   it("noReadingStandsOnABand", () => {
-    // B6's point carries no printed range, so a band could only be a shape that looks like a range and encodes nothing:
-    // an out-of-range reading inside it reads as within range. No band is drawn until the point carries the range.
+    // B6 carries the printed range since RANGE-api (PR 143, PO ruling R3, DR-48); the band is drawn in RANGE-web, which
+    // replaces this test with one that draws a filled band only where both numbers are sent. Until then no band is drawn.
     const banded: string[] = [];
     for (const [name, s] of ALL) {
       const root = draw(s);

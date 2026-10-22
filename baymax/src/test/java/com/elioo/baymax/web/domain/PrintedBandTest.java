@@ -7,7 +7,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * PO ruling R3 (2026-10-22), the API half: the trend's pale band is the range the paper PRINTED for that reading and
+ * PO ruling R3 (2026-10-22, DR-48), the API half: the trend's pale band is the range the paper PRINTED for that reading and
  * nothing else. Both directions, written together: what the stored printed range yields as numbers, and every way it
  * yields none — no printed range is all three null (never a default range), and printed text the band cannot place keeps
  * its words with both numbers null.
@@ -32,14 +32,47 @@ class PrintedBandTest {
     void aOneSidedHighCarriesOnlyItsHigh() {
         assertThat(PrintedBand.of(null, "<200")).isEqualTo(new PrintedBand(null, 200.0, "<200"));
         assertThat(PrintedBand.of(null, "≤ 200")).isEqualTo(new PrintedBand(null, 200.0, "≤ 200"));
-        assertThat(PrintedBand.of(null, "200")).isEqualTo(new PrintedBand(null, 200.0, "200"));
     }
 
     @Test
     void aOneSidedLowCarriesOnlyItsLow() {
         assertThat(PrintedBand.of(">40", null)).isEqualTo(new PrintedBand(40.0, null, ">40"));
-        assertThat(PrintedBand.of(">= 40", null)).isEqualTo(new PrintedBand(40.0, null, ">= 40"));
-        assertThat(PrintedBand.of("40", "  ")).isEqualTo(new PrintedBand(40.0, null, "40"));
+        assertThat(PrintedBand.of(">= 40", "  ")).isEqualTo(new PrintedBand(40.0, null, ">= 40"));
+    }
+
+    /**
+     * A lone signed bound is placed by its sign, not by the column extraction happened to store it in: the extraction
+     * prompt and schema give no rule for which column a one-sided range goes in, and the sign is what the paper printed.
+     * "&lt;200" stored as a LOW is still an upper bound of 200; read as a low it would draw a band above 200.
+     */
+    @Test
+    void aLoneSignedBoundIsPlacedByItsSignWhicheverColumnHoldsIt() {
+        assertThat(PrintedBand.of("<200", null)).isEqualTo(new PrintedBand(null, 200.0, "<200"));
+        assertThat(PrintedBand.of("≤ 200", " ")).isEqualTo(new PrintedBand(null, 200.0, "≤ 200"));
+        assertThat(PrintedBand.of(null, ">40")).isEqualTo(new PrintedBand(40.0, null, ">40"));
+        assertThat(PrintedBand.of(null, ">= 40")).isEqualTo(new PrintedBand(40.0, null, ">= 40"));
+    }
+
+    /**
+     * The other direction of the same rule: a lone bare number says nothing about its side except the column it was
+     * stored in, which nothing checks. "&lt;200" stored as a bare low "200" would draw a band above 200 — the wrong band
+     * R3 exists to prevent — so a lone bare number is text with no number, in either column.
+     */
+    @Test
+    void aLoneBareNumberIsTextWithNoNumberInEitherColumn() {
+        assertThat(PrintedBand.of("200", null)).isEqualTo(new PrintedBand(null, null, "200"));
+        assertThat(PrintedBand.of(null, "200")).isEqualTo(new PrintedBand(null, null, "200"));
+        assertThat(PrintedBand.of("40", "  ")).isEqualTo(new PrintedBand(null, null, "40"));
+        assertThat(PrintedBand.of(" ", "৪০")).isEqualTo(new PrintedBand(null, null, "৪০"));
+    }
+
+    /** Beside a filled other column the columns are a two-sided range, and a sign facing against its column is refused. */
+    @Test
+    void aSignContradictingAFilledOtherColumnSendsNoNumber() {
+        assertThat(PrintedBand.of("<200", "250")).isEqualTo(new PrintedBand(null, null, "<200–250"));
+        assertThat(PrintedBand.of("40", ">100")).isEqualTo(new PrintedBand(null, null, "40–>100"));
+        assertThat(PrintedBand.of(">40", "<200")).as("signs facing their own columns are a two-sided range")
+                .isEqualTo(new PrintedBand(40.0, 200.0, ">40–<200"));
     }
 
     /** The other direction: nothing printed is nothing sent. Never a range from a table, never a default. */
@@ -52,8 +85,7 @@ class PrintedBandTest {
 
     /**
      * Printed text the band cannot place keeps its words and sends no number: a whole range in one column, words, an
-     * ambiguous comma, a bound in the wrong column ("&lt;200" as a LOW bound would draw a band above 200), a unit or a
-     * qualifier, and an inverted or empty range.
+     * ambiguous comma (bare or behind a sign), a unit or a qualifier.
      */
     @ParameterizedTest
     @CsvSource(delimiter = '|', nullValues = "NULL", value = {
@@ -62,8 +94,7 @@ class PrintedBandTest {
             "NULL       | Up to 200 | Up to 200",
             "Negative   | NULL      | Negative",
             "NULL       | 1,23      | 1,23",
-            "<200       | NULL      | <200",
-            "NULL       | >40       | >40",
+            "NULL       | <1,23     | <1,23",
             "NULL       | 200 mg/dL | 200 mg/dL",
             "NULL       | see note  | see note",
     })
