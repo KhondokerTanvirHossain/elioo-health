@@ -1250,3 +1250,50 @@ under them; and a hidden field the family did not choose should not override the
 
 **Supersedes:** D1's refusals for a stale `replaces` (`NOT_FOUND` 404, `NOT_A_RETAKE` 400), in MEDIOO.md and the
 Wave 2b–3 backend plan.
+
+## DR-48 | 2026-10-22 | The PO's rulings R1–R3: "first time" only when no reading exists in any unit, no sheet for a paper not DONE, the calendar's urgency colours, and the trend chart's printed range
+
+**Rulings (PO, 2026-10-22, Tanvir, in the session; each time the recommended option):**
+- **R1, PR #137's two additions (W6-api, the value sheet JSON): approved.** "Yes, say nothing": never claim "first
+  time" unless no earlier reading of the marker exists in any unit. When the history is in another unit only, or the
+  marker is not canonicalised, the sheet says nothing about history (`earlier_line_key` null). "Yes, no sheet": a paper
+  that is not DONE (NEEDS_RETAKE, FAILED, still being read) opens no value sheet: 404 `NOT_FOUND`, and no view is
+  recorded.
+- **R2, the MonthCalendar's NOW and THIS_WEEK day marks are coloured as in the approved prototype** (phone.html, the
+  papers-tab calendar): red, the NOW token, for NOW, and amber for THIS_WEEK. They **keep their shape and their word**:
+  colour is never the only signal, and red stays reserved for NOW.
+- **R3, the TrendChart shows the lab's printed normal range as a pale band behind the line**, using only what the
+  paper printed. A paper that printed no range gets no band.
+
+**What the code does for R2 (PR #144, `feat/medioo-web-calendar-colour`):**
+- A NOW day's octagon is stroked in `--now` (the one NOW red, a fill token checked at 3:1 on bg, bg2 and bg3) and its
+  word in `--now-ink` (a text token). A THIS_WEEK day's calendar shape and word are `--week`, the amber the
+  prototype's calendar dot uses (`#92400e` light, `#ffb340` dark, a text token at 4.5:1 on every surface, so above the
+  3:1 a meaningful shape needs). No new token was needed. The legend's NOW and THIS_WEEK keys carry the same colours.
+- The colours ride on two modifiers per urgency (`month-calendar__alert--now|week` in the cell,
+  `month-calendar__key--now|week` in the legend). They join `NOW_ALLOWED` / `WEEK_ALLOWED` (`src/styles/now-usage.ts`),
+  which the built CSS is judged against. Only MonthCalendar may name them (`src/lint/now-class.test.ts`). MonthCalendar
+  is not a NOW component otherwise: a NOW token or another component's NOW class is still refused there.
+- Asserted on what the browser paints (`catalog.spec.ts`, phone and desktop, light and dark): the marks are those
+  colours, and every other element of the calendar (a routine paper's dot, a doctor's-date ring, a numeral, an empty
+  day) paints neither. A THIS_WEEK day never paints the red.
+
+**Also in that PR:** the calendar's day status (what a screen reader hears) counted "1 papers" in English. The counts
+now have their own keys, `calendar.count.papers|follows.one|other`, and the status sentences take the counted phrases.
+English says "1 paper" and "2 papers". Bangla's two forms are the words the status already used, so the Bangla a
+reader hears is unchanged. These are drafts for the copy owner.
+
+**R1 and R3 are recorded here and built elsewhere.** R2 is built in PR #144. R1 is built in PR #137 (W6-api, the
+value sheet JSON) and in its follow-up, branch `fix/baymax-web-value-sheet-gates` (W6-fix, no PR yet), which puts both
+rules on both value-sheet routes before F6. R3 needs the printed range on B6's series point: an additive field (rule
+A2), written by Java's contract test into the fixtures, built in PR #143 (`feat/baymax-web-api-labs-printed-range`,
+plan RANGE-api); the band in TrendChart, drawn only where that field is present, follows in a later W PR. Until then
+TrendChart draws no band, as W2e-b built it.
+
+**Why:** the prototype the PO approved colours these marks, and a family reads red faster than a shape. Keeping the
+shape and the word keeps the calendar readable for someone who cannot tell red from amber. A band drawn from anything
+but the paper's own printed range would invent a "normal" the lab never stated.
+
+**Supersedes:** the W2e-b note (PR #129) that the calendar's urgency colour was a PO question, and that the NOW and
+THIS_WEEK tokens were not painted in MonthCalendar. Also the W2e-b TrendChart rule "draws no band", which now holds
+only for a series whose papers printed no range.

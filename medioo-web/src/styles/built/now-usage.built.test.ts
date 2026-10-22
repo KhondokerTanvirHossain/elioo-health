@@ -84,9 +84,29 @@ describe("the built CSS", () => {
     expect(usesOf(/var\(\s*--week\b/, /./), "every --week use in the built CSS").toEqual(
       expect.arrayContaining([".verdict-card--week .verdict-card__band background", ".verdict-card--week .verdict-card__band color"]),
     );
+    // R2 (DR-48): the calendar's NOW mark (cell and legend) is the NOW red and its THIS_WEEK mark the amber, shape and
+    // word, so both ship as allowed uses and are judged below.
+    // Judged per token: the shape is the NOW fill red (--now, 3:1) and the word the NOW ink (--now-ink, 4.5:1), so a
+    // shape stroked in --now-ink or a word coloured --now is reported here and not passed as "a NOW token".
+    expect(usesOf(/var\(\s*--now\s*[,)]/, /^\.month-calendar__/), "MonthCalendar's NOW shapes are stroked in --now").toEqual(
+      expect.arrayContaining([
+        ".month-calendar__alert--now .month-calendar__mark--urgency stroke",
+        ".month-calendar__key--now .month-calendar__mark--urgency stroke",
+      ]),
+    );
+    expect(usesOf(/var\(\s*--now-ink\b/, /^\.month-calendar__/), "MonthCalendar's NOW word is coloured --now-ink").toEqual(
+      expect.arrayContaining([".month-calendar__alert--now .month-calendar__alert-word color"]),
+    );
+    expect(usesOf(/var\(\s*--week\b/, /^\.month-calendar__/), "MonthCalendar's THIS_WEEK marks paint with --week").toEqual(
+      expect.arrayContaining([
+        ".month-calendar__alert--week .month-calendar__mark--urgency stroke",
+        ".month-calendar__alert--week .month-calendar__alert-word color",
+        ".month-calendar__key--week .month-calendar__mark--urgency stroke",
+      ]),
+    );
     expect(
-      usesOf(/var\(\s*--week\b/, /./).filter((u) => !u.startsWith(".verdict-card--week ")),
-      "--week used outside .verdict-card--week",
+      usesOf(/var\(\s*--week\b/, /./).filter((u) => !/^\.(verdict-card--week|month-calendar__(alert|key)--week) /.test(u)),
+      "--week used outside .verdict-card--week and the calendar's THIS_WEEK marks",
     ).toEqual([]);
 
     expect(nowUsageViolations(css, NOW_ALLOWED)).toEqual([]);

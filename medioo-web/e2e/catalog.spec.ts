@@ -195,6 +195,127 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
         );
         // And never on the banner Java said not to show.
         expect(result.painted).not.toContain("NowBanner/hidden");
+        // R2 (DR-48): the calendar's NOW marks are among the allowed reds.
+        expect(result.painted).toEqual(expect.arrayContaining(["MonthCalendar/busy-month", "MonthCalendar/crowded-month"]));
+      });
+
+      test("theCalendarPaintsItsNowMarkRedAndItsThisWeekMarkAmberAndNothingElse", async ({ page }) => {
+        // PO ruling R2 (DR-48), on what the browser paints, not on class names: a NOW day's octagon is stroked in --now
+        // and its word in --now-ink; a THIS_WEEK day's calendar shape and word are --week; the legend's keys match;
+        // every other element of the calendar (a routine paper's dot, a doctor's-date ring, a numeral, a day with
+        // nothing) paints neither colour, and a THIS_WEEK day never paints the red. "Paints" covers the washes
+        // (--now-soft, --week-soft) and the doctor's-date ring, which is a box-shadow round the numeral.
+        await open(page);
+        const report = await page.evaluate(() => {
+          const swatch = document.createElement("div");
+          document.body.append(swatch);
+          const resolve = (prop: string, token: string) => {
+            swatch.style.setProperty(prop, `var(${token})`);
+            const value = getComputedStyle(swatch).getPropertyValue(prop);
+            swatch.style.removeProperty(prop);
+            return value;
+          };
+          // The exact values the marks must paint, one per token, so a NOW shape stroked in --now-ink or a NOW word
+          // coloured --now is reported (both are "red" to the sweep below, but not what R2 asked for).
+          const now = resolve("color", "--now");
+          const nowInk = resolve("color", "--now-ink");
+          const week = resolve("color", "--week");
+          // Every spelling of the red and the amber, washes included, for the "nothing else" sweep.
+          const both = (token: string) => [resolve("color", token), resolve("background-color", token)];
+          const reds = [...new Set(["--now", "--now-ink", "--now-soft"].flatMap(both))];
+          const ambers = [...new Set(["--week", "--week-soft"].flatMap(both))];
+          swatch.remove();
+          const PROPS = [
+            "color",
+            "background-color",
+            "fill",
+            "stroke",
+            "border-top-color",
+            "border-right-color",
+            "border-bottom-color",
+            "border-left-color",
+            "outline-color",
+            "text-decoration-color",
+            "box-shadow",
+          ];
+          // A shadow reads "rgb(...) 0px 0px 0px 2px inset", so it is matched by containment; every other property by
+          // its exact value.
+          const SHADOW = new Set(["box-shadow"]);
+          const colourOf = (prop: string, value: string) => {
+            const is = (c: string) => (SHADOW.has(prop) ? value.includes(c) : value === c);
+            return reds.some(is) ? "red" : ambers.some(is) ? "amber" : null;
+          };
+          /** Every element under `root` (itself included) that paints red or amber, as `<tag.class> prop: colour`. */
+          const painted = (root: Element, skip: (e: Element) => boolean = () => false) => {
+            const out: string[] = [];
+            for (const el of [root, ...root.querySelectorAll("*")]) {
+              if (skip(el)) continue;
+              const style = getComputedStyle(el);
+              for (const prop of PROPS) {
+                const colour = colourOf(prop, style.getPropertyValue(prop));
+                if (colour) out.push(`<${el.tagName.toLowerCase()} class="${el.getAttribute("class") ?? ""}"> ${prop}: ${colour}`);
+              }
+            }
+            return out;
+          };
+          const bad: string[] = [];
+          const counts = { now: 0, week: 0, plain: 0, follow: 0, legend: 0 };
+          for (const section of document.querySelectorAll<HTMLElement>('[data-catalog-state^="MonthCalendar/"]')) {
+            const label = `${section.dataset.catalogState} ${section.getAttribute("lang")}`;
+            for (const cell of section.querySelectorAll("td[data-date]")) {
+              const date = cell.getAttribute("data-date");
+              const alert = cell.querySelector<HTMLElement>(".month-calendar__alert");
+              const urgency = alert?.dataset.urgency ?? null;
+              if (urgency === "now" || urgency === "week") {
+                counts[urgency]++;
+                const want = urgency === "now" ? "red" : "amber";
+                const shape = alert!.querySelector("svg")!;
+                const word = alert!.querySelector(".month-calendar__alert-word")!;
+                // Exact tokens: NOW's shape --now and word --now-ink; THIS_WEEK's shape and word --week.
+                const wantShape = urgency === "now" ? now : week;
+                const wantWord = urgency === "now" ? nowInk : week;
+                const stroke = getComputedStyle(shape).stroke;
+                const ink = getComputedStyle(word).color;
+                if (stroke !== wantShape) bad.push(`${label} ${date}: the ${urgency} shape is ${stroke}, not ${wantShape}`);
+                if (ink !== wantWord) bad.push(`${label} ${date}: the ${urgency} word is ${ink}, not ${wantWord}`);
+                if (!word.textContent?.trim()) bad.push(`${label} ${date}: the ${urgency} mark has no word`);
+                // Inside the mark, only its own colour; outside it, neither.
+                for (const p of painted(alert!)) if (!p.endsWith(want)) bad.push(`${label} ${date} in the ${urgency} mark: ${p}`);
+                for (const p of painted(cell, (e) => alert!.contains(e))) bad.push(`${label} ${date} outside the ${urgency} mark: ${p}`);
+              } else {
+                if (cell.querySelector("[data-shape]")) counts.plain++;
+                // A doctor's date is drawn as a ring (a box-shadow) round the numeral; counted on its own so that
+                // direction cannot pass with no such day judged.
+                if (cell.querySelector(".month-calendar__n--follow")) counts.follow++;
+                for (const p of painted(cell)) bad.push(`${label} ${date} (no urgency): ${p}`);
+              }
+            }
+            for (const item of section.querySelectorAll(".month-calendar__legend li")) {
+              counts.legend++;
+              const shape = item.querySelector("svg")?.getAttribute("data-shape");
+              const want = shape === "octagon" ? "red" : shape === "calendar-week" ? "amber" : null;
+              const got = painted(item);
+              if (want === null) for (const p of got) bad.push(`${label} legend ${shape}: ${p}`);
+              else {
+                const stroke = getComputedStyle(item.querySelector("svg")!).stroke;
+                const wantStroke = want === "red" ? now : week;
+                if (stroke !== wantStroke) bad.push(`${label} legend ${shape} is ${stroke}, not ${wantStroke}`);
+                for (const p of got) if (!p.endsWith(want)) bad.push(`${label} legend ${shape}: ${p}`);
+              }
+            }
+          }
+          return { bad, counts, now, nowInk, week };
+        });
+        expect(report.bad).toEqual([]);
+        // Guards: the tokens resolved to three different colours, and NOW days, THIS_WEEK days, marked days without an
+        // urgency (a routine paper, a doctor's date), doctor's dates on their own and legends were all judged, so the
+        // empty list is not vacuous.
+        expect(new Set([report.now, report.nowInk, report.week]).size, "now, now-ink and week are distinct").toBe(3);
+        expect(report.counts.follow, "doctor's dates without an urgency judged").toBeGreaterThan(0);
+        expect(report.counts.now, "NOW days judged").toBeGreaterThan(0);
+        expect(report.counts.week, "THIS_WEEK days judged").toBeGreaterThan(0);
+        expect(report.counts.plain, "marked days without an urgency judged").toBeGreaterThan(0);
+        expect(report.counts.legend, "legend keys judged").toBeGreaterThan(0);
       });
 
       test("everyFieldAndTrackDrawsTheBoundary", async ({ page }) => {
