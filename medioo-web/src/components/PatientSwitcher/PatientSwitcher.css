@@ -1,0 +1,92 @@
+/* The patient switcher (PatientSwitcher.tsx): the toolbar's button naming whose papers are shown, and the sheet's list
+   of patients. A long name wraps inside the button; it never widens the toolbar. The current patient is marked by the
+   selection ground and bold type, the urgent one by its red mark (UrgentMark), never by colour alone. */
+.patient-switcher {
+  min-width: 0;
+}
+.patient-switcher__button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  min-height: var(--target-min);
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--label);
+  font-family: var(--font-bn);
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: start;
+  cursor: pointer;
+}
+.patient-switcher__button:hover {
+  background: var(--hover);
+}
+.patient-switcher__label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.patient-switcher__chevron {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.patient-switcher__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.patient-switcher__option {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  width: 100%;
+  min-height: var(--target-min);
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--label);
+  font-family: var(--font-bn);
+  font-size: var(--text-lg);
+  line-height: 1.4;
+  text-align: start;
+  cursor: pointer;
+}
+.patient-switcher__option:hover {
+  background: var(--hover);
+}
+.patient-switcher__option[aria-current="true"] {
+  background: var(--selbg);
+  font-weight: 700;
+}
+.patient-switcher__option:disabled {
+  cursor: progress;
+}
+.patient-switcher__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.patient-switcher__status {
+  margin: var(--space-3) 0 0;
+  color: var(--label);
+  font-size: var(--text-md);
+  line-height: 1.5;
+}
+.patient-switcher__button:focus-visible,
+.patient-switcher__option:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}

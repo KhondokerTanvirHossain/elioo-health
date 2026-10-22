@@ -1,0 +1,24 @@
+/* The patient's red mark (UrgentMark.tsx): the NOW red as a filled octagon, and the word beside it in --now-ink, the
+   NOW text colour the contrast test holds at 4.5:1 in both themes. It wraps with the name it follows and never widens
+   the row it sits in. */
+.urgent-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: 100%;
+  color: var(--now-ink);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  line-height: 1.4;
+}
+.urgent-mark__dot {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  fill: var(--now);
+}
+.urgent-mark__word {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

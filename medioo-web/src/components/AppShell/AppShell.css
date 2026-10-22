@@ -1,0 +1,201 @@
+/* The shell (AppShell.tsx; desktop.html scene `app`, phone.html scene `chat`). Three layouts, one document:
+   - below 900 px: the toolbar, the page's main, the tab bar fixed at the bottom (main leaves room for it); no sidebar,
+     and the conversation aside is not shown (each phone page is one column);
+   - 900 to 1199 px: no tab bar; the sidebar is hidden until the toolbar's button marks it data-open, and then lies over
+     the page at its 256 px; the aside sits beside main at 400 px;
+   - 1200 px and wider: three columns, sidebar 256 · main · aside 400, the sidebar always there and the button gone.
+   The banner slot (the NOW banner, W5) is above everything at every width. Every size is a token; nothing is red. */
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--label);
+}
+.app-shell__banner {
+  padding: var(--space-3) var(--space-3) 0;
+}
+.app-shell__frame {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+}
+.app-shell__column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.app-shell__toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: 56px;
+  padding: var(--space-1) var(--space-3);
+  border-bottom: 1px solid var(--sep);
+  background: var(--bar);
+}
+/* At the toolbar's far end: the sidebar, open over the page at 256 px from the left, never covers it. */
+.app-shell__menu {
+  display: none;
+  flex: none;
+  margin-inline-start: auto;
+  align-items: center;
+  justify-content: center;
+  width: var(--target-min);
+  height: var(--target-min);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--label);
+  cursor: pointer;
+}
+.app-shell__menu:hover {
+  background: var(--hover);
+}
+.app-shell__menu-icon {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.app-shell__main {
+  flex: 1;
+  min-width: 0;
+  /* the fixed tab bar's height (a 48 px tab and its padding), so the page's last line is never under it */
+  padding-bottom: calc(var(--target-primary) + var(--space-5));
+}
+.app-shell__aside {
+  display: none;
+  min-width: 0;
+}
+.app-shell__tabs {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 10;
+  padding: var(--space-1) var(--space-2) max(var(--space-1), env(safe-area-inset-bottom));
+  border-top: 1px solid var(--sep);
+  background: var(--bar);
+}
+
+/* The sidebar: the wordmark, the tabs as a rail, whose account this is, and sign out at the foot. */
+.app-shell__sidebar {
+  display: none;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-4) var(--space-3);
+  border-right: 1px solid var(--sep);
+  background: var(--side);
+  overflow-y: auto;
+}
+.app-shell__brand {
+  padding: 0 var(--space-2);
+}
+.app-shell__account {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: auto;
+  padding: var(--space-3) var(--space-2) 0;
+  border-top: 1px solid var(--sep);
+}
+.app-shell__owner {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.app-shell__sign-out {
+  align-self: flex-start;
+  min-height: var(--target-min);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--tint-ink);
+  font-family: var(--font-bn);
+  font-size: var(--text-md);
+  font-weight: 600;
+  cursor: pointer;
+}
+.app-shell__sign-out:hover {
+  background: var(--hover);
+}
+.app-shell__sign-out:disabled {
+  cursor: progress;
+}
+.app-shell__status {
+  margin: 0;
+  font-size: var(--text-md);
+  line-height: 1.5;
+}
+.app-shell__menu:focus-visible,
+.app-shell__sign-out:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+@media (min-width: 900px) {
+  .app-shell__tabs {
+    display: none;
+  }
+  .app-shell__main {
+    padding-bottom: 0;
+  }
+  .app-shell__menu {
+    display: inline-flex;
+  }
+  .app-shell--aside .app-shell__frame {
+    grid-template-columns: minmax(0, 1fr) var(--conversation-w);
+  }
+  .app-shell__aside {
+    display: block;
+    border-left: 1px solid var(--sep);
+    background: var(--bg3);
+  }
+  /* Shown by the toolbar's button: over the page, at its own width, the full height of the window, the page behind it
+     dimmed by the scrim token (a shadow, which takes no press: the button under it still closes the sidebar). */
+  .app-shell__sidebar[data-open] {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 20;
+    display: flex;
+    width: var(--sidebar-w);
+    box-shadow: 0 0 0 100vmax var(--scrim);
+  }
+}
+
+@media (min-width: 1200px) {
+  .app-shell__menu {
+    display: none;
+  }
+  .app-shell__frame {
+    grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  }
+  .app-shell--aside .app-shell__frame {
+    grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--conversation-w);
+  }
+  .app-shell__sidebar,
+  .app-shell__sidebar[data-open] {
+    position: sticky;
+    top: 0;
+    z-index: auto;
+    display: flex;
+    width: auto;
+    height: 100dvh;
+    box-shadow: none;
+  }
+}

@@ -108,17 +108,27 @@ WEB_PROBE_TIMEOUT_S="${WEB_PROBE_TIMEOUT_S:-5}"        # one try: docker exec, a
 # starts at 1, so a hung server, or a path that reaches neither exit, fails rather than passing or stalling.
 WEB_PROBE="process.exitCode=1;const t=process.argv[1];fetch('http://127.0.0.1:3000/app/healthz',{signal:AbortSignal.timeout(2000)}).then(r=>r.ok?r.json():Promise.reject(r.status)).then(j=>process.exit(t&&j&&j.service==='medioo-web'&&j.sha===t&&j.build===t?0:1)).catch(()=>process.exit(1))"
 
-# The catalog probe (plan W2c), run inside the container as `node -e "$WEB_CATALOG_PROBE"` once WEB_PROBE has passed.
-# The component catalog (/app/catalog-test) exists only in a build made with MEDIOO_CATALOG=1; the image that ships
-# must answer it 404 with no catalog state in the body. It is measured on the container that ships because that is
-# the only artefact the claim is about. It prints what it saw on stdout and has three outcomes:
-#   exit 0, "status=404 states=no"         the catalog is not served: pass
-#   exit 1, "status=<n> states=<yes|no>"   a definitive answer that is not that (a 200, a 404 that renders states):
-#                                          a property of the image, so it fails at once, never retried
-#   exit 3, "no-answer <error name>"       no answer within 2 s (TimeoutError) or nothing listening (TypeError): the
-#                                          first React render in a new container can be slow, so it is retried
-# exitCode starts at 3, so a path that reaches no exit counts as no answer: retried, then failed at the deadline.
-WEB_CATALOG_PROBE="process.exitCode=3;fetch('http://127.0.0.1:3000/app/catalog-test',{signal:AbortSignal.timeout(2000)}).then(r=>r.text().then(b=>{const s=b.includes('data-catalog-state');console.log('status='+r.status+' states='+(s?'yes':'no'));process.exit(r.status===404&&!s?0:1)})).catch(e=>{console.log('no-answer '+((e&&e.name)||'error'));process.exit(3)})"
+# The catalog-only pages (plans W2c, W4): pages that exist only in a build made with MEDIOO_CATALOG=1, the component
+# catalog and the shell's board page. The one list: the catalog probe below fetches every page in it, and
+# medioo-web's routes.built.test.ts and catalog-off.spec.ts read it from this line, so a page added here is probed,
+# left out of NEXT_PAGES and checked as a 404 in the production build, and a page left out of it fails the first.
+WEB_CATALOG_PAGES="/app/catalog-test /app/shell-test"
+
+# The catalog probe, run inside the container as `node -e "$WEB_CATALOG_PROBE" <page>...` (WEB_CATALOG_PAGES) once
+# WEB_PROBE has passed. The image that ships must answer every catalog-only page 404 with no catalog state in the body.
+# It is measured on the container that ships because that is the only artefact the claim is about. The pages are
+# fetched together, each with its own 2 s deadline, so the probe stays inside one try's bound. It prints what it saw
+# on stdout and has three outcomes:
+#   exit 0, "status=404 states=no"                every page is a 404 without catalog states: pass
+#   exit 1, "<page> status=<n> states=<yes|no>"   a definitive answer that is not that (a 200, a 404 that renders
+#                                                 states), on that page: a property of the image, so it fails at once,
+#                                                 never retried; it wins over a page that gave no answer
+#   exit 3, "<page> no-answer <error name>"       a page gave no answer within 2 s (TimeoutError) or nothing listens
+#                                                 (TypeError): the first React render in a new container can be slow,
+#                                                 so it is retried
+# exitCode starts at 3, so a path that reaches no exit counts as no answer: retried, then failed at the deadline. With
+# no page at all it prints "no-pages" and exits 1: a probe of nothing would pass whatever the image serves.
+WEB_CATALOG_PROBE="process.exitCode=3;const p=process.argv.slice(1);if(!p.length){console.log('no-pages');process.exit(1)}Promise.allSettled(p.map(u=>fetch('http://127.0.0.1:3000'+u,{signal:AbortSignal.timeout(2000)}).then(r=>r.text().then(b=>({st:r.status,s:b.includes('data-catalog-state')}))))).then(rs=>{rs.forEach((x,i)=>{if(x.status==='fulfilled'&&(x.value.st!==404||x.value.s)){console.log(p[i]+' status='+x.value.st+' states='+(x.value.s?'yes':'no'));process.exit(1)}});rs.forEach((x,i)=>{if(x.status==='rejected'){const e=x.reason;console.log(p[i]+' no-answer '+((e&&e.name)||'error'));process.exit(3)}});console.log('status=404 states=no');process.exit(0)})"
 
 # web_start <tag> <network>: the one place medioo-web's `docker run` arguments are written (new and put-back alike).
 # On <network> with no published port (nothing reaches it except through Caddy), no --env-file and no mounts (Node
@@ -136,13 +146,17 @@ web_start() {
     "${WEB_IMAGE}:$1" >/dev/null
 }
 
-# web_wait_healthy <tag>: 0 once WEB_PROBE passes for <tag> and then WEB_CATALOG_PROBE passes. Each try is bounded by
-# WEB_PROBE_TIMEOUT_S (a hung exec or node cannot stall it), the whole wait by WEB_HEALTH_DEADLINE_S of wall clock and
-# by 30 tries, both probes sharing that budget. Once healthz has passed it is not probed again. The catalog probe's
-# definitive answer (exit 1 with "status=…") is not retried: a served catalog is a property of the image, not a slow
-# start. Anything else from it (no answer, a timed-out or refused exec) is retried, and logged as what it was.
+# web_wait_healthy <tag>: 0 once WEB_PROBE passes for <tag> and then WEB_CATALOG_PROBE passes over every page of
+# WEB_CATALOG_PAGES. Each try is bounded by WEB_PROBE_TIMEOUT_S (a hung exec or node cannot stall it), the whole wait by
+# WEB_HEALTH_DEADLINE_S of wall clock and by 30 tries, both probes sharing that budget. Once healthz has passed it is
+# not probed again. The catalog probe's definitive answer (exit 1 with "<page> status=…") is not retried: a served
+# catalog page is a property of the image, not a slow start. Anything else from it (no answer, a timed-out or refused
+# exec) is retried, and logged as what it was, naming the page that gave no answer.
 web_wait_healthy() {
-  local tag="$1" i=0 start=$SECONDS healthy=0 out rc seen=""
+  local tag="$1" i=0 start=$SECONDS healthy=0 out rc seen="" page="" said="" p
+  local -a pages
+  read -ra pages <<< "$WEB_CATALOG_PAGES"
+  for p in "${pages[@]}"; do said="${said:+$said, }$p is a 404"; done
   while [ "$i" -lt 30 ] && [ $((SECONDS - start)) -lt "$WEB_HEALTH_DEADLINE_S" ]; do
     i=$((i + 1))
     if [ "$healthy" = 0 ]; then
@@ -152,26 +166,30 @@ web_wait_healthy() {
       fi
       healthy=1
     fi
-    out="$(timeout "$WEB_PROBE_TIMEOUT_S" docker exec "$WEB_CONTAINER_NAME" node -e "$WEB_CATALOG_PROBE" 2>/dev/null)"
+    out="$(timeout "$WEB_PROBE_TIMEOUT_S" docker exec "$WEB_CONTAINER_NAME" node -e "$WEB_CATALOG_PROBE" "${pages[@]}" 2>/dev/null)"
     rc=$?
     out="${out%%$'\n'*}"
     case "$rc:$out" in
       0:*)
-        log "$WEB_CONTAINER_NAME healthy after $((SECONDS - start))s, try $i (sha ${tag}); /app/catalog-test is a 404"
+        log "$WEB_CONTAINER_NAME healthy after $((SECONDS - start))s, try $i (sha ${tag}); $said"
         return 0 ;;
-      1:status=*)
-        log "ERROR: $WEB_CONTAINER_NAME (sha ${tag}) answers /app/catalog-test with something other than a 404 without catalog states (${out}): an image built with MEDIOO_CATALOG=1 never ships (catalog probe)"
+      "1:/"*" status="*)
+        log "ERROR: $WEB_CONTAINER_NAME (sha ${tag}) answers ${out%% *} with something other than a 404 without catalog states (${out#* }): an image built with MEDIOO_CATALOG=1 never ships (catalog probe)"
+        return 1 ;;
+      1:no-pages)
+        log "ERROR: WEB_CATALOG_PAGES names no page, so the catalog probe would pass whatever $WEB_CONTAINER_NAME (sha ${tag}) serves (catalog probe)"
         return 1 ;;
     esac
-    case "$rc" in
-      124) seen="no-answer: exec timed out after ${WEB_PROBE_TIMEOUT_S}s" ;;
-      *) seen="${out:-no output, exit $rc}" ;;
+    case "$rc:$out" in
+      124:*) page="$WEB_CATALOG_PAGES"; seen="no-answer: exec timed out after ${WEB_PROBE_TIMEOUT_S}s" ;;
+      *:/*) page="${out%% *}"; seen="${out#* }" ;;
+      *) page="$WEB_CATALOG_PAGES"; seen="${out:-no output, exit $rc}" ;;
     esac
-    log "$WEB_CONTAINER_NAME catalog probe got no answer from /app/catalog-test (${seen}), try $i; retrying"
+    log "$WEB_CONTAINER_NAME catalog probe got no answer from $page (${seen}), try $i; retrying"
     sleep 2
   done
   if [ "$healthy" = 1 ]; then
-    log "ERROR: $WEB_CONTAINER_NAME (sha ${tag}) passed /app/healthz but /app/catalog-test gave no answer in ${WEB_HEALTH_DEADLINE_S}s (last: ${seen}) (catalog probe)"
+    log "ERROR: $WEB_CONTAINER_NAME (sha ${tag}) passed /app/healthz but ${page:-$WEB_CATALOG_PAGES} gave no answer in ${WEB_HEALTH_DEADLINE_S}s (last: ${seen}) (catalog probe)"
   fi
   return 1
 }

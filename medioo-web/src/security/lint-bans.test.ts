@@ -84,6 +84,34 @@ const BANNED: [string, string, string, string?][] = [
   // No screen text is logged (plan W3): src/api, the pages and the components call no console.* at all.
   ["console.log in src is refused", "export const L = (x: string) => { console.log(x); return null; };\n", "no-console", "src/api/lint-fixture.ts"],
   ["console.error in a page is refused", "export const L = (x: string) => { console.error(x); return null; };\n", "no-console"],
+  // No prefetch (plan W4): a prefetched paper is a GET /app/api/documents/{id}, a DOCUMENT_VIEW nobody made. Every
+  // next/link <Link> says prefetch={false}; leaving it out, or any other value, is refused, in safety/ too.
+  [
+    "a Link without prefetch={false} is refused",
+    'import Link from "next/link";\nexport const P = () => <Link href="/app/home">x</Link>;\n',
+    "no-restricted-syntax",
+  ],
+  [
+    "a Link with prefetch={true} is refused",
+    'import Link from "next/link";\nexport const P = () => <Link href="/app/home" prefetch={true}>x</Link>;\n',
+    "no-restricted-syntax",
+  ],
+  [
+    "a Link with a bare prefetch is refused",
+    'import Link from "next/link";\nexport const P = () => <Link href="/app/home" prefetch>x</Link>;\n',
+    "no-restricted-syntax",
+  ],
+  [
+    "a Link under another name without prefetch={false} is refused",
+    'import Go from "next/link";\nexport const P = () => <Go href="/app/home">x</Go>;\n',
+    "no-restricted-syntax",
+  ],
+  [
+    "a Link without prefetch={false} under src/components/safety is refused",
+    'import Link from "next/link";\nexport const P = () => <Link href="/app/home">x</Link>;\n',
+    "no-restricted-syntax",
+    "src/components/safety/lint-fixture.tsx",
+  ],
   // src/copy/** may import the generated copy, but its override must not lift the other bans there.
   ["next/image under src/copy", `import Image from "next/image";\nexport const H = Image;\n`, "no-restricted-imports", "src/copy/lint-fixture.ts"],
   [
@@ -117,6 +145,20 @@ describe("lint bans", () => {
         `import { t, type CopyKey } from "@/copy";\nexport const K = (p: { k: CopyKey }) => <p>{t("bn", p.k)} {t("bn", "now.notdoctor")}</p>;\n`,
       ),
     ).toEqual([]);
+  }, 30_000);
+
+  it("a Link with prefetch={false} is clean", async () => {
+    expect(
+      await errorsIn('import Link from "next/link";\nexport const P = () => <Link href="/app/home" prefetch={false}>x</Link>;\n'),
+    ).toEqual([]);
+    expect(
+      await errorsIn(
+        'import Link from "next/link";\nexport const P = () => <Link prefetch={false} href="/app/home">x</Link>;\n',
+        "src/components/safety/lint-fixture.tsx",
+      ),
+    ).toEqual([]);
+    // Only next/link's component is judged: a component of ours that happens to be called Link is not.
+    expect(await errorsIn('const Link = (p: { href: string }) => <a href={p.href}>x</a>;\nexport const P = () => <Link href="/app/home" />;\n')).toEqual([]);
   }, 30_000);
 
   it.each(BANNED)("reports %s", async (_name, code, rule, file) => {

@@ -1,0 +1,18 @@
+/* The catalog-only shell page (page.tsx): each slot drawn as a dashed box filling its column, so the board shows where a
+   screen's main and aside go. */
+.shell-test__slot {
+  display: flex;
+  align-items: flex-start;
+  min-height: 320px;
+  margin: var(--space-4);
+  padding: var(--space-4);
+  border: 2px dashed var(--boundary);
+  border-radius: var(--radius-lg);
+}
+.shell-test__name {
+  margin: 0;
+  color: var(--label2);
+  font-family: var(--font-mono);
+  font-size: var(--text-md);
+  font-weight: 400;
+}

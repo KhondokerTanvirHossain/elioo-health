@@ -8,7 +8,7 @@ import type { CopyKey } from "@/copy";
  * at run time the literal values a JSON import widens to `string` (a gate, a level, a kind) against the unions below.
  * Fields are snake_case, as Java sends them.
  *
- * The one exception is MePatient: there is no generated fixtures/api/me/ yet, so nothing pins it (see its comment).
+ * GET /app/api/me is pinned the same way (MeJson, plan W4).
  */
 
 /** A JSON import's view of `T`: every string literal (a union, a CopyKey) widened to `string`, as resolveJsonModule types it. */
@@ -195,9 +195,8 @@ export type NowBannerJson = {
 
 /**
  * One patient of GET /app/api/me (baymax MeApiHandler: PatientJson's fields, then the name forms and the red mark).
- * NOT pinned by a fixture: there is no generated fixtures/api/me/ yet (a MeApiContractTest is pending for W4/W5), so
- * these fields are read off MeApiHandler's source, in its order, and can drift unseen. Depend on the fields actually
- * read (NowBanner takes `Pick<MePatient, "id" | "name">`) until a fixture pins the rest.
+ * Pinned by the bodies MeApiContractTest writes (fixtures/api/me/*.json; types.test.ts › everyMeFixtureIsAMeJson
+ * compares every patient key for key). `urgent` is Java's: the patient's attention stack holds a NOW paper.
  */
 export type MePatient = {
   id: string;
@@ -210,6 +209,18 @@ export type MePatient = {
   name_possessive: string;
   name_objective: string;
   urgent: boolean;
+};
+
+/**
+ * GET /app/api/me (plan B1, W4; fixtures/api/me/*.json): who is signed in, the patients this account may see, whose
+ * papers Java remembers in view (`active_patient_id`: the `baymax_patient` cookie if still visible, else the only
+ * patient, else null — ActivePatient.remembered), and whether this family previews the Next screens.
+ */
+export type MeJson = {
+  family: { id: string; owner_name: string };
+  patients: MePatient[];
+  active_patient_id: string | null;
+  preview: boolean;
 };
 
 // ---- GET /app/api/patients/{id}/calendar (B3) and /labs (B6), plan W2e-b ----------------------------------------------

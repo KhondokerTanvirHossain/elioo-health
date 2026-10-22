@@ -33,11 +33,12 @@ answer `service == "medioo-web"` with `sha` (the `GIT_SHA` it was started with) 
 baked into the image) both equal to the tag `deploy.sh` holds. The `build` field is what makes it a check of the
 image: a container started from an image built from another sha cannot pass. Needs coreutils `timeout` (the box has
 `/usr/bin/timeout`).
-Once `/app/healthz` passes, `deploy.sh` runs `WEB_CATALOG_PROBE` inside the container (plan W2c). The component
-catalog `/app/catalog-test` exists only in an image built with `MEDIOO_CATALOG=1`, so the image that ships must
-answer it 404 with no `data-catalog-state` in the body. The probe prints what it saw and has three outcomes:
-`status=404 states=no` passes. A definitive other answer (`status=200 …`, or a 404 whose body renders states) fails
-at once and is not retried, because a served catalog is a property of the image. No answer (`no-answer TimeoutError`
+Once `/app/healthz` passes, `deploy.sh` runs `WEB_CATALOG_PROBE` inside the container (plans W2c, W4) over every
+page of `WEB_CATALOG_PAGES` (today the component catalog `/app/catalog-test` and the shell's board page
+`/app/shell-test`). Those pages exist only in an image built with `MEDIOO_CATALOG=1`, so the image that ships must
+answer each 404 with no `data-catalog-state` in the body. The probe prints what it saw and has three outcomes:
+`status=404 states=no` passes. A definitive other answer on any page (`<page> status=200 …`, or a 404 whose body
+renders states) fails at once and is not retried, because a served catalog page is a property of the image. No answer (`no-answer TimeoutError`
 after its 2 s fetch deadline, `no-answer TypeError` with nothing listening, or a timed-out exec) is retried within the
 same 60 s / 30-try budget. The first React render in a new container (healthz is a route handler and warms nothing)
 can be slow on the shared box, so each retry is logged as `catalog probe got no answer … retrying`.
@@ -47,11 +48,11 @@ can be slow on the shared box, so each retry is logged as `catalog probe got no 
   and the failed container is left in place to inspect (`docker logs medioo-web`).
 - **The catalog probe fails:** the same rollback (exit 1, last 50 log lines, the previous `medioo-web` put back,
   Java untouched), with one of two ERROR lines that name the cause:
-  - `ERROR: medioo-web (sha <sha>) answers /app/catalog-test with something other than a 404 without catalog states
+  - `ERROR: medioo-web (sha <sha>) answers <page> with something other than a 404 without catalog states
     (status=<n> states=<yes|no>): an image built with MEDIOO_CATALOG=1 never ships (catalog probe)`. The image
-    serves the catalog. **Never ship it.** Find out how a catalog build reached the image: `MEDIOO_CATALOG` in the
+    serves a catalog-only page. **Never ship it.** Find out how a catalog build reached the image: `MEDIOO_CATALOG` in the
     Dockerfile or CI's image build, or `.next-catalog` copied into it. Fix that on a PR. Do not retry the deploy.
-  - `ERROR: medioo-web (sha <sha>) passed /app/healthz but /app/catalog-test gave no answer in 60s (last: …) (catalog
+  - `ERROR: medioo-web (sha <sha>) passed /app/healthz but <page> gave no answer in 60s (last: …) (catalog
     probe)`. The server never answered that path. Check `docker logs medioo-web` and `docker stats` (memory against
     the 320 MB cap, and n8n's load). This is not a served catalog. Redeploy once the box has headroom.
 - **No edge network:** `n8n_edge` missing fails the web step (exit 1) before the running `medioo-web` is touched. On

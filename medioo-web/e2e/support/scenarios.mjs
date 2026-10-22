@@ -18,6 +18,8 @@ import { join, resolve } from "node:path";
 export const FIXTURES = resolve(process.env.E2E_FIXTURES ?? join("fixtures", "api"));
 
 const UNAUTHENTICATED = { status: 401, body: { reason: "UNAUTHENTICATED" } };
+/** A mutation Java answers 204 with no body (the active patient, sign-out); no contract fixture writes one. */
+const NO_CONTENT = { status: 204, body: null };
 
 /** A fixture with one field of its body removed (the state Java answers when no public WhatsApp number is set). */
 function without(fixture, field) {
@@ -107,6 +109,28 @@ export const SCENARIOS = {
   // Java failing, for the server-log check: `me` is a 502 (read by the preview gate), and the held-place read is a 500
   // whose body carries a fixture's name and number, which must never reach the Next server log.
   "java-502": { ...SIGN_IN, "GET /app/api/me": { status: 502, body: "bad gateway" } },
+  // The shell (W4), on its catalog-only page /app/shell-test: one patient, two and no choice, none, the longest name,
+  // and a family outside the preview. Choosing a patient is Java's 204 (MeApiHandler.setActivePatient sets the cookie).
+  "me-one": { "GET /app/api/me": "me/one-patient.json", "PUT /app/api/active-patient": NO_CONTENT },
+  "me-two": { "GET /app/api/me": "me/two-patients.json", "PUT /app/api/active-patient": NO_CONTENT },
+  "me-none": { "GET /app/api/me": "me/no-patients.json" },
+  "me-long": { "GET /app/api/me": "me/long-name.json", "PUT /app/api/active-patient": NO_CONTENT },
+  "me-preview-off": { "GET /app/api/me": "me/preview-off.json" },
+  // The session ended while the page was open: the switcher's PUT is a 401, and so is the sign-in page's held-place
+  // read when the browser lands there.
+  "me-two-put-401": {
+    ...SIGN_IN,
+    "GET /app/api/me": "me/two-patients.json",
+    "PUT /app/api/active-patient": UNAUTHENTICATED,
+    "GET /app/api/sign-in/next": UNAUTHENTICATED,
+  },
+  // Signing out: Java's 204 (SignInApiHandler.signOut), then the sign-in page, where the session is gone.
+  "me-one-sign-out": {
+    ...SIGN_IN,
+    "GET /app/api/me": "me/one-patient.json",
+    "POST /app/api/sign-out": NO_CONTENT,
+    "GET /app/api/sign-in/next": UNAUTHENTICATED,
+  },
   "next-500": {
     "GET /app/api/me": "me/one-patient.json",
     "GET /app/api/sign-in/next": {
@@ -134,7 +158,10 @@ export const PAGE_MARKERS = {
 };
 
 /** Each routed scenario's longest twin (`me/long-name.json` and the area's longest fixture), per screen. */
-export const LONGEST = {};
+export const LONGEST = {
+  // The shell (W4): its longest is the longest name (fixtures/api/me/long-name.json) in the toolbar and the sidebar.
+  "me-one": "me-long",
+};
 
 /** The `{status, body}` a scenario value answers first: a fixture file read, a literal as it is. */
 function firstAnswer(value) {

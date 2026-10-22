@@ -49,6 +49,20 @@ const CLIENT_COPY_SYNTAX = [
   { selector: `${CLIENT_FILE} ExportAllDeclaration[source.value=${CLIENT_BANNED}]`, message: CLIENT_COPY_MESSAGE },
 ];
 
+// No prefetch (plan W4): a prefetched paper is a GET /app/api/documents/{id}, which records a DOCUMENT_VIEW nobody made
+// (master W6). In a file that imports next/link, every <Link> says prefetch={false}: leaving it out, a bare `prefetch`
+// (true) or any other value is refused. next/link's default import is called Link, so the JSX check sees every use.
+const NEXT_LINK = 'ImportDeclaration[source.value="next/link"]';
+const LINK_MESSAGE = "a next/link <Link> must say prefetch={false}: a prefetched page is a Java read nobody made (plan W4)";
+const LINK_SYNTAX = [
+  {
+    selector: `Program:has(${NEXT_LINK}) JSXOpeningElement[name.name="Link"]:not(:has(JSXAttribute[name.name="prefetch"] > JSXExpressionContainer > Literal[raw="false"]))`,
+    message: LINK_MESSAGE,
+  },
+  { selector: `${NEXT_LINK} > ImportDefaultSpecifier[local.name!="Link"]`, message: "import next/link as Link (plan W4: the prefetch check reads that name)" },
+  { selector: `${NEXT_LINK} > ImportSpecifier`, message: "import next/link's default export as Link (plan W4: the prefetch check reads that name)" },
+];
+
 const config = [
   {
     ignores: [".next/**", ".next-catalog/**", "node_modules/**", "playwright-report/**", "test-results/**", "next-env.d.ts"],
@@ -68,7 +82,7 @@ const config = [
           patterns: [{ group: ["**/copy/generated/*"], message: GENERATED_COPY_MESSAGE }],
         },
       ],
-      "no-restricted-syntax": ["error", ...GENERATED_COPY_SYNTAX, ...SAFETY_LITERAL_SYNTAX, ...CLIENT_COPY_SYNTAX],
+      "no-restricted-syntax": ["error", ...GENERATED_COPY_SYNTAX, ...SAFETY_LITERAL_SYNTAX, ...CLIENT_COPY_SYNTAX, ...LINK_SYNTAX],
     },
   },
   {
@@ -92,11 +106,11 @@ const config = [
     },
   },
   {
-    // The one place a safety line may be named. An override replaces the rule's options, so the generated-copy and
-    // client-file syntax bans are repeated here or they would lift.
+    // The one place a safety line may be named. An override replaces the rule's options, so the generated-copy,
+    // client-file and Link syntax bans are repeated here or they would lift.
     files: ["src/components/safety/**"],
     rules: {
-      "no-restricted-syntax": ["error", ...GENERATED_COPY_SYNTAX, ...CLIENT_COPY_SYNTAX],
+      "no-restricted-syntax": ["error", ...GENERATED_COPY_SYNTAX, ...CLIENT_COPY_SYNTAX, ...LINK_SYNTAX],
     },
   },
 ];

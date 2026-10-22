@@ -307,6 +307,28 @@ for spec in "catalog-200:200" "catalog-404-states:404-states"; do
   grep -qF "previous medioo-web ($W_RUN) is back and healthy" "$FAKE_DIR/out.log" || fail "$CASE: the restored medioo-web was not checked healthy: $(out)"
 done
 
+# 11b2. (W4) aCatalogShellTestPageFailsTheProbe: every catalog-only page is probed, not only the first. The shell's
+#    board page (/app/shell-test) served by the new image, the component catalog itself a clean 404: exit 1 at once,
+#    the message naming /app/shell-test, the previous medioo-web put back, Java untouched.
+new_case catalog-shell-test
+if run_deploy FAKE_NETWORK=1 FAKE_CATALOG=200 FAKE_CATALOG_PAGE=/app/shell-test FAKE_CATALOG_REF="$WEB:$NEW"; then
+  fail "$CASE: exited 0 though the new medioo-web serves /app/shell-test: $(out)"
+fi
+java_untouched_after_run
+NEW_RUN=$(first_line "$WEB_RUN_RE"); RESTORE_RUN=$(first_line "^docker run .* $WEB:$W_RUN\$")
+[ "$(count_between "${NEW_RUN:-0}" "$RESTORE_RUN" "$CATALOG_EXEC_RE")" = 1 ] \
+  || fail "$CASE: $(count_between "${NEW_RUN:-0}" "$RESTORE_RUN" "$CATALOG_EXEC_RE") catalog probes of the new medioo-web, expected 1"
+grep -qF "medioo-web (sha $NEW) answers /app/shell-test with something other than a 404 without catalog states (status=200 states=yes)" \
+  "$FAKE_DIR/out.log" || fail "$CASE: no catalog probe message naming /app/shell-test: $(out)"
+grep -q "medioo-web healthy .*(sha $NEW)" "$FAKE_DIR/out.log" && fail "$CASE: medioo-web $NEW reported healthy while serving /app/shell-test"
+[ -n "$RESTORE_RUN" ] || fail "$CASE: the previous medioo-web ($W_RUN) was not put back: $(out)"
+web_last_run_is "$W_RUN"
+#    and a healthy deploy names every page it found a 404, so the list it probed is visible in the log
+new_case catalog-pages-named
+run_deploy FAKE_NETWORK=1 || fail "$CASE: deploy.sh failed: $(out)"
+grep -q "medioo-web healthy .*(sha $NEW); /app/catalog-test is a 404, /app/shell-test is a 404$" "$FAKE_DIR/out.log" \
+  || fail "$CASE: the healthy line does not name both catalog-only pages: $(out)"
+
 # 11c. (W2c) the catalog probe got NO answer: the first request in a new container that renders React (healthz is a
 #    route handler and warms nothing) can be slow on the shared, memory-capped box. No answer is not a served
 #    catalog: it is retried within the same deadline and 30-try budget, and only a definitive answer fails at once.
