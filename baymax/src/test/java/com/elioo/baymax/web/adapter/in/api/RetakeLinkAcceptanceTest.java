@@ -3,6 +3,7 @@ package com.elioo.baymax.web.adapter.in.api;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.classic.spi.LoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.elioo.baymax.extraction.application.port.out.DocumentRecordPort;
 import com.elioo.baymax.extraction.domain.Document;
@@ -36,6 +37,7 @@ import java.sql.Statement;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -310,6 +312,21 @@ class RetakeLinkAcceptanceTest {
 
     private interface ThrowingRunnable {
         void run() throws Exception;
+    }
+
+    /**
+     * The guard itself, both directions, no containers: an INFO+ line with a null argument (any logger, any thread, in the
+     * capture window) is read, not crashed on; {@code List.of} rejected it with a NullPointerException, which failed main
+     * at b303f9a for no upload defect. A line whose argument is the id still fails.
+     */
+    @Test
+    void noLineCarriesReadsANullArgumentAndStillCatchesTheId() {
+        UUID id = UUID.randomUUID();
+        Logger logger = (Logger) LoggerFactory.getLogger(RetakeLinkAcceptanceTest.class);
+        ILoggingEvent nullArgument = new LoggingEvent(Logger.FQCN, logger, Level.INFO, "press {} for {}", null, new Object[]{null, "x"});
+        noLineCarries(List.of(nullArgument), id);
+        ILoggingEvent carriesId = new LoggingEvent(Logger.FQCN, logger, Level.INFO, "press {}", null, new Object[]{null, id});
+        assertThatThrownBy(() -> noLineCarries(List.of(carriesId), id)).isInstanceOf(AssertionError.class);
     }
 
     /** The stale paper's id in no INFO+ line: not in the formatted message, not among the arguments (by value). */
