@@ -54,6 +54,41 @@ const codePage = (state, verify = "sign-in/verified.json") => ({
   "POST /app/api/sign-in/verify": verify,
 });
 
+/** A fixture with one field of its body replaced (a share member's view of an owner's paper). */
+function withField(fixture, field, value) {
+  const parsed = JSON.parse(readFileSync(join(FIXTURES, fixture), "utf8"));
+  return { status: parsed.status, body: { ...parsed.body, [field]: value } };
+}
+
+/** The paper every documents fixture is (PaperFixtures.DOC), and the value of the value-sheet fixtures (W6). */
+export const PAPER_ID = "5e9edf6d-0a2a-4913-8675-9d07a4100003";
+export const SHEET_OBS = "7af69ec6-676f-3bb9-b0bb-3e665c36ed57";
+
+const PAPER = "GET /app/api/documents/{id}";
+const STATUS = "GET /app/api/documents/{id}/status";
+const SHEET = "GET /app/api/documents/{id}/values/{obs}";
+const status = (s) => ({ status: 200, body: { status: s } });
+
+/**
+ * A paper page (W6) under `me`: the paper Java sent, the status the reading page polls, and the two delete steps as
+ * Java answers them (B4c: a confirm token, then the report). No contract fixture writes a status, a token or a delete
+ * report, so those are literals in Java's shape (PaperStatusApiHandler, PaperDeleteApiHandler).
+ */
+const paper = (fixture, extra = {}, me = "me/one-patient.json") => ({
+  "GET /app/api/me": me,
+  [PAPER]: fixture,
+  [STATUS]: status("DONE"),
+  "GET /app/api/documents/{id}/delete-token": {
+    status: 200,
+    body: { confirm_token: "e2e-confirm-token", expires_at: "2026-10-20T04:10:00Z" },
+  },
+  "DELETE /app/api/documents/{id}": { status: 200, body: { objects_deleted: 3, rows_deleted: 9 } },
+  ...extra,
+});
+
+/** A value's sheet (W6-api) under `me`. */
+const sheet = (fixture, me = "me/one-patient.json") => ({ "GET /app/api/me": me, [SHEET]: fixture });
+
 export const SCENARIOS = {
   // The sign-in page (W3): nobody signed in.
   "signed-out": { ...SIGN_IN, "GET /app/api/me": "me/unauthenticated.json" },
@@ -138,6 +173,52 @@ export const SCENARIOS = {
       body: { error: `failed for ${patientName("me/one-patient.json")} at ${numberShown("sign-in/confirm.json")}` },
     },
   },
+
+  // The paper (W6), one scenario per state the page draws, each over the fixture Java's contract test wrote.
+  "paper-now-bd": paper("documents/now-bd.json"),
+  "paper-now-abroad": paper("documents/now-abroad.json"),
+  "paper-routine": paper("documents/routine-released.json"),
+  "paper-pending": paper("documents/this-week-pending.json"),
+  "paper-withheld-rejected": paper("documents/withheld-rejected.json"),
+  "paper-failed-safety": paper("documents/failed-safety.json"),
+  "paper-retake-third": paper("documents/retake-third.json"),
+  "paper-failed": paper("documents/failed.json"),
+  "paper-58": paper("documents/fifty-eight-values-multipage.json"),
+  "paper-unassessed": paper("documents/unassessed.json"),
+  // A paper still being read, whose status Java still says is being read; then the same paper once read (the test
+  // switches the scenario cookie between them, as the paper finishing between two polls does).
+  "paper-processing": paper("documents/processing.json", { [STATUS]: status("PROCESSING") }),
+  "paper-processing-done": paper("documents/routine-released.json", { [STATUS]: status("DONE") }),
+  // The longest twins (LONGEST): the longest name in the shell, over the longest paper.
+  "paper-58-long": paper("documents/fifty-eight-values-multipage.json", {}, "me/long-name.json"),
+  // A share member on the owner's paper: Java's `owner: false`, everything else the same body.
+  "paper-retake-share": paper(withField("documents/retake-third.json", "owner", false)),
+  "paper-routine-share": paper(withField("documents/routine-released.json", "owner", false)),
+  // Gone: deleted (by this family or another member) before the page was opened, or raced by another member's delete.
+  "paper-gone": paper("documents/not-found.json"),
+  "paper-delete-raced": paper("documents/routine-released.json", {
+    "DELETE /app/api/documents/{id}": { status: 404, body: { reason: "NOT_FOUND" } },
+  }),
+  // The moment after this family's own delete: the paper Java no longer shows (switched to by the delete test).
+  "paper-deleted": paper("documents/not-found.json"),
+  // A crop whose session ended: the image route sends the browser to sign-in (303), and the status read is a 401.
+  "paper-crop-signed-out": paper("documents/routine-released.json", {
+    [STATUS]: UNAUTHENTICATED,
+    "GET /app/api/sign-in/next": UNAUTHENTICATED,
+    ...SIGN_IN,
+  }),
+  // A family outside the preview on a preview paper: the gate reads `me` and stops before the paper.
+  "paper-preview-off": paper("documents/now-bd.json", {}, "me/preview-off.json"),
+  // Nobody signed in on a paper link, without JavaScript (Review Focus 2): the paper's 307, then the sign-in page.
+  "signed-out-paper": { ...SIGN_IN, "GET /app/api/me": "me/unauthenticated.json", [PAPER]: "documents/now-bd.json" },
+  // One value's sheet, by what Java says about its history (R1).
+  "sheet-earlier-three": sheet("value-sheet/earlier-three.json"),
+  "sheet-earlier-none": sheet("value-sheet/earlier-none.json"),
+  "sheet-no-history": sheet("value-sheet/no-history.json"),
+  "sheet-earlier-other-unit": sheet("value-sheet/earlier-other-unit.json"),
+  "sheet-unknown": sheet("value-sheet/unknown-one-sided.json"),
+  "sheet-not-found": sheet("value-sheet/not-found.json"),
+  "sheet-earlier-three-long": sheet("value-sheet/earlier-three.json", "me/long-name.json"),
 };
 
 export { UNAUTHENTICATED };
@@ -146,6 +227,17 @@ export { UNAUTHENTICATED };
 export const PAGE_SCENARIOS = {
   "/app": "signed-out",
   "/app/verify": "state-pending-not-sent",
+  // W6: the NOW paper (the summary's heaviest state), the longest paper's /all, and a sheet with three earlier readings.
+  "/app/documents/{id}": "paper-now-bd",
+  "/app/documents/{id}/all": "paper-58",
+  "/app/documents/{id}/values/{obs}": "sheet-earlier-three",
+};
+
+/** The address each dynamic NEXT_PAGES entry is measured at: the ids its scenario's fixtures are about. */
+export const PAGE_PATHS = {
+  "/app/documents/{id}": `/app/documents/${PAPER_ID}`,
+  "/app/documents/{id}/all": `/app/documents/${PAPER_ID}/all`,
+  "/app/documents/{id}/values/{obs}": `/app/documents/${PAPER_ID}/values/${SHEET_OBS}`,
 };
 
 /**
@@ -155,12 +247,20 @@ export const PAGE_SCENARIOS = {
 export const PAGE_MARKERS = {
   "/app": 'name="whatsapp_number"',
   "/app/verify": 'name="code"',
+  "/app/documents/{id}": "data-now-block",
+  "/app/documents/{id}/all": 'id="values"',
+  "/app/documents/{id}/values/{obs}": 'id="value-sheet-title"',
 };
 
 /** Each routed scenario's longest twin (`me/long-name.json` and the area's longest fixture), per screen. */
 export const LONGEST = {
   // The shell (W4): its longest is the longest name (fixtures/api/me/long-name.json) in the toolbar and the sidebar.
   "me-one": "me-long",
+  // The paper (W6): the longest name over the longest paper (fifty-eight values on three pages), for the summary and
+  // for /all; and the longest name over the sheet with the most earlier readings.
+  "paper-now-bd": "paper-58-long",
+  "paper-58": "paper-58-long",
+  "sheet-earlier-three": "sheet-earlier-three-long",
 };
 
 /** The `{status, body}` a scenario value answers first: a fixture file read, a literal as it is. */

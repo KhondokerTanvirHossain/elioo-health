@@ -31,9 +31,17 @@ export function previewPath(path: string): string {
  * `NEXT_PAGES` is the list `e2e/budget.spec.ts` measures, every entry against the DR-42 route ceiling in
  * `e2e/budget-ceilings.json` (S9: the ceilings file holds the two numbers, the page list is this). It is held equal to
  * the build's `.next/app-path-routes-manifest.json` by `built/routes.built.test.ts`, minus Next's 404, the probe and
- * the catalog-only pages, so a page cannot be added without being measured.
+ * the catalog-only pages, so a page cannot be added without being measured. A dynamic segment is written `{name}`, as
+ * docs/infra/app-routes.txt spells it (the manifest's `[name]`).
  */
-export const NEXT_PAGES: readonly string[] = ["/app", "/app/verify"];
+export const NEXT_PAGES: readonly string[] = [
+  "/app",
+  "/app/verify",
+  // W6: a paper, everything on it, and one value's sheet.
+  "/app/documents/{id}",
+  "/app/documents/{id}/all",
+  "/app/documents/{id}/values/{obs}",
+];
 
 /** The `GET /app…` page patterns Java serves, as docs/infra/app-routes.txt lists them (routes.test.ts). */
 export const JAVA_PAGES: readonly string[] = [

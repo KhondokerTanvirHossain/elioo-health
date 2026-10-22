@@ -35,12 +35,26 @@ function askedPatient(here: string): string | null {
  *   this stops the page itself, which might read nothing else.
  * - `?patient=` this family does not see: the not-found page (Java's 404). Two or more and no choice: the chooser in
  *   place of `main`, and no patient named anywhere. A screen never decides a patient.
+ * - `patient`, for a page that is about one patient's thing (a paper, W6): that patient, whose id Java sent with the
+ *   thing, in place of `?patient=` and of the remembered choice, so a paper opened from WhatsApp shows the paper and not
+ *   the chooser; `null` for a page about nobody (a paper that is gone), which names nobody and shows no chooser.
  */
-export async function signedInPage({ tab, main, aside }: { tab: Tab | null; main: Slot; aside?: Slot }) {
+export async function signedInPage({
+  tab,
+  main,
+  aside,
+  patient: about,
+}: {
+  tab: Tab | null;
+  main: Slot;
+  aside?: Slot;
+  patient?: string | null;
+}) {
   const { lang, preview, here } = await requestContext();
   const me = signedIn(await javaGet<MeJson>("/app/api/me"), here);
   if (preview && me.preview !== true) notFound();
-  const view = activePatient(me, askedPatient(here));
+  const view: ReturnType<typeof activePatient> =
+    about === undefined ? activePatient(me, askedPatient(here)) : about === null ? { kind: "none" } : activePatient(me, about);
   if (view.kind === "not-found") notFound();
   const patient = view.kind === "patient" ? view.patient : null;
   const ctx: ShellContext = { lang, preview, me, patient };

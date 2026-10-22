@@ -130,6 +130,37 @@ BOARD_SCENES.push(
   },
 );
 
+// The paper (plan W6, master W6's board): every gate state, NOW at home and abroad, the third retake, failed, being
+// read, the multi-page /all, a value's sheet, the delete confirm, and gone. Beside phone.html's `now` and `retake`, and
+// desktop.html's `app` (the paper column).
+const PAPER_PATH = "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003";
+const paperScene = (state: string, scenario: string, scene: string, route = PAPER_PATH, act?: Scene["act"]): Scene => ({
+  screen: "paper",
+  state,
+  route,
+  scenario,
+  proto: scene === "app" ? { file: "desktop.html", scene } : { file: "phone.html", scene },
+  act,
+});
+BOARD_SCENES.push(
+  paperScene("released", "paper-routine", "app"),
+  paperScene("pending", "paper-pending", "app"),
+  paperScene("withheld-rejected", "paper-withheld-rejected", "app"),
+  paperScene("withheld-failed-safety", "paper-failed-safety", "app"),
+  paperScene("now", "paper-now-bd", "now"),
+  paperScene("now-abroad", "paper-now-abroad", "now"),
+  paperScene("retake-third", "paper-retake-third", "retake"),
+  paperScene("failed", "paper-failed", "retake"),
+  paperScene("reading", "paper-processing", "app"),
+  paperScene("all-multipage", "paper-58", "app", `${PAPER_PATH}/all`),
+  paperScene("value-sheet", "sheet-earlier-three", "app", `${PAPER_PATH}/values/7af69ec6-676f-3bb9-b0bb-3e665c36ed57`),
+  paperScene("delete-confirm", "paper-routine", "app", PAPER_PATH, async (page) => {
+    await page.getByRole("button", { name: t("bn", "detail.delete") }).click();
+    await page.locator("dialog:modal").waitFor();
+  }),
+  paperScene("gone", "paper-gone", "app"),
+);
+
 const VIEWPORTS = { phone: { width: 390, height: 844 }, desktop: { width: 1280, height: 800 } } as const;
 // The catalog build's server (playwright.config.ts starts it on the port after the production one).
 const CATALOG_URL = process.env.E2E_CATALOG_URL ?? `http://127.0.0.1:${Number(process.env.E2E_PORT ?? 3217) + 1}`;

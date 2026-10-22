@@ -1,0 +1,118 @@
+{
+  "_meta": {
+    "generated_by": "baymax PaperApiContractTest",
+    "source": "GET /app/api/documents/{id} over the PaperFixtures case failed-safety"
+  },
+  "body": {
+    "banner": {
+      "level": "this_week",
+      "line_key": "urgency.this_week"
+    },
+    "counts": {
+      "line_key": "result.counts",
+      "outside": 1,
+      "values": 2
+    },
+    "date": "2026-10-12",
+    "date_is_upload_day": false,
+    "date_uncertain": false,
+    "doctor": { },
+    "document_type": "lab_report",
+    "facility": "Shapla Diagnostics",
+    "filed": false,
+    "follow_up": [
+      {
+        "crop": {
+          "height": 31,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Ffu-Comebackinaweek.jpg",
+          "width": 130
+        },
+        "due_date": "2026-10-19",
+        "instruction": "Come back in a week"
+      }
+    ],
+    "gate": "FAILED_SAFETY",
+    "id": "5e9edf6d-0a2a-4913-8675-9d07a4100003",
+    "medicines": [
+      {
+        "crop": {
+          "height": 32,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fmed-Napa500.jpg",
+          "width": 140
+        },
+        "dose_text": "1+0+1",
+        "duration_text": "7 days",
+        "frequency_text": "3 times a day",
+        "name": "Napa 500",
+        "timing_text": "after meals"
+      }
+    ],
+    "owner": true,
+    "page_count": 2,
+    "pages": [
+      {
+        "n": 1,
+        "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/page/1"
+      },
+      {
+        "n": 2,
+        "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/page/2"
+      }
+    ],
+    "patient": {
+      "age": 64,
+      "id": "5e9edf6d-0a2a-4913-8675-9d07a4100002",
+      "name": "Ma",
+      "name_objective": "Ma-কে",
+      "name_possessive": "Ma-র"
+    },
+    "printed_date": "2026-10-12",
+    "reasons": [ ],
+    "received_at": "2026-10-20T03:59:00Z",
+    "status": "DONE",
+    "unverified": null,
+    "urgency": "this_week",
+    "values": [
+      {
+        "chip_key": "value.chip.outside.low",
+        "crop": {
+          "height": 30,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Sodium.jpg",
+          "width": 120
+        },
+        "display_kind": "outside",
+        "id": "7e0f2d86-408b-3c71-8ffd-bfd91a5e282b",
+        "in_now_block": false,
+        "name": "Sodium",
+        "pin": 2.0,
+        "ref_high": "145",
+        "ref_low": "135",
+        "side": "low",
+        "unit": "mmol/L",
+        "value": "128"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": null,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Haemoglobin.jpg",
+          "width": null
+        },
+        "display_kind": "inside",
+        "id": "efae053b-a72a-3298-9d84-a304a320cc9c",
+        "in_now_block": false,
+        "name": "Haemoglobin",
+        "pin": 40.7,
+        "ref_high": "15.5",
+        "ref_low": "12.0",
+        "side": null,
+        "unit": "g/dL",
+        "value": "13.1"
+      }
+    ],
+    "viewer": {
+      "bangladesh": true
+    }
+  },
+  "status": 200
+}
