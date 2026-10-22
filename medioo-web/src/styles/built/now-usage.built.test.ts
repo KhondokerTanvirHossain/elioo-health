@@ -86,12 +86,16 @@ describe("the built CSS", () => {
     );
     // R2 (DR-48): the calendar's NOW mark (cell and legend) is the NOW red and its THIS_WEEK mark the amber, shape and
     // word, so both ship as allowed uses and are judged below.
-    expect(usesOf(/var\(\s*--now(-ink)?\b/, /^\.month-calendar__/), "MonthCalendar's NOW marks paint with the NOW tokens").toEqual(
+    // Judged per token: the shape is the NOW fill red (--now, 3:1) and the word the NOW ink (--now-ink, 4.5:1), so a
+    // shape stroked in --now-ink or a word coloured --now is reported here and not passed as "a NOW token".
+    expect(usesOf(/var\(\s*--now\s*[,)]/, /^\.month-calendar__/), "MonthCalendar's NOW shapes are stroked in --now").toEqual(
       expect.arrayContaining([
         ".month-calendar__alert--now .month-calendar__mark--urgency stroke",
-        ".month-calendar__alert--now .month-calendar__alert-word color",
         ".month-calendar__key--now .month-calendar__mark--urgency stroke",
       ]),
+    );
+    expect(usesOf(/var\(\s*--now-ink\b/, /^\.month-calendar__/), "MonthCalendar's NOW word is coloured --now-ink").toEqual(
+      expect.arrayContaining([".month-calendar__alert--now .month-calendar__alert-word color"]),
     );
     expect(usesOf(/var\(\s*--week\b/, /^\.month-calendar__/), "MonthCalendar's THIS_WEEK marks paint with --week").toEqual(
       expect.arrayContaining([

@@ -114,7 +114,13 @@ export function nowRedReport(page: Page, scope: string) {
         "border-bottom-color",
         "border-left-color",
         "outline-color",
+        "text-decoration-color",
+        "box-shadow",
       ];
+      // A box-shadow reads "rgb(...) 0px 0px 0px 2px inset" (a ring), so it is matched by containment; every other
+      // property by its exact value.
+      const isNow = (prop: string, value: string) =>
+        prop === "box-shadow" ? [...now].some((c) => c !== "" && value.includes(c)) : now.has(value);
       const allowed = (el: Element | null): boolean => {
         for (let e = el; e; e = e.parentElement) if ([...e.classList].some((c) => allow.test(`.${c}`))) return true;
         return false;
@@ -129,7 +135,7 @@ export function nowRedReport(page: Page, scope: string) {
           const style = getComputedStyle(el);
           for (const prop of PROPS) {
             const value = style.getPropertyValue(prop);
-            if (!now.has(value)) continue;
+            if (!isNow(prop, value)) continue;
             painted.push(label);
             if (!allowed(el)) bad.push(`${label} <${el.tagName.toLowerCase()} class="${el.getAttribute("class") ?? ""}"> ${prop}: ${value}`);
           }

@@ -56,6 +56,32 @@ const roleMismatches = (file: TokenFile, roles: Map<string, Role>): string[] =>
     return planned === token.role ? [] : [`${name}: role ${token.role}, the plan says ${planned}`];
   });
 
+/**
+ * The pairs the MonthCalendar's urgency marks rely on (R2, DR-48): now and week on bg, bg2 and bg3, every theme and
+ * layout, at 3:1. A pair fails unless its ratio is a number at or above 3, so an unresolved token (a rename, a typo)
+ * fails by name instead of passing as NaN.
+ */
+function calendarMarkFailures(resolved: ReturnType<typeof resolveTokens>): { failures: string[]; judged: number } {
+  const failures: string[] = [];
+  let judged = 0;
+  for (const theme of THEMES) {
+    for (const layout of LAYOUTS) {
+      for (const mark of ["now", "week"]) {
+        for (const surface of ["bg", "bg2", "bg3"]) {
+          judged++;
+          const fg = resolved[theme][layout][mark];
+          const bg = resolved[theme][layout][surface];
+          const ratio = fg === undefined || bg === undefined ? Number.NaN : contrastRatio(fg, bg);
+          if (!(ratio >= 3)) {
+            failures.push(`${theme}/${layout} ${mark} on ${surface} = ${Number.isNaN(ratio) ? "unresolved" : ratio.toFixed(2)}`);
+          }
+        }
+      }
+    }
+  }
+  return { failures, judged };
+}
+
 describe("contrast of the declared pairs", () => {
   it("everyTextTokenClearsFourAndAHalfOnEverySurfaceItIsDeclaredOn", () => {
     const { pairs, failures } = contrastChecks(src, "text", 4.5);
@@ -162,26 +188,26 @@ describe("contrast of the declared pairs", () => {
     // prototype's calendar dot uses), each a meaningful shape, so WCAG 1.4.11's 3:1 applies on bg, bg2 and bg3, in
     // both themes and both layouts. Both are already declared there (now as a fill, week as text at 4.5); this says
     // which pairs the calendar relies on, so a token that drops one of them fails here by name.
-    const resolved = resolveTokens(src);
-    const low: string[] = [];
-    let judged = 0;
-    for (const theme of THEMES) {
-      for (const layout of LAYOUTS) {
-        for (const mark of ["now", "week"]) {
-          for (const surface of ["bg", "bg2", "bg3"]) {
-            const ratio = contrastRatio(resolved[theme][layout][mark]!, resolved[theme][layout][surface]!);
-            judged++;
-            if (ratio < 3) low.push(`${theme}/${layout} ${mark} on ${surface} = ${ratio.toFixed(2)}`);
-          }
-        }
-      }
-    }
-    expect(low).toEqual([]);
+    const { failures, judged } = calendarMarkFailures(resolveTokens(src));
+    expect(failures).toEqual([]);
     expect(judged).toBe(2 * 2 * 2 * 3);
-    // The check can fail: the prototype's lighter dark amber used in the light theme is under 3:1 on white.
+    // The check itself can fail: the same function, given the prototype's lighter dark amber in the light theme,
+    // names the low pairs by value.
     const pale = copy();
     pale.color.week!.light = "#ffb340";
-    expect(contrastRatio(resolveTokens(pale).light.phone.week!, resolveTokens(pale).light.phone.bg!)).toBeLessThan(3);
+    const paleFailures = calendarMarkFailures(resolveTokens(pale)).failures;
+    expect(paleFailures).toEqual([
+      "light/phone week on bg = 1.78",
+      "light/phone week on bg2 = 1.60",
+      "light/phone week on bg3 = 1.78",
+      "light/desktop week on bg = 1.78",
+      "light/desktop week on bg2 = 1.64",
+      "light/desktop week on bg3 = 1.78",
+    ]);
+    // A token that does not resolve fails by name rather than passing as NaN (NaN < 3 is false).
+    const missing = resolveTokens(src);
+    delete missing.dark.desktop.week;
+    expect(calendarMarkFailures(missing).failures).toEqual(["bg", "bg2", "bg3"].map((s) => `dark/desktop week on ${s} = unresolved`));
   });
 
   it("everySurfaceMeansEverySurfaceTokenIncludingOnesAddedLater", () => {

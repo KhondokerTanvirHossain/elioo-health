@@ -1265,7 +1265,7 @@ Wave 2b–3 backend plan.
 - **R3, the TrendChart shows the lab's printed normal range as a pale band behind the line**, using only what the
   paper printed. A paper that printed no range gets no band.
 
-**What the code does for R2 (PR `feat/medioo-web-calendar-colour`):**
+**What the code does for R2 (PR #144, `feat/medioo-web-calendar-colour`):**
 - A NOW day's octagon is stroked in `--now` (the one NOW red, a fill token checked at 3:1 on bg, bg2 and bg3) and its
   word in `--now-ink` (a text token). A THIS_WEEK day's calendar shape and word are `--week`, the amber the
   prototype's calendar dot uses (`#92400e` light, `#ffb340` dark, a text token at 4.5:1 on every surface, so above the
@@ -1283,9 +1283,11 @@ now have their own keys, `calendar.count.papers|follows.one|other`, and the stat
 English says "1 paper" and "2 papers". Bangla's two forms are the words the status already used, so the Bangla a
 reader hears is unchanged. These are drafts for the copy owner.
 
-**R1 and R3 are recorded here and built elsewhere.** R1 is built in PR #137 and in the follow-up that puts both rules
-on both value-sheet routes. R3 needs the printed range on B6's series point: an additive field (rule A2), written by
-Java's contract test into the fixtures, then a band in TrendChart drawn only where that field is present. Until then
+**R1 and R3 are recorded here and built elsewhere.** R2 is built in PR #144. R1 is built in PR #137 (W6-api, the
+value sheet JSON) and in its follow-up, branch `fix/baymax-web-value-sheet-gates` (W6-fix, no PR yet), which puts both
+rules on both value-sheet routes before F6. R3 needs the printed range on B6's series point: an additive field (rule
+A2), written by Java's contract test into the fixtures, built in PR #143 (`feat/baymax-web-api-labs-printed-range`,
+plan RANGE-api); the band in TrendChart, drawn only where that field is present, follows in a later W PR. Until then
 TrendChart draws no band, as W2e-b built it.
 
 **Why:** the prototype the PO approved colours these marks, and a family reads red faster than a shape. Keeping the
