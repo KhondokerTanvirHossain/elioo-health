@@ -124,8 +124,11 @@ export interface PaperResultJson extends PaperHead {
   follow_up: FollowUpJson[];
   doctor: Record<string, { text: string; crop: CropJson }[]>;
   unverified: { total: number; values: number; medicines: number; follow_up: number } | null;
-  /** Only for NEEDS_RETAKE. */
-  retake?: { reason_key: CopyKey; ordinal: number };
+  /**
+   * Only for NEEDS_RETAKE. `replaced`: the family already sent this paper again (another paper names it as the one it
+   * replaces and did not fail), so the card asks for nothing more. Java decides it; nothing here derives it.
+   */
+  retake?: { reason_key: CopyKey; ordinal: number; replaced: boolean };
 }
 
 /**

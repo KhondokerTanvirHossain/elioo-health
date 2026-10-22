@@ -111,10 +111,18 @@ public class PostgresOutboundMessageAdapter implements OutboundMessagePort {
                         + "ORDER BY created_at DESC LIMIT 1").bind("d", documentId).map((row, meta) -> from(row)).one();
     }
 
+    /**
+     * The order {@link #latestOfKind} picks the newest message of a kind by, in unqualified {@code outbound_message} columns
+     * so a correlated subquery over its own alias can use it too. The চ্যাট thread (plan W5-api, review of #135 finding 6)
+     * leaves out the explanation a paper's card already carries by this very order, so the two can never pick different rows.
+     */
+    public static final String LATEST_OF_KIND_ORDER =
+            "created_at DESC, (gate_status IN ('released', 'approved') AND body IS NOT NULL) DESC, id DESC";
+
     @Override
     public Mono<OutboundMessage> latestOfKind(UUID documentId, OutboundMessage.Kind kind) {
         return db.sql("SELECT " + COLS + " FROM " + T + " WHERE document_id = :d AND kind = :k "
-                        + "ORDER BY created_at DESC, (gate_status IN ('released', 'approved') AND body IS NOT NULL) DESC, id DESC LIMIT 1")
+                        + "ORDER BY " + LATEST_OF_KIND_ORDER + " LIMIT 1")
                 .bind("d", documentId).bind("k", kind.dbValue())
                 .map((row, meta) -> from(row)).one();
     }

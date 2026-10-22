@@ -90,7 +90,7 @@ class UploadApiHandlerTest {
                         new UiCopy(), properties),
                 new HealthApiHandler(org.mockito.Mockito.mock(com.elioo.baymax.web.application.port.in.HealthUseCase.class)),
                 B3Handlers.nowBanner(), B3Handlers.attention(), B3Handlers.timeline(),
-                new PreferencesApiHandler(properties),
+                new PreferencesApiHandler(properties), B3Handlers.thread(),
                 guard)).build();
     }
 

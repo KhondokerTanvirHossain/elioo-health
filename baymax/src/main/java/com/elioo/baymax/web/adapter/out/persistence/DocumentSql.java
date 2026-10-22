@@ -7,7 +7,7 @@ import com.elioo.baymax.config.BaymaxSchema;
  * the same paper (review of #122, finding 8: the chat stack and the health screen each had their own idea of a retaken
  * paper).
  */
-final class DocumentSql {
+public final class DocumentSql {
 
     private DocumentSql() {
     }
@@ -18,7 +18,7 @@ final class DocumentSql {
      * that photo FAILED too: then the family still owes a readable one. A predicate on the document aliased {@code d};
      * every other status passes it.
      */
-    static final String NOT_REPLACED = """
+    public static final String NOT_REPLACED = """
             NOT (d.status IN ('NEEDS_RETAKE', 'FAILED') AND EXISTS (SELECT 1 FROM %1$s.document r
                                                                    WHERE r.replaces_document_id = d.id AND r.status <> 'FAILED'))"""
             .formatted(BaymaxSchema.NAME);

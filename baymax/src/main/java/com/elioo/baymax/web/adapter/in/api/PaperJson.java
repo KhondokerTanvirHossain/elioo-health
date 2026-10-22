@@ -94,7 +94,10 @@ public final class PaperJson {
         m.put("doctor", !shown ? Map.of() : doctor(v.clinicalContext(), crop));
         m.put("unverified", v.unverified());     // the stored V6 counts, verbatim
         if ("NEEDS_RETAKE".equals(v.status())) {
-            m.put("retake", ordered("reason_key", retakeKey.apply(v.reasonCode()), "ordinal", r.retakeOrdinal()));
+            // replaced (review of #135, finding 10): the family already sent this paper again, so a card draws it done and
+            // offers no second retake (which, after the PO's 2026-10-22 ruling, would upload an unlinked duplicate)
+            m.put("retake", ordered("reason_key", retakeKey.apply(v.reasonCode()), "ordinal", r.retakeOrdinal(),
+                    "replaced", r.retakeReplaced()));
         }
         return m;
     }

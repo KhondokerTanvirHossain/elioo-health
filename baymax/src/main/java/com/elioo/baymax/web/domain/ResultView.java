@@ -21,23 +21,41 @@ import java.util.UUID;
  *                      from ({@link FiledDay}: never null here, and its date never null)
  * @param replaces      D1: the paper this one was sent to replace, while that paper still waits for a retake; null
  *                      otherwise. Read for a FAILED paper only, so its resend clears the same retake card
+ * @param retakeReplaced review of #135, finding 10: a NEEDS_RETAKE paper the family has already sent again (another paper
+ *                      names it in {@code replaces_document_id} and did not FAIL), so its card asks for nothing more.
+ *                      Read for a NEEDS_RETAKE paper only; false otherwise
  */
 public record ResultView(DocumentView document, PatientProfile patient, boolean owner, ViewerLocale viewer,
                          Urgency urgency, List<String> urgencyReasons, GateState gate, String wording,
-                         int retakeOrdinal, int reviewHours, Instant receivedAt, Instant now, FiledDay date, UUID replaces) {
+                         int retakeOrdinal, int reviewHours, Instant receivedAt, Instant now, FiledDay date, UUID replaces,
+                         boolean retakeReplaced) {
 
     /** A paper that replaces no retake: every status but a FAILED replacement. */
     public ResultView(DocumentView document, PatientProfile patient, boolean owner, ViewerLocale viewer,
                       Urgency urgency, List<String> urgencyReasons, GateState gate, String wording,
                       int retakeOrdinal, int reviewHours, Instant receivedAt, Instant now, FiledDay date) {
         this(document, patient, owner, viewer, urgency, urgencyReasons, gate, wording, retakeOrdinal, reviewHours, receivedAt, now,
-                date, null);
+                date, null, false);
+    }
+
+    /** A paper that may replace a retake, and is not a retake already sent again. */
+    public ResultView(DocumentView document, PatientProfile patient, boolean owner, ViewerLocale viewer,
+                      Urgency urgency, List<String> urgencyReasons, GateState gate, String wording,
+                      int retakeOrdinal, int reviewHours, Instant receivedAt, Instant now, FiledDay date, UUID replaces) {
+        this(document, patient, owner, viewer, urgency, urgencyReasons, gate, wording, retakeOrdinal, reviewHours, receivedAt, now,
+                date, replaces, false);
     }
 
     /** This view naming the retake its paper was sent to replace. */
     public ResultView withReplaces(UUID paper) {
         return new ResultView(document, patient, owner, viewer, urgency, urgencyReasons, gate, wording, retakeOrdinal, reviewHours,
-                receivedAt, now, date, paper);
+                receivedAt, now, date, paper, retakeReplaced);
+    }
+
+    /** This view of a NEEDS_RETAKE paper marked as already sent again, or not. */
+    public ResultView withRetakeReplaced(boolean replaced) {
+        return new ResultView(document, patient, owner, viewer, urgency, urgencyReasons, gate, wording, retakeOrdinal, reviewHours,
+                receivedAt, now, date, replaces, replaced);
     }
 
     public ResultView {
@@ -49,6 +67,9 @@ public record ResultView(DocumentView document, PatientProfile patient, boolean 
         }
         if (urgency != null && !"DONE".equals(document.status())) {
             throw new IllegalArgumentException("urgency is shown from DONE onwards, not " + document.status());
+        }
+        if (retakeReplaced && !"NEEDS_RETAKE".equals(document.status())) {
+            throw new IllegalArgumentException("only a NEEDS_RETAKE paper is sent again, not " + document.status());
         }
         urgencyReasons = urgencyReasons == null ? List.of() : List.copyOf(urgencyReasons);
     }

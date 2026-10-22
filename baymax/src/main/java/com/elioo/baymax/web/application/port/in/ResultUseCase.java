@@ -25,6 +25,14 @@ public interface ResultUseCase {
     Mono<ResultView> result(UUID familyId, UUID documentId);
 
     /**
+     * Plan W5-api, the চ্যাট thread's card for one paper: a {@link ReadingView} while it is RECEIVED or PROCESSING, else a
+     * {@link ResultView}, read through the same visibility and the same reads as {@link #reading} and {@link #result}, and
+     * <b>recording no audit row</b>: seeing a paper in the thread is not opening it (one DOCUMENT_VIEW per open, master
+     * Review Focus 4). 404 when this family cannot see it.
+     */
+    Mono<Object> card(UUID familyId, UUID documentId);
+
+    /**
      * B6, the value sheet (s13): the earlier readings of one value on this document — the same marker and the same unit
      * (folded, so MICRO SIGN and GREEK MU are one), the same patient, from finished papers before this one, newest first,
      * at most {@code 10}. 404 when this family cannot see the document, and when the observation is not one of THIS

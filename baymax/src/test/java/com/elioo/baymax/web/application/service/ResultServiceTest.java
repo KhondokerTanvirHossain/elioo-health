@@ -87,6 +87,7 @@ class ResultServiceTest {
         when(messages.latestOfKind(any(), any())).thenReturn(Mono.empty());
         when(urgencies.currentOrAssess(any())).thenReturn(Mono.empty());
         when(reads.retakeOrdinal(any())).thenReturn(Mono.just(0));
+        when(reads.retakeReplaced(any())).thenReturn(Mono.just(false));
     }
 
     /** The poll reads the status and nothing else: no audit row every 5 s, no view, no patient. */
@@ -325,6 +326,32 @@ class ResultServiceTest {
             assertThat(r.gate()).isEqualTo(GateState.NONE);
         }).verifyComplete();
         verify(urgencies, never()).currentOrAssess(any());
+    }
+
+    /**
+     * Review of #135, finding 10, both directions: a retake the family already sent again carries {@code retakeReplaced}
+     * (so its card asks for nothing more), one still waiting does not, and a paper that is no retake never asks.
+     */
+    @Test
+    void aRetakeAlreadySentAgainSaysSoAndOneStillWaitingDoesNot() {
+        Document retake = Document.received(PATIENT, FAMILY, 1, NOW).withId(DOC)
+                .withStatus(Document.Status.NEEDS_RETAKE, "test", "low_overall", NOW);
+        when(documents.findVisible(FAMILY, DOC)).thenReturn(Mono.just(retake));
+        when(intake.view(DOC)).thenReturn(Mono.just(DocumentView.pending(retake)));
+        when(reads.retakeReplaced(DOC)).thenReturn(Mono.just(true));
+        StepVerifier.create(service.result(FAMILY, DOC)).assertNext(r -> assertThat(r.retakeReplaced()).as("sent again").isTrue())
+                .verifyComplete();
+        when(reads.retakeReplaced(DOC)).thenReturn(Mono.just(false));
+        StepVerifier.create(service.result(FAMILY, DOC)).assertNext(r -> assertThat(r.retakeReplaced()).as("still waiting").isFalse())
+                .verifyComplete();
+    }
+
+    @Test
+    void aReadPaperIsNeverAskedWhetherItWasRetaken() {
+        done();
+        when(reads.retakeReplaced(DOC)).thenReturn(Mono.just(true));
+        StepVerifier.create(service.result(FAMILY, DOC)).assertNext(r -> assertThat(r.retakeReplaced()).isFalse()).verifyComplete();
+        verify(reads, never()).retakeReplaced(any());
     }
 
     /** The other direction: a paper that is not a retake carries 0, and the streak is not asked for at all. */

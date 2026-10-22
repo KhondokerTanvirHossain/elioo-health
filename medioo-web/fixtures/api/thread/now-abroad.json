@@ -1,0 +1,92 @@
+{
+  "_meta": {
+    "generated_by": "baymax ThreadApiContractTest",
+    "source": "GET /app/api/patients/{id}/thread over the case now-abroad"
+  },
+  "body": {
+    "items": [
+      {
+        "at": "2026-10-20T04:00:00Z",
+        "card": {
+          "banner": {
+            "level": "now",
+            "line_key": "urgency.now"
+          },
+          "counts": {
+            "line_key": "result.counts",
+            "outside": 1,
+            "values": 1
+          },
+          "date": "2026-10-20",
+          "date_is_upload_day": false,
+          "date_uncertain": false,
+          "doctor": { },
+          "document_type": "lab_report",
+          "facility": "Shapla Diagnostics",
+          "filed": false,
+          "follow_up": [ ],
+          "gate": "RELEASED",
+          "id": "9fa059c1-5c29-37e1-b7f4-569cc5acd246",
+          "medicines": [ ],
+          "now": {
+            "bring_key": "now.bring.remote",
+            "call_999": false,
+            "flags_go_key": "now.remote.flags.go",
+            "notdoctor_key": "now.notdoctor",
+            "remote_share": true
+          },
+          "owner": false,
+          "page_count": 1,
+          "pages": [
+            {
+              "n": 1,
+              "src": "/app/documents/9fa059c1-5c29-37e1-b7f4-569cc5acd246/page/1"
+            }
+          ],
+          "patient": {
+            "age": 64,
+            "id": "f9e05f75-b562-3af7-82de-a0049b1bb220",
+            "name": "Ma",
+            "name_objective": "Ma-কে",
+            "name_possessive": "Ma-র"
+          },
+          "printed_date": "2026-10-20",
+          "reasons": [
+            "value_critical"
+          ],
+          "received_at": "2026-10-20T04:00:00Z",
+          "status": "DONE",
+          "unverified": null,
+          "urgency": "now",
+          "values": [
+            {
+              "chip_key": "value.chip.critical.high",
+              "crop": {
+                "height": null,
+                "src": "/app/documents/9fa059c1-5c29-37e1-b7f4-569cc5acd246/image?key=647c9aa9-a6fd-331c-bdc4-1e93704d734d%2Ff9e05f75-b562-3af7-82de-a0049b1bb220%2F9fa059c1-5c29-37e1-b7f4-569cc5acd246%2Fcrop-v1.jpg",
+                "width": null
+              },
+              "display_kind": "critical",
+              "id": "435cef81-48d0-356b-86ce-01101675d4bf",
+              "in_now_block": true,
+              "name": "Potassium",
+              "pin": 98.0,
+              "ref_high": "5.1",
+              "ref_low": "3.5",
+              "side": "high",
+              "unit": "mmol/L",
+              "value": "12.0"
+            }
+          ],
+          "viewer": {
+            "bangladesh": false
+          },
+          "wording": "রিপোর্টটি পেয়েছি — ল্যাব রিপোর্ট, ২০ অক্টোবর।\nPotassium এসেছে 12.0 mmol/L, যা স্বাভাবিকের চেয়ে অনেক বেশি।\nএখনই ডাক্তারের কাছে যান। দেরি করবেন না।\nরোগী যদি অজ্ঞান হন, শ্বাস নিতে কষ্ট হয়, বা বুকে ব্যথা হয় — সরাসরি নিকটস্থ হাসপাতালের জরুরি বিভাগে যান।\nসাথে নিয়ে যাবেন: এই রিপোর্ট এবং আগের প্রেসক্রিপশনগুলো।"
+        },
+        "kind": "paper"
+      }
+    ],
+    "next_cursor": null
+  },
+  "status": 200
+}

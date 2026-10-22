@@ -18,6 +18,7 @@ GET /app/api/patients/{id}/calendar
 GET /app/api/patients/{id}/follow-ups
 GET /app/api/patients/{id}/labs
 GET /app/api/patients/{id}/medicines
+GET /app/api/patients/{id}/thread
 GET /app/api/patients/{id}/timeline
 GET /app/api/upload-options
 GET /app/documents/{id}

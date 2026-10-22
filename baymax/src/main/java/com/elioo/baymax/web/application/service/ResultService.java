@@ -58,13 +58,36 @@ public class ResultService implements ResultUseCase {
 
     @Override
     public Mono<ReadingView> reading(UUID familyId, UUID documentId) {
-        return visibleDocument(familyId, documentId).flatMap(d -> Mono.zip(
+        return visibleDocument(familyId, documentId).flatMap(d -> readingOf(familyId, d,
+                audit.record(AuditEvent.family(AuditEvent.Kind.DOCUMENT_VIEW, familyId, d.patientId(), documentId, clock.instant()))));
+    }
+
+    /** The reading view of a visible paper; {@code before} runs ahead of the view's read (the open's audit row, or nothing). */
+    private Mono<ReadingView> readingOf(UUID familyId, Document d, Mono<Void> before) {
+        return Mono.zip(
                         records.visiblePatient(familyId, d.patientId())
                                 .switchIfEmpty(Mono.error(BaymaxException.notFound("patient_not_found", "no patient with id " + d.patientId()))),
                         viewer(familyId),
-                        audit.record(AuditEvent.family(AuditEvent.Kind.DOCUMENT_VIEW, familyId, d.patientId(), documentId, clock.instant()))
-                                .then(intake.view(documentId)))
-                .map(t -> new ReadingView(t.getT3(), t.getT1().patient(), t.getT1().owner(), t.getT2(), d.createdAt(), clock.instant())));
+                        before.then(intake.view(d.id())))
+                .map(t -> new ReadingView(t.getT3(), t.getT1().patient(), t.getT1().owner(), t.getT2(), d.createdAt(), clock.instant()));
+    }
+
+    /**
+     * Plan W5-api: the thread's card, read exactly as {@link #reading} and {@link #result} read the paper, with no audit row
+     * at all. A paper that finished between the visibility read and the reading view is answered finished, as
+     * {@code PaperApiHandler} does, never as a reading that would wait for a change that already happened.
+     */
+    @Override
+    public Mono<Object> card(UUID familyId, UUID documentId) {
+        return visibleDocument(familyId, documentId).flatMap(d -> !inFlight(d.status())
+                ? resultOf(familyId, d).cast(Object.class)
+                : readingOf(familyId, d, Mono.empty()).flatMap(r -> inFlight(Document.Status.valueOf(r.document().status()))
+                        ? Mono.<Object>just(r)
+                        : visibleDocument(familyId, documentId).flatMap(now -> resultOf(familyId, now)).cast(Object.class)));
+    }
+
+    private static boolean inFlight(Document.Status status) {
+        return status == Document.Status.RECEIVED || status == Document.Status.PROCESSING;
     }
 
     @Override
@@ -77,18 +100,25 @@ public class ResultService implements ResultUseCase {
         // first, before an assessment that may fail, so a failed read is still an audited one.
         return visibleDocument(familyId, documentId).flatMap(d -> audit.record(
                         AuditEvent.family(AuditEvent.Kind.DOCUMENT_VIEW, familyId, d.patientId(), documentId, clock.instant()))
-                .then(Mono.defer(() -> stored(d))).flatMap(level -> Mono.zip(
+                .then(Mono.defer(() -> resultOf(familyId, d))));
+    }
+
+    /** The result of a visible paper, with no audit row: {@link #result} records the open first, {@link #card} records none. */
+    private Mono<ResultView> resultOf(UUID familyId, Document d) {
+        UUID documentId = d.id();
+        return Mono.defer(() -> stored(d)).flatMap(level -> Mono.zip(
                         records.visiblePatient(familyId, d.patientId())
                                 .switchIfEmpty(Mono.error(BaymaxException.notFound("patient_not_found", "no patient with id " + d.patientId()))),
                         viewer(familyId),
                         intake.read(documentId),
-                        gate(d), retakeOrdinal(d), replacedRetake(d))
+                        gate(d), retakeOrdinal(d), replacedRetake(d), retakeReplaced(d))
                 // D2: the filed day comes from the row the view was built from, never from the earlier visibility read:
                 // a paper that finished in between would otherwise be dated as it stood before it was read
                 .map(t -> new ResultView(t.getT3().view(), t.getT1().patient(), t.getT1().owner(), t.getT2(),
                         level.map(StoredUrgency::level).orElse(null), level.map(StoredUrgency::reasons).orElse(List.of()),
                         t.getT4().state(), t.getT4().wording(), t.getT5(), properties.getOutbound().getReviewTypicalHours(),
-                        d.createdAt(), clock.instant(), filedDayOf(t.getT3().document()), t.getT6().orElse(null)))));
+                        d.createdAt(), clock.instant(), filedDayOf(t.getT3().document()), t.getT6().orElse(null),
+                        t.getT7() && "NEEDS_RETAKE".equals(t.getT3().view().status()))));
     }
 
     /** The row's generated filed day; a row read back always has one, so its absence is a mapping defect, said loudly. */
@@ -107,6 +137,14 @@ public class ResultService implements ResultUseCase {
         return d.status() == Document.Status.FAILED
                 ? documents.replacedRetakeOf(d.id()).map(Optional::of).defaultIfEmpty(Optional.empty())
                 : Mono.just(Optional.empty());
+    }
+
+    /**
+     * Review of #135, finding 10: whether a NEEDS_RETAKE paper was already sent again, so the thread's card (and the paper
+     * page's body) stops asking for a photo the family sent. Every other status: false, without a query.
+     */
+    private Mono<Boolean> retakeReplaced(Document d) {
+        return d.status() != Document.Status.NEEDS_RETAKE ? Mono.just(false) : reads.retakeReplaced(d.id()).defaultIfEmpty(false);
     }
 
     /** How many earlier readings the value sheet lists (s13 draws two; ten is a page, not a trend). */
