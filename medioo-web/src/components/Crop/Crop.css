@@ -1,0 +1,30 @@
+/* One crop of the paper (Crop.tsx): the line from the paper as an image, never wider than its row, laid out at its
+   stored size; and, when it did not load, the retry button in its place. Never red: a missing image is not urgency. */
+.crop {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+}
+.crop--failed {
+  display: flex;
+  align-items: center;
+  padding: var(--space-2);
+  background: var(--bg3);
+}
+.crop__retry {
+  min-height: var(--target-min);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--bg2);
+  color: var(--tint-ink);
+  font-family: var(--font-bn);
+  font-size: var(--text-md);
+  font-weight: 600;
+  text-align: center;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}

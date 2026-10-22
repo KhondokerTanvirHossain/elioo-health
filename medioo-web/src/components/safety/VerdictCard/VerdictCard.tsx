@@ -46,14 +46,17 @@ const STATUS_TITLE: Record<PaperStatus, CopyKey> = {
  * - the not-a-doctor line from `now.notdoctor_key`, and the tel:999 link only when `now.call_999` is true (F7), its
  *   label the fixed key `now.call999`, which that flag alone gates;
  * - the title from `counts.line_key`, or the status's word when Java sent no counts line.
+ *
+ * `wording` false leaves the wording out (the paper page, W6, shows it in its own labelled bubble below, so it is not
+ * said twice); it never shows a wording the gate withheld.
  */
-export function VerdictCard({ paper, lang }: { paper: PaperJson; lang: Lang }) {
+export function VerdictCard({ paper, lang, wording: withWording = true }: { paper: PaperJson; lang: Lang; wording?: boolean }) {
   const banner = paper.banner ?? null;
   const className = ["verdict-card"];
   if (banner) className.push(BAND_CLASS[banner.level]);
   const counts = paper.counts ?? null;
   const title = counts ? t(lang, counts.line_key, counts.values, counts.outside) : t(lang, STATUS_TITLE[paper.status]);
-  const wording = paper.gate === "RELEASED" && paper.wording ? paper.wording : null;
+  const wording = withWording && paper.gate === "RELEASED" && paper.wording ? paper.wording : null;
   const now = paper.now ?? null;
   return (
     <article className={className.join(" ")}>

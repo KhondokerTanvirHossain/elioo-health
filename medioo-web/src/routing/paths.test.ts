@@ -35,9 +35,19 @@ describe("paths", () => {
     // A page this build does not serve is Java's: the preview prefix would land on Next's 404.
     expect(NEXT_PAGES).not.toContain("/app/timeline");
     expect(href("/app/timeline", true)).toBe("/app/timeline");
+    // W6: a paper is a Next page, so a preview page links to it inside the preview; its Java sub-paths (the crop and
+    // page images, the status, the delete) are not pages of this build and stay on Java.
     expect(href("/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003", true)).toBe(
+      "/app/preview/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003",
+    );
+    expect(href("/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003", false)).toBe(
       "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003",
     );
+    for (const sub of ["/image?key=x", "/page/1", "/status", "/delete"]) {
+      expect(href(`/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003${sub}`, true)).toBe(
+        `/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003${sub}`,
+      );
+    }
   });
 
   it("reachableIsJavaOrAFlipOrNextUnderThePreview", () => {

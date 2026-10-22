@@ -4,7 +4,7 @@ import { expect, test, type Page, type Response, type TestInfo } from "@playwrig
 import { NEXT_PAGES } from "../src/routing/paths";
 import { ceilingMessage, concretePath, fontProblems, isJavaImage, readCeilings, routeTotal } from "./support/budget";
 import { useScenario } from "./support/browser-api";
-import { PAGE_MARKERS, PAGE_SCENARIOS } from "./support/scenarios.mjs";
+import { PAGE_MARKERS, PAGE_PATHS, PAGE_SCENARIOS } from "./support/scenarios.mjs";
 
 type Kind = "document" | "script" | "stylesheet" | "font" | "rsc" | "other";
 type Row = {
@@ -202,7 +202,9 @@ for (const pattern of NEXT_PAGES) {
     const scenario = PAGE_SCENARIOS[pattern];
     expect(scenario, `PAGE_SCENARIOS[${pattern}]`).toBeDefined();
     await useScenario(page, scenario!);
-    const path = concretePath(pattern);
+    // A dynamic page is measured at the ids its scenario's fixtures are about (PAGE_PATHS, W6); concretePath refuses one
+    // without an entry, so a dynamic page cannot be measured at a made-up id.
+    const path = concretePath(PAGE_PATHS[pattern] ?? pattern);
     const load = await coldLoad(page, origin, path);
     const total = routeTotal(load.rows);
     record(testInfo, `budget-route${path.replace(/[^a-zA-Z0-9]+/g, "-")}`, baseURL!, load, { path, scenario, routeTotal: total });

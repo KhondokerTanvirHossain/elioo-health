@@ -287,7 +287,15 @@ export function smallTextReport(page: Page, scope: string) {
 
 /** Every visible image under `scope`, once each has loaded: its path, whether it decoded, and its natural width. */
 export async function imagesReport(page: Page, scope: string) {
-  await page.$$eval(`${scope} img`, (imgs) => imgs.forEach((i) => i.scrollIntoView()));
+  // One at a time: a lazy image (a paper's crops, W6) loads only while it is near the viewport, so scrolling past all of
+  // them in one synchronous loop would leave most never requested.
+  await page.$$eval(`${scope} img`, async (imgs) => {
+    for (const i of imgs as HTMLImageElement[]) {
+      if (!i.checkVisibility()) continue;
+      i.scrollIntoView({ block: "center" });
+      if (!i.complete) await new Promise((done) => (i.addEventListener("load", done, { once: true }), i.addEventListener("error", done, { once: true })));
+    }
+  });
   await page.waitForFunction(
     (scope) =>
       [...document.querySelectorAll<HTMLImageElement>(`${scope} img`)].filter((i) => i.checkVisibility()).every((i) => i.complete),
@@ -377,8 +385,9 @@ export function rendersOwnText(page: Page, text: string): Promise<boolean> {
 }
 
 /** A routed page opened under a scenario, with the CSP hook installed and every eager image and font loaded. */
-export async function openRoute(page: Page, route: string, scenario: string) {
-  await useScenario(page, scenario);
+export async function openRoute(page: Page, route: string, scenario: string, rows: CropRow[] = []) {
+  // The rows whose images Java serves on this page, so each is served at its own stored size (pngFor).
+  await useScenario(page, scenario, { rows });
   await installCspHook(page);
   const response = await page.goto(route);
   expect(response?.status(), `${route} under ${scenario}`).toBe(200);
@@ -392,13 +401,16 @@ export async function openRoute(page: Page, route: string, scenario: string) {
  * second time under its longest twin (LONGEST), whose long name (read from the twin's own `me`, longNameOf) must be on
  * the page before overflow is judged. `onePrimary` requires exactly one `[data-primary]` (not at most one), so a page
  * that lost its marker cannot quietly fall from the 48 px rule to 44 px. `act` drives the page to a state a press
- * reaches (a confirm step, a refusal) before every check runs, so those states are judged too.
+ * reaches (a confirm step, a refusal) before every check runs, so those states are judged too. `images` are the other
+ * images the page shows that Java serves (a medicine's crop, a doctor's line, a whole page, W6): each must decode at its
+ * own width too. `crops` and `images` may be given per scenario, for a longest twin that serves a different paper.
  */
 export function screenChecks(
   route: string,
   scenario: string,
   opts: {
-    crops?: CropRow[];
+    crops?: CropRow[] | ((scenario: string) => CropRow[]);
+    images?: CropRow[] | ((scenario: string) => CropRow[]);
     longest?: boolean;
     fields?: string[];
     onePrimary?: boolean;
@@ -411,8 +423,10 @@ export function screenChecks(
     test(`${route} has a longest twin`, () => expect(twin, `LONGEST[${scenario}]`).toBeDefined());
     if (twin) scenarios.push(twin);
   }
+  const of = (rows: CropRow[] | ((s: string) => CropRow[]) | undefined, name: string) =>
+    typeof rows === "function" ? rows(name) : (rows ?? []);
   const open = async (page: Page, name: string) => {
-    await openRoute(page, route, name);
+    await openRoute(page, route, name, [...of(opts.crops, name), ...of(opts.images, name)]);
     if (opts.act) await opts.act.run(page);
   };
   const state = opts.act ? ` after ${opts.act.state}` : "";
@@ -485,7 +499,7 @@ export function screenChecks(
 
         test("everyVisibleImageIsADecodedBrandFileOrItsOwnCrop", async ({ page }) => {
           await open(page, name);
-          const crops = new Map((opts.crops ?? []).map((row) => [row.crop.src, expectedWidth(row)]));
+          const crops = new Map([...of(opts.crops, name), ...of(opts.images, name)].map((row) => [row.crop.src, expectedWidth(row)]));
           const images = await imagesReport(page, "body");
           const bad = images
             .filter((i) => {
@@ -501,7 +515,7 @@ export function screenChecks(
         if (opts.crops) {
           test("everyCropIsItsRowsOwnImage", async ({ page }) => {
             await open(page, name);
-            expect(await cropRowsReport(page, opts.crops!)).toEqual([]);
+            expect(await cropRowsReport(page, of(opts.crops, name))).toEqual([]);
           });
         }
       });
