@@ -157,6 +157,33 @@ describe("contrast of the declared pairs", () => {
     expect(contrastChecks(wash, "non-text", 3).failures).toContain("light/phone boundary on bg = 1.15");
   });
 
+  it("theCalendarsUrgencyMarksClearThreeOnEveryCardSurface", () => {
+    // PO ruling R2 (DR-48): the MonthCalendar's NOW mark is drawn in now and its THIS_WEEK mark in week (the amber the
+    // prototype's calendar dot uses), each a meaningful shape, so WCAG 1.4.11's 3:1 applies on bg, bg2 and bg3, in
+    // both themes and both layouts. Both are already declared there (now as a fill, week as text at 4.5); this says
+    // which pairs the calendar relies on, so a token that drops one of them fails here by name.
+    const resolved = resolveTokens(src);
+    const low: string[] = [];
+    let judged = 0;
+    for (const theme of THEMES) {
+      for (const layout of LAYOUTS) {
+        for (const mark of ["now", "week"]) {
+          for (const surface of ["bg", "bg2", "bg3"]) {
+            const ratio = contrastRatio(resolved[theme][layout][mark]!, resolved[theme][layout][surface]!);
+            judged++;
+            if (ratio < 3) low.push(`${theme}/${layout} ${mark} on ${surface} = ${ratio.toFixed(2)}`);
+          }
+        }
+      }
+    }
+    expect(low).toEqual([]);
+    expect(judged).toBe(2 * 2 * 2 * 3);
+    // The check can fail: the prototype's lighter dark amber used in the light theme is under 3:1 on white.
+    const pale = copy();
+    pale.color.week!.light = "#ffb340";
+    expect(contrastRatio(resolveTokens(pale).light.phone.week!, resolveTokens(pale).light.phone.bg!)).toBeLessThan(3);
+  });
+
   it("everySurfaceMeansEverySurfaceTokenIncludingOnesAddedLater", () => {
     const surfaces = everySurface(src);
     expect(surfaces.length).toBeGreaterThanOrEqual(10);

@@ -1,9 +1,11 @@
 /* A month of papers and doctor's dates (MonthCalendar.tsx), the papers-tab calendar of the phone prototype: seven equal
    columns Saturday → Friday, big numerals (the prototype's 20 px), a dot under a day with papers, a green ring round
    the numeral of a doctor's date (the direction contract's "green circles for follow-ups"; Q1 raised --green to 3:1 for
-   it), and the day's urgency as a shape and a word: the NOW octagon, the this-week calendar. Neither urgency is painted
-   in its colour here: the NOW and THIS_WEEK tokens belong to the NOW components and the week band
-   (built/now-usage.built.test.ts); the shape and the word say it, and the colour is a PO question (PR #129).
+   it), and the day's urgency as a shape and a word: the NOW octagon, the this-week calendar. PO ruling R2 (DR-48)
+   colours them as the prototype's calendar does: NOW in the one NOW red (--now for the shape, --now-ink for the word),
+   THIS_WEEK in the amber (--week), in the cell and in the legend, and keeps the shape and the word, so colour is never
+   the only signal. Only the two modifiers may use those tokens (NOW_ALLOWED / WEEK_ALLOWED, judged on the built CSS);
+   a routine paper's dot, a doctor's-date ring and the numerals never do, so red stays reserved for NOW.
    The caption (the patient's name and the month) wraps anywhere, so a long unbroken name never widens the grid.
    Raw px are the prototype's optical values with no token (the 2 px cell gutter, the 34 px numeral circle, the 10 px
    dot). */
@@ -109,6 +111,22 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+}
+/* R2 (DR-48): the NOW mark's shape in the NOW red (a fill token, 3:1 on bg, bg2, bg3) and its word in the NOW ink
+   (a text token); the THIS_WEEK mark's shape and word in the amber (a text token, so 4.5:1 and therefore 3:1). */
+.month-calendar__alert--now .month-calendar__mark--urgency,
+.month-calendar__key--now .month-calendar__mark--urgency {
+  stroke: var(--now);
+}
+.month-calendar__alert--now .month-calendar__alert-word {
+  color: var(--now-ink);
+}
+.month-calendar__alert--week .month-calendar__mark--urgency,
+.month-calendar__key--week .month-calendar__mark--urgency {
+  stroke: var(--week);
+}
+.month-calendar__alert--week .month-calendar__alert-word {
+  color: var(--week);
 }
 .month-calendar__alert-word {
   font-size: var(--text-xs);

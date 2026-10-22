@@ -195,6 +195,90 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
         );
         // And never on the banner Java said not to show.
         expect(result.painted).not.toContain("NowBanner/hidden");
+        // R2 (DR-48): the calendar's NOW marks are among the allowed reds.
+        expect(result.painted).toEqual(expect.arrayContaining(["MonthCalendar/busy-month", "MonthCalendar/crowded-month"]));
+      });
+
+      test("theCalendarPaintsItsNowMarkRedAndItsThisWeekMarkAmberAndNothingElse", async ({ page }) => {
+        // PO ruling R2 (DR-48), on what the browser paints, not on class names: a NOW day's octagon is stroked in --now
+        // and its word in --now-ink; a THIS_WEEK day's calendar shape and word are --week; the legend's keys match;
+        // every other element of the calendar (a routine paper's dot, a doctor's-date ring, a numeral, a day with
+        // nothing) paints neither colour, and a THIS_WEEK day never paints the red.
+        await open(page);
+        const report = await page.evaluate(() => {
+          const swatch = document.createElement("div");
+          document.body.append(swatch);
+          const resolve = (token: string) => {
+            swatch.style.setProperty("color", `var(${token})`);
+            const value = getComputedStyle(swatch).color;
+            swatch.style.removeProperty("color");
+            return value;
+          };
+          const now = resolve("--now");
+          const nowInk = resolve("--now-ink");
+          const week = resolve("--week");
+          swatch.remove();
+          const PROPS = ["color", "background-color", "fill", "stroke", "border-top-color", "border-bottom-color", "outline-color"];
+          const colourOf = (value: string) => (value === now || value === nowInk ? "red" : value === week ? "amber" : null);
+          /** Every element under `root` (itself included) that paints red or amber, as `<tag.class> prop: colour`. */
+          const painted = (root: Element, skip: (e: Element) => boolean = () => false) => {
+            const out: string[] = [];
+            for (const el of [root, ...root.querySelectorAll("*")]) {
+              if (skip(el)) continue;
+              const style = getComputedStyle(el);
+              for (const prop of PROPS) {
+                const colour = colourOf(style.getPropertyValue(prop));
+                if (colour) out.push(`<${el.tagName.toLowerCase()} class="${el.getAttribute("class") ?? ""}"> ${prop}: ${colour}`);
+              }
+            }
+            return out;
+          };
+          const bad: string[] = [];
+          const counts = { now: 0, week: 0, plain: 0, legend: 0 };
+          for (const section of document.querySelectorAll<HTMLElement>('[data-catalog-state^="MonthCalendar/"]')) {
+            const label = `${section.dataset.catalogState} ${section.getAttribute("lang")}`;
+            for (const cell of section.querySelectorAll("td[data-date]")) {
+              const date = cell.getAttribute("data-date");
+              const alert = cell.querySelector<HTMLElement>(".month-calendar__alert");
+              const urgency = alert?.dataset.urgency ?? null;
+              if (urgency === "now" || urgency === "week") {
+                counts[urgency]++;
+                const want = urgency === "now" ? "red" : "amber";
+                const shape = alert!.querySelector("svg")!;
+                const word = alert!.querySelector(".month-calendar__alert-word")!;
+                if (colourOf(getComputedStyle(shape).stroke) !== want) bad.push(`${label} ${date}: the ${urgency} shape is ${getComputedStyle(shape).stroke}`);
+                if (colourOf(getComputedStyle(word).color) !== want) bad.push(`${label} ${date}: the ${urgency} word is ${getComputedStyle(word).color}`);
+                if (!word.textContent?.trim()) bad.push(`${label} ${date}: the ${urgency} mark has no word`);
+                // Inside the mark, only its own colour; outside it, neither.
+                for (const p of painted(alert!)) if (!p.endsWith(want)) bad.push(`${label} ${date} in the ${urgency} mark: ${p}`);
+                for (const p of painted(cell, (e) => alert!.contains(e))) bad.push(`${label} ${date} outside the ${urgency} mark: ${p}`);
+              } else {
+                if (cell.querySelector("[data-shape]")) counts.plain++;
+                for (const p of painted(cell)) bad.push(`${label} ${date} (no urgency): ${p}`);
+              }
+            }
+            for (const item of section.querySelectorAll(".month-calendar__legend li")) {
+              counts.legend++;
+              const shape = item.querySelector("svg")?.getAttribute("data-shape");
+              const want = shape === "octagon" ? "red" : shape === "calendar-week" ? "amber" : null;
+              const got = painted(item);
+              if (want === null) for (const p of got) bad.push(`${label} legend ${shape}: ${p}`);
+              else {
+                if (colourOf(getComputedStyle(item.querySelector("svg")!).stroke) !== want) bad.push(`${label} legend ${shape} is not ${want}`);
+                for (const p of got) if (!p.endsWith(want)) bad.push(`${label} legend ${shape}: ${p}`);
+              }
+            }
+          }
+          return { bad, counts, now, week };
+        });
+        expect(report.bad).toEqual([]);
+        // Guards: the tokens resolved to two different colours, and NOW days, THIS_WEEK days, marked days without an
+        // urgency (a routine paper, a doctor's date) and legends were all judged, so the empty list is not vacuous.
+        expect(report.now).not.toBe(report.week);
+        expect(report.counts.now, "NOW days judged").toBeGreaterThan(0);
+        expect(report.counts.week, "THIS_WEEK days judged").toBeGreaterThan(0);
+        expect(report.counts.plain, "marked days without an urgency judged").toBeGreaterThan(0);
+        expect(report.counts.legend, "legend keys judged").toBeGreaterThan(0);
       });
 
       test("everyFieldAndTrackDrawsTheBoundary", async ({ page }) => {

@@ -17,8 +17,9 @@ import type { TokenFile } from "./build-tokens";
 // selector. The boundary is what stops `.now-bannerx` or `.status-chip--critique` from passing.
 const BOUNDARY = "(?=$|[\\s.:#\\[,>+~)]|__|--)";
 // urgent-mark: the patient's red mark in the switcher and the chooser (src/components/safety/UrgentMark, plan W4).
-export const NOW_ALLOWED = new RegExp(`^\\.(now-banner|urgent-mark|verdict-card--now|status-chip--crit-(high|low))${BOUNDARY}`);
-export const WEEK_ALLOWED = new RegExp(`^\\.verdict-card--week${BOUNDARY}`);
+// MonthCalendar's NOW and THIS_WEEK marks, in the cell and in the legend: PO ruling R2 (DR-48).
+export const NOW_ALLOWED = new RegExp(`^\\.(now-banner|urgent-mark|verdict-card--now|status-chip--crit-(high|low)|month-calendar__(alert|key)--now)${BOUNDARY}`);
+export const WEEK_ALLOWED = new RegExp(`^\\.(verdict-card--week|month-calendar__(alert|key)--week)${BOUNDARY}`);
 
 const VAR = /var\(\s*--([\w-]+)/g;
 

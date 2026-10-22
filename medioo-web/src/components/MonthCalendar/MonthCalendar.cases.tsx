@@ -1,6 +1,6 @@
 import { cleanup, render } from "@testing-library/react";
 import { expect, it } from "vitest";
-import { formatDate, t, type Lang } from "@/copy";
+import { banglaDigits, formatDate, t, type Lang } from "@/copy";
 import type { CalendarDayJson, PaperJson } from "@/api/types";
 import { NowBanner } from "@/components/safety/NowBanner/NowBanner";
 import { VerdictCard } from "@/components/safety/VerdictCard/VerdictCard";
@@ -10,7 +10,7 @@ import empty from "../../../fixtures/api/calendar/empty.json";
 import catalogNames from "../../../fixtures/catalog/names.json";
 import thisWeekPaper from "../../../fixtures/api/documents/this-week-pending.json";
 import nowBannerOne from "../../../fixtures/api/now-banner/one.json";
-import { MonthCalendar, WEEK } from "./MonthCalendar";
+import { MonthCalendar, WEEK, counted } from "./MonthCalendar";
 
 /*
  * The MonthCalendar test bodies, shared by MonthCalendar.test.tsx (the machine's time zone) and MonthCalendar.tz.test.tsx
@@ -51,8 +51,13 @@ function expectedStatus(lang: Lang, days: CalendarDayJson[], date: string): stri
   const day = days.find((d) => d.date === date);
   const urgency = urgencyOf(day);
   const key = urgency === "now" ? "calendar.day.status.now" : urgency === "week" ? "calendar.day.status.week" : "calendar.day.status";
-  return t(lang, key, formatDate(lang, date), day?.papers.length ?? 0, day?.follow_ups.length ?? 0);
+  return t(lang, key, formatDate(lang, date), counted(lang, "papers", day?.papers.length ?? 0), counted(lang, "follows", day?.follow_ups.length ?? 0));
 }
+
+/** The colour modifiers PO ruling R2 (DR-48) gives the urgency marks: NOW's red, THIS_WEEK's amber. */
+const COLOURED = /^month-calendar__(alert|key)--(now|week)$/;
+/** Every colour modifier on an element under `root` (itself included). */
+const colourClasses = (root: Element) => [root, ...root.querySelectorAll("*")].flatMap((e) => [...e.classList].filter((c) => COLOURED.test(c)));
 
 /** The status text of a cell, from the one visually hidden span the cell holds. */
 const statusOf = (cell: HTMLElement) => cell.querySelector(".month-calendar__status");
@@ -165,6 +170,11 @@ export function monthCalendarTests() {
           expect(written, `${name} ${lang} ${date}: the NOW word ${now ? "is" : "is not"} written`).toBe(now);
           if (now) {
             expect(shape!.innerHTML, `${date}: the banner's octagon`).toBe(octagon);
+            // R2 (DR-48): the NOW mark is the NOW red, and only that; its shape and its word sit inside the one modifier.
+            const alert = cell.querySelector(".month-calendar__alert")!;
+            expect(colourClasses(cell), `${name} ${lang} ${date}: the NOW colour, and no other`).toEqual(["month-calendar__alert--now"]);
+            expect(alert.contains(shape), `${date}: the octagon is in the red mark`).toBe(true);
+            expect(alert.querySelector(".month-calendar__alert-word")?.textContent, `${date}: the word is in the red mark`).toBe(word);
             nowDays++;
           }
         }
@@ -195,7 +205,14 @@ export function monthCalendarTests() {
           expect(!!shape, `${name} ${lang} ${date}: the this-week shape ${isWeek ? "is" : "is not"} drawn`).toBe(isWeek);
           const written = cell.querySelector(".month-calendar__alert-word")?.textContent === word;
           expect(written, `${name} ${lang} ${date}: the this-week word ${isWeek ? "is" : "is not"} written`).toBe(isWeek);
-          if (isWeek) expect(shape!.innerHTML, `${date}: the band's calendar`).toBe(week);
+          if (isWeek) {
+            expect(shape!.innerHTML, `${date}: the band's calendar`).toBe(week);
+            // R2 (DR-48): the THIS_WEEK mark is amber, never the NOW red; its shape and word sit inside the modifier.
+            const alert = cell.querySelector(".month-calendar__alert")!;
+            expect(colourClasses(cell), `${name} ${lang} ${date}: the THIS_WEEK colour, and no other`).toEqual(["month-calendar__alert--week"]);
+            expect(alert.contains(shape), `${date}: the calendar shape is in the amber mark`).toBe(true);
+            expect(alert.querySelector(".month-calendar__alert-word")?.textContent, `${date}: the word is in the amber mark`).toBe(word);
+          }
         }
         cleanup();
       }
@@ -226,6 +243,8 @@ export function monthCalendarTests() {
       // Four marks, four shapes: the legend tells them apart without colour, with the shapes the cells draw.
       const shapes = items.map((i) => i.querySelector("svg")?.getAttribute("data-shape"));
       expect(shapes, lang).toEqual(["dot", "calendar-week", "octagon", "ring"]);
+      // R2 (DR-48): the legend's THIS_WEEK and NOW keys carry the cells' colours; the paper and the doctor's date neither.
+      expect(items.map((i) => colourClasses(i)), lang).toEqual([[], ["month-calendar__key--week"], ["month-calendar__key--now"], []]);
       cleanup();
     }
   });
@@ -246,6 +265,61 @@ export function monthCalendarTests() {
       }
       expect(elsewhere, `${lang}: the name outside the caption`).toEqual([]);
       cleanup();
+    }
+  });
+
+  it("aRoutinePaperAndADoctorsDateCarryNeitherRedNorAmber", () => {
+    // The dangerous direction of R2 (DR-48): red only for NOW, amber only for THIS_WEEK. A day whose papers carry no
+    // urgency chip, and a doctor's date, are drawn in ink and the follow-up green, never in an urgency colour.
+    let routine = 0;
+    let follows = 0;
+    for (const [name, body] of MONTHS) {
+      for (const lang of LANGS) {
+        for (const { date, cell } of dayCells(draw(lang, body))) {
+          const day = body.days.find((d) => d.date === date);
+          if (urgencyOf(day) !== null) continue;
+          expect(colourClasses(cell), `${name} ${lang} ${date}: no urgency colour`).toEqual([]);
+          expect(cell.querySelector("[data-urgency]"), `${name} ${lang} ${date}: no urgency mark`).toBeNull();
+          if (day && day.papers.length > 0) routine++;
+          if (day && day.follow_ups.length > 0) follows++;
+        }
+        cleanup();
+      }
+    }
+    // Guard: routine papers and doctor's dates were among the days judged, so the empty lists above are not vacuous.
+    expect(routine, "routine paper days judged").toBeGreaterThan(0);
+    expect(follows, "doctor's date days judged").toBeGreaterThan(0);
+  });
+
+  it("theEnglishCountsAreSingularForOneAndPluralForTwoAndBanglaIsUnchanged", () => {
+    // The W2e-b board read "1 papers": the counted nouns are their own keys, one and other (DR-48). Typed by hand, not
+    // computed from the bundle, so a bundle that went back to one plural form fails here.
+    const routinePaper = busy.body.days.find((d) => d.papers.some((p) => p.chip === null))!.papers[0]!;
+    const nowPaper = busy.body.days.find((d) => d.papers.some((p) => p.chip === "now"))!.papers[0]!;
+    const follow = busy.body.days.find((d) => d.follow_ups.length > 0)!.follow_ups[0]!;
+    const days: CalendarDayJson[] = [
+      { date: `${month}-05`, papers: [routinePaper], follow_ups: [follow] },
+      { date: `${month}-06`, papers: [routinePaper, routinePaper], follow_ups: [follow, follow] },
+      { date: `${month}-07`, papers: [nowPaper], follow_ups: [] },
+    ];
+    const statusOn = (lang: Lang, date: string) => {
+      const root = draw(lang, { month, days });
+      const text = statusOf(dayCells(root).find((c) => c.date === date)!.cell)!.textContent;
+      cleanup();
+      return text;
+    };
+    expect(statusOn("en", `${month}-05`)).toBe("2026-10-05: 1 paper, 1 doctor's date");
+    expect(statusOn("en", `${month}-06`)).toBe("2026-10-06: 2 papers, 2 doctor's dates");
+    expect(statusOn("en", `${month}-07`)).toBe("2026-10-07: 1 paper, 0 doctor's dates, needs attention now");
+    // Bangla keeps the sentence it had before the count keys ("<n> ti kagoj, <n> ti daktarer tarikh"), for one and for
+    // two: Bangla does not change the noun with the count. Code points, as the Bangla-literal lint requires.
+    const TI_PAPER = String.fromCodePoint(0x099f, 0x09bf, 0x0020, 0x0995, 0x09be, 0x0997, 0x099c);
+    const TI_DATE = String.fromCodePoint(0x099f, 0x09bf, 0x0020, 0x09a1, 0x09be, 0x0995, 0x09cd, 0x09a4, 0x09be, 0x09b0, 0x09c7, 0x09b0, 0x0020, 0x09a4, 0x09be, 0x09b0, 0x09bf, 0x0996);
+    for (const [date, n] of [
+      [`${month}-05`, "1"],
+      [`${month}-06`, "2"],
+    ] as const) {
+      expect(statusOn("bn", date), `bn ${date}`).toBe(`${formatDate("bn", date)}: ${banglaDigits(n)}${TI_PAPER}, ${banglaDigits(n)}${TI_DATE}`);
     }
   });
 

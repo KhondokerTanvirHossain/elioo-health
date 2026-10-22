@@ -14,10 +14,13 @@ const src = join(dirname(fileURLToPath(import.meta.url)), "..");
 // The plain class strings are matched as written, except that `now-banner` right after `api/` is B3's path segment
 // (fixtures/api/now-banner/ and /app/api/now-banner), not the class. Only that segment is exempt: `now-banner` after
 // any other slash (`styles/now-banner`, `x/now-banner__call`) is still reported.
+// MonthCalendar's colour modifiers (PO ruling R2, DR-48) end in --now / --week like a token; they are not the tokens,
+// and have their own rule below, so the token patterns skip exactly them.
+const CAL_MARK = "month-calendar__(?:alert|key)";
 const RULES: { names: [label: string, pattern: RegExp][]; allowed: RegExp[] }[] = [
   {
     names: [
-      ["--now", /--(?:on-)?now(?![A-Za-z0-9_])/],
+      ["--now", new RegExp(`(?<!${CAL_MARK})--(?:on-)?now(?![A-Za-z0-9_])`)],
       ["now-banner", /(?<!api\/)now-banner/],
       ["verdict-card--now", /verdict-card--now/],
       ["status-chip--crit", /status-chip--crit/],
@@ -26,10 +29,18 @@ const RULES: { names: [label: string, pattern: RegExp][]; allowed: RegExp[] }[] 
   },
   {
     names: [
-      ["--week", /--(?:on-)?week(?![A-Za-z0-9_])/],
+      ["--week", new RegExp(`(?<!${CAL_MARK})--(?:on-)?week(?![A-Za-z0-9_])`)],
       ["verdict-card--week", /verdict-card--week/],
     ],
     allowed: [/^src\/components\/safety\//, /^src\/styles\//, /^src\/lint\//],
+  },
+  {
+    names: [["month-calendar__(alert|key)--now", new RegExp(`${CAL_MARK}--now(?![A-Za-z0-9_])`)]],
+    allowed: [/^src\/components\/MonthCalendar\//, /^src\/styles\//, /^src\/lint\//],
+  },
+  {
+    names: [["month-calendar__(alert|key)--week", new RegExp(`${CAL_MARK}--week(?![A-Za-z0-9_])`)]],
+    allowed: [/^src\/components\/MonthCalendar\//, /^src\/styles\//, /^src\/lint\//],
   },
 ];
 
@@ -103,6 +114,27 @@ describe("NOW and THIS_WEEK class names in TypeScript", () => {
     for (const text of classes) expect(scanFile("src/components/Probe/Probe.tsx", text), text).toEqual(["src/components/Probe/Probe.tsx now-banner"]);
     // A path and a class in one file is still the class.
     expect(scanFile("src/catalog/states.tsx", `${paths[0]}\n${classes[0]}`)).toEqual(["src/catalog/states.tsx now-banner"]);
+  });
+
+  it("theCalendarsColourModifiersLiveOnlyInMonthCalendar", () => {
+    // PO ruling R2 (DR-48): the calendar's NOW and THIS_WEEK marks carry their colour through these modifiers, which
+    // MonthCalendar may name and nothing else may.
+    const cal = "src/components/MonthCalendar/MonthCalendar.tsx";
+    const marks = '<span className="month-calendar__alert month-calendar__alert--now" /><li className="month-calendar__key--week" />';
+    expect(scanFile(cal, marks)).toEqual([]);
+    expect(scanFile("src/components/MonthCalendar/MonthCalendar.cases.tsx", "month-calendar__key--now month-calendar__alert--week")).toEqual([]);
+    expect(scanFile("src/components/Probe/Probe.tsx", marks)).toEqual([
+      "src/components/Probe/Probe.tsx month-calendar__(alert|key)--now",
+      "src/components/Probe/Probe.tsx month-calendar__(alert|key)--week",
+    ]);
+    // MonthCalendar is not a NOW component: a NOW token, or another component's NOW class, is still reported there.
+    expect(scanFile(cal, '<path fill="var(--now)" />')).toEqual([`${cal} --now`]);
+    expect(scanFile(cal, 'style={{ color: "var(--week)" }}')).toEqual([`${cal} --week`]);
+    expect(scanFile(cal, '<span className="status-chip--crit-high verdict-card--week" />')).toEqual([
+      `${cal} status-chip--crit`,
+      `${cal} --week`,
+      `${cal} verdict-card--week`,
+    ]);
   });
 
   it("aNowTokenIsMatchedByItsNameNotBySubstring", () => {

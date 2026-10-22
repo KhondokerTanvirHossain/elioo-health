@@ -27,6 +27,14 @@ export function dayUrgency(day: CalendarDayJson | undefined): DayUrgency {
   return null;
 }
 
+/**
+ * A count with its noun, from the bundle's one and other forms (DR-48): "1 paper", "2 papers". Only exactly one takes
+ * the one form, in either language; Bangla's two forms are the same words, so the choice only shows in English.
+ */
+export function counted(lang: Lang, noun: "papers" | "follows", n: number): string {
+  return t(lang, `calendar.count.${noun}.${n === 1 ? "one" : "other"}`, n);
+}
+
 /** The sentence a screen reader hears for a day, one bundle key per urgency, so the urgency is never joined on here. */
 const STATUS_KEY: Record<"now" | "week" | "none", CopyKey> = {
   now: "calendar.day.status.now",
@@ -34,10 +42,20 @@ const STATUS_KEY: Record<"now" | "week" | "none", CopyKey> = {
   none: "calendar.day.status",
 };
 
-/** The urgency's shape and word: the NOW octagon and the this-week calendar the paper's band draws, never a direction. */
-const URGENCY: Record<"now" | "week", { shape: "octagon" | "calendar-week"; cell: CopyKey; legend: CopyKey }> = {
-  now: { shape: "octagon", cell: "calendar.day.now", legend: "calendar.legend.now" },
-  week: { shape: "calendar-week", cell: "calendar.day.week", legend: "calendar.legend.week" },
+/**
+ * The urgency's shape and word: the NOW octagon and the this-week calendar the paper's band draws, never a direction.
+ * And its colour (PO ruling R2, DR-48): the modifier that paints the cell's mark and the legend's key, the NOW red for
+ * NOW and the amber for THIS_WEEK. The colour is never the only signal: the shape and the word stay.
+ */
+const URGENCY: Record<"now" | "week", { shape: "octagon" | "calendar-week"; cell: CopyKey; legend: CopyKey; mark: string; key: string }> = {
+  now: { shape: "octagon", cell: "calendar.day.now", legend: "calendar.legend.now", mark: "month-calendar__alert--now", key: "month-calendar__key--now" },
+  week: {
+    shape: "calendar-week",
+    cell: "calendar.day.week",
+    legend: "calendar.legend.week",
+    mark: "month-calendar__alert--week",
+    key: "month-calendar__key--week",
+  },
 };
 
 /** The calendar's paper mark, a dot; and the legend's ring, the ring a doctor's date draws round its day's numeral. */
@@ -74,7 +92,7 @@ function monthDays(month: string): { dates: string[]; firstColumn: number } {
  * What a screen reader hears for a day is text in the cell, visually hidden (`calendar.day.status*`, one key per
  * urgency), and everything drawn is aria-hidden: an author name on a static table cell is not reliably announced (NVDA
  * and JAWS browse mode, TalkBack read the cell's content), so the status is the content. The days Java did not send
- * hold nothing, and are drawn empty.
+ * hold nothing, and are drawn empty. A day's NOW mark is the NOW red and its THIS_WEEK mark the amber (R2, DR-48).
  */
 export function MonthCalendar({ month, days, caption, lang }: { month: string; days: CalendarDayJson[]; caption: string; lang: Lang }) {
   const { dates, firstColumn } = monthDays(month);
@@ -109,7 +127,7 @@ export function MonthCalendar({ month, days, caption, lang }: { month: string; d
                 const papers = day?.papers.length ?? 0;
                 const follows = day?.follow_ups.length ?? 0;
                 const urgency = dayUrgency(day);
-                const status = t(lang, STATUS_KEY[urgency ?? "none"], formatDate(lang, date), papers, follows);
+                const status = t(lang, STATUS_KEY[urgency ?? "none"], formatDate(lang, date), counted(lang, "papers", papers), counted(lang, "follows", follows));
                 const dayNumber = String(Number(date.slice(8)));
                 return (
                   <td key={column} className={fri ? "month-calendar__day month-calendar__day--fri" : "month-calendar__day"} data-date={date}>
@@ -125,7 +143,7 @@ export function MonthCalendar({ month, days, caption, lang }: { month: string; d
                       {papers > 0 && <Mark shape="dot" />}
                     </span>
                     {urgency && (
-                      <span className="month-calendar__alert" data-urgency={urgency} aria-hidden="true">
+                      <span className={`month-calendar__alert ${URGENCY[urgency].mark}`} data-urgency={urgency} aria-hidden="true">
                         <ChipShape shape={URGENCY[urgency].shape} className="month-calendar__mark month-calendar__mark--urgency" />
                         <span className="month-calendar__alert-word">{t(lang, URGENCY[urgency].cell)}</span>
                       </span>
@@ -142,11 +160,11 @@ export function MonthCalendar({ month, days, caption, lang }: { month: string; d
           <Mark shape="dot" />
           {t(lang, "calendar.legend.paper")}
         </li>
-        <li>
+        <li className={URGENCY.week.key}>
           <ChipShape shape={URGENCY.week.shape} className="month-calendar__mark month-calendar__mark--urgency" />
           {t(lang, URGENCY.week.legend)}
         </li>
-        <li>
+        <li className={URGENCY.now.key}>
           <ChipShape shape={URGENCY.now.shape} className="month-calendar__mark month-calendar__mark--urgency" />
           {t(lang, URGENCY.now.legend)}
         </li>

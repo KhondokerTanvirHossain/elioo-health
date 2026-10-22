@@ -130,6 +130,48 @@ describe("tokenUsageViolations", () => {
       tokenUsageViolations(".verdict-card--week .verdict-card__band { background: var(--week-soft) }", "week", WEEK_ALLOWED),
     ).toEqual([]);
   });
+
+  it("theCalendarsUrgencyMarksMayPaintTheirOwnColourAndNothingElseMay", () => {
+    // PO ruling R2 (DR-48): the MonthCalendar's NOW mark is the NOW red and its THIS_WEEK mark the amber, in the
+    // cell and in the legend. Only the NOW modifiers may use the NOW tokens, only the THIS_WEEK ones --week.
+    const now = `
+      .month-calendar__alert--now .month-calendar__mark--urgency { stroke: var(--now) }
+      .month-calendar__alert--now .month-calendar__alert-word { color: var(--now-ink) }
+      .month-calendar__key--now .month-calendar__mark--urgency { stroke: var(--now) }
+    `;
+    expect(nowUsageViolations(now, NOW_ALLOWED)).toEqual([]);
+    const week = `
+      .month-calendar__alert--week .month-calendar__mark--urgency { stroke: var(--week) }
+      .month-calendar__alert--week .month-calendar__alert-word { color: var(--week) }
+      .month-calendar__key--week .month-calendar__mark--urgency { stroke: var(--week) }
+    `;
+    expect(tokenUsageViolations(week, "week", WEEK_ALLOWED)).toEqual([]);
+    // The dangerous direction: the red on the THIS_WEEK mark, the amber on the NOW mark, either on the calendar's
+    // other parts (a day, its numeral, its paper dot, the doctor's-date ring), or on a modifier that only starts alike.
+    expect(nowUsageViolations(".month-calendar__alert--week .month-calendar__mark--urgency { stroke: var(--now) }", NOW_ALLOWED)).toEqual([
+      ".month-calendar__alert--week .month-calendar__mark--urgency uses --now",
+    ]);
+    expect(
+      tokenUsageViolations(".month-calendar__alert--now .month-calendar__alert-word { color: var(--week) }", "week", WEEK_ALLOWED),
+    ).toEqual([".month-calendar__alert--now .month-calendar__alert-word uses --week"]);
+    for (const selector of [
+      ".month-calendar",
+      ".month-calendar__day",
+      ".month-calendar__alert",
+      ".month-calendar__mark--dot",
+      ".month-calendar__mark--ring",
+      ".month-calendar__n--follow",
+      ".month-calendar__legend li",
+      ".month-calendar__alert--nowish",
+    ]) {
+      expect(nowUsageViolations(`${selector} { color: var(--now) }`, NOW_ALLOWED), selector).toEqual([`${selector} uses --now`]);
+      expect(tokenUsageViolations(`${selector} { color: var(--week) }`, "week", WEEK_ALLOWED), selector).toEqual([`${selector} uses --week`]);
+    }
+    // A NOW modifier reaching into another component is that component's use.
+    expect(nowUsageViolations(".month-calendar__alert--now .status-chip { color: var(--now) }", NOW_ALLOWED)).toEqual([
+      ".month-calendar__alert--now .status-chip uses --now",
+    ]);
+  });
 });
 
 describe("roleUsageViolations", () => {
