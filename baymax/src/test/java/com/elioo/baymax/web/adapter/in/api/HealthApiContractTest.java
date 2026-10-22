@@ -114,6 +114,7 @@ class HealthApiContractTest {
                         copy, properties),
                 new HealthApiHandler(health),
                 B3Handlers.nowBanner(), B3Handlers.attention(), B3Handlers.timeline(),
+                new PreferencesApiHandler(properties),
                 guard)).build();
     }
 

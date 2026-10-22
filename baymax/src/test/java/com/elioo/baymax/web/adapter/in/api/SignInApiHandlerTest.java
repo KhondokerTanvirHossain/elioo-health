@@ -101,6 +101,7 @@ class SignInApiHandlerTest {
                         new UiCopy(), properties),
                 new HealthApiHandler(org.mockito.Mockito.mock(com.elioo.baymax.web.application.port.in.HealthUseCase.class)),
                 B3Handlers.nowBanner(), B3Handlers.attention(), B3Handlers.timeline(),
+                new PreferencesApiHandler(properties),
                 guard)).build();
     }
 

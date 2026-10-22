@@ -373,6 +373,14 @@ class AppApiLogSafetyTest {
                 c.put().uri("/app/api/language").cookie("baymax_session", t).contentType(MediaType.APPLICATION_JSON)
                         .bodyValue(Map.of("lang", NAME)).exchange().expectStatus().isForbidden();
             });
+            exercise.put("PUT /app/api/preferences", (c, t) -> {
+                json(c.put().uri("/app/api/preferences"), t, Map.of("theme", "dark")).expectStatus().isNoContent();
+                json(c.put().uri("/app/api/preferences"), t, Map.of("theme", NAME + NUMBER))
+                        .expectStatus().isBadRequest().expectBody().json("{\"reason\":\"INVALID\"}", true);
+                json(c.put().uri("/app/api/preferences"), t, Map.of("theme", "dark", "name", NAME, "n", NUMBER))
+                        .expectStatus().isBadRequest().expectBody().json("{\"reason\":\"INVALID\"}", true);
+                refusedByTheGuard(c, "/app/api/preferences", t, Map.of("theme", NAME, "n", NUMBER));
+            });
             exercise.put("* /app/api/**", (c, t) -> {
                 c.get().uri("/app/api/nothing-here").cookie("baymax_session", t).exchange().expectStatus().isNotFound();
                 c.post().uri("/app/api/nothing-here").cookie("baymax_session", t).header("X-Medioo", "1")
