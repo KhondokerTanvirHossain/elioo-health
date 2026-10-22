@@ -11,6 +11,7 @@ import com.elioo.baymax.web.adapter.in.ui.DocumentPages;
 import com.elioo.baymax.web.adapter.in.ui.Lang;
 import com.elioo.baymax.web.adapter.in.ui.UiCopy;
 import com.elioo.baymax.web.application.port.in.ResultUseCase;
+import com.elioo.baymax.web.domain.EarlierReading;
 import com.elioo.baymax.web.domain.ReadingView;
 import com.elioo.baymax.web.domain.ResultView;
 import com.elioo.baymax.web.domain.WebSession;
@@ -20,10 +21,15 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * {@code GET /app/api/documents/{id}}: one paper's display model ({@link PaperJson}). As the HTML document page reads it
@@ -75,6 +81,62 @@ public class PaperApiHandler {
         @SuppressWarnings("unchecked")
         String name = (String) ((Map<String, Object>) body.get("patient")).get("name");
         return PaperJson.withNames(body, copy.poss(lang, name), copy.obj(lang, name));
+    }
+
+    /**
+     * {@code GET /app/api/documents/{id}/values/{obs}} (plan W6-api): one value's sheet ({@link PaperJson#valueSheet}), read
+     * in the HTML sheet's order ({@code DocumentPages.valueSheetPage}). The earlier readings first, which records nothing
+     * and is 404 for another family and for an observation that is not one of THIS paper's values, so a probe records no
+     * view; then the status, which records nothing either, so a row stored on a read the system rejected (NEEDS_RETAKE,
+     * FAILED), which the paper's JSON never shows, opens no sheet; then the result, the one DOCUMENT_VIEW. Then the
+     * crop sizes: this paper's, measured as its own JSON measures them ({@link #sizes}), and each earlier paper's for its
+     * own crop as its ledger stores them, never measured ({@link #earlierSizes}; they are the same patient's, proved by
+     * the earlier read). A failed size read never fails the answer after the view was recorded.
+     */
+    public Mono<ServerResponse> valueSheet(ServerRequest request) {
+        WebSession session = SessionAuthFilter.session(request);
+        Lang lang = Lang.of(request);
+        UUID documentId = uuid(request.pathVariable("id"));
+        UUID observationId = uuid(request.pathVariable("obs"));
+        UUID family = session.familyId();
+        return results.earlierHistory(family, documentId, observationId)
+                .flatMap(history -> results.status(family, documentId)
+                        .flatMap(status -> status != Document.Status.DONE ? Mono.<ResultView>error(notFound())
+                                : results.result(family, documentId))
+                        .flatMap(r -> !r.done() ? Mono.error(notFound())
+                                : Mono.zip(sizes(r, documentId, storage), earlierSizes(history.sameUnit()))
+                                        .map(s -> PaperJson.valueSheet(r, observationId, history, s.getT1(), s.getT2(),
+                                                copy.poss(lang, r.patient().name())))))
+                .flatMap(body -> ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValue(body));
+    }
+
+    /** How many earlier papers' ledgers the sheet reads at once (at most {@code ResultService.EARLIER_READINGS} in all). */
+    private static final int EARLIER_LEDGER_READS = 2;
+
+    /**
+     * Each earlier paper's crop sizes as its ledger already stores them, by document, kept to the crops the sheet shows.
+     * Never measured from here ({@code objectsOf}, not {@code measuredObjectsOf}): measuring would fetch every never-tried
+     * crop on a paper the family did not open, under the process-wide fetch gate, and hold the sheet for its budget. An
+     * unmeasured crop goes out with null sizes (D4b allows it) and is measured when its own paper is opened. A paper
+     * whose ledger cannot be read is sent without sizes; the others keep theirs.
+     */
+    private Mono<Map<UUID, Map<String, ImageDimensions>>> earlierSizes(List<EarlierReading> earlier) {
+        Map<UUID, Set<String>> shown = earlier.stream().collect(Collectors.groupingBy(EarlierReading::documentId, LinkedHashMap::new,
+                Collectors.mapping(EarlierReading::cropKey, Collectors.toSet())));
+        return Flux.fromIterable(shown.entrySet())
+                .flatMap(d -> storage.objectsOf(d.getKey())
+                        .filter(o -> o.kind() == ObjectKind.CROP && d.getValue().contains(o.storageKey()) && o.dimensions().isPresent())
+                        .collectMap(StoredObject::storageKey, o -> o.dimensions().orElseThrow())
+                        .onErrorResume(e -> {
+                            log.warn("[baymax] earlier sizes unavailable documentId={} ({})", d.getKey(), e.getClass().getSimpleName());
+                            return Mono.just(Map.of());
+                        })
+                        .map(sizes -> Map.entry(d.getKey(), sizes)), EARLIER_LEDGER_READS)
+                .collectMap(Map.Entry::getKey, Map.Entry::getValue);
+    }
+
+    private static BaymaxException notFound() {
+        return BaymaxException.notFound("observation_not_found", "no such value on document");
     }
 
     /**

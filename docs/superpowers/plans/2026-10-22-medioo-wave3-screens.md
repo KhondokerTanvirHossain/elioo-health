@@ -446,6 +446,7 @@ Branch per the table at the top. Lane X. Each F PR runs after its screen PR is m
     - a file routing `/app/api/*` to Next fails on the `/app/api/me` row;
     - a file whose preview block is `handle /app/preview/* {…}` only fails on the `/app/preview` row;
     - `theProbeSpeaksPlainHttp`: the probe's request to `/app/healthz` answers 298, not 308.
+- *(Amended by W6-api review, for PO sight:)* **F6 changes an answer for rejected papers.** Today Java's HTML sheet `/app/documents/{id}/values/{obs}` answers 200 for a NEEDS_RETAKE or FAILED paper's stored row, with its chip and crop. Next's sheet reads `GET /app/api/documents/{id}/values/{obs}`, which is 404 for any paper that is not DONE, so after F6 the same WhatsApp-reachable URL answers Next's not-found page for those papers. That is the intended behaviour, and W6-fix makes the HTML agree before F6. F6's PR states the change and its Step 2 measures one such URL before the flip.
 - [ ] **Step 5 (F6 only): Replay Review Focus 1.** Replace the `path_regexp` with `path /app/documents/*` and run the route probe. Expected: `FAIL /app/documents/<uuid>/image?key=x got 298 (next), expected 299 (java)`. Restore; quote the line.
 - [ ] **Step 6: Box (operator, `box_steps_pending`):** RUNBOOK "Routing a path to medioo-web" steps 2–6 with this PR's file: drift check, tenants' codes, backup, in-place write, validate, reload, tenants again, the full table PASS, drift check with the PR's file. Paste the result lines.
 - [ ] **Step 7: Merge** (by the PO's merge rule; this plan's pipeline does not merge), then RUNBOOK step 7: record the routes floor with the squash sha and the row's path label, and post `cat ~/medioo-routes-floor` on the PR.
@@ -739,10 +740,13 @@ Branch `feat/baymax-web-api-value-sheet`. Lane B.
 - Modify (tests): `AppApiLogSafetyTest.java`
 - Create (tests): `baymax/src/test/java/com/elioo/baymax/web/adapter/in/api/ValueSheetApiContractTest.java`
 - Generated: `docs/infra/app-routes.txt`; `medioo-web/fixtures/api/value-sheet/` `inside.json`, `outside-high.json`, `unknown-one-sided.json`, `earlier-three.json`, `earlier-none.json`, `not-found.json`
+- *(Amended by W6-api, for PO sight:)* also generated `no-history.json` (a marker that did not canonicalise: no line) and `earlier-other-unit.json` (read before only in another unit: no line); also modified `ResultUseCase.java` and `ResultService.java` (`earlierHistory`), created `web/domain/EarlierHistory.java`, and modified (tests) `EarlierReadingsTest.java`; `docs/MEDIOO.md` gains the route's entry.
 
 **Interfaces:**
 - Consumes: `ResultUseCase.earlierReadings(familyId, documentId, observationId)` (404 for another family and for an observation not on this paper, before anything is read), then `ResultUseCase.result` (one DOCUMENT_VIEW, as the HTML sheet records).
+  *(Amended by W6-api, for PO sight:)* `ResultUseCase.earlierHistory`, the same read and the same 404s, which also says whether the marker was read before in another unit; then `ResultUseCase.status`, which records nothing: a paper that is not DONE (NEEDS_RETAKE, FAILED, still being read) is 404 `NOT_FOUND` with no view recorded, because `PaperJson` never sends such a paper's rows.
 - Produces: `{"paper": {id, document_type, date, date_is_upload_day, date_uncertain, patient:{id, name, name_possessive}}, "value": <the PaperJson value row: id, name, value, unit, ref_low, ref_high, display_kind, side, chip_key, pin, in_now_block, crop>, "earlier": [{document_id, observation_id, value, unit, crop:{src, width, height}, date, date_is_upload_day}]}`.
+  *(Amended by W6-api, for PO sight:)* plus `"earlier_line_key"`: `null` | `"sheet.earlier.none"` | `"sheet.earlier"` | `"sheet.earlier.nounit"`, the heading line the HTML sheet draws. `null` when the marker did not canonicalise or was read before only in another unit, because Medioo cannot say "the first time" then; `sheet.earlier.none` only when no earlier reading of the marker exists in any unit. An earlier paper's crop size is its ledger's stored size, never measured from the sheet; null when unknown.
 
 - [ ] **Step 1: Write the failing tests** in `ValueSheetApiContractTest`:
   - one case per fixture.
@@ -762,10 +766,21 @@ Branch `feat/baymax-web-api-value-sheet`. Lane B.
   git add $M/PaperApiHandler.java $M/PaperJson.java $M/AppApiRouter.java $T/ValueSheetApiContractTest.java \
     $T/AppApiLogSafetyTest.java docs/infra/app-routes.txt $F/inside.json $F/outside-high.json \
     $F/unknown-one-sided.json $F/earlier-three.json $F/earlier-none.json $F/not-found.json
+  # (Amended by W6-api, for PO sight:) also $F/no-history.json $F/earlier-other-unit.json,
+  # baymax/src/main/java/com/elioo/baymax/web/{application/port/in/ResultUseCase.java,application/service/ResultService.java,domain/EarlierHistory.java},
+  # baymax/src/test/java/com/elioo/baymax/extraction/adapter/out/persistence/EarlierReadingsTest.java, docs/MEDIOO.md and this plan
   git status --short -- medioo-web baymax/src scripts docs .github   # nothing outside the list
   git commit -m "feat(baymax-web): one value's sheet as JSON, the earlier readings each with its crop (plan W6-api)" \
     -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   ```
+
+### Open work found by W6-api's review: W6-fix, `fix/baymax-web-value-sheet-gates` *(Amended by W6-api review, for PO sight)*
+
+Two defects are live in production on the HTML sheet (`DocumentPages.valueSheetPage` and `valueSheet`), which families open from WhatsApp today. W6-api fixed both only on its JSON route. CLAUDE.md: a fix scoped to the path under discussion leaves the defect live on every other path.
+1. **A rejected read's row opens a sheet.** A NEEDS_RETAKE or FAILED paper's stored row is served with its chip and crop, and its view is recorded.
+2. **"The first time" when it is not.** The HTML says `sheet.earlier.none` whenever no reading in this unit exists, including when the marker was read before in another unit.
+
+The fix is one value-sheet read in `ResultUseCase` that both handlers go through. It refuses anything not DONE before the result is read, and it carries `EarlierHistory`, so the HTML draws no line when `readInAnotherUnit` is true. There are tests on the HTML route and on the JSON route, each replayed red against the current HTML. It lands before F6.
 
 ---
 
@@ -784,6 +799,7 @@ Branch `feat/medioo-web-paper`. Lane C. Owns master Review Focus 2 and 5, and th
   - `GET /app/api/documents/{id}` (PaperJson): `status`; `gate`; `wording`, only for RELEASED; `review_hours`, only for PENDING; `banner`; `now.{notdoctor_key, flags_go_key, bring_key, call_999, remote_share}`; `reasons`; `counts`; `values[]`; `medicines[]`; `follow_up[]`; `doctor`; `retake.{reason_key, ordinal}`; `owner`; `viewer.bangladesh`; `pages[]`.
   - `GET /app/api/documents/{id}/status` (polled, records nothing).
   - `GET /app/api/documents/{id}/values/{obs}` (W6-api).
+    *(Amended by W6-api, for PO sight:)* `ValueSheetJson` in `src/api/types.ts` carries `earlier_line_key: null | "sheet.earlier.none" | "sheet.earlier" | "sheet.earlier.nounit"`. The earlier heading renders that key and nothing else: it is never derived from `earlier.length` (an empty `earlier` with a null key draws no line at all, never "the first time"). A 404 from this route, a rejected or unfinished paper's value included, is the not-found page.
   - `GET /app/api/documents/{id}/delete-token` → `DELETE /app/api/documents/{id}` `{confirm_token}`.
   - Images go to Java's `/app/documents/{id}/image?key=` and `/page/{n}`, which are never flipped.
   - Components:

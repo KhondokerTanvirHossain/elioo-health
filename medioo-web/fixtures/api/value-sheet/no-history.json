@@ -1,0 +1,41 @@
+{
+  "_meta": {
+    "generated_by": "baymax ValueSheetApiContractTest",
+    "source": "GET /app/api/documents/{id}/values/{obs} over the case no-history"
+  },
+  "body": {
+    "earlier": [ ],
+    "earlier_line_key": null,
+    "paper": {
+      "date": "2026-10-12",
+      "date_is_upload_day": false,
+      "date_uncertain": false,
+      "document_type": "lab_report",
+      "id": "5e9edf6d-0a2a-4913-8675-9d07a4100003",
+      "patient": {
+        "id": "5e9edf6d-0a2a-4913-8675-9d07a4100002",
+        "name": "Ma",
+        "name_possessive": "Ma-র"
+      }
+    },
+    "value": {
+      "chip_key": "value.chip.inside",
+      "crop": {
+        "height": null,
+        "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-SerumXfactor.jpg",
+        "width": null
+      },
+      "display_kind": "inside",
+      "id": "71469ed3-e8f0-3f00-93b0-244a46f519b9",
+      "in_now_block": false,
+      "name": "Serum X factor",
+      "pin": 65.0,
+      "ref_high": "50",
+      "ref_low": "10",
+      "side": null,
+      "unit": "U/L",
+      "value": "42"
+    }
+  },
+  "status": 200
+}

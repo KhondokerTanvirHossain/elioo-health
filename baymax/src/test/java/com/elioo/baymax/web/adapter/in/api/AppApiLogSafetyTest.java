@@ -280,6 +280,23 @@ class AppApiLogSafetyTest {
                 c.get().uri(b -> b.path("/app/api/documents/{id}/status").build(NAME)).cookie("baymax_session", t)
                         .exchange().expectStatus().isNotFound();
             });
+            // plan W6-api: the sheet of the value named after her, so the answer provably carries the name twice (the
+            // patient's and the value's); another family's probe, another id and a visitor are refused before any read
+            exercise.put("GET /app/api/documents/{id}/values/{obs}", (c, t) -> {
+                Map<?, ?> drawn = c.get().uri("/app/api/documents/" + paper).cookie("baymax_session", t).exchange().expectStatus().isOk()
+                        .expectBody(Map.class).returnResult().getResponseBody();
+                String obs = String.valueOf(((Map<?, ?>) ((List<?>) drawn.get("values")).get(0)).get("id"));
+                c.get().uri("/app/api/documents/" + paper + "/values/" + obs).cookie("baymax_session", t).exchange().expectStatus().isOk()
+                        .expectBody().jsonPath("$.paper.patient.name").isEqualTo(NAME)
+                        .jsonPath("$.value.name").isEqualTo(NAME);
+                c.get().uri("/app/api/documents/" + paper + "/values/" + obs).cookie("baymax_session", otherToken)
+                        .exchange().expectStatus().isNotFound();
+                c.get().uri("/app/api/documents/" + paper + "/values/" + UUID.randomUUID()).cookie("baymax_session", t)
+                        .exchange().expectStatus().isNotFound();
+                c.get().uri(b -> b.path("/app/api/documents/{id}/values/{obs}").build(paper, NAME)).cookie("baymax_session", t)
+                        .exchange().expectStatus().isNotFound();
+                c.get().uri("/app/api/documents/" + paper + "/values/" + obs).exchange().expectStatus().isUnauthorized();
+            });
             // plan B6: a lab paper with a value named MARKER (with a canonical name, so it is a lab point) and a DONE
             // prescription whose medicine is MEDICINE; both reach the answers below, so the sweep reads lines written
             // while they were in hand

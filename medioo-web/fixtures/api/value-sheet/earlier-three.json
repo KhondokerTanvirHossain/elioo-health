@@ -1,0 +1,81 @@
+{
+  "_meta": {
+    "generated_by": "baymax ValueSheetApiContractTest",
+    "source": "GET /app/api/documents/{id}/values/{obs} over the case earlier-three"
+  },
+  "body": {
+    "earlier": [
+      {
+        "crop": {
+          "height": 41,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100071/image?key=f%2Fp%2F5e9edf6d-0a2a-4913-8675-9d07a4100071%2Fcrop-1.jpg",
+          "width": 307
+        },
+        "date": "2026-09-02",
+        "date_is_upload_day": false,
+        "document_id": "5e9edf6d-0a2a-4913-8675-9d07a4100071",
+        "observation_id": "5e9edf6d-0a2a-4913-8675-9d07a4100083",
+        "unit": "mmol/L",
+        "value": "5.9"
+      },
+      {
+        "crop": {
+          "height": 42,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100072/image?key=f%2Fp%2F5e9edf6d-0a2a-4913-8675-9d07a4100072%2Fcrop-1.jpg",
+          "width": 314
+        },
+        "date": "2026-07-11",
+        "date_is_upload_day": false,
+        "document_id": "5e9edf6d-0a2a-4913-8675-9d07a4100072",
+        "observation_id": "5e9edf6d-0a2a-4913-8675-9d07a4100084",
+        "unit": "mmol/L",
+        "value": "5.4"
+      },
+      {
+        "crop": {
+          "height": null,
+          "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100073/image?key=f%2Fp%2F5e9edf6d-0a2a-4913-8675-9d07a4100073%2Fcrop-1.jpg",
+          "width": null
+        },
+        "date": "2026-04-03",
+        "date_is_upload_day": true,
+        "document_id": "5e9edf6d-0a2a-4913-8675-9d07a4100073",
+        "observation_id": "5e9edf6d-0a2a-4913-8675-9d07a4100085",
+        "unit": "mmol/L",
+        "value": "4.8"
+      }
+    ],
+    "earlier_line_key": "sheet.earlier",
+    "paper": {
+      "date": "2026-10-12",
+      "date_is_upload_day": false,
+      "date_uncertain": false,
+      "document_type": "lab_report",
+      "id": "5e9edf6d-0a2a-4913-8675-9d07a4100003",
+      "patient": {
+        "id": "5e9edf6d-0a2a-4913-8675-9d07a4100002",
+        "name": "Ma",
+        "name_possessive": "Ma-র"
+      }
+    },
+    "value": {
+      "chip_key": "value.chip.critical.high",
+      "crop": {
+        "height": null,
+        "src": "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=f%2Fp%2Fd%2Fcrop-Potassium.jpg",
+        "width": null
+      },
+      "display_kind": "critical",
+      "id": "7af69ec6-676f-3bb9-b0bb-3e665c36ed57",
+      "in_now_block": true,
+      "name": "Potassium",
+      "pin": 98.0,
+      "ref_high": "5.1",
+      "ref_low": "3.5",
+      "side": "high",
+      "unit": "mmol/L",
+      "value": "6.9"
+    }
+  },
+  "status": 200
+}

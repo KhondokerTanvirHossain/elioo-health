@@ -1,6 +1,7 @@
 package com.elioo.baymax.web.application.port.in;
 
 import com.elioo.baymax.extraction.domain.Document;
+import com.elioo.baymax.web.domain.EarlierHistory;
 import com.elioo.baymax.web.domain.EarlierReading;
 import com.elioo.baymax.web.domain.ReadingView;
 import com.elioo.baymax.web.domain.ResultView;
@@ -39,4 +40,11 @@ public interface ResultUseCase {
      * document's values (an id from another paper never opens a sheet here). Records nothing.
      */
     Flux<EarlierReading> earlierReadings(UUID familyId, UUID documentId, UUID observationId);
+
+    /**
+     * The same read as {@link #earlierReadings} (the same 404s, records nothing), with one fact more: whether the marker was
+     * also read before, for this patient, in a unit that does not fold to this one. The value sheet's JSON (plan W6-api) says
+     * "the first time" only when no earlier reading of the marker exists in any unit.
+     */
+    Mono<EarlierHistory> earlierHistory(UUID familyId, UUID documentId, UUID observationId);
 }
