@@ -1,0 +1,12 @@
+{
+  "_meta": {
+    "generated_by": "baymax SignInApiContractTest",
+    "source": "POST /app/api/sign-in/request over the SignInApiContractTest case confirm"
+  },
+  "body": {
+    "confirm": {
+      "number_display": "+880 1700-000123"
+    }
+  },
+  "status": 200
+}

@@ -4,6 +4,7 @@ import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.reactive.server.EntityExchangeResult;
@@ -147,6 +148,9 @@ class AppApiRouteContractTest {
                     continue;
                 }
                 for (HttpMethod method : methods(route)) {
+                    if (!MUTATING.contains(method)) {
+                        continue;   // the open read (plan W3-api) is swept by theOpenReadNeedsNoSessionAndWritesNothing
+                    }
                     String uri = concrete(route.pattern());
                     swept.add(method + " " + route.pattern());
                     expect(leaks, method + " " + uri + " without X-Medioo", 403, "{\"reason\":\"MISSING_HEADER\"}",
@@ -174,16 +178,43 @@ class AppApiRouteContractTest {
         });
     }
 
-    /** {@link AppApiGuard#OPEN} names routes the routers publish, and only mutations: a GET is never sessionless here. */
+    /**
+     * {@link AppApiGuard#OPEN} names routes the routers publish: the sign-in mutations, all POST, and exactly one read,
+     * {@code GET /app/api/sign-in/state} (plan W3-api), which answers from the visitor's own login cookie. Any other
+     * sessionless GET fails here: a read of family data is never open.
+     */
     @Test
-    void theOpenRoutesAreRoutesThatExistAndAreMutations() {
+    void theOpenRoutesAreRoutesThatExistAndTheOnlyOpenReadIsTheSignInState() {
         AppApiContext.runner(POSTGRES).run(context -> {
             List<RouteWalk.Route> api = api(routes(context));
             assertThat(AppApiGuard.OPEN).as("the open set").isNotEmpty();
             assertThat(api.stream().map(RouteWalk.Route::pattern).toList()).as("patterns the routers publish")
                     .containsAll(AppApiGuard.OPEN);
-            assertThat(api.stream().filter(r -> AppApiGuard.OPEN.contains(r.pattern())).map(RouteWalk.Route::method).toList())
-                    .as("the methods of the open routes").isNotEmpty().allMatch("POST"::equals);
+            List<RouteWalk.Route> open = api.stream().filter(r -> AppApiGuard.OPEN.contains(r.pattern())).toList();
+            assertThat(open.stream().filter(r -> !r.method().equals("GET")).map(RouteWalk.Route::method).toList())
+                    .as("the methods of the open mutations").isNotEmpty().allMatch("POST"::equals);
+            assertThat(open.stream().filter(r -> r.method().equals("GET")).map(RouteWalk.Route::line).toList())
+                    .as("the open reads").containsExactly("GET /app/api/sign-in/state");
+        });
+    }
+
+    /** The open read, with no session at all: answered (never the 401), never cached, and it sets no cookie. */
+    @Test
+    void theOpenReadNeedsNoSessionAndWritesNothing() {
+        AppApiContext.runner(POSTGRES).run(context -> {
+            WebTestClient client = WebTestClient.bindToApplicationContext(context).build();
+            List<String> swept = new ArrayList<>();
+            for (RouteWalk.Route route : api(routes(context))) {
+                if (!AppApiGuard.OPEN.contains(route.pattern()) || !route.method().equals("GET")) {
+                    continue;
+                }
+                swept.add(route.line());
+                EntityExchangeResult<byte[]> r = client.get().uri(concrete(route.pattern())).exchange().expectBody().returnResult();
+                assertThat(r.getStatus().value()).as(route.line()).isEqualTo(200);
+                assertThat(r.getResponseHeaders().getCacheControl()).as(route.line()).isEqualTo("no-store");
+                assertThat(r.getResponseHeaders().getOrEmpty(HttpHeaders.SET_COOKIE)).as(route.line() + " Set-Cookie").isEmpty();
+            }
+            assertThat(swept).as("open reads read from the routers").isNotEmpty();
         });
     }
 

@@ -1,0 +1,10 @@
+{
+  "_meta": {
+    "generated_by": "baymax SignInApiContractTest",
+    "source": "GET /app/api/sign-in/next over the SignInApiContractTest case next-hostile"
+  },
+  "body": {
+    "next": "/app/home"
+  },
+  "status": 200
+}

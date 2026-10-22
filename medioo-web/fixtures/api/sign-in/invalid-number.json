@@ -1,0 +1,10 @@
+{
+  "_meta": {
+    "generated_by": "baymax SignInApiContractTest",
+    "source": "POST /app/api/sign-in/request over the SignInApiContractTest case invalid-number"
+  },
+  "body": {
+    "reason": "INVALID_NUMBER"
+  },
+  "status": 400
+}

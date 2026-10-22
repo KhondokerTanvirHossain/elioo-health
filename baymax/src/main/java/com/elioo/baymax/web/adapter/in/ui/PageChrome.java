@@ -75,8 +75,18 @@ public class PageChrome {
     /** The top bar: brand home, language toggle, and the logout button when signed in. */
     String top(Lang lang, String who, boolean signedIn) {
         String here = signedIn ? BASE + "/home" : BASE + "/";
-        return "<div class=\"top\"><a class=\"brand\" href=\"" + here + "\">" + Html.brand(copy.t(lang, "app.title")) + "</a>"
-                + "<div class=\"actions\">" + langToggle(lang, here)
+        return top(lang, who, signedIn, here, here);
+    }
+
+    /**
+     * The top bar with the page's own brand target ({@code home}) and the language switch's way back ({@code back}).
+     * The sign-in pages pass their own base and step, so the {@code /app/basic} fallback keeps a visitor without
+     * JavaScript on {@code /app/basic} — a switch on the code step lands back on the code step — instead of the
+     * scripted sign-in at {@code /app/} (plan W3-api, S1).
+     */
+    String top(Lang lang, String who, boolean signedIn, String home, String back) {
+        return "<div class=\"top\"><a class=\"brand\" href=\"" + home + "\">" + Html.brand(copy.t(lang, "app.title")) + "</a>"
+                + "<div class=\"actions\">" + langToggle(lang, back)
                 + (signedIn ? logout(lang, who) : "")
                 + "</div></div>";
     }

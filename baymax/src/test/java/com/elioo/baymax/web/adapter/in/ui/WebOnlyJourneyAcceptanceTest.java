@@ -138,7 +138,14 @@ class WebOnlyJourneyAcceptanceTest {
             Map.entry("POST /app/nudges/opt-out", "reached only from a link inside a WhatsApp reminder (HMAC token)"),
             Map.entry("POST /app/patients/{id}/upload", "the legacy upload for cached pages; AddReportSubmitTest"),
             Map.entry("GET /app/patients/{id}", "a 302 for old links; AppShellRoutesTest"),
-            Map.entry("GET /app/patients/{id}/profile", "the pre-tab profile URL; redirects to /app/family (A6)"));
+            Map.entry("GET /app/patients/{id}/profile", "the pre-tab profile URL; redirects to /app/family (A6)"),
+            // plan W3-api, S1: the journey signs in through /app; the same pages under /app/basic are walked end to end,
+            // from the <noscript> href to the held page, by BasicSignInPagesTest.aNoJsSignInThroughBasicOpensTheHeldPage
+            Map.entry("GET /app/basic", "the no-JS sign-in fallback; BasicSignInPagesTest walks it"),
+            Map.entry("GET /app/basic/", "the no-JS sign-in fallback; BasicSignInPagesTest walks it"),
+            Map.entry("POST /app/basic/login", "the no-JS sign-in fallback; BasicSignInPagesTest walks it"),
+            Map.entry("GET /app/basic/verify", "the no-JS sign-in fallback; BasicSignInPagesTest walks it"),
+            Map.entry("POST /app/basic/verify", "the no-JS sign-in fallback; BasicSignInPagesTest walks it"));
 
     /** Every request the journey made, as "METHOD /raw/path", recorded by the client itself (not labelled by hand). */
     private final List<String> requests = Collections.synchronizedList(new ArrayList<>());

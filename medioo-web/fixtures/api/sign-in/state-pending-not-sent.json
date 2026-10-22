@@ -1,0 +1,15 @@
+{
+  "_meta": {
+    "generated_by": "baymax SignInApiContractTest",
+    "source": "GET /app/api/sign-in/state over the SignInApiContractTest case state-pending-not-sent"
+  },
+  "body": {
+    "code_ttl_minutes": 10,
+    "max_attempts": 5,
+    "number_tail": "123",
+    "pending": true,
+    "sent": false,
+    "wa_link": "https://wa.me/8801700000999?text=%E0%A6%95%E0%A7%8B%E0%A6%A1"
+  },
+  "status": 200
+}

@@ -1,0 +1,13 @@
+{
+  "_meta": {
+    "generated_by": "baymax SignInApiContractTest",
+    "source": "POST /app/api/sign-in/request over the SignInApiContractTest case not-sent-no-link"
+  },
+  "body": {
+    "code_ttl_minutes": 10,
+    "max_attempts": 5,
+    "number_tail": "123",
+    "sent": false
+  },
+  "status": 200
+}

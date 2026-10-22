@@ -59,25 +59,48 @@ public class SignInPages implements WebPages {
         return 11;   // open
     }
 
+    /**
+     * The no-JS sign-in fallback (plan W3-api, S1, DR-42): these same pages under {@code /app/basic}, which Caddy keeps
+     * on Java after {@code /app/} moves to Next, and which the Next sign-in page links to from {@code <noscript>}.
+     */
+    public static final String BASIC = BASE + "/basic";
+
     @Override
     public RouterFunction<ServerResponse> routes(HandlerFilterFunction<ServerResponse, ServerResponse> requireSession) {
+        // the fallback's literal paths first: no {variable} route under /app may ever take /app/basic
+        return routesUnder(BASIC)
+                .and(routesUnder(BASE))
+                .and(RouterFunctions.route().POST(BASE + "/logout", this::logout).build());
+    }
+
+    /**
+     * The number page, the number's two posts and the code page with its post, under {@code base}: every form
+     * {@code action}, every redirect, the other-number link, the brand mark and the language switch's way back are
+     * built from {@code base}, so a family that started
+     * under {@code /app/basic} stays there. Cookies, {@code next=}, the {@link LocalPath} checks and the copy are the
+     * same code whatever the base; where sign-in lands ({@code next}, else {@link #HOME}) does not depend on it.
+     */
+    RouterFunction<ServerResponse> routesUnder(String base) {
         return RouterFunctions.route()
-                .GET(BASE + "/", this::loginPage)
-                .GET(BASE, this::loginPage)
-                .POST(BASE + "/login", this::login)
-                .GET(BASE + "/verify", this::verifyPage)
-                .POST(BASE + "/verify", this::verify)
-                .POST(BASE + "/logout", this::logout)
+                .GET(base + "/", request -> loginPage(request, base))
+                .GET(base, request -> loginPage(request, base))
+                .POST(base + "/login", request -> login(request, base))
+                .GET(base + "/verify", request -> verifyPage(request, base, null))
+                .POST(base + "/verify", request -> verify(request, base))
                 .build();
     }
 
     public Mono<ServerResponse> loginPage(ServerRequest request) {
+        return loginPage(request, BASE);
+    }
+
+    private Mono<ServerResponse> loginPage(ServerRequest request, String base) {
         Lang lang = Lang.of(request);
         Optional<String> next = request.queryParam("next").flatMap(LoginCookie::nextPage);
         return sessions.resolve(request).flatMap(s -> Html.redirect(next.orElse(HOME)))
                 .switchIfEmpty(Mono.defer(() -> {
                     next.ifPresent(n -> request.exchange().getResponse().addCookie(nextCookie(n, LoginCookie.TTL)));
-                    return numberPage(lang, "", null);
+                    return numberPage(lang, base, "", null);
                 }));
     }
 
@@ -89,11 +112,11 @@ public class SignInPages implements WebPages {
      * {@code sign-in-number} (spec §4.2): one field, no fixed prefix, no placeholder digits, no deep link (D37: that
      * belongs to the code step). The {@code pattern} is a courtesy; the server is the check.
      */
-    private Mono<ServerResponse> numberPage(Lang lang, String raw, String error) {
-        return chrome.app(lang, chrome.top(lang, null, false)
+    private Mono<ServerResponse> numberPage(Lang lang, String base, String raw, String error) {
+        return chrome.app(lang, chrome.top(lang, null, false, base + "/", base + "/")
                 + "<h1>" + copy.t(lang, "login.title") + "</h1>"
                 + (error == null ? "" : "<div class=\"err\" role=\"alert\">" + error + "</div>")
-                + "<form method=\"post\" action=\"" + BASE + "/login\">"
+                + "<form method=\"post\" action=\"" + base + "/login\">"
                 + "<label for=\"n\">" + copy.t(lang, "login.number") + "</label>"
                 + "<input id=\"n\" type=\"tel\" name=\"whatsapp_number\" autocomplete=\"tel\" inputmode=\"tel\""
                 + " pattern=\"[0-9০-৯+ \\-]{8,24}\" value=\"" + esc(raw) + "\" required>"
@@ -108,27 +131,31 @@ public class SignInPages implements WebPages {
      * when WhatsApp accepted an automatic send, the {@code .s} mark the code page reads — never the number.
      */
     public Mono<ServerResponse> login(ServerRequest request) {
+        return login(request, BASE);
+    }
+
+    private Mono<ServerResponse> login(ServerRequest request, String base) {
         Lang lang = Lang.of(request);
         return request.formData().flatMap(form -> {
             String raw = Optional.ofNullable(form.getFirst("whatsapp_number")).orElse("");
             Optional<String> number = PhoneDisplay.normalise(raw);
             if (number.isEmpty()) {
-                return numberPage(lang, raw, copy.t(lang, "login.number.invalid"));
+                return numberPage(lang, base, raw, copy.t(lang, "login.number.invalid"));
             }
             if (!"1".equals(form.getFirst("confirmed"))) {
-                return chrome.app(lang, chrome.top(lang, null, false)
+                return chrome.app(lang, chrome.top(lang, null, false, base + "/", base + "/")
                         + "<h1>" + copy.t(lang, "login.title") + "</h1>"
                         + "<p class=\"number-back\">" + esc(PhoneDisplay.full(number.get())) + "</p>"
                         + "<p>" + copy.t(lang, "login.number.confirm") + "</p>"
-                        + "<form method=\"post\" action=\"" + BASE + "/login\">"
+                        + "<form method=\"post\" action=\"" + base + "/login\">"
                         + "<input type=\"hidden\" name=\"whatsapp_number\" value=\"" + esc(number.get()) + "\">"
                         + "<input type=\"hidden\" name=\"confirmed\" value=\"1\">"
                         + "<button type=\"submit\">" + copy.t(lang, "login.number.yes") + "</button> "
-                        + "<a class=\"btn quiet\" href=\"" + BASE + "/\">" + copy.t(lang, "login.number.change") + "</a>"
+                        + "<a class=\"btn quiet\" href=\"" + base + "/\">" + copy.t(lang, "login.number.change") + "</a>"
                         + "</form>");
             }
             return auth.requestCode(number.get())
-                    .flatMap(requested -> ServerResponse.seeOther(URI.create(BASE + "/verify"))
+                    .flatMap(requested -> ServerResponse.seeOther(URI.create(base + "/verify"))
                             .header(HttpHeaders.SET_COOKIE, loginCookie(LoginCookie.value(requested.phoneHash(),
                                     PhoneDisplay.last3(number.get()), requested.sent()), LoginCookie.TTL).toString())
                             .build());
@@ -136,7 +163,7 @@ public class SignInPages implements WebPages {
     }
 
     public Mono<ServerResponse> verifyPage(ServerRequest request) {
-        return verifyPage(request, null);
+        return verifyPage(request, BASE, null);
     }
 
     /**
@@ -150,15 +177,16 @@ public class SignInPages implements WebPages {
      * The two non-sent pages are identical whatever the reason, so the page tells a stranger nothing about a number.
      * No script: the 5-second poll waits for the phase-1b CSP.
      */
-    private Mono<ServerResponse> verifyPage(ServerRequest request, String error) {
+    private Mono<ServerResponse> verifyPage(ServerRequest request, String base, String error) {
         Optional<LoginCookie.Login> login = LoginCookie.read(request);
         if (login.isEmpty()) {
-            return Html.redirect(BASE + "/");
+            return Html.redirect(base + "/");
         }
         Lang lang = Lang.of(request);
         boolean sent = login.get().sent();
         String link = Optional.ofNullable(WaLink.of(lang, properties.getWa().getPublicNumber())).map(Html::esc).orElse(null);
-        StringBuilder b = new StringBuilder(chrome.top(lang, null, false));
+        // the language switch keeps the code step, under the base the visitor is on
+        StringBuilder b = new StringBuilder(chrome.top(lang, null, false, base + "/", base + "/verify"));
         b.append("<h1>").append(copy.t(lang, "login.title")).append("</h1>");
         if (sent) {
             b.append("<p class=\"lede\" role=\"status\">").append(copy.t(lang, "login.code.sent")).append("</p>");
@@ -175,7 +203,7 @@ public class SignInPages implements WebPages {
         if (error != null) {
             b.append("<div class=\"err\" role=\"alert\">").append(error).append("</div>");
         }
-        b.append("<form method=\"post\" action=\"").append(BASE).append("/verify\">")
+        b.append("<form method=\"post\" action=\"").append(base).append("/verify\">")
                 .append("<label for=\"c\">").append(copy.t(lang, "login.code")).append("</label>")
                 .append("<input id=\"c\" class=\"code-in\" type=\"text\" name=\"code\" inputmode=\"numeric\" pattern=\"[0-9০-৯]{6}\" maxlength=\"6\" autocomplete=\"one-time-code\" required>")
                 .append("<button type=\"submit\">").append(copy.t(lang, "login.enter")).append("</button>")
@@ -184,14 +212,18 @@ public class SignInPages implements WebPages {
         if (sent && link != null) {
             b.append("<p class=\"small\"><a href=\"").append(link).append("\">").append(copy.t(lang, "login.code.resend")).append("</a></p>");
         }
-        b.append("<p class=\"small\"><a href=\"").append(BASE).append("/\">").append(copy.t(lang, "login.other")).append("</a></p>");
+        b.append("<p class=\"small\"><a href=\"").append(base).append("/\">").append(copy.t(lang, "login.other")).append("</a></p>");
         return chrome.app(lang, b.toString());
     }
 
     public Mono<ServerResponse> verify(ServerRequest request) {
+        return verify(request, BASE);
+    }
+
+    private Mono<ServerResponse> verify(ServerRequest request, String base) {
         Optional<String> hash = LoginCookie.read(request).map(LoginCookie.Login::hash);
         if (hash.isEmpty()) {
-            return Html.redirect(BASE + "/");
+            return Html.redirect(base + "/");
         }
         Lang lang = Lang.of(request);
         return request.formData()
@@ -204,9 +236,9 @@ public class SignInPages implements WebPages {
                         .header(HttpHeaders.SET_COOKIE, nextCookie("", Duration.ZERO).toString())
                         .build())
                 .onErrorResume(com.elioo.baymax.web.application.port.in.CodeRejectedException.class,
-                        e -> verifyPage(request, refusal(lang, e.failure())))
+                        e -> verifyPage(request, base, refusal(lang, e.failure())))
                 .onErrorResume(BaymaxException.class, e -> e.status() == HttpStatus.UNAUTHORIZED
-                        ? verifyPage(request, copy.t(lang, "login.bad.wrong"))
+                        ? verifyPage(request, base, copy.t(lang, "login.bad.wrong"))
                         : Mono.error(e));
     }
 
