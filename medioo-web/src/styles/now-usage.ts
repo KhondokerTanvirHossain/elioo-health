@@ -16,7 +16,8 @@ import type { TokenFile } from "./build-tokens";
 // A component's own classes: the block, its elements (`__x`) and its modifiers (`--x`), then the end of the compound
 // selector. The boundary is what stops `.now-bannerx` or `.status-chip--critique` from passing.
 const BOUNDARY = "(?=$|[\\s.:#\\[,>+~)]|__|--)";
-export const NOW_ALLOWED = new RegExp(`^\\.(now-banner|verdict-card--now|status-chip--crit-(high|low))${BOUNDARY}`);
+// urgent-mark: the patient's red mark in the switcher and the chooser (src/components/safety/UrgentMark, plan W4).
+export const NOW_ALLOWED = new RegExp(`^\\.(now-banner|urgent-mark|verdict-card--now|status-chip--crit-(high|low))${BOUNDARY}`);
 export const WEEK_ALLOWED = new RegExp(`^\\.verdict-card--week${BOUNDARY}`);
 
 const VAR = /var\(\s*--([\w-]+)/g;

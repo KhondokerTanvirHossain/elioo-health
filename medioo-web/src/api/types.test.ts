@@ -28,6 +28,14 @@ import labsNonNumeric from "../../fixtures/api/health/labs-non-numeric.json";
 import labsNone from "../../fixtures/api/health/labs-none.json";
 import labsSome from "../../fixtures/api/health/labs-some.json";
 import labsWithUnknown from "../../fixtures/api/health/labs-with-unknown.json";
+// B1's generated GET /app/api/me bodies (baymax MeApiContractTest), plan W4: the shell reads every field it renders here.
+import meLongName from "../../fixtures/api/me/long-name.json";
+import meNoPatients from "../../fixtures/api/me/no-patients.json";
+import meOnePatient from "../../fixtures/api/me/one-patient.json";
+import mePreviewOff from "../../fixtures/api/me/preview-off.json";
+import mePreviewOn from "../../fixtures/api/me/preview-on.json";
+import meTwoPatients from "../../fixtures/api/me/two-patients.json";
+import meUnauthenticated from "../../fixtures/api/me/unauthenticated.json";
 import {
   BANNER_LEVELS,
   DISPLAY_KINDS,
@@ -44,6 +52,8 @@ import {
   type Json,
   type LabSeriesJson,
   type LabsJson,
+  type MeJson,
+  type MePatient,
   type NowBannerDocumentJson,
   type NowBannerJson,
   type NowSeenJson,
@@ -347,5 +357,70 @@ describe("the API types are the generated fixtures", () => {
     for (const p of points) expect(keys(p), p.observation_id).toEqual([...POINT_KEYS]);
     expect(points.length, "points walked").toBeGreaterThan(0);
     expect(pairs, "blood-pressure pairs walked").toBeGreaterThan(0);
+  });
+});
+
+/*
+ * GET /app/api/me (plan W4): every committed body is assigned to MeJson (the compile-time half) and compared key for key
+ * with the lists below (the run-time half, which sees a field Java adds), and the directory is read so a new case cannot
+ * go unchecked. The one refusal is the {"reason"} of a 401.
+ */
+const ME_KEYS = ["active_patient_id", "family", "patients", "preview"] as const;
+const ME_FAMILY_KEYS = ["id", "owner_name"] as const;
+const ME_PATIENT_KEYS = [
+  "age",
+  "documents",
+  "id",
+  "last_document_at",
+  "name",
+  "name_objective",
+  "name_possessive",
+  "owner",
+  "sex",
+  "urgent",
+] as const;
+const meKeyListsAreTheTypes: [
+  Equal<(typeof ME_KEYS)[number], keyof MeJson>,
+  Equal<(typeof ME_FAMILY_KEYS)[number], keyof MeJson["family"]>,
+  Equal<(typeof ME_PATIENT_KEYS)[number], keyof MePatient>,
+] = [true, true, true];
+
+describe("GET /app/api/me", () => {
+  it("everyMeFixtureIsAMeJson", () => {
+    expect(meKeyListsAreTheTypes.every(Boolean)).toBe(true);
+    const bodies: Array<[string, MeJson, number]> = [
+      ["long-name.json", meLongName.body, meLongName.status],
+      ["no-patients.json", meNoPatients.body, meNoPatients.status],
+      ["one-patient.json", meOnePatient.body, meOnePatient.status],
+      ["preview-off.json", mePreviewOff.body, mePreviewOff.status],
+      ["preview-on.json", mePreviewOn.body, mePreviewOn.status],
+      ["two-patients.json", meTwoPatients.body, meTwoPatients.status],
+    ];
+    const refusals: Array<[string, { reason: string }, number]> = [
+      ["unauthenticated.json", meUnauthenticated.body, meUnauthenticated.status],
+    ];
+    expect(readdirSync(join(fixtures, "me")).filter((f) => f.endsWith(".json")).sort()).toEqual(
+      [...bodies, ...refusals].map(([file]) => file).sort(),
+    );
+    expect(refusals.map(([file, body, status]) => [file, body.reason, status])).toEqual([["unauthenticated.json", "UNAUTHENTICATED", 401]]);
+    let patients = 0;
+    for (const [file, me, status] of bodies) {
+      expect(status, file).toBe(200);
+      expect(keys(me), file).toEqual([...ME_KEYS]);
+      expect(keys(me.family), `${file} family`).toEqual([...ME_FAMILY_KEYS]);
+      for (const p of me.patients) {
+        expect(keys(p), `${file} ${p.id}`).toEqual([...ME_PATIENT_KEYS]);
+        expect(typeof p.urgent, `${file} ${p.id} urgent`).toBe("boolean");
+        patients++;
+      }
+      // The remembered patient is one of the list or nobody: Java never names a patient the family cannot see.
+      if (me.active_patient_id !== null) expect(me.patients.map((p) => p.id), file).toContain(me.active_patient_id);
+    }
+    // Guards: patients were walked, and the cases the shell branches on are all here.
+    expect(patients, "patients walked").toBeGreaterThan(0);
+    expect(bodies.some(([, me]) => me.patients.length === 0), "a family with no patient").toBe(true);
+    expect(bodies.some(([, me]) => me.patients.length > 1 && me.active_patient_id === null), "two and no choice").toBe(true);
+    expect(bodies.some(([, me]) => me.preview === false), "a family outside the preview").toBe(true);
+    expect(bodies.some(([, me]) => me.patients.some((p) => p.urgent)), "an urgent patient").toBe(true);
   });
 });

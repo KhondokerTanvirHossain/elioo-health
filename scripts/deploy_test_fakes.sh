@@ -46,6 +46,8 @@ write_deploy_fakes() {
 # FAKE_CATALOG=hang-once     the first catalog fetch of the case hangs, every later one answers the plain 404
 # FAKE_CATALOG=refused       nothing answers on the catalog path (connection refused), every time
 # FAKE_CATALOG_REF=<ref>     FAKE_CATALOG applies only to a container started from <ref> (e.g. not the one put back)
+# FAKE_CATALOG_PAGE=<path>   the catalog-only page FAKE_CATALOG applies to (default /app/catalog-test); every other
+#                            page of deploy.sh's WEB_CATALOG_PAGES answers the plain 404 (plan W4)
 # `docker run` writes its arguments, one per line, to run.<name>.args, where <name> is the image's repository
 # basename (run.medscribe-ai.args, run.medioo-web.args), so each container's argument boundaries can be checked.
 printf 'docker %s\n' "$*" >> "$FAKE_DIR/calls.log"
@@ -148,7 +150,7 @@ case "$1" in
       "${FAKE_HEALTHZ_SERVICE:-medioo-web}" "${FAKE_HEALTHZ_SHA:-${gs:-unknown}}" "${FAKE_HEALTHZ_BUILD:-${ref##*:}}")}"
     # the process sees the container's environment (its -e values and the image's baked BUILD_SHA), not the test's
     exec env -i PATH="$PATH" $(cat "$envf" 2>/dev/null) BUILD_SHA="${ref##*:}" \
-      FAKE_HZ_STATUS="$status" FAKE_HZ_BODY="$body" FAKE_HZ_CATALOG="$catalog" FAKE_HZ_ONCE="$FAKE_DIR/catalog.hung-once" \
+      FAKE_HZ_STATUS="$status" FAKE_HZ_BODY="$body" FAKE_HZ_CATALOG="$catalog" FAKE_HZ_CATALOG_PAGE="${FAKE_CATALOG_PAGE:-/app/catalog-test}" FAKE_HZ_ONCE="$FAKE_DIR/catalog.hung-once" \
       node --require "$(dirname "$0")/healthz-stub.cjs" -e "$code" "$@" ;;
   logs)
     echo "fake container log line" ;;
@@ -159,7 +161,7 @@ FAKE
   cat > "$bin/healthz-stub.cjs" <<'FAKE'
 // Preloaded by the fake `docker exec ... node -e <probe>`: stands in for the Next server inside the container.
 // fetch of exactly http://127.0.0.1:3000/app/healthz answers FAKE_HZ_STATUS with FAKE_HZ_BODY; /app/catalog-test
-// answers per FAKE_HZ_CATALOG (empty: the 404 every other URL gets; 200 or 404-states: a body with a catalog state;
+// (or FAKE_HZ_CATALOG_PAGE) answers per FAKE_HZ_CATALOG (empty: the 404 every other URL gets; 200 or 404-states: a body with a catalog state;
 // hang, refused: as below, on that path only; hang-once: hangs the first time, FAKE_HZ_ONCE marking it, then the 404);
 // any other URL is 404;
 // "refused" is nothing listening; "hang" accepts and never answers (only the caller's AbortSignal ends it, and an
@@ -169,6 +171,8 @@ const status = process.env.FAKE_HZ_STATUS || "200";
 const body = process.env.FAKE_HZ_BODY || "";
 let catalog = process.env.FAKE_HZ_CATALOG || "";
 const once = process.env.FAKE_HZ_ONCE || "";
+const page = "http://127.0.0.1:3000" + (process.env.FAKE_HZ_CATALOG_PAGE || "/app/catalog-test");
+delete process.env.FAKE_HZ_CATALOG_PAGE;
 delete process.env.FAKE_HZ_STATUS;
 delete process.env.FAKE_HZ_BODY;
 delete process.env.FAKE_HZ_CATALOG;
@@ -182,13 +186,13 @@ const refused = () => Promise.reject(new TypeError("fetch failed: connect ECONNR
 globalThis.fetch = (url, opts = {}) => {
   if (status === "refused") return refused();
   if (status === "hang") return hang(opts);
-  if (String(url) === "http://127.0.0.1:3000/app/catalog-test" && catalog === "hang-once") {
+  if (String(url) === page && catalog === "hang-once") {
     if (fs.existsSync(once)) catalog = "";
     else { fs.writeFileSync(once, "hung\n"); return hang(opts); }
   }
-  if (String(url) === "http://127.0.0.1:3000/app/catalog-test" && catalog === "hang") return hang(opts);
-  if (String(url) === "http://127.0.0.1:3000/app/catalog-test" && catalog === "refused") return refused();
-  if (String(url) === "http://127.0.0.1:3000/app/catalog-test" && catalog) {
+  if (String(url) === page && catalog === "hang") return hang(opts);
+  if (String(url) === page && catalog === "refused") return refused();
+  if (String(url) === page && catalog) {
     const states = '<main data-catalog-states="13"><section data-catalog-state="StatusChip/crit-high"></section></main>';
     return Promise.resolve(new Response(states, { status: catalog === "200" ? 200 : 404, headers: { "content-type": "text/html" } }));
   }

@@ -100,8 +100,15 @@ HZ=$("$REAL_DOCKER" exec "$NAME" node -e "fetch('http://127.0.0.1:3000/app/healt
 #    container, exits 0 (deploy_web above already required it; this runs it on its own so a failure names it)
 CATALOG_PROBE=$(DEPLOY_FUNCTIONS_ONLY=1 bash -c 'source "$1" >/dev/null 2>&1 && printf %s "$WEB_CATALOG_PROBE"' _ "$DEPLOY")
 [ -n "$CATALOG_PROBE" ] || fail "deploy.sh defines no WEB_CATALOG_PROBE"
-"$REAL_DOCKER" exec "$NAME" node -e "$CATALOG_PROBE" \
-  || fail "the catalog probe failed inside the real image: /app/catalog-test is served ($("$REAL_DOCKER" exec "$NAME" node -e "fetch('http://127.0.0.1:3000/app/catalog-test').then(r=>process.stdout.write(String(r.status)))" 2>&1))"
+# the pages come from deploy.sh's own WEB_CATALOG_PAGES line (plan W4), passed as deploy.sh passes them: a probe run
+# with no page prints "no-pages" and exits 1, so a list restated here could drift from the one that ships
+CATALOG_PAGES=$(DEPLOY_FUNCTIONS_ONLY=1 bash -c 'source "$1" >/dev/null 2>&1 && printf %s "$WEB_CATALOG_PAGES"' _ "$DEPLOY")
+read -ra PAGES <<< "$CATALOG_PAGES"
+[ "${#PAGES[@]}" -gt 0 ] || fail "deploy.sh's WEB_CATALOG_PAGES names no page: every probe below would be vacuous"
+FIRST_PAGE="${PAGES[0]:-}"
+SAW=$("$REAL_DOCKER" exec "$NAME" node -e "$CATALOG_PROBE" "${PAGES[@]}" 2>/dev/null); RC=$?
+[ "$RC:$SAW" = "0:status=404 states=no" ] \
+  || fail "the catalog probe failed inside the real image over ${PAGES[*]}: exit $RC '$SAW'"
 # ... and the same probe can fail on a real daemon: the image's own base, serving what a catalog build serves on
 # 127.0.0.1:3000 (a 200 whose body renders catalog states), makes it exit non-zero
 BASE=$(awk '$1 == "FROM" && $NF == "run" { print $2 }' "$ROOT/medioo-web/Dockerfile")
@@ -121,10 +128,10 @@ if [ "$SERVED" != "200 true" ]; then
   fail "the catalog-serving stand-in never answered /app/catalog-test with 200 and a state (got '$SERVED')"
 else
   # not merely non-zero: the definitive outcome (exit 1, what it saw on stdout), the one deploy.sh never retries
-  SAW=$("$REAL_DOCKER" exec "$SERVES" node -e "$CATALOG_PROBE" 2>/dev/null); RC=$?
+  SAW=$("$REAL_DOCKER" exec "$SERVES" node -e "$CATALOG_PROBE" "${PAGES[@]}" 2>/dev/null); RC=$?
   [ "$RC" = 0 ] && fail "the catalog probe passed against a server that serves the catalog: it cannot fail"
-  [ "$RC:$SAW" = "1:status=200 states=yes" ] \
-    || fail "the catalog probe against a served catalog gave exit $RC '$SAW', expected exit 1 'status=200 states=yes'"
+  [ "$RC:$SAW" = "1:$FIRST_PAGE status=200 states=yes" ] \
+    || fail "the catalog probe against a served catalog gave exit $RC '$SAW', expected exit 1 '$FIRST_PAGE status=200 states=yes'"
 fi
 
 # 1c. (W2c) the flag is a build-time fact, not a runtime one: the same shipped image, started with MEDIOO_CATALOG=1 in
@@ -143,7 +150,7 @@ done
 if [ "$UP" != 200 ]; then
   fail "$REAL_DOCKER run with MEDIOO_CATALOG=1 never answered /app/healthz (got '$UP')"
 else
-  SAW=$("$REAL_DOCKER" exec "$RUNTIME" node -e "$CATALOG_PROBE" 2>/dev/null); RC=$?
+  SAW=$("$REAL_DOCKER" exec "$RUNTIME" node -e "$CATALOG_PROBE" "${PAGES[@]}" 2>/dev/null); RC=$?
   [ "$RC" = 0 ] || fail "with MEDIOO_CATALOG=1 at run time the shipped image serves the catalog: probe exit $RC '$SAW'"
 fi
 

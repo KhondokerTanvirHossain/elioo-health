@@ -35,7 +35,8 @@ const SERVER_LOG = "test-results/next-server.log";
 
 // Never in the gates: the screenshot board (BOARD=1), published privately, never committed.
 const BOARD = process.env.BOARD === "1";
-const PAGE_IGNORE = [/catalog\.spec\.ts/, /server-log\.spec\.ts/, /board\.spec\.ts/];
+// shell.spec.ts runs in the catalog project: the shell's page (/app/shell-test) exists only in the catalog build (W4).
+const PAGE_IGNORE = [/catalog\.spec\.ts/, /server-log\.spec\.ts/, /board\.spec\.ts/, /shell\.spec\.ts/];
 
 export default defineConfig({
   testDir: ".",
@@ -61,7 +62,12 @@ export default defineConfig({
           use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 } },
         },
         // The component catalog: both viewports and both schemes are set inside catalog.spec.ts (test.use, emulateMedia).
-        { name: "catalog", testMatch: /catalog\.spec\.ts/, use: { ...devices["Desktop Chrome"], baseURL: CATALOG_URL } },
+        // The shell (W4) too: its page is catalog-only, and its tests set their own widths.
+        {
+          name: "catalog",
+          testMatch: [/catalog\.spec\.ts/, /shell\.spec\.ts/],
+          use: { ...devices["Desktop Chrome"], baseURL: CATALOG_URL },
+        },
         // After every page test: the Next server log those tests produced.
         { name: "logs", testMatch: /server-log\.spec\.ts/, dependencies: ["phone", "desktop"] },
       ],
@@ -101,6 +107,8 @@ export default defineConfig({
             command: `MEDIOO_CATALOG=1 pnpm exec next start -p ${CATALOG_PORT}`,
             cwd: "..",
             url: `${CATALOG_URL}/app/healthz`,
+            // The shell's page (/app/shell-test, W4) reads GET /app/api/me from the same stub Java as the pages.
+            env: { JAVA_INTERNAL_URL: process.env.E2E_STUB_URL! },
             reuseExistingServer: false,
             timeout: 60_000,
           },

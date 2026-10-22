@@ -18,6 +18,10 @@ type Scene = {
   proto: { file: "phone.html" | "desktop.html"; scene: string };
   /** What to do on the page before the picture (type a number, press a button). */
   act?: (page: Page) => Promise<void>;
+  /** The widths to take it at, when not the phone and desktop pair (the shell: 390, 1024 and 1440, plan W4). */
+  viewports?: Record<string, { width: number; height: number }>;
+  /** "catalog": the page exists only in the catalog build (/app/shell-test), served on the catalog server. */
+  build?: "catalog";
 };
 
 const number = async (page: Page) => {
@@ -88,19 +92,59 @@ export const BOARD_SCENES: Scene[] = [
   },
 ];
 
+// The shell (plan W4): its layouts at the three widths that switch it, by patient count. 0, 1 and 2 patients; with two,
+// the chooser (nobody remembered) and the switcher once one is asked for (the urgent mark in its sheet); the sidebar
+// opened by the toolbar's button at 1024.
+const SHELL_WIDTHS = {
+  w390: { width: 390, height: 844 },
+  w1024: { width: 1024, height: 800 },
+  w1440: { width: 1440, height: 900 },
+};
+const TWO_SECOND = "5e9edf6d-0a2a-4913-8675-9d07a4100012";
+const shell = (state: string, scenario: string, route = "/app/shell-test", act?: Scene["act"]): Scene => ({
+  screen: "shell",
+  state,
+  route,
+  scenario,
+  build: "catalog",
+  viewports: SHELL_WIDTHS,
+  proto: { file: "desktop.html", scene: "app" },
+  act,
+});
+BOARD_SCENES.push(
+  { ...shell("one-patient", "me-one"), proto: { file: "phone.html", scene: "chat" } },
+  shell("no-patients", "me-none"),
+  shell("two-patients-chooser", "me-two"),
+  shell("two-patients-chosen", "me-two", `/app/shell-test?patient=${TWO_SECOND}`),
+  shell("two-patients-switcher-open", "me-two", `/app/shell-test?patient=${TWO_SECOND}`, async (page) => {
+    await page.locator(".patient-switcher__button").click();
+    await page.locator("dialog:modal").waitFor();
+  }),
+  shell("long-name", "me-long"),
+  {
+    ...shell("sidebar-open", "me-one", "/app/shell-test", async (page) => {
+      await page.locator(".app-shell__menu").click();
+      await page.locator(".app-shell__sidebar[data-open]").waitFor();
+    }),
+    viewports: { w1024: SHELL_WIDTHS.w1024 },
+  },
+);
+
 const VIEWPORTS = { phone: { width: 390, height: 844 }, desktop: { width: 1280, height: 800 } } as const;
+// The catalog build's server (playwright.config.ts starts it on the port after the production one).
+const CATALOG_URL = process.env.E2E_CATALOG_URL ?? `http://127.0.0.1:${Number(process.env.E2E_PORT ?? 3217) + 1}`;
 const PROTOTYPES = join(__dirname, "..", "..", "docs", "design", "2026-10-21-approved");
 const OUT = join(__dirname, "..", "test-results", "board");
 
 for (const scene of BOARD_SCENES) {
-  for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
+  for (const [layout, viewport] of Object.entries(scene.viewports ?? VIEWPORTS)) {
     for (const colorScheme of ["light", "dark"] as const) {
       test(`${scene.screen} ${scene.state} ${layout} ${colorScheme}`, async ({ page }) => {
         test.setTimeout(90_000);
         await page.setViewportSize(viewport);
         await page.emulateMedia({ colorScheme });
         await useScenario(page, scene.scenario);
-        await page.goto(scene.route);
+        await page.goto(scene.build === "catalog" ? new URL(scene.route, CATALOG_URL).href : scene.route);
         await page.evaluate(() => document.fonts.ready.then(() => undefined));
         if (scene.act) await scene.act(page);
         await page.screenshot({ path: join(OUT, scene.screen, `${scene.state}-${layout}-${colorScheme}.png`), fullPage: true });

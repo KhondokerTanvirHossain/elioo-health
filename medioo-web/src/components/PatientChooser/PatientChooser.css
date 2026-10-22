@@ -1,0 +1,68 @@
+/* The chooser (PatientChooser.tsx): the question, the hint, and one full-width row per patient. Nothing is pre-chosen,
+   so no row is drawn differently from another except an urgent patient's red mark. */
+.patient-chooser {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-4);
+}
+.patient-chooser__title {
+  margin: 0;
+  font-family: var(--font-bn);
+  font-size: var(--text-title);
+  font-weight: 700;
+  line-height: 1.35;
+}
+.patient-chooser__hint {
+  margin: 0;
+  color: var(--label2);
+  font-size: var(--text-md);
+  line-height: 1.55;
+}
+.patient-chooser__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.patient-chooser__item {
+  min-width: 0;
+}
+.patient-chooser__link {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  min-height: var(--target-primary);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--sep);
+  border-radius: var(--radius-lg);
+  background: var(--bg3);
+  color: var(--label);
+  font-family: var(--font-bn);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 1.4;
+  text-decoration: none;
+}
+.patient-chooser__link:hover {
+  background: var(--hover);
+}
+.patient-chooser__link:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+.patient-chooser__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.patient-chooser__status {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-md);
+  line-height: 1.5;
+}

@@ -28,13 +28,17 @@ function manifestPages(): string[] {
     .sort();
 }
 
-/** The component catalog's pages, from the one place they are named today: the catalog probe in deploy.sh. */
+/**
+ * The catalog-only pages (CATALOG_ONLY_PAGES), from the one list that names them: deploy.sh's WEB_CATALOG_PAGES, which
+ * its catalog probe fetches on the shipped container (plan W4). Never restated here.
+ */
 function catalogPages(): string[] {
   const line = readFileSync(join(root, "deploy.sh"), "utf8")
     .split("\n")
-    .find((l) => l.startsWith("WEB_CATALOG_PROBE="));
-  if (!line) throw new Error("deploy.sh defines no WEB_CATALOG_PROBE");
-  return [...line.matchAll(/http:\/\/127\.0\.0\.1:3000(\/app\/[^'"?]+)/g)].map((m) => m[1]!);
+    .find((l) => l.startsWith("WEB_CATALOG_PAGES="));
+  const list = /^WEB_CATALOG_PAGES="([^"]*)"$/.exec(line ?? "")?.[1];
+  if (list === undefined) throw new Error('deploy.sh defines no WEB_CATALOG_PAGES="…"');
+  return list.split(/\s+/).filter(Boolean);
 }
 
 /** Pages the build has that are not routed pages: Next's 404, the probe (measured against "probe"), the catalog. */
@@ -67,7 +71,7 @@ describe("NEXT_PAGES is what the build serves", () => {
 
   it("every page it leaves out is in the build, so the exclusion is not stale", () => {
     const excluded = notRouted();
-    expect(excluded, "the catalog probe names its page").toContain("/app/catalog-test");
+    expect(excluded, "the catalog probe names its pages").toEqual(expect.arrayContaining(["/app/catalog-test", "/app/shell-test"]));
     for (const page of excluded) expect(manifestPages(), `${page} is in the manifest`).toContain(page);
   });
 

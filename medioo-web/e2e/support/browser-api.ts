@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Page, Request } from "@playwright/test";
+import { test, type Page, type Request } from "@playwright/test";
 import { answer, record } from "./java-stub.mjs";
 import { pngFor } from "./png.mjs";
 import { signedOut } from "./scenarios.mjs";
@@ -76,7 +76,11 @@ export async function useScenario(
 ): Promise<Recorder> {
   const images = opts.images ?? {};
   const rows = new Map((opts.rows ?? []).map((r) => [r.crop.src, r]));
-  const base = new URL(process.env.E2E_BASE_URL ?? `http://127.0.0.1:${process.env.E2E_PORT ?? 3217}`);
+  // The origin the page under test is served from: its project's baseURL (the catalog build for /app/shell-test, W4),
+  // so the guard's Origin check refuses exactly what Java would refuse for that page.
+  const base = new URL(
+    test.info().project.use.baseURL ?? process.env.E2E_BASE_URL ?? `http://127.0.0.1:${process.env.E2E_PORT ?? 3217}`,
+  );
   const run = randomUUID();
   const cookie = (n: string, value: string) => ({ name: n, value, domain: base.hostname, path: "/app" });
   // A second call in one test (signed in, then signed out) must not keep the first scenario's session.

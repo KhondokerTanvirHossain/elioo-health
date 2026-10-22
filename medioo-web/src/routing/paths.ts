@@ -75,12 +75,25 @@ function matches(pattern: string, path: string): boolean {
 
 const inList = (list: readonly string[], path: string) => list.some((pattern) => matches(pattern, path));
 
-/** The link to `path` from a page: inside the preview when this is a preview page and Next serves `path`. */
-export function href(path: string, preview: boolean): string {
-  return preview && inList(NEXT_PAGES, path) ? previewPath(path) : path;
+/**
+ * `href` and `reachable` over given lists. The app uses them over this build's lists (below); a unit test uses them over
+ * a list a later PR will hold (TabBar.test.tsx: the health tab once /app/health is a Next page), so the rule judged is
+ * this one and never a test's copy of it.
+ */
+export function pathsFor(lists: { next: readonly string[]; java: readonly string[]; flipped: readonly string[] }) {
+  return {
+    /** The link to `path` from a page: inside the preview when this is a preview page and Next serves `path`. */
+    href: (path: string, preview: boolean): string => (preview && inList(lists.next, path) ? previewPath(path) : path),
+    /** Whether a link to `path` reaches a page: Java serves it, Caddy sends it to Next, or Next serves it under the preview. */
+    reachable: (path: string, preview: boolean): boolean =>
+      inList(lists.java, path) || inList(lists.flipped, path) || (preview && inList(lists.next, path)),
+  };
 }
 
+const THIS_BUILD = pathsFor({ next: NEXT_PAGES, java: JAVA_PAGES, flipped: FLIPPED });
+
+/** The link to `path` from a page: inside the preview when this is a preview page and Next serves `path`. */
+export const href: (path: string, preview: boolean) => string = THIS_BUILD.href;
+
 /** Whether a link to `path` reaches a page: Java serves it, Caddy sends it to Next, or Next serves it under the preview. */
-export function reachable(path: string, preview: boolean): boolean {
-  return inList(JAVA_PAGES, path) || inList(FLIPPED, path) || (preview && inList(NEXT_PAGES, path));
-}
+export const reachable: (path: string, preview: boolean) => boolean = THIS_BUILD.reachable;
