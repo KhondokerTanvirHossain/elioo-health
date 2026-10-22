@@ -3,6 +3,7 @@ package com.elioo.baymax.web.adapter.in.api;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.classic.spi.LoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.elioo.baymax.extraction.application.port.out.DocumentRecordPort;
 import com.elioo.baymax.extraction.domain.Document;
@@ -36,6 +37,7 @@ import java.sql.Statement;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -235,7 +237,7 @@ class RetakeLinkAcceptanceTest {
                     .as("one new paper").isEqualTo("1");
             assertThat(scalar("SELECT replaces_document_id::text FROM baymax.document WHERE id = '" + b + "'"))
                     .as("the replay relinked the paper the first press left unlinked").isEqualTo(a.toString());
-            assertThat(events.list.stream().filter(e -> e.getLevel().isGreaterOrEqual(Level.WARN)).toList()).as("WARN or above").isEmpty();
+            assertThat(captured(events).stream().filter(e -> e.getLevel().isGreaterOrEqual(Level.WARN)).toList()).as("WARN or above").isEmpty();
         });
     }
 
@@ -305,11 +307,63 @@ class RetakeLinkAcceptanceTest {
         } finally {
             root.detachAppender(events);
         }
-        return events.list.stream().filter(e -> e.getLevel().isGreaterOrEqual(Level.INFO)).toList();
+        return captured(events).stream().filter(e -> e.getLevel().isGreaterOrEqual(Level.INFO)).toList();
+    }
+
+    /**
+     * What the appender holds, copied under its own lock after it stops: a reactor thread can still be inside
+     * {@code doAppend} (synchronized on the appender) when the body returns, and streaming the bare list then threw
+     * ConcurrentModificationException (#142's push run 39808633148).
+     */
+    private static List<ILoggingEvent> captured(ListAppender<ILoggingEvent> events) {
+        events.stop();
+        synchronized (events) {
+            return new ArrayList<>(events.list);
+        }
     }
 
     private interface ThrowingRunnable {
         void run() throws Exception;
+    }
+
+    /**
+     * The guard itself, both directions, no containers: an INFO+ line with a null argument (any logger, any thread, in the
+     * capture window) is read, not crashed on; {@code List.of} rejected it with a NullPointerException, which failed main
+     * at b303f9a for no upload defect. A line whose argument is the id still fails.
+     */
+    @Test
+    void noLineCarriesReadsANullArgumentAndStillCatchesTheId() {
+        UUID id = UUID.randomUUID();
+        Logger logger = (Logger) LoggerFactory.getLogger(RetakeLinkAcceptanceTest.class);
+        ILoggingEvent nullArgument = new LoggingEvent(Logger.FQCN, logger, Level.INFO, "press {} for {}", null, new Object[]{null, "x"});
+        noLineCarries(List.of(nullArgument), id);
+        ILoggingEvent carriesId = new LoggingEvent(Logger.FQCN, logger, Level.INFO, "press {}", null, new Object[]{null, id});
+        assertThatThrownBy(() -> noLineCarries(List.of(carriesId), id)).isInstanceOf(AssertionError.class);
+    }
+
+    /**
+     * The capture is read while another thread is still logging into it, as a reactor thread can be when a press's body
+     * returns: reading never throws. Probabilistic in the red direction only (the old bare-list stream threw on most
+     * runs of this loop); the fixed read cannot throw.
+     */
+    @Test
+    void theCaptureIsReadWhileAnotherThreadStillLogs() throws Exception {
+        Logger logger = (Logger) LoggerFactory.getLogger(RetakeLinkAcceptanceTest.class);
+        for (int round = 0; round < 50; round++) {
+            ListAppender<ILoggingEvent> events = new ListAppender<>();
+            events.start();
+            java.util.concurrent.CountDownLatch writing = new java.util.concurrent.CountDownLatch(1);
+            Thread writer = new Thread(() -> {
+                for (int i = 0; i < 20_000; i++) {
+                    events.doAppend(new LoggingEvent(Logger.FQCN, logger, Level.INFO, "line {}", null, new Object[]{i}));
+                    if (i == 100) writing.countDown();
+                }
+            });
+            writer.start();
+            writing.await();
+            captured(events).stream().filter(e -> e.getLevel().isGreaterOrEqual(Level.INFO)).toList();
+            writer.join();
+        }
     }
 
     /** The stale paper's id in no INFO+ line: not in the formatted message, not among the arguments (by value). */
@@ -318,7 +372,7 @@ class RetakeLinkAcceptanceTest {
         for (UUID id : ids) {
             for (ILoggingEvent e : events) {
                 assertThat(e.getFormattedMessage()).as("INFO+ line from %s", e.getLoggerName()).doesNotContain(id.toString());
-                assertThat(e.getArgumentArray() == null ? List.of() : List.of(e.getArgumentArray()))
+                assertThat(e.getArgumentArray() == null ? List.of() : Arrays.asList(e.getArgumentArray()))
                         .as("arguments of an INFO+ line from %s", e.getLoggerName()).doesNotContain(id, id.toString());
             }
         }
