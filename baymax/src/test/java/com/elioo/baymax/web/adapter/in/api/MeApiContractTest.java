@@ -71,6 +71,8 @@ class MeApiContractTest {
     private static final Instant NOW = PaperFixtures.NOW;
     private static final UUID FAMILY = PaperFixtures.FAMILY;
     private static final UUID SHARED_ID = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100012");
+    /** A second patient the family owns: the add sheet's two-patient case names the same two (UploadApiContractTest). */
+    static final UUID BABA_ID = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100801");
     private static final String NUMBER = "+8801700000121";
 
     private final ObjectMapper json = new ObjectMapper();
@@ -127,11 +129,22 @@ class MeApiContractTest {
         }
     }
 
-    private static PatientSummary ma() {
+    static PatientSummary ma() {
         return new PatientSummary(PaperFixtures.MA, true, 1, NOW);
     }
 
-    private static PatientSummary shared() {
+    /** Ma's husband, owned by the same family, nothing on file (plan W7: the add sheet's two-patient case). */
+    static PatientSummary baba() {
+        return new PatientSummary(new PatientProfile(BABA_ID, FAMILY, "Karim", 71, PatientProfile.Sex.MALE, List.of(), NOW, NOW), true, 0, null);
+    }
+
+    /** Ma's row under the long name (fixtures/catalog/names.json), as {@code long-name} serves it. */
+    static PatientSummary maLong() {
+        return new PatientSummary(new PatientProfile(PaperFixtures.MA_ID, FAMILY, longName(), 64, PatientProfile.Sex.FEMALE, List.of(), NOW, NOW),
+                true, 1, NOW);
+    }
+
+    static PatientSummary shared() {
         // a sibling's patient shared with this number: visible, not owned, nothing on file; a Bangla name, so its
         // possessive takes another ending than Ma's
         return new PatientSummary(new PatientProfile(SHARED_ID, UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100013"),
@@ -145,8 +158,9 @@ class MeApiContractTest {
         cases.put("no-patients", Case.of(true));
         cases.put("preview-on", Case.of(true, ma()));
         cases.put("preview-off", Case.of(false, ma()));
-        cases.put("long-name", Case.of(true, new PatientSummary(new PatientProfile(PaperFixtures.MA_ID, FAMILY, longName(), 64,
-                PatientProfile.Sex.FEMALE, List.of(), NOW, NOW), true, 1, NOW)));
+        cases.put("long-name", Case.of(true, maLong()));
+        // two patients the family owns and no remembered choice: the add sheet (W7) asks whose paper it is
+        cases.put("two-owned", Case.of(true, ma(), baba()));
         cases.put("unauthenticated", new Case(List.of(), List.of(), false, false));
         return cases;
     }

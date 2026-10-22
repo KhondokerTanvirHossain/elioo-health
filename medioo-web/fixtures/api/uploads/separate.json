@@ -1,0 +1,21 @@
+{
+  "_meta": {
+    "generated_by": "baymax UploadApiContractTest",
+    "source": "POST /app/api/uploads over the UploadApiContractTest case separate (three pages as separate papers)"
+  },
+  "body": {
+    "documents": [
+      {
+        "id": "5e9edf6d-0a2a-4913-8675-9d07a4100811"
+      },
+      {
+        "id": "5e9edf6d-0a2a-4913-8675-9d07a4100812"
+      },
+      {
+        "id": "5e9edf6d-0a2a-4913-8675-9d07a4100813"
+      }
+    ],
+    "next": "/app/timeline?patient=5e9edf6d-0a2a-4913-8675-9d07a4100002"
+  },
+  "status": 200
+}

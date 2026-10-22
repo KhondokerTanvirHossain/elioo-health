@@ -11,6 +11,9 @@ import { signedOut } from "./scenarios.mjs";
  * mutation is refused exactly where Java would refuse it. Java's image routes are answered with `pngFor(row)`.
  */
 
+/** One part of a multipart body, its bytes as sent (a file's are binary, so never read as text to be compared). */
+export type Part = { name: string; filename: string | null; data: Buffer };
+
 export type BrowserRequest = {
   method: string;
   path: string;
@@ -18,6 +21,12 @@ export type BrowserRequest = {
   headers: Record<string, string>;
   /** The JSON body, or a multipart body's parts by field name, or null. */
   body: unknown;
+  /** A multipart body's parts in the order sent, repeated names kept (every `file` of a press); null otherwise. */
+  parts: Part[] | null;
+  /** What the browser was answered: the status, or "aborted" when the scenario cut the request on the wire. */
+  answered: number | "aborted";
+  /** The `{"reason"}` of a refusal (the guard's MISSING_HEADER, a route's VIEW_ONLY), else null. */
+  reason: string | null;
 };
 
 export type StubRecord = {
@@ -68,6 +77,41 @@ function parseBody(request: Request, headers: Record<string, string>): unknown {
   }
 }
 
+/**
+ * A multipart body's parts, read from its bytes: each part's name, its filename if it is a file, and its own bytes
+ * exactly (the CRLF before the next boundary is the framing, not the part). Binary-safe, so a file's SHA-256 is the
+ * file's.
+ */
+export function multipartParts(raw: Buffer, boundary: string): Part[] {
+  const delimiter = Buffer.from(`--${boundary}`);
+  const parts: Part[] = [];
+  let at = raw.indexOf(delimiter);
+  while (at !== -1) {
+    const start = at + delimiter.length;
+    if (raw.subarray(start, start + 2).toString("latin1") === "--") break;
+    const next = raw.indexOf(delimiter, start);
+    if (next === -1) break;
+    const chunk = raw.subarray(start + 2, next - 2);
+    const headEnd = chunk.indexOf("\r\n\r\n");
+    if (headEnd !== -1) {
+      const head = chunk.subarray(0, headEnd).toString("utf8");
+      const name = /\bname="([^"]*)"/.exec(head)?.[1];
+      const filename = /\bfilename="([^"]*)"/.exec(head)?.[1] ?? null;
+      if (name !== undefined) parts.push({ name, filename, data: Buffer.from(chunk.subarray(headEnd + 4)) });
+    }
+    at = next;
+  }
+  return parts;
+}
+
+function partsOf(request: Request, headers: Record<string, string>): Part[] | null {
+  const type = headers["content-type"] ?? "";
+  const raw = request.postDataBuffer();
+  const boundary = /boundary=([^;]+)/.exec(type)?.[1];
+  if (!raw || !type.startsWith("multipart/form-data") || !boundary) return null;
+  return multipartParts(raw, boundary);
+}
+
 /** The scenario for this test, the session cookie unless it is a signed-out one, and the browser's Java. */
 export async function useScenario(
   page: Page,
@@ -97,14 +141,28 @@ export async function useScenario(
     const request = route.request();
     const url = new URL(request.url());
     const headers = await request.allHeaders();
-    seen.push({
+    const entry: BrowserRequest = {
       method: request.method(),
       path: url.pathname,
       query: url.search.slice(1),
       headers,
       body: parseBody(request, headers),
-    });
-    const { status, body } = answer({ method: request.method(), path: url.pathname, headers, origin: base.origin, counters });
+      parts: partsOf(request, headers),
+      answered: 0,
+      reason: null,
+    };
+    seen.push(entry);
+    const result = answer({ method: request.method(), path: url.pathname, headers, origin: base.origin, counters });
+    // `{ abort: "<reason>" }`: the network dies under the request (a phone losing signal mid-press), after the guard
+    // let it through, so what reaches the route is a request Java would have accepted.
+    if ("abort" in result) {
+      entry.answered = "aborted";
+      return route.abort(result.abort);
+    }
+    const { status, body } = result;
+    entry.answered = status;
+    const reason = (body as { reason?: unknown } | null)?.reason;
+    entry.reason = status >= 400 && typeof reason === "string" ? reason : null;
     if (status === 204) return route.fulfill({ status });
     return route.fulfill({
       status,

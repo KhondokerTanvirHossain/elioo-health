@@ -54,6 +54,26 @@ const codePage = (state, verify = "sign-in/verified.json") => ({
   "POST /app/api/sign-in/verify": verify,
 });
 
+/** The add sheet (W7): `me`, whom the viewer may send for, and what a press is answered. */
+const addSheet = (options, uploads = "uploads/one-document.json", me = "me/one-patient.json") => ({
+  "GET /app/api/me": me,
+  "GET /app/api/upload-options": `upload-options/${options}.json`,
+  "POST /app/api/uploads": uploads,
+});
+
+/**
+ * Every refusal of a press, as Java answers it (fixtures/api/uploads/refusals.json, which UploadApiContractTest writes
+ * from the upload path's own source): one `upload-refused-<NAME>` scenario each, so the sheet's copy is checked for
+ * every name Java can send and for no name it cannot.
+ */
+const REFUSALS = JSON.parse(readFileSync(join(FIXTURES, "uploads", "refusals.json"), "utf8")).body;
+export const UPLOAD_REFUSED = Object.fromEntries(
+  Object.entries(REFUSALS).map(([name, answer]) => [`upload-refused-${name}`, addSheet("owner-one", answer)]),
+);
+
+/** The network dies under the request (browser-api.ts aborts it after the guard, java-stub.mjs drops the socket). */
+const CUT = { abort: "connectionreset" };
+
 export const SCENARIOS = {
   // The sign-in page (W3): nobody signed in.
   "signed-out": { ...SIGN_IN, "GET /app/api/me": "me/unauthenticated.json" },
@@ -138,6 +158,22 @@ export const SCENARIOS = {
       body: { error: `failed for ${patientName("me/one-patient.json")} at ${numberShown("sign-in/confirm.json")}` },
     },
   },
+  // The add sheet (W7) on /app/add. Each `me` is the family the options are of (UploadApiContractTest uses
+  // MeApiContractTest's patients): one patient, two the family owns, Ma's plus a shared one only to see, the cap
+  // reached, and the longest name.
+  "upload-owner-one": addSheet("owner-one"),
+  "upload-owner-two": addSheet("owner-two", "uploads/one-document.json", "me/two-owned.json"),
+  "upload-owner-two-long": addSheet("long-name", "uploads/one-document.json", "me/long-name.json"),
+  "upload-view-only": addSheet("view-only", "uploads/one-document.json", "me/two-patients.json"),
+  "upload-cap-reached": addSheet("cap-reached"),
+  "upload-separate": addSheet("owner-one", "uploads/separate.json"),
+  // The first press dies on the wire and its retry is answered; one that never gets through (the stuck state).
+  "upload-retry": addSheet("owner-one", [CUT, "uploads/one-document.json"]),
+  "upload-stuck": addSheet("owner-one", CUT),
+  // A refused press, then a changed one that goes through; and a sheet whose every press is refused.
+  "upload-refused-then-sent": addSheet("owner-one", [REFUSALS.UNSUPPORTED_FILE, "uploads/one-document.json"]),
+  "upload-owner-two-refused": addSheet("owner-two", REFUSALS.UNSUPPORTED_FILE, "me/two-owned.json"),
+  ...UPLOAD_REFUSED,
 };
 
 export { UNAUTHENTICATED };
@@ -146,6 +182,7 @@ export { UNAUTHENTICATED };
 export const PAGE_SCENARIOS = {
   "/app": "signed-out",
   "/app/verify": "state-pending-not-sent",
+  "/app/add": "upload-owner-one",
 };
 
 /**
@@ -155,12 +192,15 @@ export const PAGE_SCENARIOS = {
 export const PAGE_MARKERS = {
   "/app": 'name="whatsapp_number"',
   "/app/verify": 'name="code"',
+  "/app/add": "data-upload-sheet",
 };
 
 /** Each routed scenario's longest twin (`me/long-name.json` and the area's longest fixture), per screen. */
 export const LONGEST = {
   // The shell (W4): its longest is the longest name (fixtures/api/me/long-name.json) in the toolbar and the sidebar.
   "me-one": "me-long",
+  // The add sheet (W7): me/long-name.json in the shell, and upload-options/long-name.json's patient on the sheet's chip.
+  "upload-owner-two": "upload-owner-two-long",
 };
 
 /** The `{status, body}` a scenario value answers first: a fixture file read, a literal as it is. */

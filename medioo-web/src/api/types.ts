@@ -301,3 +301,43 @@ export type BpPointJson = {
 
 /** `GET /app/api/patients/{id}/labs` (B6). */
 export type LabsJson = { series: LabSeriesJson[]; bp: { points: BpPointJson[] } };
+
+// ---- GET /app/api/upload-options, POST /app/api/uploads (UploadApiHandler, B4b; plan W7) -----------------------------
+
+/** A patient on the add sheet: PatientJson's fields, then the name forms in the viewer's language (UiCopy.poss/obj). */
+export type UploadPatientJson = {
+  id: string;
+  name: string;
+  age: number | null;
+  sex: string | null;
+  owner: boolean;
+  documents: number;
+  last_document_at: string | null;
+  name_possessive: string;
+  name_objective: string;
+};
+
+/**
+ * `GET /app/api/upload-options` (fixtures/api/upload-options/*.json): whom the viewer may send for, whom they may only
+ * see, the one patient to preselect when there is nobody else it could be (never a guess), this month's allowance (a
+ * paying family: `limited` false and every number null), and every limit Java refuses a press by. A refusal's copy
+ * reads its numbers from here, never from the error body.
+ */
+export type UploadOptionsJson = {
+  can_send: UploadPatientJson[];
+  view_only: UploadPatientJson[];
+  preselected_patient_id: string | null;
+  allowance: { limited: boolean; max: number | null; remaining: number | null; resets_on: string | null };
+  limits: {
+    max_pages: number;
+    max_files: number;
+    max_file_bytes: number;
+    max_request_bytes: number;
+    downscale_max_edge: number;
+    downscale_quality: number;
+    pass_through_bytes: number;
+  };
+};
+
+/** `POST /app/api/uploads` answered (fixtures/api/uploads/*.json): the press's papers, and where the sheet goes next. */
+export type UploadAnswerJson = { documents: { id: string }[]; next: string };
