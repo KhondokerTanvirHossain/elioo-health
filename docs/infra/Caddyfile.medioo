@@ -30,8 +30,11 @@
 #
 # DR-40 A1: Java is the default. A path goes to medioo-web:3000 only once it is listed here and applied on the box.
 # Flipping a route back is a one-line edit plus the procedure above, and the routes floor (RUNBOOK -> Rollback).
-# The handle blocks are mutually exclusive: the most specific path matcher wins, and the bare `handle` is Java. Only
-# /app/healthz is routed so far (W1c); /_next/* and /fonts/* come with the first HTML route.
+# The handle blocks are mutually exclusive: the most specific path matcher wins, and the bare `handle` is Java. Routed
+# so far: /app/healthz (W1c); the preview path /app/preview and /app/preview/*, and the assets /_next/static/*,
+# /fonts/* and /brand/* (plan Wave 3, F0). Every page and every /app/api/** path is still Java's; each screen's own
+# paths come in its flip PR. scripts/caddy-route-probe.sh runs this file in a local Caddy and checks every row of
+# scripts/smoke-https.sh reaches the upstream its class names.
 #
 # Referrer-Policy stays strict-origin-when-cross-origin, the value production has sent since before the rebuild
 # (noted for the PO in the W1c PR): medioo-web's own headers send the same value, and Caddy overwrites it anyway.
@@ -47,6 +50,31 @@ medioo.eliooo.org {
 	}
 
 	handle /app/healthz {
+		reverse_proxy medioo-web:3000
+	}
+
+	# F0: the assets every Next page loads (Next's hashed chunks, the two Noto subsets, Mio and the wordmark). Next has
+	# no other files under these prefixes and Java has none at all, so a whole prefix is safe to send.
+	handle /_next/static/* {
+		reverse_proxy medioo-web:3000
+	}
+
+	handle /fonts/* {
+		reverse_proxy medioo-web:3000
+	}
+
+	handle /brand/* {
+		reverse_proxy medioo-web:3000
+	}
+
+	# F0: the preview path. Both spellings, because `/app/preview/*` alone does not match `/app/preview`. A preview page
+	# reads nothing from Java but `me` until `me` says preview (BAYMAX_WEB_PREVIEW_FAMILIES), so routing it shows the
+	# new screens to the allowlisted families only. Every method, as the asset blocks: a preview page posts nothing (each
+	# write is a browser fetch to /app/api/**, which stays on Java), and a POST here renders the page as a GET does.
+	@medioo_preview {
+		path /app/preview /app/preview/*
+	}
+	handle @medioo_preview {
 		reverse_proxy medioo-web:3000
 	}
 

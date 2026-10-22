@@ -62,7 +62,9 @@ jobs:
       # against fixture Caddyfiles, both ways (formatting ignored, unterminated blocks refused without a diff).
       # test_budget_replica.sh: the Caddy replica of the DR-42 enforcing run (W1d), only the address and upstreams
       # changed, and a source without production's encode or HSTS lines refused.
-      - name: Deploy script tests (tip check, prune, two containers, https smoke, Caddy drift, budget replica)
+      # The route probe test runs the repo's Caddyfile.medioo in a real Caddy of the box's version against every row of
+      # the smoke table (plan Wave 3, F0), so a Caddy edit that sends a row to the wrong upstream fails on the PR.
+      - name: Deploy script tests (tip check, prune, two containers, https smoke, Caddy drift, budget replica, route probe)
         run: |
           scripts/test_deploy_is_tip.sh
           bash scripts/test_deploy_prune.sh
@@ -70,6 +72,7 @@ jobs:
           bash scripts/test_smoke_https.sh
           bash scripts/test_caddy_drift.sh
           bash scripts/test_budget_replica.sh
+          bash scripts/test_caddy_route_probe.sh
       # The real medioo-web image, built from its Dockerfile, and deploy_web against the runner's Docker daemon (only
       # `docker pull` shimmed): the probe against the real Next server, `docker inspect` of what deploy.sh started
       # (no ports, 320m, rotated logs, exactly two env vars, one network), and an image built from another sha refused

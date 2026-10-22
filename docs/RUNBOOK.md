@@ -11,7 +11,7 @@ and this file should be fixed.
 | Host | EC2 `i-0215d6b600b251455`, `ec2-13-205-14-249.ap-south-1.compute.amazonaws.com`, user `ec2-user`, region ap-south-1 |
 | Shared with | an n8n stack; its Caddy terminates HTTPS for `medioo.eliooo.org` (and answers `baymax.eliooo.org` with a permanent redirect to it, path preserved — DR-15) and reaches the app as `medscribe-ai:8086` on the docker network `n8n_edge` |
 | DNS | `medioo.eliooo.org` **and** `baymax.eliooo.org` are each an **A record** pointing at the EC2 IP (`13.205.14.249`) in Hostinger (zone on `dns-parking.com`), TTL 14400. They are *not* CNAMEs, so **moving the box means changing both records** — updating only `medioo` leaves the old hostname resolving to a dead IP. `baymax` was added 2026-09-19; before that the documented redirect had never worked, because only `medioo` existed. **Negative caching: a newly added record can keep reading NXDOMAIN on a machine that looked it up while it was still missing — up to the zone's negative TTL (4h here) after the record is live.** `curl`, `host` and `getent` then fail while `dig @8.8.8.8 <name>` answers correctly, because `dig` bypasses the system resolver. That is a stale local cache, **not** a failed deploy: confirm from the EC2 box (`ssh … 'curl -sS -o /dev/null -w "%{http_code} %{redirect_url}\n" https://baymax.eliooo.org/app/home'`) before treating it as one |
-| Containers | `medscribe-ai` (Java), image `ghcr.io/khondokertanvirhossain/elioo-health/medscribe-ai:<git sha>`, published on the box's `127.0.0.1:8086` only (W1c; Caddy reaches it as `medscribe-ai:8086` on `n8n_edge`), `--env-file`; and `medioo-web` (Next.js, DR-40, from W1b), image `ghcr.io/khondokertanvirhossain/elioo-health/medioo-web:<git sha>`, same sha, on `n8n_edge` only (no host port), no env file, 320 MB cap. **Caddy sends it only the paths listed in `docs/infra/Caddyfile.medioo`** (from W1c: `/app/healthz` alone; see [Routing a path to medioo-web](#routing-a-path-to-medioo-web)) |
+| Containers | `medscribe-ai` (Java), image `ghcr.io/khondokertanvirhossain/elioo-health/medscribe-ai:<git sha>`, published on the box's `127.0.0.1:8086` only (W1c; Caddy reaches it as `medscribe-ai:8086` on `n8n_edge`), `--env-file`; and `medioo-web` (Next.js, DR-40, from W1b), image `ghcr.io/khondokertanvirhossain/elioo-health/medioo-web:<git sha>`, same sha, on `n8n_edge` only (no host port), no env file, 320 MB cap. **Caddy sends it only the paths listed in `docs/infra/Caddyfile.medioo`** (`/app/healthz` from W1c; from F0 also the preview path `/app/preview`, `/app/preview/*` and the assets `/_next/static/*`, `/fonts/*`, `/brand/*`; every page and `/app/api/**` still Java's; see [Routing a path to medioo-web](#routing-a-path-to-medioo-web)) |
 | Runtime config | `/home/ec2-user/medscribe.env`, mode 600, passed to `docker run --env-file` |
 | Database | Supabase `niramoy-rx`, session pooler, schemas `medscribe` and `baymax` |
 | Object storage | AWS S3 `elioo-baymax-prod` (ap-south-1, private, SSE-S3) via the EC2 instance role (DR-5) |
@@ -442,7 +442,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://medioo.eliooo.org/api/v1/baymax
 Baymax health returning 404 in production means the module did not load: `BAYMAX_ENABLED` is not `true`.
 
 The second container (from W1b), on the box. From outside, it answers only the paths Caddy routes to it
-(`docs/infra/Caddyfile.medioo`; from W1c, `/app/healthz`):
+(`docs/infra/Caddyfile.medioo`; from W1c, `/app/healthz`; from F0, also the preview path and the assets):
 
 ```bash
 docker ps --format '{{.Names}} {{.Image}} {{.Status}}' | grep -E '^(medscribe-ai|medioo-web) '   # both, same sha, medioo-web "(healthy)"
@@ -493,8 +493,18 @@ SELECT version, description, success FROM baymax.flyway_schema_history ORDER BY 
 DR-40 A1: Java is the default upstream. A path reaches `medioo-web:3000` only once it is listed in
 `docs/infra/Caddyfile.medioo` **and** applied in the box's Caddyfile, `/home/ec2-user/n8n/Caddyfile`, which also holds
 the n8n and bddrug sites (one reload touches all three tenants). From W1c the repo file is the source; the box's
-medioo/baymax blocks are pasted from it. Routed today: `/app/healthz` (W1c). `/_next/*` and `/fonts/*` come with the
-first HTML route.
+medioo/baymax blocks are pasted from it. Routed today: `/app/healthz` (W1c); the preview path `/app/preview` and
+`/app/preview/*`, and the assets `/_next/static/*`, `/fonts/*` and `/brand/*` (plan Wave 3, F0). Every page is still
+Java's, and so is every `/app/api/**` path; each screen's own paths come in its flip PR (F3, F5–F10) after the PO's
+on-device try. A preview page reads nothing from Java but `GET /app/api/me` until that answer says `preview: true`, so
+routing the preview shows the new screens to the families in `BAYMAX_WEB_PREVIEW_FAMILIES` only; signed out, it is a
+307 to the sign-in page holding the preview.
+
+Before the box edit, run the route probe against the PR's file:
+`bash scripts/caddy-route-probe.sh docs/infra/Caddyfile.medioo scripts/smoke-https.sh`. It runs the medioo block in a
+local Caddy of the box's version, with Java and medioo-web replaced by fixed answers, and sends every row of the smoke
+table (`PROBE` rows included): each `next` or `static` row must reach medioo-web and every other row Java. Every row
+PASS, or the file is not applied.
 
 To flip a route (or flip one back, which is the same procedure with the block removed):
 

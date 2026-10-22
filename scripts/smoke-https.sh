@@ -11,19 +11,31 @@
 # Step 1), not what the plan guessed: /baymax answers 301 with `Location: /app` (Java's redirect, not `/`), the
 # webhook GET with no parameters answers 403 (Java's verification refusal), /medscribeai and /medscribeai/ answer
 # 200. The one row that failed then is /app/healthz (Java's 404, before Caddy routed it to medioo-web).
+# The F0 rows (plan Wave 3, Task F) were measured on 2026-10-22: /app/api/me against production (Java's 401
+# UNAUTHENTICATED), and the Next rows through the W1d Caddy replica against the deployed sha's medioo-web image (stub
+# Java signed out). Signed out, the preview path is not a page: the preview gate reads `me`, gets the 401 and sends the
+# visitor to the sign-in page holding the preview (307 to /app/?next=%2Fapp%2Fpreview), not the 200 the plan guessed.
+# Next's 404 for a missing chunk is text/plain and Java's is JSON, and both carry the four headers, so that row reads
+# the Content-Type: on status and headers alone it would pass on Java's answer, the one thing it exists to tell apart.
 #
 # Header classes. Caddy's medioo header block owns HSTS, X-Content-Type-Options and Referrer-Policy on every path
 # (it runs at response-write time and overwrites the upstream); each upstream owns its CSP and X-Frame-Options.
-#   next  /app/healthz       the CSP carries a per-request nonce (medioo-web's middleware)
-#   page  /app/, /           Java's HTML pages
-#   api   /actuator/health, the webhook
+#   next    /app/healthz, /app/preview   the CSP carries a per-request nonce (medioo-web's middleware)
+#   static  /_next/static/*, /fonts/*, /brand/*   medioo-web's assets: the four headers below, once each, and no CSP
+#           required (the hashed chunks skip the middleware, so they carry none; the fonts and brand files carry one)
+#   page    /app/, /             Java's HTML pages
+#   api     /actuator/health, /app/api/me, the webhook
 # Referrer-Policy stays strict-origin-when-cross-origin, the value production sends today (PO note in the W1c PR).
 # Each of X-Frame-Options, X-Content-Type-Options, Referrer-Policy and HSTS must arrive exactly once: a browser acts on
 # every copy it receives, not on the last one (two conflicting X-Frame-Options are ignored, so framing is allowed),
 # so an upstream or a Caddy edit that appends instead of replacing fails the row whatever the last value says.
 #
-# Routing stops at /app/healthz for now: /_next/static/x.js must still be Java's JSON 404 (field statusCode 400), not
-# Next's HTML one, so a broader route applied early fails here. The PR that routes /_next/* moves that row.
+# Routing stops at the F0 paths for now (plan Wave 3, Task F): /app/healthz, the preview path (/app/preview and
+# /app/preview/*) and the assets (/_next/static/*, /fonts/*, /brand/*). Every page is still Java's, and Java still owns
+# the API: /app/api/me must be Java's JSON 401, so a route that sent /app/api/* to Next fails here. Each flip PR moves
+# its own page's rows. scripts/caddy-route-probe.sh sends this same table through a local Caddy running the repo's
+# Caddyfile.medioo and checks that each row reaches the upstream its class names: the routing is derived from this
+# table, not from a second list.
 # The old hostname (DR-15): {old}<path> is SMOKE_OLD_BASE (default https://baymax.eliooo.org) plus the path, and must
 # answer 301 to the same path on medioo.eliooo.org, so every link already sent to a family keeps working.
 #
@@ -66,9 +78,11 @@ REFERRER="strict-origin-when-cross-origin"
 #                    json:<field>=<value>   the top-level JSON field equals <value>
 #                    html:<marker>          the body contains <marker> (an attribute, not a word)
 #                    location:<value>       the Location header equals <value> exactly
+#                    type:<value>           the Content-Type header, parameters aside, equals <value>
 #   a path starting {old} is asked of the old hostname (SMOKE_OLD_BASE); every other one of <base-url>
 TABLE='/app/healthz|200|next|json:service=medioo-web
 /actuator/health|200|api|json:status=UP
+/app/api/me|401|api|json:reason=UNAUTHENTICATED
 /app/|200|page|html:name="whatsapp_number"
 /|200|page|-
 /medscribeai|200|-|-
@@ -76,7 +90,11 @@ TABLE='/app/healthz|200|next|json:service=medioo-web
 /baymax|301|-|location:/app
 /baymax/|301|-|location:/app/
 /api/v1/baymax/wa/webhook|403|api|-
-/_next/static/x.js|404|-|json:statusCode=400
+/_next/static/x.js|404|static|type:text/plain
+/fonts/noto-sans-latin.woff2|200|static|type:font/woff2
+/brand/mio-head.webp|200|static|type:image/webp
+/app/preview|307|next|location:/app/?next=%2Fapp%2Fpreview
+/app/preview/|307|next|location:/app/?next=%2Fapp%2Fpreview%2F
 {old}/app/home|301|-|location:https://medioo.eliooo.org/app/home'
 
 # header <file> <lower-case name>: the last value of that header, CR stripped (empty when absent)
@@ -117,12 +135,17 @@ check_row() {
     location:*)
       v=$(header "$hdr" location)
       [ "$v" = "${check#location:}" ] || reasons+=("location is [$v], expected [${check#location:}]") ;;
+    type:*)
+      v=$(header "$hdr" content-type); v="${v%%;*}"; v="${v%"${v##*[![:space:]]}"}"
+      [ "$v" = "${check#type:}" ] || reasons+=("content-type is [$v], expected [${check#type:}]") ;;
   esac
 
   if [ "$class" != - ]; then
     local csp
     csp=$(header "$hdr" content-security-policy)
-    if [ -z "$csp" ]; then
+    if [ "$class" = static ]; then
+      :
+    elif [ -z "$csp" ]; then
       reasons+=("content-security-policy is missing")
     elif [ "$class" = next ] && [[ "$csp" != *"'nonce-"* ]]; then
       reasons+=("content-security-policy has no nonce (not medioo-web's policy)")
