@@ -21,10 +21,10 @@ import com.elioo.baymax.web.domain.EarlierReading;
 import com.elioo.baymax.web.domain.GateState;
 import com.elioo.baymax.web.domain.ReadingView;
 import com.elioo.baymax.web.domain.ResultView;
+import com.elioo.baymax.web.domain.ValueSheetView;
 import com.elioo.baymax.web.domain.ViewerLocale;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Clock;
@@ -152,25 +152,49 @@ public class ResultService implements ResultUseCase {
     public static final int EARLIER_READINGS = 10;
 
     /**
-     * The document through {@link #visibleDocument} (404 for another family), then the observation among THAT document's
-     * values (404 for an id from another paper), then the patient's history of the marker, kept only where the unit
-     * folds to this one's ({@link MarkerThreshold#sameUnit}: MICRO SIGN, GREEK MU and "u" are one; mg/dL and µmol/L
-     * are two). A value with no canonical name has no history: the marker is not known, so nothing is "the same".
+     * Plan W6-fix: the sheet's one read (see {@link ResultUseCase#valueSheet}). The status is the visibility read's own, so
+     * a paper that is not DONE is refused before its values, its history or its result are read: nothing is recorded for
+     * it. Today the intake's view of such a paper carries no rows either (D2, {@code DocumentIntakeService.read}), so the
+     * observation would not be found; this gate does not lean on that, it states the rule where both routes meet it, under
+     * its own reason ({@code paper_not_done}, a plain 404 NOT_FOUND on the wire) so a test can tell which rule refused.
+     * The result's own status is checked again, for a paper that changed between the two reads, and that refusal records
+     * nothing either: the result is read without an audit row ({@link #resultOf}) and the one DOCUMENT_VIEW is written
+     * only once the result is known DONE. A read that fails for any other reason (an assessment, say) is still recorded
+     * as viewed before the failure reaches the caller, as {@link #result} records a failed read. That includes the race
+     * with a stored level: {@code ResultView} refuses a level on a paper that is not DONE, so such a read fails (and is
+     * recorded) exactly as {@link #result} does; the {@code paper_not_done} refusal at the result is for an unassessed one.
      */
     @Override
-    public Flux<EarlierReading> earlierReadings(UUID familyId, UUID documentId, UUID observationId) {
-        return earlierHistory(familyId, documentId, observationId).flatMapIterable(EarlierHistory::sameUnit);
+    public Mono<ValueSheetView> valueSheet(UUID familyId, UUID documentId, UUID observationId) {
+        return visibleDocument(familyId, documentId)
+                .flatMap(d -> d.status() != Document.Status.DONE ? Mono.<ValueSheetView>error(paperNotDone())
+                        : historyOf(d, documentId, observationId).flatMap(history -> resultOf(familyId, d)
+                                .onErrorResume(e -> viewed(familyId, d).then(Mono.error(e)))
+                                .flatMap(r -> !r.done() ? Mono.<ValueSheetView>error(paperNotDone())
+                                        : viewed(familyId, d).thenReturn(new ValueSheetView(r, history)))));
+    }
+
+    /** The value sheet's own refusal of a paper that is not DONE; mapped to NOT_FOUND by name in {@code ApiReason}. */
+    private static BaymaxException paperNotDone() {
+        return BaymaxException.notFound("paper_not_done", "no sheet for a paper that is not read");
+    }
+
+    private Mono<Void> viewed(UUID familyId, Document d) {
+        return audit.record(AuditEvent.family(AuditEvent.Kind.DOCUMENT_VIEW, familyId, d.patientId(), d.id(), clock.instant()));
     }
 
     /**
-     * {@link #earlierReadings}' read, keeping the one fact its unit filter drops: whether any earlier reading of the marker
-     * (this patient, finished papers before this one) is in a unit that does not fold to this one. One scan of the history
-     * ({@code DocumentReadPort.readingsOf}) answers both, so the two halves cannot disagree about which rows they saw.
+     * The value's history, private on purpose (a history read without {@link #valueSheet}'s status gate is how the HTML
+     * sheet came to differ from the JSON; {@code ResultServiceTest} holds that neither the port nor this bean offers one):
+     * the observation among THIS document's values (404 for an id from another paper), then the patient's history of the
+     * marker, kept only where the unit folds to this one's ({@link MarkerThreshold#sameUnit}: MICRO SIGN, GREEK MU and "u"
+     * are one; mg/dL and µmol/L are two), plus whether any earlier reading is in a unit that does not fold to this one.
+     * One scan of the history ({@code DocumentReadPort.readingsOf}) answers both, so the two halves cannot disagree about
+     * which rows they saw. A value with no canonical name has no history: the marker is not known, so nothing is "the same".
+     * Records nothing. {@code EarlierReadingsTest} holds the scan on Postgres through {@link #valueSheet}.
      */
-    @Override
-    public Mono<EarlierHistory> earlierHistory(UUID familyId, UUID documentId, UUID observationId) {
-        return visibleDocument(familyId, documentId)
-                .flatMap(d -> intake.view(documentId).map(v -> observationOf(v.values(), observationId)).map(o -> Map.entry(d, o)))
+    private Mono<EarlierHistory> historyOf(Document document, UUID documentId, UUID observationId) {
+        return intake.view(documentId).map(v -> observationOf(v.values(), observationId)).map(o -> Map.entry(document, o))
                 .flatMap(found -> {
                     Object canonical = found.getValue().get("canonical_name");
                     if (canonical == null) {

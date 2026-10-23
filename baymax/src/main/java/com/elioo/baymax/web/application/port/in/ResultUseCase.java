@@ -2,10 +2,9 @@ package com.elioo.baymax.web.application.port.in;
 
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.web.domain.EarlierHistory;
-import com.elioo.baymax.web.domain.EarlierReading;
+import com.elioo.baymax.web.domain.ValueSheetView;
 import com.elioo.baymax.web.domain.ReadingView;
 import com.elioo.baymax.web.domain.ResultView;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.UUID;
@@ -34,17 +33,22 @@ public interface ResultUseCase {
     Mono<Object> card(UUID familyId, UUID documentId);
 
     /**
-     * B6, the value sheet (s13): the earlier readings of one value on this document — the same marker and the same unit
-     * (folded, so MICRO SIGN and GREEK MU are one), the same patient, from finished papers before this one, newest first,
-     * at most {@code 10}. 404 when this family cannot see the document, and when the observation is not one of THIS
-     * document's values (an id from another paper never opens a sheet here). Records nothing.
+     * B6 / plan W6-fix, one value's sheet (s13): the ONE read both sheet routes go through, the HTML page and the JSON, so
+     * a rule the PO set for the sheet (ruling R1, 2026-10-22) holds on both or on neither. In this order:
+     * <ol>
+     *   <li>the paper, through visibility: 404 for another family; <b>404 for a paper that is not DONE</b> (NEEDS_RETAKE,
+     *       FAILED, still being read; reason {@code paper_not_done}), before anything else is read, so no view is
+     *       recorded for it;</li>
+     *   <li>the value's history ({@link EarlierHistory}): 404 when the observation is not one of THIS paper's values;
+     *       the earlier readings in the same (folded) unit, same patient, finished papers before this one, newest first,
+     *       at most {@code 10}, and whether the marker was also read before in another unit, so the sheet says "the
+     *       first time" only when no earlier reading exists in any unit ({@link EarlierHistory#lineKey});</li>
+     *   <li>the result; a paper that is not DONE by then is 404 {@code paper_not_done} too, with no view recorded. The
+     *       one DOCUMENT_VIEW is written once the result is read DONE, or when the result's read fails for another
+     *       reason (a failed read is still an audited one, as {@link #result} records it).</li>
+     * </ol>
+     * There is deliberately no history read on this port, or public on its implementation, without the status gate in
+     * front of it.
      */
-    Flux<EarlierReading> earlierReadings(UUID familyId, UUID documentId, UUID observationId);
-
-    /**
-     * The same read as {@link #earlierReadings} (the same 404s, records nothing), with one fact more: whether the marker was
-     * also read before, for this patient, in a unit that does not fold to this one. The value sheet's JSON (plan W6-api) says
-     * "the first time" only when no earlier reading of the marker exists in any unit.
-     */
-    Mono<EarlierHistory> earlierHistory(UUID familyId, UUID documentId, UUID observationId);
+    Mono<ValueSheetView> valueSheet(UUID familyId, UUID documentId, UUID observationId);
 }

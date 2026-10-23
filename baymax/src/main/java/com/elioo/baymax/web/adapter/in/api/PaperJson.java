@@ -120,10 +120,11 @@ public final class PaperJson {
      * paper's head ({@code paper}: its id, type, filed day and patient with the possessive form), the value as the paper
      * sends it ({@link #valueRow}), and the earlier readings, each beside its OWN paper's crop with that paper's stored
      * size ({@code earlierSizes}, by document then storage key). {@code earlier_line_key} is the heading line the HTML
-     * draws: null for a value whose name did not canonicalise (Medioo has no history of it, so the sheet claims neither
-     * earlier readings nor a first time), null too for a marker read before only in another unit ({@link
-     * EarlierHistory#readInAnotherUnit}: "the first time" would be false), {@code sheet.earlier.none} only for a known
-     * marker never read before in any unit, otherwise the heading with or without the unit. 404 for an observation that is not one of this paper's shown values; the caller has
+     * draws, from the one rule both draw ({@link EarlierHistory#lineKey}): null for a value whose name did not
+     * canonicalise (Medioo has no history of it, so the sheet claims neither earlier readings nor a first time), null too
+     * for a marker read before only in another unit ({@link EarlierHistory#readInAnotherUnit}: "the first time" would be
+     * false), {@code sheet.earlier.none} only for a known marker never read before in any unit, otherwise the heading
+     * with or without the unit. 404 for an observation that is not one of this paper's shown values; the caller has
      * already proved that before the view was recorded, so this is defensive.
      */
     public static Map<String, Object> valueSheet(ResultView r, UUID observationId, EarlierHistory history,
@@ -154,11 +155,8 @@ public final class PaperJson {
                 "crop", crop(e.documentId(), e.cropKey(), earlierSizes.getOrDefault(e.documentId(), Map.of())),
                 "date", e.date() == null ? null : e.date().toString(),
                 "date_is_upload_day", e.dateIsFallback())).toList());
-        m.put("earlier_line_key", row.get("canonical_name") == null ? null
-                // read before only in another unit: "the first time" would be false, so no line, as for an unknown marker
-                : earlier.isEmpty() && history.readInAnotherUnit() ? null
-                : earlier.isEmpty() ? "sheet.earlier.none"
-                : row.get("unit") == null ? "sheet.earlier.nounit" : "sheet.earlier");
+        // the HTML sheet draws the same key from the same rule (EarlierHistory.lineKey), never a rule of its own
+        m.put("earlier_line_key", history.lineKey(row.get("canonical_name"), row.get("unit")));
         return m;
     }
 

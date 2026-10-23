@@ -84,14 +84,14 @@ public class PaperApiHandler {
     }
 
     /**
-     * {@code GET /app/api/documents/{id}/values/{obs}} (plan W6-api): one value's sheet ({@link PaperJson#valueSheet}), read
-     * in the HTML sheet's order ({@code DocumentPages.valueSheetPage}). The earlier readings first, which records nothing
-     * and is 404 for another family and for an observation that is not one of THIS paper's values, so a probe records no
-     * view; then the status, which records nothing either, so a row stored on a read the system rejected (NEEDS_RETAKE,
-     * FAILED), which the paper's JSON never shows, opens no sheet; then the result, the one DOCUMENT_VIEW. Then the
-     * crop sizes: this paper's, measured as its own JSON measures them ({@link #sizes}), and each earlier paper's for its
-     * own crop as its ledger stores them, never measured ({@link #earlierSizes}; they are the same patient's, proved by
-     * the earlier read). A failed size read never fails the answer after the view was recorded.
+     * {@code GET /app/api/documents/{id}/values/{obs}} (plan W6-api): one value's sheet ({@link PaperJson#valueSheet}),
+     * read through {@code ResultUseCase.valueSheet}, the same read as the HTML sheet ({@code DocumentPages.valueSheetPage},
+     * plan W6-fix): 404 for another family, for a paper that is not DONE and for an observation that is not one of THIS
+     * paper's values, each with nothing recorded (a paper that stops being DONE by the result's own read included); then
+     * the result, and the one DOCUMENT_VIEW once that result is read DONE. Then the crop sizes: this
+     * paper's, measured as its own JSON measures them ({@link #sizes}), and each earlier paper's for its own crop as its
+     * ledger stores them, never measured ({@link #earlierSizes}; they are the same patient's, proved by the earlier read).
+     * A failed size read never fails the answer after the view was recorded.
      */
     public Mono<ServerResponse> valueSheet(ServerRequest request) {
         WebSession session = SessionAuthFilter.session(request);
@@ -99,14 +99,10 @@ public class PaperApiHandler {
         UUID documentId = uuid(request.pathVariable("id"));
         UUID observationId = uuid(request.pathVariable("obs"));
         UUID family = session.familyId();
-        return results.earlierHistory(family, documentId, observationId)
-                .flatMap(history -> results.status(family, documentId)
-                        .flatMap(status -> status != Document.Status.DONE ? Mono.<ResultView>error(notFound())
-                                : results.result(family, documentId))
-                        .flatMap(r -> !r.done() ? Mono.error(notFound())
-                                : Mono.zip(sizes(r, documentId, storage), earlierSizes(history.sameUnit()))
-                                        .map(s -> PaperJson.valueSheet(r, observationId, history, s.getT1(), s.getT2(),
-                                                copy.poss(lang, r.patient().name())))))
+        return results.valueSheet(family, documentId, observationId)
+                .flatMap(sheet -> Mono.zip(sizes(sheet.result(), documentId, storage), earlierSizes(sheet.history().sameUnit()))
+                        .map(s -> PaperJson.valueSheet(sheet.result(), observationId, sheet.history(), s.getT1(), s.getT2(),
+                                copy.poss(lang, sheet.result().patient().name()))))
                 .flatMap(body -> ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValue(body));
     }
 
@@ -133,10 +129,6 @@ public class PaperApiHandler {
                         })
                         .map(sizes -> Map.entry(d.getKey(), sizes)), EARLIER_LEDGER_READS)
                 .collectMap(Map.Entry::getKey, Map.Entry::getValue);
-    }
-
-    private static BaymaxException notFound() {
-        return BaymaxException.notFound("observation_not_found", "no such value on document");
     }
 
     /**

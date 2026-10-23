@@ -6,7 +6,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -38,8 +37,8 @@ class DocumentRoutesTest {
     void aValueSheetForAnObservationOfAnotherPaperIsTheNotFoundPage() {
         UUID other = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100099");
         PageFixtures.Stubs.doneLab(kit);
-        when(kit.results.earlierReadings(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID, other))
-                .thenReturn(Flux.error(BaymaxException.notFound("observation_not_found", "no such value on document")));
+        when(kit.results.valueSheet(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID, other))
+                .thenReturn(Mono.error(BaymaxException.notFound("observation_not_found", "no such value on document")));
         String html = kit.client.get().uri("/app/documents/" + WebUiTestKit.DOC_ID + "/values/" + other).cookie("baymax_session", "tok")
                 .exchange().expectStatus().isNotFound().expectBody(String.class).returnResult().getResponseBody();
         assertThat(html).contains(kit.copy.t(Lang.BN, "app.err.notfound"));
@@ -51,7 +50,7 @@ class DocumentRoutesTest {
     void theValueSheetAndTheDetailOfAReadPaperArePages() {
         PageFixtures.Stubs.doneLab(kit);
         UUID hba1c = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100021");
-        when(kit.results.earlierReadings(WebUiTestKit.FAMILY, WebUiTestKit.DOC_ID, hba1c)).thenReturn(Flux.fromIterable(List.of()));
+        PageFixtures.Stubs.sheet(kit, hba1c, List.of());
         assertThat(kit.page("/app/documents/" + WebUiTestKit.DOC_ID + "/values/" + hba1c + "?from=all", "bn"))
                 .contains("role=\"dialog\"").contains("href=\"/app/documents/" + WebUiTestKit.DOC_ID + "/all#v-" + hba1c + "\"");
         assertThat(kit.page("/app/documents/" + WebUiTestKit.DOC_ID + "/all", "bn")).contains("id=\"seg\"");

@@ -418,6 +418,110 @@ class ResultServiceTest {
         verify(audit).record(argThat(e -> e.kind() == AuditEvent.Kind.DOCUMENT_VIEW && DOC.equals(e.documentId())));
     }
 
+    static final UUID OBS = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4000204");
+
+    /** A view in this status carrying one stored, canonical Potassium row whose id is {@link #OBS}. */
+    private static DocumentView potassiumRowView(String status) {
+        Map<String, Object> row = new HashMap<>(Map.of("id", OBS, "name", "Potassium", "canonical_name", "potassium", "value", "6.9",
+                "unit", "mmol/L", "crop_key", "f/p/d/crop-1.jpg"));
+        return new DocumentView(DOC.toString(), status, null, "lab_report", "2026-10-12", null, 0.95, null, 1,
+                List.of(row), List.of(), List.of(), Map.of(), null);
+    }
+
+    /**
+     * W6-fix (ruling R1): a paper that is not DONE opens no value sheet, on either route, since both go through this read.
+     * The view here DOES carry the stored row (today the intake strips a non-DONE paper's items, D2; this rule does not
+     * lean on that), so only the status gate refuses it: 404, no history scanned, no result read, no view recorded.
+     */
+    @ParameterizedTest
+    @EnumSource(value = Document.Status.class, mode = EnumSource.Mode.EXCLUDE, names = "DONE")
+    void aPaperThatIsNotDoneOpensNoSheetAndRecordsNoView(Document.Status status) {
+        Document paper = Document.received(PATIENT, FAMILY, 1, NOW).withId(DOC).withStatus(status, null, NOW);
+        when(documents.findVisible(FAMILY, DOC)).thenReturn(Mono.just(paper));
+        when(intake.view(DOC)).thenReturn(Mono.just(potassiumRowView(status.name())));
+        when(reads.readingsOf(any(), any(), any())).thenReturn(reactor.core.publisher.Flux.empty());
+        // a FAILED paper's result asks which retake it replaced: stubbed, so a replay without the gate reaches the view
+        // row it would record (the defect), not a NullPointerException in this mock
+        when(documents.replacedRetakeOf(any())).thenReturn(Mono.empty());
+        StepVerifier.create(service.valueSheet(FAMILY, DOC, OBS)).expectErrorSatisfies(e -> {
+            assertThat(((BaymaxException) e).status()).as("a " + status + " paper's sheet").isEqualTo(HttpStatus.NOT_FOUND);
+            // the path, not just the verdict: "observation_not_found" is the same 404 from the history's own lookup
+            assertThat(((BaymaxException) e).reason()).as("the reason a " + status + " paper's sheet is refused").isEqualTo("paper_not_done");
+        }).verify();
+        verify(audit, never()).record(any());
+        verify(reads, never()).readingsOf(any(), any(), any());
+        verify(intake, never()).read(any());
+    }
+
+    /**
+     * R1's "no view recorded" on the second check too: a paper that was DONE at the visibility read and is not by the
+     * result's own read (the two reads are not one) is refused with the gate's reason, and still records no view. No
+     * stored level here: with one, {@code ResultView} itself refuses a level before DONE (an IllegalArgumentException,
+     * a 500 with the view recorded, exactly as {@link ResultService#result} answers the same race).
+     */
+    @Test
+    void aPaperThatStopsBeingDoneBetweenTheReadsOpensNoSheetAndRecordsNoView() {
+        done();
+        when(urgencies.currentOrAssess(DOC)).thenReturn(Mono.empty());
+        when(intake.view(DOC)).thenReturn(Mono.just(potassiumRowView("DONE")));
+        when(reads.readingsOf(PATIENT, "potassium", DOC)).thenReturn(reactor.core.publisher.Flux.empty());
+        Document retake = Document.received(PATIENT, FAMILY, 1, NOW).withId(DOC).withStatus(Document.Status.NEEDS_RETAKE, null, NOW);
+        // doReturn: when(intake.read(..)) would run wire()'s answer, whose own intake.view call takes the stubbing
+        org.mockito.Mockito.doReturn(Mono.just(new DocumentView.Read(readBack(retake), DocumentView.pending(retake)))).when(intake).read(DOC);
+        StepVerifier.create(service.valueSheet(FAMILY, DOC, OBS))
+                .expectErrorSatisfies(e -> assertThat(((BaymaxException) e).reason()).as("the reason").isEqualTo("paper_not_done"))
+                .verify();
+        verify(audit, never()).record(any());
+    }
+
+    /**
+     * The sheet keeps the result's audit rule in the other direction: a DONE paper whose read fails (here its assessment)
+     * is still recorded as viewed, and the failure still reaches the caller. Only "not DONE" records nothing.
+     */
+    @Test
+    void aFailedReadOfADonePapersSheetStillLeavesTheViewsAuditRow() {
+        done();
+        when(intake.view(DOC)).thenReturn(Mono.just(potassiumRowView("DONE")));
+        when(reads.readingsOf(PATIENT, "potassium", DOC)).thenReturn(reactor.core.publisher.Flux.empty());
+        when(urgencies.currentOrAssess(DOC)).thenReturn(Mono.error(new IllegalStateException("assessment failed")));
+        StepVerifier.create(service.valueSheet(FAMILY, DOC, OBS)).expectErrorMessage("assessment failed").verify();
+        verify(audit).record(argThat(e -> e.kind() == AuditEvent.Kind.DOCUMENT_VIEW && DOC.equals(e.documentId())));
+    }
+
+    /**
+     * W6-fix: the port offers a value's history only behind the sheet's status gate. A second history read on the port
+     * is how the HTML sheet came to skip the JSON's rules (the JSON gated, the HTML read {@code earlierReadings} directly);
+     * this keeps the next route from doing the same. Derived from the types themselves, never from a list of names: the
+     * port, and the service's own public surface too, since an adapter can inject the concrete bean (NowBannerService
+     * does), and a public ungated read there is the same bypass one step removed.
+     */
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(classes = {com.elioo.baymax.web.application.port.in.ResultUseCase.class, ResultService.class})
+    void theOnlyHistoryReadOnThePortIsTheGatedSheet(Class<?> type) {
+        List<String> historyReads = java.util.Arrays.stream(type.getMethods())
+                .filter(m -> java.lang.reflect.Modifier.isPublic(m.getModifiers()) && !m.isSynthetic() && !m.isBridge())
+                .filter(m -> m.getGenericReturnType().getTypeName().matches(".*\\b(EarlierHistory|EarlierReading|ValueSheetView)\\b.*"))
+                .map(java.lang.reflect.Method::getName).sorted().toList();
+        assertThat(historyReads).as(type.getSimpleName() + "'s public methods returning a value's history").containsExactly("valueSheet");
+    }
+
+    /** The other direction: the same row on a DONE paper opens its sheet, with its history and exactly one view. */
+    @Test
+    void aDonePapersValueOpensItsSheetWithOneView() {
+        done();
+        when(intake.view(DOC)).thenReturn(Mono.just(potassiumRowView("DONE")));
+        when(reads.readingsOf(PATIENT, "potassium", DOC)).thenReturn(reactor.core.publisher.Flux.just(
+                new HashMap<>(Map.of("document_id", UUID.randomUUID(), "id", UUID.randomUUID(), "value", "97", "unit", "µmol/L"))));
+        StepVerifier.create(service.valueSheet(FAMILY, DOC, OBS)).assertNext(s -> {
+            assertThat(s.result().done()).isTrue();
+            assertThat(s.result().document().values()).extracting(v -> v.get("id")).containsExactly(OBS);
+            assertThat(s.history().sameUnit()).as("no earlier reading in mmol/L").isEmpty();
+            assertThat(s.history().readInAnotherUnit()).as("read before in another unit").isTrue();
+            assertThat(s.history().lineKey("potassium", "mmol/L")).as("never the first time").isNull();
+        }).verifyComplete();
+        verify(audit).record(argThat(e -> e.kind() == AuditEvent.Kind.DOCUMENT_VIEW && DOC.equals(e.documentId())));
+    }
+
     /** A DONE view with one Potassium row, its verdict as the database holds it at the moment of the read. */
     private static DocumentView potassiumView(String verdict) {
         Map<String, Object> row = new HashMap<>(Map.of("name", "Potassium", "value", "11.0", "unit", "mmol/L"));

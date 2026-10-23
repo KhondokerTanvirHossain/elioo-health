@@ -31,13 +31,13 @@ import com.elioo.baymax.web.domain.EarlierReading;
 import com.elioo.baymax.web.domain.GateState;
 import com.elioo.baymax.web.domain.PaperDisplay;
 import com.elioo.baymax.web.domain.ResultView;
+import com.elioo.baymax.web.domain.ValueSheetView;
 import com.elioo.baymax.web.domain.WebSession;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.test.web.reactive.server.EntityExchangeResult;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -236,9 +236,11 @@ class ValueSheetApiContractTest {
         for (UUID d : List.of(EARLIER_1, EARLIER_2, EARLIER_3)) {
             when(storage.objectsOf(d)).thenReturn(Flux.fromIterable(earlierLedger(d)));
         }
-        when(results.earlierHistory(FAMILY, DOC, c.observation())).thenReturn(c.notFound()
+        // the sheet's one read (W6-fix): the gate in front of it is ResultService's, held by ResultServiceTest and, on both
+        // routes over Postgres, by ValueSheetGatesAcceptanceTest; here it serves the case's paper and history
+        when(results.valueSheet(FAMILY, DOC, c.observation())).thenReturn(c.notFound()
                 ? Mono.error(BaymaxException.notFound("observation_not_found", "no such value on document"))
-                : Mono.just(new EarlierHistory(c.earlier(), c.readInAnotherUnit())));
+                : Mono.just(new ValueSheetView(r, new EarlierHistory(c.earlier(), c.readInAnotherUnit()))));
     }
 
     private EntityExchangeResult<byte[]> exchange(String uri) {
@@ -288,7 +290,7 @@ class ValueSheetApiContractTest {
         EntityExchangeResult<byte[]> r = exchange(sheetUri(DOC, c.observation()));
         assertThat(r.getStatus().value()).isEqualTo(404);
         assertThat(json.readTree(r.getResponseBody())).isEqualTo(json.readTree("{\"reason\":\"NOT_FOUND\"}"));
-        verify(results, never()).result(any(), any());
+        // that the probe records no view is asserted where it can fail: on Postgres, below and in ValueSheetGatesAcceptanceTest
     }
 
     // ---- the contract ---------------------------------------------------------------------------------------
@@ -477,22 +479,9 @@ class ValueSheetApiContractTest {
         assertThat(sheet(both).path("earlier_line_key").asText()).as("earlier-three, also read in another unit").isEqualTo("sheet.earlier");
     }
 
-    /**
-     * A paper that is not DONE shows none of its rows (PaperJson), so none opens a sheet either and no view is recorded:
-     * a read the system rejected (NEEDS_RETAKE, FAILED) and a paper still being read (PROCESSING) holding stored rows.
-     */
-    @ParameterizedTest
-    @ValueSource(strings = {"NEEDS_RETAKE", "FAILED", "PROCESSING"})
-    void aRejectedPapersRowOpensNoSheet(String status) throws IOException {
-        ResultView rejected = PaperFixtures.rejectedWithRows(status, "PROCESSING".equals(status) ? null : "low_overall");
-        assertThat(rejected.document().values()).as("the " + status + " paper holds a stored row").isNotEmpty();
-        Case c = Case.of(rejected, rejected.document().values().get(0), List.of());
-        serve(c);
-        EntityExchangeResult<byte[]> r = exchange(sheetUri(DOC, c.observation()));
-        assertThat(r.getStatus().value()).as("a " + status + " paper's stored row").isEqualTo(404);
-        assertThat(json.readTree(r.getResponseBody())).isEqualTo(json.readTree("{\"reason\":\"NOT_FOUND\"}"));
-        verify(results, never()).result(any(), any());
-    }
+    // A paper that is not DONE opens no sheet (W6-fix): the rule is ResultService.valueSheet's, so it is held there
+    // (ResultServiceTest.aPaperThatIsNotDoneOpensNoSheetAndRecordsNoView) and on both routes over Postgres
+    // (ValueSheetGatesAcceptanceTest), never against this class's mocked ResultUseCase, where it could not fail.
 
     private static Set<String> fieldNames(JsonNode node) {
         Set<String> names = new HashSet<>();

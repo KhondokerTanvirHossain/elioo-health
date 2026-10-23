@@ -5,6 +5,7 @@ import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.testsupport.PaperFixtures;
 import com.elioo.baymax.web.adapter.in.ImageRefs;
 import com.elioo.baymax.web.adapter.in.ImageRefsSentinel;
+import com.elioo.baymax.web.domain.EarlierHistory;
 import com.elioo.baymax.web.domain.EarlierReading;
 import com.elioo.baymax.web.domain.GateState;
 import com.elioo.baymax.web.domain.ResultView;
@@ -62,7 +63,7 @@ class ImageHrefsTest {
             pages.put("result, generic NOW block", new Rendered(kit.documents.summaryBody(Lang.BN, legacy), nowRefs, PaperFixtures.DOC, true));
             pages.put("detail", new Rendered(kit.documents.detail(Lang.BN, now), nowRefs, PaperFixtures.DOC, true));
             pages.put("retake", new Rendered(kit.documents.retakeBody(Lang.BN, retake), refsOf(retake.document()), PaperFixtures.DOC, true));
-            pages.put("value sheet", new Rendered(kit.documents.valueSheet(Lang.BN, now, observation, earlier, ValueRows.FROM_SUMMARY),
+            pages.put("value sheet", new Rendered(kit.documents.valueSheet(Lang.BN, now, observation, new EarlierHistory(earlier, false), ValueRows.FROM_SUMMARY),
                     sheetRefs, PaperFixtures.DOC, false));
 
             List<String> offRefs = new ArrayList<>();

@@ -1,0 +1,274 @@
+package com.elioo.baymax.web.adapter.in.api;
+
+import com.elioo.baymax.common.error.BaymaxException;
+import com.elioo.baymax.extraction.domain.Document;
+import com.elioo.baymax.healthrecord.domain.FamilyAccount;
+import com.elioo.baymax.healthrecord.domain.PatientProfile;
+import com.elioo.baymax.web.application.port.in.ResultUseCase;
+import com.elioo.baymax.web.adapter.in.ui.Lang;
+import com.elioo.baymax.web.adapter.in.ui.UiCopy;
+import com.elioo.baymax.web.domain.AuditEvent;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.Test;
+import org.springframework.test.web.reactive.server.EntityExchangeResult;
+import org.springframework.test.web.reactive.server.WebTestClient;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+import java.nio.charset.StandardCharsets;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.Statement;
+import java.util.Arrays;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * Plan W6-fix (ruling R1, 2026-10-22): both value-sheet routes, the HTML page families open from WhatsApp
+ * ({@code /app/documents/{id}/values/{obs}}) and the JSON one ({@code /app/api/documents/{id}/values/{obs}}), go through
+ * one {@code ResultUseCase.valueSheet} read, so the two rules hold on both, in both directions:
+ * <ol>
+ *   <li>a paper that is not DONE (NEEDS_RETAKE, FAILED, still being read) opens no sheet: 404 and no DOCUMENT_VIEW; a
+ *       DONE paper's value opens one, with exactly one view;</li>
+ *   <li>"this is the first time" is said only when no earlier reading of the marker exists in any unit: a marker read
+ *       before only in another unit draws no history line at all; a marker never read before draws the first-time line.</li>
+ * </ol>
+ * Over the real module and Testcontainers Postgres (the views are counted in {@code baymax.audit_event} itself, and the
+ * history is the real {@code readingsOf} scan). The HTML is asserted on its {@code #earlier} block, never on a
+ * substring of a page full of UUIDs; the JSON on its field. Names and numbers are fictional.
+ */
+@Testcontainers
+class ValueSheetGatesAcceptanceTest {
+
+    @Container
+    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
+
+    private static final AtomicInteger NUMBERS = new AtomicInteger(800);
+
+    private final ObjectMapper json = new ObjectMapper();
+    private final UiCopy copy = new UiCopy();
+
+    /** Ma's paper with one stored creatinine row; the observation's id; the owner's session. */
+    record Sheet(String owner, UUID paper, UUID observation, PatientProfile patient) {
+    }
+
+    private static Sheet donePaperWithCreatinine(org.springframework.context.ApplicationContext context, String unit) throws Exception {
+        FamilyAccount owner = AppApiContext.family(context, number(), "Tanvir");
+        PatientProfile ma = AppApiContext.patient(context, owner.id(), "Ma");
+        UUID paper = AppApiContext.paper(context, POSTGRES, ma, "routine");
+        AppApiContext.sql(POSTGRES, "UPDATE baymax.document SET doc_date = '2026-10-12' WHERE id = '" + paper + "'");
+        return new Sheet(AppApiContext.session(context, owner.id()), paper, creatinine(ma, paper, "1.1", unit), ma);
+    }
+
+    private static String number() {
+        return "+8801700000" + NUMBERS.getAndIncrement();
+    }
+
+    /** One creatinine row (canonical, so it has a history) on the paper, under its own crop; the id the database gave it. */
+    private static UUID creatinine(PatientProfile patient, UUID document, String value, String unit) throws Exception {
+        return observation(patient, document, "Creatinine", "'creatinine'", value, unit);
+    }
+
+    /** One row on the paper; {@code canonicalSql} is the canonical_name as SQL ({@code 'creatinine'} or {@code NULL}). */
+    private static UUID observation(PatientProfile patient, UUID document, String name, String canonicalSql, String value, String unit)
+            throws Exception {
+        return UUID.fromString(scalar("INSERT INTO baymax.observation (patient_id, document_id, name, canonical_name, value, unit, ref_low,"
+                + " ref_high, crop_key, observed_at) VALUES ('" + patient.id() + "','" + document + "','" + name + "'," + canonicalSql + ",'"
+                + value + "','" + unit + "',NULL,NULL,'" + patient.familyId() + "/" + patient.id() + "/" + document + "/crop-1.jpg',now()) RETURNING id"));
+    }
+
+    // ---- rule 1: a paper that is not DONE opens no sheet --------------------------------------------------------
+    //
+    // One application context per rule, not per case, to keep the suite's live set down (each context holds Flyway,
+    // R2DBC and Netty); the test JVM's heap ceiling itself is in baymax/build.gradle.
+
+    /**
+     * A NEEDS_RETAKE or FAILED paper's stored row, and a row of a paper still being read, open no sheet on either route,
+     * and no view is recorded for the probe. The paper's own JSON never shows such a paper's rows, so neither may a sheet.
+     * The other direction first, in the same context: the same row on a DONE paper opens its sheet on each route, each
+     * recording exactly one view (so a 404 below is the gate's, not a route that answers nothing).
+     */
+    @Test
+    void aPaperThatIsNotDoneOpensNoSheetOnEitherRouteAndADoneOneOpensOne() {
+        AppApiContext.runner(POSTGRES).run(context -> {
+            WebTestClient c = WebTestClient.bindToApplicationContext(context).build();
+
+            Sheet done = donePaperWithCreatinine(context, "mg/dL");
+            EntityExchangeResult<byte[]> doneHtml = html(c, done);
+            assertThat(doneHtml.getStatus().value()).as("the HTML sheet of a DONE paper's value").isEqualTo(200);
+            assertThat(body(doneHtml)).as("the HTML sheet is the sheet").contains("id=\"sheet-title\"");
+            assertThat(views(done.paper())).as("DOCUMENT_VIEW rows after one HTML sheet").isEqualTo(1);
+            EntityExchangeResult<byte[]> doneApi = api(c, done);
+            assertThat(doneApi.getStatus().value()).as("the JSON sheet of a DONE paper's value").isEqualTo(200);
+            assertThat(json.readTree(doneApi.getResponseBody()).path("value").path("id").asText()).isEqualTo(done.observation().toString());
+            assertThat(views(done.paper())).as("DOCUMENT_VIEW rows after one HTML and one JSON sheet").isEqualTo(2);
+
+            // every status but DONE, derived from the enum, so a status added later is probed without anyone listing it
+            List<Document.Status> notDone = Arrays.stream(Document.Status.values()).filter(st -> st != Document.Status.DONE).toList();
+            int refused = 0;
+            for (Document.Status st : notDone) {
+                String status = st.name();
+                Sheet s = donePaperWithCreatinine(context, "mg/dL");
+                AppApiContext.sql(POSTGRES, "UPDATE baymax.document SET status = '" + status + "'"
+                        + (st == Document.Status.NEEDS_RETAKE ? ", status_reason_code = 'low_overall'" : "") + " WHERE id = '" + s.paper() + "'");
+
+                // the path, not just the verdict: the intake's own D2 rule (a paper that is not DONE has no rows) also ends
+                // in a 404 with no view, as "observation_not_found"; only the status gate names its own reason
+                Throwable refusal = context.getBean(ResultUseCase.class).valueSheet(s.patient().familyId(), s.paper(), s.observation())
+                        .map(v -> (Throwable) null).onErrorResume(e -> reactor.core.publisher.Mono.just(e)).block();
+                assertThat(refusal).as("the sheet read of a " + status + " paper").isInstanceOf(BaymaxException.class);
+                assertThat(((BaymaxException) refusal).reason()).as("the reason the sheet read of a " + status + " paper is refused")
+                        .isEqualTo("paper_not_done");
+                assertThat(views(s.paper())).as("DOCUMENT_VIEW rows after the sheet read of a " + status + " paper").isZero();
+
+                EntityExchangeResult<byte[]> html = html(c, s);
+                assertThat(html.getStatus().value()).as("the HTML sheet of a " + status + " paper's stored row").isEqualTo(404);
+                assertThat(views(s.paper())).as("DOCUMENT_VIEW rows after the HTML sheet of a " + status + " paper").isZero();
+
+                EntityExchangeResult<byte[]> api = api(c, s);
+                assertThat(api.getStatus().value()).as("the JSON sheet of a " + status + " paper's stored row").isEqualTo(404);
+                assertThat(json.readTree(api.getResponseBody())).isEqualTo(json.readTree("{\"reason\":\"NOT_FOUND\"}"));
+                assertThat(views(s.paper())).as("DOCUMENT_VIEW rows after both sheets of a " + status + " paper").isZero();
+                refused++;
+            }
+            assertThat(refused).as("statuses probed: every one but DONE, and at least one").isEqualTo(Document.Status.values().length - 1)
+                    .isPositive();
+        });
+    }
+
+    // ---- rule 2: "the first time" only when the marker was never read, in any unit ------------------------------
+
+    /**
+     * Four patients, one context, each sheet asserted on both routes:
+     * <ul>
+     *   <li>the dangerous direction: creatinine read last month in µmol/L, now in mg/dL. There is no earlier reading in
+     *       THIS unit, but "this is the first time" would be false, so neither route draws a history line: the HTML has
+     *       no {@code #earlier} block, the JSON's {@code earlier_line_key} is null;</li>
+     *   <li>the safe direction: a marker never read before, in any unit, is the first time on both routes;</li>
+     *   <li>R1's second no-history case: a value whose marker did not canonicalise ({@code canonical_name} NULL), read
+     *       before under the same printed name, draws no line on either route and lists nothing;</li>
+     *   <li>readings in this unit AND in another: both routes head the history with this unit, and list only its row.</li>
+     * </ul>
+     */
+    @Test
+    void theFirstTimeIsSaidOnlyWhenTheMarkerWasNeverReadInAnyUnit() {
+        AppApiContext.runner(POSTGRES).run(context -> {
+            WebTestClient c = WebTestClient.bindToApplicationContext(context).build();
+
+            // read before only in another unit
+            Sheet otherUnit = donePaperWithCreatinine(context, "mg/dL");
+            UUID older = AppApiContext.paper(context, POSTGRES, otherUnit.patient(), "routine");
+            AppApiContext.sql(POSTGRES, "UPDATE baymax.document SET doc_date = '2026-09-02' WHERE id = '" + older + "'");
+            creatinine(otherUnit.patient(), older, "97", "µmol/L");
+
+            EntityExchangeResult<byte[]> html = html(c, otherUnit);
+            assertThat(html.getStatus().value()).as("the HTML sheet").isEqualTo(200);
+            String page = body(html);
+            assertThat(page).as("the HTML sheet is the sheet").contains("id=\"sheet-title\"");
+            assertThat(page.contains("id=\"earlier\"")).as("an #earlier block on the HTML sheet of a marker read before in µmol/L")
+                    .isFalse();
+            assertThat(page).as("the first-time line on the HTML sheet of a marker read before in µmol/L")
+                    .doesNotContain(copy.t(Lang.BN, "sheet.earlier.none"));
+            JsonNode body = json.readTree(api(c, otherUnit).getResponseBody());
+            assertThat(body.has("earlier_line_key")).as("$.earlier_line_key is present").isTrue();
+            assertThat(body.path("earlier_line_key").isNull()).as("$.earlier_line_key of a marker read before in µmol/L").isTrue();
+            assertThat(body.path("earlier").size()).as("$.earlier: no reading in mg/dL").isZero();
+
+            // never read before, in any unit
+            Sheet never = donePaperWithCreatinine(context, "mg/dL");
+            assertThat(section(body(html(c, never)), "earlier")).as("the HTML #earlier block of a marker never read")
+                    .contains("<p>" + copy.t(Lang.BN, "sheet.earlier.none") + "</p>");
+            assertThat(json.readTree(api(c, never).getResponseBody()).path("earlier_line_key").asText())
+                    .as("$.earlier_line_key of a marker never read").isEqualTo("sheet.earlier.none");
+
+            // a marker that did not canonicalise: read before under the same printed name, but the marker is not known, so
+            // nothing is "the same" and nothing is "the first time" either: no line on either route, no rows
+            FamilyAccount owner = AppApiContext.family(context, number(), "Tanvir");
+            PatientProfile ma = AppApiContext.patient(context, owner.id(), "Ma");
+            UUID earlierPaper = AppApiContext.paper(context, POSTGRES, ma, "routine");
+            AppApiContext.sql(POSTGRES, "UPDATE baymax.document SET doc_date = '2026-09-02' WHERE id = '" + earlierPaper + "'");
+            observation(ma, earlierPaper, "Serum Zinc", "NULL", "70", "µg/dL");
+            UUID current = AppApiContext.paper(context, POSTGRES, ma, "routine");
+            AppApiContext.sql(POSTGRES, "UPDATE baymax.document SET doc_date = '2026-10-12' WHERE id = '" + current + "'");
+            Sheet unknown = new Sheet(AppApiContext.session(context, owner.id()), current,
+                    observation(ma, current, "Serum Zinc", "NULL", "68", "µg/dL"), ma);
+
+            EntityExchangeResult<byte[]> unknownHtml = html(c, unknown);
+            assertThat(unknownHtml.getStatus().value()).as("the HTML sheet of an uncanonicalised value").isEqualTo(200);
+            String unknownPage = body(unknownHtml);
+            assertThat(unknownPage).as("the HTML sheet is the sheet").contains("id=\"sheet-title\"");
+            assertThat(unknownPage.contains("id=\"earlier\"")).as("an #earlier block on the HTML sheet of an uncanonicalised value").isFalse();
+            assertThat(unknownPage).as("the first-time line on the HTML sheet of an uncanonicalised value")
+                    .doesNotContain(copy.t(Lang.BN, "sheet.earlier.none"));
+            JsonNode unknownBody = json.readTree(api(c, unknown).getResponseBody());
+            assertThat(unknownBody.path("value").path("id").asText()).as("the JSON sheet is this value's").isEqualTo(unknown.observation().toString());
+            assertThat(unknownBody.has("earlier_line_key")).as("$.earlier_line_key is present").isTrue();
+            assertThat(unknownBody.path("earlier_line_key").isNull()).as("$.earlier_line_key of an uncanonicalised value").isTrue();
+            assertThat(unknownBody.path("earlier").isArray()).as("$.earlier is a list").isTrue();
+            assertThat(unknownBody.path("earlier").size()).as("$.earlier of an uncanonicalised value").isZero();
+
+            // read before in this unit and in another
+            Sheet both = donePaperWithCreatinine(context, "mg/dL");
+            UUID other = AppApiContext.paper(context, POSTGRES, both.patient(), "routine");
+            AppApiContext.sql(POSTGRES, "UPDATE baymax.document SET doc_date = '2026-09-02' WHERE id = '" + other + "'");
+            creatinine(both.patient(), other, "97", "µmol/L");
+            UUID same = AppApiContext.paper(context, POSTGRES, both.patient(), "routine");
+            AppApiContext.sql(POSTGRES, "UPDATE baymax.document SET doc_date = '2026-07-11' WHERE id = '" + same + "'");
+            UUID sameObservation = creatinine(both.patient(), same, "1.0", "mg/dL");
+
+            String earlier = section(body(html(c, both)), "earlier");
+            assertThat(earlier).as("the HTML #earlier heading").contains("<h2>" + copy.t(Lang.BN, "sheet.earlier", "mg/dL") + "</h2>");
+            assertThat(earlier).as("the HTML #earlier row of the mg/dL reading")
+                    .contains("href=\"/app/documents/" + same + "/values/" + sameObservation + "?from=all\"");
+            assertThat(earlier).as("the HTML #earlier rows never link the µmol/L paper").doesNotContain("/app/documents/" + other + "/");
+            JsonNode bothBody = json.readTree(api(c, both).getResponseBody());
+            assertThat(bothBody.path("earlier_line_key").asText()).isEqualTo("sheet.earlier");
+            assertThat(bothBody.path("earlier").size()).isEqualTo(1);
+            assertThat(bothBody.path("earlier").get(0).path("observation_id").asText()).isEqualTo(sameObservation.toString());
+        });
+    }
+
+    // ---- helpers -------------------------------------------------------------------------------------------------
+
+    private static EntityExchangeResult<byte[]> html(WebTestClient c, Sheet s) {
+        return c.get().uri("/app/documents/" + s.paper() + "/values/" + s.observation() + "?from=summary").cookie("baymax_session", s.owner())
+                .cookie("baymax_lang", Lang.BN.code).exchange().expectBody().returnResult();
+    }
+
+    private static EntityExchangeResult<byte[]> api(WebTestClient c, Sheet s) {
+        return c.get().uri("/app/api/documents/" + s.paper() + "/values/" + s.observation()).cookie("baymax_session", s.owner())
+                .cookie("baymax_lang", Lang.BN.code).exchange().expectBody().returnResult();
+    }
+
+    private static String body(EntityExchangeResult<byte[]> r) {
+        return new String(r.getResponseBody() == null ? new byte[0] : r.getResponseBody(), StandardCharsets.UTF_8);
+    }
+
+    /** The element whose id is {@code id}, whole (its opening tag to its matching close of the same name). */
+    private static String section(String html, String id) {
+        int at = html.indexOf("id=\"" + id + "\"");
+        assertThat(at).as("block #" + id).isNotNegative();
+        int open = html.lastIndexOf('<', at);
+        String tag = html.substring(open + 1, html.indexOf(' ', open));
+        return html.substring(open, html.indexOf("</" + tag + ">", at) + tag.length() + 3);
+    }
+
+    private static long views(UUID paper) throws Exception {
+        return AppApiContext.count(POSTGRES, "select count(*) from baymax.audit_event where kind = '" + AuditEvent.Kind.DOCUMENT_VIEW.dbValue()
+                + "' and document_id = '" + paper + "'");
+    }
+
+    private static String scalar(String query) throws Exception {
+        try (Connection c = DriverManager.getConnection(POSTGRES.getJdbcUrl() + "&sslmode=disable", POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement s = c.createStatement(); ResultSet r = s.executeQuery(query)) {
+            r.next();
+            return r.getString(1);
+        }
+    }
+}
