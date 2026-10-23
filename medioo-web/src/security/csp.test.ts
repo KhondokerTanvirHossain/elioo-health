@@ -110,4 +110,21 @@ describe("middleware", () => {
     expect(headers.get("x-medioo-path")).toBe("/app/home");
     expect(response.headers.get("content-security-policy")).not.toBeNull();
   });
+
+  // Next's own rewrite coming back: bound to a loopback literal (HOSTNAME=127.0.0.1), Next turns the preview rewrite
+  // into a proxy to itself (its NextURL names the host `localhost`, its router compares with `127.0.0.1`), and the
+  // middleware runs a second time on the rewritten path, carrying the first pass's mark and the preview path. Dropping
+  // the mark there rendered /app/preview/<page> as the ungated /app/<page> (PR 155, measured on a standalone build).
+  it("aPreviewRewriteThatComesBackIsRefusedNotServedUngated", async () => {
+    const response = await call("/app/home", { "x-medioo-preview": "1", "x-medioo-path": "/app/preview/home" });
+    expect(response.status, "the second pass of a preview rewrite").toBe(404);
+    expect(response.headers.get("x-middleware-rewrite")).toBeNull();
+    expect(response.headers.get("x-middleware-next"), "the page is not rendered").toBeNull();
+    expect(directives(response.headers.get("content-security-policy") ?? "").get("default-src")).toBe("'none'");
+    expect(response.headers.get("x-frame-options")).toBe("DENY");
+    // the bare preview path's rewrite coming back to /app, too
+    const bare = await call("/app", { "x-medioo-preview": "1", "x-medioo-path": "/app/preview" });
+    expect(bare.status).toBe(404);
+    expect(bare.headers.get("x-middleware-next")).toBeNull();
+  });
 });

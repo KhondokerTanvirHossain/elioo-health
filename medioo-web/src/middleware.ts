@@ -19,12 +19,31 @@ import { SECURITY_HEADERS } from "./security/headers";
  * marked `x-medioo-preview: 1`, which src/api/java.ts reads as "read nothing but `me` until `me` says preview". The
  * mark and `x-medioo-path` (the path and query the browser asked for) are the middleware's alone: a client's copies
  * are deleted first, so no request can mark itself a preview or name a place to return to.
+ *
+ * The gate fails closed when the rewrite comes back. Bound to a loopback literal (HOSTNAME=127.0.0.1, as a local
+ * standalone run was in PR 155), Next makes the rewrite a proxy to itself: its NextURL names the host `localhost`,
+ * its router compares that with `127.0.0.1`, finds another origin and sends a second request, on which this middleware
+ * runs again for `/app/<rest>`, carrying the first pass's mark and the preview path. Deleting the mark there rendered
+ * the preview as the ungated page; that request is refused instead (404), whoever sent it. The image binds 0.0.0.0
+ * (Dockerfile), where the rewrite stays internal; src/routing/built/preview-gate.built.test.ts runs the standalone
+ * server both ways.
  */
 const PREVIEW = /^\/app\/preview(?=\/|$)/;
 
 export function middleware(request: NextRequest) {
   const nonce = newNonce();
   const csp = buildCsp(nonce);
+
+  if (
+    !PREVIEW.test(request.nextUrl.pathname) &&
+    request.headers.get("x-medioo-preview") === "1" &&
+    PREVIEW.test(request.headers.get("x-medioo-path") ?? "")
+  ) {
+    const refused = new NextResponse("Not Found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
+    refused.headers.set("content-security-policy", csp);
+    for (const { key, value } of SECURITY_HEADERS) refused.headers.set(key, value);
+    return refused;
+  }
 
   const requestHeaders = new Headers(request.headers);
   requestHeaders.delete("x-medioo-preview");

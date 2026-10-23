@@ -24,6 +24,8 @@
 #   stays Java's (`add-any-method` drops the method line and fails the PROBE POST row alone); `add-wide` widens the
 #   exact `path /app/add` to `/app/add*` and fails the /app/add/ boundary row alone. Each edit is anchored on the add
 #   block, so another block's `method GET HEAD` (F3's sign-in matcher) is never the one edited;
+# - F3's sign-in matcher, each way it could be wrong: without `method GET HEAD` it takes POST /app/verify (S3: every
+#   sign-in POST stays Java's), `path /app/verify*` takes /app/verifyx, and without the bare `/app` that row is Java's;
 # - a table with no rows, a file with no medioo.eliooo.org block, and a file with an upstream the probe does not know
 #   each fail, rather than pass vacuously or send a row somewhere unreplaced.
 set -uo pipefail
@@ -36,11 +38,12 @@ WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 FAILED=0
 CASES=0
-# the smoke table's rows less the {old} one: /app/healthz /actuator/health /app/api/me /app/ / /medscribeai
-# /medscribeai/ /baymax /baymax/ webhook /_next/static/x.js /fonts/noto-sans-latin.woff2 /brand/mio-head.webp
-# /app/preview /app/preview/ /app/previewx /_next/image /app/preview/probe, and F7's /app/add, /app/add/,
-# PROBE POST /app/add and PROBE HEAD /app/add (the probe sends PROBE rows; the production run never does)
-ROWS=22
+# the smoke table's rows less the {old} one: /app/healthz /actuator/health /app/api/me /app/ /app, HEAD /app/,
+# /app/verify, HEAD /app/verify, /app/login /app/verifyx /app/basic /lang/en?back=..., POST /app/verify, POST /app/login,
+# / /medscribeai /medscribeai/ /baymax /baymax/ webhook /_next/static/x.js /fonts/noto-sans-latin.woff2
+# /brand/mio-head.webp /app/preview /app/preview/ /app/previewx /_next/image /app/preview/probe, and F7's /app/add,
+# /app/add/, PROBE HEAD /app/add and PROBE POST /app/add (the probe sends PROBE rows; the production run never does)
+ROWS=32
 
 fail() { echo "FAIL: $1"; FAILED=1; }
 
@@ -68,6 +71,12 @@ if probe "$CADDYFILE"; then :; else fail "repo: exited non-zero on the repo's fi
 [ "$(fails)" = 0 ] || fail "repo: $(fails) FAIL rows: $(out)"
 grep -q '^PASS /app/api/me 299 (java)$' "$WORK/out.log" || fail "repo: no 'PASS /app/api/me 299 (java)' line: $(out)"
 grep -q '^PASS /app/preview 298 (next)$' "$WORK/out.log" || fail "repo: no 'PASS /app/preview 298 (next)' line: $(out)"
+# F3: the sign-in pages are Next's for GET and HEAD, and every sign-in POST and the no-JS fallback stay Java's
+for line in 'PASS /app/ 298 (next)' 'PASS /app 298 (next)' 'PASS HEAD /app/ 298 (next)' 'PASS /app/verify 298 (next)' \
+  'PASS HEAD /app/verify 298 (next)' 'PASS POST /app/verify 299 (java)' 'PASS POST /app/login 299 (java)' \
+  'PASS /app/basic 299 (java)' 'PASS /app/login 299 (java)'; do
+  grep -qxF "$line" "$WORK/out.log" || fail "repo: no '$line' line: $(out)"
+done
 # the probe prints each row's spec as written, so an {old} row it asked would print the literal {old}
 grep -qF '{old}' "$WORK/out.log" && fail "repo: an {old} row was asked of the probe: $(grep -F '{old}' "$WORK/out.log" | head -3 | tr '\n' '|')"
 
@@ -99,6 +108,9 @@ add-any-method|s/\n\t\tmethod GET HEAD\n(\t\tpath \/app\/add\n)/\n$1/|FAIL PROBE
 add-get-only|s/\n\t\tmethod GET HEAD\n(\t\tpath \/app\/add\n)/\n\t\tmethod GET\n$1/|FAIL PROBE HEAD /app/add got 299 (java), expected 298 (next)
 add-wide|s/(\n\t\tmethod GET HEAD\n\t\tpath \/app\/add)\n/$1*\n/|FAIL /app/add/ got 298 (next), expected 299 (java)
 add-missing|s/\t\@medioo_add \{\n\t\tmethod GET HEAD\n\t\tpath \/app\/add\n\t\}\n\thandle \@medioo_add \{\n\t\treverse_proxy medioo-web:3000\n\t\}\n//|FAIL /app/add got 299 (java), expected 298 (next)|FAIL PROBE HEAD /app/add got 299 (java), expected 298 (next)
+signin-any-method|s/\n\t\tmethod GET HEAD\n\t\tpath \/app \/app\/ \/app\/verify\n/\n\t\tpath \/app \/app\/ \/app\/verify\n/|FAIL POST /app/verify got 298 (next), expected 299 (java)
+signin-verify-prefix|s/\n\t\tpath \/app \/app\/ \/app\/verify\n/\n\t\tpath \/app \/app\/ \/app\/verify*\n/|FAIL /app/verifyx got 298 (next), expected 299 (java)
+signin-no-bare|s/\n\t\tpath \/app \/app\/ \/app\/verify\n/\n\t\tpath \/app\/ \/app\/verify\n/|FAIL /app got 299 (java), expected 298 (next)
 TABLE
 
 # 4. a table with no rows: refused, not passed
