@@ -64,7 +64,16 @@
   height: auto;
   border-radius: var(--radius-sm);
 }
+/* The paper label (copy key paper.label; principle 6, Java's .paper .label): it tells the paper's words from
+   Medioo's. Token colour, 12 px, never smaller. */
+.attention-stack__paper-label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--label2);
+}
 .attention-stack__words {
+  margin: 0;
   font-size: var(--text-md);
   line-height: 1.45;
 }

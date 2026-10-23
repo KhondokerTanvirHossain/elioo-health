@@ -94,6 +94,30 @@ describe("AttentionStack", () => {
     expect([...card.querySelectorAll("img")].map((i) => i.getAttribute("src"))).toEqual([item.crop.src]);
   });
 
+  it("theDoctorsWordsSitUnderThePaperLabel", () => {
+    // Principle 6 (Java's ValueRows.paperQuote, guarded there by PaperIsNeverMediooTest): the paper's words are told
+    // apart from Medioo's by the paper label. Inside one figure: the label caption, then the crop, then the words in a
+    // blockquote. Medioo's own title stays outside that figure.
+    const body = stack("full-stack");
+    const item = body.items.find((i) => i.kind === "follow_up");
+    if (item?.kind !== "follow_up") throw new Error("no follow-up");
+    for (const lang of LANGS) {
+      const root = draw(body, lang);
+      const card = root.querySelector<HTMLElement>('[data-attention="follow_up"]')!;
+      const figures = [...card.querySelectorAll("figure")];
+      expect(figures.length, `${lang}: one paper figure`).toBe(1);
+      const figure = figures[0]!;
+      const children = [...figure.children].map((e) => e.tagName.toLowerCase());
+      expect(children, `${lang}: label, crop, words, in that order`).toEqual(["figcaption", "img", "blockquote"]);
+      expect(figure.querySelector("figcaption")?.textContent, `${lang}: the label is the paper label`).toBe(t(lang, "paper.label"));
+      expect(figure.querySelector("blockquote")?.textContent, `${lang}: the words are the doctor's, exactly`).toBe(item.instruction);
+      const title = card.querySelector(".attention-stack__title");
+      expect(title, `${lang}: the card has Medioo's title`).not.toBeNull();
+      expect(figure.contains(title), `${lang}: Medioo's title is not inside the paper's block`).toBe(false);
+      cleanup();
+    }
+  });
+
   it("anEmptyStackIsSilence", () => {
     const body = stack("empty");
     expect(body.items).toEqual([]);
