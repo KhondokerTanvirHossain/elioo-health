@@ -70,4 +70,10 @@ tasks.named('test') {
     testLogging {
         exceptionFormat = 'full'
     }
+    // Gradle's default test heap is 512 MB. Measured 2026-10-23 (jcmd GC.class_histogram, live set after a full GC):
+    // main's suite (c48f1dc) ends at ~460 MB live before HexagonalArchitectureTest's ArchUnit import, which needs room of
+    // its own (it imports ~16k classes). W6-fix's branch tipped it into "OutOfMemoryError: Java heap space" in that
+    // import, locally and in CI, with every test green, and still did with its one new Postgres test class disabled: the
+    // margin was gone, not one class's leak. 1 GB restores the headroom; it is a ceiling, not a target.
+    maxHeapSize = '1g'
 }
