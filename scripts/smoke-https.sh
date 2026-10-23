@@ -71,14 +71,18 @@
 # production answered GET /app/home signed out with Java's session filter: 303 to /app/ (no held place), Java's CSP;
 # HEAD with Java's JSON 404 (Java routes GET alone). After it, medioo-web's chat page (plan W5) answers GET and HEAD
 # signed out with a 307 to the sign-in page holding the place (/app/?next=%2Fapp%2Fhome, the query kept), its nonce
-# CSP: measured against the deployed sha's build (a529160) with stub Java signed out, not through the W1d replica
-# (Docker was down; Caddy changes neither the status nor the Location). HEAD is a PROBE row, as F7's HEAD /app/add is:
-# the route probe sends it as HEAD, so a matcher of `method GET` alone fails there (making both HEAD rows production
-# rows now that F3 made this run method-aware is the follow-up posted on #155). Java has no POST /app/home
-# (docs/infra/app-routes.txt) and the matcher is GET and HEAD only, so a POST stays Java's; its row is a PROBE row,
-# never sent by this run. Measured against Java itself on 2026-10-23, before the flip (production, signed out, no
-# body; Java has no POST route there, so nothing is read or written): POST /app/home answers 404, application/json,
-# statusCode 400, the same answer as HEAD /app/home.
+# CSP: measured against the deployed sha's build (a529160) with stub Java signed out, and again on 2026-10-23 through
+# the W1d replica's own Caddyfile (BUDGET_REPLICA_ONLY=1) on Caddy v2.11.7 in front of `next start` of the F5 head
+# (Docker was down, so the replica ran without containers): GET and HEAD alike, 307, the same Location, the nonce
+# CSP and the four headers once each. HEAD is a PROBE row, as F7's HEAD /app/add is: the route probe sends it as HEAD,
+# so a matcher of `method GET` alone fails there (making both HEAD rows production rows now that F3 made this run
+# method-aware is the follow-up posted on #155). Java has no POST /app/home (docs/infra/app-routes.txt) and the
+# matcher is GET and HEAD only, so a POST stays Java's; its row is a PROBE row, never sent by this run. The W1d replica
+# cannot measure it (it points Java's upstream at medioo-web too, so a POST through it is Next's 307), so it was
+# measured against Java itself on 2026-10-23, before the flip (production, signed out, no body; Java has no POST route
+# there, so nothing is read or written): POST /app/home answers 404, application/json, statusCode 400, the same
+# answer as HEAD /app/home. The route probe reads the row's class (Java): a matcher that let a POST through to Next
+# fails there (`home-any-method`).
 # /app/home/ (trailing slash, outside the exact `path /app/home`) is still Java's JSON 404 (production, 2026-10-23,
 # read-only GET: 404, application/json, statusCode 400); Next would answer it with a 307 holding /app/home/, so a
 # matcher widened to `/app/home*` fails that row.
