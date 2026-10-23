@@ -396,6 +396,8 @@
   "tray.src.pdf": "PDF",
   "tray.title": "{n}টি পাতা — একই রিপোর্টের?",
   "tray.up": "পাতা {n} উপরে নিন",
+  "trend.band.legend.band": "হালকা পট্টি: রিপোর্টে লেখা সীমা",
+  "trend.band.legend.edge": "সরু টানা রেখা: রিপোর্টে লেখা সীমার শেষ",
   "trend.date.uncertain": "{0} (তারিখ নিশ্চিত নয়)",
   "trend.date.upload": "{0} (আপলোডের তারিখ)",
   "trend.point": "{0}: {1} {2}, {3}",

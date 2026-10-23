@@ -396,6 +396,8 @@
   "tray.src.pdf": "PDF",
   "tray.title": "{n} pages — one report?",
   "tray.up": "Move page {n} up",
+  "trend.band.legend.band": "Pale band: the range printed on the report",
+  "trend.band.legend.edge": "Thin solid line: the printed limit",
   "trend.date.uncertain": "{0} (date unsure)",
   "trend.date.upload": "{0} (upload date)",
   "trend.point": "{0}: {1} {2}, {3}",

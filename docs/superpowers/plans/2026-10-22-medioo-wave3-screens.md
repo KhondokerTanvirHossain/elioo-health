@@ -1174,6 +1174,27 @@ band."* Branch `feat/baymax-web-api-labs-printed-range` (PR #143). Lane B. Befor
 
 **Board:** TrendChart printed-range, two ranges in one series, one-sided edges, a band withheld beside a critical and an unknown; copied to `~/medioo-design/boards/trend-band/`.
 
+*Amended 2026-10-23 (PR #151), for PO sight:* what shipped departs from this task as follows.
+- Branch `feat/medioo-web-trend-range-band`; the board is copied to `~/medioo-design/boards/trend-range/`.
+- Tests: `anUnknownPointStandsOnNoBand` became `aRangeTextWithNoNumbersDrawsNothing` (every point Java writes with a
+  `ref_text` and no number, derived from the fixtures, at least 7) and `aReadingTheCodeCannotJudgeIsDrawnUnknown` (a
+  number sent beside a reading drawn unknown is not drawn). Added: `differingRangesAreNeverOneBand` (both ends, only
+  the high, only the low), `neighboursSharingARangeShareOneBand`, `eachRangeIsDrawnAtItsOwnPrintedBounds`,
+  `everyRangeLiesInsideThePlot`, `aBandIsOutlinedAtItsOwnBounds`, `aLoneBoundThatDisagreesWithItsReadingIsNotDrawn`,
+  `theBandNeverChangesAPointOrItsWord`, `noReaderIsGivenTheRangeTextUntilItsFormIsAccepted`,
+  `theLegendStandsOnlyUnderADrawnRange`; `catalog.spec.ts` `theTrendRangeIsPaintedPaleAndNeutralAndLeavesTheMarkersAlone`.
+- Five catalog states instead of one `printed-range`: `TrendChart/two-ranges`, `one-sided-high`, `one-sided-low`,
+  `range-withheld`, `unknown-beside-range`.
+- A two-sided band is a pale `--sep` fill outlined by two thin solid `--label3` lines at its bounds: the outline is
+  what is seen (3:1), the fill decorates it. A one-sided bound is one such line, drawn only beside a reading beyond it
+  on its side (fail closed, as `PaperDisplay.edgeAgrees`).
+- The edge line carries no label, and `ref_text` is not used as an accessible label either: until the PO accepts its
+  form (PR #143) it is neither said nor written, so a screen-reader user and a sighted reader are given the same. The
+  legend names each kind drawn (`trend.band.legend.band`, `trend.band.legend.edge`).
+- Extra files: `e2e/board.spec.ts` (shared board tooling: an `element` to shoot one catalog state, and `proto.act` to
+  act on the prototype), `e2e/catalog.spec.ts`, `src/catalog/states.tsx`, `src/catalog/states.test.tsx`, both
+  `ui-result` bundles, the generated `src/copy/generated/copy.{bn,en}.json`, and `docs/DECISIONS.md`.
+
 ---
 
 ## Task W10-api: The theme preference — `PUT /app/api/preferences`

@@ -62,11 +62,20 @@ const W2E_B: string[] = [
   "TrendChart/critical-low",
 ];
 
+/** Plan RANGE-web: the trend chart's printed range over B6's generated labs-printed-range. */
+const RANGE_WEB: string[] = [
+  "TrendChart/two-ranges",
+  "TrendChart/one-sided-high",
+  "TrendChart/one-sided-low",
+  "TrendChart/range-withheld",
+  "TrendChart/unknown-beside-range",
+];
+
 const ids = () => STATES.map(({ component, state }) => `${component}/${state}`);
 
 describe("catalog states", () => {
   it("theRegistryHoldsExactlyTheShippedStates", () => {
-    expect(ids()).toEqual([...SHIPPED, ...W2D_A(), ...W2E_B]);
+    expect(ids()).toEqual([...SHIPPED, ...W2D_A(), ...W2E_B, ...RANGE_WEB]);
   });
 
   it("onlyTheListedStatesAreEmpty", () => {

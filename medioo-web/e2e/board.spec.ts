@@ -20,9 +20,16 @@ type Scene = {
   scenario: string;
   /**
    * The prototype scene; `click`, a control of the prototype's own to press once the scene is on (its camera sheet);
-   * `show`, an element of the prototype to show as its own script would (desktop.html's #drop while a file is dragged).
+   * `show`, an element of the prototype to show as its own script would (desktop.html's #drop while a file is dragged);
+   * `act`, steps to take on the prototype when one click is not enough (the labs list, then its trend sheet).
    */
-  proto: { file: "phone.html" | "desktop.html"; scene: string; click?: string; show?: string };
+  proto: {
+    file: "phone.html" | "desktop.html";
+    scene: string;
+    click?: string;
+    show?: string;
+    act?: (page: Page) => Promise<void>;
+  };
   /** What to do on the page before the picture (type a number, press a button). */
   act?: (page: Page) => Promise<void>;
   /** The widths to take it at, when not the phone and desktop pair (the shell: 390, 1024 and 1440, plan W4). */
@@ -35,6 +42,8 @@ type Scene = {
    * part way down and hides what a family sees first.
    */
   fold?: boolean;
+  /** One element to take instead of the whole page: a component's catalog state (plan RANGE-web). */
+  element?: string;
 };
 
 const number = async (page: Page) => {
@@ -315,6 +324,44 @@ BOARD_SCENES.push(
   family("profile", "family-owner", { route: `/app/patients/${familyPatientId("family/owner.json", 1)}/profile` }),
 );
 
+// TrendChart's catalog states (plan RANGE-web, PO ruling R3): each one alone, in each language, beside the approved
+// prototype's HbA1c trend sheet. The catalog's Sheet/open states open as modals on hydration; they are closed first so
+// their scrim does not grey the chart.
+const TREND_STATES = [
+  "rising",
+  "with-unknown",
+  "critical-low",
+  "two-ranges",
+  "one-sided-high",
+  "one-sided-low",
+  "range-withheld",
+  "unknown-beside-range",
+];
+const closeCatalogSheets = async (page: Page) => {
+  await page
+    .waitForFunction(() => document.querySelectorAll("dialog[open]").length === 2, null, { timeout: 10_000 })
+    .catch(() => undefined);
+  await page.evaluate(() => document.querySelectorAll("dialog").forEach((d) => d.close()));
+};
+const trendSheet = async (proto: Page) => {
+  await proto.locator('[data-action="labs"]').first().click();
+  await proto.locator('[data-action="trend"]').first().click();
+};
+for (const state of TREND_STATES) {
+  for (const lang of ["bn", "en"]) {
+    BOARD_SCENES.push({
+      screen: "trend-range",
+      state: `${state}-${lang}`,
+      route: "/app/catalog-test",
+      scenario: "me-one",
+      build: "catalog",
+      element: `section[data-catalog-state="TrendChart/${state}"][lang="${lang}"]`,
+      proto: { file: "phone.html", scene: "health", act: trendSheet },
+      act: closeCatalogSheets,
+    });
+  }
+}
+
 const VIEWPORTS = { phone: { width: 390, height: 844 }, desktop: { width: 1280, height: 800 } } as const;
 // The catalog build's server (playwright.config.ts starts it on the port after the production one).
 const CATALOG_URL = process.env.E2E_CATALOG_URL ?? `http://127.0.0.1:${Number(process.env.E2E_PORT ?? 3217) + 1}`;
@@ -336,7 +383,9 @@ for (const scene of BOARD_SCENES) {
           await page.waitForLoadState("load");
           await page.screenshot({ path: join(OUT, scene.screen, `${scene.state}-${layout}-${colorScheme}-fold.png`) });
         }
-        await page.screenshot({ path: join(OUT, scene.screen, `${scene.state}-${layout}-${colorScheme}.png`), fullPage: true });
+        const shot = join(OUT, scene.screen, `${scene.state}-${layout}-${colorScheme}.png`);
+        if (scene.element) await page.locator(scene.element).screenshot({ path: shot });
+        else await page.screenshot({ path: shot, fullPage: true });
 
         const proto = await page.context().newPage();
         await proto.setViewportSize(viewport);
@@ -350,6 +399,10 @@ for (const scene of BOARD_SCENES) {
           await proto.waitForTimeout(600);
         }
         if (scene.proto.show) await proto.evaluate((s) => document.querySelector(s)?.classList.add("on"), scene.proto.show);
+        if (scene.proto.act) {
+          await scene.proto.act(proto);
+          await proto.waitForTimeout(600);
+        }
         await proto.screenshot({ path: join(OUT, scene.screen, `${scene.state}-${layout}-${colorScheme}-prototype.png`) });
         await proto.close();
       });
