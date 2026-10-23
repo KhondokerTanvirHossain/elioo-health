@@ -33,20 +33,22 @@ export type NowBannerPatient = Pick<MePatient, "id" | "name">;
  *
  * Mio is still here, as on every NOW surface. `patients` is GET /app/api/me's list, the only source of a name; a
  * patient it does not hold is not named, and a title with no name left falls back to the attention strip's words.
- * `onSeen` is a function, so it reaches the island only when the caller is itself a client component (W5). It receives
- * the banner the server answered after the acknowledgement, which the caller renders: a 2xx is not "hidden" (a stale
- * tap answers `show: true`). Without `onSeen` the button is inert and sends nothing (the catalog).
+ *
+ * A server component (plan W5): it passes the seen island words, the seen list and `live`, and no function. `live` is
+ * set by a signed-in page (shell.tsx), which renders this inside NowBannerHold; the hold receives Java's answer to the
+ * acknowledgement and renders it (a 2xx is not "hidden": a stale tap answers `show: true`). Without `live` the button
+ * is inert and sends nothing (the catalog).
  */
 export function NowBanner({
   banner,
   patients,
   lang,
-  onSeen,
+  live,
 }: {
   banner: NowBannerJson;
   patients: NowBannerPatient[];
   lang: Lang;
-  onSeen?: (next: NowBannerJson) => void;
+  live?: boolean;
 }) {
   const titleId = useId();
   if (!banner.show) return null;
@@ -94,7 +96,7 @@ export function NowBanner({
           seen={banner.seen}
           label={t(lang, "now.banner.seen")}
           failedLabel={t(lang, "app.err.generic")}
-          onSeen={onSeen}
+          live={live === true}
         />
       </div>
     </section>

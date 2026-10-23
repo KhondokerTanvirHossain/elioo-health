@@ -39,12 +39,77 @@ export function numberShown(fixture) {
   return JSON.parse(readFileSync(join(FIXTURES, fixture), "utf8")).body.confirm.number_display;
 }
 
+/**
+ * A fixture a helper derives a literal answer from, parsed, once its `_meta.source` says Java wrote it for `key`: the
+ * rule scenarios.test.ts's fixtureProblem applies to every fixture a scenario names, which never sees a literal. A
+ * fixture regenerated for another route, or renamed, is refused here instead of being served under this one.
+ */
+function javaWrote(fixture, key) {
+  const parsed = JSON.parse(readFileSync(join(FIXTURES, fixture), "utf8"));
+  const source = parsed?._meta?.source;
+  if (typeof source !== "string" || !source.startsWith(`${key} `)) {
+    throw new Error(`${fixture} was written for "${source}", not "${key}"`);
+  }
+  return parsed;
+}
+
+/**
+ * A NOW banner fixture whose papers belong to the `index`-th patient of a `me` fixture. The two bodies come from two
+ * contract tests that each mint their own patient ids, so on their own the banner names a patient `me` does not list
+ * (its title then falls back to the attention strip's words, as it must for a stale `me`). Java answers both from one
+ * database, where the ids agree; only the ids are changed here, never a word or a flag.
+ */
+export function bannerFor(fixture, meFixture, index = 0) {
+  const banner = javaWrote(fixture, "GET /app/api/now-banner");
+  const me = javaWrote(meFixture, "GET /app/api/me");
+  const patient = me.body.patients[index].id;
+  return {
+    status: banner.status,
+    body: { ...banner.body, documents: banner.body.documents.map((d) => ({ ...d, patient_id: patient })) },
+  };
+}
+
+/**
+ * The answer to PUT /app/api/now-banner/ack: NowBannerApiHandler.ack answers 200 with the banner re-read, the body GET
+ * /app/api/now-banner sends. No contract test writes a fixture for the PUT, so the GET's body is the literal answer:
+ * the fixture's own, or, with `meFixture`, bannerFor's (its papers the `me` patient's).
+ */
+export function reRead(fixture, meFixture) {
+  const body = meFixture === undefined ? javaWrote(fixture, "GET /app/api/now-banner").body : bannerFor(fixture, meFixture).body;
+  return { status: 200, body };
+}
+
+/**
+ * A thread fixture with its paper cards left out: a page of delivered messages only, as Java answers for a patient whose
+ * papers are all older than the thread's first page. Only items are dropped, never a word changed.
+ */
+export function messagesOnly(fixture) {
+  const parsed = javaWrote(fixture, "GET /app/api/patients/{id}/thread");
+  return { status: parsed.status, body: { ...parsed.body, items: parsed.body.items.filter((i) => i.kind === "message") } };
+}
+
 /** The open sign-in routes every signed-out scenario answers (AppApiGuard.OPEN, W3-api). */
 const SIGN_IN = {
   "POST /app/api/sign-in/request": ["sign-in/confirm.json", "sign-in/sent.json"],
   "POST /app/api/sign-in/verify": "sign-in/verified.json",
   "GET /app/api/sign-in/state": "sign-in/state-none.json",
 };
+
+/** The NOW banner every signed-in page reads (W5), when the family has nothing unseen: show false. */
+const NO_NOW = { "GET /app/api/now-banner": "now-banner/acked.json" };
+
+/**
+ * The chat page (W5): one patient (me/one-patient.json), no unseen NOW, an empty attention stack and the default thread, with
+ * `over` replacing any of them.
+ */
+const chat = (over) => ({
+  ...NO_NOW,
+  "GET /app/api/me": "me/one-patient.json",
+  "PUT /app/api/active-patient": NO_CONTENT,
+  "GET /app/api/patients/{id}/attention": "attention/empty.json",
+  "GET /app/api/patients/{id}/thread": "thread/default.json",
+  ...over,
+});
 
 /** A code page whose state is `state`, and whose verify answers `verify`. */
 const codePage = (state, verify = "sign-in/verified.json") => ({
@@ -56,6 +121,7 @@ const codePage = (state, verify = "sign-in/verified.json") => ({
 
 /** The add sheet (W7): `me`, whom the viewer may send for, and what a press is answered. */
 const addSheet = (options, uploads = "uploads/one-document.json", me = "me/one-patient.json") => ({
+  ...NO_NOW,
   "GET /app/api/me": me,
   "GET /app/api/upload-options": `upload-options/${options}.json`,
   "POST /app/api/uploads": uploads,
@@ -135,15 +201,17 @@ export const SCENARIOS = {
   "java-502": { ...SIGN_IN, "GET /app/api/me": { status: 502, body: "bad gateway" } },
   // The shell (W4), on its catalog-only page /app/shell-test: one patient, two and no choice, none, the longest name,
   // and a family outside the preview. Choosing a patient is Java's 204 (MeApiHandler.setActivePatient sets the cookie).
-  "me-one": { "GET /app/api/me": "me/one-patient.json", "PUT /app/api/active-patient": NO_CONTENT },
-  "me-two": { "GET /app/api/me": "me/two-patients.json", "PUT /app/api/active-patient": NO_CONTENT },
-  "me-none": { "GET /app/api/me": "me/no-patients.json" },
-  "me-long": { "GET /app/api/me": "me/long-name.json", "PUT /app/api/active-patient": NO_CONTENT },
-  "me-preview-off": { "GET /app/api/me": "me/preview-off.json" },
+  // Every signed-in page reads the NOW banner too (W5); here it is the one the family already saw (show: false).
+  "me-one": { ...NO_NOW, "GET /app/api/me": "me/one-patient.json", "PUT /app/api/active-patient": NO_CONTENT },
+  "me-two": { ...NO_NOW, "GET /app/api/me": "me/two-patients.json", "PUT /app/api/active-patient": NO_CONTENT },
+  "me-none": { ...NO_NOW, "GET /app/api/me": "me/no-patients.json" },
+  "me-long": { ...NO_NOW, "GET /app/api/me": "me/long-name.json", "PUT /app/api/active-patient": NO_CONTENT },
+  "me-preview-off": { ...NO_NOW, "GET /app/api/me": "me/preview-off.json" },
   // The session ended while the page was open: the switcher's PUT is a 401, and so is the sign-in page's held-place
   // read when the browser lands there.
   "me-two-put-401": {
     ...SIGN_IN,
+    ...NO_NOW,
     "GET /app/api/me": "me/two-patients.json",
     "PUT /app/api/active-patient": UNAUTHENTICATED,
     "GET /app/api/sign-in/next": UNAUTHENTICATED,
@@ -151,10 +219,86 @@ export const SCENARIOS = {
   // Signing out: Java's 204 (SignInApiHandler.signOut), then the sign-in page, where the session is gone.
   "me-one-sign-out": {
     ...SIGN_IN,
+    ...NO_NOW,
     "GET /app/api/me": "me/one-patient.json",
     "POST /app/api/sign-out": NO_CONTENT,
     "GET /app/api/sign-in/next": UNAUTHENTICATED,
   },
+  // The chat page (W5), /app/home: the thread, the attention stack and the NOW banner, each a body Java's contract tests wrote.
+  "chat-default": chat({}),
+  "chat-stack": chat({ "GET /app/api/patients/{id}/attention": "attention/full-stack.json" }),
+  "chat-now": chat({
+    "GET /app/api/now-banner": bannerFor("now-banner/one.json", "me/one-patient.json"),
+    "GET /app/api/patients/{id}/attention": "attention/now-only.json",
+    "GET /app/api/patients/{id}/thread": "thread/now.json",
+  }),
+  "chat-now-abroad": chat({
+    "GET /app/api/now-banner": bannerFor("now-banner/abroad.json", "me/one-patient.json"),
+    "GET /app/api/patients/{id}/attention": "attention/now-only.json",
+    "GET /app/api/patients/{id}/thread": "thread/now-abroad.json",
+  }),
+  // The thread's own NOW card for a viewer abroad (S13), with no banner on the page to carry a tel: link of its own.
+  "chat-thread-abroad": chat({ "GET /app/api/patients/{id}/thread": "thread/now-abroad.json" }),
+  "chat-retake": chat({ "GET /app/api/patients/{id}/thread": "thread/retake.json" }),
+  "chat-failed": chat({ "GET /app/api/patients/{id}/thread": "thread/failed.json" }),
+  "chat-first": chat({ "GET /app/api/patients/{id}/thread": "thread/first-run.json" }),
+  // A first-run patient while the family has a NOW paper for another patient: the banner is global, so Mio's
+  // introduction is on a NOW surface too (opened with ?patient= the second patient; the banner names Ma).
+  "chat-first-now": chat({
+    "GET /app/api/me": "me/two-patients.json",
+    "GET /app/api/now-banner": bannerFor("now-banner/one.json", "me/two-patients.json"),
+    "GET /app/api/patients/{id}/thread": "thread/first-run.json",
+  }),
+  // A NOW result the thread's first page does not reach: only messages there, the NOW paper in the attention stack.
+  "chat-now-past-the-page": chat({
+    "GET /app/api/patients/{id}/attention": "attention/now-only.json",
+    "GET /app/api/patients/{id}/thread": messagesOnly("thread/default.json"),
+  }),
+  // A share member: Ma is the owner's, the second patient is shared with this account (owner: false).
+  "chat-share": chat({
+    "GET /app/api/me": "me/two-patients.json",
+    "GET /app/api/patients/{id}/thread": "thread/share-member.json",
+  }),
+  "chat-share-first": chat({
+    "GET /app/api/me": "me/two-patients.json",
+    "GET /app/api/patients/{id}/thread": "thread/first-run.json",
+  }),
+  // The longest twins (LONGEST): the longest name, and the thread's longest real page.
+  "chat-long": chat({ "GET /app/api/me": "me/long-name.json", "GET /app/api/patients/{id}/thread": "thread/second-page.json" }),
+  // chat-now's twin keeps chat-now's thread: its crop check counts that thread's value rows on the twin too.
+  "chat-now-long": chat({
+    "GET /app/api/me": "me/long-name.json",
+    "GET /app/api/now-banner": bannerFor("now-banner/one.json", "me/long-name.json"),
+    "GET /app/api/patients/{id}/attention": "attention/now-only.json",
+    "GET /app/api/patients/{id}/thread": "thread/now.json",
+  }),
+  // the seen button: Java's answer to the acknowledgement is the banner re-read (hidden, still shown, or a 401). Ma is urgent in
+  // me/two-patients, so her red mark is in the switcher.
+  "chat-now-ack": chat({
+    "GET /app/api/me": "me/two-patients.json",
+    "GET /app/api/now-banner": bannerFor("now-banner/one.json", "me/two-patients.json"),
+    "PUT /app/api/now-banner/ack": reRead("now-banner/acked.json"),
+    "GET /app/api/patients/{id}/thread": "thread/now.json",
+  }),
+  "chat-now-ack-stale": chat({
+    "GET /app/api/me": "me/two-patients.json",
+    "GET /app/api/now-banner": bannerFor("now-banner/one.json", "me/two-patients.json"),
+    "PUT /app/api/now-banner/ack": reRead("now-banner/one.json", "me/two-patients.json"),
+    "GET /app/api/patients/{id}/thread": "thread/now.json",
+  }),
+  "chat-now-ack-401": chat({
+    ...SIGN_IN,
+    "GET /app/api/now-banner": bannerFor("now-banner/one.json", "me/one-patient.json"),
+    "PUT /app/api/now-banner/ack": UNAUTHENTICATED,
+    "GET /app/api/sign-in/next": UNAUTHENTICATED,
+    "GET /app/api/patients/{id}/thread": "thread/now.json",
+  }),
+  // A preview family (BAYMAX_WEB_PREVIEW_FAMILIES) on /app/preview/home, before and after a NOW paper arrived.
+  "chat-preview": chat({ "GET /app/api/me": "me/preview-on.json" }),
+  "chat-preview-now": chat({
+    "GET /app/api/me": "me/preview-on.json",
+    "GET /app/api/now-banner": bannerFor("now-banner/one.json", "me/preview-on.json"),
+  }),
   "next-500": {
     "GET /app/api/me": "me/one-patient.json",
     "GET /app/api/sign-in/next": {
@@ -196,7 +340,37 @@ export const PAGE_SCENARIOS = {
   "/app": "signed-out",
   "/app/verify": "state-pending-not-sent",
   "/app/add": "upload-owner-one",
+  "/app/home": "chat-default",
 };
+
+/** The name of a scenario's NOW twin (withNow), registered below for every signed-in PAGE_SCENARIOS entry. */
+export function withNowName(name) {
+  return `${name}--now`;
+}
+
+/** The name of a scenario's stale-acknowledgement twin: the NOW twin whose seen tap Java answers `show: true`. */
+export function withStaleNowName(name) {
+  return `${name}--now-stale`;
+}
+
+/**
+ * A page's own scenario with an unseen NOW paper for its `me` patient: `GET /app/api/now-banner` answered as
+ * bannerFor("now-banner/one.json", <the scenario's me fixture>), everything else as the page's scenario answers it, so
+ * the banner check opens each page with the reads that page makes (a scenario of another page answers 404 to them).
+ * Every W screen PR spreads NO_NOW into its scenarios; this replaces exactly that one key.
+ */
+export function withNow(name, table = SCENARIOS[name]) {
+  const me = table?.["GET /app/api/me"];
+  if (typeof me !== "string") throw new Error(`${name}: its me answer is not a fixture file, so no NOW twin can name its patient`);
+  return { ...table, "GET /app/api/now-banner": bannerFor("now-banner/one.json", me) };
+}
+
+for (const name of Object.values(PAGE_SCENARIOS)) {
+  if (signedOut(name)) continue;
+  const now = withNow(name);
+  SCENARIOS[withNowName(name)] = now;
+  SCENARIOS[withStaleNowName(name)] = { ...now, "PUT /app/api/now-banner/ack": reRead("now-banner/one.json", now["GET /app/api/me"]) };
+}
 
 /**
  * What only the page itself renders, per NEXT_PAGES entry: budget.spec.ts requires it in the measured document, so a
@@ -206,6 +380,7 @@ export const PAGE_MARKERS = {
   "/app": 'name="whatsapp_number"',
   "/app/verify": 'name="code"',
   "/app/add": "data-upload-sheet",
+  "/app/home": 'data-page="chat"',
 };
 
 /** Each routed scenario's longest twin (`me/long-name.json` and the area's longest fixture), per screen. */
@@ -215,6 +390,9 @@ export const LONGEST = {
   // The add sheet (W7): owner-two with only Ma's name lengthened (me/two-owned-long.json in the shell,
   // upload-options/long-name.json's two chips on the sheet), so the twin is the routed state, the chooser included.
   "upload-owner-two": "upload-owner-two-long",
+  // The chat page (W5): the longest name, and the thread's longest real page (thread/second-page.json, twenty items).
+  "chat-default": "chat-long",
+  "chat-now": "chat-now-long",
 };
 
 /** The `{status, body}` a scenario value answers first: a fixture file read, a literal as it is. */

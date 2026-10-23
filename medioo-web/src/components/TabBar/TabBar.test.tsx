@@ -22,8 +22,9 @@ describe("TabBar", () => {
     expect(links(plain.container).map((a) => a.getAttribute("href"))).toEqual(["/app/home", "/app/timeline", "/app/family"]);
     cleanup();
     const preview = render(<TabBar lang="bn" preview current="chat" />);
+    // The chat page is this build's (W5): on a preview page its tab stays inside the preview.
     expect(links(preview.container).map((a) => a.getAttribute("href")), "preview, before W9").toEqual([
-      "/app/home",
+      "/app/preview/home",
       "/app/timeline",
       "/app/family",
     ]);

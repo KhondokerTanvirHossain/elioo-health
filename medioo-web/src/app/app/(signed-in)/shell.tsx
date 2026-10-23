@@ -3,16 +3,22 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { javaGet, signedIn } from "@/api/java";
 import { requestContext } from "@/api/request";
-import type { MeJson, MePatient } from "@/api/types";
+import type { MeJson, MePatient, NowBannerJson } from "@/api/types";
 import type { Lang } from "@/copy";
 import { AppShell } from "@/components/AppShell/AppShell";
 import { PatientChooser } from "@/components/PatientChooser/PatientChooser";
+import { NowBanner } from "@/components/safety/NowBanner/NowBanner";
+import { NowBannerHold } from "@/components/safety/NowBanner/NowBannerHold";
 import type { Tab } from "@/components/TabBar/TabBar";
 import { activePatient } from "./active-patient";
 import { shellWords } from "./shell-words";
 
-/** What a page's slots are rendered from: the request, GET /app/api/me, and the patient whose papers are shown. */
-export type ShellContext = { lang: Lang; preview: boolean; me: MeJson; patient: MePatient | null };
+/**
+ * What a page's slots are rendered from: the request, GET /app/api/me, the patient whose papers are shown, and
+ * `nowShown`, whether the global NOW banner is on this page (GET /app/api/now-banner's `show`), so a page keeps Mio
+ * still and its NOW result in view wherever the banner is.
+ */
+export type ShellContext = { lang: Lang; preview: boolean; me: MeJson; patient: MePatient | null; nowShown: boolean };
 
 /** A slot: what the page renders, given whose papers are shown (null for a family with no patient). */
 export type Slot = ReactNode | ((ctx: ShellContext) => ReactNode | Promise<ReactNode>);
@@ -28,7 +34,10 @@ function askedPatient(here: string): string | null {
  * Every signed-in page renders through this (plan W4, Shared interfaces → "the shell and the banner render per page"):
  * one read of GET /app/api/me through javaGet (the preview gate, the cookie and nothing else), and the shell around
  * the page's slots. A page is rendered on every navigation and a layout is not, which is why this is a helper a page
- * calls and not `(signed-in)/layout.tsx`; from W5 it also reads the NOW banner here, for the same reason.
+ * calls and not `(signed-in)/layout.tsx`; it also reads the NOW banner here (W5), for the same reason: a NOW paper
+ * that arrived while the family moved from page to page by a soft navigation shows on the next page, never only after
+ * a hard load. The banner is global: every signed-in page, whoever's papers it shows, the chooser included. It is
+ * rendered live inside NowBannerHold, keyed by what Java sent, so a banner that changed starts shown again.
  *
  * - No session: the sign-in page holding this place (signedIn, a 307 to `/app/?next=…`).
  * - A preview page for a family outside the preview: the not-found page. javaGet's gate stops every read but `me`;
@@ -51,12 +60,14 @@ export async function signedInPage({
   asksItself?: boolean;
 }) {
   const { lang, preview, here } = await requestContext();
-  const me = signedIn(await javaGet<MeJson>("/app/api/me"), here);
+  const [meAnswer, bannerAnswer] = await Promise.all([javaGet<MeJson>("/app/api/me"), javaGet<NowBannerJson>("/app/api/now-banner")]);
+  const me = signedIn(meAnswer, here);
   if (preview && me.preview !== true) notFound();
+  const banner = signedIn(bannerAnswer, here);
   const view = activePatient(me, askedPatient(here));
   if (view.kind === "not-found") notFound();
   const patient = view.kind === "patient" ? view.patient : null;
-  const ctx: ShellContext = { lang, preview, me, patient };
+  const ctx: ShellContext = { lang, preview, me, patient, nowShown: banner.show };
   const chooser = view.kind === "choose" && !asksItself;
   const content = chooser ? <PatientChooser lang={lang} patients={me.patients} /> : await fill(main, ctx);
   return (
@@ -69,6 +80,13 @@ export async function signedInPage({
       tab={tab}
       main={content}
       aside={aside === undefined || chooser ? undefined : await fill(aside, ctx)}
+      banner={
+        banner.show ? (
+          <NowBannerHold key={JSON.stringify(banner.seen)}>
+            <NowBanner banner={banner} patients={me.patients} lang={lang} live />
+          </NowBannerHold>
+        ) : undefined
+      }
     />
   );
 }

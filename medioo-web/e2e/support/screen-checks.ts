@@ -392,7 +392,9 @@ export async function openRoute(page: Page, route: string, scenario: string) {
  * second time under its longest twin (LONGEST), whose long name (read from the twin's own `me`, longNameOf) must be on
  * the page before overflow is judged. `onePrimary` requires exactly one `[data-primary]` (not at most one), so a page
  * that lost its marker cannot quietly fall from the 48 px rule to 44 px. `act` drives the page to a state a press
- * reaches (a confirm step, a refusal) before every check runs, so those states are judged too.
+ * reaches (a confirm step, a refusal) before every check runs, so those states are judged too. `images` names the
+ * other crops a page shows outside a value row (an attention card's follow-up beside the doctor's words, W5): each must
+ * decode at its own width, as a row's crop does, and nothing else beside the brand files may be on the page.
  */
 export function screenChecks(
   route: string,
@@ -403,6 +405,7 @@ export function screenChecks(
     fields?: string[];
     onePrimary?: boolean;
     act?: { state: string; run: (page: Page) => Promise<void> };
+    images?: CropRow[];
   } = {},
 ) {
   const scenarios = [scenario];
@@ -485,7 +488,7 @@ export function screenChecks(
 
         test("everyVisibleImageIsADecodedBrandFileOrItsOwnCrop", async ({ page }) => {
           await open(page, name);
-          const crops = new Map((opts.crops ?? []).map((row) => [row.crop.src, expectedWidth(row)]));
+          const crops = new Map([...(opts.crops ?? []), ...(opts.images ?? [])].map((row) => [row.crop.src, expectedWidth(row)]));
           const images = await imagesReport(page, "body");
           const bad = images
             .filter((i) => {

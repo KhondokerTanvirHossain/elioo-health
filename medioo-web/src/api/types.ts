@@ -347,3 +347,87 @@ export type UploadOptionsJson = {
 
 /** `POST /app/api/uploads` answered (fixtures/api/uploads/*.json): the press's papers, and where the sheet goes next. */
 export type UploadAnswerJson = { documents: { id: string }[]; next: string };
+
+// ---- GET /app/api/patients/{id}/thread (W5-api, ThreadJson.java) -------------------------------------------------------
+
+/**
+ * The outbound kinds V23's `outbound_message_kind_check` allows, `failure` included (ThreadApiContractTest derives the
+ * same set from the constraint). A message is listed only once the provider accepted it, and only for the viewer's own
+ * account (S4, S10, S11).
+ */
+export const MESSAGE_KINDS = ["explanation", "detail", "retake", "nudge", "failure"] as const;
+export type MessageKind = (typeof MESSAGE_KINDS)[number];
+
+/** A paper in the thread: `at` is its `received_at`, `card` the body GET /app/api/documents/{id} sends for it. */
+export type ThreadPaperJson = { kind: "paper"; at: string; card: PaperJson };
+
+/** A message WhatsApp delivered: `body` is the text as sent, `document_id` the paper it is about (null for a nudge). */
+export type ThreadMessageJson = {
+  kind: "message";
+  at: string;
+  message_kind: MessageKind;
+  document_id: string | null;
+  body: string;
+};
+
+export type ThreadItemJson = ThreadPaperJson | ThreadMessageJson;
+
+/** `GET /app/api/patients/{id}/thread?cursor=` (W5-api): newest first, 20 a page. */
+export type ThreadJson = { items: ThreadItemJson[]; next_cursor: string | null };
+
+// ---- GET /app/api/patients/{id}/attention (B3, AttentionApiHandler.card) -----------------------------------------------
+
+/** AttentionItem's four kinds. */
+export const ATTENTION_KINDS = ["urgent", "retake", "follow_up", "reading"] as const;
+export type AttentionKind = (typeof ATTENTION_KINDS)[number];
+
+/** A NOW or THIS_WEEK paper: `level` is the stored urgency, the one source of its band and its line. */
+export type AttentionUrgentJson = {
+  kind: "urgent";
+  document_id: string;
+  level: BannerLevel;
+  document_type: string | null;
+  date: string;
+  date_is_upload_day: boolean;
+  date_uncertain: boolean;
+  received_at: string;
+  action_key: CopyKey;
+};
+
+/** A paper to photograph again. */
+export type AttentionRetakeJson = {
+  kind: "retake";
+  document_id: string;
+  date: string;
+  date_is_upload_day: boolean;
+  received_at: string;
+  title_key: CopyKey;
+  action_key: CopyKey;
+};
+
+/** The doctor's date, the instruction as written on the prescription, and its crop (principle 6). */
+export type AttentionFollowUpJson = {
+  kind: "follow_up";
+  document_id: string;
+  instruction: string;
+  due_date: string;
+  crop: ImageJson;
+  title_key: CopyKey;
+  action_key: CopyKey;
+};
+
+/** A paper still being read. */
+export type AttentionReadingJson = {
+  kind: "reading";
+  document_id: string;
+  date: string;
+  date_is_upload_day: boolean;
+  received_at: string;
+  title_key: CopyKey;
+  action_key: CopyKey;
+};
+
+export type AttentionItemJson = AttentionUrgentJson | AttentionRetakeJson | AttentionFollowUpJson | AttentionReadingJson;
+
+/** `GET /app/api/patients/{id}/attention` (B3): the stack in Java's order; an empty stack is silence. */
+export type AttentionJson = { items: AttentionItemJson[] };

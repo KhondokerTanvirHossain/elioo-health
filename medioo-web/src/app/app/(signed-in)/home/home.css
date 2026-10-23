@@ -1,0 +1,73 @@
+/* The chat page (home/page.tsx): one column of the conversation, the composer at its foot. The attention stack is in
+   that column below 900 px and in the shell's conversation column from 900 px, where the shell shows it (AppShell.css),
+   so the stack is drawn once at any width. */
+.chat {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  padding-top: var(--space-3);
+}
+/* The page's name, for a screen reader's list of headings: the tab says it on screen. Clipped to nothing over the
+   column's own width (as MonthCalendar's day status), so it never reports an overflow its box does not have. */
+.chat__title {
+  position: absolute;
+  inset: 0 0 auto;
+  margin: 0;
+  clip-path: inset(50%);
+  font-size: var(--text-xs);
+}
+.chat__intro {
+  display: flex;
+  justify-content: center;
+}
+.chat__papers {
+  margin: 0;
+  padding: 0 var(--space-3);
+}
+.chat__papers-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  color: var(--tint-ink);
+  font-family: var(--font-bn);
+  font-size: var(--text-md);
+  font-weight: 600;
+  text-decoration: none;
+}
+.chat__papers-link:hover {
+  text-decoration: underline;
+}
+.chat__papers-link:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+.chat__disclaimer {
+  margin: 0;
+  padding: 0 var(--space-3);
+  font-family: var(--font-bn);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  color: var(--label2);
+}
+/* The composer is docked as the prototype's is (phone.html .composer): it stays at the foot of the window over the
+   thread, on the bars' material (Composer.css), above the fixed tab bar below 900 px (its height, as the shell's main
+   leaves room for it) and at the window's bottom from 900 px. It is sticky, not fixed: it keeps its own place at the
+   end of the column, after the newest line, so at the end of the page, where the page opens (OpenAtNewest), no line of
+   the thread is under it. A typed line and Medioo's reply follow the conversation they answer. */
+.chat > .composer {
+  position: sticky;
+  bottom: calc(var(--target-primary) + var(--space-5));
+  z-index: 5;
+  margin-top: auto;
+}
+
+@media (min-width: 900px) {
+  .chat > .composer {
+    bottom: 0;
+  }
+  .chat__stack--inline {
+    display: none;
+  }
+}

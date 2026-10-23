@@ -28,6 +28,12 @@ type Scene = {
   viewports?: Record<string, { width: number; height: number }>;
   /** "catalog": the page exists only in the catalog build (/app/shell-test), served on the catalog server. */
   build?: "catalog";
+  /**
+   * Also the window as the page opens (`<state>-<layout>-<scheme>-fold.png`), beside the full page: where the page
+   * opens scrolled, or docks a bar over its content (the chat page, W5), a full-page picture draws the docked bars
+   * part way down and hides what a family sees first.
+   */
+  fold?: boolean;
 };
 
 const number = async (page: Page) => {
@@ -216,6 +222,39 @@ BOARD_SCENES.push(
   upload("cap-reached", "upload-cap-reached"),
 );
 
+// The chat page (plan W5): default, NOW, retake and first run beside phone.html's scenes, and the attention stack in the
+// conversation column and the first run beside desktop.html's.
+const chat = (state: string, scenario: string, file: "phone.html" | "desktop.html", scene: string, act?: Scene["act"]): Scene => ({
+  screen: "chat",
+  state,
+  route: "/app/home",
+  scenario,
+  proto: { file, scene },
+  act,
+  fold: true,
+});
+BOARD_SCENES.push(
+  chat("default", "chat-default", "phone.html", "chat"),
+  chat("now", "chat-now", "phone.html", "now"),
+  chat("now-abroad", "chat-now-abroad", "phone.html", "now"),
+  chat("retake", "chat-retake", "phone.html", "retake"),
+  chat("first", "chat-first", "phone.html", "first"),
+  chat("stack", "chat-stack", "desktop.html", "app"),
+  chat("first-desktop", "chat-first", "desktop.html", "first"),
+  chat("asked", "chat-default", "phone.html", "chat", async (page) => {
+    await page.locator(".composer__field").fill("Is this all right?");
+    await page.locator(".composer__send").click();
+    await page.locator(".composer__lines .message-bubble--recv").waitFor();
+  }),
+  // A NOW result while the patient shown is a first-run one: the banner is global, Mio's introduction stays still.
+  {
+    ...chat("first-now", "chat-first-now", "phone.html", "first"),
+    route: `/app/home?patient=${TWO_SECOND}`,
+  },
+  // A NOW result past the thread's first page: the stack's NOW card, its not-a-doctor line, and the disclaimer.
+  chat("now-past-the-page", "chat-now-past-the-page", "phone.html", "now"),
+);
+
 const VIEWPORTS = { phone: { width: 390, height: 844 }, desktop: { width: 1280, height: 800 } } as const;
 // The catalog build's server (playwright.config.ts starts it on the port after the production one).
 const CATALOG_URL = process.env.E2E_CATALOG_URL ?? `http://127.0.0.1:${Number(process.env.E2E_PORT ?? 3217) + 1}`;
@@ -233,6 +272,10 @@ for (const scene of BOARD_SCENES) {
         await page.goto(scene.build === "catalog" ? new URL(scene.route, CATALOG_URL).href : scene.route);
         await page.evaluate(() => document.fonts.ready.then(() => undefined));
         if (scene.act) await scene.act(page);
+        if (scene.fold) {
+          await page.waitForLoadState("load");
+          await page.screenshot({ path: join(OUT, scene.screen, `${scene.state}-${layout}-${colorScheme}-fold.png`) });
+        }
         await page.screenshot({ path: join(OUT, scene.screen, `${scene.state}-${layout}-${colorScheme}.png`), fullPage: true });
 
         const proto = await page.context().newPage();

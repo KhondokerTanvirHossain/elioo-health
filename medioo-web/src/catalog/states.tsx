@@ -176,7 +176,7 @@ export const STATES: CatalogState[] = [
   },
 
   // The NOW banner over each of B3's generated bodies; acked.json is the one Java says not to show. The seen button is
-  // inert here: the catalog passes no onSeen, and without one NowBannerSeen sends no request at all
+  // inert here: the catalog renders no live banner and no hold, and then NowBannerSeen sends no request at all
   // (NowBanner.test.tsx › theCatalogButtonSendsNothing taps every one of these).
   nowBanner("one-patient", nowBannerOne.body, (lang) => [nameFor(lang)]),
   nowBanner("two-patients", nowBannerTwoPatients.body, (lang) => [nameFor(lang), names.long]),

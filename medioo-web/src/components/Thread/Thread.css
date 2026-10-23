@@ -1,0 +1,21 @@
+/* The chat thread (Thread.tsx): one list, oldest at the top, newest beside the composer. Medioo's bubbles keep the
+   Messages grammar (MessageBubble); a message body keeps the line breaks WhatsApp sent. A paper's card sits on the
+   received side with Mio beside it (VerdictCard). */
+.thread {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.thread__item {
+  min-width: 0;
+}
+.thread__item .message-bubble__body {
+  white-space: pre-line;
+}
+.thread__item--paper {
+  padding: 0 var(--space-3);
+}
