@@ -1326,6 +1326,24 @@ A2), written by Java's contract test into the fixtures, built in PR #143 (`feat/
 plan RANGE-api); the band in TrendChart, drawn only where that field is present, follows in a later W PR. Until then
 TrendChart draws no band, as W2e-b built it.
 
+**What the code does for R3 (plan RANGE-web, branch `feat/medioo-web-trend-range-band`):** TrendChart draws, behind
+the line, only the numbers Java sends on each point (`ref_low`, `ref_high`), so React judges nothing:
+- Both numbers: a filled pale band in the pale neutral `--sep` (`--fill` is a control's wash and may not draw a
+  shape). Neighbouring readings that carry the very same numbers share one band. A reading whose numbers differ from
+  its neighbour's stands on its own short bar (at most 36 of the chart's 320 units and 60% of a column, so two bars
+  never touch). Two labs' ranges are never blended into one band, and a reading with no range breaks a band, never
+  bridged.
+- One number: a thin solid limit line at that bound, on that side only (`--label3`, unlike the dashed trend line),
+  never a band to an invented other bound.
+- No number: nothing, whatever `ref_text` says. A reading the chart draws unknown stands on nothing even if a number
+  were sent (fail closed).
+- The scale takes in the drawn bounds, so a band sits at its own numbers and is never clipped.
+- The range colours no marker and changes no word. A reading with a drawn range says it after its sentence
+  (`trend.point.range`: "…; ছাপা সীমা 59–104" / "…; printed range 59–104", with Java's `ref_text`, only as that
+  accessible label). A legend under the chart (`trend.band.legend`, hidden from screen readers) says what the band and
+  the line are. Both are drafts for the copy owner. The range is not written on screen as numbers until the PO accepts
+  `ref_text`'s form (PR #143).
+
 **Why:** the prototype the PO approved colours these marks, and a family reads red faster than a shape. Keeping the
 shape and the word keeps the calendar readable for someone who cannot tell red from amber. A band drawn from anything
 but the paper's own printed range would invent a "normal" the lab never stated.

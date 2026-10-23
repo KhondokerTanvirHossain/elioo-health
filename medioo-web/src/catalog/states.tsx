@@ -31,6 +31,7 @@ import unassessed from "../../fixtures/api/documents/unassessed.json";
 import busyCalendar from "../../fixtures/api/calendar/busy.json";
 import crowdedCalendar from "../../fixtures/api/calendar/crowded.json";
 import emptyCalendar from "../../fixtures/api/calendar/empty.json";
+import labsPrintedRange from "../../fixtures/api/health/labs-printed-range.json";
 import labsSome from "../../fixtures/api/health/labs-some.json";
 import labsWithUnknown from "../../fixtures/api/health/labs-with-unknown.json";
 // Fictional names, written by baymax CatalogFixturesExportTest so no Bangla is typed here (Global Constraints).
@@ -239,5 +240,36 @@ export const STATES: CatalogState[] = [
     component: "TrendChart",
     state: "critical-low",
     render: (lang) => <TrendChart series={seriesOf(labsWithUnknown.body, "potassium")} lang={lang} />,
+  },
+  // Plan RANGE-web (PO ruling R3, DR-48), over B6's generated labs-printed-range: two labs' ranges in one series, each
+  // reading on its own bar, and a reading whose paper printed none on nothing.
+  {
+    component: "TrendChart",
+    state: "two-ranges",
+    render: (lang) => <TrendChart series={seriesOf(labsPrintedRange.body, "creatinine")} lang={lang} />,
+  },
+  // One-sided bounds: `<200` beside 240 a line at 200 on the high side, `>40` beside 35 one at 40 on the low side; the
+  // unknown readings beside the same text stand on nothing.
+  {
+    component: "TrendChart",
+    state: "one-sided-high",
+    render: (lang) => <TrendChart series={seriesOf(labsPrintedRange.body, "total_cholesterol")} lang={lang} />,
+  },
+  {
+    component: "TrendChart",
+    state: "one-sided-low",
+    render: (lang) => <TrendChart series={seriesOf(labsPrintedRange.body, "hdl")} lang={lang} />,
+  },
+  // A range withheld: a critical by threshold inside its printed range, and an unknown, so no band and no legend.
+  {
+    component: "TrendChart",
+    state: "range-withheld",
+    render: (lang) => <TrendChart series={seriesOf(labsPrintedRange.body, "potassium")} lang={lang} />,
+  },
+  // An unknown whose range text cannot be placed stands on nothing; the inside reading beside it on its own bar.
+  {
+    component: "TrendChart",
+    state: "unknown-beside-range",
+    render: (lang) => <TrendChart series={seriesOf(labsPrintedRange.body, "fasting_glucose")} lang={lang} />,
   },
 ];

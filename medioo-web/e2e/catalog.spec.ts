@@ -31,12 +31,12 @@ const SCHEMES = ["light", "dark"] as const;
 // The registry's floor, derived as states.test.tsx derives the list: W2c's 13 states (Wordmark 1, MioAvatar 3,
 // MessageBubble 3, StatusChip 6), W2e-a's 5 (OtpInput 3, PhoneField 2), W2d-b's 6 (NowBanner), then W2d-a's one
 // VerdictCard state per paper fixture (every 200 body B2's contract test wrote), Toast/default and Sheet/open, and
-// W2e-b's 9 (MonthCalendar 5, TrendChart 4). Later PRs raise it.
+// W2e-b's 9 (MonthCalendar 5, TrendChart 4), and RANGE-web's 5 (TrendChart's printed range). Later PRs raise it.
 const documentsDir = join(__dirname, "..", "fixtures", "api", "documents");
 const PAPER_FIXTURES = readdirSync(documentsDir)
   .filter((f) => f.endsWith(".json"))
   .filter((f) => (JSON.parse(readFileSync(join(documentsDir, f), "utf8")) as { status: number }).status === 200);
-const MIN_STATES = 13 + 5 + 6 + PAPER_FIXTURES.length + 2 + 9;
+const MIN_STATES = 13 + 5 + 6 + PAPER_FIXTURES.length + 2 + 9 + 5;
 
 /** Every open modal dialog closed (the Sheet/open states), so a whole-page check is not judging a page made inert. */
 async function closeSheets(page: Page) {
@@ -197,6 +197,64 @@ for (const [layout, viewport] of Object.entries(VIEWPORTS)) {
         expect(result.painted).not.toContain("NowBanner/hidden");
         // R2 (DR-48): the calendar's NOW marks are among the allowed reds.
         expect(result.painted).toEqual(expect.arrayContaining(["MonthCalendar/busy-month", "MonthCalendar/crowded-month"]));
+      });
+
+      test("theTrendRangeIsPaintedPaleAndNeutralAndLeavesTheMarkersAlone", async ({ page }) => {
+        // PO ruling R3 (DR-48), on what the browser paints: every band is filled with the pale neutral --sep and every
+        // limit line stroked --label3, never a status colour; the legend's keys match; and no marker paints the band's
+        // fill, so the range colours no reading.
+        await open(page);
+        const report = await page.evaluate(() => {
+          const swatch = document.createElement("div");
+          document.body.append(swatch);
+          const resolve = (prop: string, token: string) => {
+            swatch.style.setProperty(prop, `var(${token})`);
+            const value = getComputedStyle(swatch).getPropertyValue(prop);
+            swatch.style.removeProperty(prop);
+            return value;
+          };
+          const fill = resolve("fill", "--sep");
+          const fillBg = resolve("background-color", "--sep");
+          const edge = resolve("stroke", "--label3");
+          const edgeBorder = resolve("border-top-color", "--label3");
+          swatch.remove();
+          const bad: string[] = [];
+          const counts = { band: 0, edge: 0, marker: 0, keyBand: 0, keyEdge: 0 };
+          for (const section of document.querySelectorAll<HTMLElement>('[data-catalog-state^="TrendChart/"]')) {
+            const at = `${section.dataset.catalogState} ${section.lang}`;
+            for (const el of section.querySelectorAll(".trend-chart__plot .trend-chart__band")) {
+              counts.band++;
+              const v = getComputedStyle(el).fill;
+              if (v !== fill) bad.push(`${at}: band fill ${v}, not ${fill}`);
+            }
+            for (const el of section.querySelectorAll(".trend-chart__plot .trend-chart__edge")) {
+              counts.edge++;
+              const s = getComputedStyle(el);
+              if (s.stroke !== edge) bad.push(`${at}: edge stroke ${s.stroke}, not ${edge}`);
+              if (s.fill !== "none" && el.tagName.toLowerCase() !== "line") bad.push(`${at}: an edge that fills a region`);
+            }
+            for (const el of section.querySelectorAll(".trend-chart__marker, .trend-chart__marker *")) {
+              counts.marker++;
+              const s = getComputedStyle(el);
+              if (s.fill === fill || s.stroke === fill) bad.push(`${at}: <${el.tagName.toLowerCase()}> marker paints the band's fill`);
+            }
+            for (const el of section.querySelectorAll(".trend-chart__key--band")) {
+              counts.keyBand++;
+              const v = getComputedStyle(el).backgroundColor;
+              if (v !== fillBg) bad.push(`${at}: band key ${v}, not ${fillBg}`);
+            }
+            for (const el of section.querySelectorAll(".trend-chart__key--edge")) {
+              counts.keyEdge++;
+              const v = getComputedStyle(el).borderTopColor;
+              if (v !== edgeBorder) bad.push(`${at}: edge key ${v}, not ${edgeBorder}`);
+            }
+          }
+          return { bad, counts, fill };
+        });
+        expect(report.bad).toEqual([]);
+        // Guard: bands, lines, markers and both keys were on the page, and the fill resolved to a colour.
+        expect(report.fill).toMatch(/^rgba?\(/);
+        for (const [what, n] of Object.entries(report.counts)) expect(n, `${what} painted`).toBeGreaterThan(0);
       });
 
       test("theCalendarPaintsItsNowMarkRedAndItsThisWeekMarkAmberAndNothingElse", async ({ page }) => {

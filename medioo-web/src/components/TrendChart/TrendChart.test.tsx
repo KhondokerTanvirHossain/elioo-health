@@ -36,7 +36,44 @@ const ALL: Array<[string, LabSeriesJson]> = [
   ["bp", bp.body],
 ].flatMap(([name, body]) => (body as LabsJson).series.map((s): [string, LabSeriesJson] => [`${name}/${s.canonical_name}`, s]));
 
+/** The series the chart draws (`chartable`), so a rule about what is drawn is checked over every one Java writes. */
+const CHARTED = ALL.filter(([, s]) => chartable(s.points));
+
 const draw = (s: LabSeriesJson, lang: Lang = "bn") => render(<TrendChart series={s} lang={lang} />).container;
+
+/** A point of a series by its observation id. */
+function pointOf(s: LabSeriesJson, id: string): TrendPointJson {
+  const p = s.points.find((x) => x.observation_id === id);
+  if (!p) throw new Error(`no point ${id} in ${s.canonical_name}`);
+  return p;
+}
+
+/** Every printed range the chart drew, in drawing order: a filled band, or a limit line on one side. */
+function rangesOf(root: HTMLElement): Array<{ el: Element; ids: string[]; kind: "band" | "edge"; side: string | null }> {
+  return [...root.querySelectorAll("[data-range-for]")].map((el) => ({
+    el,
+    ids: el.getAttribute("data-range-for")!.split(" "),
+    kind: el.classList.contains("trend-chart__band") ? "band" : "edge",
+    side: el.getAttribute("data-range-side"),
+  }));
+}
+
+/** The centre of a point's drawn marker, in the drawing's units. */
+function centreOf(root: HTMLElement, p: TrendPointJson): [number, number] {
+  const m = markerOf(root, p);
+  const half = Number(m.getAttribute("width")) / 2;
+  return [Number(m.getAttribute("x")) + half, Number(m.getAttribute("y")) + half];
+}
+
+/** The chart's value-to-y scale, read back from two of its own markers with different values (it is linear). */
+function scaleOf(root: HTMLElement, s: LabSeriesJson): (v: number) => number {
+  const a = s.points[0]!;
+  const b = s.points.find((p) => Number(p.value) !== Number(a.value));
+  if (!b) throw new Error(`${s.canonical_name}: every value equal, no scale to read`);
+  const [ya, yb] = [centreOf(root, a)[1], centreOf(root, b)[1]];
+  const k = (yb - ya) / (Number(b.value) - Number(a.value));
+  return (v) => ya + k * (v - Number(a.value));
+}
 
 /** The points oldest first, as the chart lays them out (the API sends the newest first). */
 const oldestFirst = (points: TrendPointJson[]) =>
@@ -156,18 +193,268 @@ describe("TrendChart", () => {
     expect([...met].sort()).toEqual(["crit-high", "crit-low", "in", "out-high", "out-low", "unk"]);
   });
 
-  it("noReadingStandsOnABand", () => {
-    // B6 carries the printed range since RANGE-api (PR 143, PO ruling R3, DR-48); the band is drawn in RANGE-web, which
-    // replaces this test with one that draws a filled band only where both numbers are sent. Until then no band is drawn.
-    const banded: string[] = [];
-    for (const [name, s] of ALL) {
+  it("aFilledBandIsDrawnOnlyWhereBothNumbersAreSent", () => {
+    // PO ruling R3 (DR-48): a pale band behind the line, only from what the reading's own paper printed. Java sends both
+    // numbers only for a two-sided range that agrees with the chip, so React draws exactly those and judges nothing.
+    let banded = 0;
+    let bare = 0;
+    for (const [name, s] of CHARTED) {
       const root = draw(s);
-      for (const el of root.querySelectorAll("rect, [data-band-for], .trend-chart__band")) {
-        banded.push(`${name}: ${el.getAttribute("data-band-for") ?? el.outerHTML.slice(0, 40)}`);
+      const bands = rangesOf(root).filter((r) => r.kind === "band");
+      for (const band of bands) {
+        expect(band.el.tagName.toLowerCase(), `${name}: a band is a filled rect`).toBe("rect");
+        for (const id of band.ids) {
+          const p = pointOf(s, id);
+          expect([p.ref_low, p.ref_high].includes(null), `${name} ${id}: banded without both numbers`).toBe(false);
+        }
+      }
+      for (const p of s.points) {
+        const both = p.ref_low !== null && p.ref_high !== null;
+        const holding = bands.filter((b) => b.ids.includes(p.observation_id));
+        expect(holding.length, `${name} ${p.observation_id}: bands behind it`).toBe(both ? 1 : 0);
+        if (both) banded++;
+        else bare++;
       }
       cleanup();
     }
-    expect(banded.length, `readings drawn on a band: ${banded.join("; ")}`).toBe(0);
+    // Guard: both directions were met over what Java writes.
+    expect(banded, "points sent with both numbers").toBeGreaterThanOrEqual(8);
+    expect(bare, "points sent without both numbers").toBeGreaterThanOrEqual(8);
+  });
+
+  it("aPointWithNoRangeHasNoBand", () => {
+    // labs-printed-range's creatinine of 2026-06-20 (point 179): its paper printed no range, and it is OUTSIDE, so a
+    // neighbour's range carried onto it would look as if it agreed. It stands on nothing.
+    const creat = series(labsPrintedRange.body, "creatinine");
+    const p179 = creat.points.find((p) => p.observation_id.endsWith("179"))!;
+    expect([p179.ref_low, p179.ref_high, p179.ref_text, p179.kind]).toEqual([null, null, null, "outside"]);
+    const root = draw(creat);
+    expect(rangesOf(root).filter((r) => r.ids.includes(p179.observation_id)).map((r) => r.ids.join(" ")), "ranges behind point 179").toEqual([]);
+    cleanup();
+    // And the whole of it: every chartable series with its ranges taken away draws no band, no edge and no legend.
+    let charted = 0;
+    for (const [name, s] of CHARTED) {
+      const bare = { ...s, points: s.points.map((p) => ({ ...p, ref_low: null, ref_high: null, ref_text: null })) };
+      const r = draw(bare);
+      expect(r.querySelector("svg.trend-chart__plot"), `${name}: still a chart`).not.toBeNull();
+      expect(
+        [...r.querySelectorAll("rect, line, .trend-chart__band, .trend-chart__edge, [data-range-for], .trend-chart__legend")].map((e) => e.outerHTML.slice(0, 60)),
+        `${name} with no range`,
+      ).toEqual([]);
+      charted++;
+      cleanup();
+    }
+    expect(charted).toBeGreaterThanOrEqual(8);
+  });
+
+  it("aRangeTextWithNoNumbersDrawsNothing", () => {
+    // Java sends the text but no number where it cannot be placed or would contradict the chip: beside an unknown
+    // (points 172, 173, 176, 177, 183, 174) and beside a critical by threshold inside its printed range (182).
+    const withheld = ["172", "173", "176", "177", "183", "174", "182"];
+    const met: string[] = [];
+    for (const s of labsPrintedRange.body.series as LabSeriesJson[]) {
+      const root = draw(s);
+      for (const p of s.points.filter((x) => withheld.some((w) => x.observation_id.endsWith(w)))) {
+        expect([p.ref_low, p.ref_high, typeof p.ref_text], p.observation_id).toEqual([null, null, "string"]);
+        expect(rangesOf(root).filter((r) => r.ids.includes(p.observation_id)).length, `${p.observation_id}: ${p.ref_text} drawn`).toBe(0);
+        met.push(p.observation_id.slice(-3));
+      }
+      cleanup();
+    }
+    expect(met.sort()).toEqual([...withheld].sort());
+  });
+
+  it("differingRangesAreNeverOneBand", () => {
+    // Two labs print two ranges for one marker (59–104, then 62–106): each reading stands on its own short bar, never
+    // one band that blends them.
+    const creat = series(labsPrintedRange.body, "creatinine");
+    const root = draw(creat);
+    const bands = rangesOf(root).filter((r) => r.kind === "band");
+    expect(bands.map((b) => b.ids.map((id) => id.slice(-3))), "one bar per reading, oldest first").toEqual([["175"], ["171"]]);
+    const [a, b] = bands.map((x) => ({ x: Number(x.el.getAttribute("x")), w: Number(x.el.getAttribute("width")) }));
+    expect(a!.x + a!.w < b!.x, `the bars do not touch: ${a!.x}+${a!.w} vs ${b!.x}`).toBe(true);
+    cleanup();
+    // The dangerous direction, built from a series whose three readings share one range: change the middle one's and
+    // the band must split into three, none of them across two readings.
+    const shared = series(labsSome.body, "creatinine");
+    const middle = oldestFirst(shared.points)[1]!;
+    const split = { ...shared, points: shared.points.map((p) => (p === middle ? { ...p, ref_low: 62, ref_high: 106, ref_text: "62–106" } : p)) };
+    const r = draw(split);
+    expect(rangesOf(r).map((x) => x.ids.length), "three bars, one reading each").toEqual([1, 1, 1]);
+    cleanup();
+    // Over everything Java writes: a band's readings are neighbours that carry the very same numbers.
+    for (const [name, s] of CHARTED) {
+      const order = oldestFirst(s.points).map((p) => p.observation_id);
+      for (const band of rangesOf(draw(s))) {
+        const at = band.ids.map((id) => order.indexOf(id));
+        expect(at, `${name}: neighbours, oldest first`).toEqual(at.map((_, i) => at[0]! + i));
+        const ranges = new Set(band.ids.map((id) => `${pointOf(s, id).ref_low}|${pointOf(s, id).ref_high}`));
+        expect([...ranges], `${name} ${band.ids.join(" ")}: one range`).toHaveLength(1);
+      }
+      cleanup();
+    }
+  });
+
+  it("neighboursSharingARangeShareOneBand", () => {
+    const creat = series(labsSome.body, "creatinine");
+    const root = draw(creat);
+    const bands = rangesOf(root);
+    expect(bands.map((b) => b.ids), "one band across the three readings").toEqual([oldestFirst(creat.points).map((p) => p.observation_id)]);
+    const x = Number(bands[0]!.el.getAttribute("x"));
+    const w = Number(bands[0]!.el.getAttribute("width"));
+    for (const p of creat.points) {
+      const c = centreOf(root, p);
+      expect(x < c[0] && c[0] < x + w, `${p.value}: under the band`).toBe(true);
+    }
+    cleanup();
+    // HbA1c: one reading with no range in the middle breaks the band in two, never bridged.
+    const h = draw(hba1c);
+    const order = oldestFirst(hba1c.points);
+    expect(order.map((p) => p.value)).toEqual(["9.8", "3.6", "6.1", "5.8", "5.4"]);
+    expect(rangesOf(h).map((b) => b.ids), "two bands either side of 6.1").toEqual([
+      [order[0]!.observation_id, order[1]!.observation_id],
+      [order[3]!.observation_id, order[4]!.observation_id],
+    ]);
+  });
+
+  it("eachRangeIsDrawnAtItsOwnPrintedBounds", () => {
+    // The chart's scale read back from two of its own readings: every band's edges and every limit line sit exactly at
+    // the numbers its own reading carries, and an inside reading sits in its band, an outside one beyond it on its side.
+    let checked = 0;
+    const sides = new Set<string>();
+    for (const [name, s] of CHARTED) {
+      const root = draw(s);
+      const scale = scaleOf(root, s);
+      for (const range of rangesOf(root)) {
+        // Every reading under a band or a line is checked against its OWN numbers, not only the first one's.
+        for (const id of range.ids) {
+          const q = pointOf(s, id);
+          if (range.kind === "band") {
+            const top = Number(range.el.getAttribute("y"));
+            const bottom = top + Number(range.el.getAttribute("height"));
+            expect(top, `${name} ${id}: band top at its ${q.ref_high}`).toBeCloseTo(scale(q.ref_high!), 6);
+            expect(bottom, `${name} ${id}: band bottom at its ${q.ref_low}`).toBeCloseTo(scale(q.ref_low!), 6);
+          } else {
+            const bound = range.side === "high" ? q.ref_high! : q.ref_low!;
+            expect(Number(range.el.getAttribute("y1")), `${name} ${id}: edge at its ${bound}`).toBeCloseTo(scale(bound), 6);
+            expect(range.el.getAttribute("y2")).toBe(range.el.getAttribute("y1"));
+          }
+          const y = centreOf(root, q)[1];
+          const kind = chipKindOf(q.kind, q.side);
+          const top = range.kind === "band" ? scale(q.ref_high!) : range.side === "high" ? scale(q.ref_high!) : -Infinity;
+          const bottom = range.kind === "band" ? scale(q.ref_low!) : range.side === "low" ? scale(q.ref_low!) : Infinity;
+          if (kind === "in") expect(top <= y && y <= bottom, `${name} ${q.value}: inside its band`).toBe(true);
+          if (kind.endsWith("high")) expect(y < top, `${name} ${q.value}: above its range`).toBe(true);
+          if (kind.endsWith("low")) expect(y > bottom, `${name} ${q.value}: below its range`).toBe(true);
+          sides.add(`${range.kind}:${kind}`);
+          checked++;
+        }
+      }
+      cleanup();
+    }
+    expect(checked).toBeGreaterThanOrEqual(10);
+    // Guard: inside and beyond on both sides, on a band and on a limit line.
+    expect([...sides].sort()).toEqual(expect.arrayContaining(["band:in", "band:out-high", "band:out-low", "band:crit-high", "band:crit-low", "edge:out-high", "edge:out-low"]));
+  });
+
+  it("aOneSidedBoundIsAnEdgeNeverARegion", () => {
+    // `<200` beside 240 (point 180) and `>40` beside 35 (point 181): a thin line at the printed bound, on that side only,
+    // never a band to an invented other bound.
+    for (const [canonical, id, side] of [
+      ["total_cholesterol", "180", "high"],
+      ["hdl", "181", "low"],
+    ] as const) {
+      const s = series(labsPrintedRange.body, canonical);
+      const p = s.points.find((x) => x.observation_id.endsWith(id))!;
+      expect(side === "high" ? [p.ref_low, typeof p.ref_high] : [typeof p.ref_low, p.ref_high], canonical).toEqual(
+        side === "high" ? [null, "number"] : ["number", null],
+      );
+      const root = draw(s);
+      const ranges = rangesOf(root);
+      expect(ranges.map((r) => [r.kind, r.side, r.ids]), canonical).toEqual([["edge", side, [p.observation_id]]]);
+      expect(ranges[0]!.el.tagName.toLowerCase(), "a line, never an area").toBe("line");
+      expect(root.querySelectorAll("rect").length, `${canonical}: no filled region`).toBe(0);
+      cleanup();
+    }
+  });
+
+  it("theBandNeverChangesAPointOrItsWord", () => {
+    // The band sits behind the line and colours nothing: each reading's marker, its shape and its words are the ones
+    // it has with no range at all.
+    let compared = 0;
+    for (const [name, s] of CHARTED) {
+      const bare = { ...s, points: s.points.map((p) => ({ ...p, ref_low: null, ref_high: null, ref_text: null })) };
+      const with_ = draw(s);
+      const plot = with_.querySelector("svg.trend-chart__plot")!;
+      const line = plot.querySelector("polyline")!;
+      for (const r of rangesOf(with_)) {
+        expect(r.el.parentElement, `${name}: a range drawn inside a point`).toBe(plot);
+        expect(r.el.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING, `${name}: drawn behind the line`).toBeTruthy();
+      }
+      const look = (root: HTMLElement, p: TrendPointJson) => {
+        const g = root.querySelector(`g[data-observation-id="${p.observation_id}"]`)!;
+        const li = root.querySelector(`[data-reading-for="${p.observation_id}"]`)!;
+        return [g.getAttribute("class"), markerOf(root, p).outerHTML.replace(/ (x|y)="[^"]*"/g, ""), li.getAttribute("class"),
+          ...[...li.querySelectorAll(":scope > [aria-hidden]")].map((e) => `${e.className}=${e.textContent}`)];
+      };
+      const withLooks = s.points.map((p) => look(with_, p));
+      cleanup();
+      const bareRoot = draw(bare);
+      expect(s.points.map((p) => look(bareRoot, p)), name).toEqual(withLooks);
+      compared += s.points.length;
+      cleanup();
+    }
+    expect(compared).toBeGreaterThanOrEqual(15);
+  });
+
+  it("eachReadingSaysThePrintedRangeTheChartDraws", () => {
+    let said = 0;
+    let unsaid = 0;
+    for (const lang of LANGS) {
+      for (const [name, s] of CHARTED) {
+        const root = draw(s, lang);
+        const drawn = new Set(rangesOf(root).flatMap((r) => r.ids));
+        for (const p of s.points) {
+          const spoken = root.querySelector(`[data-reading-for="${p.observation_id}"] .trend-chart__spoken`)?.textContent;
+          if (drawn.has(p.observation_id)) {
+            expect(spoken, `${lang} ${name} ${p.observation_id}`).toBe(t(lang, "trend.point.range", expectedSpoken(lang, s, p), p.ref_text!));
+            said++;
+          } else {
+            // A range the chart does not draw is not said either: `<200` beside an unknown is not this reading's range.
+            expect(spoken, `${lang} ${name} ${p.observation_id}: says no range it does not draw (${p.ref_text})`).toBe(expectedSpoken(lang, s, p));
+            unsaid++;
+          }
+        }
+        cleanup();
+      }
+    }
+    expect(said).toBeGreaterThanOrEqual(20);
+    expect(unsaid).toBeGreaterThanOrEqual(10);
+    // The sentence keeps the reading's own and adds the range after it (the bundle's words, never typed here).
+    for (const lang of LANGS) expect(t(lang, "trend.point.range", "x", "59–104")).toMatch(/^x; .+ 59–104$/);
+  });
+
+  it("theLegendStandsOnlyUnderADrawnRange", () => {
+    let shown = 0;
+    let hidden = 0;
+    for (const lang of LANGS) {
+      for (const [name, s] of CHARTED) {
+        const root = draw(s, lang);
+        const legend = root.querySelectorAll(".trend-chart__legend");
+        if (rangesOf(root).length > 0) {
+          expect(legend.length, name).toBe(1);
+          expect(legend[0]!.textContent).toBe(t(lang, "trend.band.legend"));
+          expect(legend[0]!.getAttribute("aria-hidden"), "each reading says its own range").toBe("true");
+          shown++;
+        } else {
+          expect(legend.length, name).toBe(0);
+          hidden++;
+        }
+        cleanup();
+      }
+    }
+    expect(shown).toBeGreaterThan(0);
+    expect(hidden).toBeGreaterThan(0);
   });
 
   it("aReadingTheCodeCannotJudgeIsDrawnUnknown", () => {
@@ -186,8 +473,11 @@ describe("TrendChart", () => {
       const reading = root.querySelector(`[data-reading-for="${p.observation_id}"] .trend-chart__word`);
       expect(reading?.textContent, `${p.observation_id}: the unknown word`).toBe(t("bn", "value.chip.unknown"));
     }
-    const bands = [...root.querySelectorAll("rect, [data-band-for]")].map((b) => b.getAttribute("data-band-for"));
-    expect(bands.length, `bands under readings the code cannot judge: ${bands.join("; ")}`).toBe(0);
+    // Java sends no number beside an unknown; were one sent, the chart still fails closed: a reading it draws unknown
+    // stands on no range.
+    expect([first!, second!].every((p) => p.ref_low !== null && p.ref_high !== null), "the fixture sent both numbers").toBe(true);
+    const under = rangesOf(root).filter((r) => r.ids.includes(first!.observation_id) || r.ids.includes(second!.observation_id));
+    expect(under.map((r) => r.ids.join(" ")), "ranges under readings the code cannot judge").toEqual([]);
   });
 
   it("everyReadingIsSaidWithItsDateValueUnitAndWord", () => {
@@ -200,10 +490,14 @@ describe("TrendChart", () => {
         const items = [...list.querySelectorAll(":scope > li")];
         const ordered = oldestFirst(s.points);
         expect(items.map((li) => li.getAttribute("data-reading-for")), "one reading per point, oldest first").toEqual(ordered.map((p) => p.observation_id));
+        const ranged = new Set(rangesOf(root).flatMap((r) => r.ids));
         items.forEach((li, i) => {
           const p = ordered[i]!;
           const spoken = li.querySelector(".trend-chart__spoken")!;
-          expect(spoken.textContent, `${lang} ${p.observation_id}`).toBe(expectedSpoken(lang, s, p));
+          // A reading the chart draws a range behind says it after its sentence (eachReadingSaysThePrintedRangeTheChartDraws).
+          const sentence = expectedSpoken(lang, s, p);
+          const want = ranged.has(p.observation_id) ? t(lang, "trend.point.range", sentence, p.ref_text!) : sentence;
+          expect(spoken.textContent, `${lang} ${p.observation_id}`).toBe(want);
           for (let e: Element | null = spoken; e && e !== root; e = e.parentElement) {
             expect(e.getAttribute("aria-hidden"), `${lang} ${p.observation_id}: the spoken text is not hidden from a reader`).not.toBe("true");
           }
