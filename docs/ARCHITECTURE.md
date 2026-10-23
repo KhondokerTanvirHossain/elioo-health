@@ -106,3 +106,8 @@ over the `n8n_edge` Docker network.
   Removed by the next Boot upgrade, which also deletes the `spring-framework.version` override once Boot's own BOM
   brings 6.2.19 or later (`ShippedSpringFrameworkVersionTest` fails if Boot moves while it is set).
 - Boot 3.4.x is past OSS support; Netty/reactor-netty upgrades tracked in #115.
+- The `baymax` test JVM runs with a 1 GB heap (`baymax/build.gradle`, set 2026-10-23) because the suite's live set
+  had reached Gradle's 512 MB default: main (c48f1dc) ends at about 460 MB live after a full GC, about 190 MB of it
+  `byte[]`, before `HexagonalArchitectureTest`'s ArchUnit import. Why the live set is that large (contexts or
+  containers held across classes, image bytes kept by fixtures) is not yet investigated; until it is, 1 GB is a
+  ceiling, not the new floor, and a suite that needs more is a finding, not a reason to raise it again.
