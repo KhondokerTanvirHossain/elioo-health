@@ -281,57 +281,6 @@ export type FollowUpItemJson = { document_id: string; instruction: string; due_d
 /** `GET /app/api/patients/{id}/follow-ups` (B3): soonest first, inside Java's window. */
 export type FollowUpsJson = { items: FollowUpItemJson[] };
 
-/** An urgent paper of the attention stack (B3): a stored NOW or THIS_WEEK, with the day it is filed under. */
-export type AttentionUrgentJson = {
-  kind: "urgent";
-  document_id: string;
-  document_type: string | null;
-  level: string;
-  date: string;
-  date_is_upload_day: boolean;
-  date_uncertain: boolean;
-  received_at: string;
-  action_key: string;
-};
-
-/** A paper to send again (B3): the day it came, and the line Java names. */
-export type AttentionRetakeJson = {
-  kind: "retake";
-  document_id: string;
-  date: string;
-  date_is_upload_day: boolean;
-  received_at: string;
-  title_key: string;
-  action_key: string;
-};
-
-/** A doctor's date due soon (B3): the instruction as written and its crop. */
-export type AttentionFollowUpJson = {
-  kind: "follow_up";
-  document_id: string;
-  instruction: string;
-  due_date: string;
-  crop: ImageJson;
-  title_key: string;
-  action_key: string;
-};
-
-/** A paper still being read (B3). */
-export type AttentionReadingJson = {
-  kind: "reading";
-  document_id: string;
-  date: string;
-  date_is_upload_day: boolean;
-  received_at: string;
-  title_key: string;
-  action_key: string;
-};
-
-export type AttentionItemJson = AttentionUrgentJson | AttentionRetakeJson | AttentionFollowUpJson | AttentionReadingJson;
-
-/** `GET /app/api/patients/{id}/attention` (B3): the stack in Java's order; the papers page shows its urgent items. */
-export type AttentionJson = { items: AttentionItemJson[] };
-
 /**
  * One reading of a lab series (B6, HealthJson): the value as printed, the paper's filing day, the kind and side
  * PaperDisplay.kindOf drew it with (`chipKindOf` turns them into a chip), the chip key, and the value's own crop.

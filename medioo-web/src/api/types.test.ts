@@ -66,9 +66,6 @@ import uploadOwnerTwoAsked from "../../fixtures/api/upload-options/owner-two-ask
 import uploadViewOnly from "../../fixtures/api/upload-options/view-only.json";
 import uploadedOne from "../../fixtures/api/uploads/one-document.json";
 import uploadedSeparate from "../../fixtures/api/uploads/separate.json";
-import attentionEmpty from "../../fixtures/api/attention/empty.json";
-import attentionFullStack from "../../fixtures/api/attention/full-stack.json";
-import attentionNowOnly from "../../fixtures/api/attention/now-only.json";
 import threadDefault from "../../fixtures/api/thread/default.json";
 import threadFailed from "../../fixtures/api/thread/failed.json";
 import threadFirstRun from "../../fixtures/api/thread/first-run.json";
@@ -94,7 +91,6 @@ import {
   type CalendarJson,
   type CalendarPaperJson,
   type AttentionFollowUpJson,
-  type AttentionJson,
   type AttentionReadingJson,
   type AttentionRetakeJson,
   type AttentionUrgentJson,
@@ -772,17 +768,12 @@ const THREADS: Record<string, Json<ThreadJson>> = {
 };
 const ATTENTION: Record<string, Json<AttentionJson>> = {
   "empty.json": attentionEmpty.body,
-  "full-stack.json": attentionFullStack.body,
-  "now-only.json": attentionNowOnly.body,
+  "full-stack.json": attentionFull.body,
+  "now-only.json": attentionNow.body,
 };
 const THREAD_MESSAGE_KEYS = ["at", "body", "document_id", "kind", "message_kind"];
 const THREAD_PAPER_KEYS = ["at", "card", "kind"];
-const ATTENTION_KEYS: Record<string, string[]> = {
-  urgent: ["action_key", "date", "date_is_upload_day", "date_uncertain", "document_id", "document_type", "kind", "level", "received_at"],
-  retake: ["action_key", "date", "date_is_upload_day", "document_id", "kind", "received_at", "title_key"],
-  follow_up: ["action_key", "crop", "document_id", "due_date", "instruction", "kind", "title_key"],
-  reading: ["action_key", "date", "date_is_upload_day", "document_id", "kind", "received_at", "title_key"],
-};
+// ATTENTION_KEYS is the papers page's, above: one key list per kind, typed against AttentionJson.
 
 describe("the chat page's bodies", () => {
   it("everyThreadFixtureIsAThreadJson", () => {
@@ -818,7 +809,7 @@ describe("the chat page's bodies", () => {
       expect(keys(stack), file).toEqual(["items"]);
       for (const item of stack.items) {
         expect(ATTENTION_KINDS as readonly string[], `${file} kind`).toContain(item.kind);
-        expect(keys(item), `${file} ${item.kind}`).toEqual(ATTENTION_KEYS[item.kind]);
+        expect(keys(item), `${file} ${item.kind}`).toEqual(ATTENTION_KEYS[item.kind as keyof typeof ATTENTION_KEYS]);
         if (item.kind === "urgent") expect(BANNER_LEVELS as readonly string[]).toContain((item as { level: string }).level);
         seen.add(item.kind);
       }
