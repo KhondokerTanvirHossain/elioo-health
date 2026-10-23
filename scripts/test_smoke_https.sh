@@ -9,8 +9,8 @@
 #
 # What is under test, in both directions:
 # - the flipped table passes, every row, and the row count is the table's (a smoke that checks nothing cannot pass);
-# - today's table, before F0 (Java answering the preview path and the three asset prefixes with its JSON 404), fails on
-#   exactly those five rows and nothing else; each of them, alone, fails with Java's answer (both directions per row);
+# - the table before F0 (Java answering the preview path and the three asset prefixes with its JSON 404, and /app/add
+#   with its own 303), fails on exactly those six rows and nothing else; each of them, alone, fails with Java's answer (both directions per row);
 # - each row, broken alone, fails that row and only that row: status, redirect target, the JSON field (parsed, not
 #   grepped: a nested "status":"UP" or "service":"medioo-web" before the top-level one must not pass), the HTML
 #   marker, and each security header on each path class (the nonce CSP on the Next path); every row has a break;
@@ -24,6 +24,10 @@
 # - the static class needs no CSP (the hashed chunks skip medioo-web's middleware) but still needs the four headers,
 #   each once;
 # - the old hostname still redirects every path to the new one (DR-15: links already sent to families);
+# - F7 (plan Wave 3, Task F): GET /app/add is medioo-web's, signed out a 307 to the sign-in page holding /app/add;
+#   Java's answer there before the flip (303 to /app/, its own CSP) fails that row and only that row;
+# - a PROBE row is never sent by the production run (aProductionRunNeverSendsAProbeRow): POST /app/add is Java's
+#   upload and must not be pressed against production by a smoke run; the stub's request log is read, not the output;
 # - a body is never printed (the CI log is public, DR-38; the health body carries disk and database details);
 # - a transient failure is retried, an unreachable host fails rather than hangs, and a host that accepts and never
 #   answers fails within SMOKE_DEADLINE, not after tries x rows x --max-time.
@@ -38,8 +42,9 @@ FAILED=0
 CASES=0
 # the table's size: /app/healthz /actuator/health /app/api/me /app/ / /medscribeai /medscribeai/ /baymax /baymax/
 # webhook /_next/static/x.js /fonts/noto-sans-latin.woff2 /brand/mio-head.webp /app/preview /app/preview/
-# /app/previewx /_next/image /app/preview/probe and the old host's /app/home
-ROWS=19
+# /app/previewx /_next/image /app/preview/probe /app/add (F7) and the old host's /app/home. The PROBE rows
+# (`PROBE POST /app/add`) are not counted: the production run never sends them (caddy-route-probe.sh does).
+ROWS=20
 
 fail() { echo "FAIL: $1"; FAILED=1; }
 
@@ -50,6 +55,7 @@ cat > "$WORK/stub.cjs" <<'STUB'
 const http = require("http");
 const fs = require("fs");
 const brk = process.env.STUB_BREAK || "";
+const log = process.env.STUB_LOG || "";
 const hang = process.env.STUB_HANG === "1";
 let flaky = Number(process.env.STUB_FLAKY || 0);
 const JAVA_CSP = "default-src 'none'; style-src 'self'; font-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' https: http: blob:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
@@ -92,12 +98,13 @@ function send(res, path, status, type, body, csp = JAVA_CSP, extra = {}) {
 
 // Java's answer to a path it does not serve, exactly as production gave it on 2026-10-22 before F0 (the five F0 rows)
 const JAVA_404 = '{"userMessage":"Invalid request","statusCode":400,"data":null,"error":{"code":"1002","message":"Invalid request"}}';
-// before F0, every F0 path is Java's; each <row>-java break makes one of them Java's alone
+// before F0, every F0 path is Java's, and so is /app/add (F7); each <row>-java break makes one of them Java's alone
 const javaOwns = (row) => brk === "before-f0" || brk === `${row}-java`;
 
 const server = http.createServer((req, res) => {
   if (hang) return; // accepted, never answered
   const path = req.url;
+  if (log) fs.appendFileSync(log, `${req.method} ${path}\n`);
   const html = (s) => `<!doctype html><html><body>${s}</body></html>`;
   switch (path) {
     case "/app/healthz": {
@@ -166,6 +173,13 @@ const server = http.createServer((req, res) => {
     case "/app/preview/probe":
       if (brk === "preview-probe-next") return send(res, path, 200, "text/html; charset=utf-8", html('<nav class="tabs"><a href="/app/probe">x</a></nav>'), NEXT_CSP);
       return send(res, path, 404, "application/json", JAVA_404);
+    // F7: the add sheet (plan W7) as medioo-web answers it signed out (measured 2026-10-23 against the deployed
+    // sha's build): the shell reads `me`, gets the 401 and holds the place. Before the flip Java answered GET with its
+    // session filter's 303 to /app/ (production, 2026-10-23). A POST is Java's upload, never Next's.
+    case "/app/add":
+      if (req.method === "POST" || javaOwns("add")) return send(res, path, 303, "text/html", "", JAVA_CSP, { Location: "/app/" });
+      return send(res, path, 307, "text/html", "", NEXT_CSP,
+        { Location: brk === "add-location" ? "/app/" : "/app/?next=%2Fapp%2Fadd" });
     // Java owns the API: a Caddy route that sent /app/api/* to Next would answer Next's HTML 404 here
     case "/app/api/me":
       if (brk === "me-next") return send(res, path, 404, "text/html", html("404: This page could not be found."), NEXT_CSP);
@@ -187,7 +201,8 @@ STUB
 start_stub() {
   [ -n "$STUB_PID" ] && { kill "$STUB_PID" 2>/dev/null; wait "$STUB_PID" 2>/dev/null; }
   rm -f "$WORK/port"
-  env STUB_PORT_FILE="$WORK/port" "$@" node "$WORK/stub.cjs" &
+  : > "$WORK/requests"
+  env STUB_PORT_FILE="$WORK/port" STUB_LOG="$WORK/requests" "$@" node "$WORK/stub.cjs" &
   STUB_PID=$!
   for _ in $(seq 1 50); do [ -s "$WORK/port" ] && break; sleep 0.1; done
   [ -s "$WORK/port" ] || { echo "FAIL: the stub server did not start"; exit 1; }
@@ -214,8 +229,8 @@ for row in /app/previewx /_next/image /app/preview/probe; do
   grep -qxF "PASS $row HTTP 404" "$WORK/out.log" || fail "flipped: no 'PASS $row HTTP 404' line on Java's answer: $(out)"
 done
 
-# 2. today (before F0): Java answers the preview path and the three asset prefixes with its JSON 404; those five rows
-#    fail, each saying why, and every other row passes
+# 2. before F0: Java answers the preview path and the three asset prefixes with its JSON 404, and /app/add with its
+#    session filter's 303 to /app/ (F7's row); those six rows fail, each saying why, and every other row passes
 start_stub STUB_BREAK=before-f0
 if smoke; then fail "today: exited 0 although the F0 paths are Java's 404: $(out)"; fi
 while IFS='|' read -r row why; do
@@ -226,9 +241,10 @@ done <<'TODAY'
 /brand/mio-head.webp|HTTP 404, expected 200
 /app/preview|HTTP 404, expected 307
 /app/preview/|HTTP 404, expected 307
+/app/add|HTTP 303, expected 307
 TODAY
-[ "$(fails)" = 5 ] || fail "today: $(fails) FAIL rows, expected 5 (the F0 rows alone): $(out)"
-[ "$(passes)" = $((ROWS - 5)) ] || fail "today: $(passes) PASS rows, expected $((ROWS - 5)): $(out)"
+[ "$(fails)" = 6 ] || fail "today: $(fails) FAIL rows, expected 6 (the F0 and F7 rows alone): $(out)"
+[ "$(passes)" = $((ROWS - 6)) ] || fail "today: $(passes) PASS rows, expected $((ROWS - 6)): $(out)"
 
 # 3. one break at a time: <break>:<row path>:<text the FAIL line must carry>
 while IFS='|' read -r brk row why; do
@@ -276,6 +292,8 @@ preview-java|/app/preview|HTTP 404, expected 307
 preview-location|/app/preview|location is [/app/], expected [/app/?next=%2Fapp%2Fpreview]
 preview-no-nonce|/app/preview|content-security-policy has no nonce
 preview-slash-java|/app/preview/|HTTP 404, expected 307
+add-java|/app/add|HTTP 303, expected 307
+add-location|/app/add|location is [/app/], expected [/app/?next=%2Fapp%2Fadd]
 previewx-next|/app/previewx|statusCode is [], expected [400]
 next-image-next|/_next/image|statusCode is [], expected [400]
 preview-probe-next|/app/preview/probe|HTTP 200, expected 404
@@ -283,6 +301,21 @@ me-next|/app/api/me|HTTP 404, expected 401
 me-reason|/app/api/me|reason is [NOT_FOUND], expected [UNAUTHENTICATED]
 old-host-location|http://127.0.0.1:[0-9]+/old-host/app/home|location is [https://medioo.eliooo.org/], expected [https://medioo.eliooo.org/app/home]
 TABLE
+
+# 3b. aProductionRunNeverSendsAProbeRow: the table holds a PROBE row (so the case is not vacuous), the stub saw the
+#     run's GET /app/add (so its log is read at all), and it saw no POST, nothing to /app/add but that GET, and no
+#     request whose path carries the word PROBE
+grep -qE '^PROBE POST /app/add\|' "$SMOKE" || fail "probe-skip: the table has no 'PROBE POST /app/add' row, so this case tests nothing"
+start_stub
+smoke >/dev/null || true
+grep -qxF 'GET /app/add' "$WORK/requests" || fail "probe-skip: the stub never saw GET /app/add, so its log proves nothing: $(tr '\n' '|' < "$WORK/requests" | cut -c1-300)"
+if grep -qvE '^GET ' "$WORK/requests"; then
+  fail "probe-skip: the production run sent a non-GET request: $(grep -vE '^GET ' "$WORK/requests" | head -3 | tr '\n' '|')"
+fi
+if grep -qi 'probe ' "$WORK/requests" || grep -c '/app/add' "$WORK/requests" | grep -qvx 1; then
+  fail "probe-skip: a PROBE row reached the host: $(grep -i -e 'probe ' -e '/app/add' "$WORK/requests" | head -3 | tr '\n' '|')"
+fi
+grep -q 'PROBE' "$WORK/out.log" && fail "probe-skip: the production run printed a PROBE row: $(out)"
 
 # 4. a transient 502 (Caddy before its upstream answers) is retried until the table passes
 start_stub STUB_FLAKY=2

@@ -31,10 +31,18 @@
 # replica). These rows are the routing's other direction: a matcher that reaches too far fails one of them.
 # Next's 404 for a missing chunk is text/plain and Java's is JSON, and both carry the four headers, so that row reads
 # the Content-Type: on status and headers alone it would pass on Java's answer, the one thing it exists to tell apart.
+# The F7 rows (plan Wave 3, Task F; PO ruling P4, 2026-10-23) were measured on 2026-10-23. Before the flip, production
+# answered GET /app/add signed out with Java's session filter: 303 to /app/ (no held place), Java's CSP; HEAD with
+# Java's JSON 404. After it, medioo-web's add sheet (plan W7) answers GET and HEAD signed out with a 307 to the sign-in
+# page holding the place (/app/?next=%2Fapp%2Fadd), its nonce CSP: measured against the deployed sha's build
+# (0015f5b) with stub Java signed out. POST /app/add is Java's upload (the old sheet's form and the paper page's
+# retake form post there): the Caddy matcher is GET and HEAD only, and its row is a PROBE row, never sent here. Its
+# 303 to /app/ is what Java's session filter (BaymaxWebUiRouter.requireSession) answers a POST with no session, read
+# from the code, not posted to production; the route probe reads only its class.
 #
 # Header classes. Caddy's medioo header block owns HSTS, X-Content-Type-Options and Referrer-Policy on every path
 # (it runs at response-write time and overwrites the upstream); each upstream owns its CSP and X-Frame-Options.
-#   next    /app/healthz, /app/preview   the CSP carries a per-request nonce (medioo-web's middleware)
+#   next    /app/healthz, /app/preview, /app/add   the CSP carries a per-request nonce (medioo-web's middleware)
 #   static  /_next/static/*, /fonts/*, /brand/*   medioo-web's assets: the four headers below, once each, and no CSP
 #           required (the hashed chunks skip the middleware, so they carry none; the fonts and brand files carry one)
 #   page    /app/, /             Java's HTML pages
@@ -44,9 +52,10 @@
 # every copy it receives, not on the last one (two conflicting X-Frame-Options are ignored, so framing is allowed),
 # so an upstream or a Caddy edit that appends instead of replacing fails the row whatever the last value says.
 #
-# Routing stops at the F0 paths for now (plan Wave 3, Task F): /app/healthz, the preview path (/app/preview and
-# /app/preview/*, less /app/preview/probe) and the assets (/_next/static/*, /fonts/*, /brand/*). Every page is still
-# Java's, and Java still owns the API: /app/api/me must be Java's JSON 401, so a route that sent /app/api/* to Next
+# Routing stops at the F0 paths and F7's page for now (plan Wave 3, Task F): /app/healthz, the preview path
+# (/app/preview and /app/preview/*, less /app/preview/probe), the assets (/_next/static/*, /fonts/*, /brand/*) and,
+# from F7, GET and HEAD /app/add (POST /app/add stays Java's). Every other page is still Java's, and Java still owns
+# the API: /app/api/me must be Java's JSON 401, so a route that sent /app/api/* to Next
 # fails here, as does a matcher wider than its row (the three boundary rows above). Each flip PR moves
 # its own page's rows. scripts/caddy-route-probe.sh sends this same table through a local Caddy running the repo's
 # Caddyfile.medioo and checks that each row reaches the upstream its class names: the routing is derived from this
@@ -95,6 +104,8 @@ REFERRER="strict-origin-when-cross-origin"
 #                    location:<value>       the Location header equals <value> exactly
 #                    type:<value>           the Content-Type header, parameters aside, equals <value>
 #   a path starting {old} is asked of the old hostname (SMOKE_OLD_BASE); every other one of <base-url>
+#   a path starting `PROBE ` (`PROBE <METHOD> /path`) is sent only by caddy-route-probe.sh, never by this run: it is
+#   a request that must not reach production (POST /app/add is the upload); the probe reads its class alone
 TABLE='/app/healthz|200|next|json:service=medioo-web
 /actuator/health|200|api|json:status=UP
 /app/api/me|401|api|json:reason=UNAUTHENTICATED
@@ -113,6 +124,8 @@ TABLE='/app/healthz|200|next|json:service=medioo-web
 /app/previewx|404|-|json:statusCode=400
 /_next/image|404|-|json:statusCode=400
 /app/preview/probe|404|-|json:statusCode=400
+/app/add|307|next|location:/app/?next=%2Fapp%2Fadd
+PROBE POST /app/add|303|page|location:/app/
 {old}/app/home|301|-|location:https://medioo.eliooo.org/app/home'
 
 # header <file> <lower-case name>: the last value of that header, CR stripped (empty when absent)
@@ -193,12 +206,13 @@ run_table() {
   : > "$TMP/table"
   while IFS='|' read -r path status class check; do
     [ -n "$path" ] || continue
+    [ "${path#PROBE }" = "$path" ] || continue   # the route probe's alone; never sent to production
     check_row "$path" "$status" "$class" "$check" >> "$TMP/table" || failed=$((failed + 1))
   done <<< "$TABLE"
   echo "$failed"
 }
 
-ROWS=$(printf '%s\n' "$TABLE" | grep -c '|')
+ROWS=$(printf '%s\n' "$TABLE" | grep '|' | grep -vc '^PROBE ')
 attempt=0
 while :; do
   attempt=$((attempt + 1))
