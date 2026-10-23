@@ -18,8 +18,8 @@
 # KNOWN GAP, not the expected behaviour: the plan expects `/app/preview|200|next|html:name="whatsapp_number"`. With
 # the gate as merged in W3, no viewer in any state reaches a Next screen through the preview (signed out: this 307 to
 # the sign-in page, Java's until F3 and Next's from it; signed in and allowlisted: the sign-in pages send them on to
-# /app/home, which is Java's; signed in and not allowlisted: Next's 404). The two 307 rows pin what the code does today
-# so a change is seen; they return to the plan's 200 row once the gate lets the two sign-in reads through for a signed-out visitor (a PO ruling, W3
+# /app/home, which from F5 is Next's chat page outside the preview; signed in and not allowlisted: Next's 404). The
+# two 307 rows pin what the code does today so a change is seen; they return to the plan's 200 row once the gate lets the two sign-in reads through for a signed-out visitor (a PO ruling, W3
 # follow-up), replayed red against the image of that day.
 # A POST to the preview (measured 2026-10-22 through the same replica, signed out) answers as the GET does: 307 to
 # /app/?next=..., medioo-web's nonce CSP, for /app/preview and /app/preview/verify alike. The preview block does not
@@ -67,10 +67,30 @@
 # fails the row with "content-encoding is [gzip]" (production answered exactly that on 2026-10-23, before P3 deployed),
 # and a Caddy that stopped encoding fails it with "[]". After a rollback the table is run from a checkout of the sha
 # deployed (RUNBOOK -> Rollback), and a sha from before P3 has no such row: its image compresses itself again.
+# The F5 rows (plan Wave 3, Task F; DR-49, PO ruling 2026-10-23) were measured on 2026-10-23. Before the flip,
+# production answered GET /app/home signed out with Java's session filter: 303 to /app/ (no held place), Java's CSP;
+# HEAD with Java's JSON 404 (Java routes GET alone). After it, medioo-web's chat page (plan W5) answers GET and HEAD
+# signed out with a 307 to the sign-in page holding the place (/app/?next=%2Fapp%2Fhome, the query kept), its nonce
+# CSP: measured against the deployed sha's build (a529160) with stub Java signed out, and again on 2026-10-23 through
+# the W1d replica's own Caddyfile (BUDGET_REPLICA_ONLY=1) on Caddy v2.11.7 in front of `next start` of the F5 head
+# (Docker was down, so the replica ran without containers): GET and HEAD alike, 307, the same Location, the nonce
+# CSP and the four headers once each. HEAD is a PROBE row, as F7's HEAD /app/add is: the route probe sends it as HEAD,
+# so a matcher of `method GET` alone fails there (making both HEAD rows production rows now that F3 made this run
+# method-aware is the follow-up posted on #155). Java has no POST /app/home (docs/infra/app-routes.txt) and the
+# matcher is GET and HEAD only, so a POST stays Java's; its row is a PROBE row, never sent by this run. The W1d replica
+# cannot measure it (it points Java's upstream at medioo-web too, so a POST through it is Next's 307), so it was
+# measured against Java itself on 2026-10-23, before the flip (production, signed out, no body; Java has no POST route
+# there, so nothing is read or written): POST /app/home answers 404, application/json, statusCode 400, the same
+# answer as HEAD /app/home. The route probe reads the row's class (Java): a matcher that let a POST through to Next
+# fails there (`home-any-method`).
+# /app/home/ (trailing slash, outside the exact `path /app/home`) is still Java's JSON 404 (production, 2026-10-23,
+# read-only GET: 404, application/json, statusCode 400); Next would answer it with a 307 holding /app/home/, so a
+# matcher widened to `/app/home*` fails that row.
 #
 # Header classes. Caddy's medioo header block owns HSTS, X-Content-Type-Options and Referrer-Policy on every path
 # (it runs at response-write time and overwrites the upstream); each upstream owns its CSP and X-Frame-Options.
-#   next    /app/healthz, /app/preview, /app/add, /app, /app/, /app/verify   the CSP carries a per-request nonce
+#   next    /app/healthz, /app/preview, /app/add, /app, /app/, /app/verify, /app/home   the CSP carries a
+#           per-request nonce
 #           (medioo-web's middleware)
 #   static  /_next/static/*, /fonts/*, /brand/*   medioo-web's assets: the four headers below, once each, and no CSP
 #           required (the hashed chunks skip the middleware, so they carry none; the fonts and brand files carry one)
@@ -81,13 +101,13 @@
 # every copy it receives, not on the last one (two conflicting X-Frame-Options are ignored, so framing is allowed),
 # so an upstream or a Caddy edit that appends instead of replacing fails the row whatever the last value says.
 #
-# Routing stops at the F0 paths, F7's page and F3's for now (plan Wave 3, Task F): /app/healthz, the preview path
-# (/app/preview and /app/preview/*, less /app/preview/probe), the assets (/_next/static/*, /fonts/*, /brand/*) and,
-# for GET and HEAD only, F7's /app/add (POST /app/add stays Java's) and F3's sign-in pages /app, /app/ and
-# /app/verify. Every other page is still Java's, and Java still owns the API: /app/api/me must be Java's JSON 401, so
-# a route that sent /app/api/* to Next fails here, as does a matcher wider than its row (the boundary rows above:
-# three for F0, /app/add/ for F7, /app/login and /app/verifyx for F3) or one that forgot the method (the two sign-in
-# POST rows). Each flip PR moves
+# Routing stops at the F0 paths, F7's page, F3's and F5's for now (plan Wave 3, Task F): /app/healthz, the preview
+# path (/app/preview and /app/preview/*, less /app/preview/probe), the assets (/_next/static/*, /fonts/*, /brand/*)
+# and, for GET and HEAD only, F7's /app/add (POST /app/add stays Java's), F3's sign-in pages /app, /app/ and
+# /app/verify, and F5's /app/home (the chat page). Every other page is still Java's, and Java still owns the API:
+# /app/api/me must be Java's JSON 401, so a route that sent /app/api/* to Next fails here, as does a matcher wider than
+# its row (the boundary rows above: three for F0, /app/add/ for F7, /app/login and /app/verifyx for F3, /app/home/ for
+# F5) or one that forgot the method (the two sign-in POST rows). Each flip PR moves
 # its own page's rows. scripts/caddy-route-probe.sh sends this same table through a local Caddy running the repo's
 # Caddyfile.medioo and checks that each row reaches the upstream its class names: the routing is derived from this
 # table, not from a second list.
@@ -142,7 +162,8 @@ REFERRER="strict-origin-when-cross-origin"
 #                    encoding:<value>       asked with `Accept-Encoding: zstd, gzip`, the Content-Encoding equals <value>
 #   a path starting {old} is asked of the old hostname (SMOKE_OLD_BASE); every other one of <base-url>
 #   a path starting `PROBE ` (`PROBE <METHOD> /path`) is sent only by caddy-route-probe.sh, never by this run: it is
-#   a request that must not reach production (POST /app/add is the upload); the probe reads its class alone
+#   a request this run leaves to the probe (F7's and F5's HEAD rows, until the #155 follow-up makes them production
+#   rows), or one that must not reach production (POST /app/add is the upload); the probe reads its class alone
 TABLE='/app/healthz|200|next|json:service=medioo-web
 /actuator/health|200|api|json:status=UP
 /app/api/me|401|api|json:reason=UNAUTHENTICATED
@@ -176,6 +197,10 @@ POST /app/login|200|page|html:name="whatsapp_number"
 /app/add/|404|-|json:statusCode=400
 PROBE HEAD /app/add|307|next|location:/app/?next=%2Fapp%2Fadd
 PROBE POST /app/add|303|page|location:/app/
+/app/home|307|next|location:/app/?next=%2Fapp%2Fhome
+/app/home/|404|-|json:statusCode=400
+PROBE HEAD /app/home|307|next|location:/app/?next=%2Fapp%2Fhome
+PROBE POST /app/home|404|-|json:statusCode=400
 {old}/app/home|301|-|location:https://medioo.eliooo.org/app/home'
 
 # header <file> <lower-case name>: the last value of that header, CR stripped (empty when absent)

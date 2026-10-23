@@ -7,5 +7,7 @@
  * Java's.
  * F3 (DR-49): the sign-in pages `/app`, `/app/` and `/app/verify`, GET and HEAD only (`@medioo_signin`); every
  * sign-in POST and the no-JS fallback /app/basic* stay Java's.
+ * F5 (DR-49, PO ruling 2026-10-23): `/app/home`, the chat page (plan W5), GET and HEAD only; POST /app/home is not a
+ * Next route and stays Java's.
  */
-export const FLIPPED: readonly string[] = ["/app/add", "/app", "/app/", "/app/verify"];
+export const FLIPPED: readonly string[] = ["/app/add", "/app", "/app/", "/app/verify", "/app/home"];

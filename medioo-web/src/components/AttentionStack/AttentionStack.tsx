@@ -76,10 +76,12 @@ export function AttentionStack({
         return (
           <div className="attention-stack__card">
             <p className="attention-stack__title">{t(lang, item.title_key, formatDate(lang, item.due_date))}</p>
+            {/* Principle 6 (Java's ValueRows.paperQuote): the paper's words under the paper label, beside their crop. */}
             <figure className="attention-stack__quote">
+              <figcaption className="attention-stack__paper-label">{t(lang, "paper.label")}</figcaption>
               {/* eslint-disable-next-line @next/next/no-img-element -- next/image is banned (Global Constraints) */}
               <img className="attention-stack__crop" src={item.crop.src} alt="" />
-              <figcaption className="attention-stack__words">{item.instruction}</figcaption>
+              <blockquote className="attention-stack__words">{item.instruction}</blockquote>
             </figure>
             {action(item)}
           </div>
