@@ -135,8 +135,9 @@ medioo.eliooo.org {
 	# only, per the plan's row: Java routes no POST /app/family, and POST /app/patients/{id}/profile is Java's profile
 	# save, which stays Java's. `path /app/family` is exact, so /app/family/ and /app/familyx stay Java's. The profile
 	# is a regexp anchored at both ends: one uuid segment (lower-case, as every link writes it) and nothing after
-	# `/profile`, so /app/patients/{id} (the patient page, F8's), /app/patients/{id}/profile/ and an id that is not a
-	# uuid stay Java's. Turning the old pages back on is deleting these two blocks (RUNBOOK -> Rollback).
+	# `/profile`, so /app/patients/{id} (the patient page, still Java's; also a boundary row in F8's table),
+	# /app/patients/{id}/profile/ and an id that is not a uuid stay Java's. Turning the old pages back on is deleting
+	# these two blocks (RUNBOOK -> Rollback).
 	@medioo_family {
 		method GET HEAD
 		path /app/family

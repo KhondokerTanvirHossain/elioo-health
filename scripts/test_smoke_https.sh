@@ -283,9 +283,10 @@ const server = http.createServer((req, res) => {
       return send(res, path, 404, "application/json", JAVA_404);
     // F7: the add sheet (plan W7) as medioo-web answers it signed out (measured 2026-10-23 against the deployed
     // sha's build): the shell reads `me`, gets the 401 and holds the place. Before the flip Java answered GET with its
-    // session filter's 303 to /app/ (production, 2026-10-23). A POST is Java's upload, never Next's.
+    // session filter's 303 to /app/ (production, 2026-10-23). Only GET reaches this case (a POST's key is
+    // "POST /app/add", which the stub does not answer: PROBE rows are never sent).
     case "/app/add":
-      if (req.method === "POST" || javaOwns("add")) return send(res, path, 303, "text/html", "", JAVA_CSP, { Location: "/app/" });
+      if (javaOwns("add")) return send(res, path, 303, "text/html", "", JAVA_CSP, { Location: "/app/" });
       return send(res, path, 307, "text/html", "", NEXT_CSP,
         { Location: brk === "add-location" ? "/app/" : "/app/?next=%2Fapp%2Fadd" });
     // Just outside F7's exact `path /app/add`, still Java's (production, 2026-10-23: Java's JSON 404). A matcher
@@ -295,9 +296,9 @@ const server = http.createServer((req, res) => {
       return send(res, path, 404, "application/json", JAVA_404);
     // F5: the chat page (plan W5) as medioo-web answers it signed out (measured 2026-10-23 against the deployed sha's
     // build): the shell reads `me`, gets the 401 and holds the place. Before the flip Java answered GET with its session
-    // filter's 303 to /app/ (production, 2026-10-23). Java routes no POST /app/home; a POST stays Java's JSON 404.
+    // filter's 303 to /app/ (production, 2026-10-23). Only GET reaches this case (a POST's key is "POST /app/home",
+    // which the stub does not answer: PROBE rows are never sent).
     case "/app/home":
-      if (req.method === "POST") return send(res, path, 404, "application/json", JAVA_404);
       if (javaOwns("home")) return send(res, path, 303, "text/html", "", JAVA_CSP, { Location: "/app/" });
       return send(res, path, 307, "text/html", "", NEXT_CSP,
         { Location: brk === "home-location" ? "/app/" : "/app/?next=%2Fapp%2Fhome" });
@@ -308,15 +309,14 @@ const server = http.createServer((req, res) => {
       return send(res, path, 404, "application/json", JAVA_404);
     // F10: the family tab and a patient's profile (plan W10) as medioo-web answers them signed out (measured 2026-10-23
     // against the deployed sha's build, be3a2ff): the shell reads `me`, gets the 401 and holds the place. Before the
-    // flip Java answered GET on both with its session filter's 303 to /app/ (production, 2026-10-23). Java routes no
-    // POST /app/family (its JSON 404); POST on the profile is Java's profile save, behind the same session filter.
+    // flip Java answered GET on both with its session filter's 303 to /app/ (production, 2026-10-23). Only GET reaches
+    // these two cases (a POST's key is "POST <path>", which the stub does not answer: PROBE rows are never sent).
     case "/app/family":
-      if (req.method === "POST") return send(res, path, 404, "application/json", JAVA_404);
       if (javaOwns("family")) return send(res, path, 303, "text/html", "", JAVA_CSP, { Location: "/app/" });
       return send(res, path, 307, "text/html", "", NEXT_CSP,
         { Location: brk === "family-location" ? "/app/" : "/app/?next=%2Fapp%2Ffamily" });
     case "/app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile":
-      if (req.method === "POST" || javaOwns("profile")) return send(res, path, 303, "text/html", "", JAVA_CSP, { Location: "/app/" });
+      if (javaOwns("profile")) return send(res, path, 303, "text/html", "", JAVA_CSP, { Location: "/app/" });
       return send(res, path, 307, "text/html", "", NEXT_CSP,
         { Location: brk === "profile-location" ? "/app/" : "/app/?next=%2Fapp%2Fpatients%2F5e9edf6d-0a2a-4913-8675-9d07a4100001%2Fprofile" });
     // Just outside F10's matchers, each still Java's (production, 2026-10-23, read-only GET), and Next's answer there

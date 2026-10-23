@@ -103,9 +103,9 @@
 # route probe reads only the row's class (Java). The boundary rows, each Java's on production 2026-10-23 (read-only
 # GET): /app/family/ and /app/patients/<id>/profile/ answer Java's JSON 404, where Next answers a 307 holding the
 # slash (a matcher widened to `/app/family*`, or a regexp that lost its `$`, fails there); /app/patients/x/profile
-# (an id that is not a uuid, outside `[0-9a-f-]{36}`) and /app/patients/<id> (the patient page, F8's) answer Java's
-# 303 to /app/, where Next answers a 307 and its HTML 404 (a matcher of `/app/patients/*/profile` or
-# `/app/patients/*` fails there).
+# (an id that is not a uuid, outside `[0-9a-f-]{36}`) and /app/patients/<id> (the patient page, still Java's; also a
+# boundary row in F8's table) answer Java's 303 to /app/, where Next answers a 307 and its HTML 404 (a matcher of
+# `/app/patients/*/profile` or `/app/patients/*` fails there).
 #
 # Header classes. Caddy's medioo header block owns HSTS, X-Content-Type-Options and Referrer-Policy on every path
 # (it runs at response-write time and overwrites the upstream); each upstream owns its CSP and X-Frame-Options.

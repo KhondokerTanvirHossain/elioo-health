@@ -36,7 +36,9 @@
 #   (`/app/family*`) the /app/family/ boundary row alone. The profile is a regexp: `profile-missing` fails GET and HEAD
 #   on it, `profile-get-only` the HEAD row alone, `profile-any-method` the PROBE POST row alone (POST is Java's profile
 #   save), `profile-unanchored` (the regexp without its `$`) the /profile/ boundary row alone, and `profile-any-id`
-#   (`[^/]+` for the uuid) the /app/patients/x/profile boundary row alone. Each edit is anchored on its own block;
+#   (`[^/]+` for the uuid) the /app/patients/x/profile boundary row alone, and `profile-patient-page` (the regexp
+#   widened to `(/profile)?$`) the /app/patients/<id> boundary row alone (the patient page, still Java's). Each edit
+#   is anchored on its own block;
 # - a table with no rows, a file with no medioo.eliooo.org block, and a file with an upstream the probe does not know
 #   each fail, rather than pass vacuously or send a row somewhere unreplaced.
 set -uo pipefail
@@ -140,6 +142,7 @@ profile-any-method|s/\n\t\tmethod GET HEAD\n(\t\tpath_regexp \^\/app\/patients\/
 profile-get-only|s/\n\t\tmethod GET HEAD\n(\t\tpath_regexp \^\/app\/patients\/)/\n\t\tmethod GET\n$1/|FAIL PROBE HEAD /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile got 299 (java), expected 298 (next)
 profile-unanchored|s/(\n\t\tpath_regexp \^\/app\/patients\/\[0-9a-f-\]\{36\}\/profile)\$\n/$1\n/|FAIL /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile/ got 298 (next), expected 299 (java)
 profile-any-id|s/(\n\t\tpath_regexp \^\/app\/patients\/)\[0-9a-f-\]\{36\}(\/profile\$\n)/$1\[^\/\]+$2/|FAIL /app/patients/x/profile got 298 (next), expected 299 (java)
+profile-patient-page|s/(\n\t\tpath_regexp \^\/app\/patients\/\[0-9a-f-\]\{36\})\/profile\$\n/$1(\/profile)?\$\n/|FAIL /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001 got 298 (next), expected 299 (java)
 profile-missing|s/\t\@medioo_profile \{\n\t\tmethod GET HEAD\n\t\tpath_regexp [^\n]*\n\t\}\n\thandle \@medioo_profile \{\n\t\treverse_proxy medioo-web:3000\n\t\}\n//|FAIL /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile got 299 (java), expected 298 (next)|FAIL PROBE HEAD /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile got 299 (java), expected 298 (next)
 TABLE
 

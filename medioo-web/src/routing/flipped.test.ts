@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { FLIPPED } from "./flipped";
+import { JAVA_PAGES } from "./paths";
 
 type Block = { paths: string[]; regexps: string[]; methods: string[] | null; body: string };
 
@@ -60,21 +61,27 @@ const SAMPLE_ID = "5e9edf6d-0a2a-4913-8675-9d07a4100001";
 const instance = (pattern: string) => pattern.replace(/\{\w+\}/g, SAMPLE_ID);
 
 /**
- * The FLIPPED patterns a Caddyfile's Next page blocks stand for: every literal `path`, and for each `path_regexp` the
- * one dynamic FLIPPED pattern whose instance it matches. A regexp that matches none, or more than one, is returned as
- * itself (`path_regexp <re>`), so the equality in flippedIsTheCaddyfilesNextPaths names it.
+ * The FLIPPED patterns a Caddyfile's Next page blocks stand for: every literal `path`, and for each `path_regexp` every
+ * dynamic FLIPPED pattern whose instance it matches (F6's one regexp stands for three pages). A regexp that matches
+ * none is returned as itself (`path_regexp <re>`). A regexp is also tried on an instance of each `java` pattern that
+ * is not in FLIPPED, and each one it takes is returned as `path_regexp <re> takes <pattern>`: a regexp too wide for
+ * its row sends a page that is still Java's to Next. Either way the equality in flippedIsTheCaddyfilesNextPaths names
+ * it.
  */
-export function nextPages(caddyfile: string, flipped: readonly string[]): string[] {
+export function nextPages(caddyfile: string, flipped: readonly string[], java: readonly string[]): string[] {
   const pages = handleBlocks(caddyfile)
     .filter((b) => b.body === "reverse_proxy medioo-web:3000")
     .filter((b) => b.methods === null || b.methods.includes("GET"));
   const literal = pages.flatMap((b) => b.paths).filter((p) => !NOT_PAGES.has(p));
   const dynamic = flipped.filter((p) => /\{\w+\}/.test(p));
+  const javaOnly = java.filter((p) => !flipped.includes(p));
   const fromRegexps = pages
     .flatMap((b) => b.regexps)
-    .map((re) => {
-      const hits = dynamic.filter((p) => new RegExp(re).test(instance(p)));
-      return hits.length === 1 ? hits[0]! : `path_regexp ${re}`;
+    .flatMap((re) => {
+      const takes = (p: string) => new RegExp(re).test(instance(p));
+      const hits = dynamic.filter(takes);
+      const tooWide = javaOnly.filter(takes).map((p) => `path_regexp ${re} takes ${p}`);
+      return [...(hits.length > 0 ? hits : [`path_regexp ${re}`]), ...tooWide];
     });
   return [...new Set([...literal, ...fromRegexps])].sort();
 }
@@ -85,7 +92,7 @@ describe("flipped", () => {
     const toNext = handleBlocks(caddyfile).filter((b) => b.body === "reverse_proxy medioo-web:3000");
     // Guard: the parser found the one block every version of the file routes to Next, so it did not read nothing.
     expect(toNext.flatMap((b) => b.paths), "the /app/healthz block was parsed").toContain("/app/healthz");
-    expect([...FLIPPED].sort()).toEqual(nextPages(caddyfile, FLIPPED));
+    expect([...FLIPPED].sort()).toEqual(nextPages(caddyfile, FLIPPED, JAVA_PAGES));
   });
 
   it("theParserReadsANamedMatcherWithItsMethods", () => {
@@ -114,12 +121,33 @@ describe("flipped", () => {
     const profile =
       "\t@profile {\n\t\tmethod GET HEAD\n\t\tpath_regexp ^/app/patients/[0-9a-f-]{36}/profile$\n\t}\n\thandle @profile {\n\t\treverse_proxy medioo-web:3000\n\t}\n";
     const healthz = "\thandle /app/healthz {\n\t\treverse_proxy medioo-web:3000\n\t}\n";
-    expect(nextPages(`site {\n${healthz}${profile}}\n`, ["/app/patients/{id}/profile"])).toEqual(["/app/patients/{id}/profile"]);
+    expect(nextPages(`site {\n${healthz}${profile}}\n`, ["/app/patients/{id}/profile"], JAVA_PAGES)).toEqual([
+      "/app/patients/{id}/profile",
+    ]);
     // The other direction, each way the two could disagree: a regexp that takes no FLIPPED pattern is named as itself,
     // and a FLIPPED pattern no regexp takes is absent, so the equality in flippedIsTheCaddyfilesNextPaths fails on either.
-    expect(nextPages(`site {\n${healthz}${profile}}\n`, ["/app/patients/{id}"])).toEqual([
+    expect(nextPages(`site {\n${healthz}${profile}}\n`, ["/app/patients/{id}"], [])).toEqual([
       "path_regexp ^/app/patients/[0-9a-f-]{36}/profile$",
     ]);
-    expect(nextPages(`site {\n${healthz}}\n`, ["/app/patients/{id}/profile"])).toEqual([]);
+    expect(nextPages(`site {\n${healthz}}\n`, ["/app/patients/{id}/profile"], JAVA_PAGES)).toEqual([]);
+  });
+
+  it("aRegexpThatTakesSeveralFlippedPatternsStandsForEachOfThem", () => {
+    // The plan's F6 row is one regexp for a paper, its /all page and a value page: it stands for all three.
+    const papers =
+      "\t@papers {\n\t\tmethod GET HEAD\n\t\tpath_regexp ^/app/documents/[0-9a-f-]{36}(/all|/values/[0-9a-f-]{36})?$\n\t}\n\thandle @papers {\n\t\treverse_proxy medioo-web:3000\n\t}\n";
+    const flipped = ["/app/documents/{id}", "/app/documents/{id}/all", "/app/documents/{id}/values/{obs}"];
+    expect(nextPages(`site {\n${papers}}\n`, flipped, JAVA_PAGES)).toEqual([...flipped].sort());
+  });
+
+  it("aRegexpThatAlsoTakesAJavaOnlyPageIsNamedWithThatPage", () => {
+    // Too wide: the profile regexp widened to the patient page, which is still Java's. It takes the FLIPPED profile and
+    // also /app/patients/{id}, a JAVA_PAGES pattern not in FLIPPED, so the equality must fail on that page by name.
+    const wide =
+      "\t@profile {\n\t\tmethod GET HEAD\n\t\tpath_regexp ^/app/patients/[0-9a-f-]{36}(/profile)?$\n\t}\n\thandle @profile {\n\t\treverse_proxy medioo-web:3000\n\t}\n";
+    expect(nextPages(`site {\n${wide}}\n`, ["/app/patients/{id}/profile"], JAVA_PAGES)).toEqual([
+      "/app/patients/{id}/profile",
+      "path_regexp ^/app/patients/[0-9a-f-]{36}(/profile)?$ takes /app/patients/{id}",
+    ]);
   });
 });
