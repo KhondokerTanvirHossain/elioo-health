@@ -73,13 +73,21 @@ async function start(hostname: string): Promise<Run> {
   return run;
 }
 
+/**
+ * Stub Java's request log as "<METHOD> <path>" lines. The log is read, never cleared: this file names JAVA_INTERNAL_URL,
+ * so scripts/check-no-server-mutation.sh allows it no fetch but a GET (DR-40 A3).
+ */
+async function javaLog(run: Run): Promise<string[]> {
+  const log = (await (await fetch(`${run.stub}/__requests`)).json()) as Array<Record<"method" | "path", string>>;
+  return log.map((r) => `${r.method} ${r.path}`);
+}
+
 /** GET <path> as a browser with the given cookies, redirects not followed; and every path stub Java was asked meanwhile. */
 async function ask(run: Run, path: string, cookie: string): Promise<{ status: number; location: string | null; java: string[] }> {
-  await fetch(`${run.stub}/__requests`, { method: "DELETE" });
+  const before = (await javaLog(run)).length;
   const response = await fetch(`${run.base}${path}`, { redirect: "manual", headers: { cookie } });
   await response.arrayBuffer();
-  const log = (await (await fetch(`${run.stub}/__requests`)).json()) as { method: string; path: string }[];
-  return { status: response.status, location: response.headers.get("location"), java: log.map((r) => `${r.method} ${r.path}`) };
+  return { status: response.status, location: response.headers.get("location"), java: (await javaLog(run)).slice(before) };
 }
 
 const SIGNED_OUT = "e2e_scenario=signed-out";
