@@ -32,8 +32,9 @@
 # Flipping a route back is a one-line edit plus the procedure above, and the routes floor (RUNBOOK -> Rollback).
 # The handle blocks are mutually exclusive: the most specific path matcher wins, and the bare `handle` is Java. Routed
 # so far: /app/healthz (W1c); the preview path /app/preview and /app/preview/* (less /app/preview/probe, which stays
-# Java's), and the assets /_next/static/*, /fonts/* and /brand/* (plan Wave 3, F0). Every page and every /app/api/**
-# path is still Java's; each screen's own paths come in its flip PR. scripts/caddy-route-probe.sh runs this file in a
+# Java's), and the assets /_next/static/*, /fonts/* and /brand/* (plan Wave 3, F0); GET and HEAD /app/add, the add
+# sheet (F7; POST /app/add, the upload, stays Java's). Every other page and every /app/api/** path is still Java's;
+# each screen's own paths come in its flip PR. scripts/caddy-route-probe.sh runs this file in a
 # local Caddy and checks every row of scripts/smoke-https.sh reaches the upstream its class names.
 #
 # Referrer-Policy stays strict-origin-when-cross-origin, the value production has sent since before the rebuild
@@ -79,6 +80,18 @@ medioo.eliooo.org {
 		not path /app/preview/probe /app/preview/probe/*
 	}
 	handle @medioo_preview {
+		reverse_proxy medioo-web:3000
+	}
+
+	# F7 (DR-49, PO ruling 2026-10-23): the add sheet (plan W7). GET and HEAD only: POST /app/add is Java's upload,
+	# which the old sheet's form and the paper page's retake form post to, and it stays Java's. `path /app/add` is exact,
+	# so /app/add/ and /app/addx stay Java's too. Turning the old page back on is deleting this block (RUNBOOK ->
+	# Rollback).
+	@medioo_add {
+		method GET HEAD
+		path /app/add
+	}
+	handle @medioo_add {
 		reverse_proxy medioo-web:3000
 	}
 
