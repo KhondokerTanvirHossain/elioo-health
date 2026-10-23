@@ -86,28 +86,51 @@
 # /app/home/ (trailing slash, outside the exact `path /app/home`) is still Java's JSON 404 (production, 2026-10-23,
 # read-only GET: 404, application/json, statusCode 400); Next would answer it with a 307 holding /app/home/, so a
 # matcher widened to `/app/home*` fails that row.
+# The F10 rows (plan Wave 3, Task F; DR-49, PO ruling 2026-10-23) were measured on 2026-10-23. Before the flip,
+# production answered GET /app/family and GET /app/patients/<id>/profile signed out with Java's session filter: 303 to
+# /app/ (no held place), Java's CSP; HEAD on both with Java's JSON 404 (Java routes GET alone). After it, medioo-web's
+# family tab and a patient's profile page (plan W10) answer GET and HEAD signed out with a 307 to the sign-in page
+# holding the place (/app/?next=%2Fapp%2Ffamily, /app/?next=%2Fapp%2Fpatients%2F<id>%2Fprofile), their nonce CSP:
+# measured against the deployed sha's build (be3a2ff) with stub Java signed out, and through the W1d replica's own
+# Caddyfile (BUDGET_REPLICA_ONLY=1) on a local Caddy v2.11.7 in front of that `next start` (Docker was down, so no
+# containers): GET and HEAD alike, 307, the same Location, the nonce CSP and the four headers once each. The patient id
+# is the fixtures' fictional first patient; signed out, no row reads a patient. The HEAD rows are PROBE rows, as F7's
+# and F5's are, until the #155 follow-up. Java routes no POST /app/family (docs/infra/app-routes.txt), so a POST there
+# is the JSON 404 its HEAD measured (not POSTed to production; the same no-route answer F5 measured for POST
+# /app/home). POST /app/patients/<id>/profile is Java's profile save and stays Java's: the matcher is GET and HEAD
+# only, and its row is a PROBE row, never sent here. UNMEASURED, from the code: its 303 to /app/ is Java's session
+# filter (BaymaxWebUiRouter.requireSession, which ProfilePages' GET and POST share), the answer its GET measured; the
+# route probe reads only the row's class (Java). The boundary rows, each Java's on production 2026-10-23 (read-only
+# GET): /app/family/ and /app/patients/<id>/profile/ answer Java's JSON 404, where Next answers a 307 holding the
+# slash (a matcher widened to `/app/family*`, or a regexp that lost its `$`, fails there); /app/patients/x/profile
+# (an id that is not a uuid, outside `[0-9a-f-]{36}`) and /app/patients/<id> (the patient page, still Java's; also a
+# boundary row in F8's table) answer Java's 303 to /app/, where Next answers a 307 and its HTML 404 (a matcher of
+# `/app/patients/*/profile` or `/app/patients/*` fails there).
 #
 # Header classes. Caddy's medioo header block owns HSTS, X-Content-Type-Options and Referrer-Policy on every path
 # (it runs at response-write time and overwrites the upstream); each upstream owns its CSP and X-Frame-Options.
-#   next    /app/healthz, /app/preview, /app/add, /app, /app/, /app/verify, /app/home   the CSP carries a
-#           per-request nonce
+#   next    /app/healthz, /app/preview, /app/add, /app, /app/, /app/verify, /app/home, /app/family,
+#           /app/patients/<id>/profile   the CSP carries a per-request nonce
 #           (medioo-web's middleware)
 #   static  /_next/static/*, /fonts/*, /brand/*   medioo-web's assets: the four headers below, once each, and no CSP
 #           required (the hashed chunks skip the middleware, so they carry none; the fonts and brand files carry one)
-#   page    /, /app/basic, POST /app/login   Java's HTML pages
+#   page    /, /app/basic, POST /app/login, /app/patients/x/profile, /app/patients/<id>   Java's HTML pages (the
+#           last two its session filter's 303)
 #   api     /actuator/health, /app/api/me, the webhook
 # Referrer-Policy stays strict-origin-when-cross-origin, the value production sends today (PO note in the W1c PR).
 # Each of X-Frame-Options, X-Content-Type-Options, Referrer-Policy and HSTS must arrive exactly once: a browser acts on
 # every copy it receives, not on the last one (two conflicting X-Frame-Options are ignored, so framing is allowed),
 # so an upstream or a Caddy edit that appends instead of replacing fails the row whatever the last value says.
 #
-# Routing stops at the F0 paths, F7's page, F3's and F5's for now (plan Wave 3, Task F): /app/healthz, the preview
-# path (/app/preview and /app/preview/*, less /app/preview/probe), the assets (/_next/static/*, /fonts/*, /brand/*)
-# and, for GET and HEAD only, F7's /app/add (POST /app/add stays Java's), F3's sign-in pages /app, /app/ and
-# /app/verify, and F5's /app/home (the chat page). Every other page is still Java's, and Java still owns the API:
-# /app/api/me must be Java's JSON 401, so a route that sent /app/api/* to Next fails here, as does a matcher wider than
-# its row (the boundary rows above: three for F0, /app/add/ for F7, /app/login and /app/verifyx for F3, /app/home/ for
-# F5) or one that forgot the method (the two sign-in POST rows). Each flip PR moves
+# Routing stops at the F0 paths, F7's page, F3's, F5's and F10's for now (plan Wave 3, Task F): /app/healthz, the
+# preview path (/app/preview and /app/preview/*, less /app/preview/probe), the assets (/_next/static/*, /fonts/*,
+# /brand/*) and, for GET and HEAD only, F7's /app/add (POST /app/add stays Java's), F3's sign-in pages /app, /app/ and
+# /app/verify, F5's /app/home (the chat page), and F10's /app/family and /app/patients/<uuid>/profile (the family tab
+# and a patient's profile; POST /app/patients/<id>/profile, the profile save, stays Java's). Every other page is still
+# Java's, and Java still owns the API: /app/api/me must be Java's JSON 401, so a route that sent /app/api/* to Next
+# fails here, as does a matcher wider than its row (the boundary rows above: three for F0, /app/add/ for F7,
+# /app/login and /app/verifyx for F3, /app/home/ for F5, four for F10) or one that forgot the method (the two sign-in
+# POST rows). Each flip PR moves
 # its own page's rows. scripts/caddy-route-probe.sh sends this same table through a local Caddy running the repo's
 # Caddyfile.medioo and checks that each row reaches the upstream its class names: the routing is derived from this
 # table, not from a second list.
@@ -162,8 +185,9 @@ REFERRER="strict-origin-when-cross-origin"
 #                    encoding:<value>       asked with `Accept-Encoding: zstd, gzip`, the Content-Encoding equals <value>
 #   a path starting {old} is asked of the old hostname (SMOKE_OLD_BASE); every other one of <base-url>
 #   a path starting `PROBE ` (`PROBE <METHOD> /path`) is sent only by caddy-route-probe.sh, never by this run: it is
-#   a request this run leaves to the probe (F7's and F5's HEAD rows, until the #155 follow-up makes them production
-#   rows), or one that must not reach production (POST /app/add is the upload); the probe reads its class alone
+#   a request this run leaves to the probe (F7's, F5's and F10's HEAD rows, until the #155 follow-up makes them
+#   production rows), or one that must not reach production (POST /app/add is the upload, POST
+#   /app/patients/<id>/profile the profile save); the probe reads its class alone
 TABLE='/app/healthz|200|next|json:service=medioo-web
 /actuator/health|200|api|json:status=UP
 /app/api/me|401|api|json:reason=UNAUTHENTICATED
@@ -201,6 +225,16 @@ PROBE POST /app/add|303|page|location:/app/
 /app/home/|404|-|json:statusCode=400
 PROBE HEAD /app/home|307|next|location:/app/?next=%2Fapp%2Fhome
 PROBE POST /app/home|404|-|json:statusCode=400
+/app/family|307|next|location:/app/?next=%2Fapp%2Ffamily
+/app/family/|404|-|json:statusCode=400
+PROBE HEAD /app/family|307|next|location:/app/?next=%2Fapp%2Ffamily
+PROBE POST /app/family|404|-|json:statusCode=400
+/app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile|307|next|location:/app/?next=%2Fapp%2Fpatients%2F5e9edf6d-0a2a-4913-8675-9d07a4100001%2Fprofile
+/app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile/|404|-|json:statusCode=400
+/app/patients/x/profile|303|page|location:/app/
+/app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001|303|page|location:/app/
+PROBE HEAD /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile|307|next|location:/app/?next=%2Fapp%2Fpatients%2F5e9edf6d-0a2a-4913-8675-9d07a4100001%2Fprofile
+PROBE POST /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile|303|page|location:/app/
 {old}/app/home|301|-|location:https://medioo.eliooo.org/app/home'
 
 # header <file> <lower-case name>: the last value of that header, CR stripped (empty when absent)

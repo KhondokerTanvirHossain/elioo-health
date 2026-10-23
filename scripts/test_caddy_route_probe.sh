@@ -31,6 +31,14 @@
 #   (`home-any-method` drops the method line and fails the PROBE POST row alone); `home-wide` widens the exact
 #   `path /app/home` to `/app/home*` and fails the /app/home/ boundary row alone. Each edit is anchored on the home
 #   block, so the add and sign-in blocks' `method GET HEAD` is never the one edited;
+# - F10's two blocks, each both ways. The family tab is F5's shape: `family-missing` fails GET and HEAD /app/family,
+#   `family-get-only` the HEAD row alone, `family-any-method` the PROBE POST row alone, and `family-wide`
+#   (`/app/family*`) the /app/family/ boundary row alone. The profile is a regexp: `profile-missing` fails GET and HEAD
+#   on it, `profile-get-only` the HEAD row alone, `profile-any-method` the PROBE POST row alone (POST is Java's profile
+#   save), `profile-unanchored` (the regexp without its `$`) the /profile/ boundary row alone, and `profile-any-id`
+#   (`[^/]+` for the uuid) the /app/patients/x/profile boundary row alone, and `profile-patient-page` (the regexp
+#   widened to `(/profile)?$`) the /app/patients/<id> boundary row alone (the patient page, still Java's). Each edit
+#   is anchored on its own block;
 # - a table with no rows, a file with no medioo.eliooo.org block, and a file with an upstream the probe does not know
 #   each fail, rather than pass vacuously or send a row somewhere unreplaced.
 set -uo pipefail
@@ -48,8 +56,10 @@ CASES=0
 # / /medscribeai /medscribeai/ /baymax /baymax/ webhook /_next/static/x.js /fonts/noto-sans-latin.woff2
 # /brand/mio-head.webp /brand/medioo-light.svg (P3) /app/preview /app/preview/ /app/previewx /_next/image
 # /app/preview/probe, F7's /app/add, /app/add/, PROBE HEAD /app/add and PROBE POST /app/add, and F5's /app/home,
-# /app/home/, PROBE HEAD /app/home and PROBE POST /app/home (the probe sends PROBE rows; the production run never does)
-ROWS=37
+# /app/home/, PROBE HEAD /app/home and PROBE POST /app/home, and F10's /app/family, /app/family/, PROBE HEAD and PROBE
+# POST /app/family, /app/patients/<id>/profile, its /profile/, /app/patients/x/profile, /app/patients/<id>, and PROBE
+# HEAD and PROBE POST on the profile (the probe sends PROBE rows; the production run never does)
+ROWS=47
 
 fail() { echo "FAIL: $1"; FAILED=1; }
 
@@ -80,7 +90,10 @@ grep -q '^PASS /app/preview 298 (next)$' "$WORK/out.log" || fail "repo: no 'PASS
 # F3: the sign-in pages are Next's for GET and HEAD, and every sign-in POST and the no-JS fallback stay Java's
 for line in 'PASS /app/ 298 (next)' 'PASS /app 298 (next)' 'PASS HEAD /app/ 298 (next)' 'PASS /app/verify 298 (next)' \
   'PASS HEAD /app/verify 298 (next)' 'PASS POST /app/verify 299 (java)' 'PASS POST /app/login 299 (java)' \
-  'PASS /app/basic 299 (java)' 'PASS /app/login 299 (java)'; do
+  'PASS /app/basic 299 (java)' 'PASS /app/login 299 (java)' \
+  'PASS /app/family 298 (next)' 'PASS PROBE POST /app/family 299 (java)' 'PASS /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile 298 (next)' \
+  'PASS PROBE POST /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile 299 (java)' 'PASS /app/patients/x/profile 299 (java)' \
+  'PASS /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001 299 (java)'; do
   grep -qxF "$line" "$WORK/out.log" || fail "repo: no '$line' line: $(out)"
 done
 # the probe prints each row's spec as written, so an {old} row it asked would print the literal {old}
@@ -121,6 +134,16 @@ home-any-method|s/\n\t\tmethod GET HEAD\n(\t\tpath \/app\/home\n)/\n$1/|FAIL PRO
 home-get-only|s/\n\t\tmethod GET HEAD\n(\t\tpath \/app\/home\n)/\n\t\tmethod GET\n$1/|FAIL PROBE HEAD /app/home got 299 (java), expected 298 (next)
 home-wide|s/(\n\t\tmethod GET HEAD\n\t\tpath \/app\/home)\n/$1*\n/|FAIL /app/home/ got 298 (next), expected 299 (java)
 home-missing|s/\t\@medioo_chat \{\n\t\tmethod GET HEAD\n\t\tpath \/app\/home\n\t\}\n\thandle \@medioo_chat \{\n\t\treverse_proxy medioo-web:3000\n\t\}\n//|FAIL /app/home got 299 (java), expected 298 (next)|FAIL PROBE HEAD /app/home got 299 (java), expected 298 (next)
+family-any-method|s/\n\t\tmethod GET HEAD\n(\t\tpath \/app\/family\n)/\n$1/|FAIL PROBE POST /app/family got 298 (next), expected 299 (java)
+family-get-only|s/\n\t\tmethod GET HEAD\n(\t\tpath \/app\/family\n)/\n\t\tmethod GET\n$1/|FAIL PROBE HEAD /app/family got 299 (java), expected 298 (next)
+family-wide|s/(\n\t\tmethod GET HEAD\n\t\tpath \/app\/family)\n/$1*\n/|FAIL /app/family/ got 298 (next), expected 299 (java)
+family-missing|s/\t\@medioo_family \{\n\t\tmethod GET HEAD\n\t\tpath \/app\/family\n\t\}\n\thandle \@medioo_family \{\n\t\treverse_proxy medioo-web:3000\n\t\}\n//|FAIL /app/family got 299 (java), expected 298 (next)|FAIL PROBE HEAD /app/family got 299 (java), expected 298 (next)
+profile-any-method|s/\n\t\tmethod GET HEAD\n(\t\tpath_regexp \^\/app\/patients\/)/\n$1/|FAIL PROBE POST /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile got 298 (next), expected 299 (java)
+profile-get-only|s/\n\t\tmethod GET HEAD\n(\t\tpath_regexp \^\/app\/patients\/)/\n\t\tmethod GET\n$1/|FAIL PROBE HEAD /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile got 299 (java), expected 298 (next)
+profile-unanchored|s/(\n\t\tpath_regexp \^\/app\/patients\/\[0-9a-f-\]\{36\}\/profile)\$\n/$1\n/|FAIL /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile/ got 298 (next), expected 299 (java)
+profile-any-id|s/(\n\t\tpath_regexp \^\/app\/patients\/)\[0-9a-f-\]\{36\}(\/profile\$\n)/$1\[^\/\]+$2/|FAIL /app/patients/x/profile got 298 (next), expected 299 (java)
+profile-patient-page|s/(\n\t\tpath_regexp \^\/app\/patients\/\[0-9a-f-\]\{36\})\/profile\$\n/$1(\/profile)?\$\n/|FAIL /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001 got 298 (next), expected 299 (java)
+profile-missing|s/\t\@medioo_profile \{\n\t\tmethod GET HEAD\n\t\tpath_regexp [^\n]*\n\t\}\n\thandle \@medioo_profile \{\n\t\treverse_proxy medioo-web:3000\n\t\}\n//|FAIL /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile got 299 (java), expected 298 (next)|FAIL PROBE HEAD /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile got 299 (java), expected 298 (next)
 TABLE
 
 # 4. a table with no rows: refused, not passed

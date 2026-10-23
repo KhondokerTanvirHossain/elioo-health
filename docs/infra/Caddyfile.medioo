@@ -34,8 +34,9 @@
 # so far: /app/healthz (W1c); the preview path /app/preview and /app/preview/* (less /app/preview/probe, which stays
 # Java's), and the assets /_next/static/*, /fonts/* and /brand/* (plan Wave 3, F0); GET and HEAD /app/add, the add
 # sheet (F7; POST /app/add, the upload, stays Java's); GET and HEAD /app, /app/ and /app/verify, the sign-in pages
-# (F3); GET and HEAD /app/home, the chat page (F5). Every other page, every POST to a page and every /app/api/** path
-# is still Java's; each screen's own paths come in its flip PR. scripts/caddy-route-probe.sh runs this file in a
+# (F3); GET and HEAD /app/home, the chat page (F5); GET and HEAD /app/family and /app/patients/<uuid>/profile, the
+# family tab and a patient's profile (F10; POST to the profile, its save, stays Java's). Every other page, every POST
+# to a page and every /app/api/** path is still Java's; each screen's own paths come in its flip PR. scripts/caddy-route-probe.sh runs this file in a
 # local Caddy and checks every row of scripts/smoke-https.sh reaches the upstream its class names.
 #
 # Referrer-Policy stays strict-origin-when-cross-origin, the value production has sent since before the rebuild
@@ -127,6 +128,29 @@ medioo.eliooo.org {
 		path /app/home
 	}
 	handle @medioo_chat {
+		reverse_proxy medioo-web:3000
+	}
+
+	# F10 (DR-49, PO ruling 2026-10-23): the family tab and settings, and a patient's profile (plan W10). GET and HEAD
+	# only, per the plan's row: Java routes no POST /app/family, and POST /app/patients/{id}/profile is Java's profile
+	# save, which stays Java's. `path /app/family` is exact, so /app/family/ and /app/familyx stay Java's. The profile
+	# is a regexp anchored at both ends: one uuid segment (lower-case, as every link writes it) and nothing after
+	# `/profile`, so /app/patients/{id} (the patient page, still Java's; also a boundary row in F8's table),
+	# /app/patients/{id}/profile/ and an id that is not a uuid stay Java's. Turning the old pages back on is deleting
+	# these two blocks (RUNBOOK -> Rollback).
+	@medioo_family {
+		method GET HEAD
+		path /app/family
+	}
+	handle @medioo_family {
+		reverse_proxy medioo-web:3000
+	}
+
+	@medioo_profile {
+		method GET HEAD
+		path_regexp ^/app/patients/[0-9a-f-]{36}/profile$
+	}
+	handle @medioo_profile {
 		reverse_proxy medioo-web:3000
 	}
 
