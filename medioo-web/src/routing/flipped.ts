@@ -5,5 +5,7 @@
  *
  * F7 (DR-49, PO ruling 2026-10-23): `/app/add`, the add sheet (plan W7), GET and HEAD only; POST /app/add stays
  * Java's.
+ * F3 (DR-49): the sign-in pages `/app`, `/app/` and `/app/verify`, GET and HEAD only (`@medioo_signin`); every
+ * sign-in POST and the no-JS fallback /app/basic* stay Java's.
  */
-export const FLIPPED: readonly string[] = ["/app/add"];
+export const FLIPPED: readonly string[] = ["/app/add", "/app", "/app/", "/app/verify"];

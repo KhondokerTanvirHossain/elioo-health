@@ -67,7 +67,10 @@ jobs:
       # test_caddy_route_probe.sh: scripts/caddy-route-probe.sh runs the repo's Caddyfile.medioo in a real Caddy of the
       # box's version against every row of the smoke table (plan Wave 3, F0), both ways: a Caddy edit that sends a row
       # to the wrong upstream, or a matcher that reaches past its row (/app/preview*, /_next/*), fails on the PR.
-      - name: Deploy script tests (tip check, prune, two containers, https smoke, Caddy drift, budget replica, route probe)
+      # Then `caddy validate` of Caddyfile.medioo as written (both site blocks, the real upstreams), in the same pinned
+      # image the probe runs (read from the probe, never restated): the probe loads only a rewritten copy of the medioo
+      # block, so this is the plan's Task F Step 4 validate on the box's version, on every PR.
+      - name: Deploy script tests (tip check, prune, two containers, https smoke, Caddy drift, budget replica, route probe, validate)
         run: |
           scripts/test_deploy_is_tip.sh
           bash scripts/test_deploy_prune.sh
@@ -76,6 +79,9 @@ jobs:
           bash scripts/test_caddy_drift.sh
           bash scripts/test_budget_replica.sh
           bash scripts/test_caddy_route_probe.sh
+          docker run --rm -v "$PWD/docs/infra/Caddyfile.medioo:/etc/caddy/Caddyfile:ro" \
+            "$(sed -n 's/^CADDY_IMAGE="\(.*\)"$/\1/p' scripts/caddy-route-probe.sh)" \
+            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
       # The real medioo-web image, built from its Dockerfile, and deploy_web against the runner's Docker daemon (only
       # `docker pull` shimmed): the probe against the real Next server, `docker inspect` of what deploy.sh started
       # (no ports, 320m, rotated logs, exactly two env vars, one network), and an image built from another sha refused

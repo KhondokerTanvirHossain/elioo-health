@@ -33,8 +33,9 @@
 # The handle blocks are mutually exclusive: the most specific path matcher wins, and the bare `handle` is Java. Routed
 # so far: /app/healthz (W1c); the preview path /app/preview and /app/preview/* (less /app/preview/probe, which stays
 # Java's), and the assets /_next/static/*, /fonts/* and /brand/* (plan Wave 3, F0); GET and HEAD /app/add, the add
-# sheet (F7; POST /app/add, the upload, stays Java's). Every other page and every /app/api/** path is still Java's;
-# each screen's own paths come in its flip PR. scripts/caddy-route-probe.sh runs this file in a
+# sheet (F7; POST /app/add, the upload, stays Java's); GET and HEAD /app, /app/ and /app/verify, the sign-in pages
+# (F3). Every other page, every POST to a page and every /app/api/** path is still Java's; each screen's own paths
+# come in its flip PR. scripts/caddy-route-probe.sh runs this file in a
 # local Caddy and checks every row of scripts/smoke-https.sh reaches the upstream its class names.
 #
 # Referrer-Policy stays strict-origin-when-cross-origin, the value production has sent since before the rebuild
@@ -92,6 +93,18 @@ medioo.eliooo.org {
 		path /app/add
 	}
 	handle @medioo_add {
+		reverse_proxy medioo-web:3000
+	}
+
+	# F3: the sign-in pages, GET and HEAD only, exactly these three paths. Every sign-in POST stays Java's (S3:
+	# /app/login has no GET and is never routed; POST /app/verify is the no-JS form's target), and so does the no-JS
+	# fallback /app/basic* (S1), which `path /app/*` would take. Next's pages post nothing themselves: their writes are
+	# browser fetches to /app/api/**, Java's.
+	@medioo_signin {
+		method GET HEAD
+		path /app /app/ /app/verify
+	}
+	handle @medioo_signin {
 		reverse_proxy medioo-web:3000
 	}
 

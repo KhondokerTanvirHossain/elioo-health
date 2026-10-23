@@ -17,9 +17,9 @@
 # visitor to the sign-in page holding the preview (307 to /app/?next=%2Fapp%2Fpreview), not the 200 the plan guessed.
 # KNOWN GAP, not the expected behaviour: the plan expects `/app/preview|200|next|html:name="whatsapp_number"`. With
 # the gate as merged in W3, no viewer in any state reaches a Next screen through the preview (signed out: this 307 to
-# Java's sign-in; signed in and allowlisted: the sign-in pages send them on to /app/home, which is Java's; signed in
-# and not allowlisted: Next's 404). The two 307 rows pin what the code does today so a change is seen; they return to
-# the plan's 200 row once the gate lets the two sign-in reads through for a signed-out visitor (a PO ruling, W3
+# the sign-in page, Java's until F3 and Next's from it; signed in and allowlisted: the sign-in pages send them on to
+# /app/home, which is Java's; signed in and not allowlisted: Next's 404). The two 307 rows pin what the code does today
+# so a change is seen; they return to the plan's 200 row once the gate lets the two sign-in reads through for a signed-out visitor (a PO ruling, W3
 # follow-up), replayed red against the image of that day.
 # A POST to the preview (measured 2026-10-22 through the same replica, signed out) answers as the GET does: 307 to
 # /app/?next=..., medioo-web's nonce CSP, for /app/preview and /app/preview/verify alike. The preview block does not
@@ -36,8 +36,8 @@
 # HEAD with Java's JSON 404. After it, medioo-web's add sheet (plan W7) answers GET and HEAD signed out with a 307 to
 # the sign-in page holding the place (/app/?next=%2Fapp%2Fadd), its nonce CSP: measured against the deployed sha's
 # build (0015f5b) with stub Java signed out, not through the W1d replica (Docker was down; Caddy changes neither the
-# status nor the Location). HEAD is a PROBE row because this run sends GET only: the route probe sends it as HEAD, so
-# a matcher of `method GET` alone fails there. POST /app/add is Java's upload (the old sheet's form and the paper
+# status nor the Location). HEAD is a PROBE row because this run sent GET only when F7 was written (F3 added the
+# method column): the route probe sends it as HEAD, so a matcher of `method GET` alone fails there. POST /app/add is Java's upload (the old sheet's form and the paper
 # page's retake form post there): the Caddy matcher is GET and HEAD only, and its row is a PROBE row, never sent here.
 # UNMEASURED, from the code: its 303 to /app/ is what Java's session filter (BaymaxWebUiRouter.requireSession) answers
 # a request with no session; it was not posted to production, and the W1d replica measurement (POST /app/add signed
@@ -45,24 +45,43 @@
 # the row's class (Java), so no check depends on the 303 or the Location until it is measured.
 # /app/add/ (trailing slash, outside the exact `path /app/add`) is still Java's JSON 404 (production, 2026-10-23,
 # read-only GET: 404, application/json, statusCode 400): a matcher widened to `/app/add*` fails that row.
+# The F3 rows (plan Wave 3, Task F: GET and HEAD /app, /app/ and /app/verify to medioo-web) were measured on 2026-10-23:
+# before the flip against production (GET and HEAD only), and the Next answers through a local replica: the deployed
+# sha's medioo-web tree as a standalone build bound as the image binds it (HOSTNAME=0.0.0.0, medioo-web/Dockerfile),
+# behind this repo's medioo block in Caddy v2.11.4 (the box's version), with the e2e stub Java signed out (Docker was
+# down that day, so not the image itself; the box run at the flip is the image's). A first run bound to 127.0.0.1
+# rendered /app/preview 200 without reading `me`: on a loopback literal Next proxies its own rewrite to itself and the
+# middleware ran twice (now refused, src/middleware.ts). The sign-in rows involve no rewrite and answered the same
+# under both binds. Before the flip Java answered GET /app
+# and /app/ with its number page (200, its CSP, no nonce), GET /app/verify with 303 to /app/, and HEAD on all three with
+# its JSON 404 (a WebFlux GET route does not take HEAD); after it, Next answers the number page under its nonce CSP,
+# and /app/verify with no pending login is its 307 to /app/, GET and HEAD alike. The sign-in POSTs stay Java's (S3:
+# the matcher is GET/HEAD only): with no login cookie POST /app/verify is 303 to /app/, and an empty POST /app/login is
+# the number page again with its error; neither reads or writes anything (SignInPages: no cookie, no number, no call),
+# which is why they are production rows and not PROBE rows. S1's no-JS fallback stays Java's: /app/basic is its
+# number page posting to /app/basic/login, and the language switch on its code step lands back on it. Just outside the
+# sign-in matcher GET /app/login (S3: never routed, it has no GET) and /app/verifyx are Java's JSON 404.
 #
 # Header classes. Caddy's medioo header block owns HSTS, X-Content-Type-Options and Referrer-Policy on every path
 # (it runs at response-write time and overwrites the upstream); each upstream owns its CSP and X-Frame-Options.
-#   next    /app/healthz, /app/preview, /app/add   the CSP carries a per-request nonce (medioo-web's middleware)
+#   next    /app/healthz, /app/preview, /app/add, /app, /app/, /app/verify   the CSP carries a per-request nonce
+#           (medioo-web's middleware)
 #   static  /_next/static/*, /fonts/*, /brand/*   medioo-web's assets: the four headers below, once each, and no CSP
 #           required (the hashed chunks skip the middleware, so they carry none; the fonts and brand files carry one)
-#   page    /app/, /             Java's HTML pages
+#   page    /, /app/basic, POST /app/login   Java's HTML pages
 #   api     /actuator/health, /app/api/me, the webhook
 # Referrer-Policy stays strict-origin-when-cross-origin, the value production sends today (PO note in the W1c PR).
 # Each of X-Frame-Options, X-Content-Type-Options, Referrer-Policy and HSTS must arrive exactly once: a browser acts on
 # every copy it receives, not on the last one (two conflicting X-Frame-Options are ignored, so framing is allowed),
 # so an upstream or a Caddy edit that appends instead of replacing fails the row whatever the last value says.
 #
-# Routing stops at the F0 paths and F7's page for now (plan Wave 3, Task F): /app/healthz, the preview path
+# Routing stops at the F0 paths, F7's page and F3's for now (plan Wave 3, Task F): /app/healthz, the preview path
 # (/app/preview and /app/preview/*, less /app/preview/probe), the assets (/_next/static/*, /fonts/*, /brand/*) and,
-# from F7, GET and HEAD /app/add (POST /app/add stays Java's). Every other page is still Java's, and Java still owns
-# the API: /app/api/me must be Java's JSON 401, so a route that sent /app/api/* to Next
-# fails here, as does a matcher wider than its row (the boundary rows above: three for F0, /app/add/ for F7). Each flip PR moves
+# for GET and HEAD only, F7's /app/add (POST /app/add stays Java's) and F3's sign-in pages /app, /app/ and
+# /app/verify. Every other page is still Java's, and Java still owns the API: /app/api/me must be Java's JSON 401, so
+# a route that sent /app/api/* to Next fails here, as does a matcher wider than its row (the boundary rows above:
+# three for F0, /app/add/ for F7, /app/login and /app/verifyx for F3) or one that forgot the method (the two sign-in
+# POST rows). Each flip PR moves
 # its own page's rows. scripts/caddy-route-probe.sh sends this same table through a local Caddy running the repo's
 # Caddyfile.medioo and checks that each row reaches the upstream its class names: the routing is derived from this
 # table, not from a second list.
@@ -104,6 +123,11 @@ trap 'rm -rf "$TMP"' EXIT
 REFERRER="strict-origin-when-cross-origin"
 
 # The table: path | status | header class | check
+#   path is "/path" (GET), "METHOD /path" (sent with that method: HEAD as curl --head, any other as curl -X), or
+#        "PROBE METHOD /path": a PROBE row is sent only by scripts/caddy-route-probe.sh, through a local Caddy with fixed
+#        upstreams, and this script skips it, so a row that would change data is never sent to production. Every
+#        row whose method is not GET or HEAD is PROBE except the harmless sign-in POSTs (exactly POST /app/login and
+#        POST /app/verify); any other non-PROBE row is refused before anything is sent (exit 2, allowed_row below).
 #   check is one of: -                      nothing beyond status and headers
 #                    json:<field>=<value>   the top-level JSON field equals <value>
 #                    html:<marker>          the body contains <marker> (an attribute, not a word)
@@ -115,7 +139,17 @@ REFERRER="strict-origin-when-cross-origin"
 TABLE='/app/healthz|200|next|json:service=medioo-web
 /actuator/health|200|api|json:status=UP
 /app/api/me|401|api|json:reason=UNAUTHENTICATED
-/app/|200|page|html:name="whatsapp_number"
+/app/|200|next|html:name="whatsapp_number"
+/app|200|next|html:name="whatsapp_number"
+HEAD /app/|200|next|-
+/app/verify|307|next|location:/app/
+HEAD /app/verify|307|next|location:/app/
+/app/login|404|-|json:statusCode=400
+/app/verifyx|404|-|json:statusCode=400
+/app/basic|200|page|html:action="/app/basic/login"
+/lang/en?back=%2Fapp%2Fbasic%2Fverify|303|-|location:/app/basic/verify
+POST /app/verify|303|-|location:/app/
+POST /app/login|200|page|html:name="whatsapp_number"
 /|200|page|-
 /medscribeai|200|-|-
 /medscribeai/|200|-|-
@@ -148,18 +182,24 @@ header_count() {
   tr -d '\r' < "$1" | awk -v n="$2" 'index($0, ":") && tolower(substr($0, 1, index($0, ":") - 1)) == n { c++ } END { print c + 0 }'
 }
 
-# check_row <path> <status> <class> <check>: prints one PASS or FAIL line; returns 1 on FAIL
+# check_row <path> <status> <class> <check>: prints one PASS or FAIL line; returns 1 on FAIL. <path> may carry a
+# method ("POST /app/verify"); the line names the row as written.
 check_row() {
   local path="$1" want="$2" class="$3" check="$4" body="$TMP/body" hdr="$TMP/headers" code reasons=() v url left times
+  local method=GET how=()
   : > "$body"; : > "$hdr"
+  allowed_row "$path" || { echo "FAIL $path refused: a production row changes no data (PROBE only)"; return 1; }
+  if [[ "$path" =~ ^([A-Z]+)\ (/.*)$ ]]; then method="${BASH_REMATCH[1]}"; path="${BASH_REMATCH[2]}"; fi
+  case "$method" in GET) ;; HEAD) how=(--head) ;; *) how=(-X "$method") ;; esac
   if [ "${path#"{old}"}" != "$path" ]; then url="$OLD_BASE${path#"{old}"}"; path="$url"; else url="$BASE$path"; fi
+  [ "$method" = GET ] || path="$method $path"
   left=$((END - SECONDS))
   if [ "$left" -le 0 ]; then
     echo "FAIL $path deadline of ${DEADLINE}s reached; not asked"
     return 1
   fi
   code=$(curl -s -o "$body" -D "$hdr" -w '%{http_code}' --connect-timeout $((left < 5 ? left : 5)) \
-           --max-time $((left < 15 ? left : 15)) "$url" 2>/dev/null) || true
+           --max-time $((left < 15 ? left : 15)) ${how[@]+"${how[@]}"} "$url" 2>/dev/null) || true
   code="${code:-000}"
   [ "$code" = "$want" ] || reasons+=("HTTP $code, expected $want")
 
@@ -220,7 +260,27 @@ run_table() {
   echo "$failed"
 }
 
-ROWS=$(printf '%s\n' "$TABLE" | grep '|' | grep -vc '^PROBE ')
+# A production row never changes data. It is sent after every deploy and on every retry, to the one real family's
+# production, so the rule is an allowlist, not a list of paths that look dangerous: outside PROBE, a row is a bare path
+# (GET), `GET /path` or `HEAD /path`, or exactly `POST /app/login` or `POST /app/verify` (SignInPages: with no cookie
+# and no number they read and write nothing). Every other row, whatever its method or path (a PUT or DELETE on
+# /app/api, POST /app/basic/login, which sends a WhatsApp code, an opt-out), is refused before any request (exit 2).
+# check_row asks allowed_row again before its curl, so a row cannot reach the network by another way in.
+allowed_row() { # allowed_row <path column>
+  case "$1" in
+    "POST /app/login" | "POST /app/verify") return 0 ;;
+  esac
+  [[ "$1" =~ ^((GET|HEAD)\ )?(/|\{old\}/)[^\ ]*$ ]]
+}
+refused=$(printf '%s\n' "$TABLE" | cut -d'|' -f1 | grep -vE '^PROBE ' | while IFS= read -r row; do
+  [ -n "$row" ] && ! allowed_row "$row" && printf '%s\n' "$row"
+done)
+if [ -n "$refused" ]; then
+  echo "smoke-https: refusing to send [$(printf '%s' "$refused" | tr '\n' ';')] to $BASE: a production row is GET or HEAD, or exactly POST /app/login or POST /app/verify; any other must be a PROBE row" >&2
+  exit 2
+fi
+ROWS=$(printf '%s\n' "$TABLE" | grep '|' | grep -cvE '^PROBE ')
+PROBES=$(printf '%s\n' "$TABLE" | grep '|' | grep -cE '^PROBE ')
 attempt=0
 while :; do
   attempt=$((attempt + 1))
@@ -235,5 +295,5 @@ while :; do
 done
 
 sed 's/;/; /g' "$TMP/table"
-echo "smoke-https: $ROWS rows, $failed failed, attempt $attempt of $TRIES, deadline ${DEADLINE}s ($BASE)"
+echo "smoke-https: $ROWS rows, $failed failed, $PROBES PROBE rows left to caddy-route-probe.sh, attempt $attempt of $TRIES, deadline ${DEADLINE}s ($BASE)"
 [ "$failed" = 0 ]
