@@ -208,6 +208,18 @@ export const UPLOAD_REFUSED = Object.fromEntries(
   Object.entries(REFUSALS).map(([name, answer]) => [`upload-refused-${name}`, addSheet("owner-one", answer)]),
 );
 
+/**
+ * The health tab (W9) on /app/health: one patient, no unseen NOW, and the labs and medicines bodies HealthApiContractTest
+ * wrote (fixtures/api/health/), by case name.
+ */
+const health = (labs, medicines = "medicines-latest", me = "me/one-patient.json") => ({
+  ...NO_NOW,
+  "GET /app/api/me": me,
+  "PUT /app/api/active-patient": NO_CONTENT,
+  "GET /app/api/patients/{id}/labs": `health/${labs}.json`,
+  "GET /app/api/patients/{id}/medicines": `health/${medicines}.json`,
+});
+
 /** The network dies under the request (browser-api.ts aborts it after the guard, java-stub.mjs drops the socket). */
 const CUT = { abort: "connectionreset" };
 /** The network goes quiet under the request: never answered, never reset (browser-api.ts leaves the route open). */
@@ -455,6 +467,20 @@ export const SCENARIOS = {
   // A sheet whose every press is refused, opened for Ma from a retake link (Java chose her: owner-two-asked).
   "upload-owner-two-asked-refused": addSheet("owner-two-asked", REFUSALS.UNSUPPORTED_FILE, "me/two-owned.json"),
   ...UPLOAD_REFUSED,
+  // The health tab (W9) on /app/health. Lab values (a trend, two one-reading sentences) with the latest prescription; no
+  // lab value and no prescription yet; one name in two units; blood pressure's pairs; readings printed as bounds (listed,
+  // never drawn); the newest prescription read with nothing on it; a newer one still being read; and a preview family
+  // (on /app/preview/health). The longest twin: the longest name (me/long-name.json) over labs-some and medicines-latest.
+  "health-some": health("labs-some"),
+  "health-none": health("labs-none", "medicines-none"),
+  "health-two-units": health("labs-two-units"),
+  "health-bp": health("bp"),
+  "health-bounds": health("labs-non-numeric"),
+  "health-empty-latest": health("labs-some", "medicines-empty-latest"),
+  "health-newer-unread": health("labs-some", "medicines-newer-unread"),
+  "health-two-no-choice": health("labs-some", "medicines-latest", "me/two-patients.json"),
+  "health-preview": health("labs-some", "medicines-latest", "me/preview-on.json"),
+  "health-long": health("labs-some", "medicines-latest", "me/long-name.json"),
 };
 
 export { UNAUTHENTICATED };
@@ -467,6 +493,7 @@ export const PAGE_SCENARIOS = {
   "/app/home": "chat-default",
   "/app/family": "family-owner",
   "/app/patients/{id}/profile": "family-owner",
+  "/app/health": "health-some",
 };
 
 /** The path a dynamic NEXT_PAGES entry is measured at, its id read from the fixture its scenario serves (budget.ts). */
@@ -514,6 +541,7 @@ export const PAGE_MARKERS = {
   "/app/home": 'data-page="chat"',
   "/app/family": 'class="family-account"',
   "/app/patients/{id}/profile": `data-patient-card="${familyPatientId("family/owner.json")}"`,
+  "/app/health": 'data-page="health"',
 };
 
 /** Each routed scenario's longest twin (`me/long-name.json` and the area's longest fixture), per screen. */
@@ -530,6 +558,8 @@ export const LONGEST = {
   // share member), each with its own `me`, so the card headings are measured, not only the shell's toolbar.
   "family-owner": "family-owner-long",
   "family-share-member": "family-share-member-long",
+  // The health tab (W9): the longest name in the shell over the lab values and the latest prescription's lines.
+  "health-some": "health-long",
 };
 
 /** The `{status, body}` a scenario value answers first: a fixture file read, a literal as it is. */

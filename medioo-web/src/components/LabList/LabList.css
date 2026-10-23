@@ -1,0 +1,116 @@
+/* The lab values of the health screen (LabList.tsx; phone.html scene `health`, its labs list and trend sheet): each
+   series a rounded group headed by its printed name and unit, holding the trend chart, the one-reading sentence, or
+   the readings as written. A status is its chip (shape and word), never a colour of the row, and nothing here paints
+   the NOW red: the critical chip's own colours are StatusChip's. Every size is a token. */
+.lab-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.lab-list__series {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4);
+  /* The page and the group are the same surface in light (bg and bg3), so the group draws its own hairline edge. */
+  border: 1px solid var(--sep);
+  border-radius: var(--radius-md);
+  background: var(--bg3);
+}
+.lab-list__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 700;
+  line-height: 1.35;
+}
+.lab-list__name {
+  min-width: 0;
+  font-family: var(--font-sys);
+  overflow-wrap: anywhere;
+}
+.lab-list__unit {
+  color: var(--label2);
+  font-family: var(--font-sys);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.lab-list__once-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+}
+.lab-list__once {
+  min-width: 0;
+  font-size: var(--text-md);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.lab-list__readings {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lab-list__reading,
+.lab-list__pair {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--sep);
+}
+.lab-list__reading:first-child,
+.lab-list__pair:first-child {
+  border-top: 0;
+}
+.lab-list__date {
+  flex: 1 1 10em;
+  min-width: 0;
+  color: var(--label2);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.lab-list__printed {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  min-width: 0;
+  font-family: var(--font-sys);
+  overflow-wrap: anywhere;
+}
+.lab-list__value {
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+.lab-list__reading-unit,
+.lab-list__slash {
+  color: var(--label2);
+  font-size: var(--text-sm);
+}
+.lab-list__chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.lab-list__none {
+  margin: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--sep);
+  border-radius: var(--radius-md);
+  background: var(--bg3);
+  font-size: var(--text-lg);
+  line-height: 1.5;
+}

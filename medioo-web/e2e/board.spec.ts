@@ -324,6 +324,35 @@ BOARD_SCENES.push(
   family("profile", "family-owner", { route: `/app/patients/${familyPatientId("family/owner.json", 1)}/profile` }),
 );
 
+// The health tab (plan W9): lab values, none yet, one name in two units, blood pressure, a marker read once, the latest
+// prescription's lines, the newest one read with nothing on it, a newer one still being read, and no prescription yet,
+// beside phone.html `health` with its labs list or its medicines sheet open (the prototype's own controls).
+const protoOpens = (action: "labs" | "meds") => async (proto: Page) => {
+  await proto.locator(`[data-action="${action}"]`).first().click();
+};
+const MEDICINES = "section[aria-labelledby=health-medicines]";
+const health = (state: string, scenario: string, proto: "labs" | "meds", element?: string): Scene => ({
+  screen: "health",
+  state,
+  route: "/app/health",
+  scenario,
+  proto: { file: "phone.html", scene: "health", act: protoOpens(proto) },
+  element,
+});
+BOARD_SCENES.push(
+  health("labs-some", "health-some", "labs"),
+  health("labs-none", "health-none", "labs"),
+  health("two-units", "health-two-units", "labs"),
+  health("blood-pressure", "health-bp", "labs"),
+  health("readings-as-bounds", "health-bounds", "labs"),
+  health("one-reading", "health-some", "labs", "[data-lab-series][data-canonical=potassium]"),
+  health("medicines-latest", "health-some", "meds", MEDICINES),
+  health("latest-with-none", "health-empty-latest", "meds", MEDICINES),
+  health("newer-unread", "health-newer-unread", "meds", MEDICINES),
+  health("no-prescription", "health-none", "meds", MEDICINES),
+  health("long-name", "health-long", "labs"),
+);
+
 // TrendChart's catalog states (plan RANGE-web, PO ruling R3): each one alone, in each language, beside the approved
 // prototype's HbA1c trend sheet. The catalog's Sheet/open states open as modals on hydration; they are closed first so
 // their scrim does not grey the chart.

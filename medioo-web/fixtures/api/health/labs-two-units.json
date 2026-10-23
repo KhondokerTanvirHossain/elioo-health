@@ -1,0 +1,96 @@
+{
+  "_meta": {
+    "generated_by": "baymax HealthApiContractTest",
+    "source": "GET /app/api/patients/{id}/labs over the case labs-two-units"
+  },
+  "body": {
+    "bp": {
+      "points": [ ]
+    },
+    "series": [
+      {
+        "canonical_name": "fasting_glucose",
+        "name": "Fasting Glucose",
+        "points": [
+          {
+            "chip_key": "value.chip.outside.high",
+            "crop": {
+              "src": "/app/documents/b6b6b6b6-0000-4000-8000-0000000000d1/image?key=f%2Fp%2Fb6b6b6b6-0000-4000-8000-0000000000d1%2Fcrop-v91.jpg"
+            },
+            "date": "2026-10-12",
+            "date_is_upload_day": false,
+            "date_uncertain": false,
+            "document_id": "b6b6b6b6-0000-4000-8000-0000000000d1",
+            "kind": "outside",
+            "observation_id": "b6b6b6b6-0000-4000-8000-000000000191",
+            "ref_high": 6.1,
+            "ref_low": 3.9,
+            "ref_text": "3.9–6.1",
+            "side": "high",
+            "value": "6.4"
+          },
+          {
+            "chip_key": "value.chip.inside",
+            "crop": {
+              "src": "/app/documents/b6b6b6b6-0000-4000-8000-0000000000d2/image?key=f%2Fp%2Fb6b6b6b6-0000-4000-8000-0000000000d2%2Fcrop-v92.jpg"
+            },
+            "date": "2026-08-03",
+            "date_is_upload_day": false,
+            "date_uncertain": false,
+            "document_id": "b6b6b6b6-0000-4000-8000-0000000000d2",
+            "kind": "inside",
+            "observation_id": "b6b6b6b6-0000-4000-8000-000000000192",
+            "ref_high": 6.1,
+            "ref_low": 3.9,
+            "ref_text": "3.9–6.1",
+            "side": null,
+            "value": "5.2"
+          }
+        ],
+        "unit": "mmol/L"
+      },
+      {
+        "canonical_name": "fasting_glucose",
+        "name": "Fasting Glucose",
+        "points": [
+          {
+            "chip_key": "value.chip.outside.high",
+            "crop": {
+              "src": "/app/documents/b6b6b6b6-0000-4000-8000-0000000000d3/image?key=f%2Fp%2Fb6b6b6b6-0000-4000-8000-0000000000d3%2Fcrop-v93.jpg"
+            },
+            "date": "2026-06-20",
+            "date_is_upload_day": false,
+            "date_uncertain": false,
+            "document_id": "b6b6b6b6-0000-4000-8000-0000000000d3",
+            "kind": "outside",
+            "observation_id": "b6b6b6b6-0000-4000-8000-000000000193",
+            "ref_high": 110,
+            "ref_low": 70,
+            "ref_text": "70–110",
+            "side": "high",
+            "value": "126"
+          },
+          {
+            "chip_key": "value.chip.inside",
+            "crop": {
+              "src": "/app/documents/b6b6b6b6-0000-4000-8000-0000000000d6/image?key=f%2Fp%2Fb6b6b6b6-0000-4000-8000-0000000000d6%2Fcrop-v94.jpg"
+            },
+            "date": "2026-03-02",
+            "date_is_upload_day": false,
+            "date_uncertain": false,
+            "document_id": "b6b6b6b6-0000-4000-8000-0000000000d6",
+            "kind": "inside",
+            "observation_id": "b6b6b6b6-0000-4000-8000-000000000194",
+            "ref_high": 110,
+            "ref_low": 70,
+            "ref_text": "70–110",
+            "side": null,
+            "value": "98"
+          }
+        ],
+        "unit": "mg/dL"
+      }
+    ]
+  },
+  "status": 200
+}

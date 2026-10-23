@@ -34,7 +34,15 @@ export function previewPath(path: string): string {
  * the catalog-only pages, so a page cannot be added without being measured. A dynamic segment is written `{name}`, as
  * JAVA_PAGES and app-routes.txt write it (the manifest's `[name]`, read as `{name}` by the built test).
  */
-export const NEXT_PAGES: readonly string[] = ["/app", "/app/verify", "/app/add", "/app/home", "/app/family", "/app/patients/{id}/profile"];
+export const NEXT_PAGES: readonly string[] = [
+  "/app",
+  "/app/verify",
+  "/app/add",
+  "/app/home",
+  "/app/family",
+  "/app/patients/{id}/profile",
+  "/app/health",
+];
 
 /** The `GET /app…` page patterns Java serves, as docs/infra/app-routes.txt lists them (routes.test.ts). */
 export const JAVA_PAGES: readonly string[] = [

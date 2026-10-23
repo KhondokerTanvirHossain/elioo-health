@@ -15,41 +15,33 @@ const links = (container: HTMLElement) => [...container.querySelectorAll("a")];
 
 describe("TabBar", () => {
   it("theHealthTabIsAbsentUntilItsRouteIsReachable", async () => {
-    // Today: Caddy sends /app/health nowhere and this build serves no such page, so the health tab is not a link to a 404.
+    // This build serves /app/health (W9), and Caddy does not send it to Next until F9: outside the preview the tab
+    // would be a link to Java's 404, so it is not drawn.
+    expect(NEXT_PAGES).toContain("/app/health");
     expect(FLIPPED).not.toContain("/app/health");
-    expect(NEXT_PAGES).not.toContain("/app/health");
     const plain = render(<TabBar lang="bn" preview={false} current="chat" />);
     expect(links(plain.container).map((a) => a.getAttribute("href"))).toEqual(["/app/home", "/app/timeline", "/app/family"]);
     cleanup();
+    // A preview page: the chat (W5), health (W9) and family (W10) pages are this build's, so their tabs stay inside the
+    // preview; the papers tab is Java's page.
     const preview = render(<TabBar lang="bn" preview current="chat" />);
-    // The chat page is this build's (W5): on a preview page its tab stays inside the preview.
-    // W10: this build serves /app/family, so on a preview page the family tab stays inside the preview.
-    expect(NEXT_PAGES).toContain("/app/family");
-    expect(links(preview.container).map((a) => a.getAttribute("href")), "preview, before W9").toEqual([
-      "/app/preview/home",
-      "/app/timeline",
-      "/app/preview/family",
-    ]);
+    const hrefs = links(preview.container).map((a) => a.getAttribute("href"));
+    expect(hrefs, "preview, after W9").toEqual(["/app/preview/home", "/app/timeline", "/app/preview/health", "/app/preview/family"]);
     cleanup();
 
-    // Once this build serves /app/health (W9), a preview page shows the tab, inside the preview. The lists are the
-    // real reachable() and href() over NEXT_PAGES plus /app/health (pathsFor), not a stand-in for them.
+    // Once F9 sends /app/health to Next, the tab is drawn outside the preview too. The lists are the real reachable()
+    // and href() over FLIPPED plus /app/health (pathsFor), not a stand-in for them.
     vi.resetModules();
     vi.doMock("@/routing/paths", async (importOriginal) => {
       const real = await importOriginal<typeof import("@/routing/paths")>();
       const { FLIPPED: flipped } = await import("@/routing/flipped");
-      const next = [...real.NEXT_PAGES, "/app/health"];
-      return { ...real, NEXT_PAGES: next, ...real.pathsFor({ next, java: real.JAVA_PAGES, flipped }) };
+      return { ...real, ...real.pathsFor({ next: real.NEXT_PAGES, java: real.JAVA_PAGES, flipped: [...flipped, "/app/health"] }) };
     });
-    const { TabBar: WithHealth } = await import("./TabBar");
-    const later = render(<WithHealth lang="bn" preview current="chat" />);
-    const hrefs = links(later.container).map((a) => a.getAttribute("href"));
-    expect(hrefs).toHaveLength(4);
-    expect(hrefs[2], "the health tab, third as in the prototype").toBe("/app/preview/health");
-    cleanup();
-    // ...and still not outside the preview, where Caddy would send /app/health to Java's 404.
-    const outside = render(<WithHealth lang="bn" preview={false} current="chat" />);
-    expect(links(outside.container).map((a) => a.getAttribute("href"))).toEqual(["/app/home", "/app/timeline", "/app/family"]);
+    const { TabBar: Flipped } = await import("./TabBar");
+    const later = render(<Flipped lang="bn" preview={false} current="health" />);
+    const after = links(later.container);
+    expect(after.map((a) => a.getAttribute("href"))).toEqual(["/app/home", "/app/timeline", "/app/health", "/app/family"]);
+    expect(after[2]!.getAttribute("aria-current"), "the health tab, third as in the prototype, is this page").toBe("page");
   });
 
   it("everyTabSaysItsWord", () => {

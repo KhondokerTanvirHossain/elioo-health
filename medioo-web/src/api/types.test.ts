@@ -28,6 +28,11 @@ import labsNonNumeric from "../../fixtures/api/health/labs-non-numeric.json";
 import labsNone from "../../fixtures/api/health/labs-none.json";
 import labsPrintedRange from "../../fixtures/api/health/labs-printed-range.json";
 import labsSome from "../../fixtures/api/health/labs-some.json";
+import labsTwoUnits from "../../fixtures/api/health/labs-two-units.json";
+import medicinesEmptyLatest from "../../fixtures/api/health/medicines-empty-latest.json";
+import medicinesLatest from "../../fixtures/api/health/medicines-latest.json";
+import medicinesNewerUnread from "../../fixtures/api/health/medicines-newer-unread.json";
+import medicinesNone from "../../fixtures/api/health/medicines-none.json";
 import labsWithUnknown from "../../fixtures/api/health/labs-with-unknown.json";
 // B1's generated GET /app/api/me bodies (baymax MeApiContractTest), plan W4: the shell reads every field it renders here.
 import meLongName from "../../fixtures/api/me/long-name.json";
@@ -98,8 +103,10 @@ import {
   type Json,
   type LabSeriesJson,
   type LabsJson,
+  type MedicinesJson,
   type MeJson,
   type MePatient,
+  type PrescribedMedicineJson,
   type NowBannerDocumentJson,
   type NowBannerJson,
   type NowSeenJson,
@@ -344,11 +351,20 @@ const keyListsAreTheTypes: [
   Equal<(typeof PAIR_KEYS)[number], keyof BpPointJson>,
 ] = [true, true, true, true, true, true, true, true];
 
+const MEDICINES_KEYS = ["document_id", "heading_key", "medicines", "newer_document_id", "newer_prescription_not_read"] as const;
+const MEDICINES_DATE_KEYS = ["date", "date_is_upload_day", "date_uncertain"] as const;
+const MEDICINE_LINE_KEYS = ["crop", "dose_text", "duration_text", "frequency_text", "name", "timing_text"] as const;
+const medicinesKeyListsAreTheType: [
+  Equal<(typeof MEDICINES_KEYS)[number] | (typeof MEDICINES_DATE_KEYS)[number], keyof MedicinesJson>,
+  Equal<(typeof MEDICINE_LINE_KEYS)[number], keyof PrescribedMedicineJson>,
+] = [true, true];
+
 const keys = (o: object) => Object.keys(o).sort();
 
 describe("the API types are the generated fixtures", () => {
   it("everyCalendarFixtureIsACalendarJson", () => {
     expect(keyListsAreTheTypes.every(Boolean)).toBe(true);
+    expect(medicinesKeyListsAreTheType.every(Boolean)).toBe(true);
     const calendars: Array<[string, CalendarJson]> = [
       ["busy", busy.body],
       ["crowded", crowded.body],
@@ -386,6 +402,7 @@ describe("the API types are the generated fixtures", () => {
       ["labs-with-unknown", labsWithUnknown.body],
       ["labs-non-numeric", labsNonNumeric.body],
       ["labs-printed-range", labsPrintedRange.body],
+      ["labs-two-units", labsTwoUnits.body],
       ["bp", bp.body],
     ];
     // Every committed labs fixture is assigned above, so a case B6 or W9 adds fails here until it is listed.
@@ -423,6 +440,35 @@ describe("the API types are the generated fixtures", () => {
       if (p.ref_low !== null && p.ref_high !== null) expect(p.ref_low, `${id}: low below high`).toBeLessThan(p.ref_high);
       expect(bandAgreesWithChip(p), `${id}: a band that contradicts the ${p.kind} chip is never sent`).toBe(true);
     }
+  });
+
+  it("everyMedicinesFixtureIsAMedicinesJson", () => {
+    // Each assignment is the type check (heading_key widened by the JSON import, as every *_key is).
+    const bodies: Array<[string, Json<MedicinesJson>]> = [
+      ["medicines-latest", medicinesLatest.body],
+      ["medicines-empty-latest", medicinesEmptyLatest.body],
+      ["medicines-newer-unread", medicinesNewerUnread.body],
+      ["medicines-none", medicinesNone.body],
+    ];
+    // Every committed medicines fixture is assigned above, so a case B6 or W9 adds fails here until it is listed.
+    expect(
+      readdirSync(join(fixtures, "health"))
+        .filter((f) => f.startsWith("medicines-"))
+        .sort(),
+    ).toEqual(bodies.map(([name]) => `${name}.json`).sort());
+    let lines = 0;
+    for (const [name, m] of bodies) {
+      const dated = m.document_id !== null;
+      expect(keys(m), name).toEqual(dated ? [...MEDICINES_KEYS, ...MEDICINES_DATE_KEYS].sort() : [...MEDICINES_KEYS]);
+      expect(t("bn", m.heading_key as CopyKey), `${name} heading`).not.toBe("");
+      for (const line of m.medicines as PrescribedMedicineJson[]) {
+        // Only written fields and the crop: a field the line was not written with is absent, never null or derived.
+        for (const k of Object.keys(line)) expect([...MEDICINE_LINE_KEYS], `${name} ${k}`).toContain(k);
+        expect(keys(line.crop), `${name} crop`).toEqual(["src"]);
+        lines++;
+      }
+    }
+    expect(lines, "medicine lines walked").toBeGreaterThan(0);
   });
 
   it("theLabsPrintedRangeFixtureHoldsEveryShapeOfAPrintedRange", () => {

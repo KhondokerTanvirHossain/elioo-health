@@ -302,6 +302,37 @@ export type BpPointJson = {
 /** `GET /app/api/patients/{id}/labs` (B6). */
 export type LabsJson = { series: LabSeriesJson[]; bp: { points: BpPointJson[] } };
 
+/**
+ * One line of the latest prescription (HealthJson.medicine): only the fields the line was written with
+ * (PaperDisplay.MEDICINE_FIELDS; a field the paper does not carry is absent) and its crop's href. Never an action, a
+ * purpose, a status or anything derived.
+ */
+export type PrescribedMedicineJson = {
+  name?: string;
+  dose_text?: string;
+  frequency_text?: string;
+  timing_text?: string;
+  duration_text?: string;
+  crop: ImageJson;
+};
+
+/**
+ * `GET /app/api/patients/{id}/medicines` (B6; Q3, decision 9): the newest prescription's medicines as written, under
+ * `heading_key` with its date, never "current". `document_id` null: no prescription read yet, and then no date fields.
+ * An empty `medicines` beside a document is that prescription, dated and empty: never an older list in its place.
+ * `newer_prescription_not_read`: a newer prescription is still being read (`newer_document_id`).
+ */
+export type MedicinesJson = {
+  heading_key: CopyKey;
+  document_id: string | null;
+  date?: string;
+  date_is_upload_day?: boolean;
+  date_uncertain?: boolean;
+  medicines: PrescribedMedicineJson[];
+  newer_prescription_not_read: boolean;
+  newer_document_id: string | null;
+};
+
 // ---- GET /app/api/upload-options, POST /app/api/uploads (UploadApiHandler, B4b; plan W7) -----------------------------
 
 /** A patient on the add sheet: PatientJson's fields, then the name forms in the viewer's language (UiCopy.poss/obj). */
