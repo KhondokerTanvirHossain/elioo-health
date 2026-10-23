@@ -22,6 +22,7 @@ import com.elioo.baymax.outbound.application.port.in.ExplainDocumentUseCase;
 import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
 import com.elioo.baymax.storage.domain.ObjectKind;
 import com.elioo.baymax.storage.domain.StoredObject;
+import com.elioo.baymax.testsupport.LogCapture;
 import com.elioo.baymax.testsupport.LoggedText;
 import com.elioo.baymax.testsupport.TryDocuments;
 import com.elioo.baymax.testsupport.UploadRefusalSweep;
@@ -140,7 +141,7 @@ class TryDocumentsThroughTheWebTest {
         ArgumentCaptor<byte[]> page = ArgumentCaptor.forClass(byte[].class);
         verify(storage).storePage(eq(family), eq(ma.id()), any(), eq(1), page.capture());
         assertThat(page.getValue()).isEqualTo(t1);   // a JPEG is passed through, never re-compressed (PageRenderer)
-        List<String> info = LoggedText.atInfoOrAbove(logged.list);   // message and attached throwable chain
+        List<String> info = LoggedText.atInfoOrAbove(LogCapture.events(logged));   // message and attached throwable chain
         assertThat(info).as("the upload's own INFO line was captured").anyMatch(m -> m.startsWith("[baymax] web upload documentId="));
         assertThat(info).noneMatch(m -> m.contains("Rokeya"));
     }
@@ -162,7 +163,7 @@ class TryDocumentsThroughTheWebTest {
         assertThat(html).contains("এই ধরনের ফাইল এখনো খুলতে পারি না। কাগজের ছবি বা PDF পাঠান।")
                 .doesNotContain("could not read").doesNotContain("letter").doesNotContain("JPEG, PNG or PDF");
         // the refusal's own message names the file ("could not read t6-letter.docx; …"): the likeliest leak is here
-        List<String> info = LoggedText.atInfoOrAbove(logged.list);
+        List<String> info = LoggedText.atInfoOrAbove(LogCapture.events(logged));
         assertThat(info).as("the refusal's own INFO line was captured")
                 .anyMatch(m -> m.startsWith("[baymax] web upload refused reason=unsupported_image status=400"));
         assertThat(info).noneMatch(m -> m.contains("t6-letter") || m.contains("could not read"));

@@ -18,6 +18,7 @@ import com.elioo.baymax.outbound.domain.OutboundMessage;
 import com.elioo.baymax.storage.application.port.out.StoragePort;
 import com.elioo.baymax.storage.domain.StorageKeys;
 import com.elioo.baymax.testsupport.DeletionSweep;
+import com.elioo.baymax.testsupport.LogCapture;
 import com.elioo.baymax.testsupport.PaintedPaper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -221,7 +222,7 @@ class PaperDeleteApiTest {
                 guardLog.detachAppender(guard);
                 guardLog.setLevel(guardLevel);
             }
-            deleted.expectStatus().value(status -> assertThat(status).as("the delete; the guard's cause: %s", guard.list.stream()
+            deleted.expectStatus().value(status -> assertThat(status).as("the delete; the guard's cause: %s", LogCapture.events(guard).stream()
                             .map(com.elioo.baymax.testsupport.LoggedText::of).toList()).isEqualTo(200))
                     .expectBody()
                     .jsonPath("$.objects_deleted").value(n -> assertThat(((Number) n).intValue()).isGreaterThanOrEqualTo(2))
@@ -683,9 +684,8 @@ class PaperDeleteApiTest {
     }
 
     private List<String> chainLines() {
-        synchronized (chain.list) {
-            return chain.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
-        }
+        // not synchronized (chain.list): doAppend holds the appender's monitor, not the list's, so that lock guarded nothing
+        return LogCapture.events(chain).stream().map(ILoggingEvent::getFormattedMessage).toList();
     }
 
     private static String deleteToken(WebTestClient client, String session, UUID document) {

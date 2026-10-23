@@ -54,6 +54,8 @@ dependencies {
     testImplementation 'io.projectreactor:reactor-test'
     testImplementation 'org.testcontainers:junit-jupiter:1.19.7'
     testImplementation 'org.testcontainers:postgresql:1.19.7'
+    // LogCapture: the one way a test reads a ListAppender (baymax's test fixtures)
+    testImplementation testFixtures(project(':baymax'))
 }
 
 // Spring Boot configuration

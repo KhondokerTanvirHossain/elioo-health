@@ -7,6 +7,7 @@ import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.RecoveryReport;
 import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
 import com.elioo.baymax.storage.domain.StorageKeys;
+import com.elioo.baymax.testsupport.LogCapture;
 import com.elioo.healthcare.llm.config.LlmAutoConfiguration;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -433,7 +434,7 @@ class DocumentRecoveryAcceptanceTest {
      */
     private static List<String> failureDetails(
             ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> logged, UUID documentId) {
-        return logged.list.stream()
+        return LogCapture.events(logged).stream()
                 .filter(e -> e.getFormattedMessage().contains("extraction failure detail")
                         && e.getFormattedMessage().contains(documentId.toString()))
                 .map(e -> {

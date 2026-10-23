@@ -11,6 +11,7 @@ import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
+import com.elioo.baymax.testsupport.LogCapture;
 import com.elioo.baymax.testsupport.LoggedText;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.adapter.in.ui.UiCopy;
@@ -423,6 +424,6 @@ class AppApiGuardTest {
         } finally {
             logger.detachAppender(appender);
         }
-        return appender.list.stream().filter(e -> e.getLevel() == Level.ERROR).toList();
+        return LogCapture.events(appender).stream().filter(e -> e.getLevel() == Level.ERROR).toList();
     }
 }

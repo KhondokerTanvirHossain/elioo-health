@@ -24,6 +24,7 @@ import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.storage.application.port.out.StoragePort;
 import com.elioo.baymax.storage.domain.StorageKeys;
 import com.elioo.baymax.testsupport.DeletionSweep;
+import com.elioo.baymax.testsupport.LogCapture;
 import com.elioo.baymax.testsupport.PaintedPaper;
 import com.elioo.baymax.testsupport.PaintedPaper.Hold;
 import com.elioo.baymax.wa.WaFixtures;
@@ -221,7 +222,7 @@ class WebOnlyJourneyAcceptanceTest {
             String login = cookie(web.post().uri("/app/login").contentType(MediaType.APPLICATION_FORM_URLENCODED)
                     .body(BodyInserters.fromFormData("whatsapp_number", "01700000731").with("confirmed", "1")).exchange()
                     .expectStatus().isSeeOther().expectHeader().valueEquals(HttpHeaders.LOCATION, "/app/verify"), "baymax_login");
-            String code = codes.list.stream().map(ILoggingEvent::getFormattedMessage).filter(m -> m.contains("otp fallback"))
+            String code = LogCapture.events(codes).stream().map(ILoggingEvent::getFormattedMessage).filter(m -> m.contains("otp fallback"))
                     .map(m -> m.replaceAll(".*code=([0-9]{6}).*", "$1")).findFirst()
                     .orElseThrow(() -> new AssertionError("no code in the log fallback"));
             assertThat(code).matches("[0-9]{6}");
@@ -520,7 +521,7 @@ class WebOnlyJourneyAcceptanceTest {
                     String login = cookie(web.post().uri("/app/login").contentType(MediaType.APPLICATION_FORM_URLENCODED)
                             .body(BodyInserters.fromFormData("whatsapp_number", "0" + HELD_NUMBER.substring(4)).with("confirmed", "1"))
                             .exchange().expectStatus().isSeeOther(), "baymax_login");
-                    String code = codes.list.stream().map(ILoggingEvent::getFormattedMessage).filter(m -> m.contains("otp fallback"))
+                    String code = LogCapture.events(codes).stream().map(ILoggingEvent::getFormattedMessage).filter(m -> m.contains("otp fallback"))
                             .map(m -> m.replaceAll(".*code=([0-9]{6}).*", "$1")).findFirst()
                             .orElseThrow(() -> new AssertionError("no code in the log fallback"));
                     String session = enterCode(web, login, code);
@@ -709,7 +710,7 @@ class WebOnlyJourneyAcceptanceTest {
         verify(wa, atLeastOnce()).sendText(eq(WA_NUMBER), body.capture());
         Matcher six = Pattern.compile("(?<![0-9])([0-9]{6})(?![0-9])").matcher(body.getAllValues().get(0));
         assertThat(six.find()).as("a six-digit code in the message").isTrue();
-        assertThat(codes.list).as("the code never went to the log fallback")
+        assertThat(LogCapture.events(codes)).as("the code never went to the log fallback")
                 .noneMatch(e -> e.getFormattedMessage().contains("otp fallback"));
         UiCopy copy = context.getBean(UiCopy.class);
         assertThat(web.get().uri("/app/verify").cookie("baymax_login", login).exchange().expectStatus().isOk()

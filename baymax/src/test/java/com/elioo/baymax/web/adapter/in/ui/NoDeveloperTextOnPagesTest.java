@@ -6,6 +6,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.common.error.FreeTierExceededException;
+import com.elioo.baymax.testsupport.LogCapture;
 import com.elioo.baymax.testsupport.LoggedText;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
@@ -129,7 +130,7 @@ class NoDeveloperTextOnPagesTest {
             String html = kit.client.get().uri("/app/home").cookie("baymax_session", "tok").exchange()
                     .expectStatus().is5xxServerError().expectBody(String.class).returnResult().getResponseBody();
             assertThat(html).doesNotContain("Demoprol");
-            List<String> lines = LoggedText.atInfoOrAbove(logged.list);
+            List<String> lines = LoggedText.atInfoOrAbove(LogCapture.events(logged));
             assertThat(lines).anyMatch(l -> l.contains("unhandled error on GET /app/home error=IllegalStateException"));
             assertThat(lines).noneMatch(l -> l.contains("Demoprol"));
         } finally {

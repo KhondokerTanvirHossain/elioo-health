@@ -11,6 +11,7 @@ import com.elioo.baymax.testsupport.FamilySweep;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
+import com.elioo.baymax.testsupport.LogCapture;
 import reactor.core.publisher.Mono;
 import com.elioo.baymax.wa.application.port.out.InboundMessagePort;
 import com.elioo.baymax.wa.domain.InboundMessage;
@@ -111,7 +112,7 @@ class FamilyDeletionAcceptanceTest {
 
     /** What the server logged at WARN or above: a failed delete's red names the constraint, not just "500". */
     private String serverLog() {
-        return logged.list.stream().filter(e -> e.getLevel().isGreaterOrEqual(ch.qos.logback.classic.Level.WARN))
+        return LogCapture.events(logged).stream().filter(e -> e.getLevel().isGreaterOrEqual(ch.qos.logback.classic.Level.WARN))
                 .filter(e -> e.getLoggerName().startsWith("com.elioo"))
                 .map(ILoggingEvent::getFormattedMessage).collect(Collectors.joining(" | "));
     }

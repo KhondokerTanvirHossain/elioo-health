@@ -3,6 +3,7 @@ package com.elioo.baymax.web.adapter.in.api;
 import com.elioo.baymax.nudge.application.port.in.NudgeOptOutUseCase;
 import com.elioo.baymax.nudge.application.port.out.NudgeDataPort;
 import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
+import com.elioo.baymax.testsupport.LogCapture;
 import com.elioo.baymax.web.application.port.in.ResultUseCase;
 import com.elioo.baymax.web.adapter.in.ui.UiCopy;
 import com.elioo.baymax.common.error.BaymaxException;
@@ -225,7 +226,7 @@ class UploadApiHandlerTest {
         } finally {
             root.detachAppender(logged);
         }
-        assertThat(logged.list).as("lines at ERROR").noneMatch(e -> e.getLevel().isGreaterOrEqual(Level.ERROR));
+        assertThat(LogCapture.events(logged)).as("lines at ERROR").noneMatch(e -> e.getLevel().isGreaterOrEqual(Level.ERROR));
         verify(uploads, never()).upload(any(), any(), any(), any(), any(), any());
     }
 

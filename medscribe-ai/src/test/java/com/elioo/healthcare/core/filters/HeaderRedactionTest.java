@@ -3,6 +3,7 @@ package com.elioo.healthcare.core.filters;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.elioo.baymax.testsupport.LogCapture;
 import io.micrometer.tracing.Tracer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,7 +47,7 @@ class HeaderRedactionTest {
             ex.getResponse().getHeaders().add(HttpHeaders.SET_COOKIE, setCookie);
             return ex.getResponse().setComplete();
         }).block();
-        return logged.list.stream().map(ILoggingEvent::getFormattedMessage).collect(Collectors.joining("\n"));
+        return LogCapture.events(logged).stream().map(ILoggingEvent::getFormattedMessage).collect(Collectors.joining("\n"));
     }
 
     @Test

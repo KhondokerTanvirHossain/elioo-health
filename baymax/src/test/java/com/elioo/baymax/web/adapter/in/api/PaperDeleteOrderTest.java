@@ -14,6 +14,7 @@ import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
 import com.elioo.baymax.storage.application.port.out.StoragePort;
 import com.elioo.baymax.storage.domain.StorageKeys;
 import com.elioo.baymax.testsupport.DeletionSweep;
+import com.elioo.baymax.testsupport.LogCapture;
 import com.elioo.baymax.testsupport.PaintedPaper;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -152,7 +153,7 @@ class PaperDeleteOrderTest {
             try (Connection c = connect()) {
                 assertThat(DeletionSweep.tablesStillHolding(c, p.document)).as("tables still holding the paper").isEmpty();
             }
-            List<ILoggingEvent> errors = events.list.stream().filter(e -> e.getLevel() == Level.ERROR).toList();
+            List<ILoggingEvent> errors = LogCapture.events(events).stream().filter(e -> e.getLevel() == Level.ERROR).toList();
             assertThat(errors).as("ERROR events from the delete").hasSize(1);
             ILoggingEvent orphan = errors.get(0);
             assertThat(orphan.getFormattedMessage()).as("the orphan's marker").contains("orphaned_objects");
@@ -182,9 +183,9 @@ class PaperDeleteOrderTest {
             } finally {
                 storage.detachAppender(events);
             }
-            assertThat(events.list.stream().filter(e -> e.getLevel().isGreaterOrEqual(Level.WARN)).map(ILoggingEvent::getFormattedMessage))
+            assertThat(LogCapture.events(events).stream().filter(e -> e.getLevel().isGreaterOrEqual(Level.WARN)).map(ILoggingEvent::getFormattedMessage))
                     .as("WARN or worse from storage during a normal delete").isEmpty();
-            assertThat(events.list.stream().map(ILoggingEvent::getFormattedMessage))
+            assertThat(LogCapture.events(events).stream().map(ILoggingEvent::getFormattedMessage))
                     .as("the storage delete itself ran and logged (the appender saw the logger)").anyMatch(m -> m.contains("deleted prefix="));
         });
     }

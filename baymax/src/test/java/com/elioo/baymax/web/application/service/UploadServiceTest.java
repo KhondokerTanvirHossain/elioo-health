@@ -12,6 +12,7 @@ import com.elioo.baymax.healthrecord.domain.DocumentAllowance;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientAccess;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
+import com.elioo.baymax.testsupport.LogCapture;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
 import com.elioo.baymax.web.application.port.out.AuditPort;
 import com.elioo.baymax.web.domain.AuditEvent;
@@ -283,7 +284,7 @@ class UploadServiceTest {
             logger.detachAppender(events);
         }
         verify(documents, never()).linkRetake(any(), any());
-        List<ch.qos.logback.classic.spi.ILoggingEvent> lines = events.list.stream()
+        List<ch.qos.logback.classic.spi.ILoggingEvent> lines = LogCapture.events(events).stream()
                 .filter(e -> e.getLevel().isGreaterOrEqual(ch.qos.logback.classic.Level.INFO)).toList();
         // one line per press, said where the photo is taken unlinked (upload), not again by admit: two, INFO, no argument
         assertThat(lines).hasSize(2).allSatisfy(e -> {
@@ -326,7 +327,7 @@ class UploadServiceTest {
         verify(intake).accept(ma.id(), pages, "k-other01");
         verify(audit).record(argThat(e -> e.kind() == AuditEvent.Kind.DOCUMENT_UPLOAD && made.id().equals(e.documentId())));
         verify(documents, never()).linkRetake(any(), any());
-        List<ch.qos.logback.classic.spi.ILoggingEvent> lines = events.list.stream()
+        List<ch.qos.logback.classic.spi.ILoggingEvent> lines = LogCapture.events(events).stream()
                 .filter(e -> e.getLevel().isGreaterOrEqual(ch.qos.logback.classic.Level.INFO)).toList();
         assertThat(lines).hasSize(1).allSatisfy(e -> {
             assertThat(e.getLevel()).isEqualTo(ch.qos.logback.classic.Level.INFO);
@@ -412,8 +413,8 @@ class UploadServiceTest {
         } finally {
             logger.detachAppender(events);
         }
-        assertThat(events.list.stream().filter(e -> e.getLevel().isGreaterOrEqual(ch.qos.logback.classic.Level.WARN)).toList()).isEmpty();
-        assertThat(events.list.stream().filter(e -> e.getLevel() == ch.qos.logback.classic.Level.INFO).toList())
+        assertThat(LogCapture.events(events).stream().filter(e -> e.getLevel().isGreaterOrEqual(ch.qos.logback.classic.Level.WARN)).toList()).isEmpty();
+        assertThat(LogCapture.events(events).stream().filter(e -> e.getLevel() == ch.qos.logback.classic.Level.INFO).toList())
                 .singleElement().satisfies(i -> assertThat(i.getArgumentArray()).containsExactly(earlier.id(), other.id()));
         verify(audit, never()).record(any());
     }
@@ -445,7 +446,7 @@ class UploadServiceTest {
         }
         verify(intake).accept(ma.id(), pages, null);
         verify(audit).record(argThat(e -> e.kind() == AuditEvent.Kind.DOCUMENT_UPLOAD && made.id().equals(e.documentId())));
-        List<ch.qos.logback.classic.spi.ILoggingEvent> warns = events.list.stream()
+        List<ch.qos.logback.classic.spi.ILoggingEvent> warns = LogCapture.events(events).stream()
                 .filter(e -> e.getLevel() == ch.qos.logback.classic.Level.WARN).toList();
         assertThat(warns).singleElement().satisfies(w -> {
             assertThat(w.getArgumentArray()).containsExactly(made.id(), retake.id());

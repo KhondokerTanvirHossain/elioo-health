@@ -4,6 +4,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.elioo.baymax.testsupport.LogCapture;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -40,9 +41,9 @@ class LogOtpDeliveryTest {
     void theFallbackLineAtInfoOrAboveNeverCarriesTheCode() {
         new LogOtpDelivery().deliver("+8801700000000", "b".repeat(64), CODE).block();
 
-        assertThat(logged.list).as("silence is not 'no leak': the fallback must say something at INFO or above")
+        assertThat(LogCapture.events(logged)).as("silence is not 'no leak': the fallback must say something at INFO or above")
                 .anySatisfy(e -> assertThat(e.getLevel().isGreaterOrEqual(Level.INFO)).isTrue());
-        for (ILoggingEvent e : logged.list) {
+        for (ILoggingEvent e : LogCapture.events(logged)) {
             if (e.getLevel().isGreaterOrEqual(Level.INFO)) {
                 // tokens, not a substring: the code must not BE a field, wherever it sits in the line
                 assertThat(e.getFormattedMessage().split("[^0-9A-Za-z]+"))

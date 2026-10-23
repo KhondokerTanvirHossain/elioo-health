@@ -5,6 +5,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
+import com.elioo.baymax.testsupport.LogCapture;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -67,7 +68,7 @@ class SignOutApiTest {
         logger.addAppender(appender);
         try {
             EntityExchangeResult<byte[]> r = request.get();
-            return new Answer(r, appender.list.stream().filter(e -> e.getLevel() == Level.INFO).map(ILoggingEvent::getFormattedMessage).toList());
+            return new Answer(r, LogCapture.events(appender).stream().filter(e -> e.getLevel() == Level.INFO).map(ILoggingEvent::getFormattedMessage).toList());
         } finally {
             logger.detachAppender(appender);
         }

@@ -5,6 +5,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.elioo.baymax.outbound.application.port.in.DocumentUrgencyUseCase;
+import com.elioo.baymax.testsupport.LogCapture;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -58,11 +59,11 @@ class UrgencySweepJobTest {
         StepVerifier.create(job.sweep("hourly")).verifyComplete();
 
         assertThat(lines(Level.ERROR)).containsExactly("[baymax] urgency sweep failed trigger=hourly error=IllegalStateException");
-        assertThat(logged.list).allSatisfy(e -> assertThat(e.getFormattedMessage()).doesNotContain("Potassium").doesNotContain("11.0"));
-        assertThat(logged.list).allSatisfy(e -> assertThat(e.getThrowableProxy()).isNull());
+        assertThat(LogCapture.events(logged)).allSatisfy(e -> assertThat(e.getFormattedMessage()).doesNotContain("Potassium").doesNotContain("11.0"));
+        assertThat(LogCapture.events(logged)).allSatisfy(e -> assertThat(e.getThrowableProxy()).isNull());
     }
 
     private List<String> lines(Level level) {
-        return logged.list.stream().filter(e -> e.getLevel() == level).map(ILoggingEvent::getFormattedMessage).toList();
+        return LogCapture.events(logged).stream().filter(e -> e.getLevel() == level).map(ILoggingEvent::getFormattedMessage).toList();
     }
 }

@@ -10,6 +10,7 @@ import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.outbound.domain.StoredUrgency;
 import com.elioo.baymax.outbound.domain.Urgency;
+import com.elioo.baymax.testsupport.LogCapture;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -161,7 +162,7 @@ class StoredUrgencyServiceTest {
 
         service.assessAndStore(d.id()).block();
 
-        List<String> lines = logged.list.stream().filter(e -> e.getLevel().isGreaterOrEqual(Level.INFO))
+        List<String> lines = LogCapture.events(logged).stream().filter(e -> e.getLevel().isGreaterOrEqual(Level.INFO))
                 .map(ILoggingEvent::getFormattedMessage).toList();
         assertThat(lines).anyMatch(l -> l.startsWith("[baymax] urgency stored documentId="));
         String line = lines.stream().filter(l -> l.startsWith("[baymax] urgency stored documentId=")).findFirst().orElseThrow();
@@ -187,7 +188,7 @@ class StoredUrgencyServiceTest {
         assertThat(stored.raised.get(1).reasons()).isEmpty();
         assertThat(after.level()).as("the service returns the stored level, not its own").isEqualTo(Urgency.NOW);
         assertThat(after.reasons()).containsExactly("value_critical:potassium|stopgap");
-        assertThat(logged.list.stream().map(ILoggingEvent::getFormattedMessage))
+        assertThat(LogCapture.events(logged).stream().map(ILoggingEvent::getFormattedMessage))
                 .anyMatch(l -> l.contains("documentId=" + d.id()) && l.contains("assessed=routine") && l.contains("stored=now"));
     }
     /**
@@ -219,13 +220,13 @@ class StoredUrgencyServiceTest {
                 "attempt:" + throwing.id(), "assess:" + throwing.id(),
                 "attempt:" + third.id(), "assess:" + third.id());
         assertThat(stored.rows).containsOnlyKeys(first.id(), third.id());
-        List<String> warns = logged.list.stream().filter(e -> e.getLevel() == Level.WARN)
+        List<String> warns = LogCapture.events(logged).stream().filter(e -> e.getLevel() == Level.WARN)
                 .map(ILoggingEvent::getFormattedMessage).toList();
         assertThat(warns).containsExactly("[baymax] urgency sweep skipped documentId=" + throwing.id() + " error=IllegalStateException");
-        assertThat(logged.list.stream().map(ILoggingEvent::getFormattedMessage))
+        assertThat(LogCapture.events(logged).stream().map(ILoggingEvent::getFormattedMessage))
                 .allSatisfy(l -> assertThat(l).doesNotContain("Ma Potassium").doesNotContain("11.0"));
         // an attached throwable prints its message (and the value in it) in the stack trace the formatted line hides
-        assertThat(logged.list).allSatisfy(e -> assertThat(e.getThrowableProxy()).as("no throwable on " + e.getFormattedMessage()).isNull());
+        assertThat(LogCapture.events(logged)).allSatisfy(e -> assertThat(e.getThrowableProxy()).as("no throwable on " + e.getFormattedMessage()).isNull());
     }
 
     /** The sweep judges past-due on the patient's day: it asks the port for the Dhaka date, not the UTC one. */
