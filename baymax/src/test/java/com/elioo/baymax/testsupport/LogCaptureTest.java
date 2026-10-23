@@ -3,21 +3,26 @@ package com.elioo.baymax.testsupport;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.AppenderBase;
 import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 
+import java.lang.reflect.Modifier;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import static java.util.concurrent.TimeUnit.SECONDS;
 
 /**
  * The one way a test reads a {@link ListAppender}. A reactor or bounded-elastic thread can still be inside
@@ -54,6 +59,7 @@ class LogCaptureTest {
      */
     @Test
     void readingWhileAnotherThreadStillLogsNeverThrows() throws Exception {
+        int overlapped = 0;
         for (int round = 0; round < 50; round++) {
             logger.detachAppender(appender);
             appender = new ListAppender<>();
@@ -76,11 +82,15 @@ class LogCaptureTest {
             }, "log-capture-writer");
             writer.start();
             try {
-                writing.await();
+                // bounded: a writer that dies before line 100 fails here, naming its error, instead of hanging CI
+                assertThat(writing.await(10, SECONDS)).as("writer started; its failure: %s", writerFailed.get()).isTrue();
                 while (writer.isAlive()) {
                     List<ILoggingEvent> seen = LogCapture.events(appender);
                     seen.stream().map(ILoggingEvent::getFormattedMessage).collect(Collectors.joining("\n"));
                     assertThat(seen).as("a snapshot never holds a hole").doesNotContainNull();
+                    if (seen.size() > 100 && seen.size() < 20_000) {
+                        overlapped++;   // taken mid-run: the writer had logged some lines and not yet all
+                    }
                 }
             } finally {
                 // a failed read must not leave the writer logging into the next test's appender
@@ -89,6 +99,56 @@ class LogCaptureTest {
             }
             assertThat(writerFailed.get()).as("the writer").isNull();
         }
+        // the emptiness guard: a writer that finishes before the first read makes every round vacuous
+        assertThat(overlapped).as("reads taken while the writer was still logging, across 50 rounds").isPositive();
+    }
+
+    /**
+     * The lock itself, deterministically. Another thread holds the appender's monitor, the one
+     * {@code AppenderBase.doAppend} takes for every line; {@code events} must wait for it. Reading the bare list, or
+     * copying it under the list's own monitor (which no writer takes), returns at once: both are the CME race, and the
+     * writer-thread test above passed 3 of 3 runs over the second form.
+     */
+    @Test
+    void theCopyWaitsForTheMonitorEveryAppendHolds() throws Exception {
+        assertThat(Modifier.isSynchronized(AppenderBase.class.getMethod("doAppend", Object.class).getModifiers()))
+                .as("logback's AppenderBase.doAppend is synchronized on the appender: the monitor LogCapture.events takes")
+                .isTrue();
+        logger.info("one");
+        CountDownLatch held = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        Thread holder = new Thread(() -> {
+            synchronized (appender) {
+                held.countDown();
+                try {
+                    release.await(30, SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }, "appender-monitor-holder");
+        CountDownLatch returned = new CountDownLatch(1);
+        AtomicInteger size = new AtomicInteger(-1);
+        Thread reader = new Thread(() -> {
+            size.set(LogCapture.events(appender).size());
+            returned.countDown();
+        }, "log-capture-reader");
+        holder.start();
+        try {
+            assertThat(held.await(10, SECONDS)).as("the holder took the appender's monitor").isTrue();
+            reader.start();
+            assertThat(returned.await(300, MILLISECONDS))
+                    .as("LogCapture.events returned while another thread held the appender's monitor (reader %s): "
+                            + "it read without the lock doAppend holds", reader.getState())
+                    .isFalse();
+            assertThat(reader.getState()).as("the reader waits on the appender's monitor").isEqualTo(Thread.State.BLOCKED);
+        } finally {
+            release.countDown();
+            holder.join();
+        }
+        assertThat(returned.await(10, SECONDS)).as("the read returns once the monitor is free").isTrue();
+        assertThat(size.get()).isEqualTo(1);
+        reader.join();
     }
 
     /** The other direction: the copy is what was logged, in order, and a line logged after it does not move it. */

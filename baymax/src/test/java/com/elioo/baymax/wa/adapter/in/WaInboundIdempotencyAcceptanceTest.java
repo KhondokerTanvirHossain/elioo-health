@@ -276,8 +276,14 @@ class WaInboundIdempotencyAcceptanceTest {
                 deliver(webhook(context), body);
                 deliver(webhook(context), body);
                 settle();
-                String all = LogCapture.events(logged).stream().map(ILoggingEvent::getFormattedMessage).collect(Collectors.joining("\n"));
-                assertThat(all).contains("wa inbound duplicate ref=" + Redact.id(wamid));
+                // the first delivery's intake logs its done line on boundedElastic, after its reply went out: wait for it
+                // by its digest, or the sweep below passes without having read the line most likely to carry the number
+                List<ILoggingEvent> seen = LogCapture.await(logged, "the detached intake's done line",
+                        e -> e.getFormattedMessage().startsWith("[baymax] wa intake done ref=" + Redact.id(wamid)),
+                        Duration.ofSeconds(10));
+                String all = seen.stream().map(ILoggingEvent::getFormattedMessage).collect(Collectors.joining("\n"));
+                assertThat(all).contains("wa inbound duplicate ref=" + Redact.id(wamid))
+                        .contains("wa intake done ref=" + Redact.id(wamid));
                 assertThat(all).doesNotContain(wamid).doesNotContain(DIGITS).doesNotContain(WaFixtures.decodedDigits(wamid));
             });
         } finally {

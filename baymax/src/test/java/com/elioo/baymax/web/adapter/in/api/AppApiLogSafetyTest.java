@@ -521,6 +521,14 @@ class AppApiLogSafetyTest {
             delivery.setLevel(Level.DEBUG);   // the log fallback writes the code at DEBUG only
             try {
                 exercise.values().forEach(requests -> requests.accept(client, token));
+                // the upload's processing runs detached on boundedElastic and logs its end after the 200 went out: wait
+                // for that line, by the id the answer returned, or the sweep below covers the request and not the
+                // pipeline it started (FLAKE-WA review, finding 4)
+                LogCapture.await(appender, "the uploaded paper's detached processing line", e -> {
+                    String m = e.getFormattedMessage();
+                    return m.startsWith("[baymax] document finished documentId=" + uploaded.get() + " ")
+                            || m.startsWith("[baymax] document processing ended in error documentId=" + uploaded.get() + " ");
+                }, java.time.Duration.ofSeconds(30));
             } finally {
                 root.detachAppender(appender);
                 root.setLevel(before);
