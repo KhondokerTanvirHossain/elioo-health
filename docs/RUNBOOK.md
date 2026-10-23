@@ -620,7 +620,14 @@ compressed the RSC-heavy document in tiny flushes: the 58-value `/app/documents/
 wire where Caddy's zstd gives 15 KB, and that alone put the page over the DR-42 route ceiling. Nothing changed on the
 box for this: the line was already there and Caddy never re-encodes a body the upstream encoded, so until P3 it
 compressed Java's pages (unchanged, still compressed here) and passed Next's gzip through.
-- **Streaming still streams.** Caddy flushes a response of unknown length write by write, through the encoder.
+- **Streaming still streams.** Caddy flushes a response of unknown length write by write, through the encoder. CI
+  checks it on every PR (`scripts/test_caddy_streaming.sh`, through `scripts/caddy-streaming-check.sh`): this block's
+  DR-42 replica, in the box's Caddy version and the replica's, in front of an upstream that holds 1.5 s mid-page; the
+  first part must decode well before the hold ends, in zstd and in gzip, and a handle that buffers
+  (`response_buffers`) fails it. Run it by hand (`CADDY_STREAMING_LOCAL=1` uses a local `caddy`) after any Caddy
+  upgrade or `reverse_proxy` option change.
+- **Both encodings are budgeted.** Chrome gets zstd; a browser that offers no zstd gets gzip. `budget.spec.ts`
+  measures every page in both, under the same ceilings.
 - **What to check after a deploy:** `smoke-https.sh`'s `/brand/medioo-light.svg` row asks with
   `Accept-Encoding: zstd, gzip` and needs `zstd`, which only Caddy produces. `content-encoding is [gzip]` means the
   running medioo-web compresses itself again (an image from before P3); `[]` means Caddy is not encoding (the `encode`

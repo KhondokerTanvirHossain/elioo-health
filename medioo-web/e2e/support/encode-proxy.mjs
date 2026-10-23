@@ -23,7 +23,11 @@
 //   not byte-identical: on 2026-10-23, the same build measured through this proxy and through Caddy 2.11.7 gave page
 //   totals 0.2% apart (375 to 464 B per page, this proxy the smaller), where level 2 was 4% larger. That is why the
 //   defining DR-42 run stays behind a real Caddy (scripts/budget-behind-caddy.sh, the same CI job): this proxy makes
-//   the suite measure the shipped path, Caddy decides the last few hundred bytes. gzip at Caddy's default level 5.
+//   the suite measure the shipped path, Caddy decides the last few hundred bytes.
+// - gzip: Caddy's default level 5 is klauspost's level 5, which compresses less than zlib's level 5. On 2026-10-23
+//   the probe's static scripts and stylesheet came to 108,421 B in Caddy 2.11.7's gzip against 108,415 B at node's
+//   level 4 and 104,802 B at its level 5, so this proxy gzips at level 4: level 5 made the gzip pass 3.6 KB a page
+//   kinder than Caddy, the flattering direction.
 // - one header Caddy does not send: a streamed answer carries x-encode-proxy-first-write, the size of the first write
 //   the decision was made on, so the budget can apply Caddy's rule to an unencoded streamed body (budget.ts).
 // The Host header and everything else the browser sent go to the upstream unchanged, as Caddy's reverse_proxy does.
@@ -79,7 +83,8 @@ function encoder(name) {
       params: { [constants.ZSTD_c_compressionLevel]: 3, [constants.ZSTD_c_windowLog]: 17 },
     });
   }
-  return createGzip({ level: 5 });
+  // Level 4 matches Caddy's level 5 to within a few bytes (the header above).
+  return createGzip({ level: 4 });
 }
 
 const HOP_BY_HOP = ["connection", "keep-alive", "transfer-encoding", "proxy-connection", "upgrade"];
