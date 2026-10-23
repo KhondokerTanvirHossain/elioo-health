@@ -20,7 +20,9 @@ function answerOf<T>(scenario: string, key: string): T {
   const value = SCENARIOS[scenario]?.[key];
   if (value === undefined) throw new Error(`${scenario} does not answer ${key}`);
   const first = Array.isArray(value) ? value[0]! : value;
-  return (typeof first === "string" ? body<T>(first) : first.body) as T;
+  if (typeof first === "string") return body<T>(first);
+  if (!("body" in first)) throw new Error(`${scenario} answers ${key} with no body (a cut or held request)`);
+  return first.body as T;
 }
 
 const ONE = body<MeJson>("me/one-patient.json");
