@@ -21,7 +21,14 @@ const options = (fixture: { body: unknown }) => fixture.body as UploadOptionsJso
 function sheet(fixture: { body: unknown }, opts: { asked?: string | null; replaces?: string | null } = {}) {
   const o = options(fixture);
   return render(
-    <UploadSheet options={o} words={uploadWords("bn", o)} preview={false} asked={opts.asked ?? null} replaces={opts.replaces ?? null} />,
+    <UploadSheet
+      options={o}
+      words={uploadWords("bn", o)}
+      preview={false}
+      asked={opts.asked ?? null}
+      replaces={opts.replaces ?? null}
+      closeHref="/app/home"
+    />,
   );
 }
 
