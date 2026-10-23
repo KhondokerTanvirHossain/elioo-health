@@ -25,6 +25,13 @@ if (!process.env.E2E_BASE_URL) {
 // request log. Set on process.env so the workers, which re-read this file, see the same port.
 const STUB_PORT = Number(process.env.E2E_STUB_PORT ?? PORT + 73);
 process.env.E2E_PORT ??= String(PORT);
+// `next start` itself (PO ruling P3). Next sends every body unencoded (next.config.ts: compress: false) and in
+// production Caddy's `encode zstd gzip` compresses it, so the browser never talks to Next directly: BASE_URL is the
+// measuring proxy (e2e/support/encode-proxy.mjs), which encodes as that Caddy block does, in front of Next on this
+// port. The budget therefore measures what a phone gets; encoding.spec.ts asks Next here, directly, that it encodes
+// nothing itself.
+const NEXT_PORT = Number(process.env.E2E_NEXT_PORT ?? PORT + 2);
+if (!process.env.E2E_BASE_URL) process.env.E2E_NEXT_URL ??= `http://127.0.0.1:${NEXT_PORT}`;
 process.env.E2E_STUB_URL ??= `http://127.0.0.1:${STUB_PORT}`;
 // The fixtures Java's contract tests wrote, which stub Java and browser-api.ts answer from (support/scenarios.mjs).
 process.env.E2E_FIXTURES ??= join(__dirname, "..", "fixtures", "api");
@@ -85,9 +92,9 @@ export default defineConfig({
           },
           {
             // `exec` so the server, not a shell, is the process Playwright stops; its output goes to the log file too.
-            command: `mkdir -p test-results && exec pnpm exec next start -p ${PORT} > ${SERVER_LOG} 2>&1`,
+            command: `mkdir -p test-results && exec pnpm exec next start -p ${NEXT_PORT} > ${SERVER_LOG} 2>&1`,
             cwd: "..",
-            url: `${BASE_URL}/app/healthz`,
+            url: `${process.env.E2E_NEXT_URL}/app/healthz`,
             env: {
               GIT_SHA: process.env.E2E_GIT_SHA!,
               BUILD_SHA: process.env.E2E_BUILD_SHA!,
@@ -95,6 +102,16 @@ export default defineConfig({
             },
             // Never reuse: a server someone else started runs with another GIT_SHA, and the healthz test would be
             // right to fail on it.
+            reuseExistingServer: false,
+            timeout: 60_000,
+          },
+          {
+            // The origin the browser talks to: the measuring proxy in front of `next start`, encoding as Caddy does.
+            // Ready only when /app/healthz answers through it, which is Next answering.
+            command: `node e2e/support/encode-proxy.mjs`,
+            cwd: "..",
+            url: `${BASE_URL}/app/healthz`,
+            env: { ENCODE_PORT: String(PORT), ENCODE_UPSTREAM: process.env.E2E_NEXT_URL! },
             reuseExistingServer: false,
             timeout: 60_000,
           },

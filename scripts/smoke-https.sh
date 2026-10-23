@@ -61,6 +61,12 @@
 # which is why they are production rows and not PROBE rows. S1's no-JS fallback stays Java's: /app/basic is its
 # number page posting to /app/basic/login, and the language switch on its code step lands back on it. Just outside the
 # sign-in matcher GET /app/login (S3: never routed, it has no GET) and /app/verifyx are Java's JSON 404.
+# Who compresses (PO ruling P3, 2026-10-23): medioo-web sends every body unencoded (next.config.ts compress: false) and
+# Caddy's `encode zstd gzip` compresses it. The /brand/medioo-light.svg row asks with `Accept-Encoding: zstd, gzip` and
+# needs zstd, which only Caddy produces: Next's own compression speaks gzip, so an image that compresses itself again
+# fails the row with "content-encoding is [gzip]" (production answered exactly that on 2026-10-23, before P3 deployed),
+# and a Caddy that stopped encoding fails it with "[]". After a rollback the table is run from a checkout of the sha
+# deployed (RUNBOOK -> Rollback), and a sha from before P3 has no such row: its image compresses itself again.
 #
 # Header classes. Caddy's medioo header block owns HSTS, X-Content-Type-Options and Referrer-Policy on every path
 # (it runs at response-write time and overwrites the upstream); each upstream owns its CSP and X-Frame-Options.
@@ -133,6 +139,7 @@ REFERRER="strict-origin-when-cross-origin"
 #                    html:<marker>          the body contains <marker> (an attribute, not a word)
 #                    location:<value>       the Location header equals <value> exactly
 #                    type:<value>           the Content-Type header, parameters aside, equals <value>
+#                    encoding:<value>       asked with `Accept-Encoding: zstd, gzip`, the Content-Encoding equals <value>
 #   a path starting {old} is asked of the old hostname (SMOKE_OLD_BASE); every other one of <base-url>
 #   a path starting `PROBE ` (`PROBE <METHOD> /path`) is sent only by caddy-route-probe.sh, never by this run: it is
 #   a request that must not reach production (POST /app/add is the upload); the probe reads its class alone
@@ -159,6 +166,7 @@ POST /app/login|200|page|html:name="whatsapp_number"
 /_next/static/x.js|404|static|type:text/plain
 /fonts/noto-sans-latin.woff2|200|static|type:font/woff2
 /brand/mio-head.webp|200|static|type:image/webp
+/brand/medioo-light.svg|200|static|encoding:zstd
 /app/preview|307|next|location:/app/?next=%2Fapp%2Fpreview
 /app/preview/|307|next|location:/app/?next=%2Fapp%2Fpreview%2F
 /app/previewx|404|-|json:statusCode=400
@@ -198,8 +206,11 @@ check_row() {
     echo "FAIL $path deadline of ${DEADLINE}s reached; not asked"
     return 1
   fi
+  # Only the encoding row offers an encoding; every other row reads its body as sent plain.
+  local offer=()
+  case "$check" in encoding:*) offer=(-H "Accept-Encoding: zstd, gzip") ;; esac
   code=$(curl -s -o "$body" -D "$hdr" -w '%{http_code}' --connect-timeout $((left < 5 ? left : 5)) \
-           --max-time $((left < 15 ? left : 15)) ${how[@]+"${how[@]}"} "$url" 2>/dev/null) || true
+           --max-time $((left < 15 ? left : 15)) ${how[@]+"${how[@]}"} ${offer[@]+"${offer[@]}"} "$url" 2>/dev/null) || true
   code="${code:-000}"
   [ "$code" = "$want" ] || reasons+=("HTTP $code, expected $want")
 
@@ -217,6 +228,9 @@ check_row() {
     type:*)
       v=$(header "$hdr" content-type); v="${v%%;*}"; v="${v%"${v##*[![:space:]]}"}"
       [ "$v" = "${check#type:}" ] || reasons+=("content-type is [$v], expected [${check#type:}]") ;;
+    encoding:*)
+      v=$(header "$hdr" content-encoding)
+      [ "$v" = "${check#encoding:}" ] || reasons+=("content-encoding is [$v], expected [${check#encoding:}]") ;;
   esac
 
   if [ "$class" != - ]; then

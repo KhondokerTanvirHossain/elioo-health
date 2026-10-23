@@ -14,6 +14,11 @@
   out no Bangla), on the Pixel 7 390×844 profile, asserted before a ceiling is compared. CI runs it
   against `next start` and, as the defining run, against the image behind the Caddy replica
   (`scripts/budget-behind-caddy.sh`, `E2E_VIA_CADDY=1`, HSTS required on every measured document).
+- **Superseded in part (PO ruling P3, 2026-10-23):** finding 2's "keep Next's default" is reversed. Next runs with
+  `compress: false` and Caddy's `encode zstd gzip` compresses medioo-web's responses: see the DR-42 P3 note in
+  [DECISIONS.md](../../DECISIONS.md) and [RUNBOOK](../../RUNBOOK.md) → Routing a path to medioo-web → Compression. The
+  reason this measurement could not see: its pages carried little RSC payload, and Next's streaming gzip of an
+  RSC-heavy document (W6's `/all`) cost about four times what one compression pass does.
 
 The measurement below is left as it was taken.
 
@@ -136,12 +141,12 @@ Java sign-in page takes about 0.56 s. That is transfer time only, before round t
    - Production Caddy's medioo header block runs at response-write time (it deletes `Server`), so it overwrites the upstream `Referrer-Policy` with `strict-origin-when-cross-origin` on every path.
    - DR-40 A1 and the Global Constraints now set Next's value to the same `strict-origin-when-cross-origin`, and this branch sends it. Behind the replica, the header tests pass (32 of 32).
    - No live header changes. A Caddy default-only form (`?Referrer-Policy`) was considered and is not needed: it would only matter if Next sent a different value.
-2. **Next compresses its own responses, and Caddy passes them through.**
+2. **Next compresses its own responses, and Caddy passes them through.** *(Superseded by P3: see the Status above.)*
    - Next gzips by default. Caddy does not re-encode a body that already has a `Content-Encoding`, so the browser gets gzip, not zstd.
    - With Next's compression off (`compress: false`), Caddy's zstd at its default level came out **1.2% larger in total**. Median of three runs, each against its own image in the same session as the reference: **206,451 B against 203,969 B**.
    - By class, same two runs: scripts **+3.2%** (105,473 against 102,164 B), stylesheet 822 against 805 B, the HTML **25% smaller** (2,508 against 3,352 B), fonts unchanged.
    - The three comparison runs were 206,451, 206,450 and 206,452 B.
-   - **Keep Next's default.** This branch does. The HTML gain is real but small next to the script loss. W2a or later may revisit this with Caddy's `zstd` level raised, which this measurement did not try.
+   - **Keep Next's default** (superseded by P3). This branch does. The HTML gain is real but small next to the script loss. W2a or later may revisit this with Caddy's `zstd` level raised, which this measurement did not try.
 3. **Static paths must move with the first HTML route, and only those.**
    - A Next page loads `/_next/static/*` and `/fonts/*`. If W1c routes a page to `medioo-web` but leaves those paths on Java's default, the HTML arrives and its scripts and fonts 404.
    - W1c routes **`/_next/static/*` and `/fonts/*`**, plus the HTML routes it flips, the first time any HTML route flips. `/app/healthz` alone does not need them.

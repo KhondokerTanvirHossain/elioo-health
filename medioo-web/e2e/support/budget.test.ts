@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  CADDY_MIN_LENGTH,
   CEILINGS_FILE,
   NOTO_SUBSETS,
   ceilingMessage,
@@ -11,6 +12,7 @@ import {
   isJavaImage,
   readCeilings,
   routeTotal,
+  unencodedByCaddy,
 } from "./budget";
 
 // The rules budget.spec.ts enforces with, judged here without a browser (DR-42 items 2-4, screens plan S9).
@@ -203,5 +205,112 @@ describe("fontProblems (DR-42 item 2: both self-hosted Noto subsets fetched and 
 
   it("matches a subset by path, whatever the origin or query", () => {
     expect(fontProblems([...page, font(`https://medioo.example${BN}?v=1`), font(LATIN)])).toEqual([]);
+  });
+});
+
+describe("unencodedByCaddy (PO ruling P3: what was measured is what Caddy sends a phone)", () => {
+  type Row = {
+    kind: string;
+    url: string;
+    status: number;
+    encoding: string;
+    decoded: number;
+    contentLength: number | null;
+    firstWrite?: number | null;
+  };
+  // A streamed document (no Content-Length), as Next sends every page.
+  const row = (over: Partial<Row> = {}): Row => ({
+    kind: "document",
+    url: "/app/probe",
+    status: 200,
+    encoding: "zstd",
+    decoded: 7983,
+    contentLength: null,
+    ...over,
+  });
+  const script = (over: Partial<Row> = {}) => row({ kind: "script", url: "/_next/static/chunks/a.js", decoded: 9000, ...over });
+
+  it("passes a load whose document, scripts and stylesheet all came zstd-encoded, with fonts left as they are", () => {
+    expect(
+      unencodedByCaddy([
+        row(),
+        script({ decoded: 173019 }),
+        row({ kind: "stylesheet", url: "/_next/static/css/a.css", decoded: 4944 }),
+        row({ kind: "font", url: NOTO_SUBSETS[0], encoding: "identity", decoded: 69784, contentLength: 69784 }),
+        row({ kind: "other", url: "/brand/mio-head.webp", encoding: "identity", decoded: 4620, contentLength: 4620 }),
+      ]),
+    ).toEqual([]);
+  });
+
+  it("refuses a document measured unencoded: nothing stood in front of Next, and no phone gets that", () => {
+    expect(unencodedByCaddy([row({ encoding: "identity" })])).toEqual(["/app/probe (document, 7983 B, content-encoding identity)"]);
+  });
+
+  it("refuses a script Next gzipped itself: compress: false undone, the defect P3 fixed", () => {
+    expect(unencodedByCaddy([row(), script({ encoding: "gzip" })])).toEqual([
+      "/_next/static/chunks/a.js (script, 9000 B, content-encoding gzip)",
+    ]);
+  });
+
+  it("refuses an RSC payload whose first write was over 512 B, and a stylesheet the same way", () => {
+    expect(
+      unencodedByCaddy([
+        row({ kind: "rsc", url: "/app?_rsc=1", encoding: "identity", firstWrite: 7983 }),
+        row({ kind: "stylesheet", url: "/a.css", encoding: "gzip" }),
+      ]),
+    ).toEqual(["/app?_rsc=1 (rsc, 7983 B, content-encoding identity)", "/a.css (stylesheet, 7983 B, content-encoding gzip)"]);
+  });
+
+  it("leaves a streamed document of 512 B or less alone, as Caddy does, and not one of 513 B", () => {
+    expect(unencodedByCaddy([row({ encoding: "identity", decoded: CADDY_MIN_LENGTH })])).toEqual([]);
+    expect(unencodedByCaddy([row({ encoding: "identity", decoded: CADDY_MIN_LENGTH + 1 })])).toHaveLength(1);
+  });
+
+  it("leaves a response that was not a 200 to the checks that judge it", () => {
+    expect(unencodedByCaddy([row({ status: 404, encoding: "identity" })])).toEqual([]);
+  });
+
+  // Caddy decides on the first write, or on a Content-Length over 512 B, never on the total (encode.go, MinLength):
+  // the rule judges what Caddy judged, in both directions.
+  it("accepts a streamed body whose first write was 512 B or less, however large it grew, as Caddy sends it", () => {
+    expect(
+      unencodedByCaddy([row({ kind: "rsc", url: "/app/home?_rsc=1", encoding: "identity", decoded: 40_000, firstWrite: 300 })]),
+    ).toEqual([]);
+    expect(unencodedByCaddy([row({ encoding: "identity", decoded: 40_000, firstWrite: CADDY_MIN_LENGTH })])).toEqual([]);
+  });
+
+  it("refuses a streamed body whose first write was 513 B and that came unencoded", () => {
+    expect(
+      unencodedByCaddy([row({ kind: "rsc", url: "/app/home?_rsc=1", encoding: "identity", decoded: 513, firstWrite: 513 })]),
+    ).toEqual(["/app/home?_rsc=1 (rsc, 513 B, content-encoding identity)"]);
+  });
+
+  it("refuses a body with a Content-Length over 512 B sent unencoded, whatever its first write was", () => {
+    expect(unencodedByCaddy([script({ encoding: "identity", contentLength: 9000 })])).toEqual([
+      "/_next/static/chunks/a.js (script, 9000 B, content-encoding identity)",
+    ]);
+    expect(
+      unencodedByCaddy([script({ encoding: "identity", contentLength: CADDY_MIN_LENGTH + 1, decoded: 513, firstWrite: 100 })]),
+    ).toHaveLength(1);
+  });
+
+  it("accepts a body with a Content-Length of 512 B or less sent unencoded", () => {
+    expect(unencodedByCaddy([script({ encoding: "identity", contentLength: CADDY_MIN_LENGTH, decoded: CADDY_MIN_LENGTH })])).toEqual([]);
+  });
+
+  it("behind Caddy, with no first write on record: a streamed RSC body sent unencoded is Caddy's call, a document's is not", () => {
+    // A document's first flush is Next's HTML shell, always far over 512 B; an RSC body's first flush may be small.
+    expect(unencodedByCaddy([row({ kind: "rsc", url: "/app?_rsc=1", encoding: "identity", decoded: 20_000 })])).toEqual([]);
+    expect(unencodedByCaddy([row({ encoding: "identity", decoded: 20_000 })])).toEqual([
+      "/app/probe (document, 20000 B, content-encoding identity)",
+    ]);
+  });
+
+  it("for a browser that offers no zstd, gzip is what Caddy sends, and zstd or an unencoded body over 512 B is refused", () => {
+    expect(unencodedByCaddy([row({ encoding: "gzip" }), script({ encoding: "gzip" })], "gzip")).toEqual([]);
+    expect(unencodedByCaddy([row({ encoding: "zstd" }), script({ encoding: "identity", contentLength: 9000 })], "gzip")).toEqual([
+      "/app/probe (document, 7983 B, content-encoding zstd)",
+      "/_next/static/chunks/a.js (script, 9000 B, content-encoding identity)",
+    ]);
   });
 });

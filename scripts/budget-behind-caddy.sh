@@ -7,6 +7,10 @@
 #
 #   bash scripts/budget-behind-caddy.sh
 #
+# Since PO ruling P3 (2026-10-23) the block's `encode zstd gzip` is what compresses medioo-web: the image sends every
+# body unencoded (next.config.ts compress: false). In the W1a reference Next still gzipped its own responses and Caddy
+# passed them through; the ceilings were not moved for the change (DR-42, the P3 note).
+#
 # The replica is the repo's medioo.eliooo.org block, every line as written (its `encode zstd gzip` and header block
 # included), with only two kinds of change, each checked below:
 #   - the site address becomes `http://:8080` (plain http inside the Caddy container);
@@ -149,6 +153,6 @@ E2E_BASE_URL="$BASE" E2E_CATALOG_URL="$BASE" E2E_GIT_SHA="$SHA" E2E_VIA_CADDY=1 
 # The numbers, always (paths and byte counts only).
 for f in "$ROOT"/medioo-web/test-results/budget*.json; do
   [ -e "$f" ] || { echo "budget-behind-caddy: no budget json (the spec did not reach a page)"; break; }
-  node -e 'const d=require(process.argv[1]);console.log(process.argv[1].split("/").pop(), JSON.stringify({viaCaddy:d.viaCaddy, path:d.path, routeTotal:d.routeTotal, all:d.all, totals:d.totals}))' "$f"
+  node -e 'const d=require(process.argv[1]);console.log(process.argv[1].split("/").pop(), JSON.stringify({viaCaddy:d.viaCaddy, encoding:d.encoding, path:d.path, routeTotal:d.routeTotal, all:d.all, totals:d.totals}))' "$f"
 done
 exit "$rc"

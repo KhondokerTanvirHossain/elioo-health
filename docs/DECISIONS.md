@@ -884,6 +884,41 @@ are unchanged. Records the direction contract's 2026-10-21 amendments in
    - The suite's existing run against `next start`, without Caddy, applies the same ceilings and can only be stricter.
      Caddy encodes only a body that Next sent unencoded. In the reference that was one 555 B chunk, 222 B with zstd. So
      a page can fail there by at most those bytes and still pass behind Caddy. It is never the defining measurement.
+     - *Superseded 2026-10-23 by PO ruling P3 (the compression fix; the ceilings did not move).* Next no longer
+       compresses (`next.config.ts`: `compress: false`); Caddy's `encode zstd gzip` compresses every medioo-web
+       response. The cause: Next's streaming gzip compressed the RSC-heavy document in tiny flushes. PR #149's CI
+       `next start` run measured W6's 58-value `/app/documents/{id}/all` at 304,153 B (document 64,029 B on the wire,
+       275,924 B decoded) against the 265,409 B route ceiling. Like for like, PR #149's head behind the same local Caddy
+       2.11.7 replica (phone profile), before and after: 302,833 B (document 64,080 B, Next's gzip passed through) →
+       258,174 B (document 15,089 B, Caddy's zstd). Every other page stays under its ceiling (the probe below). No
+       `KNOWN_OVER` exception was added and the ceilings file is unchanged.
+     - A browser that offers no zstd (Safari on an iPhone, to the best of our knowledge) gets Caddy's gzip at level 5,
+       flushed with every streamed write. PR #149's head with this change, behind the local Caddy 2.11.7 replica, one
+       run, phone profile, each page asked as Chrome and again with `Accept-Encoding: gzip, deflate, br`: `/all`
+       262,788 B in gzip (document 18,494 B) against 258,178 B in zstd (document 15,086 B), the probe 208,461 B
+       against 207,373 B. Under both ceilings, but `/all` in gzip has 2,621 B of margin. `budget.spec.ts` measures
+       every page in both encodings under the same ceilings, so a fix that only Chrome gets cannot pass. The harness
+       gzips at node's level 4, which matches Caddy's level 5 (klauspost) to a few bytes; node's level 5 was 3.6 KB a
+       page kinder than Caddy.
+     - The `next start` run now measures through `medioo-web/e2e/support/encode-proxy.mjs`, a proxy that encodes as
+       that Caddy block does (its content types, its 512 B first-write rule, zstd for Chrome, a flush per streamed
+       write). It is no longer "only stricter": in zstd, on the same build behind the local Caddy 2.11.7 replica, its
+       totals for main's pages (a529160) came out 0.2% (370 to 468 B) under Caddy's, and `/all`'s (PR #149's head)
+       978 B over, because node's libzstd and Caddy's Go encoder are not byte-identical. The run behind the Caddy
+       replica (`scripts/budget-behind-caddy.sh`, the same CI job) stays the defining measurement and decides those
+       bytes.
+     - `budget.spec.ts` now requires every measured document, script, stylesheet and RSC body to have crossed the wire
+       as Caddy encodes it (zstd for Chrome, gzip in the no-zstd pass), judged by Caddy's own rule: encoded when the
+       first write or the Content-Length is over 512 B, never by the total. An unencoded body Caddy would have encoded
+       means nothing stood in front of Next, and gzip to Chrome means Next compressed it itself; neither is what a
+       phone gets. `e2e/encoding.spec.ts` asks Next directly that it encodes nothing itself.
+     - Effect on the reference, both figures behind the same local Caddy 2.11.7 replica on main at a529160 (phone
+       profile): with Caddy compressing the framework's JavaScript (zstd instead of Next's gzip), the probe measured
+       207,362 B, up from 204,936 B with Next compressing. That is still under the 214,167 B floor ceiling. The
+       documents shrink and the scripts grow slightly. The CI replica run reports the exact figure.
+     - Streaming: `scripts/test_caddy_streaming.sh` (CI) runs the replica in the box's Caddy and the replica's, in
+       front of an upstream that holds 1.5 s mid-page, and requires the first part to decode well before the hold
+       ends, in zstd and in gzip; it is replayed red against a preview handle that buffers (`response_buffers`).
 3. **Framework floor ceiling: the probe ≤ 214,167 B** (203,969 B + 5%, rounded down). A Next or React upgrade that
    grows the runtime fails the probe instead of silently eating every route's margin, and becomes a PO decision.
 4. **Both ceilings live in one committed file, `medioo-web/e2e/budget-ceilings.json`, read by the budget tests.** W1d

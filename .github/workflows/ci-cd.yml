@@ -227,10 +227,19 @@ jobs:
       # (its encode and header block, only the address and the upstreams changed), and budget.spec.ts against that Caddy
       # with E2E_VIA_CADDY=1: the probe within "probe" and every page of NEXT_PAGES within "route", read from
       # medioo-web/e2e/budget-ceilings.json, on the phone profile. Every measured document must carry the HSTS header
-      # only that Caddy block sets, so a run that bypassed Caddy fails. The next start run above applies the same
-      # ceilings and can only be stricter. Prints paths and byte counts only.
+      # only that Caddy block sets, so a run that bypassed Caddy fails. Since PO ruling P3 Caddy's encode is what
+      # compresses medioo-web (Next: compress: false); the next start run above measures through a proxy that encodes
+      # the same way (e2e/support/encode-proxy.mjs), a few hundred bytes a page from Caddy, so this run decides.
+      # Prints paths and byte counts only.
       - name: medioo-web budget ceilings behind Caddy (DR-42, the enforcing run)
         run: bash scripts/budget-behind-caddy.sh
+      # PO ruling P3: Caddy's encode compresses medioo-web, so a streamed page must still stream through it. The DR-42
+      # replica of Caddyfile.medioo in each pinned Caddy (the box's and the replica's), in front of an upstream that
+      # sends part of a page, holds 1.5 s, then sends the rest: the first part must decode well before the hold ends,
+      # in zstd and in gzip. Replayed red in the test against a preview handle that buffers (response_buffers).
+      # After setup-node: the client decodes zstd, which needs Node 22.15 or later.
+      - name: medioo-web streaming through Caddy (P3)
+        run: bash scripts/test_caddy_streaming.sh
       - name: Upload medioo-web Playwright report
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

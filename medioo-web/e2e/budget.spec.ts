@@ -2,7 +2,16 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, type Page, type Response, type TestInfo } from "@playwright/test";
 import { NEXT_PAGES } from "../src/routing/paths";
-import { ceilingMessage, concretePath, fontProblems, isJavaImage, readCeilings, routeTotal } from "./support/budget";
+import {
+  FIRST_WRITE_HEADER,
+  ceilingMessage,
+  concretePath,
+  fontProblems,
+  isJavaImage,
+  readCeilings,
+  routeTotal,
+  unencodedByCaddy,
+} from "./support/budget";
 import { useScenario } from "./support/browser-api";
 import { PAGE_MARKERS, PAGE_SCENARIOS } from "./support/scenarios.mjs";
 
@@ -15,8 +24,15 @@ type Row = {
   encoding: string;
   wire: number;
   decoded: number;
+  contentLength: number | null;
+  firstWrite: number | null;
   javaImage: boolean;
 };
+
+/** A header's whole-number value, or null when it is absent. */
+function sizeHeader(value: string | undefined): number | null {
+  return value === undefined ? null : Number(value);
+}
 
 /**
  * The DR-42 first-load wire budget, enforced (W1d).
@@ -32,8 +48,12 @@ type Row = {
  *
  * The defining run is behind a Caddy replica of docs/infra/Caddyfile.medioo (scripts/budget-behind-caddy.sh), with
  * E2E_VIA_CADDY=1: every measured document must then carry Strict-Transport-Security, which only that Caddy block
- * sets, so a run that bypassed Caddy cannot pass. The suite's run against `next start` applies the same ceilings and
- * can only be stricter (Caddy encodes only what Next sent unencoded).
+ * sets, so a run that bypassed Caddy cannot pass. The suite's own run applies the same ceilings to `next start` behind
+ * the measuring proxy (support/encode-proxy.mjs), which encodes as that Caddy block does: since PO ruling P3 Next sends
+ * every body unencoded (compress: false) and Caddy compresses it, so without the proxy the suite would measure bodies
+ * no phone receives. Either way every measured document, script and stylesheet must have crossed the wire as Caddy
+ * encodes it (unencodedByCaddy). The proxy and Caddy differ by a few hundred bytes a page (DR-42, the P3 note); the
+ * Caddy run decides them.
  */
 const VIA_CADDY = process.env.E2E_VIA_CADDY === "1";
 const ENFORCED_ON = "phone";
@@ -96,6 +116,9 @@ async function coldLoad(page: Page, origin: string, path: string): Promise<Load>
       encoding: r.headers()["content-encoding"] ?? "identity",
       wire: sizes.responseBodySize,
       decoded: body.length,
+      contentLength: sizeHeader(r.headers()["content-length"]),
+      // The measuring proxy's record of a streamed body's first write; Caddy sends none, so behind it this is null.
+      firstWrite: VIA_CADDY ? null : sizeHeader(r.headers()[FIRST_WRITE_HEADER]),
       javaImage: isJavaImage(r.url()),
     });
   }
@@ -123,8 +146,11 @@ function record(testInfo: TestInfo, name: string, baseURL: string, load: Load, e
   );
 }
 
-/** What every measured load must satisfy before its total means anything. */
-function expectAWholeMeasurement(load: Load, origin: string, path: string) {
+/**
+ * What every measured load must satisfy before its total means anything. `encoding` is what Caddy answers this
+ * browser in: zstd for Chrome, gzip for a browser that offers no zstd (NO_ZSTD below).
+ */
+function expectAWholeMeasurement(load: Load, origin: string, path: string, encoding: "zstd" | "gzip" = "zstd") {
   // The page itself was measured: a 404, an error page or a redirect to sign-in is a different (smaller) page.
   expect(load.document, `${path}: the navigation produced a document response`).not.toBeNull();
   expect(load.document!.status(), `${path}: the document answered 200`).toBe(200);
@@ -147,6 +173,14 @@ function expectAWholeMeasurement(load: Load, origin: string, path: string) {
   expect(load.totals.script?.count ?? 0, `${path}: Next's client scripts`).toBeGreaterThan(0);
   expect(load.totals.stylesheet?.count ?? 0, `${path}: the stylesheet`).toBeGreaterThan(0);
   for (const r of load.rows) expect(r.wire, `wire bytes measured for ${r.url}`).toBeGreaterThan(0);
+  // What was measured is what Caddy sends a phone (PO ruling P3): Next sends every body unencoded and Caddy's
+  // `encode zstd gzip` answers Chrome in zstd. An unencoded body Caddy would have encoded was measured with nothing in
+  // front of Next, and a gzip one sent to Chrome was encoded by Next itself; neither is the shipped path. Caddy decides
+  // on the first write or the Content-Length (over 512 B is encoded), never on the total, and so does the rule.
+  expect(
+    unencodedByCaddy(load.rows, encoding),
+    `${path}: bodies that did not cross the wire as Caddy encodes them (${encoding})`,
+  ).toEqual([]);
   // Both Noto subsets, on every measured load and not only the probe (DR-42 item 2): globals.css loads them by
   // unicode-range, so a load without one is up to 97,648 B under the worst case the ceilings are defined on.
   expect(fontProblems(load.rows), `${path}: both Noto subsets crossed the wire, once each`).toEqual([]);
@@ -171,19 +205,72 @@ async function enforcedHere(page: Page, testInfo: TestInfo): Promise<boolean> {
   return true;
 }
 
-test("the framework floor: a cold first load of the probe, within the probe ceiling", async ({ page, baseURL }, testInfo) => {
-  const origin = new URL(baseURL!).origin;
-  const load = await coldLoad(page, origin, "/app/probe");
-  record(testInfo, "budget", baseURL!, load);
+/**
+ * The browsers Caddy's `encode zstd gzip` answers differently (PO ruling P3). Chrome offers zstd and gets it; a browser
+ * that offers no zstd (Safari on an iPhone, to the best of our knowledge) gets gzip at Caddy's level 5, flushed with
+ * every streamed write. The ceilings hold for both: P3's cause was a streamed document gzipped flush by flush, so a fix
+ * measured only in zstd would be asserted on Chrome alone. Each page is measured once per encoding, under the same
+ * checks and the same ceilings; the gzip pass sends that browser's Accept-Encoding on every request of the load.
+ */
+const NO_ZSTD = "gzip, deflate, br";
+const ENCODINGS = [
+  { encoding: "zstd", label: "", acceptEncoding: undefined },
+  { encoding: "gzip", label: " (a browser offering no zstd: gzip)", acceptEncoding: NO_ZSTD },
+] as const;
 
-  expectAWholeMeasurement(load, origin, "/app/probe");
+for (const { encoding, label, acceptEncoding } of ENCODINGS) {
+  test.describe(`answered in ${encoding}`, () => {
+    if (acceptEncoding) test.use({ extraHTTPHeaders: { "accept-encoding": acceptEncoding } });
+    const suffix = encoding === "zstd" ? "" : `-${encoding}`;
 
-  // The probe's own total, every response (it loads no Java image, and none is excused from the floor).
-  const { probe } = readCeilings();
-  if (await enforcedHere(page, testInfo)) {
-    expect(load.all.wire, ceilingMessage("probe", "/app/probe", load.all.wire, probe)).toBeLessThanOrEqual(probe);
-  }
-});
+    test(`the framework floor: a cold first load of the probe, within the probe ceiling${label}`, async ({ page, baseURL }, testInfo) => {
+      const origin = new URL(baseURL!).origin;
+      const load = await coldLoad(page, origin, "/app/probe");
+      record(testInfo, `budget${suffix}`, baseURL!, load, { encoding });
+
+      expectAWholeMeasurement(load, origin, "/app/probe", encoding);
+
+      // The probe's own total, every response (it loads no Java image, and none is excused from the floor).
+      const { probe } = readCeilings();
+      if (await enforcedHere(page, testInfo)) {
+        expect(load.all.wire, ceilingMessage("probe", "/app/probe", load.all.wire, probe)).toBeLessThanOrEqual(probe);
+      }
+    });
+
+    // Every routed page (NEXT_PAGES, held equal to the build's pages by src/routing/built/routes.built.test.ts) against
+    // the route ceiling, each under its PAGE_SCENARIOS scenario (W3). Its total is every response of the cold load
+    // except Java's crop and page images (S9).
+    for (const pattern of NEXT_PAGES) {
+      test(`routed page ${pattern}: a cold first load within the route ceiling${label}`, async ({ page, baseURL }, testInfo) => {
+        const origin = new URL(baseURL!).origin;
+        const scenario = PAGE_SCENARIOS[pattern];
+        expect(scenario, `PAGE_SCENARIOS[${pattern}]`).toBeDefined();
+        await useScenario(page, scenario!);
+        const path = concretePath(pattern);
+        const load = await coldLoad(page, origin, path);
+        const total = routeTotal(load.rows);
+        record(testInfo, `budget-route${path.replace(/[^a-zA-Z0-9]+/g, "-")}${suffix}`, baseURL!, load, {
+          path,
+          scenario,
+          encoding,
+          routeTotal: total,
+        });
+
+        expectAWholeMeasurement(load, origin, path, encoding);
+        // The page itself, not an error page that also answered 200: its own marker is in the document Java's stub fed.
+        const marker = PAGE_MARKERS[pattern]!;
+        expect(
+          await load.document!.text(),
+          `${path}: the document holds ${marker}, so it is the page and not an error page`,
+        ).toContain(marker);
+        const { route } = readCeilings();
+        if (await enforcedHere(page, testInfo)) {
+          expect(total, ceilingMessage("route", path, total, route)).toBeLessThanOrEqual(route);
+        }
+      });
+    }
+  });
+}
 
 // A page with no scenario would be measured against whatever stub Java answers by default (an error page, a redirect),
 // and an empty list would measure nothing at all and pass: both fail here, not silently.
@@ -192,30 +279,3 @@ test("every routed page has a scenario and a marker to be measured under", () =>
   expect(NEXT_PAGES.filter((p) => !Object.hasOwn(PAGE_SCENARIOS, p)), "pages with no PAGE_SCENARIOS entry").toEqual([]);
   expect(NEXT_PAGES.filter((p) => !Object.hasOwn(PAGE_MARKERS, p)), "pages with no PAGE_MARKERS entry").toEqual([]);
 });
-
-// Every routed page (NEXT_PAGES, held equal to the build's pages by src/routing/built/routes.built.test.ts) against the
-// route ceiling, each under its PAGE_SCENARIOS scenario (W3). Its total is every response of the cold load except
-// Java's crop and page images (S9).
-for (const pattern of NEXT_PAGES) {
-  test(`routed page ${pattern}: a cold first load within the route ceiling`, async ({ page, baseURL }, testInfo) => {
-    const origin = new URL(baseURL!).origin;
-    const scenario = PAGE_SCENARIOS[pattern];
-    expect(scenario, `PAGE_SCENARIOS[${pattern}]`).toBeDefined();
-    await useScenario(page, scenario!);
-    const path = concretePath(pattern);
-    const load = await coldLoad(page, origin, path);
-    const total = routeTotal(load.rows);
-    record(testInfo, `budget-route${path.replace(/[^a-zA-Z0-9]+/g, "-")}`, baseURL!, load, { path, scenario, routeTotal: total });
-
-    expectAWholeMeasurement(load, origin, path);
-    // The page itself, not an error page that also answered 200: its own marker is in the document Java's stub fed.
-    const marker = PAGE_MARKERS[pattern]!;
-    expect(await load.document!.text(), `${path}: the document holds ${marker}, so it is the page and not an error page`).toContain(
-      marker,
-    );
-    const { route } = readCeilings();
-    if (await enforcedHere(page, testInfo)) {
-      expect(total, ceilingMessage("route", path, total, route)).toBeLessThanOrEqual(route);
-    }
-  });
-}
