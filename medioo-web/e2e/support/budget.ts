@@ -79,6 +79,25 @@ export function concretePath(pattern: string): string {
   return pattern;
 }
 
+/** The classes Caddy's `encode` compresses on a page load (text/html, JavaScript, CSS, RSC's text/x-component). */
+const ENCODED_KINDS = new Set(["document", "script", "stylesheet", "rsc"]);
+/** Caddy's encode MinLength: a body whose first write (or Content-Length) is 512 B or less is sent as it is. */
+export const CADDY_MIN_LENGTH = 512;
+
+/**
+ * The rows that did not cross the wire as Caddy encodes them for a phone (PO ruling P3): every document, script,
+ * stylesheet and RSC body over 512 B, answered 200, must be zstd, the encoding Caddy's `encode zstd gzip` gives Chrome.
+ * `identity` means nothing in front of Next encoded it (a measurement a phone never gets); `gzip` means Next encoded it
+ * itself (compress: false undone), or the browser offered no zstd. Empty when the load is the shipped path.
+ */
+export function unencodedByCaddy(
+  rows: readonly { kind: string; url: string; status: number; encoding: string; decoded: number }[],
+): string[] {
+  return rows
+    .filter((r) => ENCODED_KINDS.has(r.kind) && r.status === 200 && r.decoded > CADDY_MIN_LENGTH && r.encoding !== "zstd")
+    .map((r) => `${r.url} (${r.kind}, ${r.decoded} B, content-encoding ${r.encoding})`);
+}
+
 /** The two self-hosted Noto subsets the W1a probe measured, both on every measured load (DR-42 item 2). */
 export const NOTO_SUBSETS = ["/fonts/noto-sans-bengali.woff2", "/fonts/noto-sans-latin.woff2"] as const;
 

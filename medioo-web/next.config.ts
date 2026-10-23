@@ -12,6 +12,13 @@ const nextConfig: NextConfig = {
   distDir: catalog ? ".next-catalog" : ".next",
   env: { MEDIOO_CATALOG: catalog ? "1" : "0" },
   poweredByHeader: false,
+  // Caddy compresses, Next does not (PO ruling P3, 2026-10-23). Next's streaming gzip compressed the RSC-heavy document
+  // in tiny flushes: the 58-value /app/documents/{id}/all page's document was 64 KB on the wire where one compression
+  // stream gives under 18 KB, and that alone put the page over the DR-42 route ceiling. Caddy's `encode zstd gzip`
+  // (docs/infra/Caddyfile.medioo) compresses every medioo-web response in production, and the e2e harness measures
+  // through a proxy that encodes the same way (e2e/support/encode-proxy.mjs). encoding.spec.ts asks Next that it
+  // encodes nothing itself; budget.spec.ts that what a phone measured crossed the wire as Caddy encodes it.
+  compress: false,
   // `/app` and `/app/` are both the sign-in page (WhatsApp links and Java's redirects use both spellings), so neither
   // may 308 to the other: Next would otherwise strip the slash with a redirect before the page renders (plan W3).
   skipTrailingSlashRedirect: true,

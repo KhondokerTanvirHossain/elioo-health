@@ -41,9 +41,10 @@ CASES=0
 # the smoke table's rows less the {old} one: /app/healthz /actuator/health /app/api/me /app/ /app, HEAD /app/,
 # /app/verify, HEAD /app/verify, /app/login /app/verifyx /app/basic /lang/en?back=..., POST /app/verify, POST /app/login,
 # / /medscribeai /medscribeai/ /baymax /baymax/ webhook /_next/static/x.js /fonts/noto-sans-latin.woff2
-# /brand/mio-head.webp /app/preview /app/preview/ /app/previewx /_next/image /app/preview/probe, and F7's /app/add,
-# /app/add/, PROBE HEAD /app/add and PROBE POST /app/add (the probe sends PROBE rows; the production run never does)
-ROWS=32
+# /brand/mio-head.webp /brand/medioo-light.svg (P3) /app/preview /app/preview/ /app/previewx /_next/image
+# /app/preview/probe, and F7's /app/add, /app/add/, PROBE HEAD /app/add and PROBE POST /app/add (the probe sends PROBE
+# rows; the production run never does)
+ROWS=33
 
 fail() { echo "FAIL: $1"; FAILED=1; }
 

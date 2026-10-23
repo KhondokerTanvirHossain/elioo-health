@@ -7,6 +7,10 @@
 #
 #   bash scripts/budget-behind-caddy.sh
 #
+# Since PO ruling P3 (2026-10-23) the block's `encode zstd gzip` is what compresses medioo-web: the image sends every
+# body unencoded (next.config.ts compress: false). In the W1a reference Next still gzipped its own responses and Caddy
+# passed them through; the ceilings were not moved for the change (DR-42, the P3 note).
+#
 # The replica is the repo's medioo.eliooo.org block, every line as written (its `encode zstd gzip` and header block
 # included), with only two kinds of change, each checked below:
 #   - the site address becomes `http://:8080` (plain http inside the Caddy container);

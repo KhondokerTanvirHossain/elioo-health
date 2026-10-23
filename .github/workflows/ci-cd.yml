@@ -227,8 +227,10 @@ jobs:
       # (its encode and header block, only the address and the upstreams changed), and budget.spec.ts against that Caddy
       # with E2E_VIA_CADDY=1: the probe within "probe" and every page of NEXT_PAGES within "route", read from
       # medioo-web/e2e/budget-ceilings.json, on the phone profile. Every measured document must carry the HSTS header
-      # only that Caddy block sets, so a run that bypassed Caddy fails. The next start run above applies the same
-      # ceilings and can only be stricter. Prints paths and byte counts only.
+      # only that Caddy block sets, so a run that bypassed Caddy fails. Since PO ruling P3 Caddy's encode is what
+      # compresses medioo-web (Next: compress: false); the next start run above measures through a proxy that encodes
+      # the same way (e2e/support/encode-proxy.mjs), a few hundred bytes a page from Caddy, so this run decides.
+      # Prints paths and byte counts only.
       - name: medioo-web budget ceilings behind Caddy (DR-42, the enforcing run)
         run: bash scripts/budget-behind-caddy.sh
       - name: Upload medioo-web Playwright report

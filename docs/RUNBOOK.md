@@ -105,6 +105,7 @@ method, and the table sends no row that changes data: only GET, HEAD and exactly
 | `/_next/static/x.js` | 404, `Content-Type: text/plain`, no CSP (`static`) | medioo-web (Next's 404 for a missing chunk; Java's JSON 404 here is the failure) |
 | `/fonts/noto-sans-latin.woff2` | 200, `Content-Type: font/woff2` (`static`) | medioo-web |
 | `/brand/mio-head.webp` | 200, `Content-Type: image/webp` (`static`) | medioo-web |
+| `/brand/medioo-light.svg` (asked with `Accept-Encoding: zstd, gzip`) | 200, `Content-Encoding: zstd` (`static`) | medioo-web, encoded by Caddy (PO ruling P3; `gzip` here means medioo-web compressed it itself, see [Routing a path to medioo-web](#routing-a-path-to-medioo-web) → Compression) |
 | `/app/preview`, `/app/preview/` | 307 to `/app/?next=%2Fapp%2Fpreview` and `...%2Fapp%2Fpreview%2F`, nonce CSP | medioo-web (signed out; a known gap, see below) |
 | `/app/previewx` | 404, JSON `statusCode == 400` | Java (outside the preview matcher; Next here means a matcher like `/app/preview*`) |
 | `/_next/image` | 404, JSON `statusCode == 400` | Java (outside `/_next/static/*`; Next here means a matcher like `/_next/*`) |
@@ -612,6 +613,26 @@ overwrites HSTS, `X-Content-Type-Options` and `Referrer-Policy` on every path, J
 `Referrer-Policy` stays `strict-origin-when-cross-origin`, the value production has always sent; changing it is a
 PO decision. Each upstream owns its own CSP and `X-Frame-Options` (Next's CSP carries a per-request nonce).
 
+Compression (PO ruling P3, 2026-10-23): **Caddy compresses medioo-web, Next does not.** `medioo-web/next.config.ts`
+says `compress: false`, and the medioo block's site-wide `encode zstd gzip` (first line of the block, so it covers
+every `handle`, medioo-web's and Java's) is the one pass that compresses a Next page. Next's own streaming gzip had
+compressed the RSC-heavy document in tiny flushes: the 58-value `/app/documents/{id}/all` document was 64 KB on the
+wire where Caddy's zstd gives 15 KB, and that alone put the page over the DR-42 route ceiling. Nothing changed on the
+box for this: the line was already there and Caddy never re-encodes a body the upstream encoded, so until P3 it
+compressed Java's pages (unchanged, still compressed here) and passed Next's gzip through.
+- **Streaming still streams.** Caddy flushes a response of unknown length write by write, through the encoder.
+- **What to check after a deploy:** `smoke-https.sh`'s `/brand/medioo-light.svg` row asks with
+  `Accept-Encoding: zstd, gzip` and needs `zstd`, which only Caddy produces. `content-encoding is [gzip]` means the
+  running medioo-web compresses itself again (an image from before P3); `[]` means Caddy is not encoding (the `encode`
+  line lost in a box edit). By hand:
+  `curl -s -o /dev/null -D - -H 'Accept-Encoding: zstd, gzip' https://medioo.eliooo.org/brand/medioo-light.svg | grep -i content-encoding`.
+- **Never remove or reorder the `encode` line** without the PO: every medioo-web page would cross the wire
+  uncompressed (the probe is about 458 KB decoded against the 214,167 B floor ceiling). `scripts/budget-behind-caddy.sh`
+  refuses a block without it, and the CI budget run behind the replica measures what it produces.
+- **The e2e harness measures the same path.** `next start` sits behind `medioo-web/e2e/support/encode-proxy.mjs`,
+  which encodes as this block does (Caddy's types, its 512 B first-write rule, zstd for Chrome, a flush per streamed
+  write). The defining DR-42 run is still behind a real Caddy (`budget-behind-caddy.sh`).
+
 ## Rollback
 
 Redeploy the previous image tag; every merge to `main` is tagged with its git sha.
@@ -655,7 +676,8 @@ has flipped: nothing is enforced. To roll back below the floor:
 2. Record the older floor (the merge sha of the most recent flip still in place), or remove the file when no route
    remains flipped: `cp ~/medioo-routes-floor ~/medioo-routes-floor.bak-$(date +%Y%m%d-%H%M)`, then write it.
 3. `IMAGE_TAG=<sha> bash ~/deploy.sh`, then `scripts/smoke-https.sh https://medioo.eliooo.org` from a checkout of
-   that sha (its table matches its routes).
+   that sha (its table matches its routes). A sha from before P3 (the compression ruling) brings back Next's own gzip:
+   nothing breaks, Caddy passes it through, pages are larger again, and that sha's table has no encoding row.
 
 `ROUTES_FLOOR_FORCE=1 IMAGE_TAG=<sha> bash ~/deploy.sh` overrides the refusal with a `WARNING: ROUTES_FLOOR_FORCE=1`
 line, for an emergency where the floor itself is the problem (GitHub down, a wrong floor file); it does not make an

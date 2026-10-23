@@ -59,11 +59,11 @@ FAILED=0
 CASES=0
 # the table's size: /app/healthz /actuator/health /app/api/me /app/ /app, HEAD /app/, /app/verify, HEAD /app/verify,
 # /app/login /app/verifyx /app/basic /lang/en?back=..., POST /app/verify, POST /app/login, / /medscribeai /medscribeai/
-# /baymax /baymax/ webhook /_next/static/x.js /fonts/noto-sans-latin.woff2 /brand/mio-head.webp /app/preview
-# /app/preview/ /app/previewx /_next/image /app/preview/probe /app/add /app/add/ (F7) and the old host's /app/home.
-# The PROBE rows (`PROBE HEAD /app/add`, `PROBE POST /app/add`) are not counted: the production run never sends them
-# (caddy-route-probe.sh does).
-ROWS=31
+# /baymax /baymax/ webhook /_next/static/x.js /fonts/noto-sans-latin.woff2 /brand/mio-head.webp /brand/medioo-light.svg
+# (P3) /app/preview /app/preview/ /app/previewx /_next/image /app/preview/probe /app/add /app/add/ (F7) and the old
+# host's /app/home. The PROBE rows (`PROBE HEAD /app/add`, `PROBE POST /app/add`) are not counted: the production run
+# never sends them (caddy-route-probe.sh does).
+ROWS=32
 
 fail() { echo "FAIL: $1"; FAILED=1; }
 
@@ -227,6 +227,24 @@ const server = http.createServer((req, res) => {
     case "/brand/mio-head.webp":
       if (javaOwns("brand")) return send(res, path, 404, "application/json", JAVA_404);
       return send(res, path, 200, "image/webp", "RIFFWEBP", NEXT_CSP);
+    // PO ruling P3: medioo-web sends its bodies unencoded and Caddy's `encode zstd gzip` encodes them, in zstd when
+    // the request offers it and only then (a request that offers nothing gets the plain body, as from Caddy). Before
+    // P3, medioo-web gzipped the svg itself and Caddy passed that on.
+    case "/brand/medioo-light.svg": {
+      if (javaOwns("brand-svg")) return send(res, path, 404, "application/json", JAVA_404);
+      const offered = String(req.headers["accept-encoding"] || "");
+      let encoding = null;
+      if (brk === "before-p3" && /gzip/.test(offered)) encoding = "gzip";
+      else if (brk !== "brand-svg-identity" && /zstd/.test(offered)) encoding = "zstd";
+      const extra = encoding ? { "Content-Encoding": encoding, Vary: "Accept-Encoding" } : {};
+      if (brk === "brand-svg-no-hsts") {
+        const h = headers(path, NEXT_CSP);
+        delete h["Strict-Transport-Security"];
+        res.writeHead(200, { ...h, "Content-Type": "image/svg+xml", ...extra });
+        return res.end("<svg/>");
+      }
+      return send(res, path, 200, "image/svg+xml", "<svg/>", NEXT_CSP, extra);
+    }
     // the preview path, signed out: the preview gate's 401 from `me` is the sign-in page holding the preview
     case "/app/preview":
       if (javaOwns("preview")) return send(res, path, 404, "application/json", JAVA_404);
@@ -316,8 +334,9 @@ for req in "POST /app/login" "POST /app/verify"; do
     || fail "aProductionRowChangesNoData: [$req] was not sent exactly once: $(tr '\n' '|' < "$WORK/requests.log" | cut -c1-400)"
 done
 
-# 2a. before F0: Java answers the preview path and the three asset prefixes with its JSON 404, and /app/add with its
-#    session filter's 303 to /app/ (F7's row); those six rows fail, each saying why, and every other row passes
+# 2a. before F0: Java answers the preview path and the three asset prefixes with its JSON 404 (P3's svg row among
+#    them), and /app/add with its session filter's 303 to /app/ (F7's row); those seven rows fail, each saying why, and
+#    every other row passes
 start_stub STUB_BREAK=before-f0
 if smoke; then fail "today: exited 0 although the F0 paths are Java's 404: $(out)"; fi
 while IFS='|' read -r row why; do
@@ -326,12 +345,13 @@ done <<'TODAY'
 /_next/static/x.js|content-type is [application/json], expected [text/plain]
 /fonts/noto-sans-latin.woff2|HTTP 404, expected 200
 /brand/mio-head.webp|HTTP 404, expected 200
+/brand/medioo-light.svg|HTTP 404, expected 200
 /app/preview|HTTP 404, expected 307
 /app/preview/|HTTP 404, expected 307
 /app/add|HTTP 303, expected 307
 TODAY
-[ "$(fails)" = 6 ] || fail "today: $(fails) FAIL rows, expected 6 (the F0 and F7 rows alone): $(out)"
-[ "$(passes)" = $((ROWS - 6)) ] || fail "today: $(passes) PASS rows, expected $((ROWS - 6)): $(out)"
+[ "$(fails)" = 7 ] || fail "today: $(fails) FAIL rows, expected 7 (the F0 and F7 rows alone): $(out)"
+[ "$(passes)" = $((ROWS - 7)) ] || fail "today: $(passes) PASS rows, expected $((ROWS - 7)): $(out)"
 
 # 2b. today (before F3, with F0 and F7 on the box): Java answers GET /app, /app/ and /app/verify with its own sign-in pages and HEAD on them with
 #    its JSON 404; the five Next sign-in rows fail, each saying why, and every other row passes
@@ -352,6 +372,14 @@ TODAY
 for req in "HEAD /app/" "HEAD /app/verify" "POST /app/verify" "POST /app/login"; do
   grep -qxF "$req" "$WORK/requests.log" || fail "today: the stub never received [$req]: $(tr '\n' '|' < "$WORK/requests.log" | cut -c1-400)"
 done
+
+# 2c. before P3 (PO ruling 2026-10-23): medioo-web gzipped its own responses, so Caddy passed them on as they were. The
+#     encoding row, which asks for zstd or gzip, sees gzip where only Caddy answers zstd; it fails alone, saying so.
+start_stub STUB_BREAK=before-p3
+if smoke; then fail "before-p3: exited 0 although medioo-web encoded its own asset: $(out)"; fi
+grep -E "^FAIL /brand/medioo-light.svg " "$WORK/out.log" | grep -qF -- "content-encoding is [gzip], expected [zstd]" \
+  || fail "before-p3: no 'FAIL /brand/medioo-light.svg ... content-encoding is [gzip], expected [zstd]' line: $(out)"
+[ "$(fails)" = 1 ] || fail "before-p3: $(fails) FAIL rows, expected exactly 1 (the encoding row): $(out)"
 
 # 3. one break at a time: <break>:<row path>:<text the FAIL line must carry>
 while IFS='|' read -r brk row why; do
@@ -398,6 +426,9 @@ fonts-type|/fonts/noto-sans-latin.woff2|content-type is [text/html], expected [f
 static-xfo-duplicate|/fonts/noto-sans-latin.woff2|x-frame-options is sent 2 times, expected once
 brand-java|/brand/mio-head.webp|HTTP 404, expected 200
 static-no-nosniff|/brand/mio-head.webp|x-content-type-options is [], expected [nosniff]
+brand-svg-java|/brand/medioo-light.svg|HTTP 404, expected 200
+brand-svg-identity|/brand/medioo-light.svg|content-encoding is [], expected [zstd]
+brand-svg-no-hsts|/brand/medioo-light.svg|strict-transport-security is missing
 preview-java|/app/preview|HTTP 404, expected 307
 preview-location|/app/preview|location is [/app/], expected [/app/?next=%2Fapp%2Fpreview]
 preview-no-nonce|/app/preview|content-security-policy has no nonce

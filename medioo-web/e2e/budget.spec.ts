@@ -2,7 +2,15 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, type Page, type Response, type TestInfo } from "@playwright/test";
 import { NEXT_PAGES } from "../src/routing/paths";
-import { ceilingMessage, concretePath, fontProblems, isJavaImage, readCeilings, routeTotal } from "./support/budget";
+import {
+  ceilingMessage,
+  concretePath,
+  fontProblems,
+  isJavaImage,
+  readCeilings,
+  routeTotal,
+  unencodedByCaddy,
+} from "./support/budget";
 import { useScenario } from "./support/browser-api";
 import { PAGE_MARKERS, PAGE_SCENARIOS } from "./support/scenarios.mjs";
 
@@ -32,8 +40,12 @@ type Row = {
  *
  * The defining run is behind a Caddy replica of docs/infra/Caddyfile.medioo (scripts/budget-behind-caddy.sh), with
  * E2E_VIA_CADDY=1: every measured document must then carry Strict-Transport-Security, which only that Caddy block
- * sets, so a run that bypassed Caddy cannot pass. The suite's run against `next start` applies the same ceilings and
- * can only be stricter (Caddy encodes only what Next sent unencoded).
+ * sets, so a run that bypassed Caddy cannot pass. The suite's own run applies the same ceilings to `next start` behind
+ * the measuring proxy (support/encode-proxy.mjs), which encodes as that Caddy block does: since PO ruling P3 Next sends
+ * every body unencoded (compress: false) and Caddy compresses it, so without the proxy the suite would measure bodies
+ * no phone receives. Either way every measured document, script and stylesheet must have crossed the wire as Caddy
+ * encodes it (unencodedByCaddy). The proxy and Caddy differ by a few hundred bytes a page (DR-42, the P3 note); the
+ * Caddy run decides them.
  */
 const VIA_CADDY = process.env.E2E_VIA_CADDY === "1";
 const ENFORCED_ON = "phone";
@@ -147,6 +159,10 @@ function expectAWholeMeasurement(load: Load, origin: string, path: string) {
   expect(load.totals.script?.count ?? 0, `${path}: Next's client scripts`).toBeGreaterThan(0);
   expect(load.totals.stylesheet?.count ?? 0, `${path}: the stylesheet`).toBeGreaterThan(0);
   for (const r of load.rows) expect(r.wire, `wire bytes measured for ${r.url}`).toBeGreaterThan(0);
+  // What was measured is what Caddy sends a phone (PO ruling P3): Next sends every body unencoded and Caddy's
+  // `encode zstd gzip` answers Chrome in zstd. An unencoded body was measured with nothing in front of Next, and a gzip
+  // one was encoded by Next itself; neither is the shipped path. Caddy leaves a first write of 512 B or less alone.
+  expect(unencodedByCaddy(load.rows), `${path}: bodies that did not cross the wire as Caddy encodes them`).toEqual([]);
   // Both Noto subsets, on every measured load and not only the probe (DR-42 item 2): globals.css loads them by
   // unicode-range, so a load without one is up to 97,648 B under the worst case the ceilings are defined on.
   expect(fontProblems(load.rows), `${path}: both Noto subsets crossed the wire, once each`).toEqual([]);

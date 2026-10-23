@@ -40,6 +40,17 @@
 #
 # Referrer-Policy stays strict-origin-when-cross-origin, the value production has sent since before the rebuild
 # (noted for the PO in the W1c PR): medioo-web's own headers send the same value, and Caddy overwrites it anyway.
+#
+# Compression: Caddy owns it for medioo-web (PO ruling P3, 2026-10-23). The site-wide `encode zstd gzip` below covers
+# every handle, medioo-web's and Java's alike. medioo-web sends every body unencoded (next.config.ts compress: false),
+# so this is the one pass that compresses its pages: Next's own streaming gzip had compressed the RSC-heavy document in
+# tiny flushes (the 58-value /all page's document 64 KB on the wire, under 18 KB in one stream) and put the page over
+# the DR-42 route ceiling. Caddy's encode never touches a body the upstream already encoded, which is why the line was
+# here all along and did nothing for medioo-web until P3. It also keeps streaming: a response of unknown length is
+# flushed write by write through the encoder (measured locally on 2026-10-23, Caddy 2.11.7). Java is unchanged: its
+# pages were already sent unencoded and compressed here (production answered /app/ in zstd before P3, read-only
+# check 2026-10-23). The live block was checked read-only the same day: identical to this one, so P3 needs no box edit.
+# scripts/smoke-https.sh's /brand/medioo-light.svg row asks for zstd after every deploy; only this line produces it.
 
 medioo.eliooo.org {
 	encode zstd gzip

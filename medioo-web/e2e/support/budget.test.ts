@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  CADDY_MIN_LENGTH,
   CEILINGS_FILE,
   NOTO_SUBSETS,
   ceilingMessage,
@@ -11,6 +12,7 @@ import {
   isJavaImage,
   readCeilings,
   routeTotal,
+  unencodedByCaddy,
 } from "./budget";
 
 // The rules budget.spec.ts enforces with, judged here without a browser (DR-42 items 2-4, screens plan S9).
@@ -203,5 +205,57 @@ describe("fontProblems (DR-42 item 2: both self-hosted Noto subsets fetched and 
 
   it("matches a subset by path, whatever the origin or query", () => {
     expect(fontProblems([...page, font(`https://medioo.example${BN}?v=1`), font(LATIN)])).toEqual([]);
+  });
+});
+
+describe("unencodedByCaddy (PO ruling P3: what was measured is what Caddy sends a phone)", () => {
+  type Row = { kind: string; url: string; status: number; encoding: string; decoded: number };
+  const row = (over: Partial<Row> = {}): Row => ({
+    kind: "document",
+    url: "/app/probe",
+    status: 200,
+    encoding: "zstd",
+    decoded: 7983,
+    ...over,
+  });
+
+  it("passes a load whose document, scripts and stylesheet all came zstd-encoded, with fonts left as they are", () => {
+    expect(
+      unencodedByCaddy([
+        row(),
+        row({ kind: "script", url: "/_next/static/chunks/a.js", decoded: 173019 }),
+        row({ kind: "stylesheet", url: "/_next/static/css/a.css", decoded: 4944 }),
+        row({ kind: "font", url: NOTO_SUBSETS[0], encoding: "identity", decoded: 69784 }),
+        row({ kind: "other", url: "/brand/mio-head.webp", encoding: "identity", decoded: 4620 }),
+      ]),
+    ).toEqual([]);
+  });
+
+  it("refuses a document measured unencoded: nothing stood in front of Next, and no phone gets that", () => {
+    expect(unencodedByCaddy([row({ encoding: "identity" })])).toEqual(["/app/probe (document, 7983 B, content-encoding identity)"]);
+  });
+
+  it("refuses a script Next gzipped itself: compress: false undone, the defect P3 fixed", () => {
+    expect(unencodedByCaddy([row(), row({ kind: "script", url: "/_next/static/chunks/a.js", encoding: "gzip", decoded: 9000 })])).toEqual([
+      "/_next/static/chunks/a.js (script, 9000 B, content-encoding gzip)",
+    ]);
+  });
+
+  it("refuses an RSC payload and a stylesheet the same way", () => {
+    expect(
+      unencodedByCaddy([
+        row({ kind: "rsc", url: "/app?_rsc=1", encoding: "identity" }),
+        row({ kind: "stylesheet", url: "/a.css", encoding: "gzip" }),
+      ]),
+    ).toEqual(["/app?_rsc=1 (rsc, 7983 B, content-encoding identity)", "/a.css (stylesheet, 7983 B, content-encoding gzip)"]);
+  });
+
+  it("leaves a body of 512 B or less alone, as Caddy does, and not one of 513 B", () => {
+    expect(unencodedByCaddy([row({ encoding: "identity", decoded: CADDY_MIN_LENGTH })])).toEqual([]);
+    expect(unencodedByCaddy([row({ encoding: "identity", decoded: CADDY_MIN_LENGTH + 1 })])).toHaveLength(1);
+  });
+
+  it("leaves a response that was not a 200 to the checks that judge it", () => {
+    expect(unencodedByCaddy([row({ status: 404, encoding: "identity" })])).toEqual([]);
   });
 });
