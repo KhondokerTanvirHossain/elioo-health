@@ -1,0 +1,60 @@
+{
+  "_meta": {
+    "generated_by": "baymax FamilyApiContractTest",
+    "source": "GET /app/api/family over the case long-name"
+  },
+  "body": {
+    "account": {
+      "language": "bn",
+      "number": "+880 1700-000539",
+      "owner_name": "Tanvir",
+      "reminders_stopped": false,
+      "terms_date": "2026-09-14"
+    },
+    "flags_offered": [
+      {
+        "id": "diabetes",
+        "label_key": "flag.diabetes"
+      },
+      {
+        "id": "hypertension",
+        "label_key": "flag.hypertension"
+      },
+      {
+        "id": "kidney",
+        "label_key": "flag.kidney"
+      },
+      {
+        "id": "thyroid",
+        "label_key": "flag.thyroid"
+      },
+      {
+        "id": "heart",
+        "label_key": "flag.heart"
+      }
+    ],
+    "patients": [
+      {
+        "age": 64,
+        "chronic_flags": [
+          {
+            "label_key": "flag.diabetes",
+            "value": "diabetes"
+          },
+          {
+            "label_key": null,
+            "value": "rheumatoid arthritis with lupus overlaps"
+          }
+        ],
+        "consent_date": "2026-09-14",
+        "id": "a74470f2-d4f6-3a5c-a984-47871c583d5d",
+        "name": "মোছাম্মৎ রোকেয়া বেগম চৌধুরী",
+        "name_possessive": "মোছাম্মৎ রোকেয়া বেগম চৌধুরীর",
+        "owner": true,
+        "reminders": "on",
+        "sex_key": "sex.FEMALE"
+      }
+    ]
+  },
+  "status": 200
+}

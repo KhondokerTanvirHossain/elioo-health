@@ -365,15 +365,100 @@ export async function cropRowsReport(page: Page, rows: readonly CropRow[]): Prom
 }
 
 /** Whether some element's own text (a text child, not a descendant's) contains `text`: a long name split across
- * elements, or present only in an attribute, is not rendered as one string. */
-export function rendersOwnText(page: Page, text: string): Promise<boolean> {
+ * elements, or present only in an attribute, is not rendered as one string. `within` narrows it to the elements inside
+ * that selector (a screen's own card, not the shell around it). */
+export function rendersOwnText(page: Page, text: string, within = "body"): Promise<boolean> {
   return page.evaluate(
-    (n) =>
-      [...document.querySelectorAll("body *")].some((el) =>
+    ({ n, within }) =>
+      [...document.querySelectorAll(`${within} *`)].some((el) =>
         [...el.childNodes].some((c) => c.nodeType === 3 && (c.textContent ?? "").includes(n)),
       ),
-    text,
+    { n: text, within },
   );
+}
+
+/**
+ * Every track under `scope` (a `[role=group]` that paints --fill: a segmented control's track, which is not focusable
+ * itself) is judged on its edge alone, at rest and hovered, with no data-theme and under data-theme light and dark: it
+ * must draw --boundary (a border, an outline or a 1 px ring), as Q1 (A) asks of anything washed with --fill. Tracks are
+ * found by what they paint, under each theme, so a track that drops --fill is not silently skipped as "not a track"
+ * while another theme still paints it. Returns the tracks found and every problem.
+ */
+export async function trackReport(page: Page, scope: string) {
+  const bad: string[] = [];
+  /** How many tracks were judged, per `theme mode` pass: the caller requires its minimum in every pass. */
+  const counts: Record<string, number> = {};
+  for (const theme of [null, "light", "dark"] as const) {
+    const themeName = theme ?? "(system)";
+    await page.evaluate((t) => {
+      if (t === null) document.documentElement.removeAttribute("data-theme");
+      else document.documentElement.setAttribute("data-theme", t);
+    }, theme);
+    for (const mode of ["rest", "hover"] as const) {
+      const tracks = await page.evaluate(
+        ({ scope }) => {
+          const swatch = document.createElement("div");
+          document.body.append(swatch);
+          const resolved = (token: string) => {
+            swatch.style.setProperty("background-color", `var(${token})`);
+            const value = getComputedStyle(swatch).backgroundColor;
+            swatch.style.removeProperty("background-color");
+            return value;
+          };
+          const fill = resolved("--fill");
+          const boundary = resolved("--boundary");
+          swatch.remove();
+          return [...document.querySelectorAll<HTMLElement>(`${scope} [role=group]`)]
+            .filter((el) => getComputedStyle(el).backgroundColor === fill)
+            .map((el, i) => {
+              el.setAttribute("data-track-check", String(i));
+              return { i, classes: [...el.classList].join("."), fill, boundary };
+            });
+        },
+        { scope },
+      );
+      counts[`${themeName} ${mode}`] = tracks.length;
+      for (const track of tracks) {
+        const el = page.locator(`[data-track-check="${track.i}"]`);
+        await page.mouse.move(0, 0);
+        // Hovered on the track's own top edge, mid-width (not a rounded corner, not an option inside it).
+        if (mode === "hover") {
+          const box = await el.boundingBox();
+          if (box) await el.hover({ position: { x: box.width / 2, y: 1 } });
+        }
+        const problems = await el.evaluate(
+          (node, { boundary, mode }) => {
+            const cs = getComputedStyle(node);
+            const out: string[] = [];
+            if (mode === "hover" && !node.matches(":hover")) out.push("not hovered");
+            if (node.tabIndex >= 0) out.push("a track that takes focus is a control: judge it with boundaryReport");
+            const visible = (style: string) => style !== "none" && style !== "hidden";
+            const sides = ["top", "right", "bottom", "left"];
+            const border = sides.every(
+              (side) =>
+                parseFloat(cs.getPropertyValue(`border-${side}-width`)) >= 1 &&
+                visible(cs.getPropertyValue(`border-${side}-style`)) &&
+                cs.getPropertyValue(`border-${side}-color`) === boundary,
+            );
+            const outline = parseFloat(cs.outlineWidth) >= 1 && visible(cs.outlineStyle) && cs.outlineColor === boundary;
+            const ring = (cs.boxShadow === "none" ? [] : cs.boxShadow.split(/,(?![^(]*\))/)).some((shadow) => {
+              const m = /^\s*(rgba?\([^)]*\))\s+(.*)$/.exec(shadow);
+              if (!m || m[1] !== boundary) return false;
+              const px = m[2]!.split(/\s+/).filter((w) => w.endsWith("px")).map(parseFloat);
+              return px.length === 4 && px[0] === 0 && px[1] === 0 && px[2] === 0 && px[3]! >= 1;
+            });
+            if (!border && !outline && !ring) out.push(`draws no --boundary ${boundary} on every edge`);
+            return out;
+          },
+          { boundary: track.boundary, mode },
+        );
+        for (const p of problems) bad.push(`.${track.classes} ${mode} data-theme=${themeName}: ${p}`);
+        await el.evaluate((node) => node.removeAttribute("data-track-check"));
+      }
+    }
+  }
+  await page.evaluate(() => document.documentElement.removeAttribute("data-theme"));
+  return { counts, bad };
 }
 
 /** A routed page opened under a scenario, with the CSP hook installed and every eager image and font loaded. */
@@ -402,6 +487,10 @@ export function screenChecks(
   opts: {
     crops?: CropRow[];
     longest?: boolean;
+    /** The selector the longest twin's long name must be drawn inside (the screen's own element, not the shell). */
+    longestIn?: string;
+    /** How many tracks (trackReport) the page must yield in every theme and state; a page with tracks names it. */
+    tracks?: number;
     fields?: string[];
     onePrimary?: boolean;
     act?: { state: string; run: (page: Page) => Promise<void> };
@@ -443,6 +532,11 @@ export function screenChecks(
             // The longest twin's name (from its own `me`) is on the page, or overflow was judged on short strings.
             const longName = longNameOf(name);
             expect(await rendersOwnText(page, longName), `the long name "${longName}" is rendered`).toBe(true);
+            if (opts.longestIn) {
+              const where = opts.longestIn;
+              expect(await page.locator(where).count(), `${where} on the page`).toBeGreaterThan(0);
+              expect(await rendersOwnText(page, longName, where), `the long name is drawn inside ${where}`).toBe(true);
+            }
           }
           const report = await overflowReport(page, "body");
           expect(report.over).toEqual([]);
@@ -460,6 +554,13 @@ export function screenChecks(
           expect(report.bad).toEqual([]);
           const checked = new Set(report.controls.flatMap((c) => c.classes));
           for (const want of opts.fields ?? []) expect(checked, `.${want} was checked`).toContain(want);
+          // Tracks (a non-focusable [role=group] washed with --fill) are judged on their edge alone, no focus demanded.
+          const tracks = await trackReport(page, "body");
+          expect(tracks.bad).toEqual([]);
+          if (opts.tracks !== undefined) {
+            for (const [pass, n] of Object.entries(tracks.counts)) expect(n, `tracks judged, ${pass}`).toBe(opts.tracks);
+            expect(Object.keys(tracks.counts), "every theme and state was a pass").toHaveLength(6);
+          }
         });
 
         test("noTextUnderTwelvePixels", async ({ page }) => {

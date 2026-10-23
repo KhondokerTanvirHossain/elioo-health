@@ -43,7 +43,9 @@ export function routeKey(scenario, method, path) {
   return null;
 }
 
-function load(value) {
+/** A scenario value's answer: a fixture read, a literal as it is, or a function of the request (`{ path, body }`). */
+function load(value, request) {
+  if (typeof value === "function") return value(request);
   if (typeof value === "string") {
     const fixture = JSON.parse(readFileSync(join(FIXTURES, value), "utf8"));
     return { status: fixture.status ?? 200, body: fixture.body };
@@ -55,7 +57,7 @@ function load(value) {
  * The answer to one request. `counters` holds how many times each `scenario key` was answered (for answer lists); the
  * caller owns it, so the stub's is per run and the browser's per test.
  */
-export function answer({ method, path, headers, origin, counters }) {
+export function answer({ method, path, headers, origin, counters, body = null }) {
   const name = cookieValue(headers.cookie, "e2e_scenario");
   const scenario = SCENARIOS[name ?? ""];
   if (!scenario) return { status: 404, body: { reason: "NOT_FOUND" } };
@@ -78,11 +80,12 @@ export function answer({ method, path, headers, origin, counters }) {
   const key = routeKey(scenario, method, path);
   if (key === null) return { status: 404, body: { reason: "NOT_FOUND" } };
   const value = scenario[key];
-  if (!Array.isArray(value)) return load(value);
+  const request = { path, body };
+  if (!Array.isArray(value)) return load(value, request);
   const counter = `${name} ${key}`;
   const n = counters.get(counter) ?? 0;
   counters.set(counter, n + 1);
-  return load(value[Math.min(n, value.length - 1)]);
+  return load(value[Math.min(n, value.length - 1)], request);
 }
 
 /** What the log keeps of one request: never a body, and of the headers only their names and the guard's three. */
@@ -117,10 +120,18 @@ function serve(port, host, origin) {
       }
       return send(200, log);
     }
-    req.resume();
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
     req.on("end", () => {
       const entry = { method: req.method ?? "GET", path: url.pathname, query: url.search.slice(1), headers: req.headers };
-      const result = answer({ ...entry, origin, counters });
+      // The JSON body, for an answer derived from the request (a scenario function); null for none or not JSON.
+      let sent = null;
+      try {
+        sent = chunks.length === 0 ? null : JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      } catch {
+        sent = null;
+      }
+      const result = answer({ ...entry, origin, counters, body: sent });
       // `{ abort }`: the connection dies under the request, as a phone's does mid-press (no status reaches anyone).
       if ("abort" in result) {
         log.push({ ...record(entry), status: 0 });

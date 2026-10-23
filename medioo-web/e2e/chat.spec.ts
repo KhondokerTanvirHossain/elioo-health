@@ -5,7 +5,8 @@ import type { AttentionJson, MeJson, NowBannerJson, ThreadJson } from "../src/ap
 import { t, type CopyKey } from "../src/copy";
 import { NEXT_PAGES, signInPath } from "../src/routing/paths";
 import { useScenario, type CropRow } from "./support/browser-api";
-import { FIXTURES, PAGE_MARKERS, PAGE_SCENARIOS, SCENARIOS, withNowName, withStaleNowName } from "./support/scenarios.mjs";
+import { concretePath } from "./support/budget";
+import { FIXTURES, PAGE_MARKERS, PAGE_PATHS, PAGE_SCENARIOS, SCENARIOS, withNowName, withStaleNowName } from "./support/scenarios.mjs";
 import { screenChecks } from "./support/screen-checks";
 
 /*
@@ -29,13 +30,13 @@ const ONE = body<MeJson>("me/one-patient.json");
 const TWO = body<MeJson>("me/two-patients.json");
 const CATALOG_URL = process.env.E2E_CATALOG_URL ?? `http://127.0.0.1:${Number(process.env.E2E_PORT ?? 3217) + 1}`;
 
-/** The signed-in pages of this build: every NEXT_PAGES entry but the sign-in pages, with a real value for each pattern. */
+/**
+ * The signed-in pages of this build: every NEXT_PAGES entry but the sign-in pages, each with the path it is opened at
+ * (a dynamic pattern filled from PAGE_PATHS, the fixture id its scenario serves; concretePath refuses one left unfilled).
+ */
 const SIGN_IN_PAGES = ["/app", "/app/verify"];
-function signedInPages(): string[] {
-  return NEXT_PAGES.filter((p) => !SIGN_IN_PAGES.includes(p)).map((p) => {
-    if (/\{\w+\}/.test(p)) throw new Error(`${p}: name a fixture id for this pattern here before the banner check can open it`);
-    return p;
-  });
+function signedInPages(): Array<{ pattern: string; path: string }> {
+  return NEXT_PAGES.filter((p) => !SIGN_IN_PAGES.includes(p)).map((pattern) => ({ pattern, path: concretePath(pattern, PAGE_PATHS) }));
 }
 
 async function open(page: Page, scenario: string, path = "/app/home") {
@@ -130,16 +131,16 @@ test.describe("the NOW banner", () => {
   test("theBannerIsOnEveryPage", async ({ page }) => {
     const pages = signedInPages();
     expect(pages.length, "signed-in pages in NEXT_PAGES").toBeGreaterThan(0);
-    for (const path of pages) {
+    for (const { pattern, path } of pages) {
       // Each page under its own scenario (PAGE_SCENARIOS), with an unseen NOW paper for its patient (withNow), so the
       // page makes its own reads and is not a not-found page drawn from another page's scenario.
-      const own = PAGE_SCENARIOS[path];
-      expect(own, `PAGE_SCENARIOS["${path}"]`).toBeDefined();
+      const own = PAGE_SCENARIOS[pattern];
+      expect(own, `PAGE_SCENARIOS["${pattern}"]`).toBeDefined();
       await open(page, withNowName(own!), path);
       await expect(alert(page), path).toHaveCount(1);
       // The page itself, not a not-found page carrying the shell's banner: its PAGE_MARKERS attribute is rendered.
-      const marker = PAGE_MARKERS[path];
-      expect(marker, `PAGE_MARKERS["${path}"]`).toBeDefined();
+      const marker = PAGE_MARKERS[pattern];
+      expect(marker, `PAGE_MARKERS["${pattern}"]`).toBeDefined();
       await expect(page.locator(`[${marker}]`), `${path} rendered itself`).toHaveCount(1);
     }
     // And on the shell's own catalog page (the catalog build, W4).
@@ -195,9 +196,9 @@ test.describe("the NOW banner", () => {
     // GET /app/api/documents/{id} renders the stale answer some other way. Every signed-in page is held to it (W6 too).
     const pages = signedInPages();
     expect(pages.length, "signed-in pages in NEXT_PAGES").toBeGreaterThan(0);
-    for (const path of pages) {
-      const own = PAGE_SCENARIOS[path];
-      expect(own, `PAGE_SCENARIOS["${path}"]`).toBeDefined();
+    for (const { pattern, path } of pages) {
+      const own = PAGE_SCENARIOS[pattern];
+      expect(own, `PAGE_SCENARIOS["${pattern}"]`).toBeDefined();
       const recorder = await open(page, withStaleNowName(own!), path);
       const before = (await recorder.java()).length;
       const refreshed = page.waitForRequest((r) => r.headers()["rsc"] === "1" && new URL(r.url()).pathname === new URL(page.url()).pathname);

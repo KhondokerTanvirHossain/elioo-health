@@ -1,0 +1,29 @@
+{
+  "_meta": {
+    "generated_by": "baymax FamilyApiContractTest",
+    "source": "GET /app/api/me over the family case share-member"
+  },
+  "body": {
+    "active_patient_id": "06b2fc1c-7353-3acb-b414-c3e7a40e5630",
+    "family": {
+      "id": "385ca751-d0ad-37e8-bf56-7dd6fd7f4fb5",
+      "owner_name": "Karim"
+    },
+    "patients": [
+      {
+        "age": 64,
+        "documents": 0,
+        "id": "06b2fc1c-7353-3acb-b414-c3e7a40e5630",
+        "last_document_at": null,
+        "name": "রোকেয়া পরীক্ষা",
+        "name_objective": "রোকেয়া পরীক্ষাকে",
+        "name_possessive": "রোকেয়া পরীক্ষার",
+        "owner": false,
+        "sex": "female",
+        "urgent": false
+      }
+    ],
+    "preview": true
+  },
+  "status": 200
+}

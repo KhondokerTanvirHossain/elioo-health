@@ -23,10 +23,12 @@ describe("TabBar", () => {
     cleanup();
     const preview = render(<TabBar lang="bn" preview current="chat" />);
     // The chat page is this build's (W5): on a preview page its tab stays inside the preview.
+    // W10: this build serves /app/family, so on a preview page the family tab stays inside the preview.
+    expect(NEXT_PAGES).toContain("/app/family");
     expect(links(preview.container).map((a) => a.getAttribute("href")), "preview, before W9").toEqual([
       "/app/preview/home",
       "/app/timeline",
-      "/app/family",
+      "/app/preview/family",
     ]);
     cleanup();
 

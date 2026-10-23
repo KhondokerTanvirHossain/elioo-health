@@ -7,6 +7,7 @@ import {
   SCENARIOS,
   UNAUTHENTICATED,
   bannerFor,
+  flagsSaved,
   longNameOf,
   messagesOnly,
   reRead,
@@ -58,6 +59,31 @@ function firstBody(value: unknown): unknown {
   const v = Array.isArray(value) ? value[0] : value;
   if (typeof v === "string") return (JSON.parse(readFileSync(join(FIXTURES, v), "utf8")) as { body: unknown }).body;
   return (v as { body: unknown }).body;
+}
+
+/** A fixture's body, or a literal's. */
+function bodyAt(value: unknown): unknown {
+  const v = Array.isArray(value) ? value[0] : value;
+  if (typeof v === "string") return (JSON.parse(readFileSync(join(FIXTURES, v), "utf8")) as { body: unknown }).body;
+  return (v as { body?: unknown } | undefined)?.body;
+}
+
+type Listed = { patients?: { id: string; owner: boolean }[] };
+const listed = (b: unknown) => ((b as Listed | undefined)?.patients ?? []).map((p) => `${p.id} owner=${p.owner}`);
+
+/**
+ * What is wrong with a scenario that serves both `me` and `family`: the two bodies list other patients, or own them
+ * differently, which Java cannot produce (both are built from one timeline.me). Null when they agree, or when the
+ * scenario serves only one of them.
+ */
+export function mePairProblem(table: Record<string, unknown>): string | null {
+  const me = table["GET /app/api/me"];
+  const family = table["GET /app/api/family"];
+  if (me === undefined || family === undefined) return null;
+  const a = listed(bodyAt(me));
+  const b = listed(bodyAt(family));
+  if (a.length === 0 && b.length === 0) return "me and family list no patient: nothing is compared";
+  return JSON.stringify(a) === JSON.stringify(b) ? null : `me lists ${JSON.stringify(a)}, family lists ${JSON.stringify(b)}`;
 }
 
 describe("the scenario table is Java's", () => {
@@ -150,6 +176,41 @@ describe("the scenario table is Java's", () => {
       const others = (table: Record<string, unknown>) => Object.entries(table).filter(([key]) => key !== "GET /app/api/now-banner");
       expect(others(twin!)).toEqual(others(SCENARIOS[name]!));
     }
+  });
+
+  it("everyFamilyScenariosMeListsItsFamilysPatients", () => {
+    const paired = Object.entries(SCENARIOS).filter(([, table]) => table["GET /app/api/me"] && table["GET /app/api/family"]);
+    // Guard: the family scenarios were found, or the sweep passes over nothing.
+    expect(paired.map(([name]) => name), "scenarios serving me and family").toContain("family-owner");
+    expect(paired.length).toBeGreaterThanOrEqual(6);
+    expect(paired.map(([name, table]) => [name, mePairProblem(table)]).filter(([, p]) => p !== null)).toEqual([]);
+  });
+
+  it("aMeThatNamesSomeoneTheTabDoesNotListIsRefused", () => {
+    // The pairs W10 first shipped: Ma beside two other patients, and an owned `me` beside a shared family patient.
+    expect(mePairProblem({ "GET /app/api/me": "me/one-patient.json", "GET /app/api/family": "family/owner.json" })).toMatch(/^me lists/);
+    expect(mePairProblem({ "GET /app/api/me": "me/one-patient.json", "GET /app/api/family": "family/share-member.json" })).toMatch(
+      /^me lists/,
+    );
+    // The same ids owned differently are refused too.
+    const family = bodyAt("family/share-member.json") as { patients: { id: string; owner: boolean }[] };
+    const owned = { status: 200, body: { patients: family.patients.map((p) => ({ ...p, owner: true })) } };
+    expect(mePairProblem({ "GET /app/api/me": owned, "GET /app/api/family": "family/share-member.json" })).toMatch(/owner=true/);
+    expect(mePairProblem({ "GET /app/api/me": "me/family-share-member.json", "GET /app/api/family": "family/share-member.json" })).toBeNull();
+  });
+
+  it("theFlagsAnswerIsTheListSentAsJavaStoresIt", () => {
+    const family = bodyAt("family/owner.json") as { patients: { id: string }[] };
+    const second = family.patients[1]!.id;
+    const saved = flagsSaved("family/owner.json")({ path: `/app/api/patients/${second}/flags`, body: { chronic_flags: [" Kidney ", "migraine", "kidney", " "] } });
+    expect(saved.status).toBe(200);
+    const body = saved.body as { id: string; chronic_flags: unknown };
+    expect(body.id, "the patient the path names, not the first one").toBe(second);
+    expect(body.chronic_flags).toEqual([
+      { value: "kidney", label_key: "flag.kidney" },
+      { value: "migraine", label_key: null },
+    ]);
+    expect(flagsSaved("family/owner.json")({ path: "/app/api/patients/5e9edf6d-0a2a-4913-8675-9d07a4100099/flags", body: {} }).status).toBe(404);
   });
 
   it("aMisspelledRouteIsRefused", () => {

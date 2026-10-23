@@ -88,6 +88,77 @@ export function messagesOnly(fixture) {
   return { status: parsed.status, body: { ...parsed.body, items: parsed.body.items.filter((i) => i.kind === "message") } };
 }
 
+/** A fixture's body, as Java's contract test wrote it. */
+function bodyOf(fixture) {
+  return JSON.parse(readFileSync(join(FIXTURES, fixture), "utf8")).body;
+}
+
+/** The id of patient `index` in a GET /app/api/family fixture: the profile page is loaded at it (PAGE_PATHS). */
+export function familyPatientId(fixture, index = 0) {
+  return bodyOf(fixture).patients[index].id;
+}
+
+/** The patient a `/app/api/patients/{id}/…` path names, from a family fixture, or undefined. */
+function patientAt(fixture, path) {
+  const id = path.split("/")[4];
+  return bodyOf(fixture).patients.find((p) => p.id === id);
+}
+
+const NOT_FOUND = { status: 404, body: { reason: "NOT_FOUND" } };
+
+/**
+ * What Java's flags PUT answers (FamilyApiHandler: the saved patient, as GET /app/api/family lists it), derived from the
+ * request, never typed here: the patient the path names in the family fixture (404 for one it does not list, as Java
+ * answers), whose `chronic_flags` are the list sent, stored as FamilyAccountService.normalizeFlags stores it (trimmed,
+ * lower-cased, blanks and repeats dropped) and each named by its offered key or by none (a typed flag).
+ */
+export function flagsSaved(fixture) {
+  return ({ path, body }) => {
+    const patient = patientAt(fixture, path);
+    if (patient === undefined) return NOT_FOUND;
+    const keys = new Map(bodyOf(fixture).flags_offered.map((o) => [o.id, o.label_key]));
+    const sent = Array.isArray(body?.chronic_flags) ? body.chronic_flags : [];
+    const values = [...new Set(sent.filter((v) => typeof v === "string" && v.trim() !== "").map((v) => v.trim().toLowerCase()))];
+    return { status: 200, body: { ...patient, chronic_flags: values.map((value) => ({ value, label_key: keys.get(value) ?? null })) } };
+  };
+}
+
+/** What Java's per-patient stop answers: the patient the path names, stopped (404 for one the fixture does not list). */
+function patientStopped(fixture) {
+  return ({ path }) => {
+    const patient = patientAt(fixture, path);
+    return patient === undefined ? NOT_FOUND : { status: 200, body: { ...patient, reminders: "stopped_for_patient" } };
+  };
+}
+
+/** What Java's family stop answers: the whole family body, the stop set and every patient stopped for the family. */
+function familyStopped(fixture) {
+  const body = bodyOf(fixture);
+  return {
+    status: 200,
+    body: {
+      ...body,
+      account: { ...body.account, reminders_stopped: true },
+      patients: body.patients.map((p) => ({ ...p, reminders: "stopped_for_family" })),
+    },
+  };
+}
+
+const VIEW_ONLY = { status: 403, body: { reason: "VIEW_ONLY" } };
+
+/** The family tab's writes (W10) as Java answers an owner: B5's routes, W10-api's preference, W3-api's sign-out. */
+const familyWrites = (fixture) => ({
+  "PUT /app/api/patients/{id}/flags": flagsSaved(fixture),
+  "PUT /app/api/patients/{id}/reminders": patientStopped(fixture),
+  "PUT /app/api/family/reminders": familyStopped(fixture),
+  "PUT /app/api/language": NO_CONTENT,
+  "PUT /app/api/preferences": NO_CONTENT,
+  "POST /app/api/sign-out": NO_CONTENT,
+  // After signing out, the sign-in page asks where to go and Java says there is no session.
+  "GET /app/api/sign-in/next": UNAUTHENTICATED,
+  "GET /app/api/sign-in/state": "sign-in/state-none.json",
+});
+
 /** The open sign-in routes every signed-out scenario answers (AppApiGuard.OPEN, W3-api). */
 const SIGN_IN = {
   "POST /app/api/sign-in/request": ["sign-in/confirm.json", "sign-in/sent.json"],
@@ -299,6 +370,59 @@ export const SCENARIOS = {
     "GET /app/api/me": "me/preview-on.json",
     "GET /app/api/now-banner": bannerFor("now-banner/one.json", "me/preview-on.json"),
   }),
+  // family (W10): each scenario's `me` is the one FamilyApiContractTest read from the same seeded family as its family
+  // body (me/family-*.json), so the toolbar never names a patient the tab does not list (FAMILY_PAIRS, checked in
+  // scenarios.test.ts). The owner (Ma remembered), the share member (every write refused VIEW_ONLY, as Java refuses a
+  // forced one), an owner whose save Java refuses VIEW_ONLY (the share withdrawn while the page was open), a family
+  // whose reminders are stopped, two patients and no choice (the tab is about everyone: no chooser), and the longest
+  // twins (the longest name on the tab's own cards, owned and shared, with the longest typed flag).
+  "family-owner": {
+    ...NO_NOW,
+    "GET /app/api/me": "me/family-owner.json",
+    "GET /app/api/family": "family/owner.json",
+    ...familyWrites("family/owner.json"),
+  },
+  "family-owner-view-only": {
+    ...NO_NOW,
+    "GET /app/api/me": "me/family-owner.json",
+    "GET /app/api/family": "family/owner.json",
+    ...familyWrites("family/owner.json"),
+    "PUT /app/api/patients/{id}/flags": VIEW_ONLY,
+  },
+  "family-owner-long": {
+    ...NO_NOW,
+    "GET /app/api/me": "me/family-long-name.json",
+    "GET /app/api/family": "family/long-name.json",
+    ...familyWrites("family/long-name.json"),
+  },
+  "family-share-member": {
+    ...NO_NOW,
+    "GET /app/api/me": "me/family-share-member.json",
+    "GET /app/api/family": "family/share-member.json",
+    ...familyWrites("family/share-member.json"),
+    "PUT /app/api/patients/{id}/flags": VIEW_ONLY,
+    "PUT /app/api/patients/{id}/reminders": VIEW_ONLY,
+  },
+  "family-share-member-long": {
+    ...NO_NOW,
+    "GET /app/api/me": "me/family-long-name-shared.json",
+    "GET /app/api/family": "family/long-name-shared.json",
+    ...familyWrites("family/long-name-shared.json"),
+    "PUT /app/api/patients/{id}/flags": VIEW_ONLY,
+    "PUT /app/api/patients/{id}/reminders": VIEW_ONLY,
+  },
+  "family-reminders-off": {
+    ...NO_NOW,
+    "GET /app/api/me": "me/family-reminders-off.json",
+    "GET /app/api/family": "family/reminders-off.json",
+    ...familyWrites("family/reminders-off.json"),
+  },
+  "family-two-no-choice": {
+    ...NO_NOW,
+    "GET /app/api/me": "me/family-owner-no-choice.json",
+    "GET /app/api/family": "family/owner.json",
+    ...familyWrites("family/owner.json"),
+  },
   "next-500": {
     "GET /app/api/me": "me/one-patient.json",
     "GET /app/api/sign-in/next": {
@@ -341,6 +465,13 @@ export const PAGE_SCENARIOS = {
   "/app/verify": "state-pending-not-sent",
   "/app/add": "upload-owner-one",
   "/app/home": "chat-default",
+  "/app/family": "family-owner",
+  "/app/patients/{id}/profile": "family-owner",
+};
+
+/** The path a dynamic NEXT_PAGES entry is measured at, its id read from the fixture its scenario serves (budget.ts). */
+export const PAGE_PATHS = {
+  "/app/patients/{id}/profile": `/app/patients/${familyPatientId("family/owner.json")}/profile`,
 };
 
 /** The name of a scenario's NOW twin (withNow), registered below for every signed-in PAGE_SCENARIOS entry. */
@@ -381,6 +512,8 @@ export const PAGE_MARKERS = {
   "/app/verify": 'name="code"',
   "/app/add": "data-upload-sheet",
   "/app/home": 'data-page="chat"',
+  "/app/family": 'class="family-account"',
+  "/app/patients/{id}/profile": `data-patient-card="${familyPatientId("family/owner.json")}"`,
 };
 
 /** Each routed scenario's longest twin (`me/long-name.json` and the area's longest fixture), per screen. */
@@ -393,6 +526,10 @@ export const LONGEST = {
   // The chat page (W5): the longest name, and the thread's longest real page (thread/second-page.json, twenty items).
   "chat-default": "chat-long",
   "chat-now": "chat-now-long",
+  // family (W10): the longest name on the tab's own cards (family/long-name.json, owned; long-name-shared.json, seen by a
+  // share member), each with its own `me`, so the card headings are measured, not only the shell's toolbar.
+  "family-owner": "family-owner-long",
+  "family-share-member": "family-share-member-long",
 };
 
 /** The `{status, body}` a scenario value answers first: a fixture file read, a literal as it is. */

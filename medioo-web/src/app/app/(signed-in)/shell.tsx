@@ -47,28 +47,39 @@ function askedPatient(here: string): string | null {
  * - `asksItself` (the add sheet, W7): a page that asks whose it is in its own words, from its own read (whom the
  *   viewer may send for, which is not whom they may see). With two or more and no choice it gets `main` with no
  *   patient, never the chooser in its place; the toolbar still names nobody.
+ * - `everyone` (plan W10, family): the page is about every patient this family sees, not one, so the chooser never
+ *   stands in for it. Nothing is decided either: with two or more and no choice, `patient` is null and the toolbar
+ *   names nobody, exactly as under the chooser. An asked `?patient=` is still checked (not found is still not found).
+ * - `asked` (plan W10, the profile page): a patient the page's own address names (`/app/patients/{id}/profile`),
+ *   resolved through activePatient in place of `?patient=`, as Java's ProfilePages chooses the patient its link names:
+ *   the toolbar names that patient, and one this family does not see is the not-found page.
+ * Both are amendments of the plan's Global Constraint "a screen never decides a patient", approved by the PO 2026-10-23 (P2).
  */
 export async function signedInPage({
   tab,
   main,
   aside,
   asksItself = false,
+  everyone,
+  asked,
 }: {
   tab: Tab | null;
   main: Slot;
   aside?: Slot;
   asksItself?: boolean;
+  everyone?: boolean;
+  asked?: string;
 }) {
   const { lang, preview, here } = await requestContext();
   const [meAnswer, bannerAnswer] = await Promise.all([javaGet<MeJson>("/app/api/me"), javaGet<NowBannerJson>("/app/api/now-banner")]);
   const me = signedIn(meAnswer, here);
   if (preview && me.preview !== true) notFound();
   const banner = signedIn(bannerAnswer, here);
-  const view = activePatient(me, askedPatient(here));
+  const view = activePatient(me, asked ?? askedPatient(here));
   if (view.kind === "not-found") notFound();
   const patient = view.kind === "patient" ? view.patient : null;
   const ctx: ShellContext = { lang, preview, me, patient, nowShown: banner.show };
-  const chooser = view.kind === "choose" && !asksItself;
+  const chooser = view.kind === "choose" && !asksItself && everyone !== true;
   const content = chooser ? <PatientChooser lang={lang} patients={me.patients} /> : await fill(main, ctx);
   return (
     <AppShell

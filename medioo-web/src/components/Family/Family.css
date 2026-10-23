@@ -1,0 +1,457 @@
+/* The family tab and settings (FamilyScreen, PatientCard, ChronicFlags, ReminderSwitch, FamilyAccount, ThemeSwitch,
+   LanguageSwitch; phone.html scenes `family` and `theme`): the prototype's grouped list, each section a rounded group
+   on the page with its small heading above it. Q1 (A), PR #120: every control painted with the --fill wash (the
+   other-flag field, a check box, the segmented track) draws a 1 px --boundary edge in every state. Nothing here is red
+   or amber: nothing on this tab is urgent, and a stop is not destructive. Every size is a token. */
+.family {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: var(--space-4) var(--space-4) var(--space-6);
+  font-family: var(--font-bn);
+}
+.family__heading {
+  margin: 0;
+  font-size: var(--text-xxl);
+  font-weight: 700;
+  line-height: 1.25;
+}
+.family__patients {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+.family__section-title,
+.family-account__title {
+  margin: 0 var(--space-4);
+  color: var(--label2);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: 1.45;
+}
+.family__none {
+  margin: 0;
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--bg3);
+  font-size: var(--text-lg);
+  line-height: 1.5;
+}
+
+/* One patient: a group with the name as its heading. */
+.family-patient {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4);
+  /* The page and the group are the same surface in light (bg and bg3), so the group draws its own hairline edge. */
+  border: 1px solid var(--sep);
+  border-radius: var(--radius-md);
+  background: var(--bg3);
+}
+.family-patient__title {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.family-patient__shared {
+  align-self: flex-start;
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--tint-soft);
+  color: var(--tint-ink);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1.4;
+}
+.family-patient__facts,
+.family-account__facts {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+.family-patient__fact,
+.family-account__fact {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+  min-height: var(--target-min);
+  align-items: center;
+  border-bottom: 1px solid var(--sep);
+}
+.family-patient__fact dt,
+.family-account__fact dt {
+  font-size: var(--text-lg);
+}
+.family-patient__fact dd,
+.family-account__fact dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--label2);
+  font-size: var(--text-lg);
+  overflow-wrap: anywhere;
+}
+.family-account__number {
+  font-family: var(--font-sys);
+  font-variant-numeric: tabular-nums;
+}
+.family-patient__group,
+.family-account__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.family-patient__subtitle,
+.family-account__subtitle {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 1.4;
+}
+.family-patient__note {
+  margin: 0;
+  color: var(--label2);
+  font-size: var(--text-md);
+  line-height: 1.5;
+}
+
+/* The long-term conditions: one row per flag, a check box drawn as the prototype's tick. */
+.family-flags {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.family-flags__title {
+  margin: 0 0 var(--space-1);
+  padding: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 1.4;
+}
+.family-flags__hint {
+  margin: 0;
+  color: var(--label2);
+  font-size: var(--text-md);
+  line-height: 1.5;
+}
+.family-flags__options {
+  display: flex;
+  flex-direction: column;
+}
+.family-flags__option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--target-min);
+  /* The separator is drawn inside the row, so the check box covering it keeps the whole 44 px. */
+  box-shadow: inset 0 -1px 0 var(--sep);
+  font-size: var(--text-lg);
+  line-height: 1.4;
+  cursor: pointer;
+}
+/* The native check box covers the whole row, unseen, so the row is the 44 px target and the platform keeps the
+   semantics (role, state, the label as its name, the space bar); the box beside the words is drawn for it. */
+.family-flags__check {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.family-flags__box {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--boundary);
+  border-radius: var(--radius-sm);
+  background: var(--fill);
+  pointer-events: none;
+}
+.family-flags__check:checked + .family-flags__box {
+  background: var(--tint);
+}
+.family-flags__check:focus-visible + .family-flags__box {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+/* The tick in a ticked box (shape as well as colour); hidden while the box is clear. */
+.family-flags__tick {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: var(--on-tint);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  visibility: hidden;
+}
+.family-flags__check:checked + .family-flags__box .family-flags__tick {
+  visibility: visible;
+}
+.family-flags__label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.family-flags__other-label {
+  margin-top: var(--space-2);
+  color: var(--label2);
+  font-size: var(--text-md);
+}
+.family-flags__input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--target-min);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--boundary);
+  border-radius: var(--radius-md);
+  background: var(--fill);
+  color: var(--label);
+  caret-color: var(--tint-ink);
+  font-family: var(--font-bn);
+  font-size: var(--text-lg);
+}
+.family-flags__input:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+.family-flags__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.family-flags__item {
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--sep);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-md);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+/* The buttons: the save, the reminder stop, the segmented options. A stop is quiet, never red (Global Constraints). */
+.family-flags__save,
+.family-reminders__stop {
+  align-self: flex-start;
+  min-height: var(--target-min);
+  padding: var(--space-2) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-md);
+  font-family: var(--font-bn);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 1.35;
+  cursor: pointer;
+}
+.family-flags__save {
+  min-height: var(--target-primary);
+  margin-top: var(--space-2);
+  background: var(--tint);
+  color: var(--on-tint);
+}
+.family-reminders__stop {
+  background: transparent;
+  color: var(--tint-ink);
+  text-align: start;
+}
+.family-reminders__stop:hover {
+  background: var(--hover);
+}
+/* While a send is under way the pressed button keeps its focus (aria-disabled, never disabled: a disabled button
+   drops the focus to the page) and says it is busy. */
+.family-flags__save[aria-disabled="true"],
+.family-reminders__stop[aria-disabled="true"],
+.family-choice__option[aria-disabled="true"] {
+  cursor: progress;
+}
+.family-flags__save:focus-visible,
+.family-reminders__stop:focus-visible,
+.family-reminders__line:focus-visible,
+.family-reminders__yes:focus-visible,
+.family-reminders__keep:focus-visible,
+.family-choice__option:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+/* The stop's confirm (optout.q): the stop itself, then keep. Neither is red: a stop is not destructive. */
+.family-reminders__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.family-reminders__yes,
+.family-reminders__keep {
+  min-height: var(--target-min);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  font-family: var(--font-bn);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.family-reminders__yes {
+  border: 0;
+  background: var(--tint);
+  color: var(--on-tint);
+}
+.family-reminders__keep {
+  border: 1px solid var(--sep);
+  background: transparent;
+  color: var(--tint-ink);
+}
+.family-reminders__keep:hover {
+  background: var(--hover);
+}
+.family-reminders {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.family-reminders__line {
+  margin: 0;
+  font-size: var(--text-md);
+  line-height: 1.55;
+}
+/* Each status region is always mounted and empty until a send says something (ToastRegion's rule: a region inserted
+   with its text already inside is often not announced). Empty, it takes no room: its column's gap is taken back. */
+.family-flags__status,
+.family-reminders__status,
+.family-choice-field__status {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: 1.5;
+}
+.family-flags__status:empty {
+  margin-top: calc(-1 * var(--space-2));
+}
+.family-reminders__status:empty {
+  margin-top: calc(-1 * var(--space-1));
+}
+.family-choice-field__status:empty {
+  margin-top: calc(-1 * var(--space-2));
+}
+.family-flags__none {
+  margin: 0;
+  color: var(--label2);
+  font-size: var(--text-md);
+  line-height: 1.5;
+}
+
+/* The account: a group like a patient's, the number in the system face. */
+.family-account {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+.family-account > :not(.family-account__title) {
+  margin: 0;
+}
+.family-account__facts,
+.family-account__group,
+.family-account__sign-out,
+.family-account .family-choice-field {
+  padding: 0 var(--space-4);
+}
+.family-account__facts {
+  padding-block: var(--space-1);
+  border: 1px solid var(--sep);
+  border-radius: var(--radius-md);
+  background: var(--bg3);
+}
+.family-account__sign-out {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* The segmented control (theme, language): the prototype's .seg, one track washed with --fill, the chosen option
+   raised on the page's surface. The choice is said by aria-pressed and by the raised shape, never by colour alone. */
+.family-choice-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.family-choice-field__title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 1.4;
+}
+.family-choice {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--boundary);
+  border-radius: var(--radius-md);
+  background: var(--fill);
+}
+.family-choice__option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-width: 0;
+  min-height: var(--target-min);
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--label);
+  font-family: var(--font-bn);
+  font-size: var(--text-md);
+  font-weight: 500;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+/* The pressed option: a shape and an edge as well as the weight (colour is never the only signal). The edge is the
+   --boundary ring, at least 3:1 against the track in both schemes (WCAG 1.4.11; family.spec.ts measures it), and the
+   tick is the one the flags and the toast draw. */
+.family-choice__option[aria-pressed="true"] {
+  background: var(--bg3);
+  box-shadow: 0 0 0 1px var(--boundary);
+  font-weight: 700;
+}
+.family-choice__label {
+  min-width: 0;
+}
+.family-choice__tick {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
