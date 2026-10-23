@@ -21,7 +21,8 @@
 // - levels: Caddy's zstd is Go's klauspost encoder at its default speed, with a 128 KiB window; node has libzstd, here
 //   at level 3 (the libzstd default, which klauspost's default speed is modelled on) with the same window. They are
 //   not byte-identical: on 2026-10-23, the same build measured through this proxy and through Caddy 2.11.7 gave page
-//   totals 0.2% apart (375 to 464 B per page, this proxy the smaller), where level 2 was 4% larger. That is why the
+//   totals 0.2% apart (375 to 464 B per page, this proxy the smaller; on W6's RSC-heavy /all page, 978 B the larger),
+//   where level 2 was 4% larger. That is why the
 //   defining DR-42 run stays behind a real Caddy (scripts/budget-behind-caddy.sh, the same CI job): this proxy makes
 //   the suite measure the shipped path, Caddy decides the last few hundred bytes.
 // - gzip: Caddy's default level 5 is klauspost's level 5, which compresses less than zlib's level 5. On 2026-10-23

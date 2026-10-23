@@ -902,10 +902,11 @@ are unchanged. Records the direction contract's 2026-10-21 amendments in
        page kinder than Caddy.
      - The `next start` run now measures through `medioo-web/e2e/support/encode-proxy.mjs`, a proxy that encodes as
        that Caddy block does (its content types, its 512 B first-write rule, zstd for Chrome, a flush per streamed
-       write). It is no longer "only stricter": in zstd, on the same build, its totals for main's pages came out 0.2%
-       (375 to 464 B) under Caddy's, and `/all`'s 983 B over, because node's libzstd and Caddy's Go encoder are not
-       byte-identical. The run behind the Caddy replica (`scripts/budget-behind-caddy.sh`, the same CI job) stays the
-       defining measurement and decides those bytes.
+       write). It is no longer "only stricter": in zstd, on the same build behind the local Caddy 2.11.7 replica, its
+       totals for main's pages (a529160) came out 0.2% (370 to 468 B) under Caddy's, and `/all`'s (PR #149's head)
+       978 B over, because node's libzstd and Caddy's Go encoder are not byte-identical. The run behind the Caddy
+       replica (`scripts/budget-behind-caddy.sh`, the same CI job) stays the defining measurement and decides those
+       bytes.
      - `budget.spec.ts` now requires every measured document, script, stylesheet and RSC body to have crossed the wire
        as Caddy encodes it (zstd for Chrome, gzip in the no-zstd pass), judged by Caddy's own rule: encoded when the
        first write or the Content-Length is over 512 B, never by the total. An unencoded body Caddy would have encoded
