@@ -32,8 +32,10 @@ import java.util.UUID;
  * {@code GET /app/api/upload-options} and {@code POST /app/api/uploads}: the add-report sheet as JSON (rebuild plan B4b).
  *
  * <p>The options are {@link UploadUseCase#uploadOptions}, the sheet's own: who the viewer may send for, who they may only
- * see, the one patient to preselect when there is nobody else it could be (never a guess), this month's allowance, and
- * every limit the server refuses by. A refusal's copy reads its numbers from here; the error body is only a name.
+ * see, the one patient to preselect when there is nobody else it could be (never a guess), whose paper the sheet opens on
+ * for the page's optional {@code ?patient=} ({@code chosen_patient_id}, by {@link UploadOptions#chosen}, the rule the HTML
+ * sheet checks its chip by, so React renders the choice and derives none), this month's allowance, and every limit the
+ * server refuses by. A refusal's copy reads its numbers from here; the error body is only a name.
  *
  * <p>The upload is one press of "পাঠান": {@code patient}, a required {@code upload_key} (a retry with the same key and
  * the same files is the same press and returns the same ids, V21), {@code group} ({@code one}, the default, or
@@ -59,8 +61,10 @@ public class UploadApiHandler {
     public Mono<ServerResponse> options(ServerRequest request) {
         WebSession session = SessionAuthFilter.session(request);
         Lang lang = Lang.of(request);
+        // the page's own ?patient= (plan W7 review): Java chooses by the HTML sheet's rule, React renders the choice
+        Optional<String> asked = request.queryParam("patient");
         return uploads.uploadOptions(session.familyId())
-                .flatMap(o -> ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValue(options(o, lang)));
+                .flatMap(o -> ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValue(options(o, asked, lang)));
     }
 
     public Mono<ServerResponse> upload(ServerRequest request) {
@@ -115,11 +119,13 @@ public class UploadApiHandler {
         return body;
     }
 
-    private Map<String, Object> options(UploadOptions o, Lang lang) {
+    private Map<String, Object> options(UploadOptions o, Optional<String> asked, Lang lang) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("can_send", o.canSend().stream().map(p -> patient(p, lang)).toList());
         body.put("view_only", o.viewOnly().stream().map(p -> patient(p, lang)).toList());
         body.put("preselected_patient_id", o.preselected().map(p -> p.patient().id().toString()).orElse(null));
+        // additive (W7 review): whose paper the sheet opens on, by the rule the HTML sheet checks its chip by
+        body.put("chosen_patient_id", o.chosen(asked).map(UUID::toString).orElse(null));
         body.put("allowance", allowance(o.allowance()));
         body.put("limits", limits());
         return body;

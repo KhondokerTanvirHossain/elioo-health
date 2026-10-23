@@ -33,7 +33,7 @@ export function previewPath(path: string): string {
  * the build's `.next/app-path-routes-manifest.json` by `built/routes.built.test.ts`, minus Next's 404, the probe and
  * the catalog-only pages, so a page cannot be added without being measured.
  */
-export const NEXT_PAGES: readonly string[] = ["/app", "/app/verify"];
+export const NEXT_PAGES: readonly string[] = ["/app", "/app/verify", "/app/add"];
 
 /** The `GET /app…` page patterns Java serves, as docs/infra/app-routes.txt lists them (routes.test.ts). */
 export const JAVA_PAGES: readonly string[] = [

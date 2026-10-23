@@ -54,6 +54,30 @@ const codePage = (state, verify = "sign-in/verified.json") => ({
   "POST /app/api/sign-in/verify": verify,
 });
 
+/** The add sheet (W7): `me`, whom the viewer may send for, and what a press is answered. */
+const addSheet = (options, uploads = "uploads/one-document.json", me = "me/one-patient.json") => ({
+  "GET /app/api/me": me,
+  "GET /app/api/upload-options": `upload-options/${options}.json`,
+  "POST /app/api/uploads": uploads,
+});
+
+/**
+ * Every refusal of a press, as Java answers it (fixtures/api/uploads/refusals.json, which UploadApiContractTest writes
+ * from the upload path's own source): one `upload-refused-<NAME>` scenario each, so the sheet's copy is checked for
+ * every name Java can send and for no name it cannot.
+ */
+const REFUSALS = JSON.parse(readFileSync(join(FIXTURES, "uploads", "refusals.json"), "utf8")).body;
+export const UPLOAD_REFUSED = Object.fromEntries(
+  Object.entries(REFUSALS).map(([name, answer]) => [`upload-refused-${name}`, addSheet("owner-one", answer)]),
+);
+
+/** The network dies under the request (browser-api.ts aborts it after the guard, java-stub.mjs drops the socket). */
+const CUT = { abort: "connectionreset" };
+/** The network goes quiet under the request: never answered, never reset (browser-api.ts leaves the route open). */
+const HOLD = { hold: true };
+/** Caddy's answer when Java is too slow: a 504 page, no Java reason (Java may still have stored the press). */
+const GATEWAY_504 = { status: 504, body: "<html><body><h1>504 Gateway Timeout</h1></body></html>" };
+
 export const SCENARIOS = {
   // The sign-in page (W3): nobody signed in.
   "signed-out": { ...SIGN_IN, "GET /app/api/me": "me/unauthenticated.json" },
@@ -138,6 +162,31 @@ export const SCENARIOS = {
       body: { error: `failed for ${patientName("me/one-patient.json")} at ${numberShown("sign-in/confirm.json")}` },
     },
   },
+  // The add sheet (W7) on /app/add. Each `me` is the family the options are of (UploadApiContractTest uses
+  // MeApiContractTest's patients): one patient, two the family owns, Ma's plus a shared one only to see, the cap
+  // reached, and the longest name.
+  "upload-owner-one": addSheet("owner-one"),
+  "upload-owner-two": addSheet("owner-two", "uploads/one-document.json", "me/two-owned.json"),
+  // owner-two with only Ma's name lengthened, in `me` and in the options: the long name inside the two-chip chooser.
+  "upload-owner-two-long": addSheet("long-name", "uploads/one-document.json", "me/two-owned-long.json"),
+  "upload-view-only": addSheet("view-only", "uploads/one-document.json", "me/two-patients.json"),
+  "upload-cap-reached": addSheet("cap-reached"),
+  "upload-separate": addSheet("owner-one", "uploads/separate.json"),
+  // The server turned downscaling on (limits.downscale_max_edge 800): the sheet scales a big photo before it goes.
+  "upload-downscale": addSheet("downscale-on"),
+  // The first press dies on the wire and its retry is answered; one that never gets through (the stuck state).
+  "upload-retry": addSheet("owner-one", [CUT, "uploads/one-document.json"]),
+  "upload-stuck": addSheet("owner-one", CUT),
+  // The network goes quiet under the first press (no RST, no error, no answer); the retry is answered.
+  "upload-silent-then-sent": addSheet("owner-one", [HOLD, "uploads/one-document.json"]),
+  "upload-silent": addSheet("owner-one", HOLD),
+  // A gateway's 504 with no Java reason (Java may have stored the press), then the retry is answered.
+  "upload-504-then-sent": addSheet("owner-one", [GATEWAY_504, "uploads/one-document.json"]),
+  // A press Java refused by name (the key was used before), then the same pages pressed again.
+  "upload-reused-then-sent": addSheet("owner-one", [REFUSALS.UPLOAD_KEY_REUSED, "uploads/one-document.json"]),
+  // A sheet whose every press is refused, opened for Ma from a retake link (Java chose her: owner-two-asked).
+  "upload-owner-two-asked-refused": addSheet("owner-two-asked", REFUSALS.UNSUPPORTED_FILE, "me/two-owned.json"),
+  ...UPLOAD_REFUSED,
 };
 
 export { UNAUTHENTICATED };
@@ -146,6 +195,7 @@ export { UNAUTHENTICATED };
 export const PAGE_SCENARIOS = {
   "/app": "signed-out",
   "/app/verify": "state-pending-not-sent",
+  "/app/add": "upload-owner-one",
 };
 
 /**
@@ -155,12 +205,16 @@ export const PAGE_SCENARIOS = {
 export const PAGE_MARKERS = {
   "/app": 'name="whatsapp_number"',
   "/app/verify": 'name="code"',
+  "/app/add": "data-upload-sheet",
 };
 
 /** Each routed scenario's longest twin (`me/long-name.json` and the area's longest fixture), per screen. */
 export const LONGEST = {
   // The shell (W4): its longest is the longest name (fixtures/api/me/long-name.json) in the toolbar and the sidebar.
   "me-one": "me-long",
+  // The add sheet (W7): owner-two with only Ma's name lengthened (me/two-owned-long.json in the shell,
+  // upload-options/long-name.json's two chips on the sheet), so the twin is the routed state, the chooser included.
+  "upload-owner-two": "upload-owner-two-long",
 };
 
 /** The `{status, body}` a scenario value answers first: a fixture file read, a literal as it is. */

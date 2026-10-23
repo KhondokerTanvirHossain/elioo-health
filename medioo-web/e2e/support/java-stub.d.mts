@@ -9,7 +9,7 @@ export function answer(request: {
   headers: Headers;
   origin: string;
   counters: Map<string, number>;
-}): { status: number; body: unknown };
+}): { status: number; body: unknown } | { abort: "connectionreset" | "connectionclosed" | "failed" } | { hold: true };
 export function record(request: { method: string; path: string; query: string; headers: Headers }): {
   method: string;
   path: string;

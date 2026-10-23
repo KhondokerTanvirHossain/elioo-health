@@ -82,6 +82,10 @@ describe("the built client chunks", () => {
     const catalog = chunks(BUILDS[1]);
     expect(catalog.some(({ text }) => text.includes("sheet__close")), "a .next-catalog chunk holds SheetDialog").toBe(true);
     expect(catalog.some(({ text }) => text.includes("toast-region")), "a .next-catalog chunk holds ToastRegion").toBe(true);
+    // Guard (W7): the production build's client chunks hold the add sheet, the largest island that takes words as
+    // props, so a copy import that reached it would land in a chunk this scan read.
+    const production = chunks(BUILDS[0]);
+    expect(production.some(({ text }) => text.includes("upload-sheet__send")), "a .next chunk holds UploadSheet").toBe(true);
     console.log("client chunks holding SheetDialog / ToastRegion:", markers);
   });
 });

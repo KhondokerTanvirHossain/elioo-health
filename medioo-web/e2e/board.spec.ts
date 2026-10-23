@@ -1,7 +1,9 @@
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test, type Page } from "@playwright/test";
 import { t } from "../src/copy";
 import { useScenario } from "./support/browser-api";
+import { pngFor } from "./support/png.mjs";
 
 /*
  * The screenshot board (plan A7, Wave 3 Shared interfaces): each screen state at phone 390×844 and desktop 1280×800,
@@ -15,7 +17,11 @@ type Scene = {
   state: string;
   route: string;
   scenario: string;
-  proto: { file: "phone.html" | "desktop.html"; scene: string };
+  /**
+   * The prototype scene; `click`, a control of the prototype's own to press once the scene is on (its camera sheet);
+   * `show`, an element of the prototype to show as its own script would (desktop.html's #drop while a file is dragged).
+   */
+  proto: { file: "phone.html" | "desktop.html"; scene: string; click?: string; show?: string };
   /** What to do on the page before the picture (type a number, press a button). */
   act?: (page: Page) => Promise<void>;
   /** The widths to take it at, when not the phone and desktop pair (the shell: 390, 1024 and 1440, plan W4). */
@@ -130,6 +136,86 @@ BOARD_SCENES.push(
   },
 );
 
+// The add sheet (plan W7) on /app/add: the sheet, the chooser, the tray with three pages, the drop target (desktop),
+// sending, slow, stuck with its retry, each refusal, a patient only to see, the cap reached. Beside phone.html scene
+// `chat` with its camera sheet (or pages sheet) open, and desktop.html scene `app` with #drop showing.
+const SHARED = "5e9edf6d-0a2a-4913-8675-9d07a4100012";
+const REFUSAL_NAMES = Object.keys(
+  (JSON.parse(readFileSync(join(__dirname, "..", "fixtures", "api", "uploads", "refusals.json"), "utf8")) as { body: object }).body,
+).sort();
+const threePages = async (page: Page) => {
+  await page.locator("[data-upload-sheet][data-live]").waitFor();
+  await page.locator('input[type=file][data-src="gallery"]').setInputFiles(
+    [120, 200, 280].map((w, i) => ({ name: `page-${i + 1}.png`, mimeType: "image/png", buffer: pngFor({ crop: { src: `p${i}`, width: w, height: 160 } }) })),
+  );
+  await page.locator(".upload-tray__item").nth(2).waitFor();
+};
+const oneReport = async (page: Page) => page.getByRole("radio", { name: t("bn", "add.group.one") }).check();
+const press = async (page: Page) => {
+  await threePages(page);
+  await oneReport(page);
+  await page.getByRole("button", { name: t("bn", "add.send"), exact: true }).click();
+};
+/** The press never answered: the sheet stays on its way. */
+const hold = async (page: Page) => page.route("**/app/api/uploads", () => {});
+const upload = (state: string, scenario: string, extra: Partial<Scene> = {}): Scene => ({
+  screen: "upload",
+  state,
+  route: "/app/add",
+  scenario,
+  proto: { file: "phone.html", scene: "chat", click: '[data-action="camera"]' },
+  ...extra,
+});
+BOARD_SCENES.push(
+  upload("sheet", "upload-owner-one"),
+  upload("chooser", "upload-owner-two"),
+  upload("tray-three-pages", "upload-owner-one", { act: threePages, proto: { file: "phone.html", scene: "chat", click: '[data-action="pages"]' } }),
+  upload("upload-drop", "upload-owner-one", {
+    viewports: { desktop: { width: 1280, height: 800 } },
+    proto: { file: "desktop.html", scene: "app", show: "#drop" },
+    act: async (page) => {
+      await page.locator("[data-upload-sheet][data-live]").waitFor();
+      const transfer = await page.evaluateHandle(() => {
+        const dt = new DataTransfer();
+        dt.items.add(new File([new Uint8Array([0xff, 0xd8])], "drop.jpg", { type: "image/jpeg" }));
+        return dt;
+      });
+      await page.dispatchEvent("body", "dragenter", { dataTransfer: transfer });
+      await page.locator("#drop").waitFor();
+    },
+  }),
+  upload("sending", "upload-owner-one", {
+    act: async (page) => {
+      await hold(page);
+      await press(page);
+      await page.locator('.upload-progress[data-phase="sending"]').waitFor();
+    },
+  }),
+  upload("slow", "upload-owner-one", {
+    act: async (page) => {
+      await hold(page);
+      await press(page);
+      await page.getByText(t("bn", "up.slow")).waitFor({ timeout: 20_000 });
+    },
+  }),
+  upload("stuck-retry", "upload-stuck", {
+    act: async (page) => {
+      await press(page);
+      await page.getByRole("button", { name: t("bn", "up.retry") }).waitFor();
+    },
+  }),
+  ...REFUSAL_NAMES.map((name) =>
+    upload(`refused-${name}`, `upload-refused-${name}`, {
+      act: async (page) => {
+        await press(page);
+        await page.locator(".upload-sheet__alert:not(:empty)").waitFor();
+      },
+    }),
+  ),
+  upload("view-only", "upload-view-only", { route: `/app/add?patient=${SHARED}` }),
+  upload("cap-reached", "upload-cap-reached"),
+);
+
 const VIEWPORTS = { phone: { width: 390, height: 844 }, desktop: { width: 1280, height: 800 } } as const;
 // The catalog build's server (playwright.config.ts starts it on the port after the production one).
 const CATALOG_URL = process.env.E2E_CATALOG_URL ?? `http://127.0.0.1:${Number(process.env.E2E_PORT ?? 3217) + 1}`;
@@ -156,6 +242,11 @@ for (const scene of BOARD_SCENES) {
         // The scene bar can be hidden at a width the prototype was not drawn for; the click is the prototype's own.
         await proto.evaluate((s) => document.querySelector<HTMLElement>(`[data-scene="${s}"]`)?.click(), scene.proto.scene);
         await proto.waitForTimeout(600);
+        if (scene.proto.click) {
+          await proto.evaluate((s) => document.querySelector<HTMLElement>(s)?.click(), scene.proto.click);
+          await proto.waitForTimeout(600);
+        }
+        if (scene.proto.show) await proto.evaluate((s) => document.querySelector(s)?.classList.add("on"), scene.proto.show);
         await proto.screenshot({ path: join(OUT, scene.screen, `${scene.state}-${layout}-${colorScheme}-prototype.png`) });
         await proto.close();
       });

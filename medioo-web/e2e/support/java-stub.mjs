@@ -120,7 +120,18 @@ function serve(port, host, origin) {
     req.resume();
     req.on("end", () => {
       const entry = { method: req.method ?? "GET", path: url.pathname, query: url.search.slice(1), headers: req.headers };
-      const { status, body } = answer({ ...entry, origin, counters });
+      const result = answer({ ...entry, origin, counters });
+      // `{ abort }`: the connection dies under the request, as a phone's does mid-press (no status reaches anyone).
+      if ("abort" in result) {
+        log.push({ ...record(entry), status: 0 });
+        return req.socket.destroy();
+      }
+      // `{ hold }`: the network goes quiet; nothing is ever answered (the browser's own watchdog ends it).
+      if ("hold" in result) {
+        log.push({ ...record(entry), status: 0 });
+        return;
+      }
+      const { status, body } = result;
       // The status it answered, beside what it received, so a test can see which side of the guard a read fell on.
       log.push({ ...record(entry), status });
       if (status === 204) {

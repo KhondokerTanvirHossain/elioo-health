@@ -29,20 +29,7 @@ async function call<T>(method: string, path: string, body?: object | FormData): 
   } catch {
     return { kind: "offline" };
   }
-  const text = await response.text().catch(() => "");
-  let json: unknown = null;
-  try {
-    json = text ? JSON.parse(text) : null;
-  } catch {
-    json = null;
-  }
-  if (response.ok) return { kind: "ok", status: response.status, body: json as T | null };
-  const reason = typeof (json as { reason?: unknown } | null)?.reason === "string" ? (json as { reason: string }).reason : "";
-  if (response.status === 401 && reason === "UNAUTHENTICATED") {
-    location.assign(signInPath(location.pathname + location.search));
-    return { kind: "signed-out" };
-  }
-  return { kind: "refused", status: response.status, reason };
+  return judged<T>(response.status, await response.text().catch(() => ""));
 }
 
 /** A mutation: `X-Medioo: 1`, JSON unless the body is FormData, the session cookie, and the 401 rule. */
@@ -54,3 +41,68 @@ export function apiSend<T>(method: "POST" | "PUT" | "DELETE", path: string, body
 export function apiGet<T>(path: string): Promise<ApiResult<T>> {
   return call<T>("GET", path);
 }
+
+/** An answer's status and text, as `call` judges them: a body, a refusal by its reason, or the sign-in page. */
+function judged<T>(status: number, text: string): ApiResult<T> {
+  let json: unknown = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    json = null;
+  }
+  if (status >= 200 && status < 300) return { kind: "ok", status, body: json as T | null };
+  const reason = typeof (json as { reason?: unknown } | null)?.reason === "string" ? (json as { reason: string }).reason : "";
+  if (status === 401 && reason === "UNAUTHENTICATED") {
+    location.assign(signInPath(location.pathname + location.search));
+    return { kind: "signed-out" };
+  }
+  return { kind: "refused", status, reason };
+}
+
+/**
+ * One press of the add sheet (plan W7): `POST /app/api/uploads` with the sheet's multipart form, straight to Java
+ * (Next never sees the body). An XMLHttpRequest, not a fetch, because only it reports how much of the body has gone
+ * (`onProgress(sent, total)`). The rules are apiSend's: `X-Medioo: 1`; no Content-Type of its own (the browser writes
+ * multipart/form-data with its boundary); a relative, same-origin URL, so the session cookie goes and no cross-origin
+ * credential mode is asked for; the 401 rule; and `offline` when the request dies (`error` or `abort`), which the sheet
+ * answers with a retry of the same press under the same key.
+ *
+ * A request that only goes quiet is dead too: a phone losing its signal usually gets no RST and no `error`. upload.js's
+ * watchdog (`post()`/`wait()`), ported: no byte moving for `STALL_MS`, or `SERVER_MS` once every byte has gone (the
+ * server is storing the pages), and the request is aborted, which resolves `offline`. No `xhr.timeout` is set: the
+ * watchdog is the only clock.
+ */
+export function apiUpload<T = unknown>(form: FormData, onProgress: (sent: number, total: number) => void): Promise<ApiResult<T>> {
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();
+    let quiet: ReturnType<typeof setTimeout> | undefined;
+    const wait = (ms: number) => {
+      clearTimeout(quiet);
+      quiet = setTimeout(() => xhr.abort(), ms);
+    };
+    xhr.open("POST", "/app/api/uploads");
+    xhr.setRequestHeader("X-Medioo", "1");
+    xhr.upload.onprogress = (e) => {
+      wait(e.lengthComputable && e.loaded >= e.total ? SERVER_MS : STALL_MS);
+      if (e.lengthComputable) onProgress(e.loaded, e.total);
+    };
+    xhr.upload.onload = () => wait(SERVER_MS);
+    xhr.onload = () => {
+      clearTimeout(quiet);
+      resolve(judged<T>(xhr.status, xhr.responseText));
+    };
+    const offline = () => {
+      clearTimeout(quiet);
+      resolve({ kind: "offline" });
+    };
+    xhr.onerror = offline;
+    xhr.onabort = offline;
+    wait(STALL_MS);
+    xhr.send(form);
+  });
+}
+
+/** No byte has moved for this long: the network is gone (upload.js: 30 s). */
+export const STALL_MS = 30_000;
+/** Every byte has gone and the server has not answered for this long: given up on (upload.js: 120 s). */
+export const SERVER_MS = 120_000;

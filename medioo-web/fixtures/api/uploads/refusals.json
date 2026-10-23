@@ -1,0 +1,74 @@
+{
+  "_meta": {
+    "generated_by": "baymax UploadApiContractTest",
+    "source": "POST /app/api/uploads refused for every reason UploadRefusalSweep reads from the upload path, by name"
+  },
+  "body": {
+    "CHOOSE_PATIENT": {
+      "body": {
+        "reason": "CHOOSE_PATIENT"
+      },
+      "status": 400
+    },
+    "EMPTY_FILE": {
+      "body": {
+        "reason": "EMPTY_FILE"
+      },
+      "status": 400
+    },
+    "FREE_TIER_DOCUMENTS": {
+      "body": {
+        "reason": "FREE_TIER_DOCUMENTS"
+      },
+      "status": 402
+    },
+    "NO_FILE": {
+      "body": {
+        "reason": "NO_FILE"
+      },
+      "status": 400
+    },
+    "TOO_LARGE": {
+      "body": {
+        "reason": "TOO_LARGE"
+      },
+      "status": 413
+    },
+    "TOO_MANY_FILES": {
+      "body": {
+        "reason": "TOO_MANY_FILES"
+      },
+      "status": 400
+    },
+    "TOO_MANY_PAGES": {
+      "body": {
+        "reason": "TOO_MANY_PAGES"
+      },
+      "status": 400
+    },
+    "UNREADABLE_PDF": {
+      "body": {
+        "reason": "UNREADABLE_PDF"
+      },
+      "status": 400
+    },
+    "UNSUPPORTED_FILE": {
+      "body": {
+        "reason": "UNSUPPORTED_FILE"
+      },
+      "status": 400
+    },
+    "UPLOAD_KEY_REUSED": {
+      "body": {
+        "reason": "UPLOAD_KEY_REUSED"
+      },
+      "status": 409
+    },
+    "VIEW_ONLY": {
+      "body": {
+        "reason": "VIEW_ONLY"
+      },
+      "status": 403
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "_meta": {
+    "generated_by": "baymax UploadApiContractTest",
+    "source": "GET /app/api/upload-options over the UploadApiContractTest case view-only"
+  },
+  "body": {
+    "allowance": {
+      "limited": true,
+      "max": 30,
+      "remaining": 26,
+      "resets_on": "2026-11-01"
+    },
+    "can_send": [
+      {
+        "age": 64,
+        "documents": 1,
+        "id": "5e9edf6d-0a2a-4913-8675-9d07a4100002",
+        "last_document_at": "2026-10-20T04:00:00Z",
+        "name": "Ma",
+        "name_objective": "Ma-কে",
+        "name_possessive": "Ma-র",
+        "owner": true,
+        "sex": "female"
+      }
+    ],
+    "chosen_patient_id": "5e9edf6d-0a2a-4913-8675-9d07a4100002",
+    "limits": {
+      "downscale_max_edge": 0,
+      "downscale_quality": 0.92,
+      "max_file_bytes": 26214400,
+      "max_files": 10,
+      "max_pages": 10,
+      "max_request_bytes": 62914560,
+      "pass_through_bytes": 1500000
+    },
+    "preselected_patient_id": "5e9edf6d-0a2a-4913-8675-9d07a4100002",
+    "view_only": [
+      {
+        "age": 71,
+        "documents": 0,
+        "id": "5e9edf6d-0a2a-4913-8675-9d07a4100012",
+        "last_document_at": null,
+        "name": "রোকেয়া পরীক্ষা",
+        "name_objective": "রোকেয়া পরীক্ষাকে",
+        "name_possessive": "রোকেয়া পরীক্ষার",
+        "owner": false,
+        "sex": "female"
+      }
+    ]
+  },
+  "status": 200
+}

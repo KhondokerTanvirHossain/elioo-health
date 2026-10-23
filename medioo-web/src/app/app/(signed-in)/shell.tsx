@@ -35,8 +35,21 @@ function askedPatient(here: string): string | null {
  *   this stops the page itself, which might read nothing else.
  * - `?patient=` this family does not see: the not-found page (Java's 404). Two or more and no choice: the chooser in
  *   place of `main`, and no patient named anywhere. A screen never decides a patient.
+ * - `asksItself` (the add sheet, W7): a page that asks whose it is in its own words, from its own read (whom the
+ *   viewer may send for, which is not whom they may see). With two or more and no choice it gets `main` with no
+ *   patient, never the chooser in its place; the toolbar still names nobody.
  */
-export async function signedInPage({ tab, main, aside }: { tab: Tab | null; main: Slot; aside?: Slot }) {
+export async function signedInPage({
+  tab,
+  main,
+  aside,
+  asksItself = false,
+}: {
+  tab: Tab | null;
+  main: Slot;
+  aside?: Slot;
+  asksItself?: boolean;
+}) {
   const { lang, preview, here } = await requestContext();
   const me = signedIn(await javaGet<MeJson>("/app/api/me"), here);
   if (preview && me.preview !== true) notFound();
@@ -44,7 +57,8 @@ export async function signedInPage({ tab, main, aside }: { tab: Tab | null; main
   if (view.kind === "not-found") notFound();
   const patient = view.kind === "patient" ? view.patient : null;
   const ctx: ShellContext = { lang, preview, me, patient };
-  const content = view.kind === "choose" ? <PatientChooser lang={lang} patients={me.patients} /> : await fill(main, ctx);
+  const chooser = view.kind === "choose" && !asksItself;
+  const content = chooser ? <PatientChooser lang={lang} patients={me.patients} /> : await fill(main, ctx);
   return (
     <AppShell
       lang={lang}
@@ -54,7 +68,7 @@ export async function signedInPage({ tab, main, aside }: { tab: Tab | null; main
       words={shellWords(lang, me, patient)}
       tab={tab}
       main={content}
-      aside={aside === undefined || view.kind === "choose" ? undefined : await fill(aside, ctx)}
+      aside={aside === undefined || chooser ? undefined : await fill(aside, ctx)}
     />
   );
 }
