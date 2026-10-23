@@ -24,6 +24,8 @@
 //   totals 0.2% apart (375 to 464 B per page, this proxy the smaller), where level 2 was 4% larger. That is why the
 //   defining DR-42 run stays behind a real Caddy (scripts/budget-behind-caddy.sh, the same CI job): this proxy makes
 //   the suite measure the shipped path, Caddy decides the last few hundred bytes. gzip at Caddy's default level 5.
+// - one header Caddy does not send: a streamed answer carries x-encode-proxy-first-write, the size of the first write
+//   the decision was made on, so the budget can apply Caddy's rule to an unencoded streamed body (budget.ts).
 // The Host header and everything else the browser sent go to the upstream unchanged, as Caddy's reverse_proxy does.
 import { createServer, request } from "node:http";
 import { basename } from "node:path";
@@ -32,6 +34,8 @@ import { constants, createGzip, createZstdCompress } from "node:zlib";
 /** The Caddyfile's order: `encode zstd gzip`. */
 const PREFERRED = ["zstd", "gzip"];
 const MIN_LENGTH = 512;
+/** Added to a streamed answer: the size of its first write (budget.ts reads it as FIRST_WRITE_HEADER, the same name). */
+const FIRST_WRITE_HEADER = "x-encode-proxy-first-write";
 
 /** Caddy's default encode matcher (encode.go, Provision): Content-Type prefixes, `*` meaning any suffix. */
 const ENCODED_TYPES = [
@@ -139,6 +143,9 @@ function relay(req, answer, res) {
       enc = encoder(chosen);
       enc.pipe(res);
     }
+    // Harness-only (Caddy sends nothing like it): the first write Caddy would have decided on, so budget.spec.ts can
+    // judge an unencoded streamed body by the rule Caddy applies (budget.ts, unencodedByCaddy), not by its total.
+    if (streamed) headers[FIRST_WRITE_HEADER] = String(firstWrite);
     res.writeHead(status, headers);
   };
   const flushKind = () => (enc && headers["content-encoding"] === "zstd" ? constants.ZSTD_e_flush : constants.Z_SYNC_FLUSH);

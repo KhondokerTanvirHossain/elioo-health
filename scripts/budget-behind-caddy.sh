@@ -153,6 +153,6 @@ E2E_BASE_URL="$BASE" E2E_CATALOG_URL="$BASE" E2E_GIT_SHA="$SHA" E2E_VIA_CADDY=1 
 # The numbers, always (paths and byte counts only).
 for f in "$ROOT"/medioo-web/test-results/budget*.json; do
   [ -e "$f" ] || { echo "budget-behind-caddy: no budget json (the spec did not reach a page)"; break; }
-  node -e 'const d=require(process.argv[1]);console.log(process.argv[1].split("/").pop(), JSON.stringify({viaCaddy:d.viaCaddy, path:d.path, routeTotal:d.routeTotal, all:d.all, totals:d.totals}))' "$f"
+  node -e 'const d=require(process.argv[1]);console.log(process.argv[1].split("/").pop(), JSON.stringify({viaCaddy:d.viaCaddy, encoding:d.encoding, path:d.path, routeTotal:d.routeTotal, all:d.all, totals:d.totals}))' "$f"
 done
 exit "$rc"

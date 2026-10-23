@@ -3,7 +3,7 @@ import { createServer, request, type IncomingMessage, type Server, type ServerRe
 import type { AddressInfo } from "node:net";
 import { createGunzip, createZstdDecompress, gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
-import { readCeilings, routeTotal } from "./budget";
+import { FIRST_WRITE_HEADER } from "./budget";
 import { chooseEncoding, encodesType, startEncodeProxy } from "./encode-proxy.mjs";
 
 /*
@@ -236,19 +236,48 @@ describe("startEncodeProxy", () => {
     expect(got.wire.equals(body)).toBe(true);
   });
 
-  it("compressionCannotHideAPageThatIsGenuinelyOverTheRouteCeiling", async () => {
-    // The other direction: what the proxy saves is what zstd saves, never bytes it drops. A page of incompressible
-    // bytes over the route ceiling is still over it on the wire, so the budget still fails a page that is truly over.
-    const { route } = readCeilings();
-    const noise = randomBytes(route + 1000);
-    const port = await behindProxy((_req, res) => {
+  it("theProxyDropsNoBytes: a large incompressible streamed body arrives whole", async () => {
+    // A property of the proxy, not of the budget: every byte the upstream wrote reaches the browser, however large the
+    // body and however many writes it came in. (That the budget still fails a page genuinely over the route ceiling is
+    // shown by budget.spec.ts itself, replayed red through this proxy; see the P3 PR.)
+    const noise = randomBytes(300_000);
+    const port = await behindProxy(async (_req, res) => {
       res.writeHead(200, { "content-type": "text/html" });
-      res.end(noise);
+      for (let at = 0; at < noise.length; at += 64 * 1024) res.write(noise.subarray(at, at + 64 * 1024));
+      res.end();
     });
     const got = await get(port, "/noise", { "accept-encoding": CHROME });
     expect(got.headers["content-encoding"]).toBe("zstd");
     expect(got.decoded.equals(noise)).toBe(true);
-    expect(routeTotal([{ url: "/noise", wire: got.wire.length }])).toBeGreaterThan(route);
+    expect(got.wire.length, "incompressible bytes do not shrink").toBeGreaterThan(noise.length);
+  });
+
+  it("aStreamedAnswerCarriesItsFirstWriteForTheBudget, encoded or not, and a known length carries none", async () => {
+    // budget.spec.ts judges an unencoded streamed body by its first write, as Caddy decides (budget.ts, unencodedByCaddy).
+    const rest = page(100);
+    const small = await behindProxy(async (_req, res) => {
+      res.writeHead(200, { "content-type": "text/x-component" });
+      res.write("x".repeat(300));
+      await new Promise((ok) => setTimeout(ok, 20));
+      res.end(rest);
+    });
+    const smallGot = await get(small, "/app/home?_rsc=1", { "accept-encoding": CHROME });
+    expect(smallGot.headers["content-encoding"]).toBeUndefined();
+    expect(smallGot.headers[FIRST_WRITE_HEADER]).toBe("300");
+
+    const large = await behindProxy((_req, res) => {
+      res.writeHead(200, { "content-type": "text/html" });
+      res.end(rest);
+    });
+    const largeGot = await get(large, "/", { "accept-encoding": CHROME });
+    expect(largeGot.headers["content-encoding"]).toBe("zstd");
+    expect(largeGot.headers[FIRST_WRITE_HEADER]).toBe(String(rest.length));
+
+    const known = await behindProxy((_req, res) => {
+      res.writeHead(200, { "content-type": "application/javascript", "content-length": String(rest.length) });
+      res.end(rest);
+    });
+    expect((await get(known, "/a.js", { "accept-encoding": CHROME })).headers[FIRST_WRITE_HEADER]).toBeUndefined();
   });
 
   it("forwardsTheRequestAsSentAndTheAnswerAsGiven", async () => {

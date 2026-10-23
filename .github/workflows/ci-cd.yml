@@ -233,6 +233,13 @@ jobs:
       # Prints paths and byte counts only.
       - name: medioo-web budget ceilings behind Caddy (DR-42, the enforcing run)
         run: bash scripts/budget-behind-caddy.sh
+      # PO ruling P3: Caddy's encode compresses medioo-web, so a streamed page must still stream through it. The DR-42
+      # replica of Caddyfile.medioo in each pinned Caddy (the box's and the replica's), in front of an upstream that
+      # sends part of a page, holds 1.5 s, then sends the rest: the first part must decode well before the hold ends,
+      # in zstd and in gzip. Replayed red in the test against a preview handle that buffers (response_buffers).
+      # After setup-node: the client decodes zstd, which needs Node 22.15 or later.
+      - name: medioo-web streaming through Caddy (P3)
+        run: bash scripts/test_caddy_streaming.sh
       - name: Upload medioo-web Playwright report
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

@@ -85,16 +85,47 @@ const ENCODED_KINDS = new Set(["document", "script", "stylesheet", "rsc"]);
 export const CADDY_MIN_LENGTH = 512;
 
 /**
- * The rows that did not cross the wire as Caddy encodes them for a phone (PO ruling P3): every document, script,
- * stylesheet and RSC body over 512 B, answered 200, must be zstd, the encoding Caddy's `encode zstd gzip` gives Chrome.
- * `identity` means nothing in front of Next encoded it (a measurement a phone never gets); `gzip` means Next encoded it
- * itself (compress: false undone), or the browser offered no zstd. Empty when the load is the shipped path.
+ * The response header the harness's measuring proxy (encode-proxy.mjs) adds to a streamed answer: the size of the
+ * upstream's first write, the one Caddy decides on. Harness-only; Caddy sends nothing like it, so behind Caddy a row
+ * has no first write on record.
  */
-export function unencodedByCaddy(
-  rows: readonly { kind: string; url: string; status: number; encoding: string; decoded: number }[],
-): string[] {
+export const FIRST_WRITE_HEADER = "x-encode-proxy-first-write";
+
+export type EncodedRow = {
+  kind: string;
+  url: string;
+  status: number;
+  encoding: string;
+  decoded: number;
+  /** The Content-Length the browser received, or null for a streamed body (an encoded body never has one). */
+  contentLength: number | null;
+  /** A streamed body's first write, when the harness recorded it (FIRST_WRITE_HEADER); undefined or null otherwise. */
+  firstWrite?: number | null;
+};
+
+/**
+ * Whether Caddy's encode handler, as configured, encodes this unencoded body (encode.go, MinLength 512): it decides on
+ * the first write, encoding when that write or the Content-Length is over 512 B, and never on the total. A streamed
+ * body with no first write on record (behind Caddy) is judged only when it is a document, whose first flush is Next's
+ * HTML shell and always far over 512 B; any other streamed body (an RSC payload) may rightly have gone unencoded.
+ */
+function caddyEncodes(r: EncodedRow): boolean {
+  if (r.contentLength !== null) return r.contentLength > CADDY_MIN_LENGTH;
+  if (typeof r.firstWrite === "number") return r.firstWrite > CADDY_MIN_LENGTH;
+  return r.kind === "document" && r.decoded > CADDY_MIN_LENGTH;
+}
+
+/**
+ * The rows that did not cross the wire as Caddy encodes them (PO ruling P3), for a browser Caddy answers in `expected`
+ * (zstd for Chrome, which offers it; gzip for a browser that does not). Of every document, script, stylesheet and RSC
+ * body answered 200: one in another encoding is refused outright (`gzip` to Chrome means Next encoded it itself,
+ * compress: false undone), and an unencoded one is refused when Caddy would have encoded it (caddyEncodes), which means
+ * nothing in front of Next encoded it: a measurement no phone gets. Empty when the load is the shipped path.
+ */
+export function unencodedByCaddy(rows: readonly EncodedRow[], expected: "zstd" | "gzip" = "zstd"): string[] {
   return rows
-    .filter((r) => ENCODED_KINDS.has(r.kind) && r.status === 200 && r.decoded > CADDY_MIN_LENGTH && r.encoding !== "zstd")
+    .filter((r) => ENCODED_KINDS.has(r.kind) && r.status === 200 && r.encoding !== expected)
+    .filter((r) => r.encoding !== "identity" || caddyEncodes(r))
     .map((r) => `${r.url} (${r.kind}, ${r.decoded} B, content-encoding ${r.encoding})`);
 }
 
