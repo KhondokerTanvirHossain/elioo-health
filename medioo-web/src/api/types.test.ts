@@ -49,14 +49,28 @@ import uploadOwnerTwoAsked from "../../fixtures/api/upload-options/owner-two-ask
 import uploadViewOnly from "../../fixtures/api/upload-options/view-only.json";
 import uploadedOne from "../../fixtures/api/uploads/one-document.json";
 import uploadedSeparate from "../../fixtures/api/uploads/separate.json";
+import attentionEmpty from "../../fixtures/api/attention/empty.json";
+import attentionFullStack from "../../fixtures/api/attention/full-stack.json";
+import attentionNowOnly from "../../fixtures/api/attention/now-only.json";
+import threadDefault from "../../fixtures/api/thread/default.json";
+import threadFailed from "../../fixtures/api/thread/failed.json";
+import threadFirstRun from "../../fixtures/api/thread/first-run.json";
+import threadNowAbroad from "../../fixtures/api/thread/now-abroad.json";
+import threadNow from "../../fixtures/api/thread/now.json";
+import threadRetake from "../../fixtures/api/thread/retake.json";
+import threadSecondPage from "../../fixtures/api/thread/second-page.json";
+import threadShareMember from "../../fixtures/api/thread/share-member.json";
 import {
+  ATTENTION_KINDS,
   BANNER_LEVELS,
+  MESSAGE_KINDS,
   DISPLAY_KINDS,
   GATES,
   PAPER_STATUSES,
   READING_STATUSES,
   SIDES,
   URGENCIES,
+  type AttentionJson,
   type BpPointJson,
   type CalendarDayJson,
   type CalendarFollowUpJson,
@@ -71,6 +85,7 @@ import {
   type NowBannerJson,
   type NowSeenJson,
   type PaperJson,
+  type ThreadJson,
   type TrendPointJson,
   type UploadAnswerJson,
   type UploadOptionsJson,
@@ -582,5 +597,78 @@ describe("the add sheet's JSON", () => {
       for (const d of a.documents) expect(keys(d), file).toEqual(["id"]);
     }
     expect(answers.map(([, a]) => a.documents.length)).toEqual([1, 3]);
+  });
+});
+
+/*
+ * GET /app/api/patients/{id}/thread (W5-api) and /attention (B3), read by the chat page (plan W5): every committed body
+ * is assigned to its type (the compile-time half) and walked here (the run-time half): each item's keys are its kind's,
+ * each kind one the type names, and a thread's paper card is a paper body. The directory is read, so a case Java adds
+ * cannot go unchecked.
+ */
+const THREADS: Record<string, Json<ThreadJson>> = {
+  "default.json": threadDefault.body,
+  "failed.json": threadFailed.body,
+  "first-run.json": threadFirstRun.body,
+  "now-abroad.json": threadNowAbroad.body,
+  "now.json": threadNow.body,
+  "retake.json": threadRetake.body,
+  "second-page.json": threadSecondPage.body,
+  "share-member.json": threadShareMember.body,
+};
+const ATTENTION: Record<string, Json<AttentionJson>> = {
+  "empty.json": attentionEmpty.body,
+  "full-stack.json": attentionFullStack.body,
+  "now-only.json": attentionNowOnly.body,
+};
+const THREAD_MESSAGE_KEYS = ["at", "body", "document_id", "kind", "message_kind"];
+const THREAD_PAPER_KEYS = ["at", "card", "kind"];
+const ATTENTION_KEYS: Record<string, string[]> = {
+  urgent: ["action_key", "date", "date_is_upload_day", "date_uncertain", "document_id", "document_type", "kind", "level", "received_at"],
+  retake: ["action_key", "date", "date_is_upload_day", "document_id", "kind", "received_at", "title_key"],
+  follow_up: ["action_key", "crop", "document_id", "due_date", "instruction", "kind", "title_key"],
+  reading: ["action_key", "date", "date_is_upload_day", "document_id", "kind", "received_at", "title_key"],
+};
+
+describe("the chat page's bodies", () => {
+  it("everyThreadFixtureIsAThreadJson", () => {
+    expect(readdirSync(join(fixtures, "thread")).filter((f) => f.endsWith(".json")).sort()).toEqual(Object.keys(THREADS).sort());
+    const kinds = new Set<string>();
+    let papers = 0;
+    for (const [file, thread] of Object.entries(THREADS)) {
+      expect(keys(thread), file).toEqual(["items", "next_cursor"]);
+      for (const item of thread.items) {
+        if (item.kind === "message") {
+          expect(keys(item), file).toEqual(THREAD_MESSAGE_KEYS);
+          const kind = (item as { message_kind: string }).message_kind;
+          expect(MESSAGE_KINDS as readonly string[], `${file} message_kind`).toContain(kind);
+          kinds.add(kind);
+        } else {
+          expect(item.kind, file).toBe("paper");
+          expect(keys(item), file).toEqual(THREAD_PAPER_KEYS);
+          const card = (item as { card: { status: string } }).card;
+          expect(PAPER_STATUSES as readonly string[], `${file} card.status`).toContain(card.status);
+          papers++;
+        }
+      }
+    }
+    // Guards: papers were walked, and the failure notice (V23) is among the kinds the fixtures carry.
+    expect(papers).toBeGreaterThan(0);
+    expect([...kinds]).toEqual(expect.arrayContaining(["failure", "nudge", "detail", "retake"]));
+  });
+
+  it("everyAttentionFixtureIsAnAttentionJson", () => {
+    expect(readdirSync(join(fixtures, "attention")).filter((f) => f.endsWith(".json")).sort()).toEqual(Object.keys(ATTENTION).sort());
+    const seen = new Set<string>();
+    for (const [file, stack] of Object.entries(ATTENTION)) {
+      expect(keys(stack), file).toEqual(["items"]);
+      for (const item of stack.items) {
+        expect(ATTENTION_KINDS as readonly string[], `${file} kind`).toContain(item.kind);
+        expect(keys(item), `${file} ${item.kind}`).toEqual(ATTENTION_KEYS[item.kind]);
+        if (item.kind === "urgent") expect(BANNER_LEVELS as readonly string[]).toContain((item as { level: string }).level);
+        seen.add(item.kind);
+      }
+    }
+    expect([...seen].sort(), "every kind was walked").toEqual([...ATTENTION_KINDS].sort());
   });
 });

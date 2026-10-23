@@ -1,7 +1,18 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { FIXTURES, SCENARIOS, UNAUTHENTICATED, longNameOf, signedOut } from "./scenarios.mjs";
+import {
+  FIXTURES,
+  PAGE_SCENARIOS,
+  SCENARIOS,
+  UNAUTHENTICATED,
+  bannerFor,
+  longNameOf,
+  messagesOnly,
+  reRead,
+  signedOut,
+  withNowName,
+} from "./scenarios.mjs";
 
 /*
  * The scenario table is held to Java, not to what its author remembered (CLAUDE.md: a stub that cannot fail the way
@@ -40,6 +51,13 @@ export function fixtureProblem(key: string, file: string, fixtures: string = FIX
   const source = (JSON.parse(readFileSync(path, "utf8")) as { _meta?: { source?: unknown } })._meta?.source;
   if (typeof source !== "string") return `${file} has no _meta.source`;
   return source.startsWith(`${key} `) ? null : `${file} was written for "${source}", not "${key}"`;
+}
+
+/** The body a scenario value answers first: a fixture file's, or a literal's. */
+function firstBody(value: unknown): unknown {
+  const v = Array.isArray(value) ? value[0] : value;
+  if (typeof v === "string") return (JSON.parse(readFileSync(join(FIXTURES, v), "utf8")) as { body: unknown }).body;
+  return (v as { body: unknown }).body;
 }
 
 describe("the scenario table is Java's", () => {
@@ -99,6 +117,39 @@ describe("the scenario table is Java's", () => {
     expect(() => longNameOf("twin", { "GET /app/api/me": "me/no-patients.json" })).toThrow("names no patient");
     expect(() => longNameOf("twin", { "GET /app/api/me": UNAUTHENTICATED })).toThrow("names no patient");
     expect(() => longNameOf("twin", {})).toThrow("names no patient");
+  });
+
+  // The derived answers (a fixture read and changed by a helper, served as a literal) are held to the same rule: the
+  // fixture they start from was written by Java for the route they answer.
+  it("aDerivedAnswerRefusesAFixtureWrittenForAnotherRoute", () => {
+    expect(() => bannerFor("me/one-patient.json", "me/one-patient.json")).toThrow(
+      'me/one-patient.json was written for "GET /app/api/me over',
+    );
+    expect(() => reRead("me/one-patient.json")).toThrow('me/one-patient.json was written for "GET /app/api/me over');
+    expect(() => reRead("now-banner/one.json", "me/one-patient.json")).not.toThrow();
+    expect(() => messagesOnly("now-banner/one.json")).toThrow('now-banner/one.json was written for "GET /app/api/now-banner over');
+    // The other direction: Java's own fixtures for each route pass.
+    expect(bannerFor("now-banner/one.json", "me/one-patient.json").body).toMatchObject({ show: true });
+    expect(reRead("now-banner/acked.json")).toMatchObject({ status: 200, body: { show: false } });
+    const messages = messagesOnly("thread/default.json").body as { items: { kind: string }[] };
+    expect(messages.items.length, "default.json holds messages").toBeGreaterThan(0);
+    expect(messages.items.every((i) => i.kind === "message")).toBe(true);
+  });
+
+  it("everySignedInPageHasANowTwin", () => {
+    const pages = Object.entries(PAGE_SCENARIOS).filter(([, name]) => !signedOut(name));
+    expect(pages.length, "signed-in pages in PAGE_SCENARIOS").toBeGreaterThan(0);
+    for (const [path, name] of pages) {
+      const twin = SCENARIOS[withNowName(name)];
+      expect(twin, `${path}: ${withNowName(name)}`).toBeDefined();
+      const me = firstBody(twin!["GET /app/api/me"]!) as { patients: { id: string }[] };
+      const banner = firstBody(twin!["GET /app/api/now-banner"]!) as { show: boolean; documents: { patient_id: string }[] };
+      expect(banner.show, `${path}: the twin shows a NOW banner`).toBe(true);
+      expect(banner.documents.map((d) => d.patient_id)).toEqual([me.patients[0]!.id]);
+      // Everything else the page reads is answered as its own scenario answers it.
+      const others = (table: Record<string, unknown>) => Object.entries(table).filter(([key]) => key !== "GET /app/api/now-banner");
+      expect(others(twin!)).toEqual(others(SCENARIOS[name]!));
+    }
   });
 
   it("aMisspelledRouteIsRefused", () => {

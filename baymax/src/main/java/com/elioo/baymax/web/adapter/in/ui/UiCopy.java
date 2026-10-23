@@ -174,6 +174,27 @@ public class UiCopy {
     }
 
     /**
+     * The WhatsApp lines the web shows exactly as WhatsApp words them (plan W5), beside the urgency lines: the red-flag
+     * line code appends to {@code wa.fallback} is appended to the web composer's reply too, from this one source.
+     */
+    static final List<String> MESSAGE_LINES = List.of("safety.red_flag_line");
+
+    /**
+     * A line of {@link #MESSAGE_LINES} from messages_{bn,en}.properties, verbatim and unescaped (for the web copy export
+     * only, never for HTML). Any other key is refused, so the export cannot grow into a second copy of the bundle.
+     */
+    public String messageLine(Lang lang, String key) {
+        if (!MESSAGE_LINES.contains(key)) {
+            throw new IllegalArgumentException("not an exported message line: " + key);
+        }
+        String raw = messages.get(lang).getProperty(key);
+        if (raw == null) {
+            throw new IllegalArgumentException("no message copy for key " + key);
+        }
+        return raw;
+    }
+
+    /**
      * The bundle text as written, unescaped, with {@code {n}} replaced by the arguments as given (a {@link Number} in
      * Bangla digits on a Bangla page, as {@link #t} writes it): for a URL parameter (the caller encodes it), a JSON body
      * ({@link #plain}) or a test — never for HTML.

@@ -1,7 +1,7 @@
 {
   "_meta": {
     "generated_by": "baymax WebCopyExportTest",
-    "source": "baymax/src/main/resources/baymax/ui_en.properties, baymax/src/main/resources/baymax/ui-shell_en.properties, baymax/src/main/resources/baymax/ui-family_en.properties, baymax/src/main/resources/baymax/ui-papers_en.properties, baymax/src/main/resources/baymax/ui-chat_en.properties, baymax/src/main/resources/baymax/ui-result_en.properties, baymax/src/main/resources/baymax/ui-upload_en.properties; urgency.* of baymax/src/main/resources/baymax/messages_en.properties"
+    "source": "baymax/src/main/resources/baymax/ui_en.properties, baymax/src/main/resources/baymax/ui-shell_en.properties, baymax/src/main/resources/baymax/ui-family_en.properties, baymax/src/main/resources/baymax/ui-papers_en.properties, baymax/src/main/resources/baymax/ui-chat_en.properties, baymax/src/main/resources/baymax/ui-result_en.properties, baymax/src/main/resources/baymax/ui-upload_en.properties; urgency.* and safety.red_flag_line of baymax/src/main/resources/baymax/messages_en.properties"
   },
   "add.camera": "Take a photo",
   "add.camera.sub": "Opens the camera — one page at a time",
@@ -68,8 +68,10 @@
   "calendar.weekday.thu": "Thu",
   "calendar.weekday.tue": "Tue",
   "calendar.weekday.wed": "Wed",
+  "chat.ask.reply": "I cannot answer questions yet. If you have a question about a medicine or a health problem, ask a doctor.",
   "chat.camera": "Send a photo of a paper",
   "chat.empty.action": "Take a photo",
+  "chat.field": "Write to Medioo",
   "chat.hello": "Hello, {0}.",
   "chat.hello.plain": "Hello.",
   "chat.intro": "I am Medioo — not a doctor. I keep medical papers in order and show what is written on them in plain words.",
@@ -318,6 +320,7 @@
   "retake.title": "This paper needs a new photo",
   "retake.title.third": "This paper is hard to read",
   "retake.viewonly": "Only the person who opened this profile can send a new photo.",
+  "safety.red_flag_line": "If the patient is unconscious, struggling to breathe, or has chest pain — go straight to the nearest hospital emergency department.",
   "sex.FEMALE": "Female",
   "sex.MALE": "Male",
   "sex.OTHER": "Other",

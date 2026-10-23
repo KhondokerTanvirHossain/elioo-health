@@ -1,6 +1,7 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { t, type CopyKey, type Lang } from "@/copy";
-import { href, reachable } from "@/routing/paths";
+import { href, reachable, servedByNext } from "@/routing/paths";
 import "./TabBar.css";
 
 export type Tab = "chat" | "papers" | "health" | "family";
@@ -40,23 +41,39 @@ const TABS: { tab: Tab; path: string; key: CopyKey; icon: ReactNode }[] = [
  * page links inside the preview (`href`). `current` is the page's own tab (null on a page that is none, a paper),
  * marked `aria-current="page"`.
  *
- * The links are plain `<a>`: a tab whose page is Java's must be a real navigation, and nothing here may prefetch a read.
+ * A tab whose page is Java's is a plain `<a>`, a real navigation. A tab whose page Next answers for this viewer (under
+ * the preview, or once flipped: `servedByNext`) is a soft navigation (next/link, never prefetched), so the shell and
+ * the NOW banner are rendered again from Java on the way there (plan W5). Nothing here may prefetch a read.
  * The same nav is the phone's bottom bar and, from 900 px, the sidebar's list (`rail`); AppShell shows one at a time.
  */
 export function TabBar({ lang, preview, current, rail }: { lang: Lang; preview: boolean; current: Tab | null; rail?: boolean }) {
   return (
     <nav className={rail ? "tab-bar tab-bar--rail" : "tab-bar"} aria-label={t(lang, "tabs.label")}>
       <ul className="tab-bar__list">
-        {TABS.filter(({ path }) => reachable(path, preview)).map(({ tab, path, key, icon }) => (
-          <li key={tab} className="tab-bar__item">
-            <a className="tab-bar__link" href={href(path, preview)} aria-current={tab === current ? "page" : undefined}>
+        {TABS.filter(({ path }) => reachable(path, preview)).map(({ tab, path, key, icon }) => {
+          const inside = (
+            <>
               <svg className="tab-bar__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                 {icon}
               </svg>
               <span className="tab-bar__label">{t(lang, key)}</span>
-            </a>
-          </li>
-        ))}
+            </>
+          );
+          const at = tab === current ? "page" : undefined;
+          return (
+            <li key={tab} className="tab-bar__item">
+              {servedByNext(path, preview) ? (
+                <Link className="tab-bar__link" href={href(path, preview)} aria-current={at} prefetch={false}>
+                  {inside}
+                </Link>
+              ) : (
+                <a className="tab-bar__link" href={href(path, preview)} aria-current={at}>
+                  {inside}
+                </a>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </nav>
   );

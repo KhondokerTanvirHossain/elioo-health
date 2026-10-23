@@ -1,0 +1,88 @@
+/* The attention stack (AttentionStack.tsx; Java's ChatView .attn-stack): a heading, then one card per item in Java's
+   order, each with exactly one action. An urgent card is UrgencyCard (safety/VerdictCard), the only one that paints
+   the NOW red or the THIS_WEEK amber; the others are the neutral card on the grouped background. Nothing here is red. */
+.attention-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-3);
+}
+.attention-stack__heading {
+  margin: 0;
+  font-family: var(--font-bn);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.attention-stack__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.attention-stack__item {
+  min-width: 0;
+}
+.attention-stack__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-width: 300px;
+  padding: var(--space-3) 14px; /* the verdict card's 14 px side padding, so the stack's cards line up */
+  border-radius: var(--radius-bubble);
+  background: var(--recv);
+  color: var(--recv-ink);
+  font-family: var(--font-bn);
+  overflow-wrap: anywhere;
+}
+.attention-stack__title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 700;
+  line-height: 1.4;
+}
+.attention-stack__line {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  color: var(--label2);
+}
+.attention-stack__quote {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+}
+/* The doctor's line as the prescription shows it: its own crop, never stretched past the card. */
+.attention-stack__crop {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+}
+.attention-stack__words {
+  font-size: var(--text-md);
+  line-height: 1.45;
+}
+.attention-stack__action {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  min-height: var(--target-min);
+  margin-top: var(--space-1);
+  color: var(--tint-ink);
+  font-size: var(--text-md);
+  font-weight: 600;
+  text-decoration: none;
+}
+.attention-stack__action:hover {
+  text-decoration: underline;
+}
+.attention-stack__action:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}

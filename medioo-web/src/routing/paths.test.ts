@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { FLIPPED } from "./flipped";
-import { basicSignInPath, href, JAVA_PAGES, NEXT_PAGES, previewPath, reachable, signInPath } from "./paths";
+import { basicSignInPath, href, JAVA_PAGES, NEXT_PAGES, pathsFor, previewPath, reachable, servedByNext, signInPath } from "./paths";
 
 const web = join(__dirname, "..", "..");
 
@@ -49,5 +49,23 @@ describe("paths", () => {
     expect(reachable("/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003", false)).toBe(true);
     expect(reachable("/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/all", false)).toBe(true);
     expect(reachable("/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/nope", false)).toBe(false);
+  });
+
+  it("onlyAPageNextAnswersForThisViewerNavigatesSoftly", () => {
+    // A soft navigation asks the server that answers the link for the next page's payload: a Java page must be a real
+    // navigation, and a Next page is Next's only under the preview or once Caddy sends it there (plan W5).
+    const lists = { next: ["/app/home"], java: ["/app/home", "/app/timeline"], flipped: [] as string[] };
+    const before = pathsFor(lists);
+    expect(before.servedByNext("/app/home", true)).toBe(true);
+    expect(before.servedByNext("/app/home?patient=x", true)).toBe(true);
+    expect(before.servedByNext("/app/home", false), "not flipped: Caddy still sends it to Java").toBe(false);
+    expect(before.servedByNext("/app/timeline", true), "a page this build does not serve").toBe(false);
+    const after = pathsFor({ ...lists, flipped: ["/app/home"] });
+    expect(after.servedByNext("/app/home", false), "flipped: Next answers it for everyone").toBe(true);
+    expect(after.servedByNext("/app/timeline", false)).toBe(false);
+    // This build: the chat page is Next's under the preview and, until F5, Java's otherwise.
+    expect(NEXT_PAGES).toContain("/app/home");
+    expect(servedByNext("/app/home", true)).toBe(true);
+    expect(servedByNext("/app/home", false)).toBe(FLIPPED.includes("/app/home"));
   });
 });

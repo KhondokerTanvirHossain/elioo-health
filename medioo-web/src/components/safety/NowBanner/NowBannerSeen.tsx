@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { apiSend } from "@/api/browser";
 import type { NowBannerJson, NowSeenJson } from "@/api/types";
+import { useBannerAnswer } from "./NowBannerHold";
 
 /** The PUT's answer is the banner re-read; anything that is not one (a body that failed to parse) is not an answer. */
 function isBanner(body: unknown): body is NowBannerJson {
@@ -12,54 +14,52 @@ function isBanner(body: unknown): body is NowBannerJson {
 
 /**
  * The "seen" button of the NOW banner, the one part of it that needs JavaScript (DR-42: every mutation does). It sends
- * `PUT /app/api/now-banner/ack` with the banner's `seen` list exactly as Java sent it, never rebuilt from the
- * documents, so the acknowledgement covers precisely what was shown (DR-41 item 5).
+ * `PUT /app/api/now-banner/ack` through apiSend with the banner's `seen` list exactly as Java sent it, never rebuilt from
+ * the documents, so the acknowledgement covers precisely what was shown (DR-41 item 5).
  *
  * The server records only the entries that match what the banner shows right now and answers 200 with the banner
- * re-read, so a 2xx does not mean "hidden": `onSeen` receives that answer, and the caller renders it (a stale tap, after
- * the reviewer released the paper or a new NOW paper arrived, answers `show: true` and the banner stays). A refusal or a
- * failed send leaves the banner as it is, says so in a status line, and makes the button usable again. With no
- * `onSeen` there is nobody to hand the answer to, so the button is inert and sends nothing (the catalog). The labels
- * arrive as strings so this island ships no copy.
+ * re-read, so a 2xx does not mean "hidden": the answer goes to the hold around the banner (NowBannerHold), which renders
+ * it. Nothing is hidden on the tap itself. A refusal or a failed send leaves the banner as it is, says so in a status
+ * line, and makes the button usable again; a 401 is apiSend's (the browser goes to sign-in holding this page) and the
+ * banner stays rendered while the page leaves, the button still busy.
+ *
+ * `live` is the server's flag that this banner is a real one (a signed-in page, shell.tsx): without it, or without a
+ * hold to hand the answer to, the button is inert and sends nothing (the catalog). The labels arrive as strings so this
+ * island ships no copy, and no function crosses from the server.
+ *
+ * The button appears only once JavaScript runs (DR-42 item 1): without it a NOW result is still read in full, and there
+ * is no control that would look like it acknowledged anything.
  */
 export function NowBannerSeen({
   seen,
   label,
   failedLabel,
-  onSeen,
+  live,
 }: {
   seen: NowSeenJson[];
   label: string;
   failedLabel: string;
-  onSeen?: (next: NowBannerJson) => void;
+  live?: boolean;
 }) {
+  const answer = useBannerAnswer();
+  const [ready, setReady] = useState(false);
   const [sending, setSending] = useState(false);
   const [failed, setFailed] = useState(false);
+  useEffect(() => setReady(true), []);
 
   async function send() {
-    if (!onSeen || sending) return;
+    if (!live || !answer || sending) return;
     setSending(true);
     setFailed(false);
-    let next: NowBannerJson | null = null;
-    try {
-      const response = await fetch("/app/api/now-banner/ack", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", "X-Medioo": "1" },
-        body: JSON.stringify({ seen }),
-      });
-      if (response.ok) {
-        const body: unknown = await response.json();
-        if (isBanner(body)) next = body;
-      }
-    } catch {
-      // Offline, or an answer that is not JSON: nothing is hidden, the banner stays, and the family can tap again.
-    } finally {
-      setSending(false);
-    }
-    if (next) onSeen(next);
+    const result = await apiSend<NowBannerJson>("PUT", "/app/api/now-banner/ack", { seen });
+    // Signed out: apiSend has already sent the browser to sign-in. The banner stays, and the button stays busy.
+    if (result.kind === "signed-out") return;
+    setSending(false);
+    if (result.kind === "ok" && isBanner(result.body)) answer(result.body);
     else setFailed(true);
   }
 
+  if (!ready) return null;
   return (
     <>
       <button type="button" className="now-banner__seen" disabled={sending} onClick={send}>

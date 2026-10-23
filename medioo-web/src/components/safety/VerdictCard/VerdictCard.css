@@ -60,6 +60,10 @@
 .verdict-card__reason {
   color: var(--label2);
 }
+/* The released explanation keeps the line breaks it was written with, as WhatsApp shows it. */
+.verdict-card__wording {
+  white-space: pre-line;
+}
 .verdict-card__notdoctor {
   margin: var(--space-2) 0 0;
   font-size: var(--text-sm);
@@ -87,4 +91,92 @@
 .verdict-card__call:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
+}
+
+/* The thread's card (plan W5): Mio beside it at the foot, as under the last bubble of a run; the title is the link to
+   the paper and its ::after spreads the tap over the whole card, under the 999 link, which stays its own target. */
+.verdict-card__beside {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.verdict-card__beside > .verdict-card {
+  flex: 0 1 300px;
+  min-width: 0;
+}
+.verdict-card--link {
+  position: relative;
+}
+.verdict-card__open {
+  display: flex;
+  align-items: center;
+  min-height: var(--target-min);
+  color: inherit;
+  text-decoration: none;
+}
+.verdict-card__open::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+.verdict-card__open:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+.verdict-card--link .verdict-card__call {
+  position: relative;
+  z-index: 1;
+}
+.verdict-card__values {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) 0 0;
+  border-top: 1px solid var(--sep);
+  list-style: none;
+}
+.verdict-card__value {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+}
+/* The value's own crop, the line as the paper printed it, above its reading: at most the card's width, never stretched. */
+.verdict-card__crop {
+  display: block;
+  flex: 0 0 100%;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+  object-fit: contain;
+  object-position: left center;
+}
+.verdict-card__reading {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2);
+  min-width: 0;
+  font-size: var(--text-md);
+  line-height: 1.4;
+}
+.verdict-card__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.verdict-card__number {
+  font-family: var(--font-sys);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.verdict-card__pending {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-md);
+  line-height: 1.45;
+  color: var(--label2);
 }

@@ -33,7 +33,7 @@ export function previewPath(path: string): string {
  * the build's `.next/app-path-routes-manifest.json` by `built/routes.built.test.ts`, minus Next's 404, the probe and
  * the catalog-only pages, so a page cannot be added without being measured.
  */
-export const NEXT_PAGES: readonly string[] = ["/app", "/app/verify", "/app/add"];
+export const NEXT_PAGES: readonly string[] = ["/app", "/app/verify", "/app/add", "/app/home"];
 
 /** The `GET /app…` page patterns Java serves, as docs/infra/app-routes.txt lists them (routes.test.ts). */
 export const JAVA_PAGES: readonly string[] = [
@@ -87,6 +87,12 @@ export function pathsFor(lists: { next: readonly string[]; java: readonly string
     /** Whether a link to `path` reaches a page: Java serves it, Caddy sends it to Next, or Next serves it under the preview. */
     reachable: (path: string, preview: boolean): boolean =>
       inList(lists.java, path) || inList(lists.flipped, path) || (preview && inList(lists.next, path)),
+    /**
+     * Whether Next answers `path` for this viewer: under the preview, or once Caddy sends it to Next. Only then may a
+     * link be a soft navigation (next/link): a soft navigation to a page Java serves would ask Next for it.
+     */
+    servedByNext: (path: string, preview: boolean): boolean =>
+      inList(lists.next, path) && (preview || inList(lists.flipped, path)),
   };
 }
 
@@ -97,3 +103,6 @@ export const href: (path: string, preview: boolean) => string = THIS_BUILD.href;
 
 /** Whether a link to `path` reaches a page: Java serves it, Caddy sends it to Next, or Next serves it under the preview. */
 export const reachable: (path: string, preview: boolean) => boolean = THIS_BUILD.reachable;
+
+/** Whether Next answers a link to `path` for this viewer, so the link may navigate softly (plan W5). */
+export const servedByNext: (path: string, preview: boolean) => boolean = THIS_BUILD.servedByNext;

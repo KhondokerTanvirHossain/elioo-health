@@ -1,0 +1,117 @@
+/* The composer (Composer.tsx; phone.html scene `chat`): the owner's camera, the field and its send button, and the
+   standing line under them. The field is washed with --fill and draws a 1 px --boundary edge in every state (Q1 (A),
+   PR #120); the focus ring is an outline beside it, never in its place. A typed line and Medioo's reply are bubbles
+   above the bar. Nothing here is red. */
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  border-top: 1px solid var(--sep);
+  /* The bars' material (the toolbar's and the tab bar's): the chat page docks the composer over the thread (home.css). */
+  background: var(--bar);
+}
+.composer__lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* The reply's live region is on the page from the start, empty (Composer.tsx); while it holds nothing it takes no
+   place in the column and adds no gap, and it stays in the accessibility tree, where display: none would take it out. */
+.composer__lines:empty {
+  position: absolute;
+}
+.composer__pair {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.composer__pair .message-bubble__body {
+  white-space: pre-line;
+}
+.composer__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.composer__camera {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--target-primary);
+  height: var(--target-primary);
+  border-radius: var(--radius-pill);
+  background: var(--tint);
+  color: var(--on-tint);
+}
+.composer__camera-icon {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linejoin: round;
+}
+.composer__form {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.composer__field {
+  box-sizing: border-box;
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--target-min);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--boundary);
+  border-radius: var(--radius-pill);
+  background: var(--fill);
+  color: var(--label);
+  caret-color: var(--tint-ink);
+  font-family: var(--font-bn);
+  font-size: var(--text-lg);
+}
+.composer__field::placeholder {
+  color: var(--label2);
+}
+.composer__send {
+  flex: none;
+  min-width: var(--target-min);
+  min-height: var(--target-min);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--tint-ink);
+  font-family: var(--font-bn);
+  font-size: var(--text-md);
+  font-weight: 600;
+  cursor: pointer;
+}
+.composer__send:hover {
+  background: var(--hover);
+}
+.composer__camera:focus-visible,
+.composer__field:focus-visible,
+.composer__send:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+.composer__standing {
+  margin: 0;
+  font-family: var(--font-bn);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  color: var(--label2);
+  overflow-wrap: anywhere;
+}

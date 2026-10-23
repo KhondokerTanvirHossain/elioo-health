@@ -1,7 +1,7 @@
 {
   "_meta": {
     "generated_by": "baymax WebCopyExportTest",
-    "source": "baymax/src/main/resources/baymax/ui_bn.properties, baymax/src/main/resources/baymax/ui-shell_bn.properties, baymax/src/main/resources/baymax/ui-family_bn.properties, baymax/src/main/resources/baymax/ui-papers_bn.properties, baymax/src/main/resources/baymax/ui-chat_bn.properties, baymax/src/main/resources/baymax/ui-result_bn.properties, baymax/src/main/resources/baymax/ui-upload_bn.properties; urgency.* of baymax/src/main/resources/baymax/messages_bn.properties"
+    "source": "baymax/src/main/resources/baymax/ui_bn.properties, baymax/src/main/resources/baymax/ui-shell_bn.properties, baymax/src/main/resources/baymax/ui-family_bn.properties, baymax/src/main/resources/baymax/ui-papers_bn.properties, baymax/src/main/resources/baymax/ui-chat_bn.properties, baymax/src/main/resources/baymax/ui-result_bn.properties, baymax/src/main/resources/baymax/ui-upload_bn.properties; urgency.* and safety.red_flag_line of baymax/src/main/resources/baymax/messages_bn.properties"
   },
   "add.camera": "ছবি তুলুন",
   "add.camera.sub": "ক্যামেরা খুলবে — পাতা একটা একটা করে",
@@ -68,8 +68,10 @@
   "calendar.weekday.thu": "বৃহঃ",
   "calendar.weekday.tue": "মঙ্গল",
   "calendar.weekday.wed": "বুধ",
+  "chat.ask.reply": "এই প্রশ্নের উত্তর আমি এখনো দিতে পারি না। ওষুধ বা শরীরের কোনো সমস্যা নিয়ে প্রশ্ন থাকলে ডাক্তারকে জিজ্ঞেস করুন।",
   "chat.camera": "কাগজের ছবি পাঠান",
   "chat.empty.action": "ছবি তুলুন",
+  "chat.field": "Medioo-কে লিখুন",
   "chat.hello": "হ্যালো, {0}।",
   "chat.hello.plain": "হ্যালো।",
   "chat.intro": "আমি Medioo — ডাক্তার নই। ডাক্তারি কাগজ গুছিয়ে রাখি, আর কাগজে যা লেখা তা সহজ বাংলায় দেখাই।",
@@ -318,6 +320,7 @@
   "retake.title": "কাগজটা আবার তুলতে হবে",
   "retake.title.third": "এই কাগজটা পড়া কঠিন হচ্ছে",
   "retake.viewonly": "শুধু যিনি এই প্রোফাইল খুলেছেন তিনি নতুন ছবি পাঠাতে পারেন।",
+  "safety.red_flag_line": "রোগী যদি অজ্ঞান হন, শ্বাস নিতে কষ্ট হয়, বা বুকে ব্যথা হয় — সরাসরি নিকটস্থ হাসপাতালের জরুরি বিভাগে যান।",
   "sex.FEMALE": "মহিলা",
   "sex.MALE": "পুরুষ",
   "sex.OTHER": "অন্য",

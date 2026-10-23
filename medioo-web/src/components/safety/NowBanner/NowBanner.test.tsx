@@ -12,11 +12,24 @@ import acked from "../../../../fixtures/api/now-banner/acked.json";
 import one from "../../../../fixtures/api/now-banner/one.json";
 import twoPatients from "../../../../fixtures/api/now-banner/two-patients.json";
 import catalogNames from "../../../../fixtures/catalog/names.json";
+import { signInPath } from "@/routing/paths";
 import { NowBanner } from "./NowBanner";
+import { NowBannerHold } from "./NowBannerHold";
+import { NowBannerSeen } from "./NowBannerSeen";
+
+// The hold re-reads the page through the App Router on a stale tap; here that is a spy.
+const router = vi.hoisted(() => ({ refresh: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => router }));
+// The real island, observed: theServerBannerPassesNoFunction reads the props NowBanner handed it.
+vi.mock("./NowBannerSeen", async (importOriginal) => {
+  const real = await importOriginal<typeof import("./NowBannerSeen")>();
+  return { ...real, NowBannerSeen: vi.fn(real.NowBannerSeen) };
+});
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  router.refresh.mockClear();
 });
 
 const LANGS: readonly Lang[] = ["bn", "en"];
@@ -57,7 +70,20 @@ const count = (text: string, part: string) => text.split(part).length - 1;
 
 /** A fetch answer: `ok` from the status, and the body Java would send. */
 const answer = (status: number, body?: unknown) =>
-  ({ ok: status >= 200 && status < 300, status, json: async () => body }) as unknown as Response;
+  ({
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body,
+    text: async () => (body === undefined ? "" : JSON.stringify(body)),
+  }) as unknown as Response;
+
+/** The banner as a signed-in page renders it (shell.tsx): live, inside the hold that renders Java's answer. */
+const live = (banner: NowBannerJson, patients: Pick<MePatient, "id" | "name">[], lang: Lang) =>
+  render(
+    <NowBannerHold>
+      <NowBanner banner={banner} patients={patients} lang={lang} live />
+    </NowBannerHold>,
+  );
 
 /** A promise the test settles by hand, to hold a request in flight. */
 function deferred<T>() {
@@ -224,22 +250,37 @@ describe("NowBanner", () => {
     }
   });
 
+  it("theServerBannerPassesNoFunction", () => {
+    // NowBanner is a server component: what it hands the seen island crosses to the browser, where a function cannot
+    // go. With `live` it passes words, the seen list and a flag, and nothing callable (plan W5).
+    const seen = vi.mocked(NowBannerSeen);
+    seen.mockClear();
+    render(<NowBanner banner={one.body} patients={patientsOf(one.body, [names.short])} lang="bn" live />);
+    // One call per render of the island (it renders again once mounted); every one carries the same plain props.
+    expect(seen.mock.calls.length, "the island was rendered").toBeGreaterThan(0);
+    for (const [props] of seen.mock.calls as unknown as [Record<string, unknown>][]) {
+      expect(Object.entries(props).filter(([, v]) => typeof v === "function").map(([k]) => k), "function props").toEqual([]);
+      expect(props.live).toBe(true);
+      expect(props.seen).toEqual(one.body.seen);
+    }
+  });
+
   it("theSeenButtonSendsWhatWasReceived", async () => {
     const banner = twoPatients.body;
     const fetchMock = vi.fn(async () => answer(200, acked.body));
     vi.stubGlobal("fetch", fetchMock);
-    const onSeen = vi.fn();
-    const { container } = render(<NowBanner banner={banner} patients={patientsOf(banner, [names.short])} lang="bn" onSeen={onSeen} />);
+    const { container } = live(banner, patientsOf(banner, [names.short]), "bn");
     const buttons = [...alertOf(container).querySelectorAll<HTMLButtonElement>("button")];
     expect(buttons.map((b) => b.textContent)).toEqual([t("bn", "now.banner.seen")]);
     fireEvent.click(buttons[0]!);
-    await waitFor(() => expect(onSeen).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("/app/api/now-banner/ack");
     expect(init.method).toBe("PUT");
+    // Through apiSend: the guard's header and type, and the session cookie.
     expect(init.headers).toEqual({ "Content-Type": "application/json", "X-Medioo": "1" });
+    expect(init.credentials).toBe("same-origin");
     // Exactly the generated seen set, as received: document_id, urgency, reasons_digest, release_state.
     expect(JSON.parse(String(init.body))).toEqual({ seen: twoPatients.body.seen });
   });
@@ -260,8 +301,7 @@ describe("NowBanner", () => {
     for (const [label, banner, sent] of cases) {
       const fetchMock = vi.fn(async () => answer(200, acked.body));
       vi.stubGlobal("fetch", fetchMock);
-      const onSeen = vi.fn();
-      const { container } = render(<NowBanner banner={banner} patients={patientsOf(banner, [names.short])} lang="bn" onSeen={onSeen} />);
+      const { container } = live(banner, patientsOf(banner, [names.short]), "bn");
       fireEvent.click(alertOf(container).querySelector("button")!);
       await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
       const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
@@ -271,59 +311,73 @@ describe("NowBanner", () => {
     }
   });
 
-  it("onSeenGetsTheBannerTheServerAnswered", async () => {
+  it("theHoldRendersWhatTheServerAnswered", async () => {
     // The server records only what the banner shows right now (NowBannerService.acknowledge's sameShownAs) and answers
     // 200 with the banner re-read. A tap with a stale entry (the reviewer released the paper in between, or a new NOW
-    // paper arrived) is a 200 whose banner still shows: the caller must render that answer, never take 2xx as hidden.
-    const cases: Array<[string, NowBannerJson, boolean]> = [
-      ["the server still shows the banner", twoPatients.body, true],
-      ["the server hid the banner", acked.body, false],
-    ];
-    for (const [label, body, show] of cases) {
-      vi.stubGlobal("fetch", vi.fn(async () => answer(200, body)));
-      const onSeen = vi.fn();
-      const { container } = render(<NowBanner banner={one.body} patients={patientsOf(one.body, [names.short])} lang="en" onSeen={onSeen} />);
-      fireEvent.click(alertOf(container).querySelector("button")!);
-      await waitFor(() => expect(onSeen).toHaveBeenCalledTimes(1));
-      expect(onSeen.mock.calls[0]?.[0], label).toEqual(expect.objectContaining({ show }));
-      expect(onSeen.mock.calls[0]?.[0], `${label}: the whole answer`).toEqual(body);
-      cleanup();
-      vi.unstubAllGlobals();
-    }
+    // paper arrived) is a 200 whose banner still shows: the page is re-read from Java (router.refresh), never taken as
+    // hidden. Only `show: false` hides it.
+    vi.stubGlobal("fetch", vi.fn(async () => answer(200, twoPatients.body)));
+    const stale = live(one.body, patientsOf(one.body, [names.short]), "en");
+    fireEvent.click(alertOf(stale.container).querySelector("button")!);
+    await waitFor(() => expect(router.refresh).toHaveBeenCalledTimes(1));
+    expect(stale.container.querySelectorAll('[role="alert"]').length, "a stale tap keeps the banner").toBe(1);
+    cleanup();
+    vi.unstubAllGlobals();
+
+    vi.stubGlobal("fetch", vi.fn(async () => answer(200, acked.body)));
+    const hidden = live(one.body, patientsOf(one.body, [names.short]), "en");
+    fireEvent.click(alertOf(hidden.container).querySelector("button")!);
+    await waitFor(() => expect(hidden.container.querySelectorAll('[role="alert"]').length).toBe(0));
+    expect(router.refresh, "a hidden banner needs no re-read").toHaveBeenCalledTimes(1);
   });
 
-  it("onSeenOnlyAfterTheServerAccepted", async () => {
-    const banner = one.body;
-    const fetchMock = vi.fn(async () => answer(400, { error: "invalid_request" }));
+  it("aRefusalKeepsTheBannerAndSaysSo", async () => {
+    const fetchMock = vi.fn(async () => answer(400, { reason: "INVALID" }));
     vi.stubGlobal("fetch", fetchMock);
-    const onSeen = vi.fn();
-    const { container } = render(<NowBanner banner={banner} patients={patientsOf(banner, [names.short])} lang="en" onSeen={onSeen} />);
+    const { container } = live(one.body, patientsOf(one.body, [names.short]), "en");
     const alert = alertOf(container);
     expect(alert.querySelector('[role="status"]'), "no failure line before a tap").toBeNull();
     const button = alert.querySelector("button")!;
     fireEvent.click(button);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(button.disabled, "the button is usable again after a refusal").toBe(false));
-    expect(onSeen).not.toHaveBeenCalled();
     // The refusal is said in words, announced: the banner stays, and the family is told the tap did not go through.
     await waitFor(() => expect(alert.querySelector('[role="status"]')?.textContent).toBe(t("en", "app.err.generic")));
+    expect(container.querySelectorAll('[role="alert"]').length).toBe(1);
+    expect(router.refresh).not.toHaveBeenCalled();
   });
 
   it("aFailedSendLeavesTheBannerAndTheButtonUsable", async () => {
-    // Offline: fetch itself rejects. onSeen never runs, the button comes back, and the failure line is shown.
+    // Offline: fetch itself rejects. Nothing is hidden, the button comes back, and the failure line is shown.
     const fetchMock = vi.fn(async (): Promise<Response> => {
       throw new TypeError("Failed to fetch");
     });
     vi.stubGlobal("fetch", fetchMock);
-    const onSeen = vi.fn();
-    const { container } = render(<NowBanner banner={one.body} patients={patientsOf(one.body, [names.short])} lang="bn" onSeen={onSeen} />);
+    const { container } = live(one.body, patientsOf(one.body, [names.short]), "bn");
     const alert = alertOf(container);
     const button = alert.querySelector("button")!;
     fireEvent.click(button);
     await waitFor(() => expect(alert.querySelector('[role="status"]')?.textContent).toBe(t("bn", "app.err.generic")));
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(button.disabled, "the button is usable again after a failed send").toBe(false);
-    expect(onSeen).not.toHaveBeenCalled();
+    expect(container.querySelectorAll('[role="alert"]').length).toBe(1);
+  });
+
+  it("aSignedOutTapKeepsTheBannerAndGoesToSignIn", async () => {
+    // Review Focus 3: the session ended while the banner was up. The 401 is not "seen": the banner stays rendered, the
+    // button stays busy while the page leaves, and the browser goes to sign-in holding this page (apiSend's rule).
+    const assign = vi.fn();
+    vi.stubGlobal("location", { pathname: "/app/preview/home", search: "?patient=p1", assign });
+    vi.stubGlobal("fetch", vi.fn(async () => answer(401, { reason: "UNAUTHENTICATED" })));
+    const { container } = live(one.body, patientsOf(one.body, [names.short]), "bn");
+    const button = alertOf(container).querySelector("button")!;
+    fireEvent.click(button);
+    await waitFor(() => expect(assign).toHaveBeenCalledTimes(1));
+    expect(assign).toHaveBeenCalledWith(signInPath("/app/preview/home?patient=p1"));
+    await settle();
+    expect(container.querySelectorAll('[role="alert"]').length, "the banner is still rendered at the 401").toBe(1);
+    expect(button.disabled, "no second tap while the page leaves").toBe(true);
+    expect(router.refresh).not.toHaveBeenCalled();
   });
 
   it("theButtonIsDisabledWhileTheAckIsInFlight", async () => {
@@ -331,27 +385,35 @@ describe("NowBanner", () => {
     const pending = deferred<Response>();
     const fetchMock = vi.fn(() => pending.promise);
     vi.stubGlobal("fetch", fetchMock);
-    const onSeen = vi.fn();
-    const { container } = render(<NowBanner banner={one.body} patients={patientsOf(one.body, [names.short])} lang="bn" onSeen={onSeen} />);
+    const { container } = live(one.body, patientsOf(one.body, [names.short]), "bn");
     const button = alertOf(container).querySelector("button")!;
     fireEvent.click(button);
     await waitFor(() => expect(button.disabled, "disabled while the PUT is in flight").toBe(true));
     fireEvent.click(button);
     await settle();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    // The banner is not hidden on the tap: it waits for Java's answer.
+    expect(container.querySelectorAll('[role="alert"]').length, "still shown while the PUT is in flight").toBe(1);
     pending.resolve(answer(200, acked.body));
-    await waitFor(() => expect(onSeen).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(container.querySelectorAll('[role="alert"]').length).toBe(0));
   });
 
-  it("theButtonWithoutOnSeenSendsNothing", async () => {
-    // With no caller to hand the server's answer to, an acknowledgement would be stored while the banner stayed up, so
-    // the island is inert: a tap sends no request at all.
+  it("aBannerThatIsNotLiveSendsNothing", async () => {
+    // Without `live` (the catalog), or live with no hold to hand the answer to, an acknowledgement would be stored while
+    // the banner stayed up, so the island is inert: a tap sends no request at all.
     const fetchMock = vi.fn(async () => answer(200, acked.body));
     vi.stubGlobal("fetch", fetchMock);
-    const { container } = render(<NowBanner banner={one.body} patients={patientsOf(one.body, [names.short])} lang="bn" />);
-    fireEvent.click(alertOf(container).querySelector("button")!);
+    const cases = [
+      render(
+        <NowBannerHold>
+          <NowBanner banner={one.body} patients={patientsOf(one.body, [names.short])} lang="bn" />
+        </NowBannerHold>,
+      ),
+      render(<NowBanner banner={one.body} patients={patientsOf(one.body, [names.short])} lang="bn" live />),
+    ];
+    for (const { container } of cases) fireEvent.click(alertOf(container).querySelector("button")!);
     await settle();
-    expect(fetchMock.mock.calls.length, "requests sent without onSeen").toBe(0);
+    expect(fetchMock.mock.calls.length, "requests sent without a live banner in a hold").toBe(0);
   });
 
   it("theCatalogButtonSendsNothing", async () => {

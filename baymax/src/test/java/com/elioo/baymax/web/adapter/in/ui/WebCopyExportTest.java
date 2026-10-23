@@ -105,6 +105,10 @@ class WebCopyExportTest {
                 assertThat(strings.put(line.getKey(), line.getValue()))
                         .as("urgency key " + line.getKey() + " is also a UI key: one source per string").isNull();
             }
+            for (Map.Entry<String, String> line : messageLines(copy, lang).entrySet()) {
+                assertThat(strings.put(line.getKey(), line.getValue()))
+                        .as("message line " + line.getKey() + " is also a UI key: one source per string").isNull();
+            }
             byLang.put(lang, strings);
         }
 
@@ -114,6 +118,9 @@ class WebCopyExportTest {
         for (Map<String, String> strings : byLang.values()) {
             assertThat(strings.size()).as("the whole bundle set, not a slice of it").isGreaterThan(300);
             assertThat(strings).containsKeys("tab.chat", "now.notdoctor", "urgency.now", "value.chip.unknown");
+            // Plan W5: the composer's reply is chat.ask.reply followed by the red-flag line WhatsApp appends to
+            // wa.fallback, so the web needs both, each from its one source.
+            assertThat(strings).containsKeys("chat.ask.reply", "safety.red_flag_line");
         }
 
         Map<String, String> files = new TreeMap<>();
@@ -122,7 +129,8 @@ class WebCopyExportTest {
             file.put("_meta", Snapshot.meta(WebCopyExportTest.class, UiCopy.PARTS.stream()
                     .map(part -> "baymax/src/main/resources/baymax/" + part + "_" + lang.code + ".properties")
                     .collect(Collectors.joining(", "))
-                    + "; urgency.* of baymax/src/main/resources/baymax/messages_" + lang.code + ".properties"));
+                    + "; urgency.* and " + String.join(", ", UiCopy.MESSAGE_LINES)
+                    + " of baymax/src/main/resources/baymax/messages_" + lang.code + ".properties"));
             files.put("copy." + lang.code + ".json", Snapshot.json(file));
         }
         return files;
@@ -169,6 +177,22 @@ class WebCopyExportTest {
         }
         assertThat(lines).as("UiCopy.urgency renders exactly the urgency.* lines of messages_" + lang.code)
                 .isEqualTo(inBundle);
+        return lines;
+    }
+
+    /**
+     * Every line of {@link UiCopy#MESSAGE_LINES} as {@link UiCopy#messageLine} returns it, each held byte for byte to
+     * the messages bundle it comes from, so the web reads the line WhatsApp sends and not a copy that could drift.
+     */
+    static Map<String, String> messageLines(UiCopy copy, Lang lang) {
+        Properties messages = messages(lang);
+        Map<String, String> lines = new TreeMap<>();
+        for (String key : UiCopy.MESSAGE_LINES) {
+            String line = copy.messageLine(lang, key);
+            assertThat(line).as(key + " is messages_" + lang.code + "'s line verbatim").isEqualTo(messages.getProperty(key));
+            lines.put(key, line);
+        }
+        assertThat(lines).as("message lines").isNotEmpty();
         return lines;
     }
 
