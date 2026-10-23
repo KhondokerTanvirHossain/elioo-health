@@ -19,6 +19,11 @@
 #   `handle /_next/* {…}` on /_next/image alone, and the preview matcher without its `not path` line on
 #   /app/preview/probe alone (the budget probe never runs the preview gate, so it must stay off the preview);
 # - a file missing an asset route fails on that asset's row;
+# - F7's rule has two directions, each a variant: GET and HEAD /app/add reach Next (`add-missing` drops the block and
+#   fails both rows; `add-get-only` keeps `method GET` and fails the HEAD row alone), and POST /app/add, the upload,
+#   stays Java's (`add-any-method` drops the method line and fails the PROBE POST row alone); `add-wide` widens the
+#   exact `path /app/add` to `/app/add*` and fails the /app/add/ boundary row alone. Each edit is anchored on the add
+#   block, so another block's `method GET HEAD` (F3's sign-in matcher) is never the one edited;
 # - a table with no rows, a file with no medioo.eliooo.org block, and a file with an upstream the probe does not know
 #   each fail, rather than pass vacuously or send a row somewhere unreplaced.
 set -uo pipefail
@@ -33,8 +38,9 @@ FAILED=0
 CASES=0
 # the smoke table's rows less the {old} one: /app/healthz /actuator/health /app/api/me /app/ / /medscribeai
 # /medscribeai/ /baymax /baymax/ webhook /_next/static/x.js /fonts/noto-sans-latin.woff2 /brand/mio-head.webp
-# /app/preview /app/preview/ /app/previewx /_next/image /app/preview/probe
-ROWS=18
+# /app/preview /app/preview/ /app/previewx /_next/image /app/preview/probe, and F7's /app/add, /app/add/,
+# PROBE POST /app/add and PROBE HEAD /app/add (the probe sends PROBE rows; the production run never does)
+ROWS=22
 
 fail() { echo "FAIL: $1"; FAILED=1; }
 
@@ -69,13 +75,19 @@ grep -qF '{old}' "$WORK/out.log" && fail "repo: an {old} row was asked of the pr
 grep -q '^PASS /app/healthz 298 (next)$' "$WORK/out.log" || fail "theProbeSpeaksPlainHttp: no 'PASS /app/healthz 298 (next)' line: $(out)"
 grep -qE ' (got )?308( |$)' "$WORK/out.log" && fail "theProbeSpeaksPlainHttp: a row was answered 308: $(out)"
 
-# 3. one wrong route at a time: <name>|<perl edit>|<the one FAIL line, exactly>
-while IFS='|' read -r name edit line; do
+# 3. one wrong route at a time: <name>|<perl edit>|<a FAIL line, exactly>[|<a second FAIL line>]; the run must print
+#    those lines and no other FAIL line (one, or two when the edit takes a whole block that two rows ask)
+while IFS='|' read -r name edit line line2; do
   [ -n "$name" ] || continue
   variant "$name" "$edit" || continue
   if probe "$WORK/$name.Caddyfile"; then fail "$name: exited 0: $(out)"; continue; fi
   grep -qxF -- "$line" "$WORK/out.log" || fail "$name: no '$line' line: $(out)"
-  [ "$(fails)" = 1 ] || fail "$name: $(fails) FAIL rows, expected exactly 1: $(out)"
+  want=1
+  if [ -n "$line2" ]; then
+    want=2
+    grep -qxF -- "$line2" "$WORK/out.log" || fail "$name: no '$line2' line: $(out)"
+  fi
+  [ "$(fails)" = "$want" ] || fail "$name: $(fails) FAIL rows, expected exactly $want: $(out)"
 done <<'TABLE'
 api-to-next|s/(\n\thandle \{\n)/\n\thandle \/app\/api\/* {\n\t\treverse_proxy medioo-web:3000\n\t}\n$1/|FAIL /app/api/me got 298 (next), expected 299 (java)
 preview-star-only|s/\n\t\tpath \/app\/preview \/app\/preview\/\*\n/\n\t\tpath \/app\/preview\/*\n/|FAIL /app/preview got 299 (java), expected 298 (next)
@@ -83,6 +95,10 @@ preview-prefix|s/\n\t\tpath \/app\/preview \/app\/preview\/\*\n/\n\t\tpath \/app
 next-wide|s/\thandle \/_next\/static\/\* \{/\thandle \/_next\/* {/|FAIL /_next/image got 298 (next), expected 299 (java)
 probe-exposed|s/\n\t\tnot path \/app\/preview\/probe [^\n]*\n/\n/|FAIL /app/preview/probe got 298 (next), expected 299 (java)
 no-fonts|s/\thandle \/fonts\/\* \{\n\t\treverse_proxy medioo-web:3000\n\t\}\n//|FAIL /fonts/noto-sans-latin.woff2 got 299 (java), expected 298 (next)
+add-any-method|s/\n\t\tmethod GET HEAD\n(\t\tpath \/app\/add\n)/\n$1/|FAIL PROBE POST /app/add got 298 (next), expected 299 (java)
+add-get-only|s/\n\t\tmethod GET HEAD\n(\t\tpath \/app\/add\n)/\n\t\tmethod GET\n$1/|FAIL PROBE HEAD /app/add got 299 (java), expected 298 (next)
+add-wide|s/(\n\t\tmethod GET HEAD\n\t\tpath \/app\/add)\n/$1*\n/|FAIL /app/add/ got 298 (next), expected 299 (java)
+add-missing|s/\t\@medioo_add \{\n\t\tmethod GET HEAD\n\t\tpath \/app\/add\n\t\}\n\thandle \@medioo_add \{\n\t\treverse_proxy medioo-web:3000\n\t\}\n//|FAIL /app/add got 299 (java), expected 298 (next)|FAIL PROBE HEAD /app/add got 299 (java), expected 298 (next)
 TABLE
 
 # 4. a table with no rows: refused, not passed

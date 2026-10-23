@@ -515,8 +515,12 @@ the n8n and bddrug sites (one reload touches all three tenants). From W1c the re
 medioo/baymax blocks are pasted from it. Routed today: `/app/healthz` (W1c); the preview path `/app/preview` and
 `/app/preview/*`, and the assets `/_next/static/*`, `/fonts/*` and `/brand/*` (plan Wave 3, F0); `GET` and `HEAD
 /app/add`, the add sheet (F7; `POST /app/add`, the upload the old sheet and the paper page's retake form send, stays
-Java's). Every other page is still Java's, and so is every `/app/api/**` path; each screen's own paths come in its
-flip PR (F3, F5–F10), each authorized by the PO's ruling P4 (2026-10-23) as soon as its screen is merged and deployed,
+Java's). **The old Java sheet is not fully off after F7:** a refused `POST /app/add` (the paper page's retake form,
+a full-page post that upload.js does not enhance, refused as too large, unsupported, a PDF or too many pages) still
+draws Java's old sheet as the POST's answer (`UploadUiHandler.refuse`). W-del must first make that refusal render on
+the paper page itself, or redirect to `/app/add?patient=<id>&replaces=<doc>` (now Next), before the old sheet code is
+removed. Every other page is still Java's, and so is every `/app/api/**` path; each screen's own paths come in its
+flip PR (F3, F5–F10), each authorized by DR-49 (PO ruling 2026-10-23) as soon as its screen is merged and deployed,
 in place of the on-device try. Every preview page that reads Java reads nothing but `GET /app/api/me` until that answer says
 `preview: true`, so for those pages routing the preview shows the new screens to the families in
 `BAYMAX_WEB_PREVIEW_FAMILIES` only; signed out, it is a 307 to the sign-in page holding the preview. The gate lives in

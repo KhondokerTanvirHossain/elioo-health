@@ -31,14 +31,20 @@
 # replica). These rows are the routing's other direction: a matcher that reaches too far fails one of them.
 # Next's 404 for a missing chunk is text/plain and Java's is JSON, and both carry the four headers, so that row reads
 # the Content-Type: on status and headers alone it would pass on Java's answer, the one thing it exists to tell apart.
-# The F7 rows (plan Wave 3, Task F; PO ruling P4, 2026-10-23) were measured on 2026-10-23. Before the flip, production
-# answered GET /app/add signed out with Java's session filter: 303 to /app/ (no held place), Java's CSP; HEAD with
-# Java's JSON 404. After it, medioo-web's add sheet (plan W7) answers GET and HEAD signed out with a 307 to the sign-in
-# page holding the place (/app/?next=%2Fapp%2Fadd), its nonce CSP: measured against the deployed sha's build
-# (0015f5b) with stub Java signed out. POST /app/add is Java's upload (the old sheet's form and the paper page's
-# retake form post there): the Caddy matcher is GET and HEAD only, and its row is a PROBE row, never sent here. Its
-# 303 to /app/ is what Java's session filter (BaymaxWebUiRouter.requireSession) answers a POST with no session, read
-# from the code, not posted to production; the route probe reads only its class.
+# The F7 rows (plan Wave 3, Task F; DR-49, PO ruling 2026-10-23) were measured on 2026-10-23. Before the flip,
+# production answered GET /app/add signed out with Java's session filter: 303 to /app/ (no held place), Java's CSP;
+# HEAD with Java's JSON 404. After it, medioo-web's add sheet (plan W7) answers GET and HEAD signed out with a 307 to
+# the sign-in page holding the place (/app/?next=%2Fapp%2Fadd), its nonce CSP: measured against the deployed sha's
+# build (0015f5b) with stub Java signed out, not through the W1d replica (Docker was down; Caddy changes neither the
+# status nor the Location). HEAD is a PROBE row because this run sends GET only: the route probe sends it as HEAD, so
+# a matcher of `method GET` alone fails there. POST /app/add is Java's upload (the old sheet's form and the paper
+# page's retake form post there): the Caddy matcher is GET and HEAD only, and its row is a PROBE row, never sent here.
+# UNMEASURED, from the code: its 303 to /app/ is what Java's session filter (BaymaxWebUiRouter.requireSession) answers
+# a request with no session; it was not posted to production, and the W1d replica measurement (POST /app/add signed
+# out, image 0015f5b, scripts/budget-behind-caddy.sh) is pending because Docker was down. The route probe reads only
+# the row's class (Java), so no check depends on the 303 or the Location until it is measured.
+# /app/add/ (trailing slash, outside the exact `path /app/add`) is still Java's JSON 404 (production, 2026-10-23,
+# read-only GET: 404, application/json, statusCode 400): a matcher widened to `/app/add*` fails that row.
 #
 # Header classes. Caddy's medioo header block owns HSTS, X-Content-Type-Options and Referrer-Policy on every path
 # (it runs at response-write time and overwrites the upstream); each upstream owns its CSP and X-Frame-Options.
@@ -56,7 +62,7 @@
 # (/app/preview and /app/preview/*, less /app/preview/probe), the assets (/_next/static/*, /fonts/*, /brand/*) and,
 # from F7, GET and HEAD /app/add (POST /app/add stays Java's). Every other page is still Java's, and Java still owns
 # the API: /app/api/me must be Java's JSON 401, so a route that sent /app/api/* to Next
-# fails here, as does a matcher wider than its row (the three boundary rows above). Each flip PR moves
+# fails here, as does a matcher wider than its row (the boundary rows above: three for F0, /app/add/ for F7). Each flip PR moves
 # its own page's rows. scripts/caddy-route-probe.sh sends this same table through a local Caddy running the repo's
 # Caddyfile.medioo and checks that each row reaches the upstream its class names: the routing is derived from this
 # table, not from a second list.
@@ -125,6 +131,8 @@ TABLE='/app/healthz|200|next|json:service=medioo-web
 /_next/image|404|-|json:statusCode=400
 /app/preview/probe|404|-|json:statusCode=400
 /app/add|307|next|location:/app/?next=%2Fapp%2Fadd
+/app/add/|404|-|json:statusCode=400
+PROBE HEAD /app/add|307|next|location:/app/?next=%2Fapp%2Fadd
 PROBE POST /app/add|303|page|location:/app/
 {old}/app/home|301|-|location:https://medioo.eliooo.org/app/home'
 

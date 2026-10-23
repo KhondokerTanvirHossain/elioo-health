@@ -83,9 +83,10 @@ medioo.eliooo.org {
 		reverse_proxy medioo-web:3000
 	}
 
-	# F7 (PO ruling P4, 2026-10-23): the add sheet (plan W7). GET and HEAD only: POST /app/add is Java's upload, which
-	# the old sheet's form and the paper page's retake form post to, and it stays Java's. `path /app/add` is exact, so
-	# /app/add/ and /app/addx stay Java's too. Turning the old page back on is deleting this block (RUNBOOK -> Rollback).
+	# F7 (DR-49, PO ruling 2026-10-23): the add sheet (plan W7). GET and HEAD only: POST /app/add is Java's upload,
+	# which the old sheet's form and the paper page's retake form post to, and it stays Java's. `path /app/add` is exact,
+	# so /app/add/ and /app/addx stay Java's too. Turning the old page back on is deleting this block (RUNBOOK ->
+	# Rollback).
 	@medioo_add {
 		method GET HEAD
 		path /app/add

@@ -1196,7 +1196,8 @@ directions asserted: a gone or no-longer-retake `replaces` gives a new, unlinked
 its retake is still linked. How it is built, and the engineering default still pending, is DR-47.
 
 **What this does not release:** the family-facing route flips (F3, F5–F10) wait for the PO's on-device try. "Accepted"
-releases each PR's merge as the table's Blocks column names it, nothing more.
+releases each PR's merge as the table's Blocks column names it, nothing more. *(Amended by DR-49, 2026-10-23: the
+flips no longer wait for the on-device try; each runs as soon as its screen is merged and deployed.)*
 
 **Open, asked of the PO (W8-api review, PR #131):** S14 as accepted removes the calendar's row, so one render of the
 papers page is one `timeline_view`, not two. The page is server-rendered and every control is a plain link, so each
@@ -1297,3 +1298,32 @@ but the paper's own printed range would invent a "normal" the lab never stated.
 **Supersedes:** the W2e-b note (PR #129) that the calendar's urgency colour was a PO question, and that the NOW and
 THIS_WEEK tokens were not painted in MonthCalendar. Also the W2e-b TrendChart rule "draws no band", which now holds
 only for a series whose papers printed no range.
+
+## DR-49 | 2026-10-23 | The old Java pages go off as each new screen lands: the flips F3, F5–F10 need no on-device try
+
+**Ruling (PO, 2026-10-23, Tanvir, in the session; the recommended option):** Medioo has exactly one family, the PO's
+own (one `family_account` row; no other family sent a paper in the 14 days before the ruling). So the old Java HTML
+pages are switched off **as each new screen lands**: every row of the Wave 3 screens plan's Task F flip table (F3,
+F5–F10) is authorized and runs as soon as its screen PR is merged and deployed. In the PO's own words: "real family
+does not depend on them no one use that". The ruling replaces Task F Step 1's on-device precondition; each F PR quotes
+it in place of the on-device result.
+
+**What it does not change:**
+- A path is never flipped while its Next screen is not on `origin/main` and deployed (Task F Step 1's first
+  precondition, the screen's squash sha an ancestor of the running image, still applies).
+- The old Java page code stays in the repo until W-del. Turning a page back on is one Caddy block (RUNBOOK ->
+  Rollback).
+- Java keeps serving `/app/api/**`, the paper images and crops (`/app/documents/{id}/page/…`, `/image`, `/status`,
+  `/delete` and every POST), the WhatsApp webhook, `/medscribeai`, the public landing `/`, and `/app/basic` (S1).
+- Every other Task F step (measure, rows first, the route probe, the box edit before the merge, the routes floor)
+  stands, and flip PRs still serialise with every other merge (RUNBOOK step 1).
+
+**Naming:** the repo's older "P4" (the Wave 2 plan's D4a production-evidence step,
+`docs/superpowers/plans/2026-10-21-medioo-wave2.md`) is a different item. Code and docs cite this ruling as "DR-49
+(PO ruling 2026-10-23)", never as a bare "P4".
+
+**Why:** the on-device try protected families who depend on the old pages; there are none besides the PO's own, and
+the PO would rather see each new screen live than keep two versions of a page running.
+
+**Supersedes:** DR-46's "What this does not release" line (the flips waiting for the PO's on-device try), and the
+screens plan's Task F header and Step 1 on-device precondition, each amended to point here.

@@ -404,7 +404,7 @@ Branch `feat/medioo-web-signin`. Lane C. Merges after W1d and W3-api; S9 applies
 
 ## Task F: Flipping a route (one PR per row of the table below)
 
-Branch per the table at the top. Lane X. Each F PR runs after its screen PR is merged and deployed. Except F0, it also waits for the PO's on-device step.
+Branch per the table at the top. Lane X. Each F PR runs after its screen PR is merged and deployed. Except F0, it also waits for the PO's on-device step. *(Amended by DR-49, 2026-10-23: no F PR waits for the on-device step any more; each runs as soon as its screen PR is merged and deployed, and quotes DR-49's ruling in place of the on-device result.)*
 
 **Files:**
 - Modify:
@@ -432,7 +432,7 @@ Branch per the table at the top. Lane X. Each F PR runs after its screen PR is m
 
 - [ ] **Step 1: Preconditions,** each pasted into the PR body:
   - The screen's squash sha is an ancestor of the running image: `curl -s https://medioo.eliooo.org/app/healthz | jq -r .sha`, then `git merge-base --is-ancestor <screen sha> <that sha> && echo deployed`. Expected: `deployed`.
-  - (not F0) The PO's on-device result, quoted: Tanvir opened the screen's preview path on his phone, with his family in `BAYMAX_WEB_PREVIEW_FAMILIES` (the box step below), in both themes, and said yes. Until then the PR stays open with the step under `box_steps_pending`.
+  - (not F0) The PO's on-device result, quoted: Tanvir opened the screen's preview path on his phone, with his family in `BAYMAX_WEB_PREVIEW_FAMILIES` (the box step below), in both themes, and said yes. Until then the PR stays open with the step under `box_steps_pending`. *(Amended by DR-49, 2026-10-23: replaced by the PO's ruling, quoted from DR-49.)*
   - (F3 only) The S1 and S3 rulings, quoted.
 - [ ] **Step 2: Measure.** Against production, run `curl -s -o /dev/null -D - <path>` (GET and HEAD only) for every non-`PROBE` row's path, before the change, and record each status and `Location`. `PROBE` rows and F0's Next rows are measured through W1d's local Caddy replica against the deployed sha's image, never by a POST to production.
 - [ ] **Step 3: Write the rows first.**

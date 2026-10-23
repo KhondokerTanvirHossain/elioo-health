@@ -25,7 +25,8 @@
 #   each once;
 # - the old hostname still redirects every path to the new one (DR-15: links already sent to families);
 # - F7 (plan Wave 3, Task F): GET /app/add is medioo-web's, signed out a 307 to the sign-in page holding /app/add;
-#   Java's answer there before the flip (303 to /app/, its own CSP) fails that row and only that row;
+#   Java's answer there before the flip (303 to /app/, its own CSP) fails that row and only that row; /app/add/ just
+#   outside the exact matcher passes on Java's JSON 404 and fails on Next's HTML 404 (`add-slash-next`);
 # - a PROBE row is never sent by the production run (aProductionRunNeverSendsAProbeRow): POST /app/add is Java's
 #   upload and must not be pressed against production by a smoke run; the stub's request log is read, not the output;
 # - a body is never printed (the CI log is public, DR-38; the health body carries disk and database details);
@@ -42,9 +43,10 @@ FAILED=0
 CASES=0
 # the table's size: /app/healthz /actuator/health /app/api/me /app/ / /medscribeai /medscribeai/ /baymax /baymax/
 # webhook /_next/static/x.js /fonts/noto-sans-latin.woff2 /brand/mio-head.webp /app/preview /app/preview/
-# /app/previewx /_next/image /app/preview/probe /app/add (F7) and the old host's /app/home. The PROBE rows
-# (`PROBE POST /app/add`) are not counted: the production run never sends them (caddy-route-probe.sh does).
-ROWS=20
+# /app/previewx /_next/image /app/preview/probe /app/add /app/add/ (F7) and the old host's /app/home. The PROBE rows
+# (`PROBE HEAD /app/add`, `PROBE POST /app/add`) are not counted: the production run never sends them
+# (caddy-route-probe.sh does).
+ROWS=21
 
 fail() { echo "FAIL: $1"; FAILED=1; }
 
@@ -180,6 +182,11 @@ const server = http.createServer((req, res) => {
       if (req.method === "POST" || javaOwns("add")) return send(res, path, 303, "text/html", "", JAVA_CSP, { Location: "/app/" });
       return send(res, path, 307, "text/html", "", NEXT_CSP,
         { Location: brk === "add-location" ? "/app/" : "/app/?next=%2Fapp%2Fadd" });
+    // Just outside F7's exact `path /app/add`, still Java's (production, 2026-10-23: Java's JSON 404). A matcher
+    // widened to `/app/add*` gives Next's HTML 404.
+    case "/app/add/":
+      if (brk === "add-slash-next") return send(res, path, 404, "text/html; charset=utf-8", html("404: This page could not be found."), NEXT_CSP);
+      return send(res, path, 404, "application/json", JAVA_404);
     // Java owns the API: a Caddy route that sent /app/api/* to Next would answer Next's HTML 404 here
     case "/app/api/me":
       if (brk === "me-next") return send(res, path, 404, "text/html", html("404: This page could not be found."), NEXT_CSP);
@@ -225,7 +232,7 @@ if smoke; then :; else fail "flipped: exited non-zero on a healthy table: $(out)
 [ "$(fails)" = 0 ] || fail "flipped: $(fails) FAIL rows: $(out)"
 grep -q 'DISK-DETAIL-NEVER-PRINTED' "$WORK/out.log" && fail "flipped: a response body reached the output"
 # the boundary rows pass on Java's JSON 404 (the other direction, Next's answer failing each, is in the break table)
-for row in /app/previewx /_next/image /app/preview/probe; do
+for row in /app/previewx /_next/image /app/preview/probe /app/add/; do
   grep -qxF "PASS $row HTTP 404" "$WORK/out.log" || fail "flipped: no 'PASS $row HTTP 404' line on Java's answer: $(out)"
 done
 
@@ -294,6 +301,7 @@ preview-no-nonce|/app/preview|content-security-policy has no nonce
 preview-slash-java|/app/preview/|HTTP 404, expected 307
 add-java|/app/add|HTTP 303, expected 307
 add-location|/app/add|location is [/app/], expected [/app/?next=%2Fapp%2Fadd]
+add-slash-next|/app/add/|statusCode is [], expected [400]
 previewx-next|/app/previewx|statusCode is [], expected [400]
 next-image-next|/_next/image|statusCode is [], expected [400]
 preview-probe-next|/app/preview/probe|HTTP 200, expected 404
@@ -306,14 +314,15 @@ TABLE
 #     run's GET /app/add (so its log is read at all), and it saw no POST, nothing to /app/add but that GET, and no
 #     request whose path carries the word PROBE
 grep -qE '^PROBE POST /app/add\|' "$SMOKE" || fail "probe-skip: the table has no 'PROBE POST /app/add' row, so this case tests nothing"
+grep -qE '^PROBE HEAD /app/add\|' "$SMOKE" || fail "probe-skip: the table has no 'PROBE HEAD /app/add' row, so this case tests less than it says"
 start_stub
 smoke >/dev/null || true
 grep -qxF 'GET /app/add' "$WORK/requests" || fail "probe-skip: the stub never saw GET /app/add, so its log proves nothing: $(tr '\n' '|' < "$WORK/requests" | cut -c1-300)"
 if grep -qvE '^GET ' "$WORK/requests"; then
   fail "probe-skip: the production run sent a non-GET request: $(grep -vE '^GET ' "$WORK/requests" | head -3 | tr '\n' '|')"
 fi
-if grep -qi 'probe ' "$WORK/requests" || grep -c '/app/add' "$WORK/requests" | grep -qvx 1; then
-  fail "probe-skip: a PROBE row reached the host: $(grep -i -e 'probe ' -e '/app/add' "$WORK/requests" | head -3 | tr '\n' '|')"
+if grep -qi 'probe ' "$WORK/requests" || grep -cE '^[A-Z]+ /app/add$' "$WORK/requests" | grep -qvx 1; then
+  fail "probe-skip: a PROBE row reached the host: $(grep -i -e 'probe ' -e '/app/add$' "$WORK/requests" | head -3 | tr '\n' '|')"
 fi
 grep -q 'PROBE' "$WORK/out.log" && fail "probe-skip: the production run printed a PROBE row: $(out)"
 
