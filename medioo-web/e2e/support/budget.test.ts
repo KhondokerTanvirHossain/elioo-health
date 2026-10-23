@@ -143,6 +143,21 @@ describe("concretePath", () => {
 
   it("refuses a dynamic segment it has no fixture for, rather than measuring a 404", () => {
     expect(() => concretePath("/app/documents/[id]")).toThrow(/\/app\/documents\/\[id\] has a dynamic segment/);
+    expect(() => concretePath("/app/patients/{id}/profile")).toThrow(/\/app\/patients\/\{id\}\/profile has a dynamic segment/);
+  });
+
+  it("loads a dynamic page at the path its fixture fills (W10)", () => {
+    const filled = { "/app/patients/{id}/profile": "/app/patients/b1813d1a/profile" };
+    expect(concretePath("/app/patients/{id}/profile", filled)).toBe("/app/patients/b1813d1a/profile");
+  });
+
+  it("refuses a filled path that is not an instance of its pattern", () => {
+    expect(() => concretePath("/app/patients/{id}/profile", { "/app/patients/{id}/profile": "/app/patients//profile" })).toThrow(
+      /is not a \/app\/patients\/\{id\}\/profile page/,
+    );
+    expect(() => concretePath("/app/patients/{id}/profile", { "/app/patients/{id}/profile": "/app/family" })).toThrow(
+      /is not a \/app\/patients\/\{id\}\/profile page/,
+    );
   });
 });
 

@@ -21,10 +21,11 @@ function manifestPages(): string[] {
   } catch {
     throw new Error("run pnpm build first: no .next/app-path-routes-manifest.json");
   }
-  // "/app/probe/page" -> "/app/probe"; route handlers ("/app/healthz/route") are not pages.
+  // "/app/probe/page" -> "/app/probe"; route handlers ("/app/healthz/route") are not pages. A dynamic segment, which
+  // the manifest writes "[id]", is read as "{id}", the spelling NEXT_PAGES shares with JAVA_PAGES and app-routes.txt.
   return Object.entries(manifest)
     .filter(([entry]) => entry.endsWith("/page"))
-    .map(([, path]) => path)
+    .map(([, path]) => path.replace(/\[(\w+)\]/g, "{$1}"))
     .sort();
 }
 

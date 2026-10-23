@@ -144,18 +144,19 @@ export async function useScenario(
     const request = route.request();
     const url = new URL(request.url());
     const headers = await request.allHeaders();
+    const sent = parseBody(request, headers);
     const entry: BrowserRequest = {
       method: request.method(),
       path: url.pathname,
       query: url.search.slice(1),
       headers,
-      body: parseBody(request, headers),
+      body: sent,
       parts: partsOf(request, headers),
       answered: 0,
       reason: null,
     };
     seen.push(entry);
-    const result = answer({ method: request.method(), path: url.pathname, headers, origin: base.origin, counters });
+    const result = answer({ method: request.method(), path: url.pathname, headers, origin: base.origin, counters, body: sent });
     // `{ abort: "<reason>" }`: the network dies under the request (a phone losing signal mid-press), after the guard
     // let it through, so what reaches the route is a request Java would have accepted.
     // `{ hold: true }`: the network goes quiet (no RST, no error, no answer), the usual way a phone loses its signal.

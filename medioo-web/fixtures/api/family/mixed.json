@@ -1,0 +1,72 @@
+{
+  "_meta": {
+    "generated_by": "baymax FamilyApiContractTest",
+    "source": "GET /app/api/family over the case mixed"
+  },
+  "body": {
+    "account": {
+      "language": "bn",
+      "number": "+880 1700-000537",
+      "owner_name": "Tanvir",
+      "reminders_stopped": false,
+      "terms_date": "2026-09-14"
+    },
+    "flags_offered": [
+      {
+        "id": "diabetes",
+        "label_key": "flag.diabetes"
+      },
+      {
+        "id": "hypertension",
+        "label_key": "flag.hypertension"
+      },
+      {
+        "id": "kidney",
+        "label_key": "flag.kidney"
+      },
+      {
+        "id": "thyroid",
+        "label_key": "flag.thyroid"
+      },
+      {
+        "id": "heart",
+        "label_key": "flag.heart"
+      }
+    ],
+    "patients": [
+      {
+        "age": 71,
+        "chronic_flags": [
+          {
+            "label_key": "flag.heart",
+            "value": "heart"
+          }
+        ],
+        "consent_date": "2026-09-14",
+        "id": "fce1eecc-2a58-3ecf-8a56-8a74b1dc3884",
+        "name": "Baba",
+        "name_possessive": "Baba-র",
+        "owner": true,
+        "reminders": "on",
+        "sex_key": "sex.MALE"
+      },
+      {
+        "age": 64,
+        "chronic_flags": [
+          {
+            "label_key": "flag.kidney",
+            "value": "kidney"
+          }
+        ],
+        "consent_date": "2026-09-12",
+        "id": "691cd823-98de-3d5f-801e-1dd20489e463",
+        "name": "রোকেয়া পরীক্ষা",
+        "name_possessive": "রোকেয়া পরীক্ষার",
+        "owner": false,
+        "reminders": "on",
+        "sex_key": "sex.FEMALE"
+      }
+    ]
+  },
+  "status": 200
+}

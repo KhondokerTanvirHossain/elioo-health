@@ -1,0 +1,29 @@
+{
+  "_meta": {
+    "generated_by": "baymax FamilyApiContractTest",
+    "source": "GET /app/api/me over the family case reminders-off"
+  },
+  "body": {
+    "active_patient_id": "b459aedc-0db2-3b7d-99f9-fa129492d244",
+    "family": {
+      "id": "5621a156-1e34-37fc-9e7f-7ec9db4b3bbd",
+      "owner_name": "Tanvir"
+    },
+    "patients": [
+      {
+        "age": 64,
+        "documents": 0,
+        "id": "b459aedc-0db2-3b7d-99f9-fa129492d244",
+        "last_document_at": null,
+        "name": "রোকেয়া পরীক্ষা",
+        "name_objective": "রোকেয়া পরীক্ষাকে",
+        "name_possessive": "রোকেয়া পরীক্ষার",
+        "owner": true,
+        "sex": "female",
+        "urgent": false
+      }
+    ],
+    "preview": true
+  },
+  "status": 200
+}

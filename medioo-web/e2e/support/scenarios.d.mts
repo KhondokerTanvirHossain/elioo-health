@@ -4,12 +4,17 @@ export type Answer = { status: number; body: unknown };
 export type Abort = { abort: "connectionreset" | "connectionclosed" | "failed" };
 /** The network goes quiet: the request is never answered (no RST, no error), as a phone losing its signal usually is. */
 export type Hold = { hold: true };
-export type Value = string | Answer | Abort | Hold | Array<string | Answer | Abort | Hold>;
+/** An answer derived from the request (the path and its parsed JSON body), as Java's would be. */
+export type Derived = (request: { path: string; body: unknown }) => Answer;
+export type Value = string | Answer | Abort | Hold | Derived | Array<string | Answer | Abort | Hold | Derived>;
+export function flagsSaved(fixture: string): Derived;
 export const FIXTURES: string;
 export const UNAUTHENTICATED: Answer;
 export const SCENARIOS: Record<string, Record<string, Value>>;
 export const PAGE_SCENARIOS: Record<string, string>;
 export const PAGE_MARKERS: Record<string, string>;
+export const PAGE_PATHS: Record<string, string>;
+export function familyPatientId(fixture: string, index?: number): string;
 export const LONGEST: Record<string, string>;
 export function patientName(fixture: string): string;
 export function numberShown(fixture: string): string;

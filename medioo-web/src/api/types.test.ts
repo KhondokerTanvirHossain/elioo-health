@@ -60,6 +60,19 @@ import threadNow from "../../fixtures/api/thread/now.json";
 import threadRetake from "../../fixtures/api/thread/retake.json";
 import threadSecondPage from "../../fixtures/api/thread/second-page.json";
 import threadShareMember from "../../fixtures/api/thread/share-member.json";
+// Each family scenario's `me`, read by FamilyApiContractTest from the same seeded family as its family body (W10 review).
+import meFamilyLongNameShared from "../../fixtures/api/me/family-long-name-shared.json";
+import meFamilyLongName from "../../fixtures/api/me/family-long-name.json";
+import meFamilyOwnerNoChoice from "../../fixtures/api/me/family-owner-no-choice.json";
+import meFamilyOwner from "../../fixtures/api/me/family-owner.json";
+import meFamilyRemindersOff from "../../fixtures/api/me/family-reminders-off.json";
+import meFamilyShareMember from "../../fixtures/api/me/family-share-member.json";
+import familyLongNameShared from "../../fixtures/api/family/long-name-shared.json";
+import familyLongName from "../../fixtures/api/family/long-name.json";
+import familyMixed from "../../fixtures/api/family/mixed.json";
+import familyOwner from "../../fixtures/api/family/owner.json";
+import familyRemindersOff from "../../fixtures/api/family/reminders-off.json";
+import familyShareMember from "../../fixtures/api/family/share-member.json";
 import {
   ATTENTION_KINDS,
   BANNER_LEVELS,
@@ -68,9 +81,15 @@ import {
   GATES,
   PAPER_STATUSES,
   READING_STATUSES,
+  REMINDER_STATES,
   SIDES,
   URGENCIES,
   type AttentionJson,
+  type FamilyAccountJson,
+  type FamilyJson,
+  type FamilyPatientJson,
+  type OfferedFlagJson,
+  type StoredFlagJson,
   type BpPointJson,
   type CalendarDayJson,
   type CalendarFollowUpJson,
@@ -467,6 +486,12 @@ describe("GET /app/api/me", () => {
   it("everyMeFixtureIsAMeJson", () => {
     expect(meKeyListsAreTheTypes.every(Boolean)).toBe(true);
     const bodies: Array<[string, MeJson, number]> = [
+      ["family-long-name-shared.json", meFamilyLongNameShared.body, meFamilyLongNameShared.status],
+      ["family-long-name.json", meFamilyLongName.body, meFamilyLongName.status],
+      ["family-owner-no-choice.json", meFamilyOwnerNoChoice.body, meFamilyOwnerNoChoice.status],
+      ["family-owner.json", meFamilyOwner.body, meFamilyOwner.status],
+      ["family-reminders-off.json", meFamilyRemindersOff.body, meFamilyRemindersOff.status],
+      ["family-share-member.json", meFamilyShareMember.body, meFamilyShareMember.status],
       ["long-name.json", meLongName.body, meLongName.status],
       ["no-patients.json", meNoPatients.body, meNoPatients.status],
       ["one-patient.json", meOnePatient.body, meOnePatient.status],
@@ -670,5 +695,70 @@ describe("the chat page's bodies", () => {
       }
     }
     expect([...seen].sort(), "every kind was walked").toEqual([...ATTENTION_KINDS].sort());
+  });
+});
+
+/*
+ * GET /app/api/family (B5, plan W10): every committed body is assigned to FamilyJson (a JSON import widens the
+ * reminders union to string, so through Json<>) and compared key for key with the lists below, and the directory is read
+ * so a new case cannot go unchecked. The reminders literal is checked against the union at run time.
+ */
+const FAMILY_KEYS = ["account", "flags_offered", "patients"] as const;
+const FAMILY_ACCOUNT_KEYS = ["language", "number", "owner_name", "reminders_stopped", "terms_date"] as const;
+const FAMILY_PATIENT_KEYS = [
+  "age",
+  "chronic_flags",
+  "consent_date",
+  "id",
+  "name",
+  "name_possessive",
+  "owner",
+  "reminders",
+  "sex_key",
+] as const;
+const familyKeyListsAreTheTypes: [
+  Equal<(typeof FAMILY_KEYS)[number], keyof FamilyJson>,
+  Equal<(typeof FAMILY_ACCOUNT_KEYS)[number], keyof FamilyAccountJson>,
+  Equal<(typeof FAMILY_PATIENT_KEYS)[number], keyof FamilyPatientJson>,
+  Equal<"label_key" | "value", keyof StoredFlagJson>,
+  Equal<"id" | "label_key", keyof OfferedFlagJson>,
+] = [true, true, true, true, true];
+
+describe("GET /app/api/family", () => {
+  it("everyFamilyFixtureIsAFamilyJson", () => {
+    expect(familyKeyListsAreTheTypes.every(Boolean)).toBe(true);
+    const bodies: Array<[string, Json<FamilyJson>, number]> = [
+      ["long-name-shared.json", familyLongNameShared.body, familyLongNameShared.status],
+      ["long-name.json", familyLongName.body, familyLongName.status],
+      ["mixed.json", familyMixed.body, familyMixed.status],
+      ["owner.json", familyOwner.body, familyOwner.status],
+      ["reminders-off.json", familyRemindersOff.body, familyRemindersOff.status],
+      ["share-member.json", familyShareMember.body, familyShareMember.status],
+    ];
+    expect(readdirSync(join(fixtures, "family")).filter((f) => f.endsWith(".json")).sort()).toEqual(bodies.map(([file]) => file).sort());
+    let patients = 0;
+    for (const [file, body, status] of bodies) {
+      expect(status, file).toBe(200);
+      expect(keys(body), file).toEqual([...FAMILY_KEYS]);
+      expect(keys(body.account), `${file} account`).toEqual([...FAMILY_ACCOUNT_KEYS]);
+      for (const o of body.flags_offered) expect(keys(o), `${file} offered`).toEqual(["id", "label_key"]);
+      for (const p of body.patients) {
+        expect(keys(p), `${file} ${p.id}`).toEqual([...FAMILY_PATIENT_KEYS]);
+        expect(REMINDER_STATES as readonly string[], `${file} ${p.id} reminders`).toContain(p.reminders);
+        for (const f of p.chronic_flags) expect(keys(f), `${file} ${p.id} flag`).toEqual(["label_key", "value"]);
+        patients++;
+      }
+    }
+    // Guards: patients were walked, and the cases the tab branches on are all here.
+    expect(patients, "patients walked").toBeGreaterThan(0);
+    const all = bodies.flatMap(([, b]) => b.patients);
+    expect(all.some((p) => !p.owner), "a shared patient").toBe(true);
+    expect(
+      bodies.some(([, b]) => b.patients.some((p) => p.owner) && b.patients.some((p) => !p.owner)),
+      "a viewer who owns one patient and sees another shared (S5's dangerous direction)",
+    ).toBe(true);
+    expect(all.some((p) => p.chronic_flags.some((f) => f.label_key === null)), "a typed flag").toBe(true);
+    expect(bodies.some(([, b]) => b.account.reminders_stopped), "a family stop").toBe(true);
+    for (const state of REMINDER_STATES) expect(all.some((p) => p.reminders === state), `a patient whose reminders are ${state}`).toBe(true);
   });
 });

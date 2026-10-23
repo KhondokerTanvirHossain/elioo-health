@@ -1,5 +1,6 @@
 package com.elioo.baymax.web.adapter.in.api;
 
+import com.elioo.baymax.family.application.service.FamilyAccountService;
 import com.elioo.baymax.testsupport.Json;
 import com.elioo.baymax.testsupport.Snapshot;
 import com.elioo.baymax.web.adapter.in.PhoneDisplay;
@@ -41,6 +42,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -53,8 +55,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Plan B5: the পরিবার tab's JSON through the real module on Postgres — {@code GET /app/api/family}, the chronic flags,
  * the reminder stops (stop only: opting back in is the E1/E2-API task, behind the PO's yes, Q5/Q9) and the language
  * cookie. Families, patients, shares and sessions are real rows; every refusal is read back from the database, so a
- * refusal that still wrote cannot pass. Each test makes its own family with its own number; the three MSW cases use
- * fixed ids and fixed instants, so their bodies are byte-stable.
+ * refusal that still wrote cannot pass. Each test makes its own family with its own number; the MSW cases use fixed
+ * ids and fixed instants, so their bodies are byte-stable. Each family scenario's {@code GET /app/api/me} is written
+ * here too ({@code fixtures/api/me/family-*.json}), from the same seeded family as its family body, so the shell's
+ * toolbar never names a patient the tab does not list.
  *
  * <p>Every assertion reads the parsed tree by field path; none matches a substring of the document (the ids are UUIDs).
  */
@@ -67,12 +71,16 @@ class FamilyApiContractTest {
     private static final Path FIXTURES = Path.of("../medioo-web/fixtures/api");
     private static final Path COMMITTED = FIXTURES.resolve("family");
     private static final Path WRITTEN = Path.of("build/web-contract/family");
+    /** The family scenarios' {@code me} bodies: in {@code me/} beside MeApiContractTest's, under a {@code family-} prefix. */
+    static final Path COMMITTED_ME = FIXTURES.resolve("me");
+    static final String ME_PREFIX = "family-";
+    private static final Path WRITTEN_ME = Path.of("build/web-contract/me");
     private static final AtomicInteger NUMBERS = new AtomicInteger();
 
     private final ObjectMapper json = new ObjectMapper();
     private final UiCopy copy = new UiCopy();
 
-    /** A fictional number in the fixture range, unique per call (the MSW cases own 533 to 536). */
+    /** A fictional number in the fixture range, unique per call (the MSW cases own 533 to 541). */
     private static String number() {
         return "+88017000006" + String.format("%02d", NUMBERS.incrementAndGet());
     }
@@ -592,6 +600,9 @@ class FamilyApiContractTest {
         cases.put("owner", FamilyApiContractTest::ownerCase);
         cases.put("share-member", FamilyApiContractTest::shareMemberCase);
         cases.put("reminders-off", FamilyApiContractTest::remindersOffCase);
+        cases.put("mixed", FamilyApiContractTest::mixedCase);
+        cases.put("long-name", () -> longNameCase(true));
+        cases.put("long-name-shared", () -> longNameCase(false));
         return cases;
     }
 
@@ -603,6 +614,19 @@ class FamilyApiContractTest {
     interface CaseSeed {
         /** Seeds the case's rows and answers the family whose session reads it. */
         UUID seed() throws Exception;
+    }
+
+    /** The cases seeded into this class's container, so the family read and the me read can seed one case once each. */
+    private static final Map<String, UUID> SEEDED = new ConcurrentHashMap<>();
+
+    /** A case's family, seeded on first use; every later test reads the same rows (the case tests only read). */
+    private static synchronized UUID seeded(String name) throws Exception {
+        UUID family = SEEDED.get(name);
+        if (family == null) {
+            family = cases().get(name).seed();
+            SEEDED.put(name, family);
+        }
+        return family;
     }
 
     private static UUID id(String name) {
@@ -640,11 +664,132 @@ class FamilyApiContractTest {
         return family;
     }
 
+    /**
+     * An owner who also sees a sibling's patient (D30 both ways on one tab): Baba is theirs, Ma is shared with their
+     * number. S5's dangerous direction: someone who owns one patient keeps the family's reminder stop.
+     */
+    private static UUID mixedCase() throws Exception {
+        UUID family = family(id("mixed"), "+8801700000537", "Tanvir", "2026-09-14T03:00:00Z", "2026-09-01T04:00:00Z");
+        patient(id("mixed-baba"), family, "Baba", 71, "male", List.of("heart"), "2026-09-14T04:00:00Z", "2026-09-05T04:00:00Z");
+        UUID other = family(id("mixed-other"), "+8801700000538", "Karim", "2026-09-12T03:00:00Z", "2026-09-01T04:00:00Z");
+        UUID ma = patient(id("mixed-ma"), other, "রোকেয়া পরীক্ষা", 64, "female", List.of("kidney"), "2026-09-12T04:00:00Z",
+                "2026-09-02T04:00:00Z");
+        share(ma, "+8801700000537");
+        return family;
+    }
+
+    /** The longest typed flag Java stores ({@code FamilyAccountService.MAX_FLAG_LENGTH}, 40), as normalizeFlags leaves it. */
+    static final String LONGEST_FLAG = "rheumatoid arthritis with lupus overlaps";
+
+    /**
+     * The longest name (MeApiContractTest.longName, CatalogFixturesExportTest's) on the tab's own card, with the longest
+     * typed flag: the owner's view ({@code long-name}) or a share member's ({@code long-name-shared}), so the longest
+     * twins measure the card headings and flags, not only the shell's toolbar.
+     */
+    private static UUID longNameCase(boolean owned) throws Exception {
+        assertThat(LONGEST_FLAG).hasSize(40);
+        assertThat(FamilyAccountService.normalizeFlags(List.of(LONGEST_FLAG))).as("stored as typed").containsExactly(LONGEST_FLAG);
+        String tag = owned ? "long" : "long-shared";
+        UUID family = family(id(tag), owned ? "+8801700000539" : "+8801700000540", "Tanvir", "2026-09-14T03:00:00Z",
+                "2026-09-01T04:00:00Z");
+        UUID patient = patient(id(tag + "-ma"), family, MeApiContractTest.longName(), 64, "female",
+                List.of("diabetes", LONGEST_FLAG), "2026-09-14T04:00:00Z", "2026-09-05T04:00:00Z");
+        if (owned) {
+            return family;
+        }
+        UUID member = family(id(tag + "-member"), "+8801700000541", "Karim", "2026-09-20T03:00:00Z", "2026-09-10T04:00:00Z");
+        share(patient, "+8801700000541");
+        return member;
+    }
+
+    /**
+     * A family scenario's {@code me}: the family case it signs in as, and the patient it remembers (the
+     * {@code baymax_patient} cookie; null for none).
+     */
+    record MeCase(String family, String remembered) {
+    }
+
+    /** scenario {@code me} name → its case. {@code owner} remembers Ma, so a profile link for Baba is the asked-patient case. */
+    static Map<String, MeCase> meCases() {
+        Map<String, MeCase> cases = new LinkedHashMap<>();
+        cases.put("owner", new MeCase("owner", id("owner-ma").toString()));
+        cases.put("owner-no-choice", new MeCase("owner", null));
+        cases.put("share-member", new MeCase("share-member", null));
+        cases.put("reminders-off", new MeCase("reminders-off", null));
+        cases.put("long-name", new MeCase("long-name", null));
+        cases.put("long-name-shared", new MeCase("long-name-shared", null));
+        return cases;
+    }
+
+    static Stream<String> meCaseNames() {
+        return meCases().keySet().stream();
+    }
+
+    /**
+     * {@code GET /app/api/me} for a family scenario, in the generated-file envelope, compared byte for byte with the
+     * committed {@code me/family-<name>.json}. In the same context the family body is read too and must be the committed
+     * family fixture, and both bodies must list the same patients, owned alike, in the same order: Java builds both from
+     * one {@code timeline.me}, so a pair that disagrees is a state Java cannot produce. The families are on the preview
+     * allowlist, as every signed-in MeApiContractTest case but {@code preview-off} is.
+     */
+    @ParameterizedTest
+    @MethodSource("meCaseNames")
+    void eachFamilyScenarioMeIsItsCommittedMswFixture(String name) {
+        MeCase c = meCases().get(name);
+        String previewIds = Stream.of("owner", "share-member", "off", "mixed", "long", "long-shared-member")
+                .map(n -> id(n).toString()).collect(Collectors.joining(","));
+        AppApiContext.runner(POSTGRES).withPropertyValues("baymax.web.preview-family-ids=" + previewIds).run(context -> {
+            UUID family = seeded(c.family());
+            String token = AppApiContext.session(context, family);
+            WebTestClient.RequestHeadersSpec<?> me = client(context).get().uri("/app/api/me").cookie("baymax_session", token);
+            if (c.remembered() != null) {
+                me = me.cookie("baymax_patient", c.remembered());
+            }
+            EntityExchangeResult<byte[]> r = me.exchange().expectBody().returnResult();
+            JsonNode meBody = json.readTree(r.getResponseBody());
+            assertThat(r.getStatus().value()).isEqualTo(200);
+            assertThat(meBody.get("preview").asBoolean()).as("on the preview allowlist").isTrue();
+            if (c.remembered() != null) {
+                assertThat(meBody.get("active_patient_id").asText()).as("the remembered patient").isEqualTo(c.remembered());
+            }
+            JsonNode familyBody = json.readTree(client(context).get().uri("/app/api/family").cookie("baymax_session", token)
+                    .exchange().expectStatus().isOk().expectBody(String.class).returnResult().getResponseBody());
+            JsonNode committed = json.readTree(Files.readString(COMMITTED.resolve(c.family() + ".json"), StandardCharsets.UTF_8)).get("body");
+            assertThat(familyBody).as("the family body beside this me is the committed " + c.family() + ".json").isEqualTo(committed);
+            List<String> mePatients = new ArrayList<>();
+            meBody.get("patients").forEach(p -> mePatients.add(p.get("id").asText() + " owner=" + p.get("owner").asBoolean()));
+            List<String> familyPatients = new ArrayList<>();
+            familyBody.get("patients").forEach(p -> familyPatients.add(p.get("id").asText() + " owner=" + p.get("owner").asBoolean()));
+            assertThat(mePatients).as("me and family list the same patients, owned alike").isNotEmpty().isEqualTo(familyPatients);
+
+            Map<String, Object> envelope = new LinkedHashMap<>();
+            envelope.put("_meta", Snapshot.meta(FamilyApiContractTest.class, "GET /app/api/me over the family case " + c.family()
+                    + (c.remembered() == null ? "" : ", its first patient remembered")));
+            envelope.put("status", r.getStatus().value());
+            envelope.put("body", json.readValue(r.getResponseBody(), Object.class));
+            String file = ME_PREFIX + name + ".json";
+            Snapshot.matches(COMMITTED_ME.resolve(file), WRITTEN_ME.resolve(file), Snapshot.json(envelope),
+                    "cp baymax/" + WRITTEN_ME.resolve(file) + " medioo-web/fixtures/api/me/" + file);
+        });
+    }
+
+    /** Both ways for the family scenarios' {@code me} bodies: every committed {@code me/family-*.json} is a current case. */
+    @Test
+    void everyCommittedFamilyMeFixtureIsACurrentCase() throws IOException {
+        List<String> committed;
+        try (Stream<Path> files = Files.list(COMMITTED_ME)) {
+            committed = files.map(p -> p.getFileName().toString()).filter(n -> n.startsWith(ME_PREFIX) && n.endsWith(".json"))
+                    .sorted().toList();
+        }
+        assertThat(committed).as("the committed family me fixtures in " + COMMITTED_ME.toAbsolutePath()).isNotEmpty();
+        assertThat(committed).containsExactlyInAnyOrderElementsOf(meCaseNames().map(n -> ME_PREFIX + n + ".json").toList());
+    }
+
     @ParameterizedTest
     @MethodSource("caseNames")
     void eachCaseIsItsCommittedMswFixture(String name) {
         AppApiContext.runner(POSTGRES).run(context -> {
-            UUID family = cases().get(name).seed();
+            UUID family = seeded(name);
             EntityExchangeResult<byte[]> r = client(context).get().uri("/app/api/family")
                     .cookie("baymax_session", AppApiContext.session(context, family)).exchange().expectBody().returnResult();
             Map<String, Object> envelope = new LinkedHashMap<>();

@@ -68,15 +68,25 @@ export function ceilingMessage(ceiling: Ceiling, page: string, measured: number,
   return `${ceiling} ceiling (budget-ceilings.json "${ceiling}"): ${page} is ${bytes(measured)} B on the wire, allowed ${bytes(allowed)} B${over}`;
 }
 
+const DYNAMIC = /^(\[[^\]]*\]|\{[^}]*\})$/;
+
 /**
- * The path a NEXT_PAGES entry is loaded at. A dynamic segment needs a fixture to fill it (W3's PAGE_SCENARIOS); until
- * one exists the page is refused here, never loaded with a made-up id whose 404 would measure small.
+ * The path a NEXT_PAGES entry is loaded at. A dynamic segment needs a fixture to fill it: `filled` (scenarios.mjs
+ * PAGE_PATHS) names the path for that pattern, with the id read from the fixture its scenario serves (W10). Without one
+ * the page is refused here, never loaded with a made-up id whose 404 would measure small; and a filled path that is not
+ * an instance of its pattern (another page, an empty segment) is refused too, or a typo would measure some other page.
  */
-export function concretePath(pattern: string): string {
-  if (/\[[^\]]*\]|\{[^}]*\}/.test(pattern)) {
+export function concretePath(pattern: string, filled: Record<string, string> = {}): string {
+  const want = pattern.split("/");
+  if (!want.some((s) => DYNAMIC.test(s))) return pattern;
+  const path = filled[pattern];
+  if (path === undefined) {
     throw new Error(`budget: ${pattern} has a dynamic segment and no fixture fills it; give it a scenario`);
   }
-  return pattern;
+  const got = path.split("/");
+  const fits = got.length === want.length && want.every((s, i) => (DYNAMIC.test(s) ? got[i] !== "" : s === got[i]));
+  if (!fits) throw new Error(`budget: ${path} is not a ${pattern} page`);
+  return path;
 }
 
 /** The classes Caddy's `encode` compresses on a page load (text/html, JavaScript, CSS, RSC's text/x-component). */

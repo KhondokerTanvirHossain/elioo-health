@@ -4,6 +4,7 @@ import { test, type Page } from "@playwright/test";
 import { t } from "../src/copy";
 import { useScenario } from "./support/browser-api";
 import { pngFor } from "./support/png.mjs";
+import { familyPatientId } from "./support/scenarios.mjs";
 
 /*
  * The screenshot board (plan A7, Wave 3 Shared interfaces): each screen state at phone 390×844 and desktop 1280×800,
@@ -253,6 +254,65 @@ BOARD_SCENES.push(
   },
   // A NOW result past the thread's first page: the stack's NOW card, its not-a-doctor line, and the disclaimer.
   chat("now-past-the-page", "chat-now-past-the-page", "phone.html", "now"),
+);
+
+// family and settings (plan W10): the owner, the share member, reminders stopped, a typed flag (the fixture's own and
+// one being typed), the theme chosen light and dark, and one patient's profile page, beside phone.html `family`/`theme`.
+const family = (state: string, scenario: string, extra: Partial<Scene> = {}): Scene => ({
+  screen: "family",
+  state,
+  route: "/app/family",
+  scenario,
+  proto: { file: "phone.html", scene: "family" },
+  ...extra,
+});
+const chooseTheme = (name: "theme.light" | "theme.dark", value: string) => async (page: Page) => {
+  await page.getByRole("button", { name: t("bn", name) }).click();
+  await page.locator(`html[data-theme="${value}"]`).waitFor({ state: "attached" });
+};
+BOARD_SCENES.push(
+  family("owner", "family-owner"),
+  family("share-member", "family-share-member"),
+  family("reminders-off", "family-reminders-off"),
+  family("typed-flag", "family-owner", {
+    act: async (page) => {
+      const field = page.locator(".family-flags__input").first();
+      await field.fill("migraine");
+      await field.scrollIntoViewIfNeeded();
+    },
+  }),
+  // The W10 review's states: a typed flag saved (Java's stored list, ticked, and the toast), the family stop's confirm
+  // (nothing sent before it), a VIEW_ONLY refusal said in words, and the longest name on the cards, owned and shared.
+  family("typed-flag-saved", "family-owner", {
+    act: async (page) => {
+      const card = page.locator("[data-patient-card]").first();
+      await card.locator(".family-flags__input").fill("  Migraine ");
+      await card.getByRole("button", { name: t("bn", "profile.save") }).click();
+      await card.getByRole("checkbox", { name: "migraine", exact: true }).waitFor({ state: "attached" });
+      await card.locator(".family-flags__save").scrollIntoViewIfNeeded();
+    },
+  }),
+  family("stop-confirm", "family-owner", {
+    act: async (page) => {
+      await page.locator("[data-family-reminders]").getByRole("button", { name: t("bn", "optout.family") }).click();
+      await page.locator("dialog:modal").waitFor();
+    },
+  }),
+  family("view-only-refused", "family-owner-view-only", {
+    act: async (page) => {
+      const card = page.locator("[data-patient-card]").first();
+      await card.getByRole("checkbox", { name: t("bn", "flag.kidney") }).check();
+      await card.getByRole("button", { name: t("bn", "profile.save") }).click();
+      await card.locator(".family-flags__status").filter({ hasText: t("bn", "app.err.forbidden") }).waitFor();
+      await card.locator(".family-flags__save").scrollIntoViewIfNeeded();
+    },
+  }),
+  family("long-name", "family-owner-long"),
+  family("share-member-long", "family-share-member-long"),
+  family("theme-light", "family-owner", { proto: { file: "phone.html", scene: "theme" }, act: chooseTheme("theme.light", "light") }),
+  family("theme-dark", "family-owner", { proto: { file: "phone.html", scene: "theme" }, act: chooseTheme("theme.dark", "dark") }),
+  // The second patient's profile while the first is remembered: the toolbar names the patient the link names.
+  family("profile", "family-owner", { route: `/app/patients/${familyPatientId("family/owner.json", 1)}/profile` }),
 );
 
 const VIEWPORTS = { phone: { width: 390, height: 844 }, desktop: { width: 1280, height: 800 } } as const;

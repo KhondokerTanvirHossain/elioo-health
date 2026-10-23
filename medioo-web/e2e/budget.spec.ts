@@ -13,7 +13,7 @@ import {
   unencodedByCaddy,
 } from "./support/budget";
 import { useScenario } from "./support/browser-api";
-import { PAGE_MARKERS, PAGE_SCENARIOS } from "./support/scenarios.mjs";
+import { PAGE_MARKERS, PAGE_PATHS, PAGE_SCENARIOS } from "./support/scenarios.mjs";
 
 type Kind = "document" | "script" | "stylesheet" | "font" | "rsc" | "other";
 type Row = {
@@ -246,7 +246,7 @@ for (const { encoding, label, acceptEncoding } of ENCODINGS) {
         const scenario = PAGE_SCENARIOS[pattern];
         expect(scenario, `PAGE_SCENARIOS[${pattern}]`).toBeDefined();
         await useScenario(page, scenario!);
-        const path = concretePath(pattern);
+        const path = concretePath(pattern, PAGE_PATHS);
         const load = await coldLoad(page, origin, path);
         const total = routeTotal(load.rows);
         record(testInfo, `budget-route${path.replace(/[^a-zA-Z0-9]+/g, "-")}${suffix}`, baseURL!, load, {

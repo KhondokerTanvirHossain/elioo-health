@@ -1,0 +1,29 @@
+{
+  "_meta": {
+    "generated_by": "baymax FamilyApiContractTest",
+    "source": "GET /app/api/me over the family case long-name"
+  },
+  "body": {
+    "active_patient_id": "a74470f2-d4f6-3a5c-a984-47871c583d5d",
+    "family": {
+      "id": "2597d0b5-3ef4-3e55-8474-8b5d904509fd",
+      "owner_name": "Tanvir"
+    },
+    "patients": [
+      {
+        "age": 64,
+        "documents": 0,
+        "id": "a74470f2-d4f6-3a5c-a984-47871c583d5d",
+        "last_document_at": null,
+        "name": "মোছাম্মৎ রোকেয়া বেগম চৌধুরী",
+        "name_objective": "মোছাম্মৎ রোকেয়া বেগম চৌধুরীকে",
+        "name_possessive": "মোছাম্মৎ রোকেয়া বেগম চৌধুরীর",
+        "owner": true,
+        "sex": "female",
+        "urgent": false
+      }
+    ],
+    "preview": true
+  },
+  "status": 200
+}

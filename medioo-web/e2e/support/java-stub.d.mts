@@ -9,6 +9,8 @@ export function answer(request: {
   headers: Headers;
   origin: string;
   counters: Map<string, number>;
+  /** The request's parsed JSON body, for a scenario value that is a function of the request. */
+  body?: unknown;
 }): { status: number; body: unknown } | { abort: "connectionreset" | "connectionclosed" | "failed" } | { hold: true };
 export function record(request: { method: string; path: string; query: string; headers: Headers }): {
   method: string;

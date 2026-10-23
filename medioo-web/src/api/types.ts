@@ -431,3 +431,49 @@ export type AttentionItemJson = AttentionUrgentJson | AttentionRetakeJson | Atte
 
 /** `GET /app/api/patients/{id}/attention` (B3): the stack in Java's order; an empty stack is silence. */
 export type AttentionJson = { items: AttentionItemJson[] };
+
+// ---- GET /app/api/family (FamilyJson.java, B5), plan W10 ----------------------------------------------------------------
+
+/**
+ * A patient's reminders as Java says them (FamilyJson.reminders): on, stopped for this patient, or stopped for the whole
+ * family (which covers every patient). Stopping is the only write until E1/E2-API (Q5, Q9).
+ */
+export const REMINDER_STATES = ["on", "stopped_for_patient", "stopped_for_family"] as const;
+export type ReminderState = (typeof REMINDER_STATES)[number];
+
+/**
+ * A stored chronic flag: `value` as written, `label_key` its copy when it is one of `flags_offered`, null when the family
+ * typed it (shown as written). Which is which is Java's decision (FamilyJson.stored), never React's.
+ */
+export type StoredFlagJson = { value: string; label_key: string | null };
+
+/** A flag the form offers: the id it saves and its copy. */
+export type OfferedFlagJson = { id: string; label_key: string };
+
+/** One patient of the family tab. `owner` false: shared with the viewer, and every write is refused 403 VIEW_ONLY. */
+export type FamilyPatientJson = {
+  id: string;
+  name: string;
+  name_possessive: string;
+  age: number | null;
+  sex_key: string;
+  owner: boolean;
+  chronic_flags: StoredFlagJson[];
+  consent_date: string | null;
+  reminders: ReminderState;
+};
+
+/**
+ * The viewer's own account. `number` is the WhatsApp number as PhoneDisplay.full spells it: the one field of /app/api
+ * that carries it, shown on the family tab and nowhere else. `reminders_stopped` is the viewer's own family's stop.
+ */
+export type FamilyAccountJson = {
+  owner_name: string | null;
+  number: string;
+  language: string;
+  reminders_stopped: boolean;
+  terms_date: string | null;
+};
+
+/** `GET /app/api/family` (B5; fixtures/api/family/*.json): the viewer's account, the offered flags, `me`'s patients in its order. */
+export type FamilyJson = { account: FamilyAccountJson; flags_offered: OfferedFlagJson[]; patients: FamilyPatientJson[] };

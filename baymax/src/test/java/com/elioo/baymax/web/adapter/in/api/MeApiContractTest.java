@@ -207,9 +207,12 @@ class MeApiContractTest {
     void everyCommittedFixtureIsACurrentCase() throws IOException {
         List<String> committed;
         try (Stream<Path> files = Files.list(COMMITTED)) {
-            committed = files.map(p -> p.getFileName().toString()).filter(n -> n.endsWith(".json")).sorted().toList();
+            // me/family-*.json are FamilyApiContractTest's (each family scenario's me, read from its seeded family), checked there
+            committed = files.map(p -> p.getFileName().toString())
+                    .filter(n -> n.endsWith(".json") && !n.startsWith(FamilyApiContractTest.ME_PREFIX)).sorted().toList();
         }
         assertThat(committed).as("the committed fixtures in " + COMMITTED.toAbsolutePath()).isNotEmpty();
+        assertThat(caseNames()).as("no case here takes the family scenarios' prefix").noneMatch(n -> n.startsWith(FamilyApiContractTest.ME_PREFIX));
         assertThat(committed).as("committed fixtures vs the cases").containsExactlyInAnyOrderElementsOf(caseNames().map(n -> n + ".json").toList());
     }
 

@@ -40,6 +40,16 @@ describe("paths", () => {
     );
   });
 
+  it("aDynamicNextPageMatchesARealIdInsideThePreview", () => {
+    // W10's profile page is the first NEXT_PAGES entry with a `{id}` segment: a real id matches it, an empty one does not.
+    const id = "b1813d1a-cb12-36de-9c8c-a15d9a6e3768";
+    expect(NEXT_PAGES).toContain("/app/patients/{id}/profile");
+    expect(href(`/app/patients/${id}/profile`, true)).toBe(`/app/preview/patients/${id}/profile`);
+    expect(href(`/app/patients/${id}/profile`, false)).toBe(`/app/patients/${id}/profile`);
+    expect(href("/app/patients//profile", true)).toBe("/app/patients//profile");
+    expect(href("/app/family", true)).toBe("/app/preview/family");
+  });
+
   it("reachableIsJavaOrAFlipOrNextUnderThePreview", () => {
     expect(FLIPPED).not.toContain("/app/health");
     expect(JAVA_PAGES).not.toContain("/app/health");
