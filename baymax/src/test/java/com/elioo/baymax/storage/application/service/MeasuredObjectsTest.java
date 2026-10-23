@@ -10,6 +10,7 @@ import com.elioo.baymax.storage.application.port.out.StoragePort;
 import com.elioo.baymax.storage.application.port.out.StoredObjectLedgerPort;
 import com.elioo.baymax.storage.domain.ObjectKind;
 import com.elioo.baymax.storage.domain.StoredObject;
+import com.elioo.baymax.testsupport.LogCapture;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -220,7 +221,7 @@ class MeasuredObjectsTest {
     // ---- fakes --------------------------------------------------------------------------------------------------
 
     private List<String> lines(Level level) {
-        return logged.list.stream().filter(e -> e.getLevel() == level).map(ILoggingEvent::getFormattedMessage).toList();
+        return LogCapture.events(logged).stream().filter(e -> e.getLevel() == level).map(ILoggingEvent::getFormattedMessage).toList();
     }
 
     private static StoredObject untried(UUID doc, ObjectKind kind, String item) {

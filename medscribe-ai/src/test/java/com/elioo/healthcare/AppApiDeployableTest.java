@@ -8,6 +8,7 @@ import ch.qos.logback.core.read.ListAppender;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
+import com.elioo.baymax.testsupport.LogCapture;
 import com.elioo.baymax.web.application.port.out.SessionStorePort;
 import com.elioo.baymax.web.application.service.PhoneHasher;
 import org.junit.jupiter.api.Test;
@@ -236,7 +237,7 @@ class AppApiDeployableTest {
             root.detachAppender(appender);
             root.setLevel(before);
         }
-        return List.copyOf(appender.list);
+        return LogCapture.events(appender);
     }
 
     private static String withThrowable(ILoggingEvent e) {

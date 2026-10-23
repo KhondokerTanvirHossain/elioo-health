@@ -5,6 +5,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.elioo.baymax.nudge.adapter.out.persistence.PostgresNudgeAdapterTest;
+import com.elioo.baymax.testsupport.LogCapture;
 import com.elioo.baymax.wa.application.port.out.InboundMessagePort;
 import com.elioo.baymax.wa.application.service.InboundRecoveryService;
 import com.elioo.baymax.wa.application.service.WaInstance;
@@ -57,7 +58,7 @@ class WaInboundStartupReportTest {
     }
 
     private List<String> warnings() {
-        return logged.list.stream().filter(e -> e.getLevel() == Level.WARN).map(ILoggingEvent::getFormattedMessage).toList();
+        return LogCapture.events(logged).stream().filter(e -> e.getLevel() == Level.WARN).map(ILoggingEvent::getFormattedMessage).toList();
     }
 
     private static String key(int n) {

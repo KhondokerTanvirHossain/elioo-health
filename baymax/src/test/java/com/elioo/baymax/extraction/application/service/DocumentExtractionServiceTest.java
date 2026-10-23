@@ -11,6 +11,7 @@ import com.elioo.baymax.extraction.domain.VerifiedItems;
 import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
 import com.elioo.baymax.storage.domain.ObjectKind;
 import com.elioo.baymax.storage.domain.StoredObject;
+import com.elioo.baymax.testsupport.LogCapture;
 import com.elioo.healthcare.gcp.vision.model.TextBlock;
 import com.elioo.healthcare.gcp.vision.model.TextGeometry;
 import com.elioo.healthcare.gcp.vision.model.TextParagraph;
@@ -808,7 +809,7 @@ class DocumentExtractionServiceTest {
      */
     private static String atInfoAndAbove(ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> logged) {
         StringBuilder all = new StringBuilder();
-        for (ch.qos.logback.classic.spi.ILoggingEvent e : logged.list) {
+        for (ch.qos.logback.classic.spi.ILoggingEvent e : LogCapture.events(logged)) {
             if (!e.getLevel().isGreaterOrEqual(ch.qos.logback.classic.Level.INFO)) {
                 continue;
             }

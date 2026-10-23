@@ -5,6 +5,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.elioo.baymax.config.BaymaxProperties;
+import com.elioo.baymax.testsupport.LogCapture;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
@@ -70,7 +71,7 @@ class WaConfigValidatorTest {
 
     /** The WARN lines startup actually emitted, i.e. what the post-deploy grep for "graph version" reads. */
     private List<String> graphVersionWarnsLogged() {
-        return logged.list.stream()
+        return LogCapture.events(logged).stream()
                 .filter(e -> e.getLevel() == Level.WARN)
                 .map(ILoggingEvent::getFormattedMessage)
                 .filter(m -> m.contains("graph version"))
@@ -309,10 +310,10 @@ class WaConfigValidatorTest {
         BaymaxProperties p = valid();
         new WaConfigValidator(p).validate(LocalDate.parse("2026-10-21"));
         assertThat(p.getWa().getGraphVersion()).isEqualTo("v25.0");
-        assertThat(logged.list).as("no level at all carries the phrase").map(ILoggingEvent::getFormattedMessage)
+        assertThat(LogCapture.events(logged)).as("no level at all carries the phrase").map(ILoggingEvent::getFormattedMessage)
                 .noneMatch(m -> m.contains("graph version"));
         // and the positive line the post-deploy check counts is there, naming the version in use
-        assertThat(logged.list).map(ILoggingEvent::getFormattedMessage)
+        assertThat(LogCapture.events(logged)).map(ILoggingEvent::getFormattedMessage)
                 .anyMatch(m -> m.matches(".*wa config ok: .*graphVersion=v25\\.0 .*"));
     }
 

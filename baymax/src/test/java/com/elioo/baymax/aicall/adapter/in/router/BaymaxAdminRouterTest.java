@@ -5,6 +5,7 @@ import com.elioo.baymax.common.error.ErrorResponseFilter;
 import com.elioo.baymax.storage.adapter.in.handler.StorageSelfTestHandler;
 import com.elioo.baymax.aicall.application.port.in.WeeklyMetricsUseCase;
 import com.elioo.baymax.config.BaymaxProperties;
+import com.elioo.baymax.testsupport.LogCapture;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.web.reactive.server.WebTestClient;
@@ -165,10 +166,10 @@ class BaymaxAdminRouterTest {
             logger.detachAppender(logged);
         }
         verify(urgency).assessAndStore(good);
-        assertThat(logged.list.stream().filter(e -> e.getLevel() == ch.qos.logback.classic.Level.ERROR)
+        assertThat(LogCapture.events(logged).stream().filter(e -> e.getLevel() == ch.qos.logback.classic.Level.ERROR)
                 .map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage))
                 .containsExactly("[baymax] urgency store after recrop failed documentId=" + bad + " error=IllegalStateException");
-        assertThat(logged.list).allSatisfy(e -> {
+        assertThat(LogCapture.events(logged)).allSatisfy(e -> {
             assertThat(e.getFormattedMessage()).doesNotContain("Potassium").doesNotContain("11.0");
             assertThat(e.getThrowableProxy()).as("no throwable on " + e.getFormattedMessage()).isNull();
         });

@@ -12,6 +12,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.elioo.baymax.testsupport.LogCapture;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
@@ -238,7 +239,7 @@ class DocumentRecoveryServiceTest {
 
         verify(documents).countUnexplainedBefore(since);
         verify(chain, never()).explainOnly(any());
-        assertThat(logged.list).filteredOn(e -> e.getLevel() == Level.WARN)
+        assertThat(LogCapture.events(logged)).filteredOn(e -> e.getLevel() == Level.WARN)
                 .extracting(ILoggingEvent::getFormattedMessage)
                 .as("the never-explained count, at WARN")
                 .containsExactly("[baymax] recovery: 3 finished document(s) older than PT6H were never explained");
@@ -266,9 +267,9 @@ class DocumentRecoveryServiceTest {
 
         verify(documents).countFailedUnnotifiedBefore(since);
         verify(chain, never()).explainOnly(any());
-        assertThat(logged.list).filteredOn(e -> e.getLevel() == Level.WARN).as("no WARN: no read paper went unexplained")
+        assertThat(LogCapture.events(logged)).filteredOn(e -> e.getLevel() == Level.WARN).as("no WARN: no read paper went unexplained")
                 .isEmpty();
-        assertThat(logged.list).filteredOn(e -> e.getLevel() == Level.INFO)
+        assertThat(LogCapture.events(logged)).filteredOn(e -> e.getLevel() == Level.INFO)
                 .extracting(ILoggingEvent::getFormattedMessage)
                 .contains("[baymax] recovery: 7 FAILED document(s) older than PT6H have no failure notice");
     }

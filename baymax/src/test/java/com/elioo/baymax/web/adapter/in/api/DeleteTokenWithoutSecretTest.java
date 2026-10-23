@@ -7,6 +7,7 @@ import ch.qos.logback.core.read.ListAppender;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.testsupport.DeletionSweep;
+import com.elioo.baymax.testsupport.LogCapture;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -62,7 +63,7 @@ class DeleteTokenWithoutSecretTest {
             } finally {
                 guard.detachAppender(events);
             }
-            List<String> errors = events.list.stream().filter(e -> e.getLevel() == Level.ERROR).map(ILoggingEvent::getFormattedMessage).toList();
+            List<String> errors = LogCapture.events(events).stream().filter(e -> e.getLevel() == Level.ERROR).map(ILoggingEvent::getFormattedMessage).toList();
             assertThat(errors).as("ERROR lines for the token route").hasSize(1);
             assertThat(errors.get(0)).as("the guard's line").startsWith("[baymax-api]");
 

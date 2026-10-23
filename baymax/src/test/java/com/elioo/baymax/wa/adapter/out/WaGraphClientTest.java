@@ -6,6 +6,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.elioo.baymax.common.redact.Redact;
 import com.elioo.baymax.config.BaymaxProperties;
+import com.elioo.baymax.testsupport.LogCapture;
 import com.elioo.baymax.wa.WaFixtures;
 import com.elioo.baymax.wa.application.port.out.WaMessagingPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -143,7 +144,7 @@ class WaGraphClientTest {
     }
 
     private String everythingLogged() {
-        return String.join("\n", logged.list.stream().map(ILoggingEvent::getFormattedMessage).toList());
+        return String.join("\n", LogCapture.events(logged).stream().map(ILoggingEvent::getFormattedMessage).toList());
     }
 
     @Test

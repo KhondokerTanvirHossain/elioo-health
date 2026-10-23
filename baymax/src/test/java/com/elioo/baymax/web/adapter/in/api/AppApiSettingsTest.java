@@ -5,6 +5,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.elioo.baymax.config.BaymaxProperties;
+import com.elioo.baymax.testsupport.LogCapture;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -116,6 +117,6 @@ class AppApiSettingsTest {
         } finally {
             logger.detachAppender(appender);
         }
-        return appender.list.stream().filter(e -> e.getLevel() == Level.WARN).toList();
+        return LogCapture.events(appender).stream().filter(e -> e.getLevel() == Level.WARN).toList();
     }
 }

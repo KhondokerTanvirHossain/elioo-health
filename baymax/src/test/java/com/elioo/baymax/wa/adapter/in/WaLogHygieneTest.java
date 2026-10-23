@@ -11,6 +11,7 @@ import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.outbound.domain.OutboundMessage;
 import com.elioo.baymax.outbound.domain.Urgency;
+import com.elioo.baymax.testsupport.LogCapture;
 import com.elioo.baymax.wa.WaFixtures;
 import com.elioo.baymax.wa.adapter.out.WhatsAppMessageDelivery;
 import com.elioo.baymax.wa.application.port.out.WaMessagingPort;
@@ -25,6 +26,7 @@ import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Mono;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -68,7 +70,7 @@ class WaLogHygieneTest {
     }
 
     private String everything() {
-        return logged.list.stream().map(ILoggingEvent::getFormattedMessage).collect(Collectors.joining("\n"));
+        return LogCapture.events(logged).stream().map(ILoggingEvent::getFormattedMessage).collect(Collectors.joining("\n"));
     }
 
     private void assertNoWamidAndNoNumber(String log) {
@@ -97,10 +99,15 @@ class WaLogHygieneTest {
 
         client.post().uri(WaWebhookRouter.WEBHOOK_PATH).header("X-Hub-Signature-256", WaSignature.sign(body, APP_SECRET))
                 .contentType(MediaType.APPLICATION_JSON).bodyValue(body).exchange().expectStatus().isOk();
+        // the intake's own line is logged on boundedElastic after the 200 has gone out: wait for it, or the sweep below
+        // passes without having read it (and a read while it is being appended was main run 39834549827's CME)
+        LogCapture.await(logged, "the detached intake's done line",
+                e -> e.getFormattedMessage().startsWith("[baymax] wa intake done ref="), Duration.ofSeconds(10));
 
         String log = everything();
         assertNoWamidAndNoNumber(log);
-        assertThat(log).as("the lines exist, carrying the digest").contains("ref=" + Redact.id(IN)).contains("ref=" + Redact.id(OUT));
+        assertThat(log).as("the lines exist, carrying the digest").contains("ref=" + Redact.id(IN)).contains("ref=" + Redact.id(OUT))
+                .contains("wa intake done ref=" + Redact.id(IN));
     }
 
     @Test

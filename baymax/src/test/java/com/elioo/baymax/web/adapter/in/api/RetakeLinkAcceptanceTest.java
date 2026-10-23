@@ -9,6 +9,7 @@ import com.elioo.baymax.extraction.application.port.out.DocumentRecordPort;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
+import com.elioo.baymax.testsupport.LogCapture;
 import com.elioo.baymax.testsupport.PaintedPaper;
 import com.elioo.baymax.web.adapter.in.ui.Dom;
 import com.elioo.baymax.web.application.port.in.AttentionUseCase;
@@ -237,7 +238,7 @@ class RetakeLinkAcceptanceTest {
                     .as("one new paper").isEqualTo("1");
             assertThat(scalar("SELECT replaces_document_id::text FROM baymax.document WHERE id = '" + b + "'"))
                     .as("the replay relinked the paper the first press left unlinked").isEqualTo(a.toString());
-            assertThat(captured(events).stream().filter(e -> e.getLevel().isGreaterOrEqual(Level.WARN)).toList()).as("WARN or above").isEmpty();
+            assertThat(LogCapture.events(events).stream().filter(e -> e.getLevel().isGreaterOrEqual(Level.WARN)).toList()).as("WARN or above").isEmpty();
         });
     }
 
@@ -307,19 +308,7 @@ class RetakeLinkAcceptanceTest {
         } finally {
             root.detachAppender(events);
         }
-        return captured(events).stream().filter(e -> e.getLevel().isGreaterOrEqual(Level.INFO)).toList();
-    }
-
-    /**
-     * What the appender holds, copied under its own lock after it stops: a reactor thread can still be inside
-     * {@code doAppend} (synchronized on the appender) when the body returns, and streaming the bare list then threw
-     * ConcurrentModificationException (#142's push run 39808633148).
-     */
-    private static List<ILoggingEvent> captured(ListAppender<ILoggingEvent> events) {
-        events.stop();
-        synchronized (events) {
-            return new ArrayList<>(events.list);
-        }
+        return LogCapture.events(events).stream().filter(e -> e.getLevel().isGreaterOrEqual(Level.INFO)).toList();
     }
 
     private interface ThrowingRunnable {
@@ -339,31 +328,6 @@ class RetakeLinkAcceptanceTest {
         noLineCarries(List.of(nullArgument), id);
         ILoggingEvent carriesId = new LoggingEvent(Logger.FQCN, logger, Level.INFO, "press {}", null, new Object[]{null, id});
         assertThatThrownBy(() -> noLineCarries(List.of(carriesId), id)).isInstanceOf(AssertionError.class);
-    }
-
-    /**
-     * The capture is read while another thread is still logging into it, as a reactor thread can be when a press's body
-     * returns: reading never throws. Probabilistic in the red direction only (the old bare-list stream threw on most
-     * runs of this loop); the fixed read cannot throw.
-     */
-    @Test
-    void theCaptureIsReadWhileAnotherThreadStillLogs() throws Exception {
-        Logger logger = (Logger) LoggerFactory.getLogger(RetakeLinkAcceptanceTest.class);
-        for (int round = 0; round < 50; round++) {
-            ListAppender<ILoggingEvent> events = new ListAppender<>();
-            events.start();
-            java.util.concurrent.CountDownLatch writing = new java.util.concurrent.CountDownLatch(1);
-            Thread writer = new Thread(() -> {
-                for (int i = 0; i < 20_000; i++) {
-                    events.doAppend(new LoggingEvent(Logger.FQCN, logger, Level.INFO, "line {}", null, new Object[]{i}));
-                    if (i == 100) writing.countDown();
-                }
-            });
-            writer.start();
-            writing.await();
-            captured(events).stream().filter(e -> e.getLevel().isGreaterOrEqual(Level.INFO)).toList();
-            writer.join();
-        }
     }
 
     /** The stale paper's id in no INFO+ line: not in the formatted message, not among the arguments (by value). */

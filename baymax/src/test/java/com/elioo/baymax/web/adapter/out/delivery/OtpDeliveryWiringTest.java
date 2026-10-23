@@ -6,6 +6,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.outbound.application.service.Copy;
+import com.elioo.baymax.testsupport.LogCapture;
 import com.elioo.baymax.wa.WaFixtures;
 import com.elioo.baymax.wa.application.port.out.WaMessagingPort;
 import com.elioo.baymax.web.application.port.out.OtpDeliveryPort;
@@ -74,7 +75,7 @@ class OtpDeliveryWiringTest {
                 assertThat(ctx).hasSingleBean(OtpDeliveryPort.class);
                 ctx.getBean(OtpDeliveryPort.class).deliver(NUMBER, "a".repeat(64), "483920").block();
                 // the log assertion comes FIRST, so a replay on the pre-fix code fails on the leak, not on "wanted but not invoked"
-                for (ILoggingEvent e : logged.list) {
+                for (ILoggingEvent e : LogCapture.events(logged)) {
                     assertThat(e.getFormattedMessage().split("[^0-9A-Za-z]+"))
                             .as("%s %s", e.getLevel(), e.getFormattedMessage()).doesNotContain("483920");
                 }

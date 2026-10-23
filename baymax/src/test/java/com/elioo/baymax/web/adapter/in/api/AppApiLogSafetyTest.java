@@ -7,6 +7,7 @@ import ch.qos.logback.core.read.ListAppender;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
+import com.elioo.baymax.testsupport.LogCapture;
 import com.elioo.baymax.testsupport.LoggedText;
 import com.elioo.baymax.web.adapter.in.PhoneDisplay;
 import com.elioo.baymax.testsupport.PaintedPaper;
@@ -531,12 +532,12 @@ class AppApiLogSafetyTest {
             List<String> minted = minted(codes);
             assertThat(minted).as("the confirmed sign-in request minted a code").isNotEmpty();
             for (String code : minted) {
-                assertThat(codes.list).as("the DEBUG appender saw the code as a token")
+                assertThat(LogCapture.events(codes)).as("the DEBUG appender saw the code as a token")
                         .anyMatch(e -> e.getLevel() == Level.DEBUG && token(code).matcher(e.getFormattedMessage()).find());
             }
             List<Pattern> codeTokens = minted.stream().map(AppApiLogSafetyTest::token).toList();
 
-            List<ILoggingEvent> events = appender.list.stream().filter(e -> e.getLevel().isGreaterOrEqual(Level.INFO)).toList();
+            List<ILoggingEvent> events = LogCapture.events(appender).stream().filter(e -> e.getLevel().isGreaterOrEqual(Level.INFO)).toList();
             assertThat(events.stream().map(ILoggingEvent::getFormattedMessage).filter(m -> m.startsWith("[baymax-api]")))
                     .as("the requests logged their access lines, so the sweep below reads something").isNotEmpty();
             // the success path was swept, not only refusals: its line names the id the answer returned, as a field
@@ -566,7 +567,7 @@ class AppApiLogSafetyTest {
     /** The codes the log fallback wrote, in order. */
     private static List<String> minted(ListAppender<ILoggingEvent> codes) {
         List<String> out = new ArrayList<>();
-        for (ILoggingEvent e : List.copyOf(codes.list)) {
+        for (ILoggingEvent e : LogCapture.events(codes)) {
             Matcher m = MINTED.matcher(e.getFormattedMessage());
             if (m.find()) {
                 out.add(m.group(1));

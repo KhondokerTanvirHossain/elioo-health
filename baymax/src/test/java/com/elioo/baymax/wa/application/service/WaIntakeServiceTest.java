@@ -12,6 +12,7 @@ import com.elioo.baymax.outbound.application.service.BanglaDate;
 import com.elioo.baymax.outbound.application.service.Copy;
 import com.elioo.baymax.outbound.domain.OutboundMessage;
 import com.elioo.baymax.outbound.domain.Urgency;
+import com.elioo.baymax.testsupport.LogCapture;
 import com.elioo.baymax.wa.WaFixtures;
 import com.elioo.baymax.wa.application.port.out.WaMessagingPort;
 import com.elioo.baymax.wa.domain.WaInbound;
@@ -766,7 +767,7 @@ class WaIntakeServiceTest {
             service.onText(FROM, "আম্মার বুকে ব্যথা").block();
             String wamid = com.elioo.baymax.wa.WaFixtures.wamid(FROM, 3);
             service.onInbound(new WaInbound(wamid, FROM, WaInbound.Type.AUDIO, "", "MEDIA-V", "audio/ogg")).block();
-            String all = String.join("\n", logged.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage).toList());
+            String all = String.join("\n", LogCapture.events(logged).stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage).toList());
             String base64 = wamid.substring("wamid.".length());
             assertThat(all).contains("route=FALLBACK").doesNotContain("বুকে").doesNotContain("1700000000")
                     .doesNotContain("wamid.");
@@ -810,7 +811,7 @@ class WaIntakeServiceTest {
                             new org.springframework.mock.http.client.MockClientHttpRequest(org.springframework.http.HttpMethod.GET,
                                     java.net.URI.create("https://lookaside.fbsbx.com/whatsapp_business/attachments/?mid=1&hash=SECRET")))));
             service.onImage(FROM, "MEDIA-13").block();
-            String all = String.join("\n", logged.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage).toList());
+            String all = String.join("\n", LogCapture.events(logged).stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage).toList());
             assertThat(all).as("the line exists").contains("wa intake failed");
             assertThat(all).as("the media URL and its token must never reach the log").doesNotContain("SECRET").doesNotContain("lookaside");
         } finally {
@@ -834,7 +835,7 @@ class WaIntakeServiceTest {
 
             service.onImage(FROM, "MEDIA-7").block();
 
-            String all = String.join("\n", logged.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage).toList());
+            String all = String.join("\n", LogCapture.events(logged).stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage).toList());
             assertThat(all).as("the line exists").contains("wa outbound failed");
             assertThat(all).as("provider prose and the number never reach the log").doesNotContain("undeliverable")
                     .doesNotContain(FROM);

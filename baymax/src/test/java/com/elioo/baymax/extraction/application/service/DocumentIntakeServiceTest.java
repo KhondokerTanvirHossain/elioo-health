@@ -13,6 +13,7 @@ import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
 import com.elioo.baymax.storage.domain.DeletionReport;
 import com.elioo.baymax.storage.domain.ObjectKind;
+import com.elioo.baymax.testsupport.LogCapture;
 import com.elioo.baymax.testsupport.TryDocuments;
 import com.elioo.baymax.storage.domain.StoredObject;
 import org.junit.jupiter.api.BeforeEach;
@@ -559,7 +560,7 @@ class DocumentIntakeServiceTest {
 
     private static String at(ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> logged,
                              java.util.function.Predicate<ch.qos.logback.classic.Level> level) {
-        return String.join("\n", logged.list.stream().filter(e -> level.test(e.getLevel()))
+        return String.join("\n", LogCapture.events(logged).stream().filter(e -> level.test(e.getLevel()))
                 .map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage).toList());
     }
 

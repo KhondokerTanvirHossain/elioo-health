@@ -8,6 +8,7 @@ import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.nudge.application.port.in.NudgeOptOutUseCase;
 import com.elioo.baymax.nudge.application.port.out.NudgeDataPort;
 import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
+import com.elioo.baymax.testsupport.LogCapture;
 import com.elioo.baymax.web.adapter.in.LoginCookie;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.adapter.in.ui.UiCopy;
@@ -231,7 +232,7 @@ class SignInStateApiTest {
         }
         assertThat(r.getStatus().value()).as("no session, still answered").isEqualTo(200);
         assertThat(r.getResponseHeaders().getCacheControl()).isEqualTo("no-store");
-        assertThat(appender.list.stream().filter(e -> e.getLevel() == Level.INFO).map(ILoggingEvent::getFormattedMessage))
+        assertThat(LogCapture.events(appender).stream().filter(e -> e.getLevel() == Level.INFO).map(ILoggingEvent::getFormattedMessage))
                 .as("the guard's one access line, on the route's own pattern")
                 .anyMatch(m -> m.startsWith("[baymax-api] GET /app/api/sign-in/state 200 "));
     }

@@ -6,6 +6,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.outbound.application.service.Copy;
+import com.elioo.baymax.testsupport.LogCapture;
 import com.elioo.baymax.wa.WaFixtures;
 import com.elioo.baymax.wa.application.port.out.WaMessagingPort;
 import org.junit.jupiter.api.AfterEach;
@@ -71,7 +72,7 @@ class CompositeOtpDeliveryTest {
     }
 
     private void noLineAtOrAbove(Level floor, String token) {
-        for (ILoggingEvent e : logged.list) {
+        for (ILoggingEvent e : LogCapture.events(logged)) {
             if (e.getLevel().isGreaterOrEqual(floor)) {
                 assertThat(e.getFormattedMessage().split("[^0-9A-Za-z+]+")).as("%s %s", e.getLevel(), e.getFormattedMessage())
                         .doesNotContain(token);
@@ -91,13 +92,13 @@ class CompositeOtpDeliveryTest {
         verifyNoMoreInteractions(wa);
         assertThat(body.getValue()).contains(CODE).contains("এই কোড কাউকে দেবেন না").contains("Medioo কখনো ফোন করে কোড চায় না");
         assertThat(body.getValue().length()).as("the cap, on the text actually sent").isLessThanOrEqualTo(props.getOutbound().getMaxChars());
-        assertThat(logged.list).as("the success line exists, or 'nothing leaked' passes on an empty log")
+        assertThat(LogCapture.events(logged)).as("the success line exists, or 'nothing leaked' passes on an empty log")
                 .anySatisfy(e -> assertThat(e.getFormattedMessage()).contains("otp delivered channel=whatsapp"));
         noLineAtOrAbove(Level.TRACE, CODE);
         noLineAtOrAbove(Level.TRACE, NUMBER);
         noLineAtOrAbove(Level.TRACE, "8801700000000");
         // a wamid is the number in base64: matched as a substring, because the token split above would cut it apart
-        assertThat(logged.list.stream().map(ILoggingEvent::getFormattedMessage))
+        assertThat(LogCapture.events(logged).stream().map(ILoggingEvent::getFormattedMessage))
                 .noneMatch(m -> m.contains(WAMID.substring("wamid.".length(), "wamid.".length() + 16)));
     }
 
@@ -107,11 +108,11 @@ class CompositeOtpDeliveryTest {
         StepVerifier.create(delivery(wa).deliver(NUMBER, HASH, CODE)).expectNext(false).verifyComplete();   // never an error upstream
 
         noLineAtOrAbove(Level.INFO, CODE);
-        assertThat(logged.list).anySatisfy(e -> {
+        assertThat(LogCapture.events(logged)).anySatisfy(e -> {
             assertThat(e.getLevel()).isEqualTo(Level.WARN);
             assertThat(e.getFormattedMessage()).contains("reason=window_expired").contains(HASH);
         });
-        assertThat(logged.list).as("the other direction: the operator can still recover it at DEBUG")
+        assertThat(LogCapture.events(logged)).as("the other direction: the operator can still recover it at DEBUG")
                 .anySatisfy(e -> {
                     assertThat(e.getLevel()).isEqualTo(Level.DEBUG);
                     assertThat(e.getFormattedMessage().split("[^0-9A-Za-z]+")).contains(CODE);
@@ -129,8 +130,8 @@ class CompositeOtpDeliveryTest {
             when(wa.sendText(anyString(), anyString())).thenReturn(Mono.just(blank));
             StepVerifier.create(delivery(wa).deliver(NUMBER, HASH, CODE)).as("id '" + blank + "'").expectNext(false).verifyComplete();
         }
-        assertThat(logged.list).anySatisfy(e -> assertThat(e.getFormattedMessage()).contains("reason=no_message_id"));
-        assertThat(logged.list).noneSatisfy(e -> assertThat(e.getFormattedMessage()).contains("otp delivered"));
+        assertThat(LogCapture.events(logged)).anySatisfy(e -> assertThat(e.getFormattedMessage()).contains("reason=no_message_id"));
+        assertThat(LogCapture.events(logged)).noneSatisfy(e -> assertThat(e.getFormattedMessage()).contains("otp delivered"));
         noLineAtOrAbove(Level.INFO, CODE);
     }
 
@@ -138,7 +139,7 @@ class CompositeOtpDeliveryTest {
     void aSendThatCompletesWithoutAMessageIdIsNotDelivered() {
         when(wa.sendText(anyString(), anyString())).thenReturn(Mono.empty());
         StepVerifier.create(delivery(wa).deliver(NUMBER, HASH, CODE)).expectNext(false).verifyComplete();
-        assertThat(logged.list).anySatisfy(e -> assertThat(e.getFormattedMessage()).contains("reason=no_message_id"));
+        assertThat(LogCapture.events(logged)).anySatisfy(e -> assertThat(e.getFormattedMessage()).contains("reason=no_message_id"));
         noLineAtOrAbove(Level.INFO, CODE);
     }
 
@@ -147,14 +148,14 @@ class CompositeOtpDeliveryTest {
         props.getWa().setAllowlist(List.of("+8801700000999"));
         StepVerifier.create(delivery(wa).deliver(NUMBER, HASH, CODE)).expectNext(false).verifyComplete();
         verify(wa, never()).sendText(anyString(), anyString());
-        assertThat(logged.list).anySatisfy(e -> assertThat(e.getFormattedMessage()).contains("reason=not_allowlisted"));
+        assertThat(LogCapture.events(logged)).anySatisfy(e -> assertThat(e.getFormattedMessage()).contains("reason=not_allowlisted"));
         noLineAtOrAbove(Level.INFO, CODE);
     }
 
     @Test
     void withTheChannelOffTheCodeGoesNowhereAboveDebug() {
         StepVerifier.create(delivery(null).deliver(NUMBER, HASH, CODE)).expectNext(false).verifyComplete();
-        assertThat(logged.list).anySatisfy(e -> assertThat(e.getFormattedMessage()).contains("reason=channel_off"));
+        assertThat(LogCapture.events(logged)).anySatisfy(e -> assertThat(e.getFormattedMessage()).contains("reason=channel_off"));
         noLineAtOrAbove(Level.INFO, CODE);
     }
 }

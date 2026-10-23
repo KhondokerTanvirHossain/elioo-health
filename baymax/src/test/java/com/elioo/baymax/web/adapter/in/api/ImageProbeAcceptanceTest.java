@@ -11,6 +11,7 @@ import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.storage.application.port.out.StoragePort;
 import com.elioo.baymax.storage.domain.StorageKeys;
+import com.elioo.baymax.testsupport.LogCapture;
 import com.elioo.baymax.testsupport.LoggedText;
 import com.elioo.baymax.testsupport.PaintedPaper;
 import com.elioo.baymax.web.adapter.in.ui.BaymaxWebUiRouter;
@@ -186,7 +187,7 @@ class ImageProbeAcceptanceTest {
             assertThat(crops).as("the deleted crop does not decode").allSatisfy(c -> assertThat(c.path("naturalWidth").asInt()).isZero());
             aSignedUrlWasThereToLeak(report);
 
-            List<ILoggingEvent> atInfo = appender.list.stream().filter(e -> e.getLevel().isGreaterOrEqual(Level.INFO)).toList();
+            List<ILoggingEvent> atInfo = LogCapture.events(appender).stream().filter(e -> e.getLevel().isGreaterOrEqual(Level.INFO)).toList();
             assertThat(LoggedText.atInfoOrAbove(atInfo)).as("positive control: the appender saw the window at INFO")
                     .anySatisfy(t -> assertThat(t).startsWith("[baymax-api] GET /app/api/me 200"))
                     .anySatisfy(t -> assertThat(t).isEqualTo("[probe-canary] html error path"))

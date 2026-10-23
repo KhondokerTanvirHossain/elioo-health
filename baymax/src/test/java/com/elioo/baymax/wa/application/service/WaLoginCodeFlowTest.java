@@ -11,6 +11,7 @@ import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.outbound.application.port.in.ExplainDocumentUseCase;
 import com.elioo.baymax.outbound.application.service.Copy;
+import com.elioo.baymax.testsupport.LogCapture;
 import com.elioo.baymax.wa.WaFixtures;
 import com.elioo.baymax.wa.application.port.out.WaMessagingPort;
 import com.elioo.baymax.web.adapter.out.delivery.CompositeOtpDelivery;
@@ -136,7 +137,7 @@ class WaLoginCodeFlowTest {
         assertThat(m.find()).as("the reply carries a 6-digit code").isTrue();
         String code = m.group(1);
 
-        for (ILoggingEvent e : logged.list) {
+        for (ILoggingEvent e : LogCapture.events(logged)) {
             assertThat(e.getFormattedMessage().split("[^0-9A-Za-z]+")).as("%s %s", e.getLevel(), e.getFormattedMessage())
                     .doesNotContain(code);
         }

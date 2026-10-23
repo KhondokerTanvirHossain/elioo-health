@@ -12,6 +12,7 @@ import com.elioo.baymax.outbound.application.port.out.OutboundMessagePort;
 import com.elioo.baymax.outbound.application.port.out.ReviewerNotificationPort;
 import com.elioo.baymax.outbound.domain.OutboundMessage;
 import com.elioo.baymax.outbound.domain.Urgency;
+import com.elioo.baymax.testsupport.LogCapture;
 import com.elioo.healthcare.llm.api.LlmClient;
 import com.elioo.healthcare.llm.model.LlmRequest;
 import com.elioo.healthcare.llm.model.LlmResponse;
@@ -172,7 +173,7 @@ class NudgeComposerTest {
             OutboundMessage m = composer.compose(course, LINK).block();
 
             assertThat(m.gateStatus()).isEqualTo(OutboundMessage.GateStatus.FAILED_SAFETY);
-            String atInfoAndAbove = logged.list.stream()
+            String atInfoAndAbove = LogCapture.events(logged).stream()
                     .filter(e -> e.getLevel().isGreaterOrEqual(ch.qos.logback.classic.Level.INFO))
                     .map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
                     .collect(java.util.stream.Collectors.joining("\n"));
@@ -181,7 +182,7 @@ class NudgeComposerTest {
             assertThat(atInfoAndAbove).as("a stored medicine, dose or name is patient text: never above DEBUG")
                     .doesNotContain("Napa").doesNotContain("665").doesNotContain("৭ দিন").doesNotContain("রহিমা");
             // the detail is still there for whoever turns DEBUG on
-            assertThat(logged.list.stream().filter(e -> e.getLevel() == ch.qos.logback.classic.Level.DEBUG)
+            assertThat(LogCapture.events(logged).stream().filter(e -> e.getLevel() == ch.qos.logback.classic.Level.DEBUG)
                     .map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage))
                     .anyMatch(line -> line.contains("Tab. Napa Extend 665 mg"));
         } finally {
@@ -209,7 +210,7 @@ class NudgeComposerTest {
 
             composer.compose(follow, LINK).block();
 
-            String all = logged.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
+            String all = LogCapture.events(logged).stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
                     .collect(java.util.stream.Collectors.joining("\n"));
             assertThat(all).as("the line exists").contains("released message delivery threw");
             assertThat(all).as("exception text is never logged above DEBUG").doesNotContain("SECRET")
