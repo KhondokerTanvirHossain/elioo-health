@@ -2,6 +2,7 @@ package com.elioo.baymax.web.adapter.in.api;
 
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.testsupport.Json;
+import com.elioo.baymax.web.application.service.TimelineService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -52,8 +53,13 @@ class PatientTimelineApiContractTest {
     static final Instant DHAKA_PAST_MIDNIGHT = Instant.parse("2026-10-21T19:00:00Z");
     static final Path FIXTURES = Path.of("../medioo-web/fixtures/api");
     static final Path WRITTEN = Path.of("build/web-contract");
-    static final List<String> TIMELINE = List.of("first-page", "last-page", "empty");
-    static final List<String> CALENDAR = List.of("busy", "empty", "crowded");
+    static final List<String> TIMELINE = List.of("first-page", "last-page", "empty", "forty-five-first-page", "lab-only", "rx-only",
+            "in-flight", "rx-none");
+    static final List<String> CALENDAR = List.of("busy", "empty", "crowded", "forty-five", "september");
+    /** A paper count above any one page (plan W8, master Review Focus 1): forty-five papers in one month. */
+    static final int FORTY_FIVE = 45;
+    /** A facility printed at real length, so a row is judged on a long line (Review Focus 1). Fictional. */
+    static final String LONG_FACILITY = "Shapla Diagnostic and Consultation Centre, Mirpur Section 10 Branch";
     static final List<String> FOLLOW_UPS = List.of("some", "none");
     private static final AtomicInteger NUMBERS = new AtomicInteger(800);
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -271,6 +277,90 @@ class PatientTimelineApiContractTest {
         });
     }
 
+    /**
+     * Plan W8 (master Review Focus 1): the forty-five-paper month the papers page is judged on holds what its fixtures
+     * claim, read by field: all forty-five on October's calendar (days with two and three papers among them, NOW and
+     * THIS_WEEK days, doctor's dates), the first timeline page full with a cursor, and the long facility on that page.
+     * Without this, a seed that wrote fewer papers would still produce two fixtures, and the overflow check would judge a
+     * quiet month.
+     */
+    @Test
+    void theFortyFivePaperMonthHoldsFortyFivePapers() {
+        FixedPapers.runnerAt(POSTGRES, NOW).run(context -> {
+            WebTestClient client = WebTestClient.bindToApplicationContext(context).build();
+            Seeded s = seedFortyFive(context, "forty-five");
+            JsonNode days = ok(client, s.session(), "/app/api/patients/" + s.patient().id() + "/calendar?month=2026-10").get("days");
+            int papers = 0;
+            int most = 0;
+            int follows = 0;
+            Set<String> chips = new HashSet<>();
+            for (JsonNode day : days) {
+                papers += day.get("papers").size();
+                most = Math.max(most, day.get("papers").size());
+                follows += day.get("follow_ups").size();
+                day.get("papers").forEach(p -> chips.add(p.get("chip").isNull() ? "-" : p.get("chip").asText()));
+            }
+            assertThat(papers).as("papers on October's calendar").isEqualTo(FORTY_FIVE);
+            assertThat(most).as("the most papers on one day").isEqualTo(3);
+            assertThat(follows).as("doctor's dates on October's calendar").isPositive();
+            assertThat(chips).as("the chips on the calendar").contains("now", "this_week", "-");
+
+            JsonNode first = ok(client, s.session(), timeline(s.patient()));
+            assertThat(first.get("entries")).as("$.entries of the first page").hasSize(TimelineService.PAGE_SIZE);
+            assertThat(first.get("next_cursor").isTextual()).as("$.next_cursor of the first page").isTrue();
+            assertThat(field(first.get("entries"), "facility")).as("$.entries[*].facility").contains(LONG_FACILITY);
+        });
+    }
+
+    /** {@code ?type=lab} and {@code ?type=rx} (the page's filter links) answer only that type, read by field. */
+    @Test
+    void aTypeFilterAnswersOnlyThatType() {
+        FixedPapers.runnerAt(POSTGRES, NOW).run(context -> {
+            WebTestClient client = WebTestClient.bindToApplicationContext(context).build();
+            Seeded s = seedTwentyFive(context, "type-filter");
+            List<String> lab = field(ok(client, s.session(), timeline(s.patient()) + "?type=lab").get("entries"), "document_type");
+            List<String> rx = field(ok(client, s.session(), timeline(s.patient()) + "?type=rx").get("entries"), "document_type");
+            assertThat(lab).as("$.entries[*].document_type for ?type=lab").hasSize(20).containsOnly("lab_report");
+            assertThat(rx).as("$.entries[*].document_type for ?type=rx").hasSize(5).containsOnly("prescription");
+        });
+    }
+
+    /**
+     * Plan W8 review: the in-flight page the papers page reloads on, and the counts line is judged on, holds what its
+     * fixture claims, read by field: a paper being read and one just received (the reload), a read lab report with
+     * values outside their range and its explanation waiting for review, a prescription with medicines, and a read
+     * paper filed under its upload day. And {@code rx-none}: a prescription filter over lab reports only answers nothing.
+     */
+    @Test
+    void theInFlightPageHoldsWhatItsNameSays() {
+        FixedPapers.runnerAt(POSTGRES, NOW).run(context -> {
+            WebTestClient client = WebTestClient.bindToApplicationContext(context).build();
+            String k = "in-flight-fields";
+            Seeded s = seedInFlight(context, k);
+            JsonNode entries = ok(client, s.session(), timeline(s.patient())).get("entries");
+            assertThat(field(entries, "status")).as("$.entries[*].status").containsExactly("PROCESSING", "RECEIVED", "DONE", "DONE", "DONE");
+            JsonNode lab = entries.get(2);
+            assertThat(lab.get("document_id").asText()).isEqualTo(FixedPapers.id(k, "lab").toString());
+            assertThat(lab.at("/counts/values").asInt()).as("the lab's values").isEqualTo(3);
+            assertThat(lab.at("/counts/outside").asInt()).as("the lab's values outside (outside and critical)").isEqualTo(2);
+            assertThat(lab.get("review_pending").asBoolean()).as("the lab's explanation waits for review").isTrue();
+            assertThat(lab.get("chip").asText()).isEqualTo("now");
+            JsonNode rx = entries.get(3);
+            assertThat(rx.get("document_type").asText()).isEqualTo("prescription");
+            assertThat(rx.at("/counts/medicines").asInt()).as("the prescription's medicines").isEqualTo(2);
+            JsonNode undated = entries.get(4);
+            assertThat(undated.get("date_is_upload_day").asBoolean()).as("the undated lab is filed under its upload day").isTrue();
+            assertThat(undated.at("/counts/values").asInt()).isEqualTo(1);
+            assertThat(undated.at("/counts/outside").asInt()).isZero();
+
+            Seeded labsOnly = seedBusyMonth(context, k + "-labs", false);
+            JsonNode none = ok(client, labsOnly.session(), timeline(labsOnly.patient()) + "?type=rx");
+            assertThat(none.get("entries")).as("$.entries for ?type=rx over lab reports only").isEmpty();
+            assertThat(none.get("next_cursor").isNull()).isTrue();
+            assertThat(ok(client, labsOnly.session(), timeline(labsOnly.patient())).get("entries")).as("the same patient unfiltered").isNotEmpty();
+        });
+    }
+
     // ---- the follow-ups -------------------------------------------------------------------------------------------
 
     @Test
@@ -332,13 +422,26 @@ class PatientTimelineApiContractTest {
         FixedPapers.runnerAt(POSTGRES, NOW).run(context -> {
             WebTestClient client = WebTestClient.bindToApplicationContext(context).build();
             String k = "fixture-timeline-" + name;
-            Seeded s = "empty".equals(name) ? family(context, k, NOW) : seedTwentyFive(context, k);
+            Seeded s = switch (name) {
+                case "empty" -> family(context, k, NOW);
+                case "forty-five-first-page" -> seedFortyFive(context, k);
+                case "in-flight" -> seedInFlight(context, k);
+                case "rx-none" -> seedBusyMonth(context, k, false);
+                default -> seedTwentyFive(context, k);
+            };
             String uri = timeline(s.patient());
+            // the filter the case asks with, named in the fixture's source (the e2e table serves it for that query)
+            String query = switch (name) {
+                case "lab-only" -> "?type=lab";
+                case "rx-only", "rx-none" -> "?type=rx";
+                default -> "";
+            };
             if ("last-page".equals(name)) {
                 uri += "?cursor=" + ok(client, s.session(), uri).get("next_cursor").asText();
             }
             AttentionApiContractTest.write(PatientTimelineApiContractTest.class, FIXTURES.resolve("timeline"), WRITTEN.resolve("timeline"),
-                    "timeline", name, "GET /app/api/patients/{id}/timeline over the case " + name, get(client, s.session(), uri));
+                    "timeline", name, "GET /app/api/patients/{id}/timeline" + query + " over the case " + name,
+                    get(client, s.session(), uri + query));
         });
     }
 
@@ -351,11 +454,15 @@ class PatientTimelineApiContractTest {
             Seeded s = switch (name) {
                 case "empty" -> family(context, k, NOW);
                 case "crowded" -> seedCrowdedMonth(context, k);
+                case "forty-five" -> seedFortyFive(context, k);
+                case "september" -> seedTwentyFive(context, k);
                 default -> seedBusyMonth(context, k);
             };
+            // the month before October (plan W8: the page's previous-month link lands on a month Java answered)
+            String month = "september".equals(name) ? "2026-09" : "2026-10";
             AttentionApiContractTest.write(PatientTimelineApiContractTest.class, FIXTURES.resolve("calendar"), WRITTEN.resolve("calendar"),
-                    "calendar", name, "GET /app/api/patients/{id}/calendar?month=2026-10 over the case " + name,
-                    get(client, s.session(), "/app/api/patients/" + s.patient().id() + "/calendar?month=2026-10"));
+                    "calendar", name, "GET /app/api/patients/{id}/calendar?month=" + month + " over the case " + name,
+                    get(client, s.session(), "/app/api/patients/" + s.patient().id() + "/calendar?month=" + month));
         });
     }
 
@@ -411,17 +518,98 @@ class PatientTimelineApiContractTest {
         return s;
     }
 
+    /**
+     * Forty-five papers in October 2026 up to the fixed today (the 21st), newest first (plan W8, master Review Focus 1):
+     * two a day, three on the 19th to the 21st; every ninth NOW from the first, every ninth THIS_WEEK from the fifth, the
+     * rest routine; every fifth from the third a prescription with a medicine and a doctor's date a week on (in October);
+     * every fourth from the second printed by {@link #LONG_FACILITY}.
+     */
+    static Seeded seedFortyFive(ApplicationContext context, String k) throws Exception {
+        Seeded s = family(context, k, NOW);
+        for (int i = 0; i < FORTY_FIVE; i++) {
+            int day = 21 - (i % 21);
+            LocalDate printed = LocalDate.of(2026, 10, day);
+            Instant uploaded = printed.atStartOfDay().toInstant(java.time.ZoneOffset.UTC).plus(Duration.ofHours(4)).plus(Duration.ofMinutes(i));
+            String level = i % 9 == 0 ? "now" : i % 9 == 4 ? "this_week" : "routine";
+            String type = i % 5 == 2 ? "prescription" : "lab_report";
+            UUID id = FixedPapers.paper(POSTGRES, FixedPapers.id(k, "paper-" + i), s.patient(), type, "DONE", printed.toString(), uploaded, level);
+            if (i % 4 == 1) {
+                FixedPapers.exec(POSTGRES, "UPDATE baymax.document SET facility = ? WHERE id = ?", LONG_FACILITY, id);
+            }
+            if ("prescription".equals(type)) {
+                FixedPapers.exec(POSTGRES, "INSERT INTO baymax.medication_event (patient_id, document_id, name, crop_key, at) "
+                        + "VALUES (?, ?, 'Zorvalex 10 mg', ?, ?)", s.patient().id(), id, s.patient().familyId() + "/" + s.patient().id()
+                        + "/" + id + "/crop-m1.jpg", java.sql.Timestamp.from(uploaded));
+                FixedPapers.followUp(POSTGRES, FixedPapers.id(k, "follow-" + i), s.patient(), id, "Review after the course",
+                        LocalDate.of(2026, 10, Math.min(day + 7, 31)).toString());
+            }
+        }
+        return s;
+    }
+
     /** October 2026: a NOW lab report on the 1st, a prescription on the 31st with a follow-up due on the 15th, a paper on 1 November. */
     static Seeded seedBusyMonth(ApplicationContext context, String k) throws Exception {
+        return seedBusyMonth(context, k, true);
+    }
+
+    /** The busy month, with or without its prescription (and the follow-up it set): without, the patient has lab reports only. */
+    static Seeded seedBusyMonth(ApplicationContext context, String k, boolean prescription) throws Exception {
         Seeded s = family(context, k, NOW);
         FixedPapers.paper(POSTGRES, FixedPapers.id(k, "oct1"), s.patient(), "lab_report", "DONE", "2026-10-01",
                 Instant.parse("2026-10-01T04:00:00Z"), "now");
-        UUID rx = FixedPapers.paper(POSTGRES, FixedPapers.id(k, "oct31"), s.patient(), "prescription", "DONE", "2026-10-31",
-                Instant.parse("2026-10-20T04:00:00Z"), "routine");
+        UUID rx = prescription ? FixedPapers.paper(POSTGRES, FixedPapers.id(k, "oct31"), s.patient(), "prescription", "DONE", "2026-10-31",
+                Instant.parse("2026-10-20T04:00:00Z"), "routine") : null;
         FixedPapers.paper(POSTGRES, FixedPapers.id(k, "nov1"), s.patient(), "lab_report", "DONE", "2026-11-01",
                 Instant.parse("2026-10-20T05:00:00Z"), "routine");
-        FixedPapers.followUp(POSTGRES, FixedPapers.id(k, "follow"), s.patient(), rx, "Bring the sugar chart", "2026-10-15");
+        if (rx != null) {
+            FixedPapers.followUp(POSTGRES, FixedPapers.id(k, "follow"), s.patient(), rx, "Bring the sugar chart", "2026-10-15");
+        }
         return s;
+    }
+
+    /**
+     * Plan W8 review: a page with papers still being read (the papers page reloads itself while one is) beside read ones
+     * whose counts the row's line says. Newest first: a lab report being read (uploaded ten minutes before the fixed
+     * now), one just received (twenty minutes, no type yet); a NOW lab report printed 19 October with three values, two
+     * of them outside their range (one critical), whose explanation waits for review; a prescription printed 18 October
+     * with two medicines; a lab report that printed no date, filed under its upload day (15 October), with one value.
+     */
+    static Seeded seedInFlight(ApplicationContext context, String k) throws Exception {
+        Seeded s = family(context, k, NOW);
+        FixedPapers.paper(POSTGRES, FixedPapers.id(k, "processing"), s.patient(), "lab_report", "PROCESSING", null,
+                NOW.minus(Duration.ofMinutes(10)), null);
+        FixedPapers.paper(POSTGRES, FixedPapers.id(k, "received"), s.patient(), null, "RECEIVED", null,
+                NOW.minus(Duration.ofMinutes(20)), null);
+        UUID lab = FixedPapers.paper(POSTGRES, FixedPapers.id(k, "lab"), s.patient(), "lab_report", "DONE", "2026-10-19",
+                Instant.parse("2026-10-19T04:00:00Z"), "now");
+        observation(lab, "Haemoglobin", "outside");
+        observation(lab, "Potassium", "critical");
+        observation(lab, "Sodium", "inside");
+        FixedPapers.exec(POSTGRES, "INSERT INTO baymax.outbound_message (family_id, document_id, kind, urgency, urgency_reasons, gate_status, "
+                + "created_at) VALUES (?, ?, 'explanation', 'now', '[]', 'pending', ?)", s.patient().familyId(), lab,
+                java.sql.Timestamp.from(Instant.parse("2026-10-19T04:05:00Z")));
+        UUID rx = FixedPapers.paper(POSTGRES, FixedPapers.id(k, "rx"), s.patient(), "prescription", "DONE", "2026-10-18",
+                Instant.parse("2026-10-18T04:00:00Z"), "routine");
+        int m = 0;
+        for (String medicine : List.of("Zorvalex 10 mg", "Quentamol 500 mg")) {
+            FixedPapers.exec(POSTGRES, "INSERT INTO baymax.medication_event (patient_id, document_id, name, crop_key, at) VALUES (?, ?, ?, ?, ?)",
+                    s.patient().id(), rx, medicine, s.patient().familyId() + "/" + s.patient().id() + "/" + rx + "/crop-m" + (++m) + ".jpg",
+                    java.sql.Timestamp.from(Instant.parse("2026-10-18T04:00:00Z")));
+        }
+        UUID undated = FixedPapers.paper(POSTGRES, FixedPapers.id(k, "undated"), s.patient(), "lab_report", "DONE", null,
+                Instant.parse("2026-10-15T04:00:00Z"), "routine");
+        observation(undated, "Glucose", "inside");
+        return s;
+    }
+
+    /** One value on {@code document} with this stored verdict (V19), as TimelineReadModelTest writes one. */
+    private static void observation(UUID document, String name, String verdict) throws Exception {
+        String level = "critical".equals(verdict) ? "now" : "outside".equals(verdict) ? "this_week" : "routine";
+        String side = "inside".equals(verdict) ? null : "high";
+        String reason = "value_" + ("critical".equals(verdict) ? "critical" : "outside".equals(verdict) ? "outside_range" : verdict) + ":x|stopgap";
+        FixedPapers.exec(POSTGRES, "INSERT INTO baymax.observation (patient_id, document_id, name, value, crop_key, observed_at, verdict, "
+                + "verdict_level, verdict_side, verdict_reason) SELECT patient_id, id, ?, '1', 'k/c.jpg', created_at, ?, ?, ?, ? "
+                + "FROM baymax.document WHERE id = ?", name, verdict, level, side, reason, document);
     }
 
     /**

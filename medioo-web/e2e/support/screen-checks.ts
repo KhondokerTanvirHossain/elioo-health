@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
+import { t } from "../../src/copy";
 import { CONTROL_CLASS, FIELD_SELECTOR, NOW_ALLOWED } from "../../src/styles/now-usage";
 import { useScenario, type CropRow } from "./browser-api";
 import { expectedWidth } from "./png.mjs";
@@ -395,6 +396,9 @@ export async function openRoute(page: Page, route: string, scenario: string) {
  * reaches (a confirm step, a refusal) before every check runs, so those states are judged too. `images` names the
  * other crops a page shows outside a value row (an attention card's follow-up beside the doctor's words, W5): each must
  * decode at its own width, as a row's crop does, and nothing else beside the brand files may be on the page.
+ * `disclaimer` requires the bundle's `disclaimer` exactly once inside `main` (master Global Constraints: the
+ * not-a-doctor line on every page that shows a result; the shell says it under every signed-in page), under every
+ * scenario the route is judged on.
  */
 export function screenChecks(
   route: string,
@@ -404,6 +408,7 @@ export function screenChecks(
     longest?: boolean;
     fields?: string[];
     onePrimary?: boolean;
+    disclaimer?: boolean;
     act?: { state: string; run: (page: Page) => Promise<void> };
     images?: CropRow[];
   } = {},
@@ -500,6 +505,14 @@ export function screenChecks(
             .map((i) => `${i.path || "no currentSrc"} complete=${i.complete} naturalWidth=${i.natural}`);
           expect(bad).toEqual([]);
         });
+
+        if (opts.disclaimer) {
+          test("theDisclaimerIsOnThePage", async ({ page }) => {
+            await open(page, name);
+            const lang = (await page.locator("html").getAttribute("lang")) === "en" ? "en" : "bn";
+            await expect(page.locator("main .app-shell__foot")).toHaveText([t(lang, "disclaimer")]);
+          });
+        }
 
         if (opts.crops) {
           test("everyCropIsItsRowsOwnImage", async ({ page }) => {

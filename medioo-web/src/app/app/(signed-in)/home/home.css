@@ -43,14 +43,6 @@
   outline: var(--focus-width) solid var(--focus);
   outline-offset: var(--focus-offset);
 }
-.chat__disclaimer {
-  margin: 0;
-  padding: 0 var(--space-3);
-  font-family: var(--font-bn);
-  font-size: var(--text-sm);
-  line-height: 1.45;
-  color: var(--label2);
-}
 /* The composer is docked as the prototype's is (phone.html .composer): it stays at the foot of the window over the
    thread, on the bars' material (Composer.css), above the fixed tab bar below 900 px (its height, as the shell's main
    leaves room for it) and at the window's bottom from 900 px. It is sticky, not fixed: it keeps its own place at the

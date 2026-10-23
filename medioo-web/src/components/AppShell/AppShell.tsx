@@ -24,6 +24,8 @@ export type ShellWords = {
   signOut: string;
   /** `app.err.generic`: a sign-out that did not go through. */
   failed: string;
+  /** `disclaimer`: the not-a-doctor line every signed-in page carries under its main (Java's AppShell footer). */
+  disclaimer: string;
   /** The switcher's words; null when no patient is shown (the chooser, or a family with none). */
   switcher: SwitcherWords | null;
 };
@@ -32,7 +34,8 @@ export type ShellWords = {
  * The shell every signed-in page renders (plan W4; desktop.html scene `app`, phone.html scene `chat`), from what
  * GET /app/api/me said and nothing else:
  * - `banner` (the global NOW banner, W5) above everything, at every width;
- * - below 900 px: the toolbar (Mio and the switcher), the page's `main`, then the bottom tab bar;
+ * - below 900 px: the toolbar (Mio and the switcher), the page's `main` with the disclaimer under it, then the bottom
+ *   tab bar (the disclaimer is under `main` at every width: the not-a-doctor line on every page that shows a result);
  * - from 900 to 1199 px: the sidebar (the wordmark, the tabs as a rail, whose account this is, sign out) hides behind
  *   the toolbar's button (SidebarToggle), and `aside` sits beside main;
  * - from 1200 px: three columns, sidebar 256 · main · aside 400 (the tokens --sidebar-w, --conversation-w).
@@ -83,7 +86,10 @@ export function AppShell({
             )}
             <SidebarToggle label={words.menu} controls={SIDEBAR_ID} />
           </header>
-          <main className="app-shell__main">{main}</main>
+          <main className="app-shell__main">
+            {main}
+            <footer className="app-shell__foot">{words.disclaimer}</footer>
+          </main>
         </div>
         {aside !== undefined && <aside className="app-shell__aside">{aside}</aside>}
       </div>

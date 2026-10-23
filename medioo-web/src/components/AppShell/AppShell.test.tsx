@@ -62,6 +62,24 @@ describe("AppShell", () => {
     expect(container.querySelector("main [data-slot=main]"), "the page's main is the document's main").not.toBeNull();
   });
 
+  it("everyShellPageCarriesTheDisclaimer", () => {
+    // Master Global Constraints: the not-a-doctor line on every page that shows a result. Every signed-in page renders
+    // through this shell, so the bundle's `disclaimer` is said once here, under the page's main, as Java's AppShell
+    // footer says it on every app page; in both languages, with or without a patient in view.
+    for (const lang of ["bn", "en"] as const) {
+      for (const active of [ONE.patients[0]!, null]) {
+        const { container } = shell(ONE, { lang, active, words: shellWords(lang, ONE, active) });
+        const foot = container.querySelectorAll("main .app-shell__foot");
+        expect(foot.length, `${lang} ${active ? "patient" : "none"}: one disclaimer, inside main`).toBe(1);
+        expect(foot[0]!.textContent).toBe(t(lang, "disclaimer"));
+        // After the page's own content, never above it.
+        const main = container.querySelector("[data-slot=main]")!;
+        expect(main.compareDocumentPosition(foot[0]!) & Node.DOCUMENT_POSITION_FOLLOWING, "after the page").toBeTruthy();
+        cleanup();
+      }
+    }
+  });
+
   it("noAsideNoConversationColumn", () => {
     const { container } = shell(ONE, { aside: undefined, banner: undefined });
     expect(container.querySelector(".app-shell__aside")).toBeNull();

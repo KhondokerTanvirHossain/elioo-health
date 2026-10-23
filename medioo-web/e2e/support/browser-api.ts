@@ -155,7 +155,14 @@ export async function useScenario(
       reason: null,
     };
     seen.push(entry);
-    const result = answer({ method: request.method(), path: url.pathname, headers, origin: base.origin, counters });
+    const result = answer({
+      method: request.method(),
+      path: url.pathname,
+      query: url.search.slice(1),
+      headers,
+      origin: base.origin,
+      counters,
+    });
     // `{ abort: "<reason>" }`: the network dies under the request (a phone losing signal mid-press), after the guard
     // let it through, so what reaches the route is a request Java would have accepted.
     // `{ hold: true }`: the network goes quiet (no RST, no error, no answer), the usual way a phone loses its signal.

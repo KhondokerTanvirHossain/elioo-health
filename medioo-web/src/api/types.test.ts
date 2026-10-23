@@ -23,6 +23,22 @@ import twoPatients from "../../fixtures/api/now-banner/two-patients.json";
 import busy from "../../fixtures/api/calendar/busy.json";
 import crowded from "../../fixtures/api/calendar/crowded.json";
 import empty from "../../fixtures/api/calendar/empty.json";
+import fortyFive from "../../fixtures/api/calendar/forty-five.json";
+import september from "../../fixtures/api/calendar/september.json";
+// B3's generated timeline pages, doctor's dates and attention stacks (plan W8).
+import attentionEmpty from "../../fixtures/api/attention/empty.json";
+import attentionFull from "../../fixtures/api/attention/full-stack.json";
+import attentionNow from "../../fixtures/api/attention/now-only.json";
+import followsNone from "../../fixtures/api/follow-ups/none.json";
+import followsSome from "../../fixtures/api/follow-ups/some.json";
+import timelineEmpty from "../../fixtures/api/timeline/empty.json";
+import timelineFirst from "../../fixtures/api/timeline/first-page.json";
+import timelineFortyFive from "../../fixtures/api/timeline/forty-five-first-page.json";
+import timelineInFlight from "../../fixtures/api/timeline/in-flight.json";
+import timelineLab from "../../fixtures/api/timeline/lab-only.json";
+import timelineLast from "../../fixtures/api/timeline/last-page.json";
+import timelineRxNone from "../../fixtures/api/timeline/rx-none.json";
+import timelineRx from "../../fixtures/api/timeline/rx-only.json";
 import bp from "../../fixtures/api/health/bp.json";
 import labsNonNumeric from "../../fixtures/api/health/labs-non-numeric.json";
 import labsNone from "../../fixtures/api/health/labs-none.json";
@@ -30,6 +46,7 @@ import labsPrintedRange from "../../fixtures/api/health/labs-printed-range.json"
 import labsSome from "../../fixtures/api/health/labs-some.json";
 import labsWithUnknown from "../../fixtures/api/health/labs-with-unknown.json";
 // B1's generated GET /app/api/me bodies (baymax MeApiContractTest), plan W4: the shell reads every field it renders here.
+import meFlagsSet from "../../fixtures/api/me/flags-set.json";
 import meLongName from "../../fixtures/api/me/long-name.json";
 import meNoPatients from "../../fixtures/api/me/no-patients.json";
 import meOnePatient from "../../fixtures/api/me/one-patient.json";
@@ -49,9 +66,6 @@ import uploadOwnerTwoAsked from "../../fixtures/api/upload-options/owner-two-ask
 import uploadViewOnly from "../../fixtures/api/upload-options/view-only.json";
 import uploadedOne from "../../fixtures/api/uploads/one-document.json";
 import uploadedSeparate from "../../fixtures/api/uploads/separate.json";
-import attentionEmpty from "../../fixtures/api/attention/empty.json";
-import attentionFullStack from "../../fixtures/api/attention/full-stack.json";
-import attentionNowOnly from "../../fixtures/api/attention/now-only.json";
 import threadDefault from "../../fixtures/api/thread/default.json";
 import threadFailed from "../../fixtures/api/thread/failed.json";
 import threadFirstRun from "../../fixtures/api/thread/first-run.json";
@@ -76,6 +90,15 @@ import {
   type CalendarFollowUpJson,
   type CalendarJson,
   type CalendarPaperJson,
+  type AttentionFollowUpJson,
+  type AttentionReadingJson,
+  type AttentionRetakeJson,
+  type AttentionUrgentJson,
+  type FollowUpItemJson,
+  type FollowUpsJson,
+  type TimelineCountsJson,
+  type TimelineEntryJson,
+  type TimelineJson,
   type Json,
   type LabSeriesJson,
   type LabsJson,
@@ -334,6 +357,8 @@ describe("the API types are the generated fixtures", () => {
       ["busy", busy.body],
       ["crowded", crowded.body],
       ["empty", empty.body],
+      ["forty-five", fortyFive.body],
+      ["september", september.body],
     ];
     // Every committed calendar fixture is assigned above, so a new case cannot go unchecked.
     expect(readdirSync(join(fixtures, "calendar")).filter((f) => f.endsWith(".json")).sort()).toEqual(
@@ -439,6 +464,125 @@ describe("the API types are the generated fixtures", () => {
 });
 
 /*
+ * The papers page's reads (plan W8): every committed timeline, follow-ups and attention body assigned to its type and
+ * compared key for key, by kind for the attention stack, whose items differ by kind. Each directory is read, so a case
+ * Java adds fails here until it is listed.
+ */
+const TIMELINE_KEYS = ["entries", "next_cursor"] as const;
+const ENTRY_KEYS = [
+  "chip",
+  "counts",
+  "date",
+  "date_is_upload_day",
+  "date_uncertain",
+  "document_id",
+  "document_type",
+  "facility",
+  "month",
+  "page_one",
+  "retake_reason_key",
+  "review_pending",
+  "status",
+] as const;
+const COUNT_KEYS = ["follow_ups", "medicines", "outside", "unverified", "values"] as const;
+const FOLLOWS_KEYS = ["items"] as const;
+const FOLLOW_ITEM_KEYS = ["crop", "document_id", "due_date", "instruction", "overdue"] as const;
+const ATTENTION_KEYS: { [K in AttentionJson["items"][number]["kind"]]: readonly string[] } = {
+  urgent: ["action_key", "date", "date_is_upload_day", "date_uncertain", "document_id", "document_type", "kind", "level", "received_at"],
+  retake: ["action_key", "date", "date_is_upload_day", "document_id", "kind", "received_at", "title_key"],
+  follow_up: ["action_key", "crop", "document_id", "due_date", "instruction", "kind", "title_key"],
+  reading: ["action_key", "date", "date_is_upload_day", "document_id", "kind", "received_at", "title_key"],
+};
+const papersKeyListsAreTheTypes: [
+  Equal<(typeof TIMELINE_KEYS)[number], keyof TimelineJson>,
+  Equal<(typeof ENTRY_KEYS)[number], keyof TimelineEntryJson>,
+  Equal<(typeof COUNT_KEYS)[number], keyof TimelineCountsJson>,
+  Equal<(typeof FOLLOWS_KEYS)[number], keyof FollowUpsJson>,
+  Equal<(typeof FOLLOW_ITEM_KEYS)[number], keyof FollowUpItemJson>,
+] = [true, true, true, true, true];
+// The attention lists are typed by kind; each is held to its type by the compiler through these.
+const URGENT_KEYS: readonly (keyof AttentionUrgentJson)[] = ATTENTION_KEYS.urgent as (keyof AttentionUrgentJson)[];
+const RETAKE_KEYS: readonly (keyof AttentionRetakeJson)[] = ATTENTION_KEYS.retake as (keyof AttentionRetakeJson)[];
+const FOLLOW_ATTN_KEYS: readonly (keyof AttentionFollowUpJson)[] = ATTENTION_KEYS.follow_up as (keyof AttentionFollowUpJson)[];
+const READING_KEYS: readonly (keyof AttentionReadingJson)[] = ATTENTION_KEYS.reading as (keyof AttentionReadingJson)[];
+
+describe("the papers page's reads are the generated fixtures", () => {
+  it("everyTimelineFixtureIsATimelineJson", () => {
+    expect(papersKeyListsAreTheTypes.every(Boolean)).toBe(true);
+    const pages: Array<[string, TimelineJson]> = [
+      ["empty", timelineEmpty.body],
+      ["first-page", timelineFirst.body],
+      ["forty-five-first-page", timelineFortyFive.body],
+      ["in-flight", timelineInFlight.body],
+      ["lab-only", timelineLab.body],
+      ["last-page", timelineLast.body],
+      ["rx-none", timelineRxNone.body],
+      ["rx-only", timelineRx.body],
+    ];
+    expect(readdirSync(join(fixtures, "timeline")).filter((f) => f.endsWith(".json")).sort()).toEqual(
+      pages.map(([name]) => `${name}.json`).sort(),
+    );
+    let entries = 0;
+    for (const [name, page] of pages) {
+      expect(keys(page), name).toEqual([...TIMELINE_KEYS]);
+      for (const e of page.entries) {
+        expect(keys(e), `${name} ${e.document_id}`).toEqual([...ENTRY_KEYS]);
+        expect(keys(e.counts), `${name} ${e.document_id} counts`).toEqual([...COUNT_KEYS]);
+        expect(keys(e.page_one), `${name} ${e.document_id} page_one`).toEqual(["src"]);
+        // On Java's real output the month is the date's (TimelineJson): MonthList groups by `month` and never re-derives it.
+        expect(e.month, `${name} ${e.document_id} month`).toBe(e.date.slice(0, 7));
+        entries++;
+      }
+    }
+    expect(entries, "entries walked").toBeGreaterThan(0);
+  });
+
+  it("everyFollowUpsFixtureIsAFollowUpsJson", () => {
+    const bodies: Array<[string, FollowUpsJson]> = [
+      ["none", followsNone.body],
+      ["some", followsSome.body],
+    ];
+    expect(readdirSync(join(fixtures, "follow-ups")).filter((f) => f.endsWith(".json")).sort()).toEqual(
+      bodies.map(([name]) => `${name}.json`).sort(),
+    );
+    let items = 0;
+    for (const [name, b] of bodies) {
+      expect(keys(b), name).toEqual([...FOLLOWS_KEYS]);
+      for (const i of b.items) {
+        expect(keys(i), `${name} ${i.due_date}`).toEqual([...FOLLOW_ITEM_KEYS]);
+        expect(keys(i.crop), `${name} ${i.due_date} crop`).toEqual(["src"]);
+        items++;
+      }
+    }
+    expect(items, "items walked").toBeGreaterThan(0);
+  });
+
+  it("everyAttentionFixtureIsAnAttentionJson", () => {
+    expect([URGENT_KEYS, RETAKE_KEYS, FOLLOW_ATTN_KEYS, READING_KEYS].every((l) => l.length > 0)).toBe(true);
+    const bodies: Array<[string, Json<AttentionJson>]> = [
+      ["empty", attentionEmpty.body],
+      ["full-stack", attentionFull.body],
+      ["now-only", attentionNow.body],
+    ];
+    expect(readdirSync(join(fixtures, "attention")).filter((f) => f.endsWith(".json")).sort()).toEqual(
+      bodies.map(([name]) => `${name}.json`).sort(),
+    );
+    const kinds = new Set<string>();
+    for (const [name, b] of bodies) {
+      expect(keys(b), name).toEqual(["items"]);
+      for (const item of b.items) {
+        const want = ATTENTION_KEYS[item.kind as keyof typeof ATTENTION_KEYS];
+        expect(want, `${name}: a kind the type names (${item.kind})`).toBeDefined();
+        expect(keys(item), `${name} ${item.kind} ${item.document_id}`).toEqual([...want!].sort());
+        kinds.add(item.kind);
+      }
+    }
+    // Guard: every kind the type names was met, so each key list was compared with something.
+    expect([...kinds].sort()).toEqual(Object.keys(ATTENTION_KEYS).sort());
+  });
+});
+
+/*
  * GET /app/api/me (plan W4): every committed body is assigned to MeJson (the compile-time half) and compared key for key
  * with the lists below (the run-time half, which sees a field Java adds), and the directory is read so a new case cannot
  * go unchecked. The one refusal is the {"reason"} of a 401.
@@ -447,6 +591,7 @@ const ME_KEYS = ["active_patient_id", "family", "patients", "preview"] as const;
 const ME_FAMILY_KEYS = ["id", "owner_name"] as const;
 const ME_PATIENT_KEYS = [
   "age",
+  "chronic_flags_set",
   "documents",
   "id",
   "last_document_at",
@@ -467,6 +612,7 @@ describe("GET /app/api/me", () => {
   it("everyMeFixtureIsAMeJson", () => {
     expect(meKeyListsAreTheTypes.every(Boolean)).toBe(true);
     const bodies: Array<[string, MeJson, number]> = [
+      ["flags-set.json", meFlagsSet.body, meFlagsSet.status],
       ["long-name.json", meLongName.body, meLongName.status],
       ["no-patients.json", meNoPatients.body, meNoPatients.status],
       ["one-patient.json", meOnePatient.body, meOnePatient.status],
@@ -491,6 +637,7 @@ describe("GET /app/api/me", () => {
       for (const p of me.patients) {
         expect(keys(p), `${file} ${p.id}`).toEqual([...ME_PATIENT_KEYS]);
         expect(typeof p.urgent, `${file} ${p.id} urgent`).toBe("boolean");
+        expect(typeof p.chronic_flags_set, `${file} ${p.id} chronic_flags_set`).toBe("boolean");
         patients++;
       }
       // The remembered patient is one of the list or nobody: Java never names a patient the family cannot see.
@@ -502,6 +649,9 @@ describe("GET /app/api/me", () => {
     expect(bodies.some(([, me]) => me.patients.length > 1 && me.active_patient_id === null), "two and no choice").toBe(true);
     expect(bodies.some(([, me]) => me.preview === false), "a family outside the preview").toBe(true);
     expect(bodies.some(([, me]) => me.patients.some((p) => p.urgent)), "an urgent patient").toBe(true);
+    // The papers page's chronic-flags ask is judged both ways: a patient with none stored, and one with a flag.
+    expect(bodies.some(([, me]) => me.patients.some((p) => !p.chronic_flags_set)), "a patient with no flag").toBe(true);
+    expect(bodies.some(([, me]) => me.patients.some((p) => p.chronic_flags_set)), "a patient with a flag").toBe(true);
   });
 });
 
@@ -618,17 +768,12 @@ const THREADS: Record<string, Json<ThreadJson>> = {
 };
 const ATTENTION: Record<string, Json<AttentionJson>> = {
   "empty.json": attentionEmpty.body,
-  "full-stack.json": attentionFullStack.body,
-  "now-only.json": attentionNowOnly.body,
+  "full-stack.json": attentionFull.body,
+  "now-only.json": attentionNow.body,
 };
 const THREAD_MESSAGE_KEYS = ["at", "body", "document_id", "kind", "message_kind"];
 const THREAD_PAPER_KEYS = ["at", "card", "kind"];
-const ATTENTION_KEYS: Record<string, string[]> = {
-  urgent: ["action_key", "date", "date_is_upload_day", "date_uncertain", "document_id", "document_type", "kind", "level", "received_at"],
-  retake: ["action_key", "date", "date_is_upload_day", "document_id", "kind", "received_at", "title_key"],
-  follow_up: ["action_key", "crop", "document_id", "due_date", "instruction", "kind", "title_key"],
-  reading: ["action_key", "date", "date_is_upload_day", "document_id", "kind", "received_at", "title_key"],
-};
+// ATTENTION_KEYS is the papers page's, above: one key list per kind, typed against AttentionJson.
 
 describe("the chat page's bodies", () => {
   it("everyThreadFixtureIsAThreadJson", () => {
@@ -664,7 +809,7 @@ describe("the chat page's bodies", () => {
       expect(keys(stack), file).toEqual(["items"]);
       for (const item of stack.items) {
         expect(ATTENTION_KINDS as readonly string[], `${file} kind`).toContain(item.kind);
-        expect(keys(item), `${file} ${item.kind}`).toEqual(ATTENTION_KEYS[item.kind]);
+        expect(keys(item), `${file} ${item.kind}`).toEqual(ATTENTION_KEYS[item.kind as keyof typeof ATTENTION_KEYS]);
         if (item.kind === "urgent") expect(BANNER_LEVELS as readonly string[]).toContain((item as { level: string }).level);
         seen.add(item.kind);
       }

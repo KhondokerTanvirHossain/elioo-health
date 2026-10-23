@@ -1,5 +1,8 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { answer } from "./java-stub.mjs";
+import { FIXTURES } from "./scenarios.mjs";
 
 /*
  * Stub Java's guard, in AppApiGuard.filter's order: the session first (a route outside OPEN with no session is 401
@@ -44,5 +47,105 @@ describe("stub Java's guard order", () => {
     expect(
       ask("POST", "/app/api/sign-out", { cookie, "x-medioo": "1", origin: ORIGIN, "content-type": "application/json" }),
     ).toEqual({ status: 404, body: { reason: "NOT_FOUND" } });
+  });
+});
+
+describe("stub Java answers for the query (plan W8)", () => {
+  // A synthetic table, so the rule is judged on answers that cannot be confused with one another.
+  const lit = (n: number) => ({ status: 200, body: { n } });
+  const TABLE = {
+    paged: {
+      "GET /app/api/patients/{id}/timeline": {
+        byQuery: [
+          { when: { type: "lab" }, answer: lit(1) },
+          { when: { cursor: "c2" }, answer: lit(2) },
+          { when: { type: "rx", cursor: "c2" }, answer: lit(3) },
+        ],
+        otherwise: lit(0),
+      },
+    },
+  };
+  const get = (query: string) =>
+    answer({
+      method: "GET",
+      path: "/app/api/patients/5e9edf6d-0a2a-4913-8675-9d07a4100002/timeline",
+      query,
+      headers: { cookie: "e2e_scenario=paged; baymax_session=e2e" },
+      origin: ORIGIN,
+      counters: new Map(),
+      scenarios: TABLE,
+    });
+
+  it("theFirstEntryWhoseEveryParameterTheQueryCarriesAnswers", () => {
+    expect(get("type=lab")).toEqual(lit(1));
+    expect(get("cursor=c2")).toEqual(lit(2));
+    // Both entries match `type=rx&cursor=c2` on cursor; the first listed wins, so order in the table is the rule.
+    expect(get("cursor=c2&type=rx")).toEqual(lit(2));
+    expect(get("type=lab&cursor=c2")).toEqual(lit(1));
+  });
+
+  it("aQueryNoEntryMatchesIsAnsweredByOtherwise", () => {
+    // The dangerous direction: a parameter's value must match exactly, never as a prefix or by its presence alone.
+    expect(get("")).toEqual(lit(0));
+    expect(get("type=labx")).toEqual(lit(0));
+    expect(get("type=")).toEqual(lit(0));
+    expect(get("cursor=c")).toEqual(lit(0));
+    expect(get("month=2026-09")).toEqual(lit(0));
+  });
+});
+
+describe("stub Java never serves a fixture for a query it was not read with (plan W8 review)", () => {
+  // Real fixtures: their _meta.source names the query Java answered (`?month=2026-10`, `?type=lab`), which is what is judged.
+  const fixture = (file: string) => {
+    const f = JSON.parse(readFileSync(join(FIXTURES, file), "utf8")) as { status?: number; body: unknown };
+    return { status: f.status ?? 200, body: f.body };
+  };
+  const NO_FIXTURE = { status: 500, body: { reason: "STUB_NO_FIXTURE_FOR_QUERY" } };
+  const TABLE = {
+    papers: {
+      "GET /app/api/patients/{id}/calendar": {
+        byQuery: [{ when: { month: "2026-09" }, answer: "calendar/september.json" }],
+        otherwise: "calendar/busy.json",
+      },
+      "GET /app/api/patients/{id}/timeline": {
+        byQuery: [
+          { when: { type: "lab" }, answer: "timeline/lab-only.json" },
+          { when: { cursor: "c2" }, answer: "timeline/last-page.json" },
+        ],
+        otherwise: "timeline/first-page.json",
+      },
+    },
+  };
+  const get = (route: "calendar" | "timeline", query: string) =>
+    answer({
+      method: "GET",
+      path: `/app/api/patients/5e9edf6d-0a2a-4913-8675-9d07a4100002/${route}`,
+      query,
+      headers: { cookie: "e2e_scenario=papers; baymax_session=e2e" },
+      origin: ORIGIN,
+      counters: new Map(),
+      scenarios: TABLE,
+    });
+
+  it("aMonthTheOtherwiseFixtureWasNotReadWithIsRefused", () => {
+    // Guard: busy.json was read for October, so November is a value of the same parameter it never answered.
+    expect(JSON.parse(readFileSync(join(FIXTURES, "calendar/busy.json"), "utf8"))._meta.source).toContain("?month=2026-10 ");
+    expect(get("calendar", "month=2026-11")).toEqual(NO_FIXTURE);
+  });
+
+  it("aRequestWithoutTheParameterIsServedAndSoIsTheValueItWasReadWith", () => {
+    expect(get("calendar", "")).toEqual(fixture("calendar/busy.json"));
+    expect(get("calendar", "month=2026-10")).toEqual(fixture("calendar/busy.json"));
+    expect(get("calendar", "month=2026-09")).toEqual(fixture("calendar/september.json"));
+    expect(get("timeline", "")).toEqual(fixture("timeline/first-page.json"));
+    expect(get("timeline", "type=lab")).toEqual(fixture("timeline/lab-only.json"));
+    expect(get("timeline", "cursor=c2")).toEqual(fixture("timeline/last-page.json"));
+  });
+
+  it("aParameterTheTableKeysOnThatTheChosenFixtureWasNotReadWithIsRefused", () => {
+    // lab-only.json is the lab filter's first page: its own "more" link (a cursor beside type=lab) is another page.
+    expect(get("timeline", "type=lab&cursor=c9")).toEqual(NO_FIXTURE);
+    // first-page.json is the first page: a cursor no entry names is a page it is not.
+    expect(get("timeline", "cursor=zz")).toEqual(NO_FIXTURE);
   });
 });
