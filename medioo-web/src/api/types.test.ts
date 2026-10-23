@@ -34,8 +34,10 @@ import followsSome from "../../fixtures/api/follow-ups/some.json";
 import timelineEmpty from "../../fixtures/api/timeline/empty.json";
 import timelineFirst from "../../fixtures/api/timeline/first-page.json";
 import timelineFortyFive from "../../fixtures/api/timeline/forty-five-first-page.json";
+import timelineInFlight from "../../fixtures/api/timeline/in-flight.json";
 import timelineLab from "../../fixtures/api/timeline/lab-only.json";
 import timelineLast from "../../fixtures/api/timeline/last-page.json";
+import timelineRxNone from "../../fixtures/api/timeline/rx-none.json";
 import timelineRx from "../../fixtures/api/timeline/rx-only.json";
 import bp from "../../fixtures/api/health/bp.json";
 import labsNonNumeric from "../../fixtures/api/health/labs-non-numeric.json";
@@ -44,6 +46,7 @@ import labsPrintedRange from "../../fixtures/api/health/labs-printed-range.json"
 import labsSome from "../../fixtures/api/health/labs-some.json";
 import labsWithUnknown from "../../fixtures/api/health/labs-with-unknown.json";
 // B1's generated GET /app/api/me bodies (baymax MeApiContractTest), plan W4: the shell reads every field it renders here.
+import meFlagsSet from "../../fixtures/api/me/flags-set.json";
 import meLongName from "../../fixtures/api/me/long-name.json";
 import meNoPatients from "../../fixtures/api/me/no-patients.json";
 import meOnePatient from "../../fixtures/api/me/one-patient.json";
@@ -514,8 +517,10 @@ describe("the papers page's reads are the generated fixtures", () => {
       ["empty", timelineEmpty.body],
       ["first-page", timelineFirst.body],
       ["forty-five-first-page", timelineFortyFive.body],
+      ["in-flight", timelineInFlight.body],
       ["lab-only", timelineLab.body],
       ["last-page", timelineLast.body],
+      ["rx-none", timelineRxNone.body],
       ["rx-only", timelineRx.body],
     ];
     expect(readdirSync(join(fixtures, "timeline")).filter((f) => f.endsWith(".json")).sort()).toEqual(
@@ -590,6 +595,7 @@ const ME_KEYS = ["active_patient_id", "family", "patients", "preview"] as const;
 const ME_FAMILY_KEYS = ["id", "owner_name"] as const;
 const ME_PATIENT_KEYS = [
   "age",
+  "chronic_flags_set",
   "documents",
   "id",
   "last_document_at",
@@ -610,6 +616,7 @@ describe("GET /app/api/me", () => {
   it("everyMeFixtureIsAMeJson", () => {
     expect(meKeyListsAreTheTypes.every(Boolean)).toBe(true);
     const bodies: Array<[string, MeJson, number]> = [
+      ["flags-set.json", meFlagsSet.body, meFlagsSet.status],
       ["long-name.json", meLongName.body, meLongName.status],
       ["no-patients.json", meNoPatients.body, meNoPatients.status],
       ["one-patient.json", meOnePatient.body, meOnePatient.status],
@@ -634,6 +641,7 @@ describe("GET /app/api/me", () => {
       for (const p of me.patients) {
         expect(keys(p), `${file} ${p.id}`).toEqual([...ME_PATIENT_KEYS]);
         expect(typeof p.urgent, `${file} ${p.id} urgent`).toBe("boolean");
+        expect(typeof p.chronic_flags_set, `${file} ${p.id} chronic_flags_set`).toBe("boolean");
         patients++;
       }
       // The remembered patient is one of the list or nobody: Java never names a patient the family cannot see.
@@ -645,6 +653,9 @@ describe("GET /app/api/me", () => {
     expect(bodies.some(([, me]) => me.patients.length > 1 && me.active_patient_id === null), "two and no choice").toBe(true);
     expect(bodies.some(([, me]) => me.preview === false), "a family outside the preview").toBe(true);
     expect(bodies.some(([, me]) => me.patients.some((p) => p.urgent)), "an urgent patient").toBe(true);
+    // The papers page's chronic-flags ask is judged both ways: a patient with none stored, and one with a flag.
+    expect(bodies.some(([, me]) => me.patients.some((p) => !p.chronic_flags_set)), "a patient with no flag").toBe(true);
+    expect(bodies.some(([, me]) => me.patients.some((p) => p.chronic_flags_set)), "a patient with a flag").toBe(true);
   });
 });
 

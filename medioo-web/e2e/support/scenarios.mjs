@@ -99,13 +99,21 @@ export function cursorOf(fixture) {
  * cursor), the calendar for its month (September for the previous-month link; Java's own month otherwise), the
  * doctor's dates, and the attention stack.
  */
-const papers = ({ me = "me/one-patient.json", timeline, cursor, calendar, follows = "follow-ups/some.json", attention = "attention/now-only.json" }) => ({
+const papers = ({
+  me = "me/one-patient.json",
+  timeline,
+  cursor,
+  calendar,
+  follows = "follow-ups/some.json",
+  attention = "attention/now-only.json",
+  rx = "timeline/rx-only.json",
+}) => ({
   ...NO_NOW,
   "GET /app/api/me": me,
   "GET /app/api/patients/{id}/timeline": {
     byQuery: [
       { when: { type: "lab" }, answer: "timeline/lab-only.json" },
-      { when: { type: "rx" }, answer: "timeline/rx-only.json" },
+      { when: { type: "rx" }, answer: rx },
       ...(cursor ? [{ when: { cursor }, answer: "timeline/last-page.json" }] : []),
     ],
     otherwise: timeline,
@@ -388,6 +396,30 @@ export const SCENARIOS = {
     calendar: "calendar/empty.json",
     follows: "follow-ups/none.json",
     attention: "attention/empty.json",
+  }),
+  // A share member on a page with papers (two-patients' second, opened by ?patient=): the busy page, and no send link.
+  "papers-member": papers({
+    me: "me/two-patients.json",
+    timeline: "timeline/first-page.json",
+    cursor: cursorOf("timeline/first-page.json"),
+    calendar: "calendar/busy.json",
+  }),
+  // Papers still being read (one PROCESSING, one RECEIVED) beside read ones: the page reloads itself while they are.
+  // Its read rows carry the counts line's cases (values outside, medicines, an upload day) and a paper under review.
+  "papers-in-flight": papers({ timeline: "timeline/in-flight.json", calendar: "calendar/busy.json", attention: "attention/empty.json" }),
+  // The prescription filter over a patient with lab reports only: Java's empty filtered page (timeline/rx-none.json).
+  "papers-filter-none": papers({
+    timeline: "timeline/first-page.json",
+    cursor: cursorOf("timeline/first-page.json"),
+    calendar: "calendar/busy.json",
+    rx: "timeline/rx-none.json",
+  }),
+  // The busy page for a patient whose chronic flags are set (me/flags-set.json): no BMX-8 ask.
+  "papers-flags-set": papers({
+    me: "me/flags-set.json",
+    timeline: "timeline/first-page.json",
+    cursor: cursorOf("timeline/first-page.json"),
+    calendar: "calendar/busy.json",
   }),
 };
 

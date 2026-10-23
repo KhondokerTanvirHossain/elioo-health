@@ -1,14 +1,16 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { javaGet, signedIn } from "@/api/java";
 import { requestContext } from "@/api/request";
 import type { AttentionJson, AttentionUrgentJson, CalendarJson, FollowUpsJson, MePatient, TimelineJson } from "@/api/types";
-import { formatMonthYear, t, type Lang } from "@/copy";
+import { formatDate, formatMonthYear, t, type Lang } from "@/copy";
 import { DueCards } from "@/components/DueCard/DueCard";
 import { MonthCalendar } from "@/components/MonthCalendar/MonthCalendar";
-import { filedDay, MonthList, typeLabel } from "@/components/MonthList/MonthList";
+import { MonthList, typeLabel } from "@/components/MonthList/MonthList";
 import { UrgencyTag } from "@/components/safety/UrgencyTag/UrgencyTag";
 import { href } from "@/routing/paths";
 import { signedInPage, type ShellContext } from "../shell";
+import { shift } from "./months";
 import "./papers.css";
 
 /** The filters Java knows (TimelineFilter.fromParam): anything else is every paper, as Java reads it. */
@@ -18,6 +20,11 @@ const FILTERS = [
   { type: "rx", key: "timeline.filter.rx" },
 ] as const;
 type Filter = (typeof FILTERS)[number]["type"];
+
+/** A paper still being read (Java's AppTabs.papersBody `inFlight`): while one is listed, the page reloads itself. */
+const IN_FLIGHT = new Set(["RECEIVED", "PROCESSING"]);
+/** Java's reload interval for this page (`head(...).refresh(inFlight ? 5 : 0)`), in seconds. */
+const RELOAD_SECONDS = 5;
 
 /** What this render asks of Java, from the address the browser asked for (requestContext().here). */
 function asked(here: string): { type: Filter; cursor: string | null; month: string | null } {
@@ -34,16 +41,6 @@ const query = (params: Record<string, string | null>) => {
   return s === "" ? "" : `?${s}`;
 };
 
-/**
- * The month `by` months from Java's `YYYY-MM`, for the calendar's two links: calendar arithmetic on Java's own month
- * key (UTC, so no time zone moves it), never a reading of today. The page then shows the month Java answers.
- */
-function shift(month: string, by: number): string {
-  const [y, m] = month.split("-").map(Number);
-  const d = new Date(Date.UTC(y!, m! - 1 + by, 1));
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-}
-
 /** A signed-in read of this page: a 400 (a malformed month or a cursor Java never minted) is the not-found page. */
 async function read<T>(path: string, here: string): Promise<T> {
   const answer = await javaGet<T>(path);
@@ -59,6 +56,17 @@ function Chevron({ back }: { back?: boolean }) {
   );
 }
 
+/**
+ * The day an urgent paper is filed under, in full (Java's strip: `copy.date(lang, u.date())`): the strip has no month
+ * header to hold the year, so a paper from an earlier year never reads as this year's. An upload day says so, and a
+ * printed date the model was unsure of is marked, both from Java's flags.
+ */
+function stripDay(lang: Lang, u: AttentionUrgentJson): string {
+  const day = formatDate(lang, u.date);
+  if (u.date_is_upload_day) return `${day} ${t(lang, "timeline.uploaddate")}`;
+  return u.date_uncertain ? t(lang, "trend.date.uncertain", day) : day;
+}
+
 /** The attention strip (`attn.strip`): the stack's urgent papers (stored NOW and THIS_WEEK only), each a link to its paper; none is nothing. */
 function Strip({ items, lang, preview }: { items: AttentionUrgentJson[]; lang: Lang; preview: boolean }) {
   if (items.length === 0) return null;
@@ -71,7 +79,7 @@ function Strip({ items, lang, preview }: { items: AttentionUrgentJson[]; lang: L
         {items.map((u) => (
           <li key={u.document_id} className="papers__strip-item">
             <a className="papers__urgent" href={href(`/app/documents/${u.document_id}`, preview)}>
-              <span className="papers__urgent-what">{`${typeLabel(lang, u.document_type)} · ${filedDay(lang, u)}`}</span>
+              <span className="papers__urgent-what">{`${typeLabel(lang, u.document_type)} · ${stripDay(lang, u)}`}</span>
               <UrgencyTag level={u.level} lang={lang} />
             </a>
           </li>
@@ -85,8 +93,9 @@ function Strip({ items, lang, preview }: { items: AttentionUrgentJson[]; lang: L
  * The papers page (`tab.papers`) for the patient in view (plan W8; phone.html scene `papers`, Java's AppTabs.papersBody): the title and whose
  * papers they are, the owner's one way to send a paper, the attention strip, the doctor's dates, the wall calendar of
  * the month Java answered with its two neighbouring months as links, the type filter, Java's month list and its "more"
- * link. Every control is a plain link, so the page reads and pages without JavaScript. One render is one timeline read
- * (the one TIMELINE_VIEW, S14) and one calendar read (no audit row), whatever link brought the family here.
+ * link, and the chronic-flags ask under it all when none is stored. Every control is a plain link, so the page reads and
+ * pages without JavaScript; while a listed paper is still being read it reloads itself, as Java's does. One render is one
+ * timeline read (the one TIMELINE_VIEW, S14) and one calendar read (no audit row), whatever link brought the family here.
  */
 async function papers({ lang, preview, patient }: ShellContext, here: string) {
   const title = (
@@ -118,9 +127,14 @@ async function papers({ lang, preview, patient }: ShellContext, here: string) {
   const urgent = attention.items.filter((i): i is AttentionUrgentJson => i.kind === "urgent");
   const before = shift(calendar.month, -1);
   const after = shift(calendar.month, 1);
+  // Java reloads this page every 5 s while a listed paper is still being read, so a paper sent from the add sheet (which
+  // comes back here) moves on by itself, with no script. Each reload is one more render: one more timeline read and so
+  // one more TIMELINE_VIEW, exactly as Java's own reload records today (S14 counts one per render).
+  const reading = timeline.entries.some((e) => IN_FLIGHT.has(e.status));
 
   return (
     <div className="papers">
+      {reading && <meta httpEquiv="refresh" content={String(RELOAD_SECONDS)} />}
       <header className="papers__head">
         <div className="papers__heading">
           {title}
@@ -184,6 +198,7 @@ async function papers({ lang, preview, patient }: ShellContext, here: string) {
           )}
         </>
       )}
+      {!patient.chronic_flags_set && <FlagsAsk lang={lang} patient={patient} preview={preview} />}
     </div>
   );
 }
@@ -212,6 +227,32 @@ function Empty({ lang, patient, add }: { lang: Lang; patient: MePatient; add: st
       <p className="papers__foot">{t(lang, "timeline.empty.foot")}</p>
     </section>
   );
+}
+
+/**
+ * BMX-8 (PO option 1), as Java's papersBody asks it: a patient with no chronic flag stored is asked once, here, under the
+ * list, where the family already is. Nothing infers a flag, and the nudge engine's silence rule can never fire until
+ * someone answers. The answer is given on the family tab (Java's /app/family for this patient). Java states the fact
+ * (`chronic_flags_set` on GET /app/api/me); this asks exactly when it is false, for any viewer, as Java does.
+ */
+function FlagsAsk({ lang, patient, preview }: { lang: Lang; patient: MePatient; preview: boolean }) {
+  return (
+    <section className="papers__ask" aria-labelledby="papers-ask">
+      <h2 className="papers__h2" id="papers-ask">
+        {t(lang, "timeline.flags.ask")}
+      </h2>
+      <p className="papers__foot">{t(lang, "timeline.flags.why")}</p>
+      <a className="papers__ask-link" href={href(`/app/family${query({ patient: patient.id })}`, preview)}>
+        {t(lang, "timeline.flags.cta")}
+      </a>
+    </section>
+  );
+}
+
+/** The tab's own title, as Java's head names it (`tab.papers — app.title`), so this page is told apart from the others. */
+export async function generateMetadata(): Promise<Metadata> {
+  const { lang } = await requestContext();
+  return { title: `${t(lang, "tab.papers")} — ${t(lang, "app.title")}` };
 }
 
 export default async function PapersPage() {

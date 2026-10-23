@@ -209,6 +209,8 @@ export type MePatient = {
   name_possessive: string;
   name_objective: string;
   urgent: boolean;
+  /** Whether any chronic flag is stored (BMX-8): the papers page asks for them exactly when this is false, as Java's does. */
+  chronic_flags_set: boolean;
 };
 
 /**

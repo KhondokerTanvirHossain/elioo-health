@@ -1,8 +1,13 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { TimelineEntryJson } from "@/api/types";
 import { formatDayMonth, formatMonthYear, t, type Lang } from "@/copy";
 import firstPage from "../../../fixtures/api/timeline/first-page.json";
+import fortyFive from "../../../fixtures/api/timeline/forty-five-first-page.json";
+import inFlight from "../../../fixtures/api/timeline/in-flight.json";
 import { MonthList } from "./MonthList";
 
 afterEach(cleanup);
@@ -106,4 +111,76 @@ describe("MonthList", () => {
       cleanup();
     }
   });
+
+  it("theCountsLineIsJavasTimelineSummary", () => {
+    // Java's rules (TimelineSummary.line), written out here so the line is judged against them and not against itself:
+    // a lab or imaging paper counts its values and, only when there are any, how many are outside; a prescription its
+    // medicines; any other paper what it has; an upload day adds `timeline.sum.nodate`; the parts are joined with " · ".
+    const javas = (lang: Lang, e: TimelineEntryJson): string => {
+      const c = e.counts;
+      const values = () => t(lang, "timeline.sum.values", c.values) + (c.outside > 0 ? `, ${t(lang, "timeline.sum.outside", c.outside)}` : "");
+      const medicines = () => t(lang, "timeline.sum.medicines", c.medicines);
+      const parts: string[] = [];
+      if (e.document_type === "lab_report" || e.document_type === "imaging_report") parts.push(values());
+      else if (e.document_type === "prescription") parts.push(medicines());
+      else {
+        if (c.values > 0) parts.push(values());
+        if (c.medicines > 0) parts.push(medicines());
+      }
+      if (e.date_is_upload_day) parts.push(t(lang, "timeline.sum.nodate"));
+      return parts.join(" · ");
+    };
+    const pages = [firstPage.body.entries, fortyFive.body.entries, inFlight.body.entries] as TimelineEntryJson[][];
+    const done = pages.flat().filter((e) => e.status === "DONE");
+    // Guards: the line was judged on a lab with values outside, a prescription and an upload day, all of them read.
+    expect(done.some((e) => e.document_type === "lab_report" && e.counts.outside > 0), "a read lab with values outside").toBe(true);
+    expect(done.some((e) => e.document_type === "prescription" && e.counts.medicines > 0), "a read prescription").toBe(true);
+    expect(done.some((e) => e.date_is_upload_day), "a read paper filed under its upload day").toBe(true);
+    let judged = 0;
+    for (const lang of LANGS) {
+      for (const entries of pages) {
+        const root = draw(entries, lang);
+        for (const e of entries.filter((x) => x.status === "DONE")) {
+          const want = javas(lang, e);
+          const line = rowOf(root, e.document_id)!.querySelector(".month-list__summary");
+          expect(line?.textContent ?? "", `${lang} ${e.document_id}`).toBe(want);
+          judged++;
+        }
+        cleanup();
+      }
+    }
+    expect(judged, "rows judged").toBe(done.length * LANGS.length);
+  });
+
+  it("theReviewChipIsNeverTheInsideColour", () => {
+    // A paper waiting for review is not "within range": its chip takes the unknown look, as Java's `.chips .chip.review`
+    // (the unknown status colour) and the prototype's `.chip.unk`, never `.status-chip--in`'s tint, which means INSIDE.
+    const pending = inFlight.body.entries.find((e) => e.review_pending);
+    expect(pending, "in-flight.json holds a paper waiting for review").toBeDefined();
+    const chip = rowOf(draw(inFlight.body.entries as TimelineEntryJson[]), pending!.document_id)!.querySelector(".month-list__review");
+    expect(chip?.textContent).toBe(t("bn", "timeline.review.pending"));
+    const review = declarations(MONTH_LIST_CSS, ".month-list__review");
+    const inside = declarations(STATUS_CHIP_CSS, ".status-chip--in");
+    expect(inside, "the inside chip's colours were read").toEqual({ background: "var(--tint-soft)", color: "var(--tint-ink)" });
+    expect(review).toEqual({ background: "var(--unk-soft)", color: "var(--label2)" });
+    expect(review.background).not.toBe(inside.background);
+    expect(review.color).not.toBe(inside.color);
+  });
 });
+
+const MONTH_LIST_CSS = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "MonthList.css"), "utf8");
+const STATUS_CHIP_CSS = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../StatusChip/StatusChip.css"), "utf8");
+
+/** The background and color one rule declares for exactly `selector` (a rule listing only that selector). */
+function declarations(css: string, selector: string): { background?: string; color?: string } {
+  const blocks = [...css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g)];
+  const rule = blocks.find(([, sel]) => sel!.split(",").map((s) => s.trim()).includes(selector));
+  if (!rule) throw new Error(`no rule for ${selector}`);
+  const out: { background?: string; color?: string } = {};
+  for (const decl of rule[2]!.split(";")) {
+    const [prop, ...rest] = decl.split(":");
+    const name = prop?.trim();
+    if (name === "background" || name === "color") out[name] = rest.join(":").trim();
+  }
+  return out;
+}

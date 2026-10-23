@@ -32,14 +32,20 @@ export function filedDay(lang: Lang, e: { date: string; date_is_upload_day: bool
 /**
  * The one line under a read paper (Java's TimelineSummary, from the stored counts, never a model's summary): a lab or
  * imaging paper counts its values and, only when there are any, how many are outside; a prescription its medicines;
- * any other paper what it has.
+ * any other paper what it has; a paper filed under its upload day adds that its date could not be read
+ * (`timeline.sum.nodate`, Java's `dateIsFallback()`, sent as `date_is_upload_day`). The parts are joined with " · ".
  */
-function summary(lang: Lang, type: string | null, c: TimelineCountsJson): string {
+function summary(lang: Lang, type: string | null, c: TimelineCountsJson, uploadDay: boolean): string {
   const values = () => t(lang, "timeline.sum.values", c.values) + (c.outside > 0 ? `, ${t(lang, "timeline.sum.outside", c.outside)}` : "");
   const medicines = () => t(lang, "timeline.sum.medicines", c.medicines);
-  if (type === "lab_report" || type === "imaging_report") return values();
-  if (type === "prescription") return medicines();
-  return [c.values > 0 ? values() : null, c.medicines > 0 ? medicines() : null].filter(Boolean).join(" · ");
+  const parts =
+    type === "lab_report" || type === "imaging_report"
+      ? [values()]
+      : type === "prescription"
+        ? [medicines()]
+        : [c.values > 0 ? values() : null, c.medicines > 0 ? medicines() : null];
+  if (uploadDay) parts.push(t(lang, "timeline.sum.nodate"));
+  return parts.filter(Boolean).join(" · ");
 }
 
 /** Where a paper that is not read is (Java's TimelineView.state): its title and its state line. */
@@ -52,7 +58,7 @@ const READING = { title: "timeline.reading.title", state: "timeline.reading" } a
 function Row({ e, lang, preview }: { e: TimelineEntryJson; lang: Lang; preview: boolean }) {
   const done = e.status === "DONE";
   const notRead = done ? null : (NOT_READ[e.status] ?? READING);
-  const line = done ? summary(lang, e.document_type, e.counts) : "";
+  const line = done ? summary(lang, e.document_type, e.counts, e.date_is_upload_day) : "";
   return (
     <a className="month-list__row" href={href(`/app/documents/${e.document_id}`, preview)}>
       <svg className="month-list__thumb" viewBox="0 0 24 24" aria-hidden="true" focusable="false">

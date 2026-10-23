@@ -207,18 +207,46 @@
   border-radius: var(--radius-lg);
   background: var(--bg3);
 }
+/* The chronic-flags ask under the list (Java's `.card.ask`): a quiet card, its one link to the family tab. */
+.papers__ask {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--sep);
+  border-radius: var(--radius-lg);
+  background: var(--bg3);
+}
+.papers__ask-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  max-width: 100%;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-pill);
+  color: var(--tint-ink);
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: 1.4;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
 .papers__add:hover,
 .papers__urgent:hover,
 .papers__month:hover,
 .papers__filter:hover,
-.papers__more:hover {
+.papers__more:hover,
+.papers__ask-link:hover {
   background: var(--hover);
 }
 .papers__add:focus-visible,
 .papers__urgent:focus-visible,
 .papers__month:focus-visible,
 .papers__filter:focus-visible,
-.papers__more:focus-visible {
+.papers__more:focus-visible,
+.papers__ask-link:focus-visible {
   outline: var(--focus-width) solid var(--focus);
   outline-offset: var(--focus-offset);
 }

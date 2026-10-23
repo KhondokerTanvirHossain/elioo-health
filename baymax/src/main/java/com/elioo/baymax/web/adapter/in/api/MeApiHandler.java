@@ -36,6 +36,9 @@ import java.util.UUID;
  * F1 levels, the same 30-day window as the চ্যাট stack and the কাগজপত্র strip), so the switcher's red mark and the stack
  * never disagree. THIS_WEEK alone is not urgent here: red is reserved for NOW.
  *
+ * <p>{@code chronic_flags_set} is true when the patient has any chronic flag stored: the papers page's BMX-8 ask
+ * (AppTabs.papersBody) shows exactly when it is false.
+ *
  * <p>{@code preview} is decided by {@code baymax.web.preview-family-ids} and nothing else: no cookie, header or query
  * parameter can turn it on. The JSON carries no phone number, no plan, no confidence, no model.
  */
@@ -91,13 +94,17 @@ public class MeApiHandler {
         return body;
     }
 
-    /** {@link PatientJson}'s fields (shared with {@code /api/v1/baymax/me}), then the name forms and the red mark. */
+    /** {@link PatientJson}'s fields (shared with {@code /api/v1/baymax/me}), then the name forms, the red mark and whether flags are set. */
     private static Map<String, Object> patient(PatientSummary p, boolean urgent) {
         Map<String, Object> m = PatientJson.fields(p);
         String name = p.patient().name();
         m.put("name_possessive", NameGrammar.possessive(name));
         m.put("name_objective", NameGrammar.objective(name));
         m.put("urgent", urgent);
+        // BMX-8 (PO option 1): whether any chronic flag is stored, so the papers page asks exactly when Java's does
+        // (AppTabs.papersBody: none stored is asked). A fact, never the flags themselves; /app/api/family carries those.
+        List<String> flags = p.patient().chronicFlags();
+        m.put("chronic_flags_set", flags != null && !flags.isEmpty());
         return m;
     }
 }
