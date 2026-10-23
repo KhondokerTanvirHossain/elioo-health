@@ -37,7 +37,8 @@ const TABS: { tab: Tab; path: string; key: CopyKey; icon: ReactNode }[] = [
 /**
  * The tabs (plan W4): chat `/app/home`, papers `/app/timeline`, health `/app/health`, family `/app/family`. A tab is
  * rendered only when its page answers for this viewer (`reachable`: Java serves it, Caddy sends it to Next, or Next
- * serves it under the preview), so the health tab is absent until W9's page exists, never a link to a 404. A preview
+ * serves it under the preview), so the health tab shows under the preview (W9's page) and outside it only once F9
+ * sends /app/health to Next; never a link to Java's 404. A preview
  * page links inside the preview (`href`). `current` is the page's own tab (null on a page that is none, a paper),
  * marked `aria-current="page"`.
  *

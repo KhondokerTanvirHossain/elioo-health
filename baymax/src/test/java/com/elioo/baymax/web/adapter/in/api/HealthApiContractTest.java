@@ -136,9 +136,11 @@ class HealthApiContractTest {
         cases.put("labs-some", () -> Case.labs(labsSome()));
         cases.put("labs-none", () -> Case.labs(List.of()));
         cases.put("bp", () -> Case.labs(bpRows()));
+        cases.put("bp-flagged", () -> Case.labs(bpFlaggedRows()));
         cases.put("labs-with-unknown", () -> Case.labs(labsWithUnknown()));
         cases.put("labs-non-numeric", () -> Case.labs(labsNonNumeric()));
         cases.put("labs-printed-range", () -> Case.labs(labsPrintedRange()));
+        cases.put("labs-two-units", () -> Case.labs(labsTwoUnits()));
         cases.put("medicines-latest", () -> Case.medicines(new LatestPrescription(RX, LocalDate.parse("2026-10-12"), false, true,
                 List.of(medicine("Tab. Demoprol", "50 mg", "1+0+1", "after food", "30 days", 1),
                         medicine("Tab. Fictazide", "25 mg", null, null, null, 2)), Optional.empty())));
@@ -147,6 +149,8 @@ class HealthApiContractTest {
         cases.put("medicines-newer-unread", () -> Case.medicines(new LatestPrescription(RX, LocalDate.parse("2026-10-12"), false, false,
                 List.of(medicine("Tab. Demoprol", "50 mg", "1+0+1", null, null, 1)), Optional.of(RX_READING))));
         cases.put("medicines-none", () -> Case.medicines(LatestPrescription.none(Optional.empty())));
+        // A family's first prescription, still being read: nothing read yet, and a newer one (HealthServiceTest asserts it).
+        cases.put("medicines-none-newer-unread", () -> Case.medicines(LatestPrescription.none(Optional.of(RX_READING))));
         return cases;
     }
 
@@ -264,6 +268,20 @@ class HealthApiContractTest {
                 potassiumAug, creatinineJun, cholesterolJun, hdlJun);
     }
 
+    /**
+     * Plan W9: one name printed in two units on four papers. Fasting glucose in mmol/L (October, August) and in mg/dL
+     * (June, March) is two series, as {@link HealthService} keys a series by canonical name AND folded unit: joined by name
+     * alone, 6.4 and 126 would draw a twentyfold rise that never happened. The health screen shows them as Java sent them,
+     * two series under one printed name, and never joins them itself.
+     */
+    static List<Map<String, Object>> labsTwoUnits() {
+        Map<String, Object> oct = verdict(row(LAB_OCT, 91, "2026-10-12", "Fasting Glucose", "fasting_glucose", "6.4", "mmol/L", "3.9", "6.1"), "outside", "high");
+        Map<String, Object> aug = verdict(row(LAB_AUG, 92, "2026-08-03", "Fasting Glucose", "fasting_glucose", "5.2", "mmol/L", "3.9", "6.1"), "inside", null);
+        Map<String, Object> jun = verdict(row(LAB_UNDATED, 93, "2026-06-20", "Fasting Glucose", "fasting_glucose", "126", "mg/dL", "70", "110"), "outside", "high");
+        Map<String, Object> mar = verdict(row(LAB_MAR, 94, "2026-03-02", "Fasting Glucose", "fasting_glucose", "98", "mg/dL", "70", "110"), "inside", null);
+        return List.of(oct, aug, jun, mar);
+    }
+
     private static Map<String, Object> verdict(Map<String, Object> row, String verdict, String side) {
         row.put("verdict", verdict);
         if (side != null) {
@@ -277,6 +295,19 @@ class HealthApiContractTest {
         Map<String, Object> systolic = row(LAB_OCT, 41, "2026-10-12", "BP", "bp_systolic", "130", "mmHg", null, null);
         systolic.put("source_line", BloodPressurePairAcceptanceTest.EXTRACTED_BP_LINE);
         Map<String, Object> diastolic = row(LAB_OCT, 42, "2026-10-12", "BP", "bp_diastolic", "80", "mmHg", null, null);
+        diastolic.put("source_line", BloodPressurePairAcceptanceTest.EXTRACTED_BP_LINE);
+        return List.of(systolic, diastolic);
+    }
+
+    /**
+     * Review of PR #160: the same {@code BP : 130 / 80} line with each half judged differently, systolic outside high
+     * against its printed 90–120 and diastolic inside 60–90, so a screen that drew one half's chip for both, or swapped
+     * them, shows a different word on a half than Java sent for it.
+     */
+    static List<Map<String, Object>> bpFlaggedRows() {
+        Map<String, Object> systolic = verdict(row(LAB_OCT, 43, "2026-10-12", "BP", "bp_systolic", "130", "mmHg", "90", "120"), "outside", "high");
+        systolic.put("source_line", BloodPressurePairAcceptanceTest.EXTRACTED_BP_LINE);
+        Map<String, Object> diastolic = verdict(row(LAB_OCT, 44, "2026-10-12", "BP", "bp_diastolic", "80", "mmHg", "60", "90"), "inside", null);
         diastolic.put("source_line", BloodPressurePairAcceptanceTest.EXTRACTED_BP_LINE);
         return List.of(systolic, diastolic);
     }
@@ -430,6 +461,26 @@ class HealthApiContractTest {
         assertThat(j.path("ref_low").isNull() ? null : j.path("ref_low").asDouble()).isEqualTo(p.range().low());
         assertThat(j.path("ref_high").isNull() ? null : j.path("ref_high").asDouble()).isEqualTo(p.range().high());
         assertThat(j.path("ref_text").isNull() ? null : j.path("ref_text").asText()).isEqualTo(p.range().text());
+    }
+
+    /** Plan W9: one printed name in two units is two series, each its own unit and its own papers, newest first. */
+    @Test
+    void oneNameInTwoUnitsIsTwoSeries() throws IOException {
+        JsonNode body = get(cases().get("labs-two-units").get());
+        JsonNode series = body.path("series");
+        assertThat(series).as("two units of one name").hasSize(2);
+        List<String> units = new ArrayList<>();
+        for (JsonNode s : series) {
+            assertThat(s.path("canonical_name").asText()).isEqualTo("fasting_glucose");
+            assertThat(s.path("name").asText()).as("both under the one printed name").isEqualTo("Fasting Glucose");
+            assertThat(s.path("points")).as(s.path("unit").asText() + "'s papers").hasSize(2);
+            units.add(s.path("unit").asText());
+        }
+        assertThat(units).containsExactly("mmol/L", "mg/dL");
+        assertThat(series.get(0).path("points").get(0).path("observation_id").asText()).isEqualTo(observation(91));
+        assertThat(series.get(0).path("points").get(1).path("observation_id").asText()).isEqualTo(observation(92));
+        assertThat(series.get(1).path("points").get(0).path("observation_id").asText()).isEqualTo(observation(93));
+        assertThat(series.get(1).path("points").get(1).path("observation_id").asText()).isEqualTo(observation(94));
     }
 
     // ---- R3: the printed range, per point ------------------------------------------------------------------------
@@ -649,6 +700,24 @@ class HealthApiContractTest {
         assertThat(body.path("document_id").isNull()).isTrue();
         assertThat(body.path("medicines")).isEmpty();
         assertThat(body.path("newer_prescription_not_read").asBoolean()).isFalse();
+    }
+
+    @Test
+    void aFirstPrescriptionStillBeingReadIsSentWithNoDocumentAndTheNewerOne() throws IOException {
+        JsonNode body = get(cases().get("medicines-none-newer-unread").get());
+        assertThat(body.path("document_id").isNull()).as("nothing read yet").isTrue();
+        assertThat(body.path("medicines")).isEmpty();
+        assertThat(body.path("newer_prescription_not_read").asBoolean()).isTrue();
+        assertThat(body.path("newer_document_id").asText()).isEqualTo(RX_READING.toString());
+    }
+
+    @Test
+    void eachBloodPressureHalfCarriesItsOwnJudgement() throws IOException {
+        JsonNode pair = get(cases().get("bp-flagged").get()).path("bp").path("points").get(0);
+        assertThat(pair.path("systolic").path("kind").asText()).isEqualTo("outside");
+        assertThat(pair.path("systolic").path("side").asText()).isEqualTo("high");
+        assertThat(pair.path("diastolic").path("kind").asText()).isEqualTo("inside");
+        assertThat(pair.path("diastolic").path("side").isNull()).isTrue();
     }
 
     /** Every key the two routes can emit (the heading, every chip a point can carry) resolves in both languages. */

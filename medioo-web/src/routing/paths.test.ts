@@ -53,8 +53,11 @@ describe("paths", () => {
   it("reachableIsJavaOrAFlipOrNextUnderThePreview", () => {
     expect(FLIPPED).not.toContain("/app/health");
     expect(JAVA_PAGES).not.toContain("/app/health");
+    // W9: this build serves /app/health, so it is reachable under the preview, and only there until F9 flips it.
+    expect(NEXT_PAGES).toContain("/app/health");
     expect(reachable("/app/health", false)).toBe(false);
-    expect(reachable("/app/health", true)).toBe(false);
+    expect(reachable("/app/health", true)).toBe(true);
+    expect(reachable("/app/healthy", true), "a page this build does not serve").toBe(false);
     // Java serves the paper, so it is reachable whatever the preview says; a pattern matches a real id.
     expect(reachable("/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003", false)).toBe(true);
     expect(reachable("/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/all", false)).toBe(true);

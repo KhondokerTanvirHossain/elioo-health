@@ -1,0 +1,14 @@
+{
+  "_meta": {
+    "generated_by": "baymax HealthApiContractTest",
+    "source": "GET /app/api/patients/{id}/medicines over the case medicines-none-newer-unread"
+  },
+  "body": {
+    "document_id": null,
+    "heading_key": "health.medicines.as_written",
+    "medicines": [ ],
+    "newer_document_id": "b6b6b6b6-0000-4000-8000-0000000000d5",
+    "newer_prescription_not_read": true
+  },
+  "status": 200
+}

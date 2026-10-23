@@ -1130,6 +1130,44 @@ Branch `feat/medioo-web-health`. Lane C. After W2e-b. DR-44 item 3, DR-45 item 7
   ```
   PR body: the `health.*` drafts and the replays.
 
+*Amended 2026-10-23 (PR #160), for PO sight:* what shipped departs from this task as follows.
+- `MedicinesAsWritten({ medicines, lang, preview })`: every link to a paper goes through `href(path, preview)`, so a
+  preview page stays inside the preview once this build serves `/app/documents/{id}` (W6); today that path is Java's,
+  and `href` returns it unchanged. Tested with literal hrefs, and under a `vi.doMock` of `@/routing/paths` that adds
+  the paper page to `NEXT_PAGES` (`aPreviewPageLinksThePaperInsideThePreviewOnceThisBuildServesIt`).
+- Every lab reading is shown beside its own paper's crop (`landing.c.p`): a listed reading, the one-reading sentence,
+  each blood-pressure half, and, for a charted series, each reading's paper under the chart (newest first, its date
+  beside its crop). Each is a `[data-value-row]`, so `everyCropIsItsRowsOwnImage` judges the lab crops with the
+  medicine lines (`crops:` lists both, in page order). Every crop on the tab carries one neutral alternative text
+  (`health.crop.alt`), never the string read off it.
+- A blood-pressure pair is two groups, `[data-half=systolic]` and `[data-half=diastolic]`, each its value, its own chip
+  and its own crop, the slash between them read aloud. HealthApiContractTest case `bp-flagged` (systolic outside high
+  against 90–120, diastolic inside 60–90) is the fixture that can see a chip drawn for the wrong half.
+- Under the prescription's lines: `med.pharmacy` (approved), the medsSheet foot line `health.medicines.doctor_only` and
+  the link `health.medicines.open` to the prescription. HealthApiContractTest case `medicines-none-newer-unread`
+  (`LatestPrescription.none(Optional.of(id))`, a new family's first prescription still being read) says
+  `health.medicines.first_unread`, linked, and never "a newer one".
+- Draft keys beyond the five above: `health.one_reading.nounit`, `health.bp`, `health.medicines.first_unread`,
+  `health.medicines.open`, `health.medicines.doctor_only`, `health.crop.alt`; and W6's `crop.retry`.
+- W9 carries W6's `Crop` (`Crop.tsx`, `Crop.css`, `Crop.test.tsx`, blob-identical to PR #149's) and `crop.retry`. The
+  browser proof of its retry is ported into `e2e/health.spec.ts › theCropRetryFetchesTheImageAgain` on a medicine crop,
+  so W9 does not lean on `paper.spec.ts`; the two PRs may merge in either order (the add/add of identical blobs
+  resolves cleanly on rebase).
+- `TrendChart` gains an optional `labelledBy` (additive): the health tab names each list of readings by its heading,
+  unit included, so one name in two units is never two lists named alike.
+- The board has 13 states, not 9: also `readings-as-bounds`, `long-name`, `blood-pressure-flagged` and
+  `first-prescription-being-read`.
+- Extra files: `src/components/TabBar/TabBar.tsx` and `TabBar.test.tsx`, `src/routing/paths.test.ts`,
+  `e2e/board.spec.ts`, `health/health.css`, `src/components/TrendChart/TrendChart.tsx`, `src/api/types.test.ts`, and
+  the fixtures `bp-flagged.json`, `medicines-none-newer-unread.json`. Extra e2e cases:
+  `eachBloodPressureHalfShowsItsOwnChip`, `theCropRetryFetchesTheImageAgain`, `theReadsAreTheChosenPatientsNotTheFirst`,
+  `aFirstPrescriptionStillBeingReadIsSaidAndLinked`, `theLinesComeWithThePharmacyRuleAndTheirPrescription`,
+  `theDisclaimerIsShownWheneverAValueOrAMedicineIs`, and screen checks for `health-bp-flagged`, `health-empty-latest`
+  (now with crops) and `health-first-unread`.
+- `gl build`: the Docker Postgres on 5433 was down while this was built, so the full build's evidence is CI's
+  "Build and test" on the PR's head, quoted in the PR body; the PR merges only when that check is green and the PR is
+  CLEAN. `HealthApiContractTest` and `WebCopyExportTest` (no database) ran locally.
+
 ---
 
 ## Task RANGE-api: Each labs point carries the range its own paper printed (PO ruling R3, DR-48)

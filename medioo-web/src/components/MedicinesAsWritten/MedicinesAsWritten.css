@@ -1,0 +1,98 @@
+/* The medicines of the health screen (MedicinesAsWritten.tsx; phone.html scene `health`, its medicines sheet): Java's
+   heading with the prescription's date above one rounded group, each line its crop first, at its own size up to the group's
+   width (what a pharmacy is shown), then the fields as written. No colour, no chip and no status on a medicine; the newer
+   prescription's line is a plain link in the tint. Every size is a token. */
+.medicines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.medicines__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+}
+.medicines__heading {
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.medicines__date {
+  color: var(--label2);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+.medicines__lines {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0;
+  padding: 0 var(--space-4);
+  /* The page and the group are the same surface in light (bg and bg3), so the group draws its own hairline edge. */
+  border: 1px solid var(--sep);
+  border-radius: var(--radius-md);
+  background: var(--bg3);
+  list-style: none;
+}
+.medicines__line {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--sep);
+}
+.medicines__line:first-child {
+  border-top: 0;
+}
+/* The crop at its own size, never wider than the group (Crop.css): a small crop is not blown up past its pixels. */
+.medicines__crop {
+  justify-self: start;
+}
+.medicines__writing {
+  margin: 0;
+  font-family: var(--font-sys);
+  font-size: var(--text-md);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.medicines__none {
+  margin: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--sep);
+  border-radius: var(--radius-md);
+  background: var(--bg3);
+  font-size: var(--text-lg);
+  line-height: 1.5;
+}
+.medicines__newer,
+.medicines__open {
+  margin: 0;
+}
+/* Under the lines: the pharmacy rule and the doctor's line, quiet, then the link to the prescription itself. */
+.medicines__foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0 var(--space-4);
+}
+.medicines__pharmacy,
+.medicines__doctor {
+  margin: 0;
+  color: var(--label2);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.medicines__newer-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  color: var(--tint-ink);
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
