@@ -566,6 +566,13 @@ PASS, or the file is not applied.
 
 To flip a route (or flip one back, which is the same procedure with the block removed):
 
+**Flipping back a path Java never served (F9, `/app/health`) also reverts `FLIPPED`** in
+`medioo-web/src/routing/flipped.ts` in the same PR (`flipped.test.ts` requires both). For every other flip, a removed
+block hands the path back to a working Java page; for F9 it hands it back to Java's JSON 404, and the deployed
+medioo-web image keeps drawing the health tab on every Next page as a link to that 404 until the revert PR's image
+deploys. Deploy that PR's image as soon as the box edit is done, or roll back below the F9 routes floor
+([Rollback](#rollback)).
+
 1. **PR first.** Add the `handle <path> { reverse_proxy medioo-web:3000 }` block to `docs/infra/Caddyfile.medioo`,
    and the path's row to `scripts/smoke-https.sh` (with its test). The ship stage applies it to the box before the
    PR merges, so the merge's deploy finds the box and the repo agreeing. **Hold every other merge from the box edit
@@ -685,7 +692,10 @@ has flipped: nothing is enforced. To roll back below the floor:
 
 1. Revert the routes flipped since the target sha: edit the box's Caddyfile back as in the procedure above (back up,
    write in place only, confirm the container sees it, validate, reload) and fold the same revert into
-   `docs/infra/Caddyfile.medioo` in a PR, or the next deploy's drift check goes red.
+   `docs/infra/Caddyfile.medioo` in a PR, or the next deploy's drift check goes red. **F9 (`/app/health`) is not
+   done at the Caddy edit:** Java has no page there, so until an image without `/app/health` in `FLIPPED` runs (the
+   target sha below the F9 floor, or a revert PR that removes it from `medioo-web/src/routing/flipped.ts` too), every
+   Next page's health tab links to Java's JSON 404. Do not stop at step 1.
 2. Record the older floor (the merge sha of the most recent flip still in place), or remove the file when no route
    remains flipped: `cp ~/medioo-routes-floor ~/medioo-routes-floor.bak-$(date +%Y%m%d-%H%M)`, then write it.
 3. `IMAGE_TAG=<sha> bash ~/deploy.sh`, then `scripts/smoke-https.sh https://medioo.eliooo.org` from a checkout of

@@ -14,7 +14,9 @@
  * segment), which flipped.test.ts reads as this pattern; POST /app/patients/{id}/profile, the profile save, stays
  * Java's.
  * F9 (DR-49, PO ruling 2026-10-23): `/app/health`, the health tab (plan W9), GET and HEAD only; Java never had a page
- * here and routes no POST /app/health. From here the health tab is drawn outside the preview too (TabBar).
+ * here and routes no POST /app/health. From here the health tab is drawn outside the preview too (TabBar). Because
+ * Java has no page behind it, flipping F9 back takes this entry out in the same PR that removes its Caddy block:
+ * deleting the block alone leaves every Next page's health tab linking to Java's JSON 404.
  */
 export const FLIPPED: readonly string[] = [
   "/app/add",
