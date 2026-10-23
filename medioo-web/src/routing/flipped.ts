@@ -9,5 +9,17 @@
  * sign-in POST and the no-JS fallback /app/basic* stay Java's.
  * F5 (DR-49, PO ruling 2026-10-23): `/app/home`, the chat page (plan W5), GET and HEAD only; POST /app/home is not a
  * Next route and stays Java's.
+ * F10 (DR-49, PO ruling 2026-10-23): `/app/family`, the family tab and settings, and `/app/patients/{id}/profile`, a
+ * patient's profile (plan W10), GET and HEAD only. Caddy matches the profile by `path_regexp` (one lower-case uuid
+ * segment), which flipped.test.ts reads as this pattern; POST /app/patients/{id}/profile, the profile save, stays
+ * Java's.
  */
-export const FLIPPED: readonly string[] = ["/app/add", "/app", "/app/", "/app/verify", "/app/home"];
+export const FLIPPED: readonly string[] = [
+  "/app/add",
+  "/app",
+  "/app/",
+  "/app/verify",
+  "/app/home",
+  "/app/family",
+  "/app/patients/{id}/profile",
+];

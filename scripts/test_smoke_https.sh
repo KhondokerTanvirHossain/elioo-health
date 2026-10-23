@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
 # Tests for scripts/smoke-https.sh (plan W1c), against a local stub server (node, written below) that answers the
-# path-class table the way production answers it after the F3 and F5 flips (plan Wave 3, Task F: GET/HEAD /app, /app/,
-# /app/verify and /app/home on medioo-web, on top of F0's preview path and assets), as measured on 2026-10-23. Real curl, real HTTP,
+# path-class table the way production answers it after the F3, F5 and F10 flips (plan Wave 3, Task F: GET/HEAD /app,
+# /app/, /app/verify, /app/home, /app/family and /app/patients/<uuid>/profile on medioo-web, on top of F0's preview path
+# and assets), as measured on 2026-10-23. Real curl, real HTTP,
 # no network beyond 127.0.0.1. The stub answers by method and path, so a row sent with the wrong method gets another
 # row's answer.
 #
@@ -11,9 +12,9 @@
 #
 # What is under test, in both directions:
 # - the flipped table passes, every row, and the row count is the table's (a smoke that checks nothing cannot pass);
-# - the table before F0 (Java answering the preview path and the three asset prefixes with its JSON 404, and /app/add
-#   and /app/home each with its own 303), fails on exactly those eight rows and nothing else; each of them, alone,
-#   fails with Java's answer (both directions per row);
+# - the table before F0 (Java answering the preview path and the three asset prefixes with its JSON 404, and /app/add,
+#   /app/home, /app/family and /app/patients/<id>/profile each with its own 303), fails on exactly those ten rows and
+#   nothing else; each of them, alone, fails with Java's answer (both directions per row);
 # - today's table, before F3 (Java answering GET /app, /app/ and /app/verify with its own sign-in pages, and HEAD on
 #   them with its JSON 404), fails on exactly the five new Next rows and nothing else, each saying why; each of them,
 #   alone, fails with Java's answer (both directions per row);
@@ -47,10 +48,16 @@
 # - F5 (plan Wave 3, Task F): GET /app/home is medioo-web's, signed out a 307 to the sign-in page holding /app/home;
 #   Java's answer there before the flip (303 to /app/, its own CSP) fails that row and only that row; /app/home/ just
 #   outside the exact matcher passes on Java's JSON 404 and fails on Next's 307 there (`home-slash-next`);
+# - F10 (plan Wave 3, Task F): GET /app/family and GET /app/patients/<uuid>/profile are medioo-web's, signed out a 307
+#   to the sign-in page holding the place; Java's answer on either before the flip (303 to /app/, its own CSP) fails
+#   that row and only that row; the boundary rows pass on Java's answer and fail on Next's, each alone: /app/family/
+#   and /app/patients/<id>/profile/ (Java's JSON 404, Next's 307 holding the slash), /app/patients/x/profile (an id
+#   that is not a uuid: Java's 303, Next's 307) and /app/patients/<id> (Java's 303, Next's HTML 404);
 # - a PROBE row is never sent by the production run (aProductionRunNeverSendsAProbeRow): POST /app/add is Java's
-#   upload and must not be pressed against production by a smoke run, and F7's and F5's HEAD rows are the route
-#   probe's until the #155 follow-up; the stub's request log is read, not the output alone (exactly one request each
-#   to /app/add and /app/home, their GETs; no POST but the two sign-in POSTs);
+#   upload and POST /app/patients/<id>/profile the profile save, neither to be pressed against production by a smoke
+#   run, and F7's, F5's and F10's HEAD rows are the route probe's until the #155 follow-up; the stub's request log is
+#   read, not the output alone (exactly one request each to /app/add, /app/home, /app/family and the profile, their
+#   GETs; no POST but the two sign-in POSTs);
 # - a body is never printed (the CI log is public, DR-38; the health body carries disk and database details);
 # - a transient failure is retried, an unreachable host fails rather than hangs, and a host that accepts and never
 #   answers fails within SMOKE_DEADLINE, not after tries x rows x --max-time.
@@ -67,10 +74,11 @@ CASES=0
 # /app/login /app/verifyx /app/basic /lang/en?back=..., POST /app/verify, POST /app/login, / /medscribeai /medscribeai/
 # /baymax /baymax/ webhook /_next/static/x.js /fonts/noto-sans-latin.woff2 /brand/mio-head.webp /brand/medioo-light.svg
 # (P3) /app/preview /app/preview/ /app/previewx /_next/image /app/preview/probe /app/add /app/add/ (F7) /app/home
-# /app/home/ (F5) and the old host's /app/home. The PROBE rows (`PROBE HEAD /app/add`, `PROBE POST /app/add`,
-# `PROBE HEAD /app/home`, `PROBE POST /app/home`) are not counted: the production run never sends them
-# (caddy-route-probe.sh does).
-ROWS=34
+# /app/home/ (F5) /app/family /app/family/ /app/patients/<id>/profile /app/patients/<id>/profile/
+# /app/patients/x/profile /app/patients/<id> (F10) and the old host's /app/home. The PROBE rows (HEAD and POST on each
+# of /app/add, /app/home, /app/family and /app/patients/<id>/profile) are not counted: the production run never sends
+# them (caddy-route-probe.sh does).
+ROWS=40
 
 fail() { echo "FAIL: $1"; FAILED=1; }
 
@@ -131,8 +139,8 @@ function send(res, path, status, type, body, csp = JAVA_CSP, extra = {}) {
 
 // Java's answer to a path it does not serve, exactly as production gave it on 2026-10-22 before F0 (the five F0 rows)
 const JAVA_404 = '{"userMessage":"Invalid request","statusCode":400,"data":null,"error":{"code":"1002","message":"Invalid request"}}';
-// before F0, every F0 path is Java's, and so are /app/add (F7) and /app/home (F5); each <row>-java break makes one of
-// them Java's alone
+// before F0, every F0 path is Java's, and so are /app/add (F7), /app/home (F5), /app/family and the profile (F10);
+// each <row>-java break makes one of them Java's alone
 const javaOwns = (row) => brk === "before-f0" || brk === `${row}-java`;
 // before F3 (production until the F3 box edit), GET and HEAD /app, /app/ and /app/verify are Java's
 const javaSignIn = (row) => brk === "before-f3" || brk === `${row}-java`;
@@ -298,6 +306,34 @@ const server = http.createServer((req, res) => {
     case "/app/home/":
       if (brk === "home-slash-next") return send(res, path, 307, "text/html", "", NEXT_CSP, { Location: "/app/?next=%2Fapp%2Fhome%2F" });
       return send(res, path, 404, "application/json", JAVA_404);
+    // F10: the family tab and a patient's profile (plan W10) as medioo-web answers them signed out (measured 2026-10-23
+    // against the deployed sha's build, be3a2ff): the shell reads `me`, gets the 401 and holds the place. Before the
+    // flip Java answered GET on both with its session filter's 303 to /app/ (production, 2026-10-23). Java routes no
+    // POST /app/family (its JSON 404); POST on the profile is Java's profile save, behind the same session filter.
+    case "/app/family":
+      if (req.method === "POST") return send(res, path, 404, "application/json", JAVA_404);
+      if (javaOwns("family")) return send(res, path, 303, "text/html", "", JAVA_CSP, { Location: "/app/" });
+      return send(res, path, 307, "text/html", "", NEXT_CSP,
+        { Location: brk === "family-location" ? "/app/" : "/app/?next=%2Fapp%2Ffamily" });
+    case "/app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile":
+      if (req.method === "POST" || javaOwns("profile")) return send(res, path, 303, "text/html", "", JAVA_CSP, { Location: "/app/" });
+      return send(res, path, 307, "text/html", "", NEXT_CSP,
+        { Location: brk === "profile-location" ? "/app/" : "/app/?next=%2Fapp%2Fpatients%2F5e9edf6d-0a2a-4913-8675-9d07a4100001%2Fprofile" });
+    // Just outside F10's matchers, each still Java's (production, 2026-10-23, read-only GET), and Next's answer there
+    // as the same build gave it: the two trailing slashes are Java's JSON 404 and Next's 307 holding the slash; an id
+    // that is not a uuid and the patient page itself are Java's 303, and Next's 307 and HTML 404.
+    case "/app/family/":
+      if (brk === "family-slash-next") return send(res, path, 307, "text/html", "", NEXT_CSP, { Location: "/app/?next=%2Fapp%2Ffamily%2F" });
+      return send(res, path, 404, "application/json", JAVA_404);
+    case "/app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile/":
+      if (brk === "profile-slash-next") return send(res, path, 307, "text/html", "", NEXT_CSP, { Location: "/app/?next=%2Fapp%2Fpatients%2F5e9edf6d-0a2a-4913-8675-9d07a4100001%2Fprofile%2F" });
+      return send(res, path, 404, "application/json", JAVA_404);
+    case "/app/patients/x/profile":
+      if (brk === "profile-not-uuid-next") return send(res, path, 307, "text/html", "", NEXT_CSP, { Location: "/app/?next=%2Fapp%2Fpatients%2Fx%2Fprofile" });
+      return send(res, path, 303, "text/html", "", JAVA_CSP, { Location: "/app/" });
+    case "/app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001":
+      if (brk === "patient-next") return send(res, path, 404, "text/html; charset=utf-8", NEXT_404, NEXT_CSP);
+      return send(res, path, 303, "text/html", "", JAVA_CSP, { Location: "/app/" });
     // Java owns the API: a Caddy route that sent /app/api/* to Next would answer Next's HTML 404 here
     case "/app/api/me":
       if (brk === "me-next") return send(res, path, 404, "text/html", html("404: This page could not be found."), NEXT_CSP);
@@ -343,7 +379,7 @@ if smoke; then :; else fail "flipped: exited non-zero on a healthy table: $(out)
 [ "$(fails)" = 0 ] || fail "flipped: $(fails) FAIL rows: $(out)"
 grep -q 'DISK-DETAIL-NEVER-PRINTED' "$WORK/out.log" && fail "flipped: a response body reached the output"
 # the boundary rows pass on Java's JSON 404 (the other direction, Next's answer failing each, is in the break table)
-for row in /app/previewx /_next/image /app/preview/probe /app/add/ /app/home/; do
+for row in /app/previewx /_next/image /app/preview/probe /app/add/ /app/home/ /app/family/ /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile/; do
   grep -qxF "PASS $row HTTP 404" "$WORK/out.log" || fail "flipped: no 'PASS $row HTTP 404' line on Java's answer: $(out)"
 done
 # aProductionRowChangesNoData, read from what was sent rather than from the table's text: every request the production
@@ -356,8 +392,8 @@ for req in "POST /app/login" "POST /app/verify"; do
 done
 
 # 2a. before F0: Java answers the preview path and the three asset prefixes with its JSON 404 (P3's svg row among
-#    them), and /app/add (F7's row) and /app/home (F5's row) each with its session filter's 303 to /app/; those eight
-#    rows fail, each saying why, and
+#    them), and /app/add (F7's row), /app/home (F5's row), /app/family and the profile (F10's rows) each with its
+#    session filter's 303 to /app/; those ten rows fail, each saying why, and
 #    every other row passes
 start_stub STUB_BREAK=before-f0
 if smoke; then fail "today: exited 0 although the F0 paths are Java's 404: $(out)"; fi
@@ -372,9 +408,11 @@ done <<'TODAY'
 /app/preview/|HTTP 404, expected 307
 /app/add|HTTP 303, expected 307
 /app/home|HTTP 303, expected 307
+/app/family|HTTP 303, expected 307
+/app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile|HTTP 303, expected 307
 TODAY
-[ "$(fails)" = 8 ] || fail "today: $(fails) FAIL rows, expected 8 (the F0, F7 and F5 rows alone): $(out)"
-[ "$(passes)" = $((ROWS - 8)) ] || fail "today: $(passes) PASS rows, expected $((ROWS - 8)): $(out)"
+[ "$(fails)" = 10 ] || fail "today: $(fails) FAIL rows, expected 10 (the F0, F7, F5 and F10 rows alone): $(out)"
+[ "$(passes)" = $((ROWS - 10)) ] || fail "today: $(passes) PASS rows, expected $((ROWS - 10)): $(out)"
 
 # 2b. before F3 (with F0 and F7 on the box): Java answers GET /app, /app/ and /app/verify with its own sign-in pages and HEAD on them with
 #    its JSON 404; the five Next sign-in rows fail, each saying why, and every other row passes
@@ -475,6 +513,14 @@ post-login-next|POST /app/login|HTTP 404, expected 200
 home-java|/app/home|HTTP 303, expected 307
 home-location|/app/home|location is [/app/], expected [/app/?next=%2Fapp%2Fhome]
 home-slash-next|/app/home/|HTTP 307, expected 404
+family-java|/app/family|HTTP 303, expected 307
+family-location|/app/family|location is [/app/], expected [/app/?next=%2Fapp%2Ffamily]
+family-slash-next|/app/family/|HTTP 307, expected 404
+profile-java|/app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile|HTTP 303, expected 307
+profile-location|/app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile|location is [/app/], expected [/app/?next=%2Fapp%2Fpatients%2F5e9edf6d-0a2a-4913-8675-9d07a4100001%2Fprofile]
+profile-slash-next|/app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile/|HTTP 307, expected 404
+profile-not-uuid-next|/app/patients/x/profile|HTTP 307, expected 303
+patient-next|/app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001|HTTP 404, expected 303
 previewx-next|/app/previewx|statusCode is [], expected [400]
 next-image-next|/_next/image|statusCode is [], expected [400]
 preview-probe-next|/app/preview/probe|HTTP 200, expected 404
@@ -483,28 +529,34 @@ me-reason|/app/api/me|reason is [NOT_FOUND], expected [UNAUTHENTICATED]
 old-host-location|http://127.0.0.1:[0-9]+/old-host/app/home|location is [https://medioo.eliooo.org/], expected [https://medioo.eliooo.org/app/home]
 TABLE
 
-# 3b. aProductionRunNeverSendsAProbeRow: the table holds all four PROBE rows (so the case is not vacuous), the stub saw
-#     the run's GET /app/add and GET /app/home (so its log is read at all), and it saw no POST but the two sign-in
-#     POSTs (F3's production rows), exactly one request to each of /app/add and /app/home (their GETs), and no request
-#     whose path carries the word PROBE
-for spec in 'PROBE POST /app/add' 'PROBE HEAD /app/add' 'PROBE POST /app/home' 'PROBE HEAD /app/home'; do
+# 3b. aProductionRunNeverSendsAProbeRow: the table holds all eight PROBE rows (so the case is not vacuous), the stub
+#     saw the run's GET on each of /app/add, /app/home, /app/family and the profile (so its log is read at all), and it
+#     saw no POST but the two sign-in POSTs (F3's production rows), exactly one request to each of those four (their
+#     GETs), and no request whose path carries the word PROBE
+PROFILE=/app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile
+for spec in 'PROBE POST /app/add' 'PROBE HEAD /app/add' 'PROBE POST /app/home' 'PROBE HEAD /app/home' \
+  'PROBE POST /app/family' 'PROBE HEAD /app/family' "PROBE POST $PROFILE" "PROBE HEAD $PROFILE"; do
   grep -qF "$spec|" "$SMOKE" || fail "probe-skip: the table has no '$spec' row, so this case tests less than it says"
 done
 start_stub
 smoke >/dev/null || true
-for page in /app/add /app/home; do
+for page in /app/add /app/home /app/family "$PROFILE"; do
   grep -qxF "GET $page" "$WORK/requests.log" || fail "probe-skip: the stub never saw GET $page, so its log proves nothing: $(tr '\n' '|' < "$WORK/requests.log" | cut -c1-300)"
 done
 if grep -E '^POST ' "$WORK/requests.log" | grep -qvxE 'POST /app/(login|verify)'; then
   fail "probe-skip: the production run sent a POST other than the sign-in POSTs: $(grep -E '^POST ' "$WORK/requests.log" | grep -vxE 'POST /app/(login|verify)' | head -3 | tr '\n' '|')"
 fi
-if grep -qi 'probe ' "$WORK/requests.log" || [ "$(grep -cE '^[A-Z]+ /app/add$' "$WORK/requests.log")" != 1 ] \
-     || [ "$(grep -cE '^[A-Z]+ /app/home$' "$WORK/requests.log")" != 1 ]; then
-  fail "probe-skip: a PROBE row reached the host: $(grep -i -e 'probe ' -e '/app/add$' -e '/app/home$' "$WORK/requests.log" | head -4 | tr '\n' '|')"
+probe_reached=""
+grep -qi 'probe ' "$WORK/requests.log" && probe_reached=1
+for page in /app/add /app/home /app/family "$PROFILE"; do
+  [ "$(grep -cE "^[A-Z]+ $page\$" "$WORK/requests.log")" = 1 ] || probe_reached=1
+done
+if [ -n "$probe_reached" ]; then
+  fail "probe-skip: a PROBE row reached the host: $(grep -i -e 'probe ' -e '/app/add$' -e '/app/home$' -e '/app/family$' -e '/profile$' "$WORK/requests.log" | head -6 | tr '\n' '|')"
 fi
 # a PROBE row would print as a PASS/FAIL line naming it; the summary line names the PROBE rows it left, by count only
 grep -qE '^(PASS|FAIL) PROBE ' "$WORK/out.log" && fail "probe-skip: the production run printed a PROBE row: $(out)"
-grep -qF ', 4 PROBE rows left to caddy-route-probe.sh,' "$WORK/out.log" || fail "probe-skip: the summary does not count the table's four PROBE rows as left: $(out)"
+grep -qF ', 8 PROBE rows left to caddy-route-probe.sh,' "$WORK/out.log" || fail "probe-skip: the summary does not count the table's eight PROBE rows as left: $(out)"
 
 # 4. a transient 502 (Caddy before its upstream answers) is retried until the table passes
 start_stub STUB_FLAKY=2
