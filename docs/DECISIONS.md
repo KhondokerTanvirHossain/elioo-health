@@ -1339,8 +1339,8 @@ the line, only the numbers Java sends on each point (`ref_low`, `ref_high`), so 
   were sent (fail closed).
 - The scale takes in the drawn bounds, so a band sits at its own numbers and is never clipped.
 - The range colours no marker and changes no word. A reading with a drawn range says it after its sentence
-  (`trend.point.range`: "…; ছাপা সীমা 59–104" / "…; printed range 59–104", with Java's `ref_text`, only as that
-  accessible label). A legend under the chart (`trend.band.legend`, hidden from screen readers) says what the band and
+  (`trend.point.range`: "…; রিপোর্টে লেখা সীমা 59–104" / "…; range printed on the report 59–104", with Java's
+  `ref_text`, only as that accessible label; the glossary's term, since "ছাপা সীমা" is retired, spec §7.4). A legend under the chart (`trend.band.legend`, hidden from screen readers) says what the band and
   the line are. Both are drafts for the copy owner. The range is not written on screen as numbers until the PO accepts
   `ref_text`'s form (PR #143).
 

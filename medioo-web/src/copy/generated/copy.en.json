@@ -401,7 +401,7 @@
   "trend.date.upload": "{0} (upload date)",
   "trend.point": "{0}: {1} {2}, {3}",
   "trend.point.nounit": "{0}: {1}, {2}",
-  "trend.point.range": "{0}; printed range {1}",
+  "trend.point.range": "{0}; range printed on the report {1}",
   "type.default": "Paper",
   "type.discharge_summary": "Discharge summary",
   "type.imaging_report": "Imaging report",
