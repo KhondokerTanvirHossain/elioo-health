@@ -1322,27 +1322,29 @@ reader hears is unchanged. These are drafts for the copy owner.
 **R1 and R3 are recorded here and built elsewhere.** R2 is built in PR #144. R1 is built in PR #137 (W6-api, the
 value sheet JSON) and in its follow-up, branch `fix/baymax-web-value-sheet-gates` (W6-fix, no PR yet), which puts both
 rules on both value-sheet routes before F6. R3 needs the printed range on B6's series point: an additive field (rule
-A2), written by Java's contract test into the fixtures, built in PR #143 (`feat/baymax-web-api-labs-printed-range`,
-plan RANGE-api); the band in TrendChart, drawn only where that field is present, follows in a later W PR. Until then
-TrendChart draws no band, as W2e-b built it.
+A2), written by Java's contract test into the fixtures. R3's data is built in PR #143 (RANGE-api) and its band in
+PR #151 (RANGE-web).
 
-**What the code does for R3 (plan RANGE-web, branch `feat/medioo-web-trend-range-band`):** TrendChart draws, behind
-the line, only the numbers Java sends on each point (`ref_low`, `ref_high`), so React judges nothing:
-- Both numbers: a filled pale band in the pale neutral `--sep` (`--fill` is a control's wash and may not draw a
-  shape). Neighbouring readings that carry the very same numbers share one band. A reading whose numbers differ from
+**What the code does for R3 (PR #151, `feat/medioo-web-trend-range-band`):** TrendChart draws, behind the line, only
+the numbers Java sends on each point (`ref_low`, `ref_high`), so React judges nothing:
+- Both numbers: a pale band, outlined by two thin solid `--label3` lines at its printed bounds. The lines are what is
+  seen (`--label3` is 3:1 and more on every surface, WCAG 1.4.11); the `--sep` fill only decorates a shape already
+  seen, which is what `--sep`'s exemption allows (`--fill` is a control's wash and may not draw a shape). Neighbouring
+  readings that carry the very same numbers share one band. A reading whose numbers differ from
   its neighbour's stands on its own short bar (at most 36 of the chart's 320 units and 60% of a column, so two bars
   never touch). Two labs' ranges are never blended into one band, and a reading with no range breaks a band, never
   bridged.
 - One number: a thin solid limit line at that bound, on that side only (`--label3`, unlike the dashed trend line),
-  never a band to an invented other bound.
+  never a band to an invented other bound, and only beside a reading beyond it on its side (fail closed, as Java's
+  `PaperDisplay.edgeAgrees`).
 - No number: nothing, whatever `ref_text` says. A reading the chart draws unknown stands on nothing even if a number
   were sent (fail closed).
 - The scale takes in the drawn bounds, so a band sits at its own numbers and is never clipped.
-- The range colours no marker and changes no word. A reading with a drawn range says it after its sentence
-  (`trend.point.range`: "…; রিপোর্টে লেখা সীমা 59–104" / "…; range printed on the report 59–104", with Java's
-  `ref_text`, only as that accessible label; the glossary's term, since "ছাপা সীমা" is retired, spec §7.4). A legend under the chart (`trend.band.legend`, hidden from screen readers) says what the band and
-  the line are. Both are drafts for the copy owner. The range is not written on screen as numbers until the PO accepts
-  `ref_text`'s form (PR #143).
+- The range colours no marker and changes no word. Its text (`ref_text`) is neither said nor written until the PO
+  accepts its form (PR #143), so a screen-reader user and a sighted reader are given the same: the band's place and
+  the chip's word. A legend under the chart names each kind it draws, one entry each (`trend.band.legend.band`,
+  `trend.band.legend.edge`, in the glossary's "রিপোর্টে লেখা সীমা", since "ছাপা সীমা" is retired, spec §7.4). It
+  is hidden from screen readers, as the drawing it explains is. Both are drafts for the copy owner.
 
 **Why:** the prototype the PO approved colours these marks, and a family reads red faster than a shape. Keeping the
 shape and the word keeps the calendar readable for someone who cannot tell red from amber. A band drawn from anything

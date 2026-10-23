@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { formatDate, formatDayMonth, t, type Lang } from "@/copy";
 import type { LabSeriesJson, TrendPointJson } from "@/api/types";
 import { CHIP_KEY, CHIP_SHAPE, ChipShape, chipKindOf } from "@/components/StatusChip/StatusChip";
@@ -11,6 +12,8 @@ const H = 104;
 const TOP = 16;
 const BOTTOM = 88;
 const MARKER = 18;
+/** The plot's vertical extent in viewBox units: every reading, band and limit line is drawn between these. */
+export const PLOT = { top: TOP, bottom: BOTTOM } as const;
 
 /** A printed value as a number, only when the whole text is a plain decimal: "<0.5", ">500", "5,4", "5.9 H" are not. */
 function plainNumber(value: string): number | null {
@@ -36,10 +39,16 @@ type Range = { low: number | null; high: number | null };
 
 /**
  * The range the chart may draw behind a reading: Java's numbers as sent, and nothing behind a reading the chart draws
- * unknown. Java never sends a number beside an unknown (PaperDisplay.drawnBand); were one sent, the chart fails closed.
+ * unknown. A lone bound is drawn only beside a reading beyond it on its own side, out of range or critical (D35: a
+ * one-sided range is never an inside; a limit line never has its reading on the "normal" side). Java sends no other
+ * number (PaperDisplay.drawnBand, edgeAgrees); were one sent, the chart fails closed rather than draw it.
  */
-function drawnRange(p: TrendPointJson, kind: ReturnType<typeof chipKindOf>): Range | null {
+function drawnRange(p: TrendPointJson, n: number, kind: ReturnType<typeof chipKindOf>): Range | null {
   if (kind === "unk" || (p.ref_low === null && p.ref_high === null)) return null;
+  if (p.ref_low === null || p.ref_high === null) {
+    const beyond = p.ref_high !== null ? kind.endsWith("high") && n > p.ref_high : kind.endsWith("low") && n < p.ref_low!;
+    if (kind === "in" || !beyond) return null;
+  }
   return { low: p.ref_low, high: p.ref_high };
 }
 
@@ -77,13 +86,13 @@ function dateText(lang: Lang, p: TrendPointJson, withYear: boolean): string {
  * is decorative.
  *
  * Behind the line, the range each reading's OWN paper printed (PO ruling R3, DR-48; B6's `ref_low` / `ref_high`, PR 143),
- * only where Java sent a number, so React judges nothing (see `rangeRuns`): both numbers are a filled pale band, one is
- * a thin limit line on that side only, none is nothing whatever `ref_text` says. Neighbours that carry the very same
- * numbers share one band; a reading whose range differs stands on its own short bar, so two labs' ranges are never
- * blended into one. The scale takes in the drawn bounds, so a band is drawn at its own numbers, never clipped. The range
- * colours no marker and changes no word: a reading the chart draws says its range after its sentence
- * (`trend.point.range`, the `ref_text` Java sends, only as that accessible label), and a legend under the chart says
- * what the pale band is. Nothing is drawn unless `chartable` holds. Colours are tokens through classes (TrendChart.css),
+ * only where Java sent a number, so React judges nothing (see `rangeRuns`): both numbers are a pale band outlined by
+ * two thin solid lines at its bounds, one is a thin limit line on that side only (and only beside a reading beyond it),
+ * none is nothing whatever `ref_text` says. Neighbours that carry the very same numbers share one band; a reading whose
+ * range differs stands on its own short bar, so two labs' ranges are never blended into one. The scale takes in the
+ * drawn bounds, so a band is drawn at its own numbers, never clipped. The range colours no marker and changes no word,
+ * and its text (`ref_text`) is neither said nor written until the PO accepts its form (PR 143); a legend under the
+ * chart names each kind it draws. Nothing is drawn unless `chartable` holds. Colours are tokens through classes (TrendChart.css),
  * no inline style, and the critical shape is never red here: the red belongs to the NOW components.
  */
 export function TrendChart({ series, lang }: { series: LabSeriesJson; lang: Lang }) {
@@ -94,7 +103,7 @@ export function TrendChart({ series, lang }: { series: LabSeriesJson; lang: Lang
     // Oldest first; the API sends the newest first, and within one day keeps its own order (index, reversed).
     .sort((a, b) => a.p.date.localeCompare(b.p.date) || b.i - a.i);
 
-  const ranges = readings.map((r) => drawnRange(r.p, r.kind));
+  const ranges = readings.map((r) => drawnRange(r.p, r.n, r.kind));
   const runs = rangeRuns(ranges);
   // The scale spans the readings and every bound drawn, so a band sits at its own printed numbers, never clipped.
   const bounds = ranges.flatMap((r) => (r ? [r.low, r.high] : [])).filter((b): b is number => b !== null);
@@ -104,7 +113,9 @@ export function TrendChart({ series, lang }: { series: LabSeriesJson; lang: Lang
   const yOf = (v: number) => (max === min ? (TOP + BOTTOM) / 2 : BOTTOM - ((v - min) / (max - min)) * (BOTTOM - TOP));
   const column = W / readings.length;
   const bar = Math.min(BAR, column * 0.6);
-  const placed = readings.map((r, i) => ({ ...r, x: column * (i + 0.5), y: yOf(r.n), ranged: ranges[i] !== null }));
+  const placed = readings.map((r, i) => ({ ...r, x: column * (i + 0.5), y: yOf(r.n) }));
+  const drawsBand = runs.some((r) => r.range.low !== null && r.range.high !== null);
+  const drawsEdge = runs.some((r) => r.range.low === null || r.range.high === null);
 
   return (
     <div className="trend-chart">
@@ -118,17 +129,30 @@ export function TrendChart({ series, lang }: { series: LabSeriesJson; lang: Lang
             .join(" ");
           if (range.low !== null && range.high !== null) {
             const top = yOf(range.high);
+            const bottom = yOf(range.low);
+            // The fill is decoration; the range is seen through its two bounds, thin solid lines in the edge's token
+            // (3:1 on the page), drawn over the fill across the band's own width.
             return (
-              <rect
-                key={`band-${ids}`}
-                className="trend-chart__band"
-                data-range-for={ids}
-                x={left}
-                y={top}
-                width={right - left}
-                height={yOf(range.low) - top}
-                rx={3}
-              />
+              <Fragment key={`band-${ids}`}>
+                <rect className="trend-chart__band" data-range-for={ids} x={left} y={top} width={right - left} height={bottom - top} />
+                {(
+                  [
+                    ["high", top],
+                    ["low", bottom],
+                  ] as const
+                ).map(([side, y]) => (
+                  <line
+                    key={side}
+                    className="trend-chart__edge trend-chart__edge--bound"
+                    data-bound-for={ids}
+                    data-range-side={side}
+                    x1={left}
+                    x2={right}
+                    y1={y}
+                    y2={y}
+                  />
+                ))}
+              </Fragment>
             );
           }
           // One printed bound: a thin line at it, on its side only, never a region to an invented other bound.
@@ -155,14 +179,14 @@ export function TrendChart({ series, lang }: { series: LabSeriesJson; lang: Lang
         ))}
       </svg>
       <ol className="trend-chart__readings" aria-label={series.name}>
-        {placed.map(({ p, kind, ranged }) => {
+        {placed.map(({ p, kind }) => {
           const date = dateText(lang, p, withYear);
           const word = t(lang, CHIP_KEY[kind]);
-          const sentence = series.unit
+          // The reading's own sentence. Its range's text (`ref_text`) is neither said nor written until the PO accepts
+          // its form (PR 143), so a listener and a sighted reader are given the same.
+          const spoken = series.unit
             ? t(lang, "trend.point", date, p.value, series.unit, word)
             : t(lang, "trend.point.nounit", date, p.value, word);
-          // The range is said only where it is drawn, in the words Java sends for it (`ref_text`).
-          const spoken = ranged && p.ref_text !== null ? t(lang, "trend.point.range", sentence, p.ref_text) : sentence;
           return (
             <li key={p.observation_id} className={`trend-chart__reading trend-chart__reading--${kind}`} data-reading-for={p.observation_id}>
               <span className="trend-chart__spoken">{spoken}</span>
@@ -186,10 +210,19 @@ export function TrendChart({ series, lang }: { series: LabSeriesJson; lang: Lang
       </ol>
       {runs.length > 0 && (
         <p className="trend-chart__legend" aria-hidden="true">
-          {/* A key for each kind drawn here: the pale band, the limit line. */}
-          {runs.some((r) => r.range.low !== null && r.range.high !== null) && <span className="trend-chart__key trend-chart__key--band" />}
-          {runs.some((r) => r.range.low === null || r.range.high === null) && <span className="trend-chart__key trend-chart__key--edge" />}
-          <span>{t(lang, "trend.band.legend")}</span>
+          {/* One entry per kind drawn here, each its key and its own phrase. */}
+          {drawsBand && (
+            <span className="trend-chart__legend-entry" data-legend="band">
+              <span className="trend-chart__key trend-chart__key--band" />
+              <span>{t(lang, "trend.band.legend.band")}</span>
+            </span>
+          )}
+          {drawsEdge && (
+            <span className="trend-chart__legend-entry" data-legend="edge">
+              <span className="trend-chart__key trend-chart__key--edge" />
+              <span>{t(lang, "trend.band.legend.edge")}</span>
+            </span>
+          )}
         </p>
       )}
     </div>

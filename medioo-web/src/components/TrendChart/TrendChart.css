@@ -4,12 +4,12 @@
    and critical are told apart by the shape (an arrow, a double arrow) and the word, never by colour alone and never by
    the NOW red, which belongs to the NOW components (built/now-usage.built.test.ts). The drawing holds no text, so no
    SVG scaling can take a word under the 12 px floor. Behind the line, each reading's own printed range (PO ruling R3,
-   DR-48): a pale neutral band, never a status colour and never the NOW red, or a thin solid limit line for a
-   one-sided bound, so it never reads as the dashed trend line. Neither touches a marker. The band is painted --sep,
-   the pale neutral that may draw a shape (non-text, exempt from 1.4.11's 3:1 because nothing is perceived only
-   through it): --fill is a control's wash, a surface that draws no indicator and carries a --boundary. The band is
-   never the only signal either: the reading's status is its chip's shape and word, and each reading says its range in
-   text. The 3 / 4 dash is the prototype's. */
+   DR-48): a pale neutral band, never a status colour and never the NOW red, outlined at its two printed bounds by thin
+   solid --label3 lines, or one such line alone for a one-sided bound; solid, so it never reads as the dashed trend
+   line. Neither touches a marker. The range is perceived through those lines, which are --label3 (3:1 and more on
+   every surface, WCAG 1.4.11); the band's --sep fill only decorates a shape already seen, which is the one use --sep's
+   exemption allows (--fill is a control's wash, a surface that draws no indicator and carries a --boundary). The
+   reading's status is still its chip's shape and word, never the band. The 3 / 4 dash is the prototype's. */
 .trend-chart {
   max-width: 480px;
   font-family: var(--font-sys);
@@ -92,26 +92,33 @@
   clip-path: inset(50%);
   white-space: normal;
 }
-/* Under the chart, only when it draws a range: what the pale band and the limit line are. Each reading says its own
-   range to a screen reader, so the legend is hidden from one. */
+/* Under the chart, only when it draws a range: one entry per kind it draws, the pale band and the limit line, each its
+   key and its phrase. It explains the drawing, which is hidden from a screen reader, so the legend is too. */
 .trend-chart__legend {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-1) var(--space-2);
+  gap: var(--space-1) var(--space-3);
   margin: var(--space-2) 0 0;
   font-family: var(--font-bn);
   font-size: var(--text-xs);
   line-height: 1.3;
   color: var(--label2);
 }
+.trend-chart__legend-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
 .trend-chart__key {
   flex: none;
   width: 16px;
 }
+/* The band's key is drawn as the band is: the pale fill between its two solid bounds. */
 .trend-chart__key--band {
   height: 10px;
-  border-radius: 2px;
+  border-top: 1.5px solid var(--label3);
+  border-bottom: 1.5px solid var(--label3);
   background: var(--sep);
 }
 .trend-chart__key--edge {
