@@ -39,6 +39,10 @@
 #   (`[^/]+` for the uuid) the /app/patients/x/profile boundary row alone, and `profile-patient-page` (the regexp
 #   widened to `(/profile)?$`) the /app/patients/<id> boundary row alone (the patient page, still Java's). Each edit
 #   is anchored on its own block;
+# - F9's block is F5's shape: `health-missing` drops it and fails GET and HEAD /app/health, `health-get-only` keeps
+#   `method GET` and fails the HEAD row alone, `health-any-method` drops the method line and fails the PROBE POST row
+#   alone (Java routes no POST /app/health), and `health-wide` (`/app/health*`) fails the /app/health/ boundary row
+#   alone. Each edit is anchored on the health block, never on /app/healthz's own `handle /app/healthz`;
 # - a table with no rows, a file with no medioo.eliooo.org block, and a file with an upstream the probe does not know
 #   each fail, rather than pass vacuously or send a row somewhere unreplaced.
 set -uo pipefail
@@ -58,8 +62,9 @@ CASES=0
 # /app/preview/probe, F7's /app/add, /app/add/, PROBE HEAD /app/add and PROBE POST /app/add, and F5's /app/home,
 # /app/home/, PROBE HEAD /app/home and PROBE POST /app/home, and F10's /app/family, /app/family/, PROBE HEAD and PROBE
 # POST /app/family, /app/patients/<id>/profile, its /profile/, /app/patients/x/profile, /app/patients/<id>, and PROBE
-# HEAD and PROBE POST on the profile (the probe sends PROBE rows; the production run never does)
-ROWS=47
+# HEAD and PROBE POST on the profile, and F9's /app/health, /app/health/, PROBE HEAD and PROBE POST /app/health (the
+# probe sends PROBE rows; the production run never does)
+ROWS=51
 
 fail() { echo "FAIL: $1"; FAILED=1; }
 
@@ -93,7 +98,9 @@ for line in 'PASS /app/ 298 (next)' 'PASS /app 298 (next)' 'PASS HEAD /app/ 298 
   'PASS /app/basic 299 (java)' 'PASS /app/login 299 (java)' \
   'PASS /app/family 298 (next)' 'PASS PROBE POST /app/family 299 (java)' 'PASS /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile 298 (next)' \
   'PASS PROBE POST /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile 299 (java)' 'PASS /app/patients/x/profile 299 (java)' \
-  'PASS /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001 299 (java)'; do
+  'PASS /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001 299 (java)' \
+  'PASS /app/health 298 (next)' 'PASS PROBE HEAD /app/health 298 (next)' 'PASS PROBE POST /app/health 299 (java)' \
+  'PASS /app/health/ 299 (java)'; do
   grep -qxF "$line" "$WORK/out.log" || fail "repo: no '$line' line: $(out)"
 done
 # the probe prints each row's spec as written, so an {old} row it asked would print the literal {old}
@@ -144,6 +151,10 @@ profile-unanchored|s/(\n\t\tpath_regexp \^\/app\/patients\/\[0-9a-f-\]\{36\}\/pr
 profile-any-id|s/(\n\t\tpath_regexp \^\/app\/patients\/)\[0-9a-f-\]\{36\}(\/profile\$\n)/$1\[^\/\]+$2/|FAIL /app/patients/x/profile got 298 (next), expected 299 (java)
 profile-patient-page|s/(\n\t\tpath_regexp \^\/app\/patients\/\[0-9a-f-\]\{36\})\/profile\$\n/$1(\/profile)?\$\n/|FAIL /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001 got 298 (next), expected 299 (java)
 profile-missing|s/\t\@medioo_profile \{\n\t\tmethod GET HEAD\n\t\tpath_regexp [^\n]*\n\t\}\n\thandle \@medioo_profile \{\n\t\treverse_proxy medioo-web:3000\n\t\}\n//|FAIL /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile got 299 (java), expected 298 (next)|FAIL PROBE HEAD /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile got 299 (java), expected 298 (next)
+health-any-method|s/\n\t\tmethod GET HEAD\n(\t\tpath \/app\/health\n)/\n$1/|FAIL PROBE POST /app/health got 298 (next), expected 299 (java)
+health-get-only|s/\n\t\tmethod GET HEAD\n(\t\tpath \/app\/health\n)/\n\t\tmethod GET\n$1/|FAIL PROBE HEAD /app/health got 299 (java), expected 298 (next)
+health-wide|s/(\n\t\tmethod GET HEAD\n\t\tpath \/app\/health)\n/$1*\n/|FAIL /app/health/ got 298 (next), expected 299 (java)
+health-missing|s/\t\@medioo_health \{\n\t\tmethod GET HEAD\n\t\tpath \/app\/health\n\t\}\n\thandle \@medioo_health \{\n\t\treverse_proxy medioo-web:3000\n\t\}\n//|FAIL /app/health got 299 (java), expected 298 (next)|FAIL PROBE HEAD /app/health got 299 (java), expected 298 (next)
 TABLE
 
 # 4. a table with no rows: refused, not passed

@@ -14,13 +14,15 @@ afterEach(() => {
 const links = (container: HTMLElement) => [...container.querySelectorAll("a")];
 
 describe("TabBar", () => {
-  it("theHealthTabIsAbsentUntilItsRouteIsReachable", async () => {
-    // This build serves /app/health (W9), and Caddy does not send it to Next until F9: outside the preview the tab
-    // would be a link to Java's 404, so it is not drawn.
+  it("theHealthTabIsDrawnOnlyWhereItsRouteIsReachable", async () => {
+    // F9 sends /app/health to Next (DR-49), so outside the preview the tab is a link to this build's page, third as in
+    // the prototype, and marked when it is this page.
     expect(NEXT_PAGES).toContain("/app/health");
-    expect(FLIPPED).not.toContain("/app/health");
-    const plain = render(<TabBar lang="bn" preview={false} current="chat" />);
-    expect(links(plain.container).map((a) => a.getAttribute("href"))).toEqual(["/app/home", "/app/timeline", "/app/family"]);
+    expect(FLIPPED).toContain("/app/health");
+    const plain = render(<TabBar lang="bn" preview={false} current="health" />);
+    const after = links(plain.container);
+    expect(after.map((a) => a.getAttribute("href"))).toEqual(["/app/home", "/app/timeline", "/app/health", "/app/family"]);
+    expect(after[2]!.getAttribute("aria-current"), "the health tab, third as in the prototype, is this page").toBe("page");
     cleanup();
     // A preview page: the chat (W5), health (W9) and family (W10) pages are this build's, so their tabs stay inside the
     // preview; the papers tab is Java's page.
@@ -29,19 +31,23 @@ describe("TabBar", () => {
     expect(hrefs, "preview, after W9").toEqual(["/app/preview/home", "/app/timeline", "/app/preview/health", "/app/preview/family"]);
     cleanup();
 
-    // Once F9 sends /app/health to Next, the tab is drawn outside the preview too. The lists are the real reachable()
-    // and href() over FLIPPED plus /app/health (pathsFor), not a stand-in for them.
+    // The other direction: where Caddy does not send /app/health to Next (a box without F9's block, as before F9), the
+    // tab would be a link to Java's 404, so it is not drawn. The lists are the real reachable() and href() over FLIPPED
+    // less /app/health (pathsFor), not a stand-in for them.
     vi.resetModules();
     vi.doMock("@/routing/paths", async (importOriginal) => {
       const real = await importOriginal<typeof import("@/routing/paths")>();
       const { FLIPPED: flipped } = await import("@/routing/flipped");
-      return { ...real, ...real.pathsFor({ next: real.NEXT_PAGES, java: real.JAVA_PAGES, flipped: [...flipped, "/app/health"] }) };
+      const before = flipped.filter((p) => p !== "/app/health");
+      return { ...real, ...real.pathsFor({ next: real.NEXT_PAGES, java: real.JAVA_PAGES, flipped: before }) };
     });
-    const { TabBar: Flipped } = await import("./TabBar");
-    const later = render(<Flipped lang="bn" preview={false} current="health" />);
-    const after = links(later.container);
-    expect(after.map((a) => a.getAttribute("href"))).toEqual(["/app/home", "/app/timeline", "/app/health", "/app/family"]);
-    expect(after[2]!.getAttribute("aria-current"), "the health tab, third as in the prototype, is this page").toBe("page");
+    const { TabBar: Unflipped } = await import("./TabBar");
+    const earlier = render(<Unflipped lang="bn" preview={false} current="chat" />);
+    expect(links(earlier.container).map((a) => a.getAttribute("href")), "before F9").toEqual([
+      "/app/home",
+      "/app/timeline",
+      "/app/family",
+    ]);
   });
 
   it("everyTabSaysItsWord", () => {
@@ -49,7 +55,7 @@ describe("TabBar", () => {
       const { getByRole } = render(<TabBar lang={lang} preview={false} current="papers" />);
       const nav = getByRole("navigation", { name: t(lang, "tabs.label") });
       const names = [...nav.querySelectorAll("a")].map((a) => a.textContent);
-      expect(names).toEqual([t(lang, "tab.chat"), t(lang, "tab.papers"), t(lang, "tab.family")]);
+      expect(names).toEqual([t(lang, "tab.chat"), t(lang, "tab.papers"), t(lang, "tab.health"), t(lang, "tab.family")]);
       cleanup();
     }
   });

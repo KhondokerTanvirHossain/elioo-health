@@ -35,8 +35,8 @@
 # Java's), and the assets /_next/static/*, /fonts/* and /brand/* (plan Wave 3, F0); GET and HEAD /app/add, the add
 # sheet (F7; POST /app/add, the upload, stays Java's); GET and HEAD /app, /app/ and /app/verify, the sign-in pages
 # (F3); GET and HEAD /app/home, the chat page (F5); GET and HEAD /app/family and /app/patients/<uuid>/profile, the
-# family tab and a patient's profile (F10; POST to the profile, its save, stays Java's). Every other page, every POST
-# to a page and every /app/api/** path is still Java's; each screen's own paths come in its flip PR. scripts/caddy-route-probe.sh runs this file in a
+# family tab and a patient's profile (F10; POST to the profile, its save, stays Java's); GET and HEAD /app/health, the
+# health tab (F9). Every other page, every POST to a page and every /app/api/** path is still Java's; each screen's own paths come in its flip PR. scripts/caddy-route-probe.sh runs this file in a
 # local Caddy and checks every row of scripts/smoke-https.sh reaches the upstream its class names.
 #
 # Referrer-Policy stays strict-origin-when-cross-origin, the value production has sent since before the rebuild
@@ -151,6 +151,24 @@ medioo.eliooo.org {
 		path_regexp ^/app/patients/[0-9a-f-]{36}/profile$
 	}
 	handle @medioo_profile {
+		reverse_proxy medioo-web:3000
+	}
+
+	# F9 (DR-49, PO ruling 2026-10-23): the health tab, lab values with their trend and the medicines as written (plan
+	# W9). GET and HEAD only, per the plan's row: Java never had a page here and routes no POST /app/health, so a POST
+	# stays Java's JSON 404. `path /app/health` is exact, so /app/health/ and /app/healthx stay Java's; /app/healthz is
+	# medioo-web's own health check, routed by its own `handle /app/healthz` above. Unlike the other flips, Java has no
+	# page behind this path, so deleting this block alone does NOT turn the tab off: the running medioo-web image still
+	# lists /app/health in FLIPPED (medioo-web/src/routing/flipped.ts) and every Next page keeps drawing the health tab,
+	# now a link to Java's JSON 404. Turning it off is one revert PR that removes this block AND /app/health from
+	# FLIPPED (flipped.test.ts requires both, and its TabBar/paths tests flip back with it), its image deployed; until
+	# that deploy, the box edit leaves the tab linking to the 404. Or roll the image back below the F9 routes floor
+	# (RUNBOOK -> Rollback floor), which restores both together.
+	@medioo_health {
+		method GET HEAD
+		path /app/health
+	}
+	handle @medioo_health {
 		reverse_proxy medioo-web:3000
 	}
 

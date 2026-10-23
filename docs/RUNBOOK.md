@@ -11,7 +11,7 @@ and this file should be fixed.
 | Host | EC2 `i-0215d6b600b251455`, `ec2-13-205-14-249.ap-south-1.compute.amazonaws.com`, user `ec2-user`, region ap-south-1 |
 | Shared with | an n8n stack; its Caddy terminates HTTPS for `medioo.eliooo.org` (and answers `baymax.eliooo.org` with a permanent redirect to it, path preserved — DR-15) and reaches the app as `medscribe-ai:8086` on the docker network `n8n_edge` |
 | DNS | `medioo.eliooo.org` **and** `baymax.eliooo.org` are each an **A record** pointing at the EC2 IP (`13.205.14.249`) in Hostinger (zone on `dns-parking.com`), TTL 14400. They are *not* CNAMEs, so **moving the box means changing both records** — updating only `medioo` leaves the old hostname resolving to a dead IP. `baymax` was added 2026-09-19; before that the documented redirect had never worked, because only `medioo` existed. **Negative caching: a newly added record can keep reading NXDOMAIN on a machine that looked it up while it was still missing — up to the zone's negative TTL (4h here) after the record is live.** `curl`, `host` and `getent` then fail while `dig @8.8.8.8 <name>` answers correctly, because `dig` bypasses the system resolver. That is a stale local cache, **not** a failed deploy: confirm from the EC2 box (`ssh … 'curl -sS -o /dev/null -w "%{http_code} %{redirect_url}\n" https://baymax.eliooo.org/app/home'`) before treating it as one |
-| Containers | `medscribe-ai` (Java), image `ghcr.io/khondokertanvirhossain/elioo-health/medscribe-ai:<git sha>`, published on the box's `127.0.0.1:8086` only (W1c; Caddy reaches it as `medscribe-ai:8086` on `n8n_edge`), `--env-file`; and `medioo-web` (Next.js, DR-40, from W1b), image `ghcr.io/khondokertanvirhossain/elioo-health/medioo-web:<git sha>`, same sha, on `n8n_edge` only (no host port), no env file, 320 MB cap. **Caddy sends it only the paths listed in `docs/infra/Caddyfile.medioo`** (`/app/healthz` from W1c; from F0 also the preview path `/app/preview`, `/app/preview/*` and the assets `/_next/static/*`, `/fonts/*`, `/brand/*`; from F7 `GET`/`HEAD /app/add`, the add sheet (`POST /app/add` stays Java's); from F3 also `GET`/`HEAD` `/app`, `/app/` and `/app/verify`, the sign-in pages; from F5 `GET`/`HEAD /app/home`, the chat page; from F10 `GET`/`HEAD /app/family` and `/app/patients/<uuid>/profile`, the family tab and a patient's profile (`POST` to the profile, its save, stays Java's); every other page, every POST to a page, the no-JS fallback `/app/basic*` and `/app/api/**` still Java's; see [Routing a path to medioo-web](#routing-a-path-to-medioo-web)) |
+| Containers | `medscribe-ai` (Java), image `ghcr.io/khondokertanvirhossain/elioo-health/medscribe-ai:<git sha>`, published on the box's `127.0.0.1:8086` only (W1c; Caddy reaches it as `medscribe-ai:8086` on `n8n_edge`), `--env-file`; and `medioo-web` (Next.js, DR-40, from W1b), image `ghcr.io/khondokertanvirhossain/elioo-health/medioo-web:<git sha>`, same sha, on `n8n_edge` only (no host port), no env file, 320 MB cap. **Caddy sends it only the paths listed in `docs/infra/Caddyfile.medioo`** (`/app/healthz` from W1c; from F0 also the preview path `/app/preview`, `/app/preview/*` and the assets `/_next/static/*`, `/fonts/*`, `/brand/*`; from F7 `GET`/`HEAD /app/add`, the add sheet (`POST /app/add` stays Java's); from F3 also `GET`/`HEAD` `/app`, `/app/` and `/app/verify`, the sign-in pages; from F5 `GET`/`HEAD /app/home`, the chat page; from F10 `GET`/`HEAD /app/family` and `/app/patients/<uuid>/profile`, the family tab and a patient's profile (`POST` to the profile, its save, stays Java's); from F9 `GET`/`HEAD /app/health`, the health tab; every other page, every POST to a page, the no-JS fallback `/app/basic*` and `/app/api/**` still Java's; see [Routing a path to medioo-web](#routing-a-path-to-medioo-web)) |
 | Runtime config | `/home/ec2-user/medscribe.env`, mode 600, passed to `docker run --env-file` |
 | Database | Supabase `niramoy-rx`, session pooler, schemas `medscribe` and `baymax` |
 | Object storage | AWS S3 `elioo-baymax-prod` (ap-south-1, private, SSE-S3) via the EC2 instance role (DR-5) |
@@ -475,7 +475,7 @@ Baymax health returning 404 in production means the module did not load: `BAYMAX
 
 The second container (from W1b), on the box. From outside, it answers only the paths Caddy routes to it
 (`docs/infra/Caddyfile.medioo`; from W1c, `/app/healthz`; from F0, also the preview path and the assets; from F7,
-`GET`/`HEAD /app/add`; from F3, also `GET`/`HEAD` `/app`, `/app/` and `/app/verify`; from F5, `GET`/`HEAD /app/home`; from F10, `GET`/`HEAD /app/family` and `/app/patients/<uuid>/profile`):
+`GET`/`HEAD /app/add`; from F3, also `GET`/`HEAD` `/app`, `/app/` and `/app/verify`; from F5, `GET`/`HEAD /app/home`; from F10, `GET`/`HEAD /app/family` and `/app/patients/<uuid>/profile`; from F9, `GET`/`HEAD /app/health`):
 
 ```bash
 docker ps --format '{{.Names}} {{.Image}} {{.Status}}' | grep -E '^(medscribe-ai|medioo-web) '   # both, same sha, medioo-web "(healthy)"
@@ -537,7 +537,9 @@ removed. From F5, `GET` and `HEAD /app/home`, the chat page (Java routes no othe
 Java's JSON 404). From F10, `GET` and `HEAD /app/family`, the family tab and settings, and
 `/app/patients/<uuid>/profile`, a patient's profile (a `path_regexp` of one lower-case uuid segment, anchored at both
 ends, so `/app/patients/<id>` and `/app/patients/<id>/profile/` stay Java's); `POST /app/patients/<id>/profile`, the
-profile save, stays Java's, and Java routes no `POST /app/family`. Every other page is still Java's, and so are every POST to a page (S3: `POST /app/login` and `POST /app/verify`
+profile save, stays Java's, and Java routes no `POST /app/family`. From F9, `GET` and `HEAD /app/health`, the health
+tab (Java never had a page there and routes no `POST /app/health`, so a POST stays Java's JSON 404; `path /app/health`
+is exact, so `/app/health/` stays Java's, and `/app/healthz` is medioo-web's own check, routed on its own). Every other page is still Java's, and so are every POST to a page (S3: `POST /app/login` and `POST /app/verify`
 included), the no-JS sign-in fallback `/app/basic*` (S1) and every `/app/api/**` path; each screen's own paths come in its
 flip PR (F3, F5–F10), each authorized by DR-49 (PO ruling 2026-10-23) as soon as its screen is merged and deployed,
 in place of the on-device try. Every preview page that reads Java reads nothing but `GET /app/api/me` until that answer says
@@ -563,6 +565,13 @@ table (`PROBE` rows included): each `next` or `static` row must reach medioo-web
 PASS, or the file is not applied.
 
 To flip a route (or flip one back, which is the same procedure with the block removed):
+
+**Flipping back a path Java never served (F9, `/app/health`) also reverts `FLIPPED`** in
+`medioo-web/src/routing/flipped.ts` in the same PR (`flipped.test.ts` requires both). For every other flip, a removed
+block hands the path back to a working Java page; for F9 it hands it back to Java's JSON 404, and the deployed
+medioo-web image keeps drawing the health tab on every Next page as a link to that 404 until the revert PR's image
+deploys. Deploy that PR's image as soon as the box edit is done, or roll back below the F9 routes floor
+([Rollback](#rollback)).
 
 1. **PR first.** Add the `handle <path> { reverse_proxy medioo-web:3000 }` block to `docs/infra/Caddyfile.medioo`,
    and the path's row to `scripts/smoke-https.sh` (with its test). The ship stage applies it to the box before the
@@ -683,7 +692,10 @@ has flipped: nothing is enforced. To roll back below the floor:
 
 1. Revert the routes flipped since the target sha: edit the box's Caddyfile back as in the procedure above (back up,
    write in place only, confirm the container sees it, validate, reload) and fold the same revert into
-   `docs/infra/Caddyfile.medioo` in a PR, or the next deploy's drift check goes red.
+   `docs/infra/Caddyfile.medioo` in a PR, or the next deploy's drift check goes red. **F9 (`/app/health`) is not
+   done at the Caddy edit:** Java has no page there, so until an image without `/app/health` in `FLIPPED` runs (the
+   target sha below the F9 floor, or a revert PR that removes it from `medioo-web/src/routing/flipped.ts` too), every
+   Next page's health tab links to Java's JSON 404. Do not stop at step 1.
 2. Record the older floor (the merge sha of the most recent flip still in place), or remove the file when no route
    remains flipped: `cp ~/medioo-routes-floor ~/medioo-routes-floor.bak-$(date +%Y%m%d-%H%M)`, then write it.
 3. `IMAGE_TAG=<sha> bash ~/deploy.sh`, then `scripts/smoke-https.sh https://medioo.eliooo.org` from a checkout of
