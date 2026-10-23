@@ -87,7 +87,8 @@ public class PaperApiHandler {
      * {@code GET /app/api/documents/{id}/values/{obs}} (plan W6-api): one value's sheet ({@link PaperJson#valueSheet}),
      * read through {@code ResultUseCase.valueSheet}, the same read as the HTML sheet ({@code DocumentPages.valueSheetPage},
      * plan W6-fix): 404 for another family, for a paper that is not DONE and for an observation that is not one of THIS
-     * paper's values, each before anything is recorded; then the result, the one DOCUMENT_VIEW. Then the crop sizes: this
+     * paper's values, each with nothing recorded (a paper that stops being DONE by the result's own read included); then
+     * the result, and the one DOCUMENT_VIEW once that result is read DONE. Then the crop sizes: this
      * paper's, measured as its own JSON measures them ({@link #sizes}), and each earlier paper's for its own crop as its
      * ledger stores them, never measured ({@link #earlierSizes}; they are the same patient's, proved by the earlier read).
      * A failed size read never fails the answer after the view was recorded.

@@ -586,8 +586,8 @@ public class DocumentPages implements WebPages {
     /**
      * GET /app/documents/{id}/values/{obs}?from=summary|all: one value's sheet as a plain URL, over the কাগজপত্র tab. Read
      * through {@code ResultUseCase.valueSheet}, the same read as the JSON sheet (plan W6-fix): 404 for another family, for
-     * a paper that is not DONE and for an id that is not one of THIS paper's values, each before the result is read, so a
-     * probe records no view.
+     * a paper that is not DONE (also when it stops being DONE by the result's own read) and for an id that is not one of
+     * THIS paper's values, each with no view recorded, so a probe records none.
      */
     public Mono<ServerResponse> valueSheetPage(ServerRequest request) {
         WebSession session = SessionAuthFilter.session(request);

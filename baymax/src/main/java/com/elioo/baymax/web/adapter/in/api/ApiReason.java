@@ -108,6 +108,9 @@ public enum ApiReason {
             Map.entry(FreeTierExceededException.DOCUMENTS, FREE_TIER_DOCUMENTS),
             Map.entry("confirm_required", CONFIRM_REQUIRED),
             Map.entry("not_a_retake", NOT_A_RETAKE),
+            // the value sheet's status gate (ResultService.valueSheet, ruling R1): its own reason so a test can tell it from
+            // "observation_not_found", the same plain NOT_FOUND on the wire
+            Map.entry("paper_not_done", NOT_FOUND),
             // a share member's write on a patient they see (TimelineService.updateChronicFlags, the reminders routes)
             Map.entry("not_owner", VIEW_ONLY),
             // chronic flags FamilyAccountService.normalizeFlags refuses: too many, or one too long

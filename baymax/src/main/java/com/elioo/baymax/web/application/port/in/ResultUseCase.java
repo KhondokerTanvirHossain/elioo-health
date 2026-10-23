@@ -37,14 +37,18 @@ public interface ResultUseCase {
      * a rule the PO set for the sheet (ruling R1, 2026-10-22) holds on both or on neither. In this order:
      * <ol>
      *   <li>the paper, through visibility: 404 for another family; <b>404 for a paper that is not DONE</b> (NEEDS_RETAKE,
-     *       FAILED, still being read), before anything else is read, so no view is recorded for it;</li>
+     *       FAILED, still being read; reason {@code paper_not_done}), before anything else is read, so no view is
+     *       recorded for it;</li>
      *   <li>the value's history ({@link EarlierHistory}): 404 when the observation is not one of THIS paper's values;
      *       the earlier readings in the same (folded) unit, same patient, finished papers before this one, newest first,
      *       at most {@code 10}, and whether the marker was also read before in another unit, so the sheet says "the
      *       first time" only when no earlier reading exists in any unit ({@link EarlierHistory#lineKey});</li>
-     *   <li>the result, the one DOCUMENT_VIEW; a paper that is not DONE by then is 404 too.</li>
+     *   <li>the result; a paper that is not DONE by then is 404 {@code paper_not_done} too, with no view recorded. The
+     *       one DOCUMENT_VIEW is written once the result is read DONE, or when the result's read fails for another
+     *       reason (a failed read is still an audited one, as {@link #result} records it).</li>
      * </ol>
-     * There is deliberately no history read on this port without the status gate in front of it.
+     * There is deliberately no history read on this port, or public on its implementation, without the status gate in
+     * front of it.
      */
     Mono<ValueSheetView> valueSheet(UUID familyId, UUID documentId, UUID observationId);
 }
