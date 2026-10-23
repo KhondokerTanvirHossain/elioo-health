@@ -51,12 +51,16 @@ describe("paths", () => {
   });
 
   it("reachableIsJavaOrAFlipOrNextUnderThePreview", () => {
-    expect(FLIPPED).not.toContain("/app/health");
     expect(JAVA_PAGES).not.toContain("/app/health");
-    // W9: this build serves /app/health, so it is reachable under the preview, and only there until F9 flips it.
+    // W9: this build serves /app/health; Java never did. F9 sends it to Next, so it is reachable with or without the
+    // preview. Before F9 it was reachable under the preview only (TabBar.test.tsx keeps that direction, over the same
+    // rule with /app/health left out of FLIPPED).
     expect(NEXT_PAGES).toContain("/app/health");
-    expect(reachable("/app/health", false)).toBe(false);
+    expect(FLIPPED).toContain("/app/health");
+    expect(reachable("/app/health", false)).toBe(true);
     expect(reachable("/app/health", true)).toBe(true);
+    // A page neither server answers is reachable nowhere, flip or no flip.
+    expect(reachable("/app/healthy", false), "a page no server answers").toBe(false);
     expect(reachable("/app/healthy", true), "a page this build does not serve").toBe(false);
     // Java serves the paper, so it is reachable whatever the preview says; a pattern matches a real id.
     expect(reachable("/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003", false)).toBe(true);

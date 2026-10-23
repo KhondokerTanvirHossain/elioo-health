@@ -104,13 +104,19 @@ test.describe("the health tab", () => {
       .toBe(expectedWidth(broken));
   });
 
-  test("theHealthTabAppearsInPreviewOnly", async ({ page }) => {
+  test("theHealthTabAppearsInAndOutOfThePreview", async ({ page }) => {
     const tab = t("bn", "tab.health");
-    // Not a preview page, while Caddy does not send /app/health to Next (F9): no tab, since its link would reach Java's 404.
-    expect(FLIPPED).not.toContain("/app/health");
+    // Not a preview page: Caddy sends /app/health to Next (F9), so the tab is drawn, a link to this page, marked as it.
+    // (Before F9 it was absent here, its link would have reached Java's 404: TabBar.test.tsx keeps that direction.)
+    expect(FLIPPED).toContain("/app/health");
     await open(page, "health-some");
     await expect(page.locator("[data-page=health]")).toHaveCount(1);
-    await expect(page.getByRole("link", { name: tab })).toHaveCount(0);
+    const plain = page.getByRole("link", { name: tab });
+    expect(await plain.count(), "the tab is drawn outside the preview").toBeGreaterThan(0);
+    for (const link of await plain.all()) {
+      await expect(link).toHaveAttribute("href", "/app/health");
+      await expect(link).toHaveAttribute("aria-current", "page");
+    }
     // A preview page: the tab, inside the preview, marked as this page.
     await open(page, "health-preview", "/app/preview/health");
     const links = page.getByRole("link", { name: tab });
