@@ -23,9 +23,14 @@
 #   fails both rows; `add-get-only` keeps `method GET` and fails the HEAD row alone), and POST /app/add, the upload,
 #   stays Java's (`add-any-method` drops the method line and fails the PROBE POST row alone); `add-wide` widens the
 #   exact `path /app/add` to `/app/add*` and fails the /app/add/ boundary row alone. Each edit is anchored on the add
-#   block, so another block's `method GET HEAD` (F3's sign-in matcher) is never the one edited;
+#   block, so another block's `method GET HEAD` (F3's sign-in matcher, F5's chat matcher) is never the one edited;
 # - F3's sign-in matcher, each way it could be wrong: without `method GET HEAD` it takes POST /app/verify (S3: every
 #   sign-in POST stays Java's), `path /app/verify*` takes /app/verifyx, and without the bare `/app` that row is Java's;
+# - F5's rule has the same two directions as F7's: GET and HEAD /app/home reach Next (`home-missing` drops the block
+#   and fails both rows; `home-get-only` keeps `method GET` and fails the HEAD row alone), and a POST stays Java's
+#   (`home-any-method` drops the method line and fails the PROBE POST row alone); `home-wide` widens the exact
+#   `path /app/home` to `/app/home*` and fails the /app/home/ boundary row alone. Each edit is anchored on the home
+#   block, so the add and sign-in blocks' `method GET HEAD` is never the one edited;
 # - a table with no rows, a file with no medioo.eliooo.org block, and a file with an upstream the probe does not know
 #   each fail, rather than pass vacuously or send a row somewhere unreplaced.
 set -uo pipefail
@@ -42,9 +47,9 @@ CASES=0
 # /app/verify, HEAD /app/verify, /app/login /app/verifyx /app/basic /lang/en?back=..., POST /app/verify, POST /app/login,
 # / /medscribeai /medscribeai/ /baymax /baymax/ webhook /_next/static/x.js /fonts/noto-sans-latin.woff2
 # /brand/mio-head.webp /brand/medioo-light.svg (P3) /app/preview /app/preview/ /app/previewx /_next/image
-# /app/preview/probe, and F7's /app/add, /app/add/, PROBE HEAD /app/add and PROBE POST /app/add (the probe sends PROBE
-# rows; the production run never does)
-ROWS=33
+# /app/preview/probe, F7's /app/add, /app/add/, PROBE HEAD /app/add and PROBE POST /app/add, and F5's /app/home,
+# /app/home/, PROBE HEAD /app/home and PROBE POST /app/home (the probe sends PROBE rows; the production run never does)
+ROWS=37
 
 fail() { echo "FAIL: $1"; FAILED=1; }
 
@@ -112,6 +117,10 @@ add-missing|s/\t\@medioo_add \{\n\t\tmethod GET HEAD\n\t\tpath \/app\/add\n\t\}\
 signin-any-method|s/\n\t\tmethod GET HEAD\n\t\tpath \/app \/app\/ \/app\/verify\n/\n\t\tpath \/app \/app\/ \/app\/verify\n/|FAIL POST /app/verify got 298 (next), expected 299 (java)
 signin-verify-prefix|s/\n\t\tpath \/app \/app\/ \/app\/verify\n/\n\t\tpath \/app \/app\/ \/app\/verify*\n/|FAIL /app/verifyx got 298 (next), expected 299 (java)
 signin-no-bare|s/\n\t\tpath \/app \/app\/ \/app\/verify\n/\n\t\tpath \/app\/ \/app\/verify\n/|FAIL /app got 299 (java), expected 298 (next)
+home-any-method|s/\n\t\tmethod GET HEAD\n(\t\tpath \/app\/home\n)/\n$1/|FAIL PROBE POST /app/home got 298 (next), expected 299 (java)
+home-get-only|s/\n\t\tmethod GET HEAD\n(\t\tpath \/app\/home\n)/\n\t\tmethod GET\n$1/|FAIL PROBE HEAD /app/home got 299 (java), expected 298 (next)
+home-wide|s/(\n\t\tmethod GET HEAD\n\t\tpath \/app\/home)\n/$1*\n/|FAIL /app/home/ got 298 (next), expected 299 (java)
+home-missing|s/\t\@medioo_chat \{\n\t\tmethod GET HEAD\n\t\tpath \/app\/home\n\t\}\n\thandle \@medioo_chat \{\n\t\treverse_proxy medioo-web:3000\n\t\}\n//|FAIL /app/home got 299 (java), expected 298 (next)|FAIL PROBE HEAD /app/home got 299 (java), expected 298 (next)
 TABLE
 
 # 4. a table with no rows: refused, not passed
