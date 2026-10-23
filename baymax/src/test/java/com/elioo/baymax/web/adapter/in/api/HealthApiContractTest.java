@@ -136,6 +136,7 @@ class HealthApiContractTest {
         cases.put("labs-some", () -> Case.labs(labsSome()));
         cases.put("labs-none", () -> Case.labs(List.of()));
         cases.put("bp", () -> Case.labs(bpRows()));
+        cases.put("bp-flagged", () -> Case.labs(bpFlaggedRows()));
         cases.put("labs-with-unknown", () -> Case.labs(labsWithUnknown()));
         cases.put("labs-non-numeric", () -> Case.labs(labsNonNumeric()));
         cases.put("labs-printed-range", () -> Case.labs(labsPrintedRange()));
@@ -148,6 +149,8 @@ class HealthApiContractTest {
         cases.put("medicines-newer-unread", () -> Case.medicines(new LatestPrescription(RX, LocalDate.parse("2026-10-12"), false, false,
                 List.of(medicine("Tab. Demoprol", "50 mg", "1+0+1", null, null, 1)), Optional.of(RX_READING))));
         cases.put("medicines-none", () -> Case.medicines(LatestPrescription.none(Optional.empty())));
+        // A family's first prescription, still being read: nothing read yet, and a newer one (HealthServiceTest asserts it).
+        cases.put("medicines-none-newer-unread", () -> Case.medicines(LatestPrescription.none(Optional.of(RX_READING))));
         return cases;
     }
 
@@ -292,6 +295,19 @@ class HealthApiContractTest {
         Map<String, Object> systolic = row(LAB_OCT, 41, "2026-10-12", "BP", "bp_systolic", "130", "mmHg", null, null);
         systolic.put("source_line", BloodPressurePairAcceptanceTest.EXTRACTED_BP_LINE);
         Map<String, Object> diastolic = row(LAB_OCT, 42, "2026-10-12", "BP", "bp_diastolic", "80", "mmHg", null, null);
+        diastolic.put("source_line", BloodPressurePairAcceptanceTest.EXTRACTED_BP_LINE);
+        return List.of(systolic, diastolic);
+    }
+
+    /**
+     * Review of PR #160: the same {@code BP : 130 / 80} line with each half judged differently, systolic outside high
+     * against its printed 90–120 and diastolic inside 60–90, so a screen that drew one half's chip for both, or swapped
+     * them, shows a different word on a half than Java sent for it.
+     */
+    static List<Map<String, Object>> bpFlaggedRows() {
+        Map<String, Object> systolic = verdict(row(LAB_OCT, 43, "2026-10-12", "BP", "bp_systolic", "130", "mmHg", "90", "120"), "outside", "high");
+        systolic.put("source_line", BloodPressurePairAcceptanceTest.EXTRACTED_BP_LINE);
+        Map<String, Object> diastolic = verdict(row(LAB_OCT, 44, "2026-10-12", "BP", "bp_diastolic", "80", "mmHg", "60", "90"), "inside", null);
         diastolic.put("source_line", BloodPressurePairAcceptanceTest.EXTRACTED_BP_LINE);
         return List.of(systolic, diastolic);
     }
@@ -684,6 +700,24 @@ class HealthApiContractTest {
         assertThat(body.path("document_id").isNull()).isTrue();
         assertThat(body.path("medicines")).isEmpty();
         assertThat(body.path("newer_prescription_not_read").asBoolean()).isFalse();
+    }
+
+    @Test
+    void aFirstPrescriptionStillBeingReadIsSentWithNoDocumentAndTheNewerOne() throws IOException {
+        JsonNode body = get(cases().get("medicines-none-newer-unread").get());
+        assertThat(body.path("document_id").isNull()).as("nothing read yet").isTrue();
+        assertThat(body.path("medicines")).isEmpty();
+        assertThat(body.path("newer_prescription_not_read").asBoolean()).isTrue();
+        assertThat(body.path("newer_document_id").asText()).isEqualTo(RX_READING.toString());
+    }
+
+    @Test
+    void eachBloodPressureHalfCarriesItsOwnJudgement() throws IOException {
+        JsonNode pair = get(cases().get("bp-flagged").get()).path("bp").path("points").get(0);
+        assertThat(pair.path("systolic").path("kind").asText()).isEqualTo("outside");
+        assertThat(pair.path("systolic").path("side").asText()).isEqualTo("high");
+        assertThat(pair.path("diastolic").path("kind").asText()).isEqualTo("inside");
+        assertThat(pair.path("diastolic").path("side").isNull()).isTrue();
     }
 
     /** Every key the two routes can emit (the heading, every chip a point can carry) resolves in both languages. */

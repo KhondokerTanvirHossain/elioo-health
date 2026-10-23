@@ -94,8 +94,11 @@ function dateText(lang: Lang, p: TrendPointJson, withYear: boolean): string {
  * and its text (`ref_text`) is neither said nor written until the PO accepts its form (PR 143); a legend under the
  * chart names each kind it draws. Nothing is drawn unless `chartable` holds. Colours are tokens through classes (TrendChart.css),
  * no inline style, and the critical shape is never red here: the red belongs to the NOW components.
+ *
+ * `labelledBy`, when given, is the id of a heading that names the series with its unit (the health tab's, where one
+ * printed name in two units is two series): the list is then named by that heading, so two lists are never named alike.
  */
-export function TrendChart({ series, lang }: { series: LabSeriesJson; lang: Lang }) {
+export function TrendChart({ series, lang, labelledBy }: { series: LabSeriesJson; lang: Lang; labelledBy?: string }) {
   if (!chartable(series.points)) return null;
   const withYear = new Set(series.points.map((p) => p.date.slice(0, 4))).size > 1;
   const readings = series.points
@@ -178,7 +181,7 @@ export function TrendChart({ series, lang }: { series: LabSeriesJson; lang: Lang
           </g>
         ))}
       </svg>
-      <ol className="trend-chart__readings" aria-label={series.name}>
+      <ol className="trend-chart__readings" {...(labelledBy ? { "aria-labelledby": labelledBy } : { "aria-label": series.name })}>
         {placed.map(({ p, kind }) => {
           const date = dateText(lang, p, withYear);
           const word = t(lang, CHIP_KEY[kind]);

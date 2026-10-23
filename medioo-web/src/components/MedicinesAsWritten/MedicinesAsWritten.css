@@ -67,8 +67,24 @@
   font-size: var(--text-lg);
   line-height: 1.5;
 }
-.medicines__newer {
+.medicines__newer,
+.medicines__open {
   margin: 0;
+}
+/* Under the lines: the pharmacy rule and the doctor's line, quiet, then the link to the prescription itself. */
+.medicines__foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0 var(--space-4);
+}
+.medicines__pharmacy,
+.medicines__doctor {
+  margin: 0;
+  color: var(--label2);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 .medicines__newer-link {
   display: inline-flex;

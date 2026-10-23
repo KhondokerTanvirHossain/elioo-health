@@ -24,6 +24,7 @@ import busy from "../../fixtures/api/calendar/busy.json";
 import crowded from "../../fixtures/api/calendar/crowded.json";
 import empty from "../../fixtures/api/calendar/empty.json";
 import bp from "../../fixtures/api/health/bp.json";
+import bpFlagged from "../../fixtures/api/health/bp-flagged.json";
 import labsNonNumeric from "../../fixtures/api/health/labs-non-numeric.json";
 import labsNone from "../../fixtures/api/health/labs-none.json";
 import labsPrintedRange from "../../fixtures/api/health/labs-printed-range.json";
@@ -33,6 +34,7 @@ import medicinesEmptyLatest from "../../fixtures/api/health/medicines-empty-late
 import medicinesLatest from "../../fixtures/api/health/medicines-latest.json";
 import medicinesNewerUnread from "../../fixtures/api/health/medicines-newer-unread.json";
 import medicinesNone from "../../fixtures/api/health/medicines-none.json";
+import medicinesNoneNewerUnread from "../../fixtures/api/health/medicines-none-newer-unread.json";
 import labsWithUnknown from "../../fixtures/api/health/labs-with-unknown.json";
 // B1's generated GET /app/api/me bodies (baymax MeApiContractTest), plan W4: the shell reads every field it renders here.
 import meLongName from "../../fixtures/api/me/long-name.json";
@@ -404,11 +406,12 @@ describe("the API types are the generated fixtures", () => {
       ["labs-printed-range", labsPrintedRange.body],
       ["labs-two-units", labsTwoUnits.body],
       ["bp", bp.body],
+      ["bp-flagged", bpFlagged.body],
     ];
     // Every committed labs fixture is assigned above, so a case B6 or W9 adds fails here until it is listed.
     expect(
       readdirSync(join(fixtures, "health"))
-        .filter((f) => f.startsWith("labs-") || f === "bp.json")
+        .filter((f) => f.startsWith("labs-") || f === "bp.json" || f.startsWith("bp-"))
         .sort(),
     ).toEqual(labs.map(([name]) => `${name}.json`).sort());
     const points: TrendPointJson[] = [];
@@ -449,6 +452,7 @@ describe("the API types are the generated fixtures", () => {
       ["medicines-empty-latest", medicinesEmptyLatest.body],
       ["medicines-newer-unread", medicinesNewerUnread.body],
       ["medicines-none", medicinesNone.body],
+      ["medicines-none-newer-unread", medicinesNoneNewerUnread.body],
     ];
     // Every committed medicines fixture is assigned above, so a case B6 or W9 adds fails here until it is listed.
     expect(

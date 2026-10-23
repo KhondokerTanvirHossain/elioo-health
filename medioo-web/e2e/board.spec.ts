@@ -351,6 +351,9 @@ BOARD_SCENES.push(
   health("newer-unread", "health-newer-unread", "meds", MEDICINES),
   health("no-prescription", "health-none", "meds", MEDICINES),
   health("long-name", "health-long", "labs"),
+  // Review of PR #160: a pair whose halves are judged apart, and a family's first prescription still being read.
+  health("blood-pressure-flagged", "health-bp-flagged", "labs", "[data-bp]"),
+  health("first-prescription-being-read", "health-first-unread", "meds", MEDICINES),
 );
 
 // TrendChart's catalog states (plan RANGE-web, PO ruling R3): each one alone, in each language, beside the approved

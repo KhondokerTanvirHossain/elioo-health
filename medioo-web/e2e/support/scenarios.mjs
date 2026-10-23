@@ -481,6 +481,12 @@ export const SCENARIOS = {
   "health-two-no-choice": health("labs-some", "medicines-latest", "me/two-patients.json"),
   "health-preview": health("labs-some", "medicines-latest", "me/preview-on.json"),
   "health-long": health("labs-some", "medicines-latest", "me/long-name.json"),
+  // Review of PR #160: a pair whose halves are judged apart; lab values with no prescription, and a prescription with no
+  // lab value (the disclaimer each way); and a family's first prescription still being read, nothing read before it.
+  "health-bp-flagged": health("bp-flagged"),
+  "health-labs-only": health("labs-some", "medicines-none"),
+  "health-medicines-only": health("labs-none", "medicines-latest"),
+  "health-first-unread": health("labs-none", "medicines-none-newer-unread"),
 };
 
 export { UNAUTHENTICATED };
