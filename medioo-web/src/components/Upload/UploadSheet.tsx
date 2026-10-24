@@ -46,7 +46,8 @@ let pageIds = 0;
  * Without JavaScript the server's markup stays as drawn: every control off, no `<form>` (the page's `<noscript>` says
  * a paper needs JavaScript, DR-42). `asked` is the page's `?patient=` (for the view-only line and the retake);
  * `replaces` its `?replaces=`, sent only while the patient chosen is the one the retake link named (DR-47: Java drops
- * any other anyway).
+ * any other anyway). `closeHref` is where the header's close (sheet.close) goes, resolved by the page (close-href.ts):
+ * a plain link, so it closes with or without JavaScript.
  */
 export function UploadSheet({
   options,
@@ -54,12 +55,14 @@ export function UploadSheet({
   preview,
   asked,
   replaces,
+  closeHref,
 }: {
   options: UploadOptionsJson;
   words: UploadWords;
   preview: boolean;
   asked: string | null;
   replaces: string | null;
+  closeHref: string;
 }) {
   const askedViewOnly = asked !== null && options.view_only.some((p) => p.id === asked);
 
@@ -274,9 +277,14 @@ export function UploadSheet({
 
   const sheet = (body: React.ReactNode) => (
     <section className="upload-sheet" aria-labelledby={headingId} data-upload-sheet="" data-live={live ? "" : undefined}>
-      <h1 className="upload-sheet__title" id={headingId}>
-        {words.title}
-      </h1>
+      <div className="upload-sheet__head">
+        <h1 className="upload-sheet__title" id={headingId}>
+          {words.title}
+        </h1>
+        <a className="upload-sheet__close" href={closeHref}>
+          {words.close}
+        </a>
+      </div>
       {body}
     </section>
   );

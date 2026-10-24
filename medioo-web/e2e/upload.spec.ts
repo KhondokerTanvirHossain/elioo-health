@@ -376,8 +376,44 @@ test.describe("a retake", () => {
   });
 });
 
+/** The sheet's close (sheet.close), a link in its header. */
+const closeLink = (page: Page) => page.locator("[data-upload-sheet]").getByRole("link", { name: t("bn", "sheet.close"), exact: true });
+
+test.describe("the sheet's close", () => {
+  const PAPER = `/app/documents/${RETAKE_OF}`;
+
+  test("theCloseGoesBackToThePaperItWasOpenedFrom", async ({ page }) => {
+    // The link Java's paper page draws (DocumentPages.anotherPaper): back=/app/documents/{id}.
+    await openAdd(page, "upload-owner-one", `/app/add?patient=${MA.id}&back=${encodeURIComponent(PAPER)}`);
+    await expect(closeLink(page)).toHaveAttribute("href", PAPER);
+    const box = (await closeLink(page).boundingBox())!;
+    expect({ width: box.width >= 44, height: box.height >= 44 }, "a 44 px target").toEqual({ width: true, height: true });
+    await closeLink(page).click();
+    await page.waitForURL((url) => url.pathname === PAPER);
+  });
+
+  for (const back of ["//evil.example", "https://evil.example/app/home", "/\\evil.example", "/app/../api/v1/baymax/me"]) {
+    test(`theCloseNeverLeavesTheApp ${back}`, async ({ page }) => {
+      await openAdd(page, "upload-owner-one", `/app/add?patient=${MA.id}&back=${encodeURIComponent(back)}`);
+      await expect(closeLink(page)).toHaveAttribute("href", "/app/home");
+    });
+  }
+
+  test("withNoBackTheCloseGoesToTheChatTab", async ({ page }) => {
+    await openAdd(page, "upload-owner-one");
+    await expect(closeLink(page)).toHaveAttribute("href", "/app/home");
+  });
+});
+
 test.describe("without JavaScript", () => {
   test.use({ javaScriptEnabled: false });
+
+  test("withoutJavaScriptTheCloseStillCloses", async ({ page }) => {
+    await useScenario(page, "upload-owner-one");
+    const paper = `/app/documents/${RETAKE_OF}`;
+    expect((await page.goto(`/app/add?patient=${MA.id}&back=${encodeURIComponent(paper)}`))?.status()).toBe(200);
+    await expect(closeLink(page), "a plain link the server drew").toHaveAttribute("href", paper);
+  });
 
   test("withoutJavaScriptTheSheetSaysSo", async ({ page }) => {
     await useScenario(page, "upload-owner-one");

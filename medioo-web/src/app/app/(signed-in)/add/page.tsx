@@ -4,6 +4,7 @@ import type { UploadOptionsJson } from "@/api/types";
 import { t } from "@/copy";
 import { UploadSheet } from "@/components/Upload/UploadSheet";
 import { signedInPage } from "../shell";
+import { closeHref } from "./close-href";
 import { uploadWords } from "./upload-words";
 
 type Params = Record<string, string | string[] | undefined>;
@@ -13,7 +14,9 @@ const one = (v: string | string[] | undefined) => (typeof v === "string" && v !=
  * `/app/add` (plan W7): the add sheet as a page, inside the shell, over GET /app/api/upload-options. `?patient=` is the
  * patient the page was opened for (the shell answers 404 for one this family does not see, as Java does): it is handed
  * to Java's options read, which answers whom the sheet opens on (`chosen_patient_id`), and to the sheet as received.
- * `?replaces=` is the paper a retake replaces (D1), handed to the sheet as received: Java judges it on the press. Every press needs JavaScript (DR-42): without it the `<noscript>` says so (upload.nojs) and the sheet
+ * `?replaces=` is the paper a retake replaces (D1), handed to the sheet as received: Java judges it on the press. `?back=`
+ * is the page that opened the sheet, as Java's links carry it: the sheet's close goes there when it is a page of this
+ * app (Java's LocalPath rule) that answers, and to the chat tab otherwise (close-href.ts). Every press needs JavaScript (DR-42): without it the `<noscript>` says so (upload.nojs) and the sheet
  * the server drew has every control off and no `<form>`, so nothing posts anywhere. Java keeps its own `/app/add` until
  * F7 flips the path; until then this page is reached on the preview path.
  */
@@ -40,6 +43,7 @@ export default async function AddPage({ searchParams }: { searchParams: Promise<
             preview={preview}
             asked={asked}
             replaces={one(params.replaces)}
+            closeHref={closeHref(one(params.back), preview)}
           />
         </>
       );
