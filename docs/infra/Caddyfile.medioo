@@ -36,7 +36,7 @@
 # sheet (F7; POST /app/add, the upload, stays Java's); GET and HEAD /app, /app/ and /app/verify, the sign-in pages
 # (F3); GET and HEAD /app/home, the chat page (F5); GET and HEAD /app/family and /app/patients/<uuid>/profile, the
 # family tab and a patient's profile (F10; POST to the profile, its save, stays Java's); GET and HEAD /app/health, the
-# health tab (F9). Every other page, every POST to a page and every /app/api/** path is still Java's; each screen's own paths come in its flip PR. scripts/caddy-route-probe.sh runs this file in a
+# health tab (F9); GET and HEAD /app/timeline, the papers page (F8). Every other page, every POST to a page and every /app/api/** path is still Java's; each screen's own paths come in its flip PR. scripts/caddy-route-probe.sh runs this file in a
 # local Caddy and checks every row of scripts/smoke-https.sh reaches the upstream its class names.
 #
 # Referrer-Policy stays strict-origin-when-cross-origin, the value production has sent since before the rebuild
@@ -169,6 +169,19 @@ medioo.eliooo.org {
 		path /app/health
 	}
 	handle @medioo_health {
+		reverse_proxy medioo-web:3000
+	}
+
+	# F8 (DR-49, PO ruling 2026-10-23): the papers page, the wall calendar, the doctor's dates and the month list
+	# (plan W8). GET and HEAD only, per the plan's row: Java routes no POST /app/timeline, so a POST stays Java's JSON
+	# 404. `path /app/timeline` is exact and ignores the query, so /app/timeline?patient=<id> (every link to the tab)
+	# comes here, while /app/timeline/ and /app/timelinex stay Java's, and so does the patient page /app/patients/<id>.
+	# Turning the old page back on is deleting this block (RUNBOOK -> Rollback).
+	@medioo_papers {
+		method GET HEAD
+		path /app/timeline
+	}
+	handle @medioo_papers {
 		reverse_proxy medioo-web:3000
 	}
 

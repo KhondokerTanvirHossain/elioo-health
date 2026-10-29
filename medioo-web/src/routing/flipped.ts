@@ -17,6 +17,9 @@
  * here and routes no POST /app/health. From here the health tab is drawn outside the preview too (TabBar). Because
  * Java has no page behind it, flipping F9 back takes this entry out in the same PR that removes its Caddy block:
  * deleting the block alone leaves every Next page's health tab linking to Java's JSON 404.
+ * F8 (DR-49, PO ruling 2026-10-23): `/app/timeline`, the papers page (plan W8), GET and HEAD only; Java routes no
+ * POST /app/timeline. Java's old page is still behind the path, so turning it back on is deleting the Caddy block
+ * (RUNBOOK -> Rollback), as for F7, F5 and F10; flipped.test.ts then needs this entry out in the repo too.
  */
 export const FLIPPED: readonly string[] = [
   "/app/add",
@@ -27,4 +30,5 @@ export const FLIPPED: readonly string[] = [
   "/app/family",
   "/app/patients/{id}/profile",
   "/app/health",
+  "/app/timeline",
 ];
