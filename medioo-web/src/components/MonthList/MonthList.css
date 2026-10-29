@@ -1,7 +1,8 @@
 /* The papers page's list (MonthList.tsx): phone.html scene `papers`, the month's grouped cells. A month header, then
    one full-width row per paper, each one link at least the 44 px floor: a drawn paper, the type, the day and the
    facility as printed, the counts line and the stored level's tag. Everything wraps, so a long facility or a long
-   reason never widens the row. Nothing here is red or amber: the level's tag (safety/UrgencyTag) is shape and word. */
+   reason never widens the row. Nothing here is red or amber: only the level's tag (safety/UrgencyTag) is, NOW red and
+   THIS_WEEK amber with its shape and word (PO ruling P5), and papers.spec.ts holds the rest of the row to neither. */
 .month-list {
   display: flex;
   flex-direction: column;

@@ -15,12 +15,14 @@ const src = join(dirname(fileURLToPath(import.meta.url)), "..");
 // (fixtures/api/now-banner/ and /app/api/now-banner), not the class. Only that segment is exempt: `now-banner` after
 // any other slash (`styles/now-banner`, `x/now-banner__call`) is still reported.
 // MonthCalendar's colour modifiers (PO ruling R2, DR-48) end in --now / --week like a token; they are not the tokens,
-// and have their own rule below, so the token patterns skip exactly them.
+// and have their own rule below, so the token patterns skip exactly them. UrgencyTag's (PO ruling P5) likewise.
 const CAL_MARK = "month-calendar__(?:alert|key)";
+const TAG = "urgency-tag";
+const MODIFIER_BLOCKS = `${CAL_MARK}|${TAG}`;
 const RULES: { names: [label: string, pattern: RegExp][]; allowed: RegExp[] }[] = [
   {
     names: [
-      ["--now", new RegExp(`(?<!${CAL_MARK})--(?:on-)?now(?![A-Za-z0-9_])`)],
+      ["--now", new RegExp(`(?<!${MODIFIER_BLOCKS})--(?:on-)?now(?![A-Za-z0-9_])`)],
       ["now-banner", /(?<!api\/)now-banner/],
       ["verdict-card--now", /verdict-card--now/],
       ["status-chip--crit", /status-chip--crit/],
@@ -29,7 +31,7 @@ const RULES: { names: [label: string, pattern: RegExp][]; allowed: RegExp[] }[] 
   },
   {
     names: [
-      ["--week", new RegExp(`(?<!${CAL_MARK})--(?:on-)?week(?![A-Za-z0-9_])`)],
+      ["--week", new RegExp(`(?<!${MODIFIER_BLOCKS})--(?:on-)?week(?![A-Za-z0-9_])`)],
       ["verdict-card--week", /verdict-card--week/],
     ],
     allowed: [/^src\/components\/safety\//, /^src\/styles\//, /^src\/lint\//],
@@ -41,6 +43,14 @@ const RULES: { names: [label: string, pattern: RegExp][]; allowed: RegExp[] }[] 
   {
     names: [["month-calendar__(alert|key)--week", new RegExp(`${CAL_MARK}--week(?![A-Za-z0-9_])`)]],
     allowed: [/^src\/components\/MonthCalendar\//, /^src\/styles\//, /^src\/lint\//],
+  },
+  {
+    names: [["urgency-tag--now", new RegExp(`${TAG}--now(?![A-Za-z0-9_])`)]],
+    allowed: [/^src\/components\/safety\/UrgencyTag\//, /^src\/styles\//, /^src\/lint\//],
+  },
+  {
+    names: [["urgency-tag--week", new RegExp(`${TAG}--week(?![A-Za-z0-9_])`)]],
+    allowed: [/^src\/components\/safety\/UrgencyTag\//, /^src\/styles\//, /^src\/lint\//],
   },
 ];
 
@@ -135,6 +145,26 @@ describe("NOW and THIS_WEEK class names in TypeScript", () => {
       `${cal} --week`,
       `${cal} verdict-card--week`,
     ]);
+  });
+
+  it("aPapersUrgencyTagsColourModifiersLiveOnlyInUrgencyTag", () => {
+    // PO ruling P5 (2026-10-28): a paper's NOW tag on the papers list and the attention strip carries the NOW red, and
+    // its THIS_WEEK tag the amber, through these modifiers, which UrgencyTag may name and nothing else may: not the
+    // list or the page that place the tag, and not another safety component.
+    const tag = "src/components/safety/UrgencyTag/UrgencyTag.tsx";
+    const both = '<span className="urgency-tag urgency-tag--now" /><span className="urgency-tag urgency-tag--week" />';
+    expect(scanFile(tag, both)).toEqual([]);
+    expect(scanFile("src/components/safety/UrgencyTag/UrgencyTag.test.tsx", both)).toEqual([]);
+    for (const file of [
+      "src/components/MonthList/MonthList.tsx",
+      "src/app/app/(signed-in)/timeline/page.tsx",
+      "src/components/safety/NowBanner/NowBanner.tsx",
+      "src/components/MonthCalendar/MonthCalendar.tsx",
+    ]) {
+      expect(scanFile(file, both), file).toEqual([`${file} urgency-tag--now`, `${file} urgency-tag--week`]);
+    }
+    // The modifiers are matched by name: a look-alike is not one, and the plain block class names no level.
+    expect(scanFile("src/components/MonthList/MonthList.tsx", '<span className="urgency-tag urgency-tag--nowish urgency-tag--weekly" />')).toEqual([]);
   });
 
   it("aNowTokenIsMatchedByItsNameNotBySubstring", () => {
