@@ -33,8 +33,8 @@ describe("paths", () => {
     expect(href("/app/verify", false)).toBe("/app/verify");
     expect(href("/app/", true)).toBe("/app/preview/");
     // A page this build does not serve is Java's: the preview prefix would land on Next's 404.
-    expect(NEXT_PAGES).not.toContain("/app/family");
-    expect(href("/app/family", true)).toBe("/app/family");
+    expect(NEXT_PAGES).not.toContain("/app/nudges/opt-out");
+    expect(href("/app/nudges/opt-out", true)).toBe("/app/nudges/opt-out");
     // The papers page (W8) is a Next page: a preview page's link to it, query and all, stays inside the preview.
     expect(NEXT_PAGES).toContain("/app/timeline");
     expect(href("/app/timeline?patient=x&type=lab", true)).toBe("/app/preview/timeline?patient=x&type=lab");

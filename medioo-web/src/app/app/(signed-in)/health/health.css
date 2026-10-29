@@ -1,5 +1,5 @@
 /* The health tab (health/page.tsx; phone.html scene `health`): the page's title, then two sections, the lab values and
-   the medicines, each its small heading above its groups, and the disclaimer at the foot. Every size is a token. */
+   the medicines, each its small heading above its groups. Every size is a token. */
 .health {
   display: flex;
   flex-direction: column;
@@ -37,10 +37,4 @@
   background: var(--bg3);
   font-size: var(--text-lg);
   line-height: 1.5;
-}
-.health__disclaimer {
-  margin: 0;
-  color: var(--label2);
-  font-size: var(--text-sm);
-  line-height: 1.45;
 }

@@ -12,6 +12,7 @@
     "patients": [
       {
         "age": 64,
+        "chronic_flags_set": true,
         "documents": 0,
         "id": "a79cee37-8a3e-3953-b76a-d5e477b70696",
         "last_document_at": null,
