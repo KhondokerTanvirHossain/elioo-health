@@ -163,6 +163,9 @@ class MeApiContractTest {
         cases.put("two-owned", Case.of(true, ma(), baba()));
         // the same two with Ma's name the longest (the add sheet's longest twin, W7): two-owned with one thing changed
         cases.put("two-owned-long", Case.of(true, maLong(), baba()));
+        // plan W8 review: a patient whose chronic flags were answered, so the papers page's BMX-8 ask is judged both ways
+        cases.put("flags-set", Case.of(true, new PatientSummary(new PatientProfile(PaperFixtures.MA_ID, FAMILY, "Ma", 64,
+                PatientProfile.Sex.FEMALE, List.of("diabetes"), NOW, NOW), true, 1, NOW)));
         cases.put("unauthenticated", new Case(List.of(), List.of(), false, false));
         return cases;
     }
@@ -240,6 +243,15 @@ class MeApiContractTest {
         assertThat(none.at("/patients").isArray()).isTrue();
         assertThat(none.at("/patients").size()).isZero();
         assertThat(none.at("/active_patient_id").isNull()).isTrue();
+
+        // BMX-8 (PO option 1): whether the patient has any chronic flag stored, the fact the papers page asks on (Java's
+        // papersBody asks when there is none); a patient with none is asked, the one with a flag is not
+        assertThat(one.at("/patients/0/chronic_flags_set").isBoolean()).as("$.patients[0].chronic_flags_set is a boolean").isTrue();
+        assertThat(one.at("/patients/0/chronic_flags_set").asBoolean()).as("Ma with no flags").isFalse();
+        assertThat(byId.get(SHARED_ID.toString()).path("chronic_flags_set").isBoolean()).as("the shared patient's chronic_flags_set").isTrue();
+        assertThat(byId.get(SHARED_ID.toString()).path("chronic_flags_set").asBoolean()).as("the shared patient, no flags").isFalse();
+        JsonNode flagged = body(cases.get("flags-set"));
+        assertThat(flagged.at("/patients/0/chronic_flags_set").asBoolean()).as("Ma with diabetes ticked").isTrue();
 
         JsonNode longest = body(cases.get("long-name"));
         assertThat(longest.at("/patients/0/name").asText()).isEqualTo(longName());

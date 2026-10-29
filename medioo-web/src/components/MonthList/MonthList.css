@@ -1,0 +1,131 @@
+/* The papers page's list (MonthList.tsx): phone.html scene `papers`, the month's grouped cells. A month header, then
+   one full-width row per paper, each one link at least the 44 px floor: a drawn paper, the type, the day and the
+   facility as printed, the counts line and the stored level's tag. Everything wraps, so a long facility or a long
+   reason never widens the row. Nothing here is red or amber: the level's tag (safety/UrgencyTag) is shape and word. */
+.month-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+  font-family: var(--font-bn);
+  color: var(--label);
+}
+.month-list__month {
+  min-width: 0;
+}
+.month-list__heading {
+  margin: 0 0 var(--space-2);
+  padding: 0 var(--space-1);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.month-list__items {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-radius: var(--radius-lg);
+  background: var(--bg3);
+  overflow: hidden;
+}
+.month-list__item {
+  min-width: 0;
+}
+.month-list__item + .month-list__item {
+  border-top: 1px solid var(--sep);
+}
+.month-list__row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-height: var(--target-min);
+  padding: var(--space-3) var(--space-4);
+  color: inherit;
+  text-decoration: none;
+}
+.month-list__row:hover {
+  background: var(--hover);
+}
+.month-list__row:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: calc(-1 * var(--focus-width));
+}
+.month-list__thumb,
+.month-list__chevron {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: var(--label2);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.month-list__chevron {
+  align-self: center;
+}
+.month-list__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.month-list__title {
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.month-list__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+  min-width: 0;
+  color: var(--label2);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+.month-list__date,
+.month-list__facility {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.month-list__state {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.month-list__line,
+.month-list__summary {
+  color: var(--label2);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.month-list__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+  margin-top: var(--space-1);
+}
+/* Waiting for review is not "within range": the unknown look (Java's `.chips .chip.review`, the prototype's `.chip.unk`),
+   never the tint, which means INSIDE (`.status-chip--in`). MonthList.test.tsx holds the two apart. */
+.month-list__review {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  padding: 1px 9px; /* the prototype chip's optical padding, as StatusChip's */
+  border-radius: var(--radius-pill);
+  background: var(--unk-soft);
+  color: var(--label2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}

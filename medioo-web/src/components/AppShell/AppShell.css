@@ -76,6 +76,17 @@
   /* the fixed tab bar's height (a 48 px tab and its padding), so the page's last line is never under it */
   padding-bottom: calc(var(--target-primary) + var(--space-5));
 }
+/* The disclaimer under every page's main (Java's AppShell footer): quiet, never a control, wrapping in any language. */
+.app-shell__foot {
+  max-width: 720px; /* a reading measure, the papers column's */
+  margin: var(--space-6) auto 0;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border-top: 1px solid var(--sep);
+  color: var(--label2);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
 .app-shell__aside {
   display: none;
   min-width: 0;

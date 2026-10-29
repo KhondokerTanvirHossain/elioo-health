@@ -1,0 +1,472 @@
+{
+  "_meta": {
+    "generated_by": "baymax PatientTimelineApiContractTest",
+    "source": "GET /app/api/patients/{id}/timeline over the case forty-five-first-page"
+  },
+  "body": {
+    "entries": [
+      {
+        "chip": null,
+        "counts": {
+          "follow_ups": 1,
+          "medicines": 1,
+          "outside": 0,
+          "unverified": 0,
+          "values": 0
+        },
+        "date": "2026-10-21",
+        "date_is_upload_day": false,
+        "date_uncertain": false,
+        "document_id": "53d8ef0a-0ca9-341a-9f9f-5703c289d28e",
+        "document_type": "prescription",
+        "facility": "Shapla Diagnostics",
+        "month": "2026-10",
+        "page_one": {
+          "src": "/app/documents/53d8ef0a-0ca9-341a-9f9f-5703c289d28e/page/1"
+        },
+        "retake_reason_key": null,
+        "review_pending": false,
+        "status": "DONE"
+      },
+      {
+        "chip": null,
+        "counts": {
+          "follow_ups": 0,
+          "medicines": 0,
+          "outside": 0,
+          "unverified": 0,
+          "values": 0
+        },
+        "date": "2026-10-21",
+        "date_is_upload_day": false,
+        "date_uncertain": false,
+        "document_id": "f2ca7c12-bff3-39f6-8585-706db0517c26",
+        "document_type": "lab_report",
+        "facility": "Shapla Diagnostic and Consultation Centre, Mirpur Section 10 Branch",
+        "month": "2026-10",
+        "page_one": {
+          "src": "/app/documents/f2ca7c12-bff3-39f6-8585-706db0517c26/page/1"
+        },
+        "retake_reason_key": null,
+        "review_pending": false,
+        "status": "DONE"
+      },
+      {
+        "chip": "now",
+        "counts": {
+          "follow_ups": 0,
+          "medicines": 0,
+          "outside": 0,
+          "unverified": 0,
+          "values": 0
+        },
+        "date": "2026-10-21",
+        "date_is_upload_day": false,
+        "date_uncertain": false,
+        "document_id": "5dbcdec3-32ed-3dce-a588-493ade0bd35b",
+        "document_type": "lab_report",
+        "facility": "Shapla Diagnostics",
+        "month": "2026-10",
+        "page_one": {
+          "src": "/app/documents/5dbcdec3-32ed-3dce-a588-493ade0bd35b/page/1"
+        },
+        "retake_reason_key": null,
+        "review_pending": false,
+        "status": "DONE"
+      },
+      {
+        "chip": null,
+        "counts": {
+          "follow_ups": 0,
+          "medicines": 0,
+          "outside": 0,
+          "unverified": 0,
+          "values": 0
+        },
+        "date": "2026-10-20",
+        "date_is_upload_day": false,
+        "date_uncertain": false,
+        "document_id": "dfe59c32-7bab-3c7f-9407-52be9b9b811d",
+        "document_type": "lab_report",
+        "facility": "Shapla Diagnostics",
+        "month": "2026-10",
+        "page_one": {
+          "src": "/app/documents/dfe59c32-7bab-3c7f-9407-52be9b9b811d/page/1"
+        },
+        "retake_reason_key": null,
+        "review_pending": false,
+        "status": "DONE"
+      },
+      {
+        "chip": "this_week",
+        "counts": {
+          "follow_ups": 1,
+          "medicines": 1,
+          "outside": 0,
+          "unverified": 0,
+          "values": 0
+        },
+        "date": "2026-10-20",
+        "date_is_upload_day": false,
+        "date_uncertain": false,
+        "document_id": "65bd1a62-c1f4-3d49-ab1a-f15a2d436910",
+        "document_type": "prescription",
+        "facility": "Shapla Diagnostics",
+        "month": "2026-10",
+        "page_one": {
+          "src": "/app/documents/65bd1a62-c1f4-3d49-ab1a-f15a2d436910/page/1"
+        },
+        "retake_reason_key": null,
+        "review_pending": false,
+        "status": "DONE"
+      },
+      {
+        "chip": null,
+        "counts": {
+          "follow_ups": 0,
+          "medicines": 0,
+          "outside": 0,
+          "unverified": 0,
+          "values": 0
+        },
+        "date": "2026-10-20",
+        "date_is_upload_day": false,
+        "date_uncertain": false,
+        "document_id": "4ca5b0c4-1ca0-3853-a69c-5dd6ee119dff",
+        "document_type": "lab_report",
+        "facility": "Shapla Diagnostic and Consultation Centre, Mirpur Section 10 Branch",
+        "month": "2026-10",
+        "page_one": {
+          "src": "/app/documents/4ca5b0c4-1ca0-3853-a69c-5dd6ee119dff/page/1"
+        },
+        "retake_reason_key": null,
+        "review_pending": false,
+        "status": "DONE"
+      },
+      {
+        "chip": null,
+        "counts": {
+          "follow_ups": 0,
+          "medicines": 0,
+          "outside": 0,
+          "unverified": 0,
+          "values": 0
+        },
+        "date": "2026-10-19",
+        "date_is_upload_day": false,
+        "date_uncertain": false,
+        "document_id": "5e4e5c9c-71ae-39d4-9098-9652d3dc7242",
+        "document_type": "lab_report",
+        "facility": "Shapla Diagnostics",
+        "month": "2026-10",
+        "page_one": {
+          "src": "/app/documents/5e4e5c9c-71ae-39d4-9098-9652d3dc7242/page/1"
+        },
+        "retake_reason_key": null,
+        "review_pending": false,
+        "status": "DONE"
+      },
+      {
+        "chip": null,
+        "counts": {
+          "follow_ups": 0,
+          "medicines": 0,
+          "outside": 0,
+          "unverified": 0,
+          "values": 0
+        },
+        "date": "2026-10-19",
+        "date_is_upload_day": false,
+        "date_uncertain": false,
+        "document_id": "8d8a808c-0d4a-34eb-b86a-0a1611d2e0fb",
+        "document_type": "lab_report",
+        "facility": "Shapla Diagnostics",
+        "month": "2026-10",
+        "page_one": {
+          "src": "/app/documents/8d8a808c-0d4a-34eb-b86a-0a1611d2e0fb/page/1"
+        },
+        "retake_reason_key": null,
+        "review_pending": false,
+        "status": "DONE"
+      },
+      {
+        "chip": null,
+        "counts": {
+          "follow_ups": 1,
+          "medicines": 1,
+          "outside": 0,
+          "unverified": 0,
+          "values": 0
+        },
+        "date": "2026-10-19",
+        "date_is_upload_day": false,
+        "date_uncertain": false,
+        "document_id": "25ec3aec-ae1a-38f5-bc60-0ef8254728cd",
+        "document_type": "prescription",
+        "facility": "Shapla Diagnostics",
+        "month": "2026-10",
+        "page_one": {
+          "src": "/app/documents/25ec3aec-ae1a-38f5-bc60-0ef8254728cd/page/1"
+        },
+        "retake_reason_key": null,
+        "review_pending": false,
+        "status": "DONE"
+      },
+      {
+        "chip": null,
+        "counts": {
+          "follow_ups": 0,
+          "medicines": 0,
+          "outside": 0,
+          "unverified": 0,
+          "values": 0
+        },
+        "date": "2026-10-18",
+        "date_is_upload_day": false,
+        "date_uncertain": false,
+        "document_id": "9105e1b6-828a-346d-a6d3-0c2adfa108da",
+        "document_type": "lab_report",
+        "facility": "Shapla Diagnostics",
+        "month": "2026-10",
+        "page_one": {
+          "src": "/app/documents/9105e1b6-828a-346d-a6d3-0c2adfa108da/page/1"
+        },
+        "retake_reason_key": null,
+        "review_pending": false,
+        "status": "DONE"
+      },
+      {
+        "chip": null,
+        "counts": {
+          "follow_ups": 0,
+          "medicines": 0,
+          "outside": 0,
+          "unverified": 0,
+          "values": 0
+        },
+        "date": "2026-10-18",
+        "date_is_upload_day": false,
+        "date_uncertain": false,
+        "document_id": "e63add00-df6e-321e-8c72-82f1cd41f3a0",
+        "document_type": "lab_report",
+        "facility": "Shapla Diagnostics",
+        "month": "2026-10",
+        "page_one": {
+          "src": "/app/documents/e63add00-df6e-321e-8c72-82f1cd41f3a0/page/1"
+        },
+        "retake_reason_key": null,
+        "review_pending": false,
+        "status": "DONE"
+      },
+      {
+        "chip": null,
+        "counts": {
+          "follow_ups": 0,
+          "medicines": 0,
+          "outside": 0,
+          "unverified": 0,
+          "values": 0
+        },
+        "date": "2026-10-17",
+        "date_is_upload_day": false,
+        "date_uncertain": false,
+        "document_id": "434a4e45-464c-3703-8704-e51bb7e6590a",
+        "document_type": "lab_report",
+        "facility": "Shapla Diagnostic and Consultation Centre, Mirpur Section 10 Branch",
+        "month": "2026-10",
+        "page_one": {
+          "src": "/app/documents/434a4e45-464c-3703-8704-e51bb7e6590a/page/1"
+        },
+        "retake_reason_key": null,
+        "review_pending": false,
+        "status": "DONE"
+      },
+      {
+        "chip": "this_week",
+        "counts": {
+          "follow_ups": 0,
+          "medicines": 0,
+          "outside": 0,
+          "unverified": 0,
+          "values": 0
+        },
+        "date": "2026-10-17",
+        "date_is_upload_day": false,
+        "date_uncertain": false,
+        "document_id": "83fe902b-d2f2-350d-97b6-d9be77f04476",
+        "document_type": "lab_report",
+        "facility": "Shapla Diagnostics",
+        "month": "2026-10",
+        "page_one": {
+          "src": "/app/documents/83fe902b-d2f2-350d-97b6-d9be77f04476/page/1"
+        },
+        "retake_reason_key": null,
+        "review_pending": false,
+        "status": "DONE"
+      },
+      {
+        "chip": null,
+        "counts": {
+          "follow_ups": 0,
+          "medicines": 0,
+          "outside": 0,
+          "unverified": 0,
+          "values": 0
+        },
+        "date": "2026-10-16",
+        "date_is_upload_day": false,
+        "date_uncertain": false,
+        "document_id": "aed9bb1e-115b-3df4-80e4-172fab758ad1",
+        "document_type": "lab_report",
+        "facility": "Shapla Diagnostics",
+        "month": "2026-10",
+        "page_one": {
+          "src": "/app/documents/aed9bb1e-115b-3df4-80e4-172fab758ad1/page/1"
+        },
+        "retake_reason_key": null,
+        "review_pending": false,
+        "status": "DONE"
+      },
+      {
+        "chip": null,
+        "counts": {
+          "follow_ups": 0,
+          "medicines": 0,
+          "outside": 0,
+          "unverified": 0,
+          "values": 0
+        },
+        "date": "2026-10-16",
+        "date_is_upload_day": false,
+        "date_uncertain": false,
+        "document_id": "56cdcde3-603f-3eb0-95e9-c80e3062abee",
+        "document_type": "lab_report",
+        "facility": "Shapla Diagnostic and Consultation Centre, Mirpur Section 10 Branch",
+        "month": "2026-10",
+        "page_one": {
+          "src": "/app/documents/56cdcde3-603f-3eb0-95e9-c80e3062abee/page/1"
+        },
+        "retake_reason_key": null,
+        "review_pending": false,
+        "status": "DONE"
+      },
+      {
+        "chip": "now",
+        "counts": {
+          "follow_ups": 1,
+          "medicines": 1,
+          "outside": 0,
+          "unverified": 0,
+          "values": 0
+        },
+        "date": "2026-10-15",
+        "date_is_upload_day": false,
+        "date_uncertain": false,
+        "document_id": "39c0916b-1cee-3ced-9461-1186fc8b15cd",
+        "document_type": "prescription",
+        "facility": "Shapla Diagnostics",
+        "month": "2026-10",
+        "page_one": {
+          "src": "/app/documents/39c0916b-1cee-3ced-9461-1186fc8b15cd/page/1"
+        },
+        "retake_reason_key": null,
+        "review_pending": false,
+        "status": "DONE"
+      },
+      {
+        "chip": null,
+        "counts": {
+          "follow_ups": 0,
+          "medicines": 0,
+          "outside": 0,
+          "unverified": 0,
+          "values": 0
+        },
+        "date": "2026-10-15",
+        "date_is_upload_day": false,
+        "date_uncertain": false,
+        "document_id": "40afd1f5-bb64-3580-888e-74c0034f3338",
+        "document_type": "lab_report",
+        "facility": "Shapla Diagnostics",
+        "month": "2026-10",
+        "page_one": {
+          "src": "/app/documents/40afd1f5-bb64-3580-888e-74c0034f3338/page/1"
+        },
+        "retake_reason_key": null,
+        "review_pending": false,
+        "status": "DONE"
+      },
+      {
+        "chip": null,
+        "counts": {
+          "follow_ups": 0,
+          "medicines": 0,
+          "outside": 0,
+          "unverified": 0,
+          "values": 0
+        },
+        "date": "2026-10-14",
+        "date_is_upload_day": false,
+        "date_uncertain": false,
+        "document_id": "a8630736-cfbe-34f2-9792-294f92316b30",
+        "document_type": "lab_report",
+        "facility": "Shapla Diagnostics",
+        "month": "2026-10",
+        "page_one": {
+          "src": "/app/documents/a8630736-cfbe-34f2-9792-294f92316b30/page/1"
+        },
+        "retake_reason_key": null,
+        "review_pending": false,
+        "status": "DONE"
+      },
+      {
+        "chip": null,
+        "counts": {
+          "follow_ups": 1,
+          "medicines": 1,
+          "outside": 0,
+          "unverified": 0,
+          "values": 0
+        },
+        "date": "2026-10-14",
+        "date_is_upload_day": false,
+        "date_uncertain": false,
+        "document_id": "4c043009-19cc-3a1c-b724-45606701dd12",
+        "document_type": "prescription",
+        "facility": "Shapla Diagnostics",
+        "month": "2026-10",
+        "page_one": {
+          "src": "/app/documents/4c043009-19cc-3a1c-b724-45606701dd12/page/1"
+        },
+        "retake_reason_key": null,
+        "review_pending": false,
+        "status": "DONE"
+      },
+      {
+        "chip": null,
+        "counts": {
+          "follow_ups": 0,
+          "medicines": 0,
+          "outside": 0,
+          "unverified": 0,
+          "values": 0
+        },
+        "date": "2026-10-13",
+        "date_is_upload_day": false,
+        "date_uncertain": false,
+        "document_id": "e3ec9aed-a7de-302e-a576-d808096e44f0",
+        "document_type": "lab_report",
+        "facility": "Shapla Diagnostic and Consultation Centre, Mirpur Section 10 Branch",
+        "month": "2026-10",
+        "page_one": {
+          "src": "/app/documents/e3ec9aed-a7de-302e-a576-d808096e44f0/page/1"
+        },
+        "retake_reason_key": null,
+        "review_pending": false,
+        "status": "DONE"
+      }
+    ],
+    "next_cursor": "v1.MjAyNi0xMC0xM3wyMDI2LTEwLTEzVDA0OjI5OjAwWnxlM2VjOWFlZC1hN2RlLTMwMmUtYTU3Ni1kODA4MDk2ZTQ0ZjA"
+  },
+  "status": 200
+}

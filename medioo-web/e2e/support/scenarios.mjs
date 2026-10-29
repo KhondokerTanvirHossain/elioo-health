@@ -87,6 +87,44 @@ export function messagesOnly(fixture) {
   const parsed = javaWrote(fixture, "GET /app/api/patients/{id}/thread");
   return { status: parsed.status, body: { ...parsed.body, items: parsed.body.items.filter((i) => i.kind === "message") } };
 }
+/** The `next_cursor` a timeline fixture hands its "more" link, so the next page is served for exactly that cursor. */
+export function cursorOf(fixture) {
+  const cursor = JSON.parse(readFileSync(join(FIXTURES, fixture), "utf8")).body.next_cursor;
+  if (typeof cursor !== "string") throw new Error(`${fixture} has no next_cursor`);
+  return cursor;
+}
+
+/**
+ * The papers page's four reads (plan W8): the timeline for its query (`?type=lab`, `?type=rx`, the first page's
+ * cursor), the calendar for its month (September for the previous-month link; Java's own month otherwise), the
+ * doctor's dates, and the attention stack.
+ */
+const papers = ({
+  me = "me/one-patient.json",
+  timeline,
+  cursor,
+  calendar,
+  follows = "follow-ups/some.json",
+  attention = "attention/now-only.json",
+  rx = "timeline/rx-only.json",
+}) => ({
+  ...NO_NOW,
+  "GET /app/api/me": me,
+  "GET /app/api/patients/{id}/timeline": {
+    byQuery: [
+      { when: { type: "lab" }, answer: "timeline/lab-only.json" },
+      { when: { type: "rx" }, answer: rx },
+      ...(cursor ? [{ when: { cursor }, answer: "timeline/last-page.json" }] : []),
+    ],
+    otherwise: timeline,
+  },
+  "GET /app/api/patients/{id}/calendar": {
+    byQuery: [{ when: { month: "2026-09" }, answer: "calendar/september.json" }],
+    otherwise: calendar,
+  },
+  "GET /app/api/patients/{id}/follow-ups": follows,
+  "GET /app/api/patients/{id}/attention": attention,
+});
 
 /** A fixture's body, as Java's contract test wrote it. */
 function bodyOf(fixture) {
@@ -487,6 +525,58 @@ export const SCENARIOS = {
   "health-labs-only": health("labs-some", "medicines-none"),
   "health-medicines-only": health("labs-none", "medicines-latest"),
   "health-first-unread": health("labs-none", "medicines-none-newer-unread"),
+  // The papers page (W8). Busy: a NOW in the strip, three doctor's dates (one overdue), October's calendar, the first of two
+  // pages (its cursor serves the last page), and September behind the previous-month link.
+  "papers-busy": papers({ timeline: "timeline/first-page.json", cursor: cursorOf("timeline/first-page.json"), calendar: "calendar/busy.json" }),
+  // Forty-five papers in October (master Review Focus 1), with the whole attention stack; and its longest twin, the
+  // longest name (me/long-name.json) over the same month.
+  "papers-forty-five": papers({ timeline: "timeline/forty-five-first-page.json", calendar: "calendar/forty-five.json", attention: "attention/full-stack.json" }),
+  "papers-forty-five-long": papers({
+    me: "me/long-name.json",
+    timeline: "timeline/forty-five-first-page.json",
+    calendar: "calendar/forty-five.json",
+    attention: "attention/full-stack.json",
+  }),
+  // One month: five papers, all in September, and no doctor's date.
+  "papers-one-month": papers({
+    timeline: "timeline/last-page.json",
+    calendar: "calendar/september.json",
+    follows: "follow-ups/none.json",
+    attention: "attention/empty.json",
+  }),
+  // No paper at all, for the owner; and for a share member (two-patients' second, whom the family does not own).
+  "papers-empty": papers({ timeline: "timeline/empty.json", calendar: "calendar/empty.json", follows: "follow-ups/none.json", attention: "attention/empty.json" }),
+  "papers-empty-member": papers({
+    me: "me/two-patients.json",
+    timeline: "timeline/empty.json",
+    calendar: "calendar/empty.json",
+    follows: "follow-ups/none.json",
+    attention: "attention/empty.json",
+  }),
+  // A share member on a page with papers (two-patients' second, opened by ?patient=): the busy page, and no send link.
+  "papers-member": papers({
+    me: "me/two-patients.json",
+    timeline: "timeline/first-page.json",
+    cursor: cursorOf("timeline/first-page.json"),
+    calendar: "calendar/busy.json",
+  }),
+  // Papers still being read (one PROCESSING, one RECEIVED) beside read ones: the page reloads itself while they are.
+  // Its read rows carry the counts line's cases (values outside, medicines, an upload day) and a paper under review.
+  "papers-in-flight": papers({ timeline: "timeline/in-flight.json", calendar: "calendar/busy.json", attention: "attention/empty.json" }),
+  // The prescription filter over a patient with lab reports only: Java's empty filtered page (timeline/rx-none.json).
+  "papers-filter-none": papers({
+    timeline: "timeline/first-page.json",
+    cursor: cursorOf("timeline/first-page.json"),
+    calendar: "calendar/busy.json",
+    rx: "timeline/rx-none.json",
+  }),
+  // The busy page for a patient whose chronic flags are set (me/flags-set.json): no BMX-8 ask.
+  "papers-flags-set": papers({
+    me: "me/flags-set.json",
+    timeline: "timeline/first-page.json",
+    cursor: cursorOf("timeline/first-page.json"),
+    calendar: "calendar/busy.json",
+  }),
 };
 
 export { UNAUTHENTICATED };
@@ -500,6 +590,7 @@ export const PAGE_SCENARIOS = {
   "/app/family": "family-owner",
   "/app/patients/{id}/profile": "family-owner",
   "/app/health": "health-some",
+  "/app/timeline": "papers-busy",
 };
 
 /** The path a dynamic NEXT_PAGES entry is measured at, its id read from the fixture its scenario serves (budget.ts). */
@@ -548,6 +639,7 @@ export const PAGE_MARKERS = {
   "/app/family": 'class="family-account"',
   "/app/patients/{id}/profile": `data-patient-card="${familyPatientId("family/owner.json")}"`,
   "/app/health": 'data-page="health"',
+  "/app/timeline": 'class="month-list"',
 };
 
 /** Each routed scenario's longest twin (`me/long-name.json` and the area's longest fixture), per screen. */
@@ -566,11 +658,14 @@ export const LONGEST = {
   "family-share-member": "family-share-member-long",
   // The health tab (W9): the longest name in the shell over the lab values and the latest prescription's lines.
   "health-some": "health-long",
+  // The papers page (W8): the longest name over forty-five papers in one month (timeline/forty-five-first-page.json).
+  "papers-busy": "papers-forty-five-long",
 };
 
 /** The `{status, body}` a scenario value answers first: a fixture file read, a literal as it is. */
 function firstAnswer(value) {
-  const v = Array.isArray(value) ? value[0] : value;
+  const plain = value !== null && typeof value === "object" && "byQuery" in value ? value.otherwise : value;
+  const v = Array.isArray(plain) ? plain[0] : plain;
   if (typeof v !== "string") return v ?? null;
   const fixture = JSON.parse(readFileSync(join(FIXTURES, v), "utf8"));
   return { status: fixture.status ?? 200, body: fixture.body };

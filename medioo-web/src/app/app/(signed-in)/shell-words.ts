@@ -13,6 +13,7 @@ export function shellWords(lang: Lang, me: MeJson, active: MePatient | null): Sh
     menu: t(lang, "tabs.label"),
     signOut: t(lang, "app.logout"),
     failed: t(lang, "app.err.generic"),
+    disclaimer: t(lang, "disclaimer"),
     switcher:
       active === null
         ? null

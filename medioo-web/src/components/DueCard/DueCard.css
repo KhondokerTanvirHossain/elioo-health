@@ -1,0 +1,101 @@
+/* The doctor's dates (DueCard.tsx): phone.html scene `papers`, the due card. Each date is a card: the crop of the
+   doctor's words beside them, the day under them, and an overdue date's clock and word. The crop is shown at its own
+   size up to the card's width, never stretched past it. No red and no amber: overdue is a shape and a word. */
+.due-card__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  font-family: var(--font-bn);
+  color: var(--label);
+}
+.due-card__title {
+  margin: 0;
+  padding: 0 var(--space-1);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.due-card__items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.due-card__item {
+  min-width: 0;
+}
+.due-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--bg3);
+}
+.due-card__crop {
+  display: block;
+  flex: none;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: 96px; /* a line of the doctor's writing; a taller crop is scaled down whole, its aspect kept */
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  box-shadow: 0 0 0 1px var(--sep);
+}
+.due-card__text {
+  display: flex;
+  flex: 1 1 12em;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.due-card__instruction {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.due-card__when {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  color: var(--label2);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+.due-card__date {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.due-card__overdue {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  color: var(--label);
+  font-weight: 700;
+}
+.due-card__shape {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.due-card__word {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

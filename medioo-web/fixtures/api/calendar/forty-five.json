@@ -1,0 +1,455 @@
+{
+  "_meta": {
+    "generated_by": "baymax PatientTimelineApiContractTest",
+    "source": "GET /app/api/patients/{id}/calendar?month=2026-10 over the case forty-five"
+  },
+  "body": {
+    "days": [
+      {
+        "date": "2026-10-01",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "f9e18311-4ecb-3caf-a42e-b5e612b32ac1",
+            "document_type": "lab_report"
+          },
+          {
+            "chip": null,
+            "document_id": "1eaa5d76-b1f6-39bd-aa9a-cfb44a91792c",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-10-02",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": "this_week",
+            "document_id": "51650229-0ac4-371e-b7b6-cee477243d1b",
+            "document_type": "lab_report"
+          },
+          {
+            "chip": null,
+            "document_id": "ef0d929d-58c4-3be3-be02-68e5775f0c07",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-10-03",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "2b166c3a-dd67-3950-8aa0-1f64fd8bb6bc",
+            "document_type": "lab_report"
+          },
+          {
+            "chip": "now",
+            "document_id": "f1df0233-632c-336d-b414-b0db5eca8dfe",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-10-04",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "6b98bd33-dc5a-39bb-8309-eb451b8db08d",
+            "document_type": "lab_report"
+          },
+          {
+            "chip": null,
+            "document_id": "964dd1db-5a04-3fd2-909b-335859372163",
+            "document_type": "prescription"
+          }
+        ]
+      },
+      {
+        "date": "2026-10-05",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "157fd296-0d1b-3d36-bd31-e84f08007e15",
+            "document_type": "prescription"
+          },
+          {
+            "chip": null,
+            "document_id": "e5a5a31b-798d-3b1a-bfcd-152cea56392b",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-10-06",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": "now",
+            "document_id": "8ec4bbf5-c679-3d18-9c77-b43c83a7b554",
+            "document_type": "lab_report"
+          },
+          {
+            "chip": null,
+            "document_id": "e0915a33-922a-3512-a28c-8da61cd8bce0",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-10-07",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "44662e8c-7d6f-38f4-81b1-cb8416a46719",
+            "document_type": "lab_report"
+          },
+          {
+            "chip": null,
+            "document_id": "6617e951-ef5b-3597-afda-5a9fe943efd9",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-10-08",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "8654f470-da53-3375-a64b-feab12cbe1ee",
+            "document_type": "lab_report"
+          },
+          {
+            "chip": "this_week",
+            "document_id": "12239e55-03e2-3089-86a6-ca54a51e465e",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-10-09",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "7c6869d2-366c-3966-91b6-f803e8f8d375",
+            "document_type": "lab_report"
+          },
+          {
+            "chip": null,
+            "document_id": "43483a34-530c-3d29-9805-dd531647ec6a",
+            "document_type": "prescription"
+          }
+        ]
+      },
+      {
+        "date": "2026-10-10",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "b30db86a-60a6-3312-99d9-0a8e0200fb98",
+            "document_type": "prescription"
+          },
+          {
+            "chip": null,
+            "document_id": "4b4523b3-6f9d-3690-b9c5-1738ff22e8df",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-10-11",
+        "follow_ups": [
+          {
+            "crop": {
+              "src": "/app/documents/964dd1db-5a04-3fd2-909b-335859372163/image?key=cbd22710-77bc-3696-ad36-f04cecd29a98%2F852ff333-b2a1-3e3b-9a26-79d06b46bc1a%2F964dd1db-5a04-3fd2-909b-335859372163%2Fcrop-f5604e95d.jpg"
+            },
+            "document_id": "964dd1db-5a04-3fd2-909b-335859372163",
+            "instruction": "Review after the course"
+          }
+        ],
+        "papers": [
+          {
+            "chip": "this_week",
+            "document_id": "6e674304-467f-36ac-8928-eb6cb4abc292",
+            "document_type": "lab_report"
+          },
+          {
+            "chip": null,
+            "document_id": "7dfa858b-53ee-3e1b-8f2b-d39246a94658",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-10-12",
+        "follow_ups": [
+          {
+            "crop": {
+              "src": "/app/documents/157fd296-0d1b-3d36-bd31-e84f08007e15/image?key=cbd22710-77bc-3696-ad36-f04cecd29a98%2F852ff333-b2a1-3e3b-9a26-79d06b46bc1a%2F157fd296-0d1b-3d36-bd31-e84f08007e15%2Fcrop-f81eac2a2.jpg"
+            },
+            "document_id": "157fd296-0d1b-3d36-bd31-e84f08007e15",
+            "instruction": "Review after the course"
+          }
+        ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "ddb16bd9-8345-38ca-979c-1f0bfcc9b38f",
+            "document_type": "lab_report"
+          },
+          {
+            "chip": "now",
+            "document_id": "e3ab95e5-f361-306a-88e8-b1f0067ab294",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-10-13",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "2cbe60b1-8304-3780-b193-3a7891a70f2c",
+            "document_type": "lab_report"
+          },
+          {
+            "chip": null,
+            "document_id": "634289e3-d849-32ef-b6d2-9ba84c9014c1",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-10-14",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "21133db5-35c8-3ae7-b256-5c7b2b04790b",
+            "document_type": "lab_report"
+          },
+          {
+            "chip": null,
+            "document_id": "a45db71d-5cd5-3a26-a740-450b5e0872bb",
+            "document_type": "prescription"
+          }
+        ]
+      },
+      {
+        "date": "2026-10-15",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": "now",
+            "document_id": "cba16b91-01e2-3b97-a4da-cdfcc8564c58",
+            "document_type": "prescription"
+          },
+          {
+            "chip": null,
+            "document_id": "2b7c279b-22e0-390a-bb41-65c0d3568874",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-10-16",
+        "follow_ups": [
+          {
+            "crop": {
+              "src": "/app/documents/43483a34-530c-3d29-9805-dd531647ec6a/image?key=cbd22710-77bc-3696-ad36-f04cecd29a98%2F852ff333-b2a1-3e3b-9a26-79d06b46bc1a%2F43483a34-530c-3d29-9805-dd531647ec6a%2Fcrop-fc4947bd5.jpg"
+            },
+            "document_id": "43483a34-530c-3d29-9805-dd531647ec6a",
+            "instruction": "Review after the course"
+          }
+        ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "a2a27865-f967-3f40-82a8-07e633095e2b",
+            "document_type": "lab_report"
+          },
+          {
+            "chip": null,
+            "document_id": "84e51530-6239-339f-bbf4-f672bcaefe76",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-10-17",
+        "follow_ups": [
+          {
+            "crop": {
+              "src": "/app/documents/b30db86a-60a6-3312-99d9-0a8e0200fb98/image?key=cbd22710-77bc-3696-ad36-f04cecd29a98%2F852ff333-b2a1-3e3b-9a26-79d06b46bc1a%2Fb30db86a-60a6-3312-99d9-0a8e0200fb98%2Fcrop-f8cee53dd.jpg"
+            },
+            "document_id": "b30db86a-60a6-3312-99d9-0a8e0200fb98",
+            "instruction": "Review after the course"
+          }
+        ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "87f5827e-52ed-3a9d-87f7-e2287ed69ed0",
+            "document_type": "lab_report"
+          },
+          {
+            "chip": "this_week",
+            "document_id": "61fa95ec-0776-38bd-b073-e9501edc763b",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-10-18",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "853122ff-df2a-3c5f-a51e-efad4c2dc960",
+            "document_type": "lab_report"
+          },
+          {
+            "chip": null,
+            "document_id": "c797f96e-0c60-3be7-887b-ac332bcc32e6",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-10-19",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "a3d6dd37-19b9-3eda-9db0-cd67455ba754",
+            "document_type": "lab_report"
+          },
+          {
+            "chip": null,
+            "document_id": "20161c87-0119-31b7-b5cc-ff42901dea6e",
+            "document_type": "lab_report"
+          },
+          {
+            "chip": null,
+            "document_id": "3216d5d7-d125-3e41-be71-d524655d837a",
+            "document_type": "prescription"
+          }
+        ]
+      },
+      {
+        "date": "2026-10-20",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "ecd2c40f-a233-35ca-a8a9-d37189be3db9",
+            "document_type": "lab_report"
+          },
+          {
+            "chip": "this_week",
+            "document_id": "538d6fb8-bc6b-3df0-b89a-92414763202f",
+            "document_type": "prescription"
+          },
+          {
+            "chip": null,
+            "document_id": "fcd372a6-0736-3cb6-8fae-c303a4f170ad",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-10-21",
+        "follow_ups": [
+          {
+            "crop": {
+              "src": "/app/documents/a45db71d-5cd5-3a26-a740-450b5e0872bb/image?key=cbd22710-77bc-3696-ad36-f04cecd29a98%2F852ff333-b2a1-3e3b-9a26-79d06b46bc1a%2Fa45db71d-5cd5-3a26-a740-450b5e0872bb%2Fcrop-fa21427fa.jpg"
+            },
+            "document_id": "a45db71d-5cd5-3a26-a740-450b5e0872bb",
+            "instruction": "Review after the course"
+          }
+        ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "cdab2093-854c-3952-9a49-ee0923880818",
+            "document_type": "prescription"
+          },
+          {
+            "chip": null,
+            "document_id": "3b4355a0-7074-35ac-ac2b-6acbf6094639",
+            "document_type": "lab_report"
+          },
+          {
+            "chip": "now",
+            "document_id": "fe54b408-dad5-3475-ac9b-b5797d446fd2",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-10-22",
+        "follow_ups": [
+          {
+            "crop": {
+              "src": "/app/documents/cba16b91-01e2-3b97-a4da-cdfcc8564c58/image?key=cbd22710-77bc-3696-ad36-f04cecd29a98%2F852ff333-b2a1-3e3b-9a26-79d06b46bc1a%2Fcba16b91-01e2-3b97-a4da-cdfcc8564c58%2Fcrop-fe673f4d6.jpg"
+            },
+            "document_id": "cba16b91-01e2-3b97-a4da-cdfcc8564c58",
+            "instruction": "Review after the course"
+          }
+        ],
+        "papers": [ ]
+      },
+      {
+        "date": "2026-10-26",
+        "follow_ups": [
+          {
+            "crop": {
+              "src": "/app/documents/3216d5d7-d125-3e41-be71-d524655d837a/image?key=cbd22710-77bc-3696-ad36-f04cecd29a98%2F852ff333-b2a1-3e3b-9a26-79d06b46bc1a%2F3216d5d7-d125-3e41-be71-d524655d837a%2Fcrop-fcc7c9911.jpg"
+            },
+            "document_id": "3216d5d7-d125-3e41-be71-d524655d837a",
+            "instruction": "Review after the course"
+          }
+        ],
+        "papers": [ ]
+      },
+      {
+        "date": "2026-10-27",
+        "follow_ups": [
+          {
+            "crop": {
+              "src": "/app/documents/538d6fb8-bc6b-3df0-b89a-92414763202f/image?key=cbd22710-77bc-3696-ad36-f04cecd29a98%2F852ff333-b2a1-3e3b-9a26-79d06b46bc1a%2F538d6fb8-bc6b-3df0-b89a-92414763202f%2Fcrop-fa0625bf9.jpg"
+            },
+            "document_id": "538d6fb8-bc6b-3df0-b89a-92414763202f",
+            "instruction": "Review after the course"
+          }
+        ],
+        "papers": [ ]
+      },
+      {
+        "date": "2026-10-28",
+        "follow_ups": [
+          {
+            "crop": {
+              "src": "/app/documents/cdab2093-854c-3952-9a49-ee0923880818/image?key=cbd22710-77bc-3696-ad36-f04cecd29a98%2F852ff333-b2a1-3e3b-9a26-79d06b46bc1a%2Fcdab2093-854c-3952-9a49-ee0923880818%2Fcrop-fa27bf4b2.jpg"
+            },
+            "document_id": "cdab2093-854c-3952-9a49-ee0923880818",
+            "instruction": "Review after the course"
+          }
+        ],
+        "papers": [ ]
+      }
+    ],
+    "month": "2026-10"
+  },
+  "status": 200
+}

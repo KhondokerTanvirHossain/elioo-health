@@ -24,11 +24,11 @@ describe("TabBar", () => {
     expect(after.map((a) => a.getAttribute("href"))).toEqual(["/app/home", "/app/timeline", "/app/health", "/app/family"]);
     expect(after[2]!.getAttribute("aria-current"), "the health tab, third as in the prototype, is this page").toBe("page");
     cleanup();
-    // A preview page: the chat (W5), health (W9) and family (W10) pages are this build's, so their tabs stay inside the
-    // preview; the papers tab is Java's page.
+    // A preview page: the chat (W5), papers (W8), health (W9) and family (W10) pages are this build's, so their tabs stay
+    // inside the preview.
     const preview = render(<TabBar lang="bn" preview current="chat" />);
     const hrefs = links(preview.container).map((a) => a.getAttribute("href"));
-    expect(hrefs, "preview, after W9").toEqual(["/app/preview/home", "/app/timeline", "/app/preview/health", "/app/preview/family"]);
+    expect(hrefs, "preview, after W9").toEqual(["/app/preview/home", "/app/preview/timeline", "/app/preview/health", "/app/preview/family"]);
     cleanup();
 
     // The other direction: where Caddy does not send /app/health to Next (a box without F9's block, as before F9), the

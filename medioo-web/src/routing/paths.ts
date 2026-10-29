@@ -42,6 +42,7 @@ export const NEXT_PAGES: readonly string[] = [
   "/app/family",
   "/app/patients/{id}/profile",
   "/app/health",
+  "/app/timeline",
 ];
 
 /** The `GET /app…` page patterns Java serves, as docs/infra/app-routes.txt lists them (routes.test.ts). */

@@ -1,0 +1,11 @@
+{
+  "_meta": {
+    "generated_by": "baymax PatientTimelineApiContractTest",
+    "source": "GET /app/api/patients/{id}/timeline?type=rx over the case rx-none"
+  },
+  "body": {
+    "entries": [ ],
+    "next_cursor": null
+  },
+  "status": 200
+}
