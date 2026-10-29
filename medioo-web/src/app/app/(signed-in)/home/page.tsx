@@ -38,8 +38,8 @@ function greeting(lang: Lang, me: MeJson) {
  *
  * Below 900 px the stack is in the one column, above the thread; where the shell shows the conversation column, the
  * stack is there and the main column holds the thread. A patient with no paper yet gets Medioo's introduction and,
- * for the owner, the one camera. The disclaimer is on the page whenever a result is: a paper card in the thread, or any
- * card in the attention stack (which can hold a paper older than the thread's first page).
+ * for the owner, the one camera. The disclaimer is the shell's (AppShell, plan W8 review): under `main` on every
+ * signed-in page, so it is on this one whenever a result is, and only once.
  *
  * The composer is docked at the foot of the window (home.css) and the page opens on the newest exchange (OpenAtNewest),
  * except while a NOW result is on the page (the banner, or a NOW card in the stack): then it opens at the top, so the
@@ -72,7 +72,6 @@ export default async function HomePage() {
       // Java's ChatView: a patient with no paper and nothing to look at gets the introduction. The thread lists every
       // paper and every delivered message, so its first page empty is a patient with none.
       const first = thread.items.length === 0 && attention.items.length === 0;
-      const results = thread.items.some((i) => i.kind === "paper") || attention.items.length > 0;
       const nowOnPage = ctx.nowShown || attention.items.some((i) => i.kind === "urgent" && i.level === "now");
       return (
         <div className="chat" data-page="chat">
@@ -93,7 +92,6 @@ export default async function HomePage() {
               </a>
             </p>
           )}
-          {results && <p className="chat__disclaimer">{t(lang, "disclaimer")}</p>}
           <Composer words={composerWords(lang)} owner={patient.owner} patientId={patient.id} preview={preview} />
           <OpenAtNewest hold={nowOnPage} />
         </div>

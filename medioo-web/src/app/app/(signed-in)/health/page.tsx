@@ -13,7 +13,8 @@ import "./health.css";
  * pairs, and the medicines as written on the latest prescription, under Java's heading with its date. Two reads,
  * `GET /app/api/patients/{id}/labs` and `/medicines`, in parallel through javaGet (the preview gate, the cookie and
  * nothing else); nothing is joined, judged or derived here. The patient is the shell's (`?patient=` honoured; the
- * chooser when two or more and nobody chosen). The disclaimer is on the page whenever a value or a medicine is.
+ * chooser when two or more and nobody chosen). The disclaimer is the shell's (AppShell, plan W8 review): under `main` on
+ * every signed-in page, so this page does not say it a second time.
  */
 export default async function HealthPage() {
   return signedInPage({
@@ -36,7 +37,6 @@ export default async function HealthPage() {
       ]);
       const labs = signedIn(labsAnswer, here);
       const medicines = signedIn(medicinesAnswer, here);
-      const results = labs.series.length > 0 || labs.bp.points.length > 0 || medicines.medicines.length > 0;
       return (
         <div className="health" data-page="health">
           {title}
@@ -52,7 +52,6 @@ export default async function HealthPage() {
             </h2>
             <MedicinesAsWritten medicines={medicines} lang={lang} preview={preview} />
           </section>
-          {results && <p className="health__disclaimer">{t(lang, "disclaimer")}</p>}
         </div>
       );
     },

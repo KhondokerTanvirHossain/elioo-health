@@ -157,6 +157,6 @@ test.describe("the preview and the session", () => {
 for (const width of [390, 1024, 1440]) {
   test.describe(`at ${width} px`, () => {
     test.use({ viewport: { width, height: 900 } });
-    screenChecks("/app/shell-test", "me-one", { longest: true });
+    screenChecks("/app/shell-test", "me-one", { longest: true, disclaimer: true });
   });
 }

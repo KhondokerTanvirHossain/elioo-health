@@ -3,14 +3,19 @@ type Headers = Record<string, string | string[] | undefined>;
 export const OPEN: Set<string>;
 export function cookieValue(header: string | undefined, name: string): string | null;
 export function routeKey(scenario: Record<string, unknown>, method: string, path: string): string | null;
+export function forQuery(value: unknown, query: string | undefined): unknown;
 export function answer(request: {
   method: string;
   path: string;
+  /** The request's query, without "?". */
+  query?: string;
   headers: Headers;
   origin: string;
   counters: Map<string, number>;
   /** The request's parsed JSON body, for a scenario value that is a function of the request. */
   body?: unknown;
+  /** The scenario table (SCENARIOS unless a unit test passes its own). */
+  scenarios?: Record<string, Record<string, unknown>>;
 }): { status: number; body: unknown } | { abort: "connectionreset" | "connectionclosed" | "failed" } | { hold: true };
 export function record(request: { method: string; path: string; query: string; headers: Headers }): {
   method: string;

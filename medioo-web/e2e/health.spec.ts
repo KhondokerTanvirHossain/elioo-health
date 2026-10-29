@@ -183,14 +183,15 @@ test.describe("the health tab", () => {
   });
 
   test("theDisclaimerIsShownWheneverAValueOrAMedicineIs", async ({ page }) => {
-    // Both, lab values only, a prescription only: the line. Neither: no line.
-    for (const scenario of ["health-some", "health-labs-only", "health-medicines-only"]) {
+    // Both, lab values only, a prescription only: the line, said once. Since W8 the shell says it under `main` on every
+    // signed-in page (AppShell, as Java's AppShell footer does), so the page does not say it a second time, and with
+    // neither the shell's line is still the only one.
+    for (const scenario of ["health-some", "health-labs-only", "health-medicines-only", "health-none"]) {
       await open(page, scenario);
-      await expect(page.locator(".health__disclaimer"), scenario).toHaveText(t("bn", "disclaimer"));
+      await expect(page.locator("[data-page=health]"), scenario).toHaveCount(1);
+      await expect(page.getByText(t("bn", "disclaimer"), { exact: true }), scenario).toHaveCount(1);
+      await expect(page.locator("main .app-shell__foot"), scenario).toHaveText([t("bn", "disclaimer")]);
     }
-    await open(page, "health-none");
-    await expect(page.locator("[data-page=health]")).toHaveCount(1);
-    await expect(page.locator(".health__disclaimer"), "health-none").toHaveCount(0);
   });
 
   test("everySeriesIsShownAsJavaSentIt", async ({ page }) => {

@@ -1,0 +1,276 @@
+{
+  "_meta": {
+    "generated_by": "baymax PatientTimelineApiContractTest",
+    "source": "GET /app/api/patients/{id}/calendar?month=2026-09 over the case september"
+  },
+  "body": {
+    "days": [
+      {
+        "date": "2026-09-07",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "ab87e0b5-a15f-3a87-a7c9-25dae8d48d70",
+            "document_type": "prescription"
+          }
+        ]
+      },
+      {
+        "date": "2026-09-08",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "be86d82a-c25f-3946-9d67-369b5f2b3075",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-09-09",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "3b0565c9-efae-354f-b952-728ea2698b80",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-09-10",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "169113a9-d132-3c3e-8bbf-4fc6545e9034",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-09-11",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "cd49003b-2dc6-3dd3-8260-d0e60a98f5ab",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-09-12",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "552c9293-230b-307a-81ba-e6aabf7caf62",
+            "document_type": "prescription"
+          }
+        ]
+      },
+      {
+        "date": "2026-09-13",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "d855124c-8847-36ea-8bc7-6741b3171363",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-09-14",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "89aac622-5c85-3181-9e6a-a433c529c632",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-09-15",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "36412e0c-81fa-3228-8678-4904a92662cc",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-09-16",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "2d50aa08-35b2-3824-a01f-3db9b6c093e8",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-09-17",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "236484da-9287-3767-a681-b222f7111949",
+            "document_type": "prescription"
+          }
+        ]
+      },
+      {
+        "date": "2026-09-18",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "ef085fd5-cd9b-30bd-88d5-68f332cec6bf",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-09-19",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "8c797e63-7d5a-3b35-abc4-d3cefd0c1d27",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-09-20",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "0c389fee-6afe-3794-a43a-88ccdbc53094",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-09-21",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "a6e5774a-95f6-35ff-acda-958f64c80c88",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-09-22",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "e80b022b-ce8c-3f53-9e6f-859eac14257b",
+            "document_type": "prescription"
+          }
+        ]
+      },
+      {
+        "date": "2026-09-23",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "43ee654d-29b9-3915-92ef-ed18fccbbf98",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-09-24",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "1f666f40-0224-36c0-afcd-dec4dfdcd30d",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-09-25",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "2dfd1f64-f5d2-317d-8875-55eb7c47f480",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-09-26",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "5892e1bb-bde2-30df-9711-56b69e8a46bc",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-09-27",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "9b5de8ff-3c82-3daa-ae24-ec2cc60e8e53",
+            "document_type": "prescription"
+          }
+        ]
+      },
+      {
+        "date": "2026-09-28",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "79db664b-258d-3c49-a023-47b133779d72",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-09-29",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": null,
+            "document_id": "434a7c92-e6e2-3edd-9ff2-1faeac9d703e",
+            "document_type": "lab_report"
+          }
+        ]
+      },
+      {
+        "date": "2026-09-30",
+        "follow_ups": [ ],
+        "papers": [
+          {
+            "chip": "this_week",
+            "document_id": "7e5f0237-6033-384c-93c7-8ecdb049163c",
+            "document_type": "lab_report"
+          }
+        ]
+      }
+    ],
+    "month": "2026-09"
+  },
+  "status": 200
+}
