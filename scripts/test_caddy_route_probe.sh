@@ -46,8 +46,11 @@
 # - F8's block is F5's shape: `timeline-missing` drops it and fails GET /app/timeline, GET /app/timeline?patient=<id>
 #   and HEAD /app/timeline (three lines), `timeline-get-only` keeps `method GET` and fails the HEAD row alone,
 #   `timeline-any-method` drops the method line and fails the PROBE POST row alone (Java routes no POST
-#   /app/timeline), and `timeline-wide` (`/app/timeline*`) fails the /app/timeline/ boundary row alone. Each edit is
-#   anchored on the papers block;
+#   /app/timeline), `timeline-wide` (`/app/timeline*`) fails the /app/timeline/ boundary row alone, and
+#   `timeline-takes-patient` (the matcher widened to `path /app/timeline /app/patients/*`) fails the patient page
+#   /app/patients/<id>, /app/patients/x/profile and the /profile/ boundary rows and no other, so the plan's second F8
+#   row (the patient page stays Java's) has a red replay on the papers block itself. Each edit is anchored on the
+#   papers block;
 # - a table with no rows, a file with no medioo.eliooo.org block, and a file with an upstream the probe does not know
 #   each fail, rather than pass vacuously or send a row somewhere unreplaced.
 set -uo pipefail
@@ -168,6 +171,7 @@ timeline-any-method|s/\n\t\tmethod GET HEAD\n(\t\tpath \/app\/timeline\n)/\n$1/|
 timeline-get-only|s/\n\t\tmethod GET HEAD\n(\t\tpath \/app\/timeline\n)/\n\t\tmethod GET\n$1/|FAIL PROBE HEAD /app/timeline got 299 (java), expected 298 (next)
 timeline-wide|s/(\n\t\tmethod GET HEAD\n\t\tpath \/app\/timeline)\n/$1*\n/|FAIL /app/timeline/ got 298 (next), expected 299 (java)
 timeline-missing|s/\t\@medioo_papers \{\n\t\tmethod GET HEAD\n\t\tpath \/app\/timeline\n\t\}\n\thandle \@medioo_papers \{\n\t\treverse_proxy medioo-web:3000\n\t\}\n//|FAIL /app/timeline got 299 (java), expected 298 (next)|FAIL /app/timeline?patient=5e9edf6d-0a2a-4913-8675-9d07a4100001 got 299 (java), expected 298 (next)|FAIL PROBE HEAD /app/timeline got 299 (java), expected 298 (next)
+timeline-takes-patient|s/(\n\t\tpath \/app\/timeline)\n/$1 \/app\/patients\/*\n/|FAIL /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile/ got 298 (next), expected 299 (java)|FAIL /app/patients/x/profile got 298 (next), expected 299 (java)|FAIL /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001 got 298 (next), expected 299 (java)
 TABLE
 
 # 4. a table with no rows: refused, not passed
