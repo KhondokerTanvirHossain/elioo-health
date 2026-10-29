@@ -1354,6 +1354,17 @@ but the paper's own printed range would invent a "normal" the lab never stated.
 THIS_WEEK tokens were not painted in MonthCalendar. Also the W2e-b TrendChart rule "draws no band", which now holds
 only for a series whose papers printed no range.
 
+**Amendment 2026-10-28 (PO ruling P5, Tanvir, in the session; the recommended option): R2 extends to the papers page's
+rows and its urgent strip.** A paper's NOW tag on the month list and in the attention strip (`safety/UrgencyTag`) is
+the prototype's `paperCell` `chip crit`: the NOW wash (`--now-soft`) with the octagon and এখনই in the NOW ink
+(`--now-ink`). Its THIS_WEEK tag is `chip out`: the amber wash (`--week-soft`) with the calendar and এ সপ্তাহে in
+the amber (`--week`). Shape and word are kept, and red stays NOW's alone. Nothing else on a row or a strip card is red
+or amber: a routine row, the counts line and the review chip stay neutral. Two modifiers, `urgency-tag--now` (in
+`NOW_ALLOWED`) and `urgency-tag--week` (in `WEEK_ALLOWED`), carry the colours. The TS lint lets only
+`src/components/safety/UrgencyTag/` name them. No new token: `now-ink` and `week` are text tokens already checked at
+4.5:1 on every surface, the washes included. Built in PR #162 (`feat/medioo-web-papers-row-colour`). It supersedes the
+W8 (PR #150) default of shape and word on the neutral wash.
+
 ## DR-49 | 2026-10-23 | The old Java pages go off as each new screen lands: the flips F3, F5–F10 need no on-device try
 
 **Ruling (PO, 2026-10-23, Tanvir, in the session; the recommended option):** Medioo has exactly one family, the PO's

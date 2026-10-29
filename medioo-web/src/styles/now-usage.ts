@@ -18,8 +18,11 @@ import type { TokenFile } from "./build-tokens";
 const BOUNDARY = "(?=$|[\\s.:#\\[,>+~)]|__|--)";
 // urgent-mark: the patient's red mark in the switcher and the chooser (src/components/safety/UrgentMark, plan W4).
 // MonthCalendar's NOW and THIS_WEEK marks, in the cell and in the legend: PO ruling R2 (DR-48).
-export const NOW_ALLOWED = new RegExp(`^\\.(now-banner|urgent-mark|verdict-card--now|status-chip--crit-(high|low)|month-calendar__(alert|key)--now)${BOUNDARY}`);
-export const WEEK_ALLOWED = new RegExp(`^\\.(verdict-card--week|month-calendar__(alert|key)--week)${BOUNDARY}`);
+// A paper's NOW and THIS_WEEK tag on the papers list and the attention strip (safety/UrgencyTag): PO ruling P5.
+export const NOW_ALLOWED = new RegExp(
+  `^\\.(now-banner|urgent-mark|verdict-card--now|status-chip--crit-(high|low)|month-calendar__(alert|key)--now|urgency-tag--now)${BOUNDARY}`,
+);
+export const WEEK_ALLOWED = new RegExp(`^\\.(verdict-card--week|month-calendar__(alert|key)--week|urgency-tag--week)${BOUNDARY}`);
 
 const VAR = /var\(\s*--([\w-]+)/g;
 

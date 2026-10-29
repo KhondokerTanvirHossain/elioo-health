@@ -1,7 +1,8 @@
 /* The papers page (timeline/page.tsx): phone.html scene `papers`. One column up to 720 px wide: the title with the owner's
    send link, the attention strip, the doctor's dates, the month's two neighbours as links over the wall calendar, the
    type filter, the month list and its "more" link. Every link meets the 44 px floor and the send link, the page's one
-   primary press, 48 px. Nothing here is red or amber; the levels are shape and word (safety/UrgencyTag). */
+   primary press, 48 px. Nothing here is red or amber; a level is its tag's (safety/UrgencyTag: NOW red, THIS_WEEK
+   amber, shape and word kept, PO ruling P5), never the strip card's. */
 .papers {
   display: flex;
   flex-direction: column;

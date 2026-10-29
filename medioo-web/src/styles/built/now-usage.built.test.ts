@@ -104,9 +104,15 @@ describe("the built CSS", () => {
         ".month-calendar__key--week .month-calendar__mark--urgency stroke",
       ]),
     );
+    // P5 (2026-10-28): a paper's NOW tag on the papers list and the strip is the prototype's chip crit, its THIS_WEEK
+    // tag chip out, so both ship as allowed uses, each with its own level's wash and ink and never the other's.
+    expect(usesOf(/var\(\s*--now-soft\b/, /^\.urgency-tag/), "UrgencyTag's NOW wash").toEqual([".urgency-tag--now background"]);
+    expect(usesOf(/var\(\s*--now-ink\b/, /^\.urgency-tag/), "UrgencyTag's NOW ink").toEqual([".urgency-tag--now color"]);
+    expect(usesOf(/var\(\s*--week-soft\b/, /^\.urgency-tag/), "UrgencyTag's THIS_WEEK wash").toEqual([".urgency-tag--week background"]);
+    expect(usesOf(/var\(\s*--week\s*[,)]/, /^\.urgency-tag/), "UrgencyTag's THIS_WEEK amber").toEqual([".urgency-tag--week color"]);
     expect(
-      usesOf(/var\(\s*--week\b/, /./).filter((u) => !/^\.(verdict-card--week|month-calendar__(alert|key)--week) /.test(u)),
-      "--week used outside .verdict-card--week and the calendar's THIS_WEEK marks",
+      usesOf(/var\(\s*--week\b/, /./).filter((u) => !/^\.(verdict-card--week|month-calendar__(alert|key)--week|urgency-tag--week) /.test(u)),
+      "--week used outside .verdict-card--week, the calendar's THIS_WEEK marks and the papers' THIS_WEEK tag",
     ).toEqual([]);
 
     expect(nowUsageViolations(css, NOW_ALLOWED)).toEqual([]);

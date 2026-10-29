@@ -6,7 +6,7 @@ import { shift } from "../src/app/app/(signed-in)/timeline/months";
 import { formatDate, formatMonthYear, t, type CopyKey, type Lang } from "../src/copy";
 import { useScenario, type CropRow } from "./support/browser-api";
 import { FIXTURES, longNameOf } from "./support/scenarios.mjs";
-import { cropRowsReport, overflowReport, rendersOwnText, screenChecks } from "./support/screen-checks";
+import { axeReport, cropRowsReport, expectSchemeIsPainted, overflowReport, rendersOwnText, screenChecks } from "./support/screen-checks";
 
 /*
  * The papers page (plan W8) at /app/timeline, against the production build and stub Java: the wall calendar, the doctor's dates
@@ -344,6 +344,169 @@ test("aNonPreviewFamilyOnThePreviewPathReadsNothingButMe", async ({ page }) => {
   const response = await page.goto("/app/preview/timeline");
   expect(response?.status()).toBe(404);
   expect((await recorder.java()).map((r) => `${r.method} ${r.path}`)).toEqual(["GET /app/api/me"]);
+});
+
+/**
+ * The short word each level's tag must say: the keys UrgencyTag renders, named here only to judge the rendered text
+ * (the safety-line lint keeps the rendering of urgency.* to src/components/safety/; this renders nothing).
+ */
+const SHORT_WORD: Record<"now" | "this_week", CopyKey> = { now: "urgency.now.short", this_week: "urgency.this_week.short" };
+
+/** What the browser paints on every list row and strip row: each tag's colours, shape and word, and every red or amber. */
+function rowPaint(page: Page) {
+  return page.evaluate(() => {
+    // The active theme's tokens, resolved by the browser to the spelling getComputedStyle reports.
+    const swatch = document.createElement("div");
+    document.body.append(swatch);
+    const resolved = (prop: string, token: string) => {
+      swatch.style.setProperty(prop, `var(${token})`);
+      const value = getComputedStyle(swatch).getPropertyValue(prop);
+      swatch.style.removeProperty(prop);
+      return value;
+    };
+    const both = (token: string) => [resolved("color", token), resolved("background-color", token)];
+    const tok = {
+      nowInk: resolved("color", "--now-ink"),
+      nowSoft: resolved("background-color", "--now-soft"),
+      week: resolved("color", "--week"),
+      weekSoft: resolved("background-color", "--week-soft"),
+    };
+    // Every spelling of the red and the amber, washes included, for the "nothing else" sweep (not --on-now, the white
+    // written on the red, which is also the white of a card).
+    const reds = [...new Set(["--now", "--now-ink", "--now-soft"].flatMap(both))].filter((c) => c !== "");
+    const ambers = [...new Set(["--week", "--week-soft"].flatMap(both))].filter((c) => c !== "");
+    swatch.remove();
+    const PROPS = ["color", "background-color", "fill", "stroke", "border-top-color", "border-right-color", "border-bottom-color", "border-left-color", "outline-color", "text-decoration-color", "box-shadow"];
+    const kind = (prop: string, value: string) => {
+      const is = (c: string) => (prop === "box-shadow" ? value.includes(c) : value === c);
+      return reds.some(is) ? "red" : ambers.some(is) ? "amber" : null;
+    };
+    /** Every element under `root` (itself included, `skip` excluded) that paints red or amber, as `<class> prop: kind`. */
+    const painted = (root: Element, skip: (e: Element) => boolean = () => false) => {
+      const out: string[] = [];
+      for (const el of [root, ...root.querySelectorAll("*")]) {
+        if (skip(el)) continue;
+        const style = getComputedStyle(el);
+        for (const prop of PROPS) {
+          const k = kind(prop, style.getPropertyValue(prop));
+          if (k) out.push(`<${el.tagName.toLowerCase()} class="${el.getAttribute("class") ?? ""}"> ${prop}: ${k}`);
+        }
+      }
+      return out;
+    };
+    const rows = [...document.querySelectorAll(".month-list a[href^='/app/documents/'], .papers__strip a")].map((row) => {
+      const tag = row.querySelector<HTMLElement>("[data-urgency]");
+      const shape = tag?.querySelector("svg");
+      const word = tag?.querySelector(".urgency-tag__word");
+      const review = row.querySelector(".month-list__review");
+      return {
+        where: row.closest(".papers__strip") ? "strip" : "list",
+        id: row.getAttribute("href")!.split("/")[3]!,
+        level: tag?.dataset.urgency ?? null,
+        tag: tag
+          ? {
+              background: getComputedStyle(tag).backgroundColor,
+              shape: shape?.getAttribute("data-shape") ?? null,
+              stroke: shape ? getComputedStyle(shape).stroke : null,
+              word: word?.textContent ?? null,
+              wordColour: word ? getComputedStyle(word).color : null,
+              inside: painted(tag),
+            }
+          : null,
+        outside: painted(row, (e) => !!tag && tag.contains(e)),
+        review: review ? { text: review.textContent, painted: painted(review) } : null,
+      };
+    });
+    return { tok, rows, reds: reds.length, ambers: ambers.length };
+  });
+}
+
+test.describe("the rows' and the strip's colour (PO ruling P5): NOW red, THIS_WEEK amber, shape and word kept", () => {
+  for (const colorScheme of ["light", "dark"] as const) {
+    test.describe(colorScheme, () => {
+      test.use({ colorScheme });
+      for (const lang of ["bn", "en"] as const) {
+        test(`theNowTagIsRedTheThisWeekTagAmberAndNothingElseOnARowIsEither (${lang})`, async ({ page, context, baseURL }) => {
+          await context.addCookies([{ name: "baymax_lang", value: lang, url: baseURL! }]);
+          const seen = { list: { now: 0, this_week: 0, none: 0 }, strip: { now: 0, this_week: 0, none: 0 }, review: 0, reviewBesideNow: 0 };
+          const bad: string[] = [];
+          // Forty-five: both levels in the list and the strip. In flight: a NOW paper waiting for review, so the review
+          // chip sits beside a red tag. Busy: the page every other check judges.
+          for (const scenario of ["papers-forty-five", "papers-in-flight", "papers-busy"]) {
+            await open(page, scenario);
+            const { tok, rows, reds, ambers } = await rowPaint(page);
+            expect(reds, "the red's spellings resolved").toBeGreaterThanOrEqual(3);
+            expect(ambers, "the amber's spellings resolved").toBeGreaterThanOrEqual(2);
+            for (const r of rows) {
+              const at = `${scenario} ${r.where} ${r.id}`;
+              const level = r.level === "now" || r.level === "this_week" ? r.level : "none";
+              seen[r.where as "list" | "strip"][level]++;
+              // Outside the tag, whatever the row's level, nothing on the row is red or amber.
+              for (const p of r.outside) bad.push(`${at} outside the tag: ${p}`);
+              if (r.review) {
+                seen.review++;
+                // The case in-flight is here for: a review chip on the same row as a red tag, where a sibling or a shared
+                // tags-row rule would spill the red onto the chip.
+                if (level === "now") seen.reviewBesideNow++;
+                expect(r.review.text, `${at} review chip`).toBe(t(lang, "timeline.review.pending"));
+                for (const p of r.review.painted) bad.push(`${at} the review chip: ${p}`);
+              }
+              if (level === "none") {
+                expect(r.tag, `${at} a routine row has no tag`).toBeNull();
+                continue;
+              }
+              const tag = r.tag!;
+              const word = t(lang, SHORT_WORD[level]);
+              const want = level === "now"
+                ? { colour: "red", background: tok.nowSoft, ink: tok.nowInk, shape: "octagon", word }
+                : { colour: "amber", background: tok.weekSoft, ink: tok.week, shape: "calendar-week", word };
+              if (tag.background !== want.background) bad.push(`${at}: the ${level} wash is ${tag.background}, not ${want.background}`);
+              if (tag.wordColour !== want.ink) bad.push(`${at}: the ${level} word is ${tag.wordColour}, not ${want.ink}`);
+              if (tag.stroke !== want.ink) bad.push(`${at}: the ${level} shape is ${tag.stroke}, not ${want.ink}`);
+              if (tag.shape !== want.shape) bad.push(`${at}: the ${level} shape is ${tag.shape}, not ${want.shape}`);
+              if (tag.word !== want.word) bad.push(`${at}: the ${level} word says ${tag.word}, not ${want.word}`);
+              // Inside the tag, only its own level's colour: never red on THIS_WEEK, never amber on NOW.
+              for (const p of tag.inside) if (!p.endsWith(want.colour)) bad.push(`${at} in the ${level} tag: ${p}`);
+            }
+          }
+          expect(bad).toEqual([]);
+          // Guards: every kind of row was judged, in the list and in the strip, and the review chip was met beside a red tag.
+          for (const where of ["list", "strip"] as const) {
+            expect(seen[where].now, `${where}: NOW tags judged`).toBeGreaterThan(0);
+            expect(seen[where].this_week, `${where}: THIS_WEEK tags judged`).toBeGreaterThan(0);
+          }
+          expect(seen.list.none, "routine rows judged").toBeGreaterThan(0);
+          expect(seen.review, "review chips judged").toBeGreaterThan(0);
+          expect(seen.reviewBesideNow, "a review chip beside a NOW tag judged").toBeGreaterThan(0);
+        });
+      }
+
+      // papers-busy is judged whole by screenChecks below, and both pages here are judged whole too. Forty-five holds
+      // both levels in the list and the strip. In flight holds a red tag beside the review chip in the list, and also
+      // carries the 5 s meta refresh while a paper is being read (PR #150, Java parity), which axe's meta-refresh rule
+      // reports (WCAG F41). That one rule, by its id, is the known exception, raised with the PO on its own; every other
+      // rule still judges the whole page: the strip, the header, the due dates, the calendar and the filter included.
+      const AXE_CASES = [
+        { scenario: "papers-forty-five", coloured: [".urgency-tag--now", ".urgency-tag--week"], except: [] },
+        { scenario: "papers-in-flight", coloured: [".month-list .urgency-tag--now"], except: ["meta-refresh"] },
+      ] as const;
+      for (const { scenario, coloured, except } of AXE_CASES) {
+        test(`axeReportsNoViolationOnTheColouredTags (${scenario})`, async ({ page }) => {
+          await open(page, scenario);
+          await expectSchemeIsPainted(page, colorScheme);
+          // Guards: the coloured modifiers themselves sit inside what axe judges (every tag carried .urgency-tag before
+          // P5, uncoloured), and an exception is kept only while the thing it excepts is on the page.
+          for (const sel of coloured) expect(await page.locator(sel).count(), `${sel} on the page axe judges`).toBeGreaterThan(0);
+          if (except.length > 0) {
+            expect(await page.locator("meta[http-equiv='refresh']").count(), "the excepted meta refresh is on the page").toBe(1);
+          }
+          const report = await axeReport(page, undefined, except);
+          expect(report.violations).toEqual([]);
+          expect(report.passes, "axe checked something").toBeGreaterThan(0);
+        });
+      }
+    });
+  }
 });
 
 screenChecks("/app/timeline", "papers-busy", { crops: FOLLOW_ROWS, longest: true, disclaimer: true });

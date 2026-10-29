@@ -1,6 +1,7 @@
-/* A paper's stored urgency on a row (UrgencyTag.tsx): the shape and the short word, on the neutral wash, in the row's
-   text colour. No NOW red and no amber here: R2 (DR-48) coloured MonthCalendar's marks, and colouring a row's tag is
-   a separate PO call. Wraps with the row it sits in and never widens it. */
+/* A paper's stored urgency on a row (UrgencyTag.tsx): the shape and the short word. PO ruling P5 (2026-10-28), as
+   the approved prototype's paperCell: NOW is chip crit (the NOW wash, the NOW ink), THIS_WEEK chip out (the amber wash,
+   the amber), the shape in the word's colour. Only the two modifiers paint either; the base rule stays the neutral wash
+   (built/now-usage.built.test.ts judges it on the shipped CSS). Wraps with the row it sits in and never widens it. */
 .urgency-tag {
   display: inline-flex;
   align-items: center;
@@ -16,6 +17,14 @@
   font-weight: 700;
   line-height: 1.6;
   overflow-wrap: anywhere;
+}
+.urgency-tag--now {
+  background: var(--now-soft);
+  color: var(--now-ink);
+}
+.urgency-tag--week {
+  background: var(--week-soft);
+  color: var(--week);
 }
 .urgency-tag__shape {
   flex: none;

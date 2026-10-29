@@ -55,10 +55,15 @@ export async function expectSchemeIsPainted(page: Page, colorScheme: "light" | "
   await page.emulateMedia({ colorScheme });
 }
 
-/** axe over the page (or `include`), as `id: targets` lines, and how many rules passed. */
-export async function axeReport(page: Page, include?: string) {
-  const builder = new AxeBuilder({ page });
-  const results = await (include ? builder.include(include) : builder).analyze();
+/**
+ * axe over the page (or `include`), as `id: targets` lines, and how many rules passed. `disableRules` names the rules a
+ * caller excepts, each one by its id, so every other rule still judges the whole scope.
+ */
+export async function axeReport(page: Page, include?: string, disableRules: readonly string[] = []) {
+  let builder = new AxeBuilder({ page });
+  if (include) builder = builder.include(include);
+  if (disableRules.length > 0) builder = builder.disableRules([...disableRules]);
+  const results = await builder.analyze();
   return {
     violations: results.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`),
     passes: results.passes.length,

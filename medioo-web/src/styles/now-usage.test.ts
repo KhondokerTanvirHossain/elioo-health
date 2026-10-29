@@ -172,6 +172,47 @@ describe("tokenUsageViolations", () => {
       ".month-calendar__alert--now .status-chip uses --now",
     ]);
   });
+
+  it("aPapersUrgencyTagMayPaintItsOwnLevelsColourAndNothingElseMay", () => {
+    // PO ruling P5 (2026-10-28): the papers list's and the attention strip's NOW tag is the prototype's chip crit (the
+    // NOW wash and ink) and the THIS_WEEK tag its chip out (the amber wash and amber), shape and word kept. Only the NOW
+    // modifier may use the NOW tokens, only the THIS_WEEK one --week.
+    const now = ".urgency-tag--now { background: var(--now-soft); color: var(--now-ink) } .urgency-tag--now .urgency-tag__shape { stroke: var(--now-ink) }";
+    expect(nowUsageViolations(now, NOW_ALLOWED)).toEqual([]);
+    const week = ".urgency-tag--week { background: var(--week-soft); color: var(--week) } .urgency-tag--week .urgency-tag__word { color: var(--week) }";
+    expect(tokenUsageViolations(week, "week", WEEK_ALLOWED)).toEqual([]);
+    // The dangerous direction: the red on the THIS_WEEK tag, the amber on the NOW tag, either on the tag's base rule
+    // (every tag, whatever its level), its parts, the rows and strip around it, or a modifier that only starts alike.
+    expect(nowUsageViolations(".urgency-tag--week { color: var(--now-ink) }", NOW_ALLOWED)).toEqual([".urgency-tag--week uses --now-ink"]);
+    expect(tokenUsageViolations(".urgency-tag--now { background: var(--week-soft) }", "week", WEEK_ALLOWED)).toEqual([
+      ".urgency-tag--now uses --week-soft",
+    ]);
+    for (const selector of [
+      ".urgency-tag",
+      ".urgency-tag__shape",
+      ".urgency-tag__word",
+      ".urgency-tag--nowish",
+      ".urgency-tag--weekly",
+      ".month-list__row",
+      ".month-list__review",
+      ".month-list__tags",
+      ".papers__urgent",
+      ".papers__strip",
+    ]) {
+      expect(nowUsageViolations(`${selector} { color: var(--now) }`, NOW_ALLOWED), selector).toEqual([`${selector} uses --now`]);
+      expect(tokenUsageViolations(`${selector} { color: var(--week) }`, "week", WEEK_ALLOWED), selector).toEqual([`${selector} uses --week`]);
+    }
+    // A tag's modifier reaching into the row around it, or a row reaching into the tag, is not the tag's own use.
+    expect(nowUsageViolations(".urgency-tag--now .month-list__review { color: var(--now) }", NOW_ALLOWED)).toEqual([
+      ".urgency-tag--now .month-list__review uses --now",
+    ]);
+    expect(nowUsageViolations(".month-list__tags .urgency-tag--now { color: var(--now) }", NOW_ALLOWED)).toEqual([
+      ".month-list__tags .urgency-tag--now uses --now",
+    ]);
+    expect(nowUsageViolations(".urgency-tag--now ~ .month-list__review { color: var(--now) }", NOW_ALLOWED)).toEqual([
+      ".urgency-tag--now ~ .month-list__review uses --now",
+    ]);
+  });
 });
 
 describe("roleUsageViolations", () => {
