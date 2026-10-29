@@ -428,7 +428,7 @@ test.describe("the rows' and the strip's colour (PO ruling P5): NOW red, THIS_WE
       for (const lang of ["bn", "en"] as const) {
         test(`theNowTagIsRedTheThisWeekTagAmberAndNothingElseOnARowIsEither (${lang})`, async ({ page, context, baseURL }) => {
           await context.addCookies([{ name: "baymax_lang", value: lang, url: baseURL! }]);
-          const seen = { list: { now: 0, this_week: 0, none: 0 }, strip: { now: 0, this_week: 0, none: 0 }, review: 0 };
+          const seen = { list: { now: 0, this_week: 0, none: 0 }, strip: { now: 0, this_week: 0, none: 0 }, review: 0, reviewBesideNow: 0 };
           const bad: string[] = [];
           // Forty-five: both levels in the list and the strip. In flight: a NOW paper waiting for review, so the review
           // chip sits beside a red tag. Busy: the page every other check judges.
@@ -445,6 +445,9 @@ test.describe("the rows' and the strip's colour (PO ruling P5): NOW red, THIS_WE
               for (const p of r.outside) bad.push(`${at} outside the tag: ${p}`);
               if (r.review) {
                 seen.review++;
+                // The case in-flight is here for: a review chip on the same row as a red tag, where a sibling or a shared
+                // tags-row rule would spill the red onto the chip.
+                if (level === "now") seen.reviewBesideNow++;
                 expect(r.review.text, `${at} review chip`).toBe(t(lang, "timeline.review.pending"));
                 for (const p of r.review.painted) bad.push(`${at} the review chip: ${p}`);
               }
@@ -467,25 +470,37 @@ test.describe("the rows' and the strip's colour (PO ruling P5): NOW red, THIS_WE
             }
           }
           expect(bad).toEqual([]);
-          // Guards: every kind of row was judged, in the list and in the strip, and the review chip was met.
+          // Guards: every kind of row was judged, in the list and in the strip, and the review chip was met beside a red tag.
           for (const where of ["list", "strip"] as const) {
             expect(seen[where].now, `${where}: NOW tags judged`).toBeGreaterThan(0);
             expect(seen[where].this_week, `${where}: THIS_WEEK tags judged`).toBeGreaterThan(0);
           }
           expect(seen.list.none, "routine rows judged").toBeGreaterThan(0);
           expect(seen.review, "review chips judged").toBeGreaterThan(0);
+          expect(seen.reviewBesideNow, "a review chip beside a NOW tag judged").toBeGreaterThan(0);
         });
       }
 
-      // papers-busy is judged whole by screenChecks below. Forty-five holds both levels in the list and the strip; in
-      // flight, a red tag beside the review chip, judged on the list alone, because that page's meta refresh (it
-      // reloads while a paper is being read, by design) is axe's meta-refresh rule and not the colour under test.
-      for (const [scenario, include] of [["papers-forty-five", undefined], ["papers-in-flight", ".month-list"]] as const) {
+      // papers-busy is judged whole by screenChecks below, and both pages here are judged whole too. Forty-five holds
+      // both levels in the list and the strip. In flight holds a red tag beside the review chip in the list, and also
+      // carries the 5 s meta refresh while a paper is being read (PR #150, Java parity), which axe's meta-refresh rule
+      // reports (WCAG F41). That one rule, by its id, is the known exception, raised with the PO on its own; every other
+      // rule still judges the whole page: the strip, the header, the due dates, the calendar and the filter included.
+      const AXE_CASES = [
+        { scenario: "papers-forty-five", coloured: [".urgency-tag--now", ".urgency-tag--week"], except: [] },
+        { scenario: "papers-in-flight", coloured: [".month-list .urgency-tag--now"], except: ["meta-refresh"] },
+      ] as const;
+      for (const { scenario, coloured, except } of AXE_CASES) {
         test(`axeReportsNoViolationOnTheColouredTags (${scenario})`, async ({ page }) => {
           await open(page, scenario);
           await expectSchemeIsPainted(page, colorScheme);
-          expect(await page.locator(".urgency-tag").count(), "coloured tags on the page").toBeGreaterThan(0);
-          const report = await axeReport(page, include);
+          // Guards: the coloured modifiers themselves sit inside what axe judges (every tag carried .urgency-tag before
+          // P5, uncoloured), and an exception is kept only while the thing it excepts is on the page.
+          for (const sel of coloured) expect(await page.locator(sel).count(), `${sel} on the page axe judges`).toBeGreaterThan(0);
+          if (except.length > 0) {
+            expect(await page.locator("meta[http-equiv='refresh']").count(), "the excepted meta refresh is on the page").toBe(1);
+          }
+          const report = await axeReport(page, undefined, except);
           expect(report.violations).toEqual([]);
           expect(report.passes, "axe checked something").toBeGreaterThan(0);
         });

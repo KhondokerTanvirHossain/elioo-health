@@ -1362,7 +1362,7 @@ the amber (`--week`). Shape and word are kept, and red stays NOW's alone. Nothin
 or amber: a routine row, the counts line and the review chip stay neutral. Two modifiers, `urgency-tag--now` (in
 `NOW_ALLOWED`) and `urgency-tag--week` (in `WEEK_ALLOWED`), carry the colours. The TS lint lets only
 `src/components/safety/UrgencyTag/` name them. No new token: `now-ink` and `week` are text tokens already checked at
-4.5:1 on every surface, the washes included. Built in branch `feat/medioo-web-papers-row-colour`. It supersedes the
+4.5:1 on every surface, the washes included. Built in PR #162 (`feat/medioo-web-papers-row-colour`). It supersedes the
 W8 (PR #150) default of shape and word on the neutral wash.
 
 ## DR-49 | 2026-10-23 | The old Java pages go off as each new screen lands: the flips F3, F5–F10 need no on-device try
