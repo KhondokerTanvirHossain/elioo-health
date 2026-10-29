@@ -43,6 +43,14 @@
 #   `method GET` and fails the HEAD row alone, `health-any-method` drops the method line and fails the PROBE POST row
 #   alone (Java routes no POST /app/health), and `health-wide` (`/app/health*`) fails the /app/health/ boundary row
 #   alone. Each edit is anchored on the health block, never on /app/healthz's own `handle /app/healthz`;
+# - F8's block is F5's shape: `timeline-missing` drops it and fails GET /app/timeline, GET /app/timeline?patient=<id>
+#   and HEAD /app/timeline (three lines), `timeline-get-only` keeps `method GET` and fails the HEAD row alone,
+#   `timeline-any-method` drops the method line and fails the PROBE POST row alone (Java routes no POST
+#   /app/timeline), `timeline-wide` (`/app/timeline*`) fails the /app/timeline/ boundary row alone, and
+#   `timeline-takes-patient` (the matcher widened to `path /app/timeline /app/patients/*`) fails the patient page
+#   /app/patients/<id>, /app/patients/x/profile and the /profile/ boundary rows and no other, so the plan's second F8
+#   row (the patient page stays Java's) has a red replay on the papers block itself. Each edit is anchored on the
+#   papers block;
 # - a table with no rows, a file with no medioo.eliooo.org block, and a file with an upstream the probe does not know
 #   each fail, rather than pass vacuously or send a row somewhere unreplaced.
 set -uo pipefail
@@ -62,9 +70,10 @@ CASES=0
 # /app/preview/probe, F7's /app/add, /app/add/, PROBE HEAD /app/add and PROBE POST /app/add, and F5's /app/home,
 # /app/home/, PROBE HEAD /app/home and PROBE POST /app/home, and F10's /app/family, /app/family/, PROBE HEAD and PROBE
 # POST /app/family, /app/patients/<id>/profile, its /profile/, /app/patients/x/profile, /app/patients/<id>, and PROBE
-# HEAD and PROBE POST on the profile, and F9's /app/health, /app/health/, PROBE HEAD and PROBE POST /app/health (the
-# probe sends PROBE rows; the production run never does)
-ROWS=51
+# HEAD and PROBE POST on the profile, and F9's /app/health, /app/health/, PROBE HEAD and PROBE POST /app/health, and
+# F8's /app/timeline, /app/timeline?patient=<id>, /app/timeline/, PROBE HEAD and PROBE POST /app/timeline (the probe
+# sends PROBE rows; the production run never does)
+ROWS=56
 
 fail() { echo "FAIL: $1"; FAILED=1; }
 
@@ -100,7 +109,9 @@ for line in 'PASS /app/ 298 (next)' 'PASS /app 298 (next)' 'PASS HEAD /app/ 298 
   'PASS PROBE POST /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile 299 (java)' 'PASS /app/patients/x/profile 299 (java)' \
   'PASS /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001 299 (java)' \
   'PASS /app/health 298 (next)' 'PASS PROBE HEAD /app/health 298 (next)' 'PASS PROBE POST /app/health 299 (java)' \
-  'PASS /app/health/ 299 (java)'; do
+  'PASS /app/health/ 299 (java)' \
+  'PASS /app/timeline 298 (next)' 'PASS /app/timeline?patient=5e9edf6d-0a2a-4913-8675-9d07a4100001 298 (next)' 'PASS PROBE HEAD /app/timeline 298 (next)' \
+  'PASS PROBE POST /app/timeline 299 (java)' 'PASS /app/timeline/ 299 (java)'; do
   grep -qxF "$line" "$WORK/out.log" || fail "repo: no '$line' line: $(out)"
 done
 # the probe prints each row's spec as written, so an {old} row it asked would print the literal {old}
@@ -110,18 +121,19 @@ grep -qF '{old}' "$WORK/out.log" && fail "repo: an {old} row was asked of the pr
 grep -q '^PASS /app/healthz 298 (next)$' "$WORK/out.log" || fail "theProbeSpeaksPlainHttp: no 'PASS /app/healthz 298 (next)' line: $(out)"
 grep -qE ' (got )?308( |$)' "$WORK/out.log" && fail "theProbeSpeaksPlainHttp: a row was answered 308: $(out)"
 
-# 3. one wrong route at a time: <name>|<perl edit>|<a FAIL line, exactly>[|<a second FAIL line>]; the run must print
-#    those lines and no other FAIL line (one, or two when the edit takes a whole block that two rows ask)
-while IFS='|' read -r name edit line line2; do
+# 3. one wrong route at a time: <name>|<perl edit>|<a FAIL line, exactly>[|<a second FAIL line>[|<a third>]]; the run
+#    must print those lines and no other FAIL line (one, or more when the edit takes a whole block that several rows
+#    ask)
+while IFS='|' read -r name edit line line2 line3; do
   [ -n "$name" ] || continue
   variant "$name" "$edit" || continue
   if probe "$WORK/$name.Caddyfile"; then fail "$name: exited 0: $(out)"; continue; fi
-  grep -qxF -- "$line" "$WORK/out.log" || fail "$name: no '$line' line: $(out)"
-  want=1
-  if [ -n "$line2" ]; then
-    want=2
-    grep -qxF -- "$line2" "$WORK/out.log" || fail "$name: no '$line2' line: $(out)"
-  fi
+  want=0
+  for expected in "$line" "$line2" "$line3"; do
+    [ -n "$expected" ] || continue
+    want=$((want + 1))
+    grep -qxF -- "$expected" "$WORK/out.log" || fail "$name: no '$expected' line: $(out)"
+  done
   [ "$(fails)" = "$want" ] || fail "$name: $(fails) FAIL rows, expected exactly $want: $(out)"
 done <<'TABLE'
 api-to-next|s/(\n\thandle \{\n)/\n\thandle \/app\/api\/* {\n\t\treverse_proxy medioo-web:3000\n\t}\n$1/|FAIL /app/api/me got 298 (next), expected 299 (java)
@@ -155,6 +167,11 @@ health-any-method|s/\n\t\tmethod GET HEAD\n(\t\tpath \/app\/health\n)/\n$1/|FAIL
 health-get-only|s/\n\t\tmethod GET HEAD\n(\t\tpath \/app\/health\n)/\n\t\tmethod GET\n$1/|FAIL PROBE HEAD /app/health got 299 (java), expected 298 (next)
 health-wide|s/(\n\t\tmethod GET HEAD\n\t\tpath \/app\/health)\n/$1*\n/|FAIL /app/health/ got 298 (next), expected 299 (java)
 health-missing|s/\t\@medioo_health \{\n\t\tmethod GET HEAD\n\t\tpath \/app\/health\n\t\}\n\thandle \@medioo_health \{\n\t\treverse_proxy medioo-web:3000\n\t\}\n//|FAIL /app/health got 299 (java), expected 298 (next)|FAIL PROBE HEAD /app/health got 299 (java), expected 298 (next)
+timeline-any-method|s/\n\t\tmethod GET HEAD\n(\t\tpath \/app\/timeline\n)/\n$1/|FAIL PROBE POST /app/timeline got 298 (next), expected 299 (java)
+timeline-get-only|s/\n\t\tmethod GET HEAD\n(\t\tpath \/app\/timeline\n)/\n\t\tmethod GET\n$1/|FAIL PROBE HEAD /app/timeline got 299 (java), expected 298 (next)
+timeline-wide|s/(\n\t\tmethod GET HEAD\n\t\tpath \/app\/timeline)\n/$1*\n/|FAIL /app/timeline/ got 298 (next), expected 299 (java)
+timeline-missing|s/\t\@medioo_papers \{\n\t\tmethod GET HEAD\n\t\tpath \/app\/timeline\n\t\}\n\thandle \@medioo_papers \{\n\t\treverse_proxy medioo-web:3000\n\t\}\n//|FAIL /app/timeline got 299 (java), expected 298 (next)|FAIL /app/timeline?patient=5e9edf6d-0a2a-4913-8675-9d07a4100001 got 299 (java), expected 298 (next)|FAIL PROBE HEAD /app/timeline got 299 (java), expected 298 (next)
+timeline-takes-patient|s/(\n\t\tpath \/app\/timeline)\n/$1 \/app\/patients\/*\n/|FAIL /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile/ got 298 (next), expected 299 (java)|FAIL /app/patients/x/profile got 298 (next), expected 299 (java)|FAIL /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001 got 298 (next), expected 299 (java)
 TABLE
 
 # 4. a table with no rows: refused, not passed

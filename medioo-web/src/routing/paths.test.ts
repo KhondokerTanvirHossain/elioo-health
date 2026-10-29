@@ -88,5 +88,10 @@ describe("paths", () => {
     expect(NEXT_PAGES).toContain("/app/home");
     expect(servedByNext("/app/home", true)).toBe(true);
     expect(servedByNext("/app/home", false)).toBe(FLIPPED.includes("/app/home"));
+    // F8: Caddy sends /app/timeline to Next, query and all, so a link to the papers tab (always `?patient=`) is Next's
+    // for every viewer; the patient page beside it is still Java's, a real navigation.
+    expect(FLIPPED).toContain("/app/timeline");
+    expect(servedByNext("/app/timeline?patient=5e9edf6d-0a2a-4913-8675-9d07a4100001", false)).toBe(true);
+    expect(servedByNext("/app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001", false)).toBe(false);
   });
 });
