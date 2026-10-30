@@ -44,7 +44,9 @@ public class ThreadApiHandler {
         Lang lang = Lang.of(request);
         UUID patientId = patientId(request);
         String cursor = request.queryParam("cursor").orElse(null);
-        return threads.thread(session.familyId(), patientId, cursor)
+        // plan CHAT-api: asks only when asked for, so the web deployed today (which reads an unknown kind as a paper) is untouched
+        boolean asks = "1".equals(request.queryParam("asks").orElse(null));
+        return threads.thread(session.familyId(), patientId, cursor, asks)
                 .flatMap(page -> Flux.fromIterable(page.items())
                         .flatMapSequential(entry -> item(entry, lang), CARD_CONCURRENCY)
                         .collectList()
@@ -56,6 +58,7 @@ public class ThreadApiHandler {
         return switch (entry.item()) {
             case ThreadItem.Paper paper -> PaperApiHandler.body(entry.card(), lang, copy, storage).map(card -> ThreadJson.paper(paper, card));
             case ThreadItem.Message message -> Mono.just(ThreadJson.message(message));
+            case ThreadItem.Ask ask -> Mono.just(ThreadJson.ask(ask));
         };
     }
 

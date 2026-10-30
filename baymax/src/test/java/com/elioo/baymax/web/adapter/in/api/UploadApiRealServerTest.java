@@ -110,7 +110,7 @@ class UploadApiRealServerTest {
                         new UiCopy(), properties),
                 new HealthApiHandler(org.mockito.Mockito.mock(com.elioo.baymax.web.application.port.in.HealthUseCase.class)),
                 B3Handlers.nowBanner(), B3Handlers.attention(), B3Handlers.timeline(),
-                new PreferencesApiHandler(properties), B3Handlers.thread(),
+                new PreferencesApiHandler(properties), B3Handlers.thread(), B3Handlers.ask(),
                 guard);
         HttpHandler app = RouterFunctions.toHttpHandler(router);
         // what the application pulled off the socket, counted below the exchange: the server's own side of the cap

@@ -16,4 +16,14 @@ public interface ThreadReadPort {
      * patient, which that paper's card already carries as its {@code wording}. At most {@code limit} entries.
      */
     Flux<ThreadItem> page(UUID viewerFamilyId, UUID patientId, ThreadItem.Cursor after, int limit);
+
+    /**
+     * The same page, and with {@code asks} also every answered চ্যাট turn this viewer's own account asked about this patient
+     * whose cited papers all still exist (S10), as {@link ThreadItem.Ask} (plan CHAT-api), interleaved by the same order.
+     * Without {@code asks} it is exactly {@link #page(UUID, UUID, ThreadItem.Cursor, int)}.
+     */
+    default Flux<ThreadItem> page(UUID viewerFamilyId, UUID patientId, ThreadItem.Cursor after, int limit, boolean asks) {
+        return asks ? Flux.error(new UnsupportedOperationException("this read model lists no asks"))
+                : page(viewerFamilyId, patientId, after, limit);
+    }
 }

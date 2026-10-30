@@ -1,5 +1,7 @@
 package com.elioo.baymax.web.adapter.in.api;
 
+import com.elioo.baymax.companion.application.port.out.ChatCopyPort;
+import com.elioo.baymax.companion.application.service.ChatAppendix;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.outbound.application.port.in.DocumentUrgencyUseCase;
@@ -66,6 +68,14 @@ class ThreadApiContractTest {
     static final Path COMMITTED = Path.of("../medioo-web/fixtures/api/thread");
     static final Path WRITTEN = Path.of("build/web-contract/thread");
     static final List<String> CASES = List.of("default", "now", "now-abroad", "retake", "failed", "first-run", "share-member", "second-page");
+    /**
+     * Plan CHAT-api: the thread read with {@code ?asks=1}, in an area of its own. The web deployed today walks every file of
+     * {@code fixtures/api/thread/} as a thread it can draw, and an ask item is a kind it does not know yet; PR CHAT-web
+     * moves it beside the others when the web reads asks.
+     */
+    static final Path COMMITTED_ASKS = Path.of("../medioo-web/fixtures/api/thread-asks");
+    static final Path WRITTEN_ASKS = Path.of("build/web-contract/thread-asks");
+    static final List<String> ASK_CASES = List.of("with-asks");
     /** The keys a delivery, a review or a model leaves on a row, none of which the browser may receive. */
     static final Set<String> NEVER_SENT = Set.of("wamid", "delivery_status", "reviewer", "reject_reason", "gate_status", "confidence",
             "model", "status_reason", "provider_message_id", "delivery_error", "urgency_reasons");
@@ -323,9 +333,37 @@ class ThreadApiContractTest {
                         Timestamp.from(Instant.parse("2026-10-15T04:01:00Z")));
                 papers.add(sized);
             }
+            case "with-asks" -> {
+                // plan CHAT-api: a paper with its delivered explanation, an answered question citing it, an emergency, and a
+                // question still being answered (not listed); every answer assembled as the pipeline assembles it
+                UUID routine = FixedPapers.paper(POSTGRES, FixedPapers.id(k, "routine"), ma, "lab_report", "DONE", "2026-10-12",
+                        Instant.parse("2026-10-12T04:00:00Z"), "routine");
+                delivered(k, "routine-explanation", f, ma, routine, "explanation", "released", ComposedBodies.explanation(context, routine),
+                        Instant.parse("2026-10-12T04:02:00Z"));
+                ChatCopyPort copy = context.getBean(ChatCopyPort.class);
+                String answer = "Ma-র ক্রিয়েটিনিন 1.8 mg/dL, কাগজে ছাপা সীমা 0.7–1.3-এর বাইরে।"
+                        + ChatAppendix.tail(false, java.util.Optional.empty(), key -> copy.line("bn", key));
+                turn(FixedPapers.id(k, "ask-answer"), f, ma, "আম্মার ক্রিয়েটিনিন কত?", answer, "answer", "model", 1, true,
+                        List.of(routine), Instant.parse("2026-10-13T05:00:00Z"));
+                turn(FixedPapers.id(k, "ask-emergency"), f, ma, "আম্মার বুকে ব্যথা", ChatAppendix.emergency(key -> copy.line("bn", key)),
+                        "emergency", "red_flag", 0, false, List.of(), Instant.parse("2026-10-14T05:00:00Z"));
+                turn(FixedPapers.id(k, "ask-pending"), f, ma, "আম্মার প্রেশার কত?", null, null, null, 0, true, List.of(),
+                        Instant.parse("2026-10-21T05:59:00Z"));
+                papers.add(routine);
+            }
             default -> throw new IllegalArgumentException("no thread case " + shape);
         }
         return new Seeded(ma, session, papers);
+    }
+
+    /** One চ্যাট turn (V29) as the pipeline stores it: {@code answer} null is a question still being answered. */
+    static void turn(UUID id, UUID family, PatientProfile p, String question, String answer, String kind, String handler, int calls,
+                     boolean counted, List<UUID> documents, Instant at) throws Exception {
+        FixedPapers.exec(POSTGRES, "INSERT INTO baymax.chat_turn (id, family_id, patient_id, lang, question, answer, kind, counted, handler,"
+                        + " model_calls, document_ids, created_at, answered_at) VALUES (?, ?, ?, 'bn', ?, ?, ?, ?, ?, ?, CAST(? AS uuid[]), ?, ?)",
+                id, family, p.id(), question, answer, kind, counted, handler, calls,
+                documents.stream().map(UUID::toString).collect(java.util.stream.Collectors.joining(",", "{", "}")), Timestamp.from(at),
+                answer == null ? null : Timestamp.from(at.plusSeconds(4)));
     }
 
     static EntityExchangeResult<byte[]> get(WebTestClient client, String session, String uri) {
@@ -345,6 +383,9 @@ class ThreadApiContractTest {
     /** The answer the case's fixture holds: the first page, or for {@code second-page} the page after it. */
     static EntityExchangeResult<byte[]> answer(WebTestClient client, Seeded s, String name) throws IOException {
         String uri = s.uri();
+        if ("with-asks".equals(name)) {
+            return get(client, s.session(), uri + "?asks=1");
+        }
         if ("second-page".equals(name)) {
             JsonNode first = ok(client, s.session(), uri);
             assertThat(first.get("next_cursor").isTextual()).as("the first page of 50 items has a next page").isTrue();
@@ -380,6 +421,59 @@ class ThreadApiContractTest {
             AttentionApiContractTest.write(ThreadApiContractTest.class, COMMITTED, WRITTEN, "thread", name,
                     "GET /app/api/patients/{id}/thread over the case " + name, answer(client, s, name));
         });
+    }
+
+    /**
+     * Plan CHAT-api: the web deployed today reads an unknown item kind as a paper, so asks are listed only when asked for.
+     * With turns stored, the thread without {@code asks=1} lists none of them, and with it lists exactly the answered ones.
+     */
+    @Test
+    void withoutAsksTheThreadIsUnchanged() {
+        FixedPapers.runnerAt(POSTGRES, NOW).run(context -> {
+            WebTestClient client = WebTestClient.bindToApplicationContext(context).build();
+            Seeded s = seed(context, "without-asks-" + UUID.randomUUID(), "with-asks");
+            JsonNode without = ok(client, s.session(), s.uri());
+            JsonNode with = ok(client, s.session(), s.uri() + "?asks=1");
+            assertThat(itemsOf(without, "ask")).as("ask items without asks=1").isEmpty();
+            assertThat(itemsOf(with, "ask")).as("the answered turns, with asks=1").hasSize(2);
+            assertThat(with.get("items").size() - 2).isEqualTo(without.get("items").size());
+            assertThat(ok(client, s.session(), s.uri() + "?asks=0").equals(without)).as("asks=0 is the old thread").isTrue();
+        });
+    }
+
+    @Test
+    void withAsksAnAnsweredTurnIsListedInTime() {
+        FixedPapers.runnerAt(POSTGRES, NOW).run(context -> {
+            WebTestClient client = WebTestClient.bindToApplicationContext(context).build();
+            Seeded s = seed(context, "in-time-" + UUID.randomUUID(), "with-asks");
+            JsonNode with = ok(client, s.session(), s.uri() + "?asks=1");
+            List<String> order = new ArrayList<>();
+            with.get("items").forEach(i -> order.add(i.get("kind").asText() + ("ask".equals(i.get("kind").asText())
+                    ? ":" + i.get("answer_kind").asText() : "")));
+            assertThat(order).containsExactly("ask:emergency", "ask:answer", "paper");
+            JsonNode emergency = itemsOf(with, "ask").get(0);
+            assertThat(emergency.get("call_999").asBoolean()).as("a Bangladeshi viewer").isTrue();
+            assertThat(itemsOf(with, "ask").get(1).get("call_999").asBoolean()).as("not an emergency").isFalse();
+            assertThat(emergency.get("question").asText()).isEqualTo("আম্মার বুকে ব্যথা");
+        });
+    }
+
+    @Test
+    void theAsksCaseIsItsCommittedMswFixture() {
+        FixedPapers.runnerAt(POSTGRES, NOW).run(context -> {
+            WebTestClient client = WebTestClient.bindToApplicationContext(context).build();
+            for (String name : ASK_CASES) {
+                Seeded s = seed(context, "fixture-thread-" + name, name);
+                AttentionApiContractTest.write(ThreadApiContractTest.class, COMMITTED_ASKS, WRITTEN_ASKS, "thread-asks", name,
+                        "GET /app/api/patients/{id}/thread?asks=1 over the case " + name, answer(client, s, name));
+            }
+        });
+    }
+
+    @Test
+    void everyCommittedAsksFixtureIsACurrentCase() throws IOException {
+        assertThat(AttentionApiContractTest.committed(COMMITTED_ASKS))
+                .containsExactlyInAnyOrderElementsOf(ASK_CASES.stream().map(n -> n + ".json").toList());
     }
 
     @Test

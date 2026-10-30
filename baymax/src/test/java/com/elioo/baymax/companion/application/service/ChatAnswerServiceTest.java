@@ -20,6 +20,7 @@ import com.elioo.baymax.healthrecord.domain.PatientAccess;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.outbound.application.service.Copy;
 import com.elioo.baymax.outbound.domain.Urgency;
+import com.elioo.baymax.testsupport.LogCapture;
 import com.elioo.baymax.testsupport.LoggedText;
 import com.elioo.baymax.web.adapter.in.ui.UiChatCopyAdapter;
 import com.elioo.baymax.web.adapter.in.ui.UiCopy;
@@ -402,7 +403,7 @@ class ChatAnswerServiceTest {
 
         ask(question);
 
-        List<String> info = LoggedText.atInfoOrAbove(logged.list);
+        List<String> info = LoggedText.atInfoOrAbove(LogCapture.events(logged));
         String turnLine = info.stream().filter(l -> l.startsWith("[baymax] chat turn=")).findFirst()
                 .orElseThrow(() -> new AssertionError("no turn line at INFO: " + info));
         Map<String, String> fields = new LinkedHashMap<>();

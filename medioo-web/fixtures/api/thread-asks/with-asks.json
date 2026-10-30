@@ -1,0 +1,75 @@
+{
+  "_meta": {
+    "generated_by": "baymax ThreadApiContractTest",
+    "source": "GET /app/api/patients/{id}/thread?asks=1 over the case with-asks"
+  },
+  "body": {
+    "items": [
+      {
+        "answer": "রোগী যদি অজ্ঞান হন, শ্বাস নিতে কষ্ট হয়, বা বুকে ব্যথা হয় — সরাসরি নিকটস্থ হাসপাতালের জরুরি বিভাগে যান।\nআমি ডাক্তার নই — এই মুহূর্তে আমার উত্তরের জন্য অপেক্ষা করবেন না।\n\nএটি একটি তথ্য ও রেকর্ড রাখার সেবা, চিকিৎসা পরামর্শ নয়। সব সময় ডাক্তারের সাথে নিশ্চিত হয়ে নিন।\nরোগী যদি অজ্ঞান হন, শ্বাস নিতে কষ্ট হয়, বা বুকে ব্যথা হয় — সরাসরি নিকটস্থ হাসপাতালের জরুরি বিভাগে যান।",
+        "answer_kind": "emergency",
+        "at": "2026-10-14T05:00:00Z",
+        "call_999": true,
+        "kind": "ask",
+        "question": "আম্মার বুকে ব্যথা",
+        "turn_id": "eb6da572-b84a-3b7d-afdb-d1cdfe14b528"
+      },
+      {
+        "answer": "Ma-র ক্রিয়েটিনিন 1.8 mg/dL, কাগজে ছাপা সীমা 0.7–1.3-এর বাইরে।\n\nএটি একটি তথ্য ও রেকর্ড রাখার সেবা, চিকিৎসা পরামর্শ নয়। সব সময় ডাক্তারের সাথে নিশ্চিত হয়ে নিন।\nরোগী যদি অজ্ঞান হন, শ্বাস নিতে কষ্ট হয়, বা বুকে ব্যথা হয় — সরাসরি নিকটস্থ হাসপাতালের জরুরি বিভাগে যান।",
+        "answer_kind": "answer",
+        "at": "2026-10-13T05:00:00Z",
+        "call_999": false,
+        "kind": "ask",
+        "question": "আম্মার ক্রিয়েটিনিন কত?",
+        "turn_id": "835f8d74-df97-3351-a112-8ad8a47618f7"
+      },
+      {
+        "at": "2026-10-12T04:00:00Z",
+        "card": {
+          "banner": null,
+          "counts": null,
+          "date": "2026-10-12",
+          "date_is_upload_day": false,
+          "date_uncertain": false,
+          "doctor": { },
+          "document_type": "lab_report",
+          "facility": "Shapla Diagnostics",
+          "filed": true,
+          "follow_up": [ ],
+          "gate": "RELEASED",
+          "id": "9a9d453d-8196-370e-8c6c-dd6870c67cb0",
+          "medicines": [ ],
+          "owner": true,
+          "page_count": 1,
+          "pages": [
+            {
+              "n": 1,
+              "src": "/app/documents/9a9d453d-8196-370e-8c6c-dd6870c67cb0/page/1"
+            }
+          ],
+          "patient": {
+            "age": 64,
+            "id": "579b242d-d7b8-35c0-947b-00188beb7830",
+            "name": "Ma",
+            "name_objective": "Ma-কে",
+            "name_possessive": "Ma-র"
+          },
+          "printed_date": "2026-10-12",
+          "reasons": [ ],
+          "received_at": "2026-10-12T04:00:00Z",
+          "status": "DONE",
+          "unverified": null,
+          "urgency": "routine",
+          "values": [ ],
+          "viewer": {
+            "bangladesh": true
+          },
+          "wording": "রিপোর্টটি পেয়েছি — ল্যাব রিপোর্ট, ১২ অক্টোবর।\nMa-এর টাইমলাইনে রেখে দিলাম: https://baymax.eliooo.org/app/documents/9a9d453d-8196-370e-8c6c-dd6870c67cb0\nকাগজে যা লেখা আছে নিচে তুলে দিলাম।\nবিস্তারিত জানতে চাইলে লিখুন \"বিস্তারিত\"।"
+        },
+        "kind": "paper"
+      }
+    ],
+    "next_cursor": null
+  },
+  "status": 200
+}

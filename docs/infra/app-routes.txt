@@ -44,6 +44,7 @@ GET /app/verify
 GET /baymax
 GET /baymax/{*rest}
 POST /app/add
+POST /app/api/patients/{id}/ask
 POST /app/api/sign-in/request
 POST /app/api/sign-in/verify
 POST /app/api/sign-out
