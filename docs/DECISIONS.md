@@ -1393,3 +1393,73 @@ the PO would rather see each new screen live than keep two versions of a page ru
 
 **Supersedes:** DR-46's "What this does not release" line (the flips waiting for the PO's on-device try), and the
 screens plan's Task F header and Step 1 on-device precondition, each amended to point here.
+
+## DR-50 | 2026-10-30 | Chat answers by Claude Sonnet without a clinician sign-off: the D11 gate is lifted by the PO, and what code still enforces
+
+**Ruling (PO, 2026-10-30, Tanvir, in the session), in his own words:** "D11 there is no cliniccians for now. so make
+the gen AI avaialavable for all time so any question got replied". Asked three follow-ups, he chose the recommended
+option each time:
+- **WHERE:** the web chat first. WhatsApp text answers come in a later, separate PR; until it lands, WhatsApp keeps
+  `wa.fallback` with `safety.red_flag_line` appended, unchanged.
+- **DOSES: "Explain, never change".** An answer says what the prescription says, word for word, and what the medicine is
+  generally for. It never tells anyone to start, stop, skip or change a dose; for that it says to ask the doctor who
+  wrote it. Enforced in code, not only in the prompt.
+- **MODEL: Claude Sonnet**, the tier DR-10 uses for extraction (`claude-sonnet-5` today), selected by property
+  (`baymax.chat.model`), never hard-coded.
+
+**The safety envelope put to the PO with those choices, binding:**
+1. Emergency phrases are caught in code **before any model call** and get the existing emergency lines at once
+   (`safety.red_flag_line`, then `now.notdoctor`, and the 999 action only for a Bangladeshi number, by
+   `ResultService.viewer`'s rule). Zero model calls, outside the daily cap, also when answers are switched off.
+2. Answers come only from the family's own stored papers (the asked patient's, through `HealthRecordPort.visiblePatient`)
+   and never state a number that is not on a stored paper (a closed set of numeric tokens built from the facts given to
+   the model).
+3. `disclaimer` and `safety.red_flag_line` are always appended, by code, after the answer.
+4. No patient text in logs above DEBUG: questions, answers, prompts and medicine names never; sizes, ids, durations,
+   tokens and USD only.
+
+**What this waives:** the roadmap's Phase 3 entry criterion "D11 signed by a clinician and the PO", and the doctor
+sign-off package (`docs/superpowers/plans/2026-10-17-medioo-roadmap.md`, "Doctor sign-off package") **as a gate**.
+Its content stays the requirement list: the red-flag categories (item 1) ship as code-matched phrases, each row
+`status=active` with `source=DR-50 (PO 2026-10-30, no clinician)`, so a later clinician review edits rows rather than
+code; its test questions ("আম্মার ক্রিয়েটিনিন কত?", "ওষুধটা অর্ধেক করব?", "Napa কীসের?", "আম্মার বুকে ব্যথা", "ok
+thanks" after a NOW) are acceptance tests. Items 3–8 (the conditional emergency template and its remote variant, D28,
+D34, the pending per-marker thresholds, the glossary) are **not** built here and keep their own status: no
+`marker-thresholds.properties` row changes, and urgency stays exactly as F1 stores it.
+
+**What code still enforces, on the final text the family is shown (CLAUDE.md: a limit is asserted on the thing sent):**
+- the emergency pre-check above (the D11 red-flag categories in Bangla, Banglish and English, matched on the normalised
+  question by stem, plus the existing `baymax.outbound.emergency-phrases` list, whole-token, as `UrgencyService` uses
+  it);
+- the dose-change guard: the model's own words may not contain a start/stop/skip/change/half/double instruction (Bangla,
+  Banglish, English); prescription lines reach the answer only as code-inserted verbatim copies of the stored line, and
+  a question asking for a change gets the fixed ask-the-doctor line appended by code;
+- the number closed set, number words outside verbatim lines, a reassurance list, references that resolve, and the
+  length cap on the whole assembled text;
+- on any failed check one repair call naming the violation codes, then a fixed reply. The raw model text is never shown
+  and never stored;
+- the urgency line (`urgency.now` / `urgency.this_week`) appended for the asked patient's highest stored open urgency;
+- a per-family daily question cap (`baymax.chat.daily-cap`, default 50, Asia/Dhaka day), reserved atomically, with a
+  polite fixed reply. Emergency turns are never refused by it.
+
+**What is prompt-only, said plainly:** that the model does not diagnose the patient and does not interpret a value
+clinically beyond the paper's printed range. "What the medicine is generally for" names conditions by nature, so the
+spec's condition-word rule (§7.1 step 7) is not enforced on chat answers. The roadmap's D8 allowance (6 model-worded
+answers per family-month) is superseded by "any question got replied" and the daily cap.
+
+**Supersedes, for web chat answers only:**
+- DR-16's "medicines remain out of the model prompt" and "still forbidden: saying what a medicine is for". The
+  prescription's lines are given to the model so it can say what a medicine is generally for. Dosing still reaches the
+  family only as the stored line, verbatim. DR-16 is unchanged for explanations, nudges and WhatsApp.
+- the spec's §4.13 "medicines are never in the prompt and never in model text", and §7.3's T-only medicine rows, for the
+  same scope.
+- the W5 composer that declines every question (S8); `chat.ask.reply` remains the web's offline/timeout fallback.
+
+**Price:** Sonnet's rate comes from Anthropic's pricing page (`baymax.llm.prices.anthropic.[claude-sonnet-5]`,
+$2 / $10 per 1M tokens), because Anthropic's Models API carries no price field (it returns id, display name, creation
+date, token limits and capabilities). This is the one documented exception to CLAUDE.md's "prices come from the
+provider's API": the plan re-fetches the page and records the date, and the first week's `sum(cost_usd) where
+purpose = 'chat'` is reconciled against the Anthropic console's usage.
+
+**Built in:** `docs/superpowers/plans/2026-10-30-medioo-chat-answers.md`, PRs CHAT-api
+(`feat/baymax-chat-answers-api`) and CHAT-web (`feat/medioo-web-chat-answers`).
