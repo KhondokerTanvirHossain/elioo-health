@@ -3,8 +3,9 @@ import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import type { AttentionJson, AttentionUrgentJson, CalendarJson, FollowUpsJson, MeJson, TimelineJson } from "../src/api/types";
 import { shift } from "../src/app/app/(signed-in)/timeline/months";
+import { MAX_CHECKS, RELOAD_SECONDS, waitBefore } from "../src/app/app/(signed-in)/timeline/quiet-check";
 import { formatDate, formatMonthYear, t, type CopyKey, type Lang } from "../src/copy";
-import { useScenario, type CropRow } from "./support/browser-api";
+import { useScenario, type CropRow, type Recorder } from "./support/browser-api";
 import { FIXTURES, longNameOf } from "./support/scenarios.mjs";
 import { axeReport, cropRowsReport, expectSchemeIsPainted, overflowReport, rendersOwnText, screenChecks } from "./support/screen-checks";
 
@@ -148,21 +149,161 @@ test.describe("without JavaScript", () => {
 
   test("aPaperBeingReadReloadsThePageWithoutJavaScript", async ({ page }) => {
     // Java's papersBody reloads every 5 s while a listed paper is RECEIVED or PROCESSING; the add sheet comes back here.
+    // Without JavaScript that stays so (PO ruling P6): the refresh sits in a <noscript>, which a browser that runs no
+    // script parses as markup, so the meta is in the document and in force.
     expect(reading(IN_FLIGHT), "in-flight.json lists a paper still being read").toBe(true);
     const recorder = await open(page, "papers-in-flight");
-    await expect(page.locator("meta[http-equiv='refresh']")).toHaveAttribute("content", "5");
+    await expect(page.locator("meta[http-equiv='refresh']")).toHaveAttribute("content", String(RELOAD_SECONDS));
     // And it does reload, with no script: one more render is one more timeline read (one more TIMELINE_VIEW, as Java's).
     const timelineReads = async () => (await recorder.java()).filter((r) => r.method === "GET" && isRead(r.path, TIMELINE)).length;
     expect(await timelineReads()).toBe(1);
     await expect.poll(timelineReads, { timeout: 9_000, intervals: [500] }).toBe(2);
+    // The page reloaded as a page, by the browser: no status was asked (no script), and the second render is the
+    // whole page again, its reading rows still listed.
+    expect(recorder.requests().filter((r) => r.path.endsWith("/status")), "status checks without JavaScript").toEqual([]);
+    await expect(page.locator(".month-list a[href^='/app/documents/']")).toHaveCount(IN_FLIGHT.entries.length);
+  });
+
+  test("aSettledPageDoesNotReloadWithoutJavaScript", async ({ page }) => {
+    // The other direction: nothing being read, no refresh at all (and no TIMELINE_VIEW nobody made).
+    expect(reading(FIRST), "first-page.json has nothing being read").toBe(false);
+    await open(page, "papers-busy");
+    await expect(page.locator("meta[http-equiv='refresh']")).toHaveCount(0);
   });
 });
 
-test("aSettledPageDoesNotReload", async ({ page }) => {
-  // The other direction: nothing being read, no reload (and no TIMELINE_VIEW nobody made).
+test.describe("with JavaScript, the page checks quietly (PO ruling P6)", () => {
+  const STATUS = "/app/api/documents/{id}/status";
+  const READING = IN_FLIGHT.entries.filter((e) => e.status === "RECEIVED" || e.status === "PROCESSING").map((e) => e.document_id);
+  const SETTLED = body<TimelineJson>("timeline/in-flight-settled.json");
+  /** The browser's status checks so far, each by the paper it asked about. */
+  const checks = (recorder: Recorder) => recorder.requests().filter((r) => isRead(r.path, STATUS)).map((r) => r.path.split("/")[4]!);
+  const timelineReads = async (recorder: Recorder) =>
+    (await recorder.java()).filter((r) => r.method === "GET" && isRead(r.path, TIMELINE)).length;
+  /** Marks this document, so a reload (a new document) is told apart from a re-render of the same one. */
+  const mark = (page: Page) => page.evaluate(() => ((window as unknown as { __same?: boolean }).__same = true));
+  const sameDocument = (page: Page) => page.evaluate(() => (window as unknown as { __same?: boolean }).__same === true);
+  /** Moves this test's scenario cookie, as Java's own state moves when the reading ends. */
+  const moveTo = async (page: Page, scenario: string) => {
+    const url = new URL(page.url());
+    await page.context().addCookies([{ name: "e2e_scenario", value: scenario, domain: url.hostname, path: "/app" }]);
+  };
+  /** Every text the live region was given, in order, from before the page's own script ran. */
+  const recordLiveRegion = (page: Page) =>
+    page.addInitScript(() => {
+      const said: string[] = [];
+      (window as unknown as { __said: string[] }).__said = said;
+      new MutationObserver(() => {
+        const region = document.querySelector(".papers [role='status']");
+        const text = region?.textContent ?? "";
+        if (text !== "" && text !== said.at(-1)) said.push(text);
+      }).observe(document, { subtree: true, childList: true, characterData: true });
+    });
+  const said = (page: Page) => page.evaluate(() => (window as unknown as { __said: string[] }).__said);
+
+  test.beforeAll(() => {
+    // Guards: the case the page opens on lists two papers being read beside read ones, and the case it settles into
+    // lists the same page with nothing being read.
+    expect(READING.length, "in-flight.json's papers being read").toBe(2);
+    expect(reading(SETTLED), "in-flight-settled.json has nothing being read").toBe(false);
+    expect(SETTLED.entries.length).toBe(IN_FLIGHT.entries.length);
+  });
+
+  test("noMetaRefreshIsInForceAndThePageNeverReloadsItself", async ({ page }) => {
+    await page.clock.install();
+    const recorder = await open(page, "papers-in-flight");
+    // The refresh is not in the document: with script on, a <noscript>'s content is text, never a meta element.
+    await expect(page.locator("meta[http-equiv='refresh']")).toHaveCount(0);
+    await mark(page);
+    // Well past Java's 5 s reload, twice: the papers being read are checked, each, and the page is still the same page.
+    await page.clock.fastForward(RELOAD_SECONDS * 1000);
+    await expect.poll(() => checks(recorder).length).toBe(READING.length);
+    await page.clock.fastForward(RELOAD_SECONDS * 1000);
+    await expect.poll(() => checks(recorder).length).toBe(2 * READING.length);
+    expect([...new Set(checks(recorder))].sort(), "each paper being read, and only those").toEqual([...READING].sort());
+    expect(await sameDocument(page), "the page did not reload").toBe(true);
+    expect(await timelineReads(recorder), "one render, one timeline read").toBe(1);
+  });
+
+  test("aPaperThatSettlesReRendersThePageOnceAndSaysSoOnce", async ({ page }) => {
+    await recordLiveRegion(page);
+    await page.clock.install();
+    const recorder = await open(page, "papers-in-flight");
+    await mark(page);
+    const rows = page.locator(".month-list a[href^='/app/documents/']");
+    // Two checks that find both still being read: nothing re-rendered and nothing said.
+    for (let i = 1; i <= 2; i++) {
+      await page.clock.fastForward(RELOAD_SECONDS * 1000);
+      await expect.poll(() => checks(recorder).length).toBe(i * READING.length);
+    }
+    expect(await said(page), "checks that find nothing new say nothing").toEqual([]);
+    expect(await timelineReads(recorder)).toBe(1);
+    // Java has read both; the next check finds it and the page's data is rendered again, once, in the same document.
+    await moveTo(page, "papers-settled");
+    await page.clock.fastForward(RELOAD_SECONDS * 1000);
+    await expect.poll(() => listed(page)).toEqual(SETTLED.entries.map((e) => e.document_id));
+    expect(await sameDocument(page), "re-rendered, not reloaded").toBe(true);
+    await expect(page.locator(".papers [role='status']")).toHaveText(t("bn", "status.DONE"));
+    await expect(rows.filter({ hasText: t("bn", "timeline.reading") })).toHaveCount(0);
+    // Nothing is being read now: no more checks, no more renders, and the region is not told again.
+    const after = checks(recorder).length;
+    for (let i = 0; i < 3; i++) await page.clock.fastForward(30_000);
+    expect(checks(recorder).length, "no check once nothing is being read").toBe(after);
+    expect(await timelineReads(recorder), "the first render and the one re-render").toBe(2);
+    expect(await said(page), "said once").toEqual([t("bn", "status.DONE")]);
+  });
+
+  test("afterTheCapItStopsAndOffersALinkToThisPage", async ({ page }) => {
+    await page.clock.install();
+    const recorder = await open(page, "papers-in-flight");
+    const again = page.getByRole("link", { name: t("bn", "attn.reading.action") });
+    await expect(again).toHaveCount(0);
+    for (let i = 0; i < MAX_CHECKS; i++) {
+      await page.clock.fastForward(waitBefore(i));
+      await expect.poll(() => checks(recorder).length).toBe((i + 1) * READING.length);
+    }
+    // The link is this very page, a plain link that reloads it; and nothing is asked after the cap.
+    await expect(again).toHaveAttribute("href", `/app/timeline?patient=${ONE.patients[0]!.id}`);
+    await page.clock.fastForward(10 * 60_000);
+    expect(checks(recorder).length, "no check after the cap").toBe(MAX_CHECKS * READING.length);
+    expect(await timelineReads(recorder)).toBe(1);
+    await again.click();
+    await expect.poll(() => timelineReads(recorder)).toBe(2);
+  });
+
+  test.describe("with reduced motion", () => {
+    test.use({ reducedMotion: "reduce" });
+
+    test("theReRenderMovesNothingAndKeepsThePlace", async ({ page }) => {
+      await page.clock.install();
+      const recorder = await open(page, "papers-in-flight");
+      await page.evaluate(() => window.scrollTo(0, 300));
+      const at = await page.evaluate(() => window.scrollY);
+      expect(at, "the page scrolled, so keeping the place is judged").toBeGreaterThan(0);
+      await moveTo(page, "papers-settled");
+      await page.clock.fastForward(RELOAD_SECONDS * 1000);
+      await expect.poll(() => listed(page)).toEqual(SETTLED.entries.map((e) => e.document_id));
+      expect(await timelineReads(recorder)).toBe(2);
+      // No animation or transition ran for the re-render, and the family's place on the page is where they left it.
+      expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
+      expect(await page.evaluate(() => window.scrollY)).toBe(at);
+      const motion = await page.locator(".papers__quiet, .papers__quiet *").evaluateAll((els) =>
+        els.map((e) => [getComputedStyle(e).transitionDuration, getComputedStyle(e).animationName].join(" ")),
+      );
+      expect(motion.length).toBeGreaterThan(0);
+      for (const m of motion) expect(m).toBe("0s none");
+    });
+  });
+});
+
+test("aSettledPageDoesNotCheck", async ({ page }) => {
+  // The other direction with JavaScript: nothing being read, no refresh and no status check at all.
   expect(reading(FIRST), "first-page.json has nothing being read").toBe(false);
-  await open(page, "papers-busy");
+  await page.clock.install();
+  const recorder = await open(page, "papers-busy");
   await expect(page.locator("meta[http-equiv='refresh']")).toHaveCount(0);
+  await page.clock.fastForward(60_000);
+  expect(recorder.requests().filter((r) => r.path.endsWith("/status"))).toEqual([]);
 });
 
 test.describe("the attention strip", () => {
@@ -481,26 +622,23 @@ test.describe("the rows' and the strip's colour (PO ruling P5): NOW red, THIS_WE
         });
       }
 
-      // papers-busy is judged whole by screenChecks below, and both pages here are judged whole too. Forty-five holds
-      // both levels in the list and the strip. In flight holds a red tag beside the review chip in the list, and also
-      // carries the 5 s meta refresh while a paper is being read (PR #150, Java parity), which axe's meta-refresh rule
-      // reports (WCAG F41). That one rule, by its id, is the known exception, raised with the PO on its own; every other
-      // rule still judges the whole page: the strip, the header, the due dates, the calendar and the filter included.
+      // papers-busy is judged whole by screenChecks below, and both pages here are judged whole too, every rule on:
+      // the strip, the header, the due dates, the calendar and the filter included. Forty-five holds both levels in the
+      // list and the strip. In flight holds a red tag beside the review chip in the list, and a paper being read: with
+      // JavaScript the page checks quietly and never reloads itself (PO ruling P6), so axe's meta-refresh rule (WCAG
+      // F41), which PR #162 excepted here, has nothing to report and is no longer excepted.
       const AXE_CASES = [
-        { scenario: "papers-forty-five", coloured: [".urgency-tag--now", ".urgency-tag--week"], except: [] },
-        { scenario: "papers-in-flight", coloured: [".month-list .urgency-tag--now"], except: ["meta-refresh"] },
+        { scenario: "papers-forty-five", coloured: [".urgency-tag--now", ".urgency-tag--week"] },
+        { scenario: "papers-in-flight", coloured: [".month-list .urgency-tag--now"] },
       ] as const;
-      for (const { scenario, coloured, except } of AXE_CASES) {
+      for (const { scenario, coloured } of AXE_CASES) {
         test(`axeReportsNoViolationOnTheColouredTags (${scenario})`, async ({ page }) => {
           await open(page, scenario);
           await expectSchemeIsPainted(page, colorScheme);
-          // Guards: the coloured modifiers themselves sit inside what axe judges (every tag carried .urgency-tag before
-          // P5, uncoloured), and an exception is kept only while the thing it excepts is on the page.
+          // Guard: the coloured modifiers themselves sit inside what axe judges (every tag carried .urgency-tag before
+          // P5, uncoloured).
           for (const sel of coloured) expect(await page.locator(sel).count(), `${sel} on the page axe judges`).toBeGreaterThan(0);
-          if (except.length > 0) {
-            expect(await page.locator("meta[http-equiv='refresh']").count(), "the excepted meta refresh is on the page").toBe(1);
-          }
-          const report = await axeReport(page, undefined, except);
+          const report = await axeReport(page);
           expect(report.violations).toEqual([]);
           expect(report.passes, "axe checked something").toBeGreaterThan(0);
         });

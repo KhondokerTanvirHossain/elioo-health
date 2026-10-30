@@ -54,13 +54,19 @@ class PatientTimelineApiContractTest {
     static final Path FIXTURES = Path.of("../medioo-web/fixtures/api");
     static final Path WRITTEN = Path.of("build/web-contract");
     static final List<String> TIMELINE = List.of("first-page", "last-page", "empty", "forty-five-first-page", "lab-only", "rx-only",
-            "in-flight", "rx-none");
+            "in-flight", "in-flight-settled", "rx-none");
     static final List<String> CALENDAR = List.of("busy", "empty", "crowded", "forty-five", "september");
     /** A paper count above any one page (plan W8, master Review Focus 1): forty-five papers in one month. */
     static final int FORTY_FIVE = 45;
     /** A facility printed at real length, so a row is judged on a long line (Review Focus 1). Fictional. */
     static final String LONG_FACILITY = "Shapla Diagnostic and Consultation Centre, Mirpur Section 10 Branch";
     static final List<String> FOLLOW_UPS = List.of("some", "none");
+    /**
+     * PO ruling P6 (2026-10-30): what the papers page's quiet check polls while a paper is being read
+     * ({@code GET /app/api/documents/{id}/status}, which records nothing), one answer per status, each read from the
+     * in-flight case's own paper of that status. The body names no paper: the fixture is the status alone.
+     */
+    static final List<String> DOCUMENT_STATUS = List.of("processing", "received", "done");
     private static final AtomicInteger NUMBERS = new AtomicInteger(800);
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -353,6 +359,15 @@ class PatientTimelineApiContractTest {
             assertThat(undated.at("/counts/values").asInt()).isEqualTo(1);
             assertThat(undated.at("/counts/outside").asInt()).isZero();
 
+            // in-flight-settled (PO ruling P6): the same five papers, the two being read now read, nothing else moved
+            Seeded settled = seedInFlight(context, k + "-settled", true);
+            JsonNode read = ok(client, settled.session(), timeline(settled.patient())).get("entries");
+            assertThat(field(read, "status")).as("$.entries[*].status once read").containsExactly("DONE", "DONE", "DONE", "DONE", "DONE");
+            assertThat(field(read, "document_type")).as("$.entries[*].document_type once read")
+                    .containsExactly("lab_report", "prescription", "lab_report", "prescription", "lab_report");
+            assertThat(read.get(0).at("/counts/values").asInt()).as("the lab read from PROCESSING has its value").isEqualTo(1);
+            assertThat(read.get(0).get("date_is_upload_day").asBoolean()).as("filed under its upload day").isTrue();
+
             Seeded labsOnly = seedBusyMonth(context, k + "-labs", false);
             JsonNode none = ok(client, labsOnly.session(), timeline(labsOnly.patient()) + "?type=rx");
             assertThat(none.get("entries")).as("$.entries for ?type=rx over lab reports only").isEmpty();
@@ -426,6 +441,7 @@ class PatientTimelineApiContractTest {
                 case "empty" -> family(context, k, NOW);
                 case "forty-five-first-page" -> seedFortyFive(context, k);
                 case "in-flight" -> seedInFlight(context, k);
+                case "in-flight-settled" -> seedInFlight(context, k, true);
                 case "rx-none" -> seedBusyMonth(context, k, false);
                 default -> seedTwentyFive(context, k);
             };
@@ -479,6 +495,32 @@ class PatientTimelineApiContractTest {
         });
     }
 
+    static Stream<String> documentStatusCases() {
+        return DOCUMENT_STATUS.stream();
+    }
+
+    /**
+     * PO ruling P6: the answers the papers page's quiet check reads, each from the in-flight case's paper of that
+     * status, so the e2e table answers the poll with what Java answers for it, never a body written by hand.
+     */
+    @ParameterizedTest
+    @MethodSource("documentStatusCases")
+    void eachDocumentStatusCaseIsItsCommittedMswFixture(String name) {
+        FixedPapers.runnerAt(POSTGRES, NOW).run(context -> {
+            WebTestClient client = WebTestClient.bindToApplicationContext(context).build();
+            String k = "fixture-document-status-" + name;
+            Seeded s = seedInFlight(context, k);
+            String paper = "done".equals(name) ? "lab" : name;
+            EntityExchangeResult<byte[]> r = get(client, s.session(), "/app/api/documents/" + FixedPapers.id(k, paper) + "/status");
+            assertThat(r.getStatus().value()).as("GET the " + paper + " paper's status").isEqualTo(200);
+            assertThat(JSON.readTree(r.getResponseBody()).get("status").asText()).as("the " + paper + " paper's status")
+                    .isEqualTo(name.toUpperCase(java.util.Locale.ROOT));
+            AttentionApiContractTest.write(PatientTimelineApiContractTest.class, FIXTURES.resolve("document-status"),
+                    WRITTEN.resolve("document-status"), "document-status", name,
+                    "GET /app/api/documents/{id}/status over the in-flight case's " + paper + " paper", r);
+        });
+    }
+
     @Test
     void everyCommittedFixtureIsACurrentCase() throws IOException {
         assertThat(AttentionApiContractTest.committed(FIXTURES.resolve("timeline")))
@@ -487,6 +529,8 @@ class PatientTimelineApiContractTest {
                 .containsExactlyInAnyOrderElementsOf(CALENDAR.stream().map(n -> n + ".json").toList());
         assertThat(AttentionApiContractTest.committed(FIXTURES.resolve("follow-ups")))
                 .containsExactlyInAnyOrderElementsOf(FOLLOW_UPS.stream().map(n -> n + ".json").toList());
+        assertThat(AttentionApiContractTest.committed(FIXTURES.resolve("document-status")))
+                .containsExactlyInAnyOrderElementsOf(DOCUMENT_STATUS.stream().map(n -> n + ".json").toList());
     }
 
     // ---- seeds ----------------------------------------------------------------------------------------------------
@@ -575,11 +619,24 @@ class PatientTimelineApiContractTest {
      * with two medicines; a lab report that printed no date, filed under its upload day (15 October), with one value.
      */
     static Seeded seedInFlight(ApplicationContext context, String k) throws Exception {
+        return seedInFlight(context, k, false);
+    }
+
+    /**
+     * The in-flight case; {@code settled}: the same papers once the two being read have been read (PO ruling P6, the
+     * page the quiet check re-renders into): the one that was PROCESSING a routine lab report with one value inside its
+     * range, the one just RECEIVED a routine prescription, both filed under their upload day as Java files an undated
+     * paper. Nothing else changes.
+     */
+    static Seeded seedInFlight(ApplicationContext context, String k, boolean settled) throws Exception {
         Seeded s = family(context, k, NOW);
-        FixedPapers.paper(POSTGRES, FixedPapers.id(k, "processing"), s.patient(), "lab_report", "PROCESSING", null,
-                NOW.minus(Duration.ofMinutes(10)), null);
-        FixedPapers.paper(POSTGRES, FixedPapers.id(k, "received"), s.patient(), null, "RECEIVED", null,
-                NOW.minus(Duration.ofMinutes(20)), null);
+        UUID processing = FixedPapers.paper(POSTGRES, FixedPapers.id(k, "processing"), s.patient(), "lab_report",
+                settled ? "DONE" : "PROCESSING", null, NOW.minus(Duration.ofMinutes(10)), settled ? "routine" : null);
+        FixedPapers.paper(POSTGRES, FixedPapers.id(k, "received"), s.patient(), settled ? "prescription" : null,
+                settled ? "DONE" : "RECEIVED", null, NOW.minus(Duration.ofMinutes(20)), settled ? "routine" : null);
+        if (settled) {
+            observation(processing, "Glucose", "inside");
+        }
         UUID lab = FixedPapers.paper(POSTGRES, FixedPapers.id(k, "lab"), s.patient(), "lab_report", "DONE", "2026-10-19",
                 Instant.parse("2026-10-19T04:00:00Z"), "now");
         observation(lab, "Haemoglobin", "outside");

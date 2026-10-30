@@ -11,6 +11,8 @@ import { UrgencyTag } from "@/components/safety/UrgencyTag/UrgencyTag";
 import { href } from "@/routing/paths";
 import { signedInPage, type ShellContext } from "../shell";
 import { shift } from "./months";
+import { IN_FLIGHT, RELOAD_SECONDS } from "./quiet-check";
+import { QuietCheck } from "./QuietCheck";
 import "./papers.css";
 
 /** The filters Java knows (TimelineFilter.fromParam): anything else is every paper, as Java reads it. */
@@ -21,10 +23,6 @@ const FILTERS = [
 ] as const;
 type Filter = (typeof FILTERS)[number]["type"];
 
-/** A paper still being read (Java's AppTabs.papersBody `inFlight`): while one is listed, the page reloads itself. */
-const IN_FLIGHT = new Set(["RECEIVED", "PROCESSING"]);
-/** Java's reload interval for this page (`head(...).refresh(inFlight ? 5 : 0)`), in seconds. */
-const RELOAD_SECONDS = 5;
 
 /** What this render asks of Java, from the address the browser asked for (requestContext().here). */
 function asked(here: string): { type: Filter; cursor: string | null; month: string | null } {
@@ -94,7 +92,8 @@ function Strip({ items, lang, preview }: { items: AttentionUrgentJson[]; lang: L
  * papers they are, the owner's one way to send a paper, the attention strip, the doctor's dates, the wall calendar of
  * the month Java answered with its two neighbouring months as links, the type filter, Java's month list and its "more"
  * link, and the chronic-flags ask under it all when none is stored. Every control is a plain link, so the page reads and
- * pages without JavaScript; while a listed paper is still being read it reloads itself, as Java's does. One render is one
+ * pages without JavaScript; while a listed paper is still being read it reloads itself without JavaScript, as Java's
+ * does, and with JavaScript checks quietly and re-renders once the paper is read (PO ruling P6). One render is one
  * timeline read (the one TIMELINE_VIEW, S14) and one calendar read (no audit row), whatever link brought the family here.
  */
 async function papers({ lang, preview, patient }: ShellContext, here: string) {
@@ -127,14 +126,21 @@ async function papers({ lang, preview, patient }: ShellContext, here: string) {
   const urgent = attention.items.filter((i): i is AttentionUrgentJson => i.kind === "urgent");
   const before = shift(calendar.month, -1);
   const after = shift(calendar.month, 1);
-  // Java reloads this page every 5 s while a listed paper is still being read, so a paper sent from the add sheet (which
-  // comes back here) moves on by itself, with no script. Each reload is one more render: one more timeline read and so
-  // one more TIMELINE_VIEW, exactly as Java's own reload records today (S14 counts one per render).
-  const reading = timeline.entries.some((e) => IN_FLIGHT.has(e.status));
+  // While a listed paper is still being read, a paper sent from the add sheet (which comes back here) moves on by itself.
+  // Without JavaScript the page reloads every 5 s, as Java's does: the refresh sits in a <noscript>, which only a
+  // browser that runs no script parses as markup. With JavaScript it never reloads (PO ruling P6, WCAG F41): QuietCheck
+  // asks each paper's status, which records nothing, and re-renders the page's data once one has been read. Either way
+  // each render is one more timeline read and so one more TIMELINE_VIEW (S14 counts one per render); the quiet check
+  // makes one render per paper read, where the reload made one every 5 s.
+  const reading = timeline.entries.filter((e) => IN_FLIGHT.has(e.status)).map((e) => e.document_id);
 
   return (
     <div className="papers">
-      {reading && <meta httpEquiv="refresh" content={String(RELOAD_SECONDS)} />}
+      {reading.length > 0 && (
+        <noscript className="papers__reload">
+          <meta httpEquiv="refresh" content={String(RELOAD_SECONDS)} />
+        </noscript>
+      )}
       <header className="papers__head">
         <div className="papers__heading">
           {title}
@@ -142,6 +148,15 @@ async function papers({ lang, preview, patient }: ShellContext, here: string) {
         </div>
         {patient.owner && !nothingAtAll && <AddLink href={add} label={t(lang, "timeline.add")} />}
       </header>
+      {/* Under the heading, so the link it offers after the cap reads after the page's title, never before it. */}
+      <QuietCheck
+        reading={reading}
+        again={page({ type, month, cursor })}
+        words={{
+          settled: { DONE: t(lang, "status.DONE"), NEEDS_RETAKE: t(lang, "status.NEEDS_RETAKE"), FAILED: t(lang, "status.FAILED") },
+          again: t(lang, "attn.reading.action"),
+        }}
+      />
       {nothingAtAll ? (
         <Empty lang={lang} patient={patient} add={add} />
       ) : (

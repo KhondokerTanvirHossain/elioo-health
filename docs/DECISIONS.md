@@ -984,6 +984,23 @@ A3 forbids Next from mutating on the browser's behalf.
 fetched (no `local()` shortcut). The 200 KB limit and its method, fonts via `local()` first and crops excluded, stay
 for Java pages. Puts DR-40 A4 in force, with item 1's opt-out exception.
 
+**Amendment 2026-10-30 (PO ruling P6, Tanvir, in the session; the recommended option): a reading page never
+reloads itself when JavaScript runs.** The papers page (W8, PR #150) reloaded every 5 s while a listed paper was being
+read, as Java's does; axe reports that as WCAG F41 (`meta-refresh`), and PR #162 excepted the rule on that one page.
+The PO was offered two options and answered "okay go on" to the recommended one: with JavaScript, check quietly in the
+background and update without a full reload; keep the 5 s reload only as the no-JavaScript fallback. So:
+- Without JavaScript the page still reloads every 5 s: the meta refresh sits in a `<noscript>`, which only a browser
+  that runs no script parses as markup.
+- With JavaScript no meta refresh is in the document. A client island (`timeline/QuietCheck.tsx`) polls
+  `GET /app/api/documents/{id}/status` for each paper being read. That read records nothing (B4c). It polls at 5 s
+  for the first six checks, then backs off ×1.5 to 30 s. When a paper is read or gone it re-renders the page's data
+  once (`router.refresh()`), and the status is said once in a polite live region, in the bundle's `status.*` words. It
+  asks nothing while nothing is being read or the tab is hidden, and asks again as soon as the tab is seen. After 20
+  checks (about 6.5 min, past Java's 5 min "taking longer" line) it stops and offers a plain link to the same page
+  (`attn.reading.action`).
+- The axe exception is gone: every rule judges the page being read. A re-render is still one TIMELINE_VIEW (S14), but
+  there is now one per paper read, not one every 5 s.
+
 ## DR-43 | 2026-10-21 | Voice: typed commands first; the speech-to-text provider is chosen by a measured bake-off
 
 **Decision (PO, 2026-10-21; rebuild plan Part B, decision 2):**

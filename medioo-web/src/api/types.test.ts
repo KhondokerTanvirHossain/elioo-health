@@ -35,6 +35,10 @@ import timelineEmpty from "../../fixtures/api/timeline/empty.json";
 import timelineFirst from "../../fixtures/api/timeline/first-page.json";
 import timelineFortyFive from "../../fixtures/api/timeline/forty-five-first-page.json";
 import timelineInFlight from "../../fixtures/api/timeline/in-flight.json";
+import timelineInFlightSettled from "../../fixtures/api/timeline/in-flight-settled.json";
+import statusDone from "../../fixtures/api/document-status/done.json";
+import statusProcessing from "../../fixtures/api/document-status/processing.json";
+import statusReceived from "../../fixtures/api/document-status/received.json";
 import timelineLab from "../../fixtures/api/timeline/lab-only.json";
 import timelineLast from "../../fixtures/api/timeline/last-page.json";
 import timelineRxNone from "../../fixtures/api/timeline/rx-none.json";
@@ -122,6 +126,7 @@ import {
   type AttentionUrgentJson,
   type FollowUpItemJson,
   type FollowUpsJson,
+  type PaperStatusJson,
   type TimelineCountsJson,
   type TimelineEntryJson,
   type TimelineJson,
@@ -583,6 +588,7 @@ describe("the papers page's reads are the generated fixtures", () => {
       ["first-page", timelineFirst.body],
       ["forty-five-first-page", timelineFortyFive.body],
       ["in-flight", timelineInFlight.body],
+      ["in-flight-settled", timelineInFlightSettled.body],
       ["lab-only", timelineLab.body],
       ["last-page", timelineLast.body],
       ["rx-none", timelineRxNone.body],
@@ -604,6 +610,26 @@ describe("the papers page's reads are the generated fixtures", () => {
       }
     }
     expect(entries, "entries walked").toBeGreaterThan(0);
+  });
+
+  it("everyDocumentStatusFixtureIsAPaperStatusJson", () => {
+    // PO ruling P6: what the quiet check polls. Each answer is one status Java stores, and the cases hold both
+    // directions the check judges: still being read (RECEIVED, PROCESSING) and read (DONE).
+    const bodies: Array<[string, Json<PaperStatusJson>]> = [
+      ["done", statusDone.body],
+      ["processing", statusProcessing.body],
+      ["received", statusReceived.body],
+    ];
+    expect(readdirSync(join(fixtures, "document-status")).filter((f) => f.endsWith(".json")).sort()).toEqual(
+      bodies.map(([name]) => `${name}.json`).sort(),
+    );
+    for (const [name, b] of bodies) {
+      expect(keys(b), name).toEqual(["status"]);
+      expect(PAPER_STATUSES, name).toContain(b.status);
+      expect(b.status, name).toBe(name.toUpperCase());
+    }
+    const reading = bodies.filter(([, b]) => (READING_STATUSES as readonly string[]).includes(b.status));
+    expect(reading.map(([n]) => n).sort()).toEqual(["processing", "received"]);
   });
 
   it("everyFollowUpsFixtureIsAFollowUpsJson", () => {

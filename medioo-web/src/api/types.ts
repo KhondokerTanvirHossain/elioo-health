@@ -149,6 +149,12 @@ export interface PaperReadingJson extends PaperHead {
 export type PaperJson = PaperResultJson | PaperReadingJson;
 
 /**
+ * GET /app/api/documents/{id}/status (PaperStatusApiHandler, B4c): a paper's stored status and nothing else, read
+ * without an audit row; what the papers page's quiet check polls (PO ruling P6).
+ */
+export type PaperStatusJson = { status: PaperStatus };
+
+/**
  * A paper still being read. A guard rather than `status === …` comparisons: each variant's status is a union of
  * literals, and TypeScript narrows a union only on a comparison that rules out a whole constituent.
  */
