@@ -220,6 +220,27 @@ describe("Composer", () => {
     expect(container.querySelectorAll('a[href^="tel:"]').length).toBe(0);
   });
 
+  it("theNewestExchangeIsScrolledIntoView", async () => {
+    // The composer keeps its place after the newest exchange (home.css): the window goes to the page's end when the
+    // pending bubble is drawn and again when the answer replaces it, so neither is left under the docked bar.
+    const scrollTo = vi.fn();
+    vi.stubGlobal("scrollTo", scrollTo);
+    let resolve: (r: Response) => void = () => undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise<Response>((r) => (resolve = r))),
+    );
+    const container = draw();
+    scrollTo.mockClear();
+    await ask(container, QUESTION);
+    expect(scrollTo, "after the pending bubble").toHaveBeenCalledTimes(1);
+    expect(scrollTo.mock.calls[0]![0]).toMatchObject({ top: document.documentElement.scrollHeight });
+    await act(async () => resolve(new Response(JSON.stringify(fixture("emergency").body), { status: 200 })));
+    await settle();
+    expect(bubbles(container, "recv")).toEqual([fixture("emergency").body.answer]);
+    expect(scrollTo, "and again after the answer").toHaveBeenCalledTimes(2);
+  });
+
   it("theAnswerIsTextNotMarkup", async () => {
     answering(200, { ...fixture("answer").body, answer: "<b>x</b>" });
     const container = draw();
@@ -286,17 +307,17 @@ describe("Composer", () => {
   it("theFallbackCarriesTheRedFlagLine", async () => {
     for (const lang of LANGS) {
       const words = composerWords(lang, POSSESSIVE);
-      expect(words.pending, lang).toBe(t(lang, "chat.ask.pending", POSSESSIVE));
+      expect(words.pending, lang).toBe(t(lang, "chat.composer.pending", POSSESSIVE));
       expect(words.call999, lang).toBe(call999Words(lang));
-      expect(words.standing, lang).toBe(t(lang, "chat.ask.nojs"));
-      expect(words.hint, lang).toBe(t(lang, "chat.ask.hint"));
+      expect(words.standing, lang).toBe(t(lang, "chat.composer.nojs"));
+      expect(words.hint, lang).toBe(t(lang, "chat.composer.hint"));
       answering("offline");
       const container = draw(words);
       await ask(container, QUESTION);
       await settle();
       const [reply] = bubbles(container, "recv");
       expect(reply, `the reply (${lang})`).toBe(t(lang, "chat.ask.reply") + "\n" + t(lang, "safety.red_flag_line"));
-      expect(container.querySelector(".composer__standing")?.textContent).toBe(t(lang, "chat.ask.hint"));
+      expect(container.querySelector(".composer__standing")?.textContent).toBe(t(lang, "chat.composer.hint"));
       cleanup();
     }
   });
