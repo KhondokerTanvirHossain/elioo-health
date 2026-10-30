@@ -1,6 +1,5 @@
 package com.elioo.baymax.companion.application.service;
 
-import com.elioo.baymax.config.BaymaxProperties;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -23,7 +22,7 @@ class RedFlagMatcherTest {
     static final List<String> TEMPLATES = List.of("আম্মার {p}", "{p} হচ্ছে", "{p} হয়ে গেছেন", "amma {p} korche", "my mother has {p}", "{P}!!");
 
     private static RedFlagMatcher shipped() {
-        return new RedFlagMatcher(RedFlagMatcher.load(RedFlagMatcher.RESOURCE), new BaymaxProperties().getOutbound().getEmergencyPhrases());
+        return new RedFlagMatcher(RedFlagMatcher.load(RedFlagMatcher.RESOURCE));
     }
 
     @Test
@@ -39,7 +38,9 @@ class RedFlagMatcherTest {
         for (Map.Entry<String, List<String>> category : active.entrySet()) {
             for (String phrase : category.getValue()) {
                 for (String template : TEMPLATES) {
-                    String question = template.replace("{p}", phrase).replace("{P}", phrase.toUpperCase(Locale.ROOT));
+                    // a row's "anynumber" word stands for a number the family types
+                    String written = phrase.replace(RedFlagMatcher.ANY_NUMBER, "10");
+                    String question = template.replace("{p}", written).replace("{P}", written.toUpperCase(Locale.ROOT));
                     checked++;
                     Optional<String> got = matcher.match(question);
                     if (!got.equals(Optional.of(category.getKey()))) {
@@ -69,11 +70,31 @@ class RedFlagMatcherTest {
         assertThat(shipped().match("আব্বা ভুল করে প্রেশারের ওষুধ দুটো খেয়ে ফেলেছে")).isEqualTo(Optional.of("overdose"));
     }
 
+    /**
+     * Review of #164, finding 13: the document emergency words (urgent, admission, জরুরি, ভর্তি) are routine in a family's
+     * question and no longer fire; a real sign beside them still does.
+     */
     @Test
-    void theDocumentEmergencyWordsStillFire() {
+    void aDocumentsEmergencyWordIsNotAnEmergencyInAQuestion() {
         RedFlagMatcher matcher = shipped();
-        assertThat(matcher.match("রিপোর্টটা কি জরুরি?")).isEqualTo(Optional.of(RedFlagMatcher.DOCUMENT_WORD));
-        assertThat(matcher.match("is this urgent")).isEqualTo(Optional.of(RedFlagMatcher.DOCUMENT_WORD));
+        assertThat(matcher.match("is this report urgent?")).as("is this report urgent?").isEmpty();
+        assertThat(matcher.match("জরুরি কিছু আছে?")).as("জরুরি কিছু আছে?").isEmpty();
+        assertThat(matcher.match("ভর্তির তারিখ")).as("ভর্তির তারিখ").isEmpty();
+        assertThat(matcher.match("what was the admission date?")).as("what was the admission date?").isEmpty();
+        assertThat(matcher.match("ডাক্তার বলেছেন জরুরি ভর্তি, এখন বুকে ব্যথা")).isEqualTo(Optional.of("chest_pain"));
+    }
+
+    /** Review of #164, finding 10: a near row fires in any order within the window, and not beyond it or with a part missing. */
+    @Test
+    void aNearRowFiresInAnyOrderWithinItsWindowOnly() {
+        RedFlagMatcher matcher = shipped();
+        assertThat(matcher.match("বুকে খুব ব্যথা হচ্ছে")).isEqualTo(Optional.of("chest_pain"));
+        assertThat(matcher.match("pain in my chest")).isEqualTo(Optional.of("chest_pain"));
+        assertThat(matcher.match("Ma's sugar is 2.1 and she is shaking")).isEqualTo(Optional.of("hypoglycaemia"));
+        assertThat(matcher.match("chest one two three four five six seven eight nine pain")).as("ten words apart").isEmpty();
+        assertThat(matcher.match("what does the chest X-ray say?")).as("one part only").isEmpty();
+        assertThat(matcher.match("she took 10 tablets")).isEqualTo(Optional.of("overdose"));
+        assertThat(matcher.match("she took her tablets this morning")).as("no count").isEmpty();
     }
 
     @Test
@@ -102,9 +123,9 @@ class RedFlagMatcherTest {
         rows.setProperty("test_flag.status", "proposed");
         rows.setProperty("test_flag.source", "test");
         rows.setProperty("test_flag.en.1", "purple elephant");
-        assertThat(new RedFlagMatcher(rows, List.of()).match("I see a purple elephant")).isEmpty();
+        assertThat(new RedFlagMatcher(rows).match("I see a purple elephant")).isEmpty();
 
         rows.setProperty("test_flag.status", "active");
-        assertThat(new RedFlagMatcher(rows, List.of()).match("I see a purple elephant")).isEqualTo(Optional.of("test_flag"));
+        assertThat(new RedFlagMatcher(rows).match("I see a purple elephant")).isEqualTo(Optional.of("test_flag"));
     }
 }
