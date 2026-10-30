@@ -1,26 +1,42 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import type { AttentionJson, MeJson, NowBannerJson, ThreadJson } from "../src/api/types";
+import type { AskJson, AttentionJson, MeJson, NowBannerJson, ThreadJson } from "../src/api/types";
 import { t, type CopyKey } from "../src/copy";
 import { NEXT_PAGES, signInPath } from "../src/routing/paths";
 import { useScenario, type CropRow } from "./support/browser-api";
 import { concretePath } from "./support/budget";
-import { FIXTURES, PAGE_MARKERS, PAGE_PATHS, PAGE_SCENARIOS, SCENARIOS, withNowName, withStaleNowName } from "./support/scenarios.mjs";
+import { forQuery } from "./support/java-stub.mjs";
+import {
+  FIXTURES,
+  PAGE_MARKERS,
+  PAGE_PATHS,
+  PAGE_SCENARIOS,
+  SCENARIOS,
+  withNowName,
+  withStaleNowName,
+  type Value,
+} from "./support/scenarios.mjs";
 import { screenChecks } from "./support/screen-checks";
 
 /*
  * The chat page (plan W5) on /app/home against the production build and stub Java: the global NOW banner and its seen button, the
- * thread as WhatsApp delivered it, the attention stack and the composer that declines as WhatsApp does. Every body is
- * one Java's contract tests wrote (fixtures/api/**); scenarios.mjs says which answers which route.
+ * thread as WhatsApp delivered it (and the questions asked here, plan CHAT-web), the attention stack and the composer
+ * that asks Java (PO ruling P7, DR-50). Every body is one Java's contract tests wrote (fixtures/api/**); scenarios.mjs
+ * says which answers which route.
  */
 
 const body = <T>(file: string): T => (JSON.parse(readFileSync(join(FIXTURES, file), "utf8")) as { body: T }).body;
-/** What a scenario answers a route with, as stub Java would serve it (a fixture file read, or a literal). */
-function answerOf<T>(scenario: string, key: string): T {
-  const value = SCENARIOS[scenario]?.[key];
-  if (value === undefined) throw new Error(`${scenario} does not answer ${key}`);
+/**
+ * What a scenario answers a route with, as stub Java would serve it (a fixture file read, or a literal), for the query
+ * the page reads it with (the chat page reads its thread with `asks=1`, plan CHAT-web).
+ */
+function answerOf<T>(scenario: string, key: string, query = "asks=1"): T {
+  const table = SCENARIOS[scenario]?.[key];
+  if (table === undefined) throw new Error(`${scenario} does not answer ${key}`);
+  const value = forQuery(table, query) as Exclude<Value, { byQuery: unknown }>;
   const first = Array.isArray(value) ? value[0]! : value;
+  if (typeof first === "function") throw new Error(`${scenario} answers ${key} from the request`);
   if (typeof first === "string") return body<T>(first);
   if (!("body" in first)) throw new Error(`${scenario} answers ${key} with no body (a cut or held request)`);
   return first.body as T;
@@ -52,6 +68,19 @@ const alert = (page: Page) => page.locator('section[role="alert"]');
 /** Every tel: link on the page, by its href, so a failure names the number it offered. */
 const telLinks = (page: Page) => page.locator('a[href^="tel:"]').evaluateAll((as) => as.map((a) => a.getAttribute("href")));
 const seenButton = (page: Page) => alert(page).getByRole("button", { name: t("bn", "now.banner.seen") });
+
+/**
+ * Types `question` into the composer and presses send; resolves with Medioo's bubble once it is no longer the pending one
+ * (the answer, or the reply), its text exactly as drawn (textContent, line breaks kept).
+ */
+async function ask(page: Page, question: string): Promise<string> {
+  await page.locator(".composer__field").fill(question);
+  await page.getByRole("button", { name: t("bn", "add.send") }).click();
+  const pending = t("bn", "chat.ask.pending", ONE.patients[0]!.name_possessive);
+  const bubble = page.locator(".composer__lines .message-bubble--recv .message-bubble__body").last();
+  await expect.poll(async () => ((await bubble.count()) === 0 ? pending : await bubble.textContent()), { message: "Medioo answered" }).not.toBe(pending);
+  return (await bubble.textContent()) ?? "";
+}
 
 test.describe("the NOW banner", () => {
   test("theNowLineIsShippedVerbatimAndTheNameIsTheTitles", async ({ page }) => {
@@ -330,32 +359,88 @@ test.describe("the thread and the composer", () => {
     );
   });
 
-  test("askingSendsNothingAndRepliesAsWhatsAppDoes", async ({ page }) => {
-    const recorder = await open(page, "chat-default");
-    const field = page.locator(".composer__field");
-    await field.fill("Is this all right?");
-    // The address and the document before the send: a form that submitted (by GET, by POST, with or without a named
-    // field) navigates, so "the address is unchanged and nothing navigated" is what says nothing left the page.
+  test("aQuestionIsAnsweredFromJava", async ({ page }) => {
+    // Plan CHAT-web (PO ruling P7, DR-50): the typed question goes to Java once, and Medioo's bubble is Java's answer as
+    // sent, ending with the disclaimer and the red-flag line Java's code appended. The page itself never navigates.
+    const answer = answerOf<AskJson>("chat-ask-answer", "POST /app/api/patients/{id}/ask");
+    const recorder = await open(page, "chat-ask-answer");
+    // The field appears once the page has hydrated, after the App Router's own same-document replaceState of the address
+    // (a framenavigated event of its own): navigations are counted from there, so only the press's can be seen.
+    await page.locator(".composer__field").waitFor();
     const before = new URL(page.url());
-    let navigations = 0;
+    const navigations: string[] = [];
     page.on("framenavigated", (frame) => {
-      if (frame === page.mainFrame()) navigations++;
+      if (frame === page.mainFrame()) navigations.push(frame.url());
     });
-    await page.getByRole("button", { name: t("bn", "add.send") }).click();
-    // Whichever comes first, the reply drawn in place or the page leaving; then the address and the navigations are
-    // judged before anything else, so a form that submitted fails naming where it went.
-    const reply = page.locator(".composer__lines .message-bubble--recv");
-    await Promise.race([
-      reply.waitFor({ timeout: 5_000 }).catch(() => undefined),
-      page.waitForEvent("framenavigated", { timeout: 5_000 }).catch(() => undefined),
-    ]);
+    const reply = await ask(page, answer.question);
     const after = new URL(page.url());
     expect([after.pathname, after.search], "the address after the send").toEqual([before.pathname, before.search]);
-    expect(navigations, "navigations after the send").toBe(0);
-    await expect(page.locator(".composer__lines .message-bubble--sent")).toHaveText("Is this all right?");
-    await expect(reply).toContainText(t("bn", "chat.ask.reply"));
-    await expect(reply).toContainText(t("bn", "safety.red_flag_line"));
-    expect(recorder.requests().filter((r) => r.method !== "GET"), "no request carried the typed line").toEqual([]);
+    expect(navigations, "navigations after the send").toEqual([]);
+    await expect(page.locator(".composer__lines .message-bubble--sent")).toHaveText(answer.question);
+    expect(reply, "Medioo's bubble").toBe(answer.answer);
+    expect(reply.endsWith(`${t("bn", "disclaimer")}\n${t("bn", "safety.red_flag_line")}`), "ends with both appended lines").toBe(true);
+    const posts = recorder.requests().filter((r) => r.method !== "GET");
+    expect(posts.map((r) => `${r.method} ${r.path} ${r.answered}`)).toEqual([`POST /app/api/patients/${ONE.patients[0]!.id}/ask 200`]);
+    expect(posts[0]!.body, "the parsed body").toEqual({ question: answer.question });
+    expect(posts[0]!.headers["x-medioo"]).toBe("1");
+    await expect(page.locator(".composer__send"), "send is back for the next question").toBeEnabled();
+  });
+
+  test("aFailedAskShowsTheReplyNeverAnEmptyBubble", async ({ page }) => {
+    // A press whose connection dies, and a route Java refuses (chat-default does not answer the ask: 404): both show the
+    // reply WhatsApp gives, with the red-flag line, and never an empty or a stuck bubble.
+    const fallback = `${t("bn", "chat.ask.reply")}\n${t("bn", "safety.red_flag_line")}`;
+    for (const [scenario, answered] of [
+      ["chat-ask-offline", "aborted"],
+      ["chat-default", 404],
+    ] as const) {
+      const recorder = await open(page, scenario);
+      expect(await ask(page, "Is this all right?"), scenario).toBe(fallback);
+      expect(recorder.requests().filter((r) => r.method === "POST").map((r) => r.answered), scenario).toEqual([answered]);
+    }
+  });
+
+  test("anEmergencyAnswerOffers999OnlyWhenJavaSays", async ({ page }) => {
+    const home = answerOf<AskJson>("chat-ask-emergency", "POST /app/api/patients/{id}/ask");
+    expect([home.kind, home.call_999]).toEqual(["emergency", true]);
+    await open(page, "chat-ask-emergency");
+    expect(await telLinks(page), "before the question").toEqual([]);
+    expect(await ask(page, home.question)).toBe(home.answer);
+    expect(await page.locator(".composer__lines a[href^='tel:']").evaluateAll((as) => as.map((a) => a.getAttribute("href")))).toEqual([
+      "tel:999",
+    ]);
+  });
+
+  test("anEmergencyAbroadHasNoTelLink", async ({ page }) => {
+    const abroad = answerOf<AskJson>("chat-ask-emergency-abroad", "POST /app/api/patients/{id}/ask");
+    expect([abroad.kind, abroad.call_999]).toEqual(["emergency", false]);
+    await open(page, "chat-ask-emergency-abroad");
+    expect(await ask(page, abroad.question)).toBe(abroad.answer);
+    expect(await telLinks(page), "tel: links on the page").toEqual([]);
+  });
+
+  test("theAnswerSurvivesAReload", async ({ page }) => {
+    // The stored turns, read by the page's server render (?asks=1), oldest first as the thread reads.
+    const stored = answerOf<ThreadJson>("chat-with-asks", "GET /app/api/patients/{id}/thread")
+      .items.filter((i) => i.kind === "ask")
+      .reverse();
+    expect(stored.length, "with-asks holds answered turns").toBeGreaterThan(0);
+    await open(page, "chat-with-asks");
+    const shown = await page.locator("[data-thread-item='ask']").evaluateAll((items) =>
+      items.map((el) => [...el.querySelectorAll(".message-bubble__body")].map((b) => b.textContent)),
+    );
+    expect(shown).toEqual(stored.map((a) => (a.kind === "ask" ? [a.question, a.answer] : [])));
+    // The stored emergency, read in Bangladesh, keeps its 999 link; the stored answer has none.
+    expect(
+      await page.locator("[data-thread-item='ask'] a[href^='tel:']").evaluateAll((as) => as.map((a) => a.getAttribute("href"))),
+    ).toEqual(stored.filter((a) => a.kind === "ask" && a.call_999).map(() => "tel:999"));
+  });
+
+  test("thePageAsksForAsks", async ({ page }) => {
+    const recorder = await open(page, "chat-with-asks");
+    const reads = (await recorder.java()).filter((r) => r.method === "GET" && /^\/app\/api\/patients\/[^/]+\/thread$/.test(r.path));
+    expect(reads.length, "the page's server read of the thread").toBeGreaterThan(0);
+    expect(reads.map((r) => `${r.path}?${r.query}`)).toEqual(reads.map(() => `/app/api/patients/${ONE.patients[0]!.id}/thread?asks=1`));
   });
 
   test("aFirstRunPatientGetsTheIntroAndOneCamera", async ({ page }) => {
@@ -406,7 +491,22 @@ test.describe("without JavaScript", () => {
     await expect(page.getByRole("button", { name: t("bn", "now.banner.seen") }), "no seen button without JavaScript").toHaveCount(0);
     // And the composer is no form that could post the typed text anywhere.
     expect(await page.locator("form").count()).toBe(0);
-    await expect(page.locator(".composer__standing")).toHaveText(t("bn", "chat.soon"));
+    await expect(page.locator(".composer__standing")).toHaveText(t("bn", "chat.ask.nojs"));
+  });
+
+  test("withoutJavaScriptThereIsNoFieldAndTheLineSaysHow", async ({ page }) => {
+    // DR-42 item 1: no field and no form that could post a question; the standing line says how to ask; and a stored
+    // answer, which the server renders, is readable as it was shown.
+    const recorder = await open(page, "chat-with-asks");
+    expect(await page.locator("input").count(), "inputs").toBe(0);
+    expect(await page.locator("form").count(), "forms").toBe(0);
+    await expect(page.locator(".composer__standing")).toHaveText(t("bn", "chat.ask.nojs"));
+    const stored = answerOf<ThreadJson>("chat-with-asks", "GET /app/api/patients/{id}/thread").items.find((i) => i.kind === "ask");
+    expect(stored?.kind, "with-asks holds an ask").toBe("ask");
+    if (stored?.kind !== "ask") return;
+    const answers = await page.locator("[data-thread-item='ask'] .message-bubble--recv .message-bubble__body").allTextContents();
+    expect(answers, "the stored answers on the page").toContain(stored.answer);
+    expect(recorder.requests().filter((r) => r.method !== "GET"), "nothing posted").toEqual([]);
   });
 });
 
@@ -424,3 +524,15 @@ test.describe("chat-now", () => screenChecks("/app/home", "chat-now", { longest:
 test.describe("chat-stack", () => screenChecks("/app/home", "chat-stack", { images: followUps }));
 test.describe("chat-first", () => screenChecks("/app/home", "chat-first"));
 test.describe("chat-now-past-the-page", () => screenChecks("/app/home", "chat-now-past-the-page"));
+// Plan CHAT-web: the stored questions and answers (and their longest twin), and the page after an emergency answer was
+// drawn in place (the answer bubble and its 999 call judged like the rest of the page).
+test.describe("chat-with-asks", () => screenChecks("/app/home", "chat-with-asks", { longest: true }));
+test.describe("chat-ask-emergency", () =>
+  screenChecks("/app/home", "chat-ask-emergency", {
+    act: {
+      state: "an emergency answer",
+      run: async (page) => {
+        await ask(page, answerOf<AskJson>("chat-ask-emergency", "POST /app/api/patients/{id}/ask").question);
+      },
+    },
+  }));
