@@ -42,10 +42,12 @@ import java.util.function.Function;
 /**
  * The চ্যাট pipeline (DR-50, PO ruling P7), in this order, which is part of the safety design:
  * <ol>
- *   <li>the question is checked (blank or over {@code question-max-chars}: 400) and the patient must be visible to this
- *       account (else 404), before any {@code chat_turn} SQL;</li>
- *   <li><b>the emergency pre-check</b> ({@link RedFlagMatcher}): zero model calls, before the switch, the cap and the
- *       context; never counted; the existing emergency lines ({@link ChatAppendix#emergency});</li>
+ *   <li><b>the emergency pre-check</b> ({@link RedFlagMatcher}) on the whole question, before its length is checked; then
+ *       the question is checked (blank, or over {@code question-max-chars} and no emergency: 400) and the patient must be
+ *       visible to this account (else 404), before any {@code chat_turn} SQL;</li>
+ *   <li>an emergency gets the existing emergency lines ({@link ChatAppendix#emergency}): zero model calls, before the
+ *       switch, the cap and the context; never counted; stored cut to {@code question-max-chars}; and returned even when
+ *       storing it fails;</li>
  *   <li>answers switched off, or no chat client: {@code chat.ask.reply} (DECLINED);</li>
  *   <li>the daily cap, reserved atomically ({@link ChatTurnPort#reserveCounted}): {@code chat.ask.limit} (LIMIT);</li>
  *   <li>the context of stored facts ({@link ChatContextBuilder}) and one model call through {@link MeteredLlmClient}
@@ -109,32 +111,60 @@ public class ChatAnswerService implements AskUseCase {
     @Override
     public Mono<AskAnswer> ask(UUID familyId, UUID patientId, String question, String lang) {
         BaymaxProperties.Chat chat = properties.getChat();
-        String q = question == null ? "" : question.strip();
+        String asked = question == null ? "" : question.strip();
         String l = "en".equals(lang) ? "en" : "bn";
-        if (q.isEmpty() || q.length() > chat.getQuestionMaxChars()) {
+        // the emergency pre-check reads the whole question, before its length is held against it: a long, frantic message
+        // about chest pain gets the emergency lines, never a 400 (review of #164, findings 7, 14)
+        boolean emergency = !asked.isEmpty() && redFlags.match(asked).isPresent();
+        if (asked.isEmpty() || (!emergency && asked.length() > chat.getQuestionMaxChars())) {
             return Mono.error(BaymaxException.badRequest("invalid_question",
                     "a question is between one and " + chat.getQuestionMaxChars() + " characters"));
         }
+        // what is stored and returned: an over-long emergency is cut to the column's limit (V29's CHECK), on a code point
+        String q = cut(asked, chat.getQuestionMaxChars());
         long started = System.nanoTime();
         return records.visiblePatient(familyId, patientId)
                 .switchIfEmpty(Mono.error(BaymaxException.notFound("patient_not_found", "no patient with id " + patientId)))
                 .flatMap(access -> records.findFamily(familyId)
                         .switchIfEmpty(Mono.error(BaymaxException.unauthorized("session_family_gone", "the family no longer exists")))
                         .map(f -> ViewerLocale.of(f.whatsappNumber()))
-                        .flatMap(viewer -> route(familyId, access.patient(), q, l, viewer, started)));
+                        .flatMap(viewer -> emergency ? emergency(familyId, access.patient(), q, l, viewer, started)
+                                : route(familyId, access.patient(), q, l, viewer, started)));
+    }
+
+    /**
+     * 2. the emergency reply: before the switch, the cap, the context and any model call. It is pure copy, so a store that
+     * fails or answers nothing never costs the family the emergency lines (review of #164, finding 14): the reply is still
+     * returned, under an id no row carries, and the failure is logged by class and patient id only.
+     */
+    private Mono<AskAnswer> emergency(UUID familyId, PatientProfile patient, String q, String l, ViewerLocale viewer, long started) {
+        String answer = ChatAppendix.emergency(key -> copy.line(l, key));
+        Body body = new Body(answer, AnswerKind.EMERGENCY, "red_flag", List.of());
+        Mono<AskAnswer> unstored = Mono.fromSupplier(() -> new AskAnswer(UUID.randomUUID(), AnswerKind.EMERGENCY, q, answer,
+                viewer.bangladesh(), clock.instant()));
+        return turns.reserveUncounted(familyId, patient.id(), l, q)
+                .flatMap(id -> finish(id, patient, q, l, viewer, body, "", new Tally(), started))
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.warn("[baymax] chat emergency for patient={} not stored: no turn reserved", patient.id());
+                    return unstored;
+                }))
+                .onErrorResume(e -> {
+                    log.warn("[baymax] chat emergency for patient={} not stored: {}", patient.id(), e.getClass().getSimpleName());
+                    return unstored;
+                });
     }
 
     private Mono<AskAnswer> route(UUID familyId, PatientProfile patient, String q, String l, ViewerLocale viewer, long started) {
         Function<String, String> line = key -> copy.line(l, key);
-        // 2. the emergency pre-check: before the switch, the cap, the context and any model call
-        if (redFlags.match(q).isPresent()) {
-            String answer = ChatAppendix.emergency(line);
-            return turns.reserveUncounted(familyId, patient.id(), l, q)
-                    .flatMap(id -> finish(id, patient, q, l, viewer, new Body(answer, AnswerKind.EMERGENCY, "red_flag", List.of()), "",
-                            new Tally(), started));
-        }
-        return openUrgency(familyId, patient.id()).flatMap(open -> {
-            String tail = ChatAppendix.tail(DoseChangeGuard.asksForChange(q), open, line);
+        // whether code appends the ask-the-doctor line: the stored medicines' names count as medicine words, since a family
+        // names the drug (review of #164, finding 3); a names read that fails appends the line rather than drop it
+        Mono<Boolean> doseQuestion = contexts.medicineNames(familyId, patient.id())
+                .map(names -> DoseChangeGuard.asksForChange(q, names))
+                .defaultIfEmpty(DoseChangeGuard.asksForChange(q))
+                .onErrorReturn(true);
+        return Mono.zip(openUrgency(familyId, patient.id()), doseQuestion).flatMap(t -> {
+            Optional<Urgency> open = t.getT1();
+            String tail = ChatAppendix.tail(t.getT2(), open, line);
             // 3. switched off, or no model
             if (!properties.getChat().isEnabled()) {
                 return fixed(familyId, patient, q, l, viewer, AnswerKind.DECLINED, "off", "chat.ask.reply", tail, started);
@@ -143,12 +173,26 @@ public class ChatAnswerService implements AskUseCase {
             if (client == null) {
                 return fixed(familyId, patient, q, l, viewer, AnswerKind.DECLINED, "no_model", "chat.ask.reply", tail, started);
             }
-            // 4. the daily cap, reserved atomically
+            // 4. the daily cap, reserved atomically; only the reservation's own emptiness is the cap (review of #164, finding 6)
             return turns.reserveCounted(familyId, patient.id(), l, q, dayStart(), properties.getChat().getDailyCap())
-                    .flatMap(id -> modelled(id, client, familyId, patient, q, l, viewer, tail, started))
-                    .switchIfEmpty(Mono.defer(() -> fixed(familyId, patient, q, l, viewer, AnswerKind.LIMIT, "cap", "chat.ask.limit", tail,
-                            started)));
+                    .map(Optional::of)
+                    .defaultIfEmpty(Optional.empty())
+                    .flatMap(reserved -> reserved.isPresent()
+                            ? modelled(reserved.get(), client, familyId, patient, q, l, viewer, tail, started)
+                            : fixed(familyId, patient, q, l, viewer, AnswerKind.LIMIT, "cap", "chat.ask.limit", tail, started));
         });
+    }
+
+    /** The first {@code max} characters of a text, never splitting a code point. */
+    static String cut(String text, int max) {
+        if (text.length() <= max) {
+            return text;
+        }
+        int end = max;
+        if (Character.isHighSurrogate(text.charAt(end - 1))) {
+            end--;
+        }
+        return text.substring(0, end);
     }
 
     /** 5–6: the context, one call, the checks, one repair, else the fixed reply. Never empty. */
@@ -178,7 +222,10 @@ public class ChatAnswerService implements AskUseCase {
                 });
             });
         });
-        return work.timeout(chat.getAnswerDeadline())
+        // a context read or a call that completes empty is a model error, never an empty turn: a reserved, counted turn is
+        // always completed (review of #164, finding 6)
+        return work.switchIfEmpty(Mono.fromSupplier(() -> new Body(failed.text(), AnswerKind.FALLBACK, "model_error", List.of())))
+                .timeout(chat.getAnswerDeadline())
                 .onErrorResume(e -> {
                     log.warn("[baymax] chat turn={} model failed after {} call(s): {}", turnId, tally.calls, e.getClass().getSimpleName());
                     return Mono.just(new Body(failed.text(), AnswerKind.FALLBACK, "model_error", List.of()));

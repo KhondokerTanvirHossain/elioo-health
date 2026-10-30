@@ -77,6 +77,13 @@ class AppApiLogSafetyTest {
     private static final String OWNER = "Tanvir";
     /** Plan CHAT-api: a question the family typed, and the answer the stub model gives (both text no log may carry). */
     private static final String QUESTION = "Demoprol-question-6271 কি খাব?";
+    /**
+     * Review of #164, finding 15: what the stub model answers QUESTION with, text that passes every code check (no digit, no
+     * number word, no dose or reassurance word) and so is SHOWN, carrying the patient's name and a letter-only needle.
+     */
+    private static final String SHOWN_TEXT = NAME + " Chatmodeltext Qzxv: কাগজে এর উত্তর লেখা নেই।";
+    /** A second question, which the stub answers with text the checks refuse twice, so the fixed reply is shown. */
+    private static final String REFUSED_QUESTION = "Second-ask-5150 কী?";
     private static final String MODEL_TEXT = "Chat-model-text-3381 " + MEDICINE;
     /** The other family's number and owner: their requests are the 404 branch of every route. */
     private static final String OTHER_NUMBER = "+8801700000124";
@@ -127,6 +134,7 @@ class AppApiLogSafetyTest {
         out.add(new Needle("a delivered message's wamid (plan W5-api)", "wamid.log-safety"));
         out.add(new Needle("a question typed in the chat (plan CHAT-api)", "Demoprol-question-6271"));
         out.add(new Needle("the chat model's text (plan CHAT-api)", "Chat-model-text-3381"));
+        out.add(new Needle("the chat model's shown answer (review of #164)", "Chatmodeltext Qzxv"));
         FAMILIES.forEach((number, whose) -> {
             String digits = number.substring(1);
             String national = "0" + digits.substring(3);
@@ -169,6 +177,7 @@ class AppApiLogSafetyTest {
     @Test
     void noApiRouteLogsTheOwnersNumberOrThePatientsNameAtInfoOrAbove() {
         AppApiContext.runner(POSTGRES, MINIO).withPropertyValues("baymax.auth.web-mints-code=true", "baymax.auth.hmac-secret=log-safety-secret",
+                        "baymax.chat.enabled=true",
                         "baymax.llm.prices.anthropic.[claude-sonnet-5].input=2.00", "baymax.llm.prices.anthropic.[claude-sonnet-5].output=10.00")
                 .withBean(com.elioo.baymax.companion.config.ChatModelConfiguration.CHAT_CLIENT,
                         com.elioo.baymax.extraction.config.BaymaxModelClient.class,
@@ -176,7 +185,8 @@ class AppApiLogSafetyTest {
                             @Override
                             public reactor.core.publisher.Mono<com.elioo.healthcare.llm.model.LlmResponse> invoke(
                                     com.elioo.healthcare.llm.model.LlmRequest request) {
-                                return reactor.core.publisher.Mono.just(new com.elioo.healthcare.llm.model.LlmResponse(MODEL_TEXT, "end_turn",
+                                String text = request.userPrompt().contains("Second-ask-5150") ? MODEL_TEXT : SHOWN_TEXT;
+                                return reactor.core.publisher.Mono.just(new com.elioo.healthcare.llm.model.LlmResponse(text, "end_turn",
                                         new com.elioo.healthcare.llm.model.TokenUsage(900, 120), "claude-sonnet-5", null, "anthropic", 3L));
                             }
 
@@ -496,10 +506,17 @@ class AppApiLogSafetyTest {
                         .expectStatus().isNoContent();
                 c.get().uri("/app/api/me").cookie("baymax_session", leaving).exchange().expectStatus().isUnauthorized();
             });
-            // plan CHAT-api: a question through the model path (the stub's text is refused twice, so the fixed reply is
-            // shown), an emergency, a too-long question, another family's patient, and the guard's refusals
+            // plan CHAT-api: a question through the model path whose answer passes every check and is SHOWN, carrying the
+            // model's words and the patient's name (review of #164, finding 15: a FALLBACK shows only fixed copy, so a log of
+            // the shown answer would have gone unseen); a second whose text is refused twice; an emergency, a too-long
+            // question, another family's patient, and the guard's refusals
             exercise.put("POST /app/api/patients/{id}/ask", (c, t) -> {
-                json(c.post().uri("/app/api/patients/" + rokeya.id() + "/ask"), t, Map.of("question", QUESTION))
+                Map<?, ?> shown = json(c.post().uri("/app/api/patients/" + rokeya.id() + "/ask"), t, Map.of("question", QUESTION))
+                        .expectStatus().isOk().expectBody(Map.class).returnResult().getResponseBody();
+                assertThat(shown.get("kind")).as("the answer is the model's, shown").isEqualTo("answer");
+                assertThat((String) shown.get("answer")).as("both needles reached the shown answer").contains("Chatmodeltext Qzxv")
+                        .startsWith(NAME);
+                json(c.post().uri("/app/api/patients/" + rokeya.id() + "/ask"), t, Map.of("question", REFUSED_QUESTION))
                         .expectStatus().isOk().expectBody().jsonPath("$.kind").isEqualTo("fallback");
                 json(c.post().uri("/app/api/patients/" + rokeya.id() + "/ask"), t, Map.of("question", NAME + "-র বুকে ব্যথা " + NUMBER))
                         .expectStatus().isOk().expectBody().jsonPath("$.kind").isEqualTo("emergency");

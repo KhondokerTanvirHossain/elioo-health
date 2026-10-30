@@ -115,6 +115,8 @@ class ChatAnswerServiceTest {
         when(turns.reserveUncounted(any(), any(), anyString(), anyString())).thenReturn(Mono.just(TURN));
         when(turns.complete(any(), any())).thenReturn(Mono.empty());
         when(contexts.build(FAMILY, PATIENT, "Ma")).thenReturn(Mono.just(CTX));
+        when(contexts.medicineNames(FAMILY, PATIENT)).thenReturn(Mono.just(CTX.medicineNames()));
+        properties.getChat().setEnabled(true);
         when(attention.urgent(FAMILY, PATIENT)).thenReturn(Mono.just(List.of()));
         when(callLog.save(any())).thenAnswer(i -> Mono.just(i.getArgument(0)));
         when(model.providerName()).thenReturn("anthropic");
@@ -365,6 +367,101 @@ class ChatAnswerServiceTest {
                 .verifyComplete();
         assertThat(stored().handler()).isEqualTo("model_error");
         assertThat(stored().modelCalls()).isEqualTo(1);
+    }
+
+    /**
+     * Review of #164, finding 5: each call is inside its own 20 s, the two together are not inside the deadline. Only the
+     * answer deadline can fire here; without it the repair would be shown at 36 s.
+     */
+    @Test
+    void theAnswerDeadlineCoversBothCalls() {
+        properties.getChat().setAnswerDeadline(Duration.ofSeconds(30));
+        properties.getChat().setModelTimeout(Duration.ofSeconds(20));
+        // assembled on each call, so the delay runs on the virtual clock: the first reply is refused, the repair would pass
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        when(model.invoke(any())).thenAnswer(i -> Mono.delay(Duration.ofSeconds(18))
+                .map(t -> reply(calls.getAndIncrement() == 0 ? "Ma-র ক্রিয়েটিনিন 8" : "Ma-র ক্রিয়েটিনিন 1.8।", 1, 1)));
+
+        StepVerifier.withVirtualTime(() -> service().ask(FAMILY, PATIENT, "আম্মার ক্রিয়েটিনিন কত?", "bn"))
+                .thenAwait(Duration.ofSeconds(60))
+                .assertNext(a -> assertThat(a.kind()).isEqualTo(AnswerKind.FALLBACK))
+                .verifyComplete();
+        assertThat(stored().handler()).isEqualTo("model_error");
+        assertThat(stored().modelCalls()).isEqualTo(2);
+    }
+
+    /** Review of #164, finding 5: a reply cut at max_tokens passes every content check and is still never shown. */
+    @Test
+    void aMaxTokensStopIsNeverShown() {
+        String cutShort = "Ma-র ক্রিয়েটিনিন 1.8, কাগজে ছাপা";
+        model(Mono.just(new LlmResponse(cutShort, "max_tokens", new TokenUsage(10, 2048), "claude-sonnet-5", null, "anthropic", 5L)));
+        assertThat(AnswerCheck.violations(cutShort, CTX)).as("the cut reply passes the content checks").isEmpty();
+
+        AskAnswer a = ask("আম্মার ক্রিয়েটিনিন কত?");
+
+        assertThat(a.kind()).isEqualTo(AnswerKind.FALLBACK);
+        assertThat(a.answer()).doesNotContain(cutShort);
+        assertThat(stored().answer()).isEqualTo(line("bn", "chat.ask.failed") + ChatAppendix.tail(false, Optional.empty(), k -> line("bn", k)));
+        assertThat(stored().handler()).isEqualTo("model_error");
+    }
+
+    /**
+     * Review of #164, finding 6: a context read that completes empty is a model error on the reserved, counted turn, never
+     * a LIMIT and never a second turn.
+     */
+    @Test
+    void anEmptyContextCompletesTheCountedTurn() {
+        when(contexts.build(FAMILY, PATIENT, "Ma")).thenReturn(Mono.empty());
+
+        Optional<AskAnswer> a = service().ask(FAMILY, PATIENT, "আম্মার ক্রিয়েটিনিন কত?", "bn").blockOptional(Duration.ofSeconds(10));
+
+        assertThat(a).as("the asked question gets a reply, never nothing").isPresent();
+        assertThat(a.get().kind()).isEqualTo(AnswerKind.FALLBACK);
+        verify(turns, times(1)).complete(eq(TURN), any());
+        assertThat(stored().handler()).isEqualTo("model_error");
+        verify(turns, never()).reserveUncounted(any(), any(), anyString(), anyString());
+    }
+
+    /** Review of #164, findings 7 and 14: a long, frantic emergency gets the emergency lines, stored cut to the column. */
+    @Test
+    void aLongEmergencyIsStillAnEmergency() {
+        String question = "আম্মার বুকে ব্যথা, " + "ক".repeat(1500);
+
+        AskAnswer a = ask(question);
+
+        assertThat(a.kind()).isEqualTo(AnswerKind.EMERGENCY);
+        ArgumentCaptor<String> storedQuestion = ArgumentCaptor.forClass(String.class);
+        verify(turns).reserveUncounted(eq(FAMILY), eq(PATIENT), eq("bn"), storedQuestion.capture());
+        assertThat(storedQuestion.getValue()).hasSize(properties.getChat().getQuestionMaxChars()).startsWith("আম্মার বুকে ব্যথা");
+        verify(model, never()).invoke(any());
+        assertThatThrownBy(() -> ask("ক".repeat(1001))).as("a long question that is not an emergency").isInstanceOf(BaymaxException.class);
+    }
+
+    /** Review of #164, finding 14: the emergency reply is copy; a store that fails never costs the family the lines. */
+    @Test
+    void anEmergencyIsAnsweredWhenItsStoreFails() {
+        when(turns.reserveUncounted(any(), any(), anyString(), anyString())).thenReturn(Mono.error(new IllegalStateException("db down")));
+        AskAnswer reserveFailed = ask("আম্মার বুকে ব্যথা");
+        assertThat(reserveFailed.kind()).isEqualTo(AnswerKind.EMERGENCY);
+        assertThat(reserveFailed.answer()).isEqualTo(ChatAppendix.emergency(k -> line("bn", k)));
+        assertThat(reserveFailed.call999()).isTrue();
+
+        when(turns.reserveUncounted(any(), any(), anyString(), anyString())).thenReturn(Mono.just(TURN));
+        when(turns.complete(any(), any())).thenReturn(Mono.error(new IllegalStateException("db down")));
+        AskAnswer completeFailed = ask("আম্মার বুকে ব্যথা");
+        assertThat(completeFailed.kind()).isEqualTo(AnswerKind.EMERGENCY);
+        assertThat(completeFailed.answer()).isEqualTo(ChatAppendix.emergency(k -> line("bn", k)));
+        verify(model, never()).invoke(any());
+    }
+
+    /** Review of #164, finding 3: a question that names the stored drug, not "the medicine", is a dose question. */
+    @Test
+    void aDoseQuestionThatNamesTheDrugGetsTheDoctorLine() {
+        model(Mono.just(reply("Ma-র শেষ প্রেসক্রিপশনে লেখা: {{rx:1}}", 1, 1)));
+
+        AskAnswer a = ask("আম্মার Demoprol কি কম হবে?");
+
+        assertThat(a.answer()).contains(line("bn", "chat.dose.ask_doctor"));
     }
 
     @Test
