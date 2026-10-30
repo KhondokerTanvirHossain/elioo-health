@@ -5,6 +5,7 @@ import { isReadingPaper, type PaperJson, type PaperReadingJson, type PaperResult
 import { DeletePaper } from "@/components/DeletePaper/DeletePaper";
 import { MessageBubble } from "@/components/MessageBubble/MessageBubble";
 import { PageImage } from "@/components/PageImage/PageImage";
+import { POLL_SECONDS } from "@/components/ReadingProgress/poll";
 import { ReadingProgress } from "@/components/ReadingProgress/ReadingProgress";
 import { NowBlock } from "@/components/safety/NowBlock/NowBlock";
 import { VerdictCard } from "@/components/safety/VerdictCard/VerdictCard";
@@ -257,7 +258,13 @@ function Failed({ paper, ctx }: { paper: PaperResultJson; ctx: Ctx }) {
   );
 }
 
-/** A paper still being read (DocumentPages.progressBody): three real steps, nothing about a result, and the poll. */
+/**
+ * A paper still being read (DocumentPages.progressBody): three real steps, nothing about a result, and the poll. With
+ * JavaScript, ReadingProgress asks the status quietly and draws the result once, with no reload; without it, the page
+ * reloads itself every POLL_SECONDS (`<noscript>`, inert wherever script runs), as Java's reading page does, so a family
+ * whose browser runs no script still moves on to the result (PO ruling P6). Each such reload is one read of the paper,
+ * as each of Java's own reloads is.
+ */
 function Reading({ paper, ctx }: { paper: PaperReadingJson; ctx: Ctx }) {
   const { lang, preview } = ctx;
   const received = paper.status === "RECEIVED";
@@ -284,6 +291,9 @@ function Reading({ paper, ctx }: { paper: PaperReadingJson; ctx: Ctx }) {
         {t(lang, "progress.timeline")}
       </a>
       <ReadingProgress documentId={paper.id} />
+      <noscript>
+        <meta httpEquiv="refresh" content={String(POLL_SECONDS)} />
+      </noscript>
     </section>
   );
 }

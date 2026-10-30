@@ -35,6 +35,15 @@
 .delete-paper__warn {
   margin: 0 0 var(--space-4);
 }
+/* The line the sheet says a refusal in (DeletePaper's inSheet). Empty, it takes no room but stays in the page (never
+   display: none), so a screen reader announces what is written into it. */
+.delete-paper__said {
+  margin: 0 0 var(--space-4);
+  font-weight: 600;
+}
+.delete-paper__said:empty {
+  margin: 0;
+}
 .delete-paper__actions {
   display: grid;
   gap: var(--space-2);

@@ -56,7 +56,9 @@ function askedPatient(here: string): string | null {
  * - `asked` (plan W10, the profile page): a patient the page's own address names (`/app/patients/{id}/profile`),
  *   resolved through activePatient in place of `?patient=`, as Java's ProfilePages chooses the patient its link names:
  *   the toolbar names that patient, and one this family does not see is the not-found page.
- * Both are amendments of the plan's Global Constraint "a screen never decides a patient", approved by the PO 2026-10-23 (P2).
+ * `everyone` and `asked` are amendments of the plan's Global Constraint "a screen never decides a patient", approved by
+ * the PO 2026-10-23 (P2). `patient` (W6) is a third, put to the PO for sight (the plan's Global Constraints): like
+ * `asked` it resolves through activePatient, so a paper about a patient this family's `me` does not list is not found.
  */
 export async function signedInPage({
   tab,

@@ -9,12 +9,15 @@
  * a short-lived cookie; the paper page, seeing a marker for its own path, reads no paper and sends its main empty, and
  * KeptOnBannerRefresh keeps the main it already shows. The shell re-reads `me` and the banner as on every render, so the
  * banner is drawn again from what Java now says. The hold clears the cookie once the refresh has landed. A page that
- * registered nothing refreshes as before, re-reading everything.
+ * registered nothing refreshes as before, re-reading everything. The router's cache then holds the refresh's empty main
+ * for that address, so the tab also remembers what each held page last showed (rememberShown), and back to it shows
+ * that again, as back did before the refresh, with no load and no read.
  *
  * No directive and no copy: the server reads the cookie with readBannerOnly, the client islands write and clear it.
  */
 
-export const BANNER_ONLY_COOKIE = "medioo_banner_only";
+/** Named with the codename, as every other cookie under /app is (baymax_session, baymax_patient, baymax_lang …). */
+export const BANNER_ONLY_COOKIE = "baymax_banner_only";
 /** Seconds the marker lives if the hold never clears it (a tab closed mid-refresh): long enough for one refresh. */
 const MAX_AGE = 10;
 
@@ -36,6 +39,26 @@ export function markBannerOnly(): boolean {
   if (held === null) return false;
   document.cookie = `${BANNER_ONLY_COOKIE}=${encodeURIComponent(JSON.stringify(held))}; Path=/app; Max-Age=${MAX_AGE}; SameSite=Strict`;
   return true;
+}
+
+/** How many pages' mains the tab remembers (a paper, its /all, a sheet and one more), the oldest forgotten first. */
+const SHOWN_PAGES = 4;
+const shown = new Map<string, unknown>();
+
+/**
+ * What a held page last showed, by its path, for a holder that mounts again with nothing in it: back to a paper after
+ * a banner-only refresh and a sheet, the router restores the paper's address from its cache, which holds the
+ * refresh's empty main, and the page shows what this tab last showed there, as back did before the refresh. Lives as
+ * long as the tab's script does: a hard load starts with nothing kept.
+ */
+export function rememberShown(path: string, main: unknown): void {
+  shown.delete(path);
+  shown.set(path, main);
+  if (shown.size > SHOWN_PAGES) shown.delete(shown.keys().next().value!);
+}
+
+export function shownBefore(path: string): unknown {
+  return shown.get(path);
 }
 
 export function clearBannerOnly(): void {
