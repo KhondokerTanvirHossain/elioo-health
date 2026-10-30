@@ -103,7 +103,8 @@ class ChatModelConfigurationTest {
         assertThat(cost).as("the price of " + model + " for a million in and a million out").isPresent();
         assertThat(cost.get()).isEqualByComparingTo("12.00000000");
         assertThat(bound.getChat().getEffort()).isEqualTo("low");
-        assertThat(bound.getChat().isEnabled()).isTrue();
+        assertThat(bound.getChat().isEnabled()).as("answers ship off until the live measurement and CHAT-web (review of #164)")
+                .isFalse();
         assertThat(bound.getChat().getDailyCap()).isEqualTo(50);
     }
 
