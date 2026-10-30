@@ -323,6 +323,23 @@ const paper = (fixture, extra = {}, me = "me/one-patient.json") => ({
   ...extra,
 });
 
+/**
+ * A paper fixture about another patient (W6's `patient`, for PO sight): the same body with its `patient` naming `id`,
+ * and that patient's names as the `me` fixture lists them, or the fixture's own names for a patient `me` does not list.
+ */
+function paperAbout(fixture, id, meFixture) {
+  const parsed = JSON.parse(readFileSync(join(FIXTURES, fixture), "utf8"));
+  const listed = meFixture === undefined ? undefined : bodyOf(meFixture).patients.find((p) => p.id === id);
+  const own = parsed.body.patient;
+  const name = listed?.name ?? own.name;
+  // Java's own suffixes on the fixture's names, kept, with the name swapped in.
+  const patient = { ...own, id, name, name_objective: own.name_objective.replace(own.name, name), name_possessive: own.name_possessive.replace(own.name, name) };
+  return { status: parsed.status, body: { ...parsed.body, patient } };
+}
+
+/** A patient no `me` fixture lists: a paper about them is one this family does not see. */
+export const UNLISTED_PATIENT = "5e9edf6d-0a2a-4913-8675-9d07a4100999";
+
 /** A value's sheet (W6-api) under `me`. */
 const sheet = (fixture, me = "me/one-patient.json") => ({ ...NO_NOW, "GET /app/api/me": me, [SHEET]: fixture });
 
@@ -697,6 +714,10 @@ export const SCENARIOS = {
   "paper-delete-raced": paper("documents/routine-released.json", {
     "DELETE /app/api/documents/{id}": { status: 404, body: { reason: "NOT_FOUND" } },
   }),
+  // A delete whose confirm token Java refused (expired, or not this session's): the sheet stays and says so.
+  "paper-delete-refused": paper("documents/routine-released.json", {
+    "DELETE /app/api/documents/{id}": { status: 400, body: { reason: "CONFIRM_REQUIRED" } },
+  }),
   // The moment after this family's own delete: the paper Java no longer shows (switched to by the delete test).
   "paper-deleted": paper("documents/not-found.json"),
   // A crop whose session ended: the image route sends the browser to sign-in (303), and the status read is a 401.
@@ -705,6 +726,16 @@ export const SCENARIOS = {
     "GET /app/api/sign-in/next": UNAUTHENTICATED,
     ...SIGN_IN,
   }),
+  // The NOW paper whose value rows open a sheet Java serves: a stale seen tap, a sheet, then back (banner-only.ts).
+  "paper-now-bd-sheet": paper("documents/now-bd.json", { [SHEET]: "value-sheet/earlier-three.json" }),
+  // Whose paper (W6's `patient`, for PO sight): two patients and no choice, the paper about the second, so a page that
+  // named the first, or showed the chooser, is told apart; and a paper about a patient this family's `me` does not list.
+  "paper-two-no-choice": paper(
+    paperAbout("documents/now-bd.json", "5e9edf6d-0a2a-4913-8675-9d07a4100012", "me/two-patients.json"),
+    {},
+    "me/two-patients.json",
+  ),
+  "paper-not-this-familys": paper(paperAbout("documents/now-bd.json", UNLISTED_PATIENT)),
   // A family outside the preview on a preview paper: the gate reads `me` and stops before the paper.
   "paper-preview-off": paper("documents/now-bd.json", {}, "me/preview-off.json"),
   // Nobody signed in on a paper link, without JavaScript (Review Focus 2): the paper's 307, then the sign-in page.
@@ -767,7 +798,8 @@ export function withNow(name, table = SCENARIOS[name]) {
   return { ...table, "GET /app/api/now-banner": bannerFor("now-banner/one.json", me) };
 }
 
-for (const name of Object.values(PAGE_SCENARIOS)) {
+// paper-now-bd-sheet is no page's measured scenario, but its stale twin is the back-after-a-sheet test's (paper.spec.ts).
+for (const name of [...Object.values(PAGE_SCENARIOS), "paper-now-bd-sheet"]) {
   if (signedOut(name)) continue;
   const now = withNow(name);
   SCENARIOS[withNowName(name)] = now;

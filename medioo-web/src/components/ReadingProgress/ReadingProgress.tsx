@@ -4,9 +4,11 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { apiGet } from "@/api/browser";
 import { READING_STATUSES, type PaperStatusJson } from "@/api/types";
+import { clearBannerOnly } from "@/components/safety/NowBanner/banner-only";
+import { POLL_SECONDS } from "./poll";
 
 /** How often the reading page asks (DocumentPages.POLL_SECONDS). */
-export const POLL_MS = 5_000;
+export const POLL_MS = POLL_SECONDS * 1_000;
 
 const reading = (status: string) => (READING_STATUSES as readonly string[]).includes(status);
 
@@ -16,6 +18,10 @@ const reading = (status: string) => (READING_STATUSES as readonly string[]).incl
  * longer being read, the page is rendered again once (`router.refresh()`, one read of the paper, the result's), and
  * the poll stops; a paper gone in the meantime is refreshed too, so the page says so. A signed-out answer is apiGet's
  * sign-in hop. One request at a time: the next waits for the answer to the last. It renders nothing.
+ *
+ * That one refresh is always a real read, never a banner-only one (banner-only.ts): a stale seen tap's marker still
+ * set when the paper finishes would get the page an empty main, the holder would keep "being read", and with the poll
+ * stopped the page would never move on. So the marker is cleared first.
  */
 export function ReadingProgress({ documentId, every = POLL_MS }: { documentId: string; every?: number }) {
   const router = useRouter();
@@ -29,6 +35,7 @@ export function ReadingProgress({ documentId, every = POLL_MS }: { documentId: s
       const gone = answer.kind === "refused" && answer.status === 404;
       if (done || gone) {
         stopped = true;
+        clearBannerOnly();
         router.refresh();
         return;
       }

@@ -1,6 +1,14 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BANNER_ONLY_COOKIE, clearBannerOnly, holdOnBannerRefresh, markBannerOnly, readBannerOnly } from "./banner-only";
+import {
+  BANNER_ONLY_COOKIE,
+  clearBannerOnly,
+  holdOnBannerRefresh,
+  markBannerOnly,
+  readBannerOnly,
+  rememberShown,
+  shownBefore,
+} from "./banner-only";
 import { KeptOnBannerRefresh } from "./KeptOnBannerRefresh";
 
 const PATH = "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003";
@@ -65,9 +73,58 @@ describe("banner-only", () => {
   });
 
   it("aHolderWithNothingToKeepClearsTheMarkerAndLoadsAgain", () => {
+    // A marker that outlived its refresh: written for this page, then the page mounted empty (a load that got the
+    // banner-only main). Reloading with the marker still set would get the empty main again, so it must be gone by then.
+    // A page this tab has not shown (the store of what each page showed would restore it otherwise).
+    const fresh = `${PATH}/values/7af69ec6-676f-3bb9-b0bb-3e665c36ed57`;
+    const release = holdOnBannerRefresh({ path: fresh, patient: PATIENT });
+    expect(markBannerOnly()).toBe(true);
+    release();
+    expect(marker(), "guard: the marker is set before the holder mounts").not.toBeNull();
+    const atReload: Array<string | null> = [];
+    const reload = vi.fn(() => void atReload.push(marker()));
+    vi.stubGlobal("location", { ...location, reload });
+    render(<KeptOnBannerRefresh path={fresh} patient={PATIENT} />);
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(atReload[0], "the marker was still set at reload").toBeNull();
+    expect(marker(), "and it stays cleared").toBeNull();
+  });
+
+  it("aHolderMountedAgainEmptyForAPageItShowedRestoresItWithNoReload", () => {
+    // Back to the paper after a banner-only refresh and a sheet: the router restores the paper's address from its cache,
+    // which holds the refresh's empty main. The holder mounts fresh with no children: it shows what this tab last showed
+    // at that address, as back did before the refresh, and loads nothing.
     const reload = vi.fn();
     vi.stubGlobal("location", { ...location, reload });
-    render(<KeptOnBannerRefresh path={PATH} patient={PATIENT} />);
+    render(
+      <KeptOnBannerRefresh path={PATH} patient={PATIENT}>
+        <p data-paper>the paper</p>
+      </KeptOnBannerRefresh>,
+    );
+    cleanup();
+    const { container } = render(<KeptOnBannerRefresh path={PATH} patient={PATIENT} />);
+    expect(container.querySelector("[data-paper]")?.textContent, "restored on a fresh mount").toBe("the paper");
+    expect(reload, "and nothing loaded").not.toHaveBeenCalled();
+    cleanup();
+    // A page this tab never showed has nothing to restore: it loads again, as before.
+    render(<KeptOnBannerRefresh path={`${PATH}/all`} patient={PATIENT} />);
     expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("theTabRemembersTheLastFourPagesOnly", () => {
+    const paths = [1, 2, 3, 4, 5].map((n) => `/app/documents/0000000${n}`);
+    for (const p of paths) rememberShown(p, p);
+    expect(shownBefore(paths[0]!), "the oldest is forgotten").toBeUndefined();
+    expect(paths.slice(1).map(shownBefore)).toEqual(paths.slice(1));
+    // Shown again, a page is the newest: the next one forgets the page after it.
+    rememberShown(paths[1]!, "again");
+    rememberShown("/app/documents/00000006", "six");
+    expect(shownBefore(paths[1]!)).toBe("again");
+    expect(shownBefore(paths[2]!)).toBeUndefined();
+  });
+
+  it("theMarkerCarriesTheCodenameAsEveryOtherCookieDoes", () => {
+    // baymax_session, baymax_patient, baymax_lang …: Java sees every cookie under /app, so this one reads as ours.
+    expect(BANNER_ONLY_COOKIE).toBe("baymax_banner_only");
   });
 });

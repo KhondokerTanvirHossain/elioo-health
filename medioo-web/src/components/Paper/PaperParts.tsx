@@ -25,21 +25,22 @@ export function cropWords(lang: Lang, alt: string | null): CropWords {
   return { retry: t(lang, "crop.retry"), alt: alt ?? "" };
 }
 
-/** The fields one value row is drawn from (ValueRowsView), each resolved here from what Java sent. */
+/**
+ * The fields one value row is drawn from (ValueRowsView), each resolved here from what Java sent. The bar's two ends
+ * only where Java placed a pin: without one ValueBar draws nothing, so they would be bytes the row never shows.
+ */
 function rowFields(lang: Lang, value: PaperValueJson): ValueRowFields {
-  return {
+  const common = {
     id: value.id,
     display_kind: value.display_kind,
     name: value.name,
     value: value.value,
     unit: value.unit,
-    pin: value.pin,
-    ref_low: value.ref_low,
-    ref_high: value.ref_high,
     crop: value.crop,
     range: rangeText(lang, value),
     chip: chipKindOf(value.display_kind, value.side),
   };
+  return value.pin === null ? { ...common, pin: null } : { ...common, pin: value.pin, ref_low: value.ref_low, ref_high: value.ref_high };
 }
 
 /**

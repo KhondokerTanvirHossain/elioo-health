@@ -483,6 +483,12 @@ BOARD_SCENES.push(
     await page.getByRole("button", { name: t("bn", "detail.delete") }).click();
     await page.locator("dialog:modal").waitFor();
   }),
+  // After review: a delete whose token Java refused, said inside the open sheet.
+  paperScene("delete-refused", "paper-delete-refused", "app", PAPER_PATH, async (page) => {
+    await page.getByRole("button", { name: t("bn", "detail.delete") }).click();
+    await page.getByRole("button", { name: t("bn", "doc.delete.yes") }).click();
+    await page.locator("dialog:modal [role=status]:not(:empty)").waitFor();
+  }),
   paperScene("gone", "paper-gone", "app"),
 );
 

@@ -89,6 +89,25 @@ describe("DeletePaper", () => {
     expect(replace).toHaveBeenCalledTimes(1);
   });
 
+  it("aRefusedTokenIsSaidInsideTheOpenSheet", async () => {
+    // The sheet stays open for the next yes, and showModal makes everything outside it inert: a toast outside would be
+    // neither seen nor announced. So the failure is said inside the dialog, in a status line that was there empty first.
+    apiGet.mockResolvedValue(token("tok-expired"));
+    apiSend.mockResolvedValue({ kind: "refused", status: 400, reason: "CONFIRM_REQUIRED" });
+    const el = render(<DeletePaper documentId={DOC} words={words} />).container;
+    await press(el, words.open);
+    const dialog = el.querySelector("dialog")!;
+    const before = dialog.querySelector('[role="status"]')?.textContent ?? null;
+    await press(el, words.yes);
+    expect(dialog.hasAttribute("open"), "the sheet stays for the next yes").toBe(true);
+    expect(dialog.querySelector('[role="status"]')?.textContent, "the failure, said inside the open sheet").toBe(words.failed);
+    expect(before, "its status line was there, empty, before anything was said").toBe("");
+    // Asked again, the sheet starts with nothing said.
+    await press(el, words.no);
+    await press(el, words.open);
+    expect(dialog.querySelector('[role="status"]')?.textContent).toBe("");
+  });
+
   it("aDeleteRacedByAnotherMemberSaysGone", async () => {
     apiGet.mockResolvedValue(token("tok-1"));
     apiSend.mockResolvedValue({ kind: "refused", status: 404, reason: "NOT_FOUND" });

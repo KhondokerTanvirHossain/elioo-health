@@ -4,15 +4,18 @@ import Link from "next/link";
 import type { CropJson, PaperValueJson } from "@/api/types";
 import { Crop } from "@/components/Crop/Crop";
 import { StatusChipView, type ChipKind } from "@/components/StatusChip/StatusChipView";
-import { ValueBar } from "./ValueBar";
+import { ValueBar, type BarFields } from "./ValueBar";
 import { sheetHref, type From } from "./sheet-href";
 
-/** One value row as its server parent resolved it: Java's strings as sent, its range line and its chip kind. */
-export type ValueRowFields = Pick<PaperValueJson, "id" | "display_kind" | "name" | "value" | "unit" | "pin" | "ref_low" | "ref_high"> & {
+/**
+ * One value row as its server parent resolved it: Java's strings as sent, its range line and its chip kind, and the
+ * bar's ends only beside a pin (ValueBar draws nothing without one).
+ */
+export type ValueRowFields = Pick<PaperValueJson, "id" | "display_kind" | "name" | "value" | "unit"> & {
   crop: CropJson;
   range: string;
   chip: ChipKind;
-};
+} & BarFields;
 
 /** What every row of one list shares, sent once: the paper, where a sheet goes back to, and the words in `lang`. */
 export type ValueRowsShared = {

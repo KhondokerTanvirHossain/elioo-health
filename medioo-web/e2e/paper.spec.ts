@@ -2,13 +2,13 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { t } from "../src/copy";
-import type { PaperResultJson, ValueSheetJson } from "../src/api/types";
+import type { MeJson, PaperResultJson, ValueSheetJson } from "../src/api/types";
 import { allRows, summaryRows } from "../src/components/Paper/rows";
 import { BANNER_ONLY_COOKIE } from "../src/components/safety/NowBanner/banner-only";
 import { basicSignInPath, signInPath } from "../src/routing/paths";
 import { useScenario, type CropRow, type Recorder } from "./support/browser-api";
 import { expectedWidth } from "./support/png.mjs";
-import { FIXTURES, PAPER_ID, SHEET_OBS, withStaleNowName } from "./support/scenarios.mjs";
+import { FIXTURES, PAPER_ID, SHEET_OBS, UNLISTED_PATIENT, withStaleNowName } from "./support/scenarios.mjs";
 import { cropRowsReport, imagesReport, screenChecks } from "./support/screen-checks";
 
 /*
@@ -163,6 +163,16 @@ test.describe("a paper that is gone", () => {
     await expect(page.locator(".toast__text")).toHaveText(t("bn", "doc.gone"));
   });
 
+  test("aRefusedTokenIsSaidInsideTheOpenSheet", async ({ page }) => {
+    // showModal makes everything outside the sheet inert, the toast included: the refusal is said inside the sheet.
+    await open(page, "paper-delete-refused");
+    await page.getByRole("button", { name: t("bn", "detail.delete") }).click();
+    await page.getByRole("button", { name: t("bn", "doc.delete.yes") }).click();
+    const said = page.locator("dialog[open]").getByRole("status");
+    await expect(said, "the refusal, inside the open sheet").toHaveText(t("bn", "app.err.generic"));
+    await expect(said).toBeVisible();
+  });
+
   test("aDeleteThatSucceedsLeavesThePaperGone", async ({ page }) => {
     const recorder = await open(page, "paper-routine");
     await page.getByRole("button", { name: t("bn", "detail.delete") }).click();
@@ -251,6 +261,30 @@ test.describe("one open is one read of the paper (Review Focus 4)", () => {
     }
   });
 
+  test("backFromASheetAfterAStaleSeenRestoresThePaperWithNoRead", async ({ page }) => {
+    // After the banner-only refresh the router's cache holds, for the paper's address, a main with nothing in it. A
+    // value's sheet and then back restores the paper from that cache: it must show the paper it showed, with no reload
+    // and no read (one open is one view), never a blank main or a load of its own.
+    const recorder = await open(page, withStaleNowName("paper-now-bd-sheet"), PAPER);
+    expect(await paperReads(recorder), "the open").toBe(1);
+    const refreshed = page.waitForRequest((r) => r.headers()["rsc"] === "1" && new URL(r.url()).pathname === PAPER);
+    await page.locator('section[role="alert"]').getByRole("button", { name: t("bn", "now.banner.seen") }).click();
+    await refreshed;
+    await page.waitForLoadState("networkidle");
+    expect((await recorder.java()).map((r) => r.path), "guard: the refresh reached Java").toContain("/app/api/now-banner");
+    expect(await paperReads(recorder), "guard: the banner-only refresh read no paper").toBe(1);
+    await page.evaluate(() => Object.assign(window, { __sameDocument: true }));
+    await page.locator("[data-value-row] a.value-row__open").first().click();
+    await page.locator("#value-sheet-title").waitFor();
+    await page.goBack();
+    await page.waitForURL((u) => u.pathname === PAPER);
+    await page.waitForLoadState("networkidle");
+    await page.waitForTimeout(1_000);
+    expect(await page.evaluate(() => "__sameDocument" in window), "back restored the paper without reloading the page").toBe(true);
+    await expect(page.locator("[data-now-block]"), "back shows the paper, not an empty main").toHaveCount(1);
+    expect(await paperReads(recorder), "back read the paper again").toBe(1);
+  });
+
   test("aNonPreviewFamilyOnAPreviewPaperCausesNoPaperRead", async ({ page }) => {
     const recorder = await useScenario(page, "paper-preview-off");
     const response = await page.goto(`/app/preview/documents/${PAPER_ID}`);
@@ -266,6 +300,64 @@ test.describe("one open is one read of the paper (Review Focus 4)", () => {
     expect(response?.status()).toBe(200);
     await expect(page.locator(".paper__back")).toHaveAttribute("href", `/app/preview/documents/${PAPER_ID}`);
     expect(await paperReads(recorder)).toBe(1);
+  });
+});
+
+test.describe("a banner-only marker the browser forged", () => {
+  // The marker is written by the page's own script, so anyone can write one. It skips the page's paper read, never the
+  // shell's checks: sign-in, the preview gate and whose paper it is are still decided from `me`, as on every render.
+  async function forge(page: Page, baseURL: string | undefined, path: string, patient: string | null) {
+    const value = encodeURIComponent(JSON.stringify({ path, patient }));
+    await page.context().addCookies([{ name: BANNER_ONLY_COOKIE, value, url: new URL("/app/", baseURL).toString() }]);
+  }
+  const PATIENT = doc("now-bd.json").patient.id;
+
+  test("aForgedMarkerOnAPreviewPaperForANonPreviewFamilyIsNotFoundAndReadsNoPaper", async ({ page, baseURL }) => {
+    const path = `/app/preview/documents/${PAPER_ID}`;
+    const recorder = await useScenario(page, "paper-preview-off");
+    await forge(page, baseURL, path, PATIENT);
+    const response = await page.goto(path);
+    expect(response?.status(), "a forged marker skipped the preview gate").toBe(404);
+    const java = await recorder.java();
+    expect(java.some((r) => r.path === "/app/api/me"), "the gate read me").toBe(true);
+    expect(java.filter((r) => r.path.startsWith("/app/api/documents/")).map((r) => `${r.method} ${r.path}`)).toEqual([]);
+  });
+
+  test("aForgedMarkerWithNoSessionStillGoesToSignIn", async ({ page, baseURL }) => {
+    await useScenario(page, "signed-out-paper");
+    await forge(page, baseURL, PAPER, PATIENT);
+    const answer = await page.request.get(PAPER, { maxRedirects: 0 });
+    expect(answer.status(), "a forged marker skipped sign-in").toBe(307);
+    expect(answer.headers()["location"]).toBe(signInPath(PAPER));
+  });
+
+  test("aForgedMarkerNamingAPatientOutsideTheFamilyIsNotFound", async ({ page, baseURL }) => {
+    await useScenario(page, "paper-now-bd");
+    await forge(page, baseURL, PAPER, UNLISTED_PATIENT);
+    const response = await page.goto(PAPER);
+    expect(response?.status(), "a forged marker named a patient this family does not see").toBe(404);
+  });
+});
+
+test.describe("whose paper (W6's `patient`, for PO sight)", () => {
+  test("aTwoPatientFamilyOpeningAPaperLinkSeesThePaperNotTheChooser", async ({ page }) => {
+    // Two patients and no remembered choice, the paper about the second: the paper names its own patient.
+    const me = body<MeJson>("me/two-patients.json");
+    expect(me.active_patient_id, "guard: no remembered choice").toBeNull();
+    const second = me.patients[1]!;
+    await open(page, "paper-two-no-choice");
+    await expect(page.locator(".patient-chooser"), "the chooser stood in for the paper").toHaveCount(0);
+    await expect(page.locator("[data-now-block]")).toBeVisible();
+    await expect(page.locator(".patient-switcher__label"), "the toolbar names the paper's patient").toHaveText(
+      t("bn", "switch.label", second.name),
+    );
+  });
+
+  test("aPaperAboutAPatientThisFamilyDoesNotSeeIsNotFound", async ({ page }) => {
+    const me = body<MeJson>("me/one-patient.json");
+    expect(me.patients.map((p) => p.id), "guard: me does not list the paper's patient").not.toContain(UNLISTED_PATIENT);
+    await useScenario(page, "paper-not-this-familys");
+    expect((await page.goto(PAPER))?.status(), "a paper about a patient outside the family was shown").toBe(404);
   });
 });
 
@@ -308,6 +400,16 @@ test.describe("without JavaScript (DR-42 item 1)", () => {
     await expect(page.locator("[data-value-row]")).toHaveCount(doc("fifty-eight-values-multipage.json").values.length);
     await open(page, "sheet-earlier-three", SHEET);
     await expect(page.locator("[data-value-row]")).toHaveCount(1 + sheetOf("earlier-three.json").earlier.length);
+  });
+
+  test("aPaperBeingReadMovesOnToItsResultWithoutJavaScript", async ({ page }) => {
+    // PO ruling P6: the 5 s reload is the no-JavaScript fallback (Java's reading page reloads itself without script).
+    // With JavaScript the poll asks the status instead, and oneOpenIsOneDocumentRead holds that nothing else reloads.
+    await open(page, "paper-processing");
+    await expect(page.locator("#progress")).toBeVisible();
+    await switchScenario(page, "paper-processing-done");
+    await expect(page.locator("[data-value-row]").first(), "the page moved on to the result by itself").toBeVisible({ timeout: 8_000 });
+    await expect(page.locator("#progress")).toHaveCount(0);
   });
 
   test("anExpiredSessionOnAPaperWithoutJavaScriptReachesTheFallback", async ({ page }) => {
