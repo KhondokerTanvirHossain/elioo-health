@@ -98,8 +98,13 @@
   font-weight: 600;
   cursor: pointer;
 }
-.composer__send:hover {
+.composer__send:hover:not(:disabled) {
   background: var(--hover);
+}
+/* While Java answers a question (Composer.tsx): one question at a time. */
+.composer__send:disabled {
+  color: var(--label2);
+  cursor: default;
 }
 .composer__camera:focus-visible,
 .composer__field:focus-visible,
