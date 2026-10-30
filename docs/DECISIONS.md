@@ -229,6 +229,8 @@ promises and the open medicines-in-explanation question are recorded in docs/MED
 
 ## DR-16 | 2026-09-19 | Medicines may appear in outbound explanations as verbatim transcription with crops, never as model-generated text
 
+> Web chat: superseded by DR-50 (2026-10-30) for "medicines remain out of the model prompt" and "what a medicine is for"; unchanged for explanations, nudges and WhatsApp.
+
 **Decision:** Medicines may appear in outbound explanations as verbatim transcription with crops, never as
 model-generated text; medicines remain out of the model prompt.
 
@@ -1429,8 +1431,8 @@ D34, the pending per-marker thresholds, the glossary) are **not** built here and
 
 **What code still enforces, on the final text the family is shown (CLAUDE.md: a limit is asserted on the thing sent):**
 - the emergency pre-check above (the D11 red-flag categories in Bangla, Banglish and English, matched on the normalised
-  question by stem, plus the existing `baymax.outbound.emergency-phrases` list, whole-token, as `UrgencyService` uses
-  it);
+  question by stem and by near rows; amended in the review of #164: the `baymax.outbound.emergency-phrases` document
+  words are not used, because "is this report urgent?" and "ভর্তির তারিখ" are routine questions);
 - the dose-change guard: the model's own words may not contain a start/stop/skip/change/half/double instruction (Bangla,
   Banglish, English); prescription lines reach the answer only as code-inserted verbatim copies of the stored line, and
   a question asking for a change gets the fixed ask-the-doctor line appended by code;
@@ -1463,3 +1465,16 @@ purpose = 'chat'` is reconciled against the Anthropic console's usage.
 
 **Built in:** `docs/superpowers/plans/2026-10-30-medioo-chat-answers.md`, PRs CHAT-api
 (`feat/baymax-chat-answers-api`) and CHAT-web (`feat/medioo-web-chat-answers`).
+
+**Amended in the review of #164 (2026-10-30), engineering, no scope change:** the first term lists matched only the
+phrasings written into their own corpus, so "Ma can stop Demoprol now", "Stop {{rx:1}} today" and "I think she is having
+a heart attack" all passed. Now: the dose-change guard fails closed on the model's own words (instruction and dose words
+anywhere; give/use/hold/timing words beside a medicine reference, the stored medicine's name and the `{{rx:n}}` line
+included), and the question side counts the drug's name as a medicine word; a paper's day and month are no longer free
+numbers (only a whole matching date); a sentence naming a fact may state only that fact's numbers; number words up to
+the hundreds and thousands, fraction signs, superscripts, dose amounts and numbers beside a prescription line are
+refused; "inside" needs an INSIDE verdict (a one-sided range is never inside); the emergency check runs on the whole
+question before its length and answers even when the turn cannot be stored. Both lists are guarded by corpora written
+from how families and the model phrase things, not from the lists. **Answers ship switched off**
+(`BAYMAX_CHAT_ENABLED` absent = false) until `ChatAnswerLiveTest` has run the five D11 questions against real Sonnet and
+CHAT-web asks the route; the emergency pre-check runs either way.
