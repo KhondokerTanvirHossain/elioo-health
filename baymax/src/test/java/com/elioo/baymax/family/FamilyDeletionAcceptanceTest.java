@@ -265,6 +265,11 @@ class FamilyDeletionAcceptanceTest {
         nowAck(f, p, docA);
         nowAck(member, p, docA);
         nowAck(f, gp, gDoc);
+        // Plan CHAT-api (V29, chat_turn), each a question an account holder typed: the family about its own patient, the
+        // share member about the same patient, and F about G's patient (shared with F above), which no patient of F's covers
+        chatTurn(f, p);
+        chatTurn(member, p);
+        chatTurn(f, gp);
 
         List<UUID> shares = new ArrayList<>();
         for (String id : column("select id from baymax.share_member where patient_id = '" + p + "'")) {
@@ -277,6 +282,12 @@ class FamilyDeletionAcceptanceTest {
     private static void nowAck(UUID viewer, UUID patient, UUID document) throws Exception {
         sql("insert into baymax.now_ack (family_id, patient_id, document_id, urgency, reasons_digest, release_state) values ('"
                 + viewer + "','" + patient + "','" + document + "','now',encode(sha256(convert_to('[]', 'UTF8')), 'hex'),'none')");
+    }
+
+    /** One answered চ্যাট turn, as PostgresChatTurnAdapter stores a completed one. */
+    private static void chatTurn(UUID asker, UUID patient) throws Exception {
+        sql("insert into baymax.chat_turn (family_id, patient_id, lang, question, answer, kind, counted, handler, model_calls, answered_at)"
+                + " values ('" + asker + "','" + patient + "','bn','প্রশ্ন','উত্তর','answer',true,'model',1,now())");
     }
 
     /** An HMAC-shaped key, unique per family, so two fixtures in one database never collide. */
@@ -302,7 +313,7 @@ class FamilyDeletionAcceptanceTest {
                 otherBefore = FamilySweep.rowsByColumn(c, targets, fx.other());
             }
             assertThat(otherBefore).as("the other family's ack on its own paper, by F, before the delete")
-                    .containsEntry("now_ack.patient_id", 1L);
+                    .containsEntry("now_ack.patient_id", 1L).containsEntry("chat_turn.patient_id", 1L);
 
             // admin storage self-test against the same bucket
             api.get().uri("/api/v1/baymax/admin/storage/selftest").header(AdminAuthFilter.HEADER, TOKEN)
@@ -336,6 +347,7 @@ class FamilyDeletionAcceptanceTest {
             }
             Map<String, Long> expected = new LinkedHashMap<>(otherBefore);
             expected.put("now_ack.patient_id", 0L);
+            expected.put("chat_turn.patient_id", 0L);
             assertThat(otherAfter).as("the other family, its patient, its paper and its other rows are intact").isEqualTo(expected);
             assertThat(otherAfter).containsEntry("family_account.id", 1L).containsEntry("patient_profile.id", 1L)
                     .containsEntry("document.patient_id", 1L);
