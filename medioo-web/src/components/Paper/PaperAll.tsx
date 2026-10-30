@@ -4,8 +4,8 @@ import type { PaperResultJson, PaperValueJson } from "@/api/types";
 import { DeletePaper } from "@/components/DeletePaper/DeletePaper";
 import { PageImage } from "@/components/PageImage/PageImage";
 import { VerdictCard } from "@/components/safety/VerdictCard/VerdictCard";
-import { FollowUpQuote, ValueRow } from "./PaperParts";
-import { DoctorLines, Medicines, paperHref, type PaperWords } from "./PaperSummary";
+import { FollowUpQuote, ValueRows } from "./PaperParts";
+import { DoctorLines, Medicines, paperHref, type PaperWords } from "./PaperShared";
 import { valueGroups } from "./rows";
 import { metaLine, patientLine, typeText } from "./paper-text";
 import "./Paper.css";
@@ -35,9 +35,7 @@ export function PaperAll({ paper, lang, preview, words }: { paper: PaperResultJs
       <div className="paper__section">
         <h3 className="paper__subheading">{t(lang, "detail.group.count", title, rows.length)}</h3>
         {why !== undefined && <p className="paper__why">{why}</p>}
-        {rows.map((v, i) => (
-          <ValueRow key={v.id ?? `row-${i}`} value={v} documentId={paper.id} lang={lang} preview={preview} from="all" />
-        ))}
+        <ValueRows values={rows} documentId={paper.id} lang={lang} preview={preview} from="all" />
       </div>
     );
   return (

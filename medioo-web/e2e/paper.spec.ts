@@ -4,10 +4,11 @@ import { expect, test, type Page } from "@playwright/test";
 import { t } from "../src/copy";
 import type { PaperResultJson, ValueSheetJson } from "../src/api/types";
 import { allRows, summaryRows } from "../src/components/Paper/rows";
+import { BANNER_ONLY_COOKIE } from "../src/components/safety/NowBanner/banner-only";
 import { basicSignInPath, signInPath } from "../src/routing/paths";
 import { useScenario, type CropRow, type Recorder } from "./support/browser-api";
 import { expectedWidth } from "./support/png.mjs";
-import { FIXTURES, PAPER_ID, SHEET_OBS } from "./support/scenarios.mjs";
+import { FIXTURES, PAPER_ID, SHEET_OBS, withStaleNowName } from "./support/scenarios.mjs";
 import { cropRowsReport, imagesReport, screenChecks } from "./support/screen-checks";
 
 /*
@@ -216,6 +217,38 @@ test.describe("one open is one read of the paper (Review Focus 4)", () => {
     expect(await paperReads(recorder), "the result, once").toBe(5);
     await page.waitForTimeout(6_000);
     expect(await paperReads(recorder), "and the poll stopped").toBe(5);
+  });
+
+  test("aStaleSeenKeepsThePaperAndReadsItNoMore", async ({ page }) => {
+    // A stale `now.banner.seen` tap (Java answers `show: true`) refreshes the banner only (banner-only.ts): no read of
+    // the paper or the sheet, the page still shows itself, the marker is gone once the refresh landed, and the next open
+    // reads again.
+    const READ = /^\/app\/api\/documents\//;
+    const reads = async (r: Recorder) => (await r.java()).filter((x) => x.method === "GET" && READ.test(x.path)).length;
+    const cases: Array<[string, string, string]> = [
+      [PAPER, "paper-now-bd", "[data-now-block]"],
+      [ALL, "paper-58", "#values"],
+      [SHEET, "sheet-earlier-three", "#value-sheet-title"],
+    ];
+    for (const [path, own, mark] of cases) {
+      const recorder = await open(page, withStaleNowName(own), path);
+      expect(await reads(recorder), `${path}: the open`).toBe(1);
+      const refreshed = page.waitForRequest((r) => r.headers()["rsc"] === "1" && new URL(r.url()).pathname === path);
+      const banner = page.locator('section[role="alert"]');
+      await banner.getByRole("button", { name: t("bn", "now.banner.seen") }).click();
+      await refreshed;
+      await page.waitForLoadState("networkidle");
+      // Guard: the refresh reached Java (it re-read the banner), or this saw no refresh at all.
+      expect((await recorder.java()).map((r) => r.path), `${path}: the banner re-read`).toContain("/app/api/now-banner");
+      expect(await reads(recorder), `${path}: read by the refresh`).toBe(1);
+      await expect(banner, `${path}: the stale banner stays`).toHaveCount(1);
+      await expect(page.locator(mark), `${path}: the page still shows itself`).toHaveCount(1);
+      const left = (await page.context().cookies()).filter((c) => c.name === BANNER_ONLY_COOKIE);
+      expect(left, `${path}: the marker served one refresh`).toEqual([]);
+      await page.reload();
+      await page.locator(mark).waitFor();
+      expect(await reads(recorder), `${path}: the next open reads it`).toBe(2);
+    }
   });
 
   test("aNonPreviewFamilyOnAPreviewPaperCausesNoPaperRead", async ({ page }) => {

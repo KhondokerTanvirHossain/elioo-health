@@ -7,7 +7,8 @@ import { isReadingPaper, type PaperJson, type PaperResultJson, type ValueSheetJs
 import { CHIP_KEY } from "@/components/StatusChip/StatusChip";
 import { MEDICINE_FIELDS } from "./PaperParts";
 import { PaperAll } from "./PaperAll";
-import { PaperSummary, type PaperWords } from "./PaperSummary";
+import { type PaperWords } from "./PaperShared";
+import { PaperSummary } from "./PaperSummary";
 import { allRows, summaryRows } from "./rows";
 import { ValueSheet } from "./ValueSheet";
 

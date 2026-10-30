@@ -2,36 +2,24 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { t, type CopyKey, type Lang } from "@/copy";
 import { isReadingPaper, type PaperJson, type PaperReadingJson, type PaperResultJson, type PaperValueJson } from "@/api/types";
-import { DeletePaper, type DeleteWords } from "@/components/DeletePaper/DeletePaper";
+import { DeletePaper } from "@/components/DeletePaper/DeletePaper";
 import { MessageBubble } from "@/components/MessageBubble/MessageBubble";
-import { PageImage, type ZoomWords } from "@/components/PageImage/PageImage";
+import { PageImage } from "@/components/PageImage/PageImage";
 import { ReadingProgress } from "@/components/ReadingProgress/ReadingProgress";
 import { NowBlock } from "@/components/safety/NowBlock/NowBlock";
 import { VerdictCard } from "@/components/safety/VerdictCard/VerdictCard";
 import { href, reachable } from "@/routing/paths";
-import { FollowUpQuote, MedicineRow, PaperQuote, ValueRow, type From } from "./PaperParts";
-import { metaLine, patientLine, sectionText, typeText } from "./paper-text";
+import { FollowUpQuote, PaperQuote, ValueRow, ValueRows, type From } from "./PaperParts";
+import { DoctorLines, Medicines, paperHref, unverified, type PaperWords } from "./PaperShared";
+import { metaLine, patientLine, typeText } from "./paper-text";
 import { drawsRowsAbove, valueGroups } from "./rows";
 import "./Paper.css";
 
-/** The island words a paper page resolves on the server (src/app/app/(signed-in)/documents/[id]/paper-words.ts). */
-export type PaperWords = { delete: DeleteWords; page: (n: number, label?: string) => ZoomWords };
-
 type Ctx = { lang: Lang; preview: boolean; words: PaperWords };
-
-/** The paper's own address, inside the preview on a preview page. */
-export function paperHref(id: string, preview: boolean, rest = ""): string {
-  return href(`/app/documents/${id}${rest}`, preview);
-}
 
 /** This patient's papers (Java's papers page until F8). */
 function papersHref(patientId: string, preview: boolean): string {
   return href("/app/timeline", preview) + `?patient=${encodeURIComponent(patientId)}`;
-}
-
-/** How many of a kind were read and not stored (DR-28: the stored V6 counts). */
-function unverified(paper: PaperResultJson, kind: "values" | "medicines" | "follow_up"): number {
-  return paper.unverified?.[kind] ?? 0;
 }
 
 function PageLinks({ paper, ctx, label }: { paper: PaperResultJson | PaperReadingJson; ctx: Ctx; label?: (n: number) => string }) {
@@ -54,36 +42,9 @@ function Group({ id, title, why, children }: { id: string; title: string; why?: 
   );
 }
 
-const rows = (values: PaperValueJson[], paper: PaperResultJson, ctx: Ctx, from: From) =>
-  values.map((v, i) => <ValueRow key={v.id ?? `row-${i}`} value={v} documentId={paper.id} lang={ctx.lang} preview={ctx.preview} from={from} />);
-
-/** The doctor's lines (every section Java sent, each quoted beside its crop), as DocumentPages.contextQuotes draws them. */
-export function DoctorLines({ paper, ctx }: { paper: PaperResultJson; ctx: { lang: Lang } }) {
-  return Object.entries(paper.doctor).map(([section, lines]) => (
-    <div key={section} className="paper__section">
-      <h3 className="paper__subheading">{sectionText(ctx.lang, section)}</h3>
-      {lines.map((l, i) => (
-        <PaperQuote key={i} text={l.text} crop={l.crop} documentId={paper.id} lang={ctx.lang} />
-      ))}
-    </div>
-  ));
-}
-
-/** The medicines section (DocumentPages.medicinesSection): the pharmacy notice once, then each medicine crop first. */
-export function Medicines({ paper, ctx }: { paper: PaperResultJson; ctx: { lang: Lang } }) {
-  const missing = unverified(paper, "medicines");
-  if (paper.medicines.length === 0 && missing === 0) return null;
-  return (
-    <section id="medicines" className="paper__group">
-      <h2 className="paper__heading">{t(ctx.lang, "med.title")}</h2>
-      {paper.medicines.length > 0 && <p className="paper__note">{t(ctx.lang, "med.pharmacy")}</p>}
-      {missing > 0 && <p className="paper__note">{t(ctx.lang, "med.unverified", missing)}</p>}
-      {paper.medicines.map((m, i) => (
-        <MedicineRow key={i} medicine={m} documentId={paper.id} lang={ctx.lang} />
-      ))}
-    </section>
-  );
-}
+const rows = (values: PaperValueJson[], paper: PaperResultJson, ctx: Ctx, from: From) => (
+  <ValueRows values={values} documentId={paper.id} lang={ctx.lang} preview={ctx.preview} from={from} />
+);
 
 /** The head every paper page shares: back to this patient's papers, whose paper it is, its title and its meta line. */
 function Head({ paper, ctx, title, meta }: { paper: PaperJson; ctx: Ctx; title: string; meta?: string }) {
@@ -348,17 +309,3 @@ export function PaperSummary({ paper, lang, preview, words }: { paper: PaperJson
   );
 }
 
-/** A paper that is no longer here (deleted, or never this family's): `doc.gone`, and the way back to the papers. */
-export function PaperGone({ lang, preview, deleted }: { lang: Lang; preview: boolean; deleted: boolean }) {
-  return (
-    <article className="paper" data-gone>
-      <section className="paper__card">
-        <h1 className="paper__title">{t(lang, "doc.gone")}</h1>
-        {deleted && <p className="paper__line">{t(lang, "doc.deleted")}</p>}
-        <a className="paper__action" href={href("/app/timeline", preview)}>
-          {t(lang, "app.back.papers")}
-        </a>
-      </section>
-    </article>
-  );
-}

@@ -2,7 +2,7 @@ import "server-only";
 import { t, type Lang } from "@/copy";
 import type { DeleteWords } from "@/components/DeletePaper/DeletePaper";
 import type { ZoomWords } from "@/components/PageImage/PageImage";
-import type { PaperWords } from "@/components/Paper/PaperSummary";
+import type { PaperWords } from "@/components/Paper/PaperShared";
 
 /*
  * The paper's island words, resolved on the server (plan W6): the delete and the page zoom are client islands, which
