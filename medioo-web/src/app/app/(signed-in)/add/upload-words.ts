@@ -17,6 +17,8 @@ export type UploadPatientWords = { id: string; label: string; sending: string };
 export type UploadWords = {
   /** add.title, the sheet's heading. */
   title: string;
+  /** sheet.close, the header's link back to the page that opened the sheet. */
+  close: string;
   /** add.who, the chips' legend. */
   who: string;
   patients: UploadPatientWords[];
@@ -69,6 +71,7 @@ export function uploadWords(lang: Lang, options: UploadOptionsJson): UploadWords
   }
   return {
     title: t(lang, "add.title"),
+    close: t(lang, "sheet.close"),
     who: t(lang, "add.who"),
     patients: options.can_send.map((p) => ({
       id: p.id,
