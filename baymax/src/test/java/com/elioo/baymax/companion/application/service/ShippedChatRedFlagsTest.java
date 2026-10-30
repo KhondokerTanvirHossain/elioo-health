@@ -2,9 +2,14 @@ package com.elioo.baymax.companion.application.service;
 
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Properties;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -57,6 +62,43 @@ class ShippedChatRedFlagsTest {
             if (banglish == 0) wrong.add(name + ": no Banglish phrase");
             if (english == 0) wrong.add(name + ": no English phrase");
         }
+        assertThat(wrong).isEmpty();
+    }
+
+    /**
+     * Review of #164 (findings 2, 10, 13): the recall corpus, sentences written from how families type an emergency and a
+     * routine question, never derived from the phrase file, so a phrase the file lacks is a named failure here. Both
+     * directions, at least twenty rows per script, every row reported by itself.
+     */
+    @Test
+    void aFamilysEmergencySentencesFireAndItsRoutineQuestionsDoNot() throws IOException {
+        RedFlagMatcher matcher = new RedFlagMatcher(RedFlagMatcher.load(RedFlagMatcher.RESOURCE));
+        Map<String, Integer> perScript = new LinkedHashMap<>();
+        Map<String, Integer> perGroup = new LinkedHashMap<>();
+        List<String> wrong = new ArrayList<>();
+        try (InputStream in = ShippedChatRedFlagsTest.class.getResourceAsStream("/chat/red-flag-corpus.tsv")) {
+            assertThat(in).as("the red-flag corpus").isNotNull();
+            String[] lines = new String(in.readAllBytes(), StandardCharsets.UTF_8).split("\n");
+            for (int i = 0; i < lines.length; i++) {
+                String l = lines[i];
+                if (l.isBlank() || l.startsWith("#")) {
+                    continue;
+                }
+                String[] cols = l.split("\t", 3);
+                assertThat(cols).as("line " + (i + 1) + " has three tab-separated columns").hasSize(3);
+                perScript.merge(cols[0], 1, Integer::sum);
+                perGroup.merge(cols[0] + "/" + cols[1], 1, Integer::sum);
+                Optional<String> got = matcher.match(cols[2]);
+                if ("flag".equals(cols[1]) && got.isEmpty()) {
+                    wrong.add("row " + (i + 1) + ": expected an emergency (" + cols[0] + "): " + cols[2]);
+                } else if ("pass".equals(cols[1]) && got.isPresent()) {
+                    wrong.add("row " + (i + 1) + ": expected no emergency (" + cols[0] + "), got " + got.get() + ": " + cols[2]);
+                }
+            }
+        }
+        assertThat(perScript.keySet()).containsExactlyInAnyOrder("bn", "banglish", "en");
+        perScript.forEach((script, n) -> assertThat(n).as("rows in " + script).isGreaterThanOrEqualTo(20));
+        assertThat(perGroup.keySet()).as("both directions in every script").hasSize(6);
         assertThat(wrong).isEmpty();
     }
 
