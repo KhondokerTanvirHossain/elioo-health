@@ -12,6 +12,7 @@ import {
   messagesOnly,
   reRead,
   signedOut,
+  withAsks,
   withNowName,
 } from "./scenarios.mjs";
 
@@ -213,6 +214,15 @@ describe("the scenario table is Java's", () => {
     const messages = messagesOnly("thread/default.json").body as { items: { kind: string }[] };
     expect(messages.items.length, "default.json holds messages").toBeGreaterThan(0);
     expect(messages.items.every((i) => i.kind === "message")).toBe(true);
+    // withAsks (plan CHAT-web): only a fixture Java read with asks=1, the thread read without the query included.
+    expect(() => withAsks("thread/default.json")).toThrow('thread/default.json was written for "GET /app/api/patients/{id}/thread over');
+    const asked = withAsks("thread/with-asks.json");
+    expect(asked.byQuery).toEqual([{ when: { asks: "1" }, answer: "thread/with-asks.json" }]);
+    // Without asks=1, Java lists every item but the asks, words unchanged.
+    const all = (firstBody("thread/with-asks.json") as { items: { kind: string }[] }).items;
+    const without = (asked.otherwise as { body: { items: { kind: string }[] } }).body.items;
+    expect(all.filter((i) => i.kind === "ask").length, "with-asks holds asks").toBeGreaterThan(0);
+    expect(without, "the same page without its asks").toEqual(all.filter((i) => i.kind !== "ask"));
   });
 
   it("everySignedInPageHasANowTwin", () => {
