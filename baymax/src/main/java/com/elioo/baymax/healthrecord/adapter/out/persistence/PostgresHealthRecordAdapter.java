@@ -166,6 +166,11 @@ public class PostgresHealthRecordAdapter implements HealthRecordPort {
                 // document and family_account (no cascade, so a forgotten row fails the delete loudly)
                 .flatMap(c -> add(c, "now_ack", "DELETE FROM " + S + ".now_ack WHERE family_id = :family"
                         + " OR patient_id IN " + patientsOf, "family", familyId))
+                // chat_turn (V29, plan CHAT-api): every question this account holder asked, about any patient it sees (a share
+                // member's questions about another family's patient included), and every one anyone asked about this family's
+                // patients; before patient_profile and family_account (no cascade, so a forgotten row fails the delete loudly)
+                .flatMap(c -> add(c, "chat_turn", "DELETE FROM " + S + ".chat_turn WHERE family_id = :family"
+                        + " OR patient_id IN " + patientsOf, "family", familyId))
                 .flatMap(c -> add(c, "document", "DELETE FROM " + S + ".document WHERE family_id = :family", "family", familyId))
                 .flatMap(c -> add(c, "web_session", "DELETE FROM " + S + ".web_session WHERE family_id = :family", "family", familyId))
                 .flatMap(c -> add(c, "otp_code", "DELETE FROM " + S + ".otp_code WHERE family_id = :family", "family", familyId))
@@ -197,6 +202,8 @@ public class PostgresHealthRecordAdapter implements HealthRecordPort {
                 .flatMap(c -> add(c, "stored_object", "DELETE FROM " + S + ".stored_object WHERE patient_id = :patient", "patient", patientId))
                 // now_ack (plan B3): every দেখেছি on this patient's papers, whoever tapped; the family's own taps elsewhere stay
                 .flatMap(c -> add(c, "now_ack", "DELETE FROM " + S + ".now_ack WHERE patient_id = :patient", "patient", patientId))
+                // chat_turn (V29): every question about this patient, whoever asked; the family's questions about others stay
+                .flatMap(c -> add(c, "chat_turn", "DELETE FROM " + S + ".chat_turn WHERE patient_id = :patient", "patient", patientId))
                 .flatMap(c -> add(c, "document", "DELETE FROM " + S + ".document WHERE patient_id = :patient", "patient", patientId))
                 .flatMap(c -> add(c, "patient_profile", "DELETE FROM " + S + ".patient_profile WHERE id = :patient", "patient", patientId));
     }
