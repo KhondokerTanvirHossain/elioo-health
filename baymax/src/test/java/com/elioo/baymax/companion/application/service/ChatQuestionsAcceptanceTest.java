@@ -74,7 +74,7 @@ class ChatQuestionsAcceptanceTest {
 
     private ReactiveWebApplicationContextRunner runner(StubModel stub) {
         return PostgresNudgeAdapterTest.runnerFor(POSTGRES)
-                .withPropertyValues("baymax.wa.enabled=false", "baymax.nudge.enabled=false",
+                .withPropertyValues("baymax.wa.enabled=false", "baymax.nudge.enabled=false", "baymax.chat.enabled=true",
                         "baymax.llm.prices.anthropic.[claude-sonnet-5].input=2.00",
                         "baymax.llm.prices.anthropic.[claude-sonnet-5].output=10.00")
                 .withBean(ChatModelConfiguration.CHAT_CLIENT, BaymaxModelClient.class, () -> new BaymaxModelClient(stub));

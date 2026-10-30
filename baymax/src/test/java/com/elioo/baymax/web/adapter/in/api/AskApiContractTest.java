@@ -82,7 +82,7 @@ class AskApiContractTest {
 
     static ReactiveWebApplicationContextRunner runner(String... extra) {
         return FixedPapers.runnerAt(POSTGRES, NOW)
-                .withPropertyValues("baymax.llm.prices.anthropic.[claude-sonnet-5].input=2.00",
+                .withPropertyValues("baymax.chat.enabled=true", "baymax.llm.prices.anthropic.[claude-sonnet-5].input=2.00",
                         "baymax.llm.prices.anthropic.[claude-sonnet-5].output=10.00")
                 .withPropertyValues(extra)
                 .withBean(ChatModelConfiguration.CHAT_CLIENT, BaymaxModelClient.class, () -> new BaymaxModelClient(new StubModel()));

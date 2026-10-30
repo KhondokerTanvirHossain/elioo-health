@@ -492,8 +492,12 @@ public class BaymaxProperties {
      */
     @Data
     public static class Chat {
-        /** Off: every question but an emergency gets {@code chat.ask.reply}; the emergency pre-check runs regardless. */
-        private boolean enabled = true;
+        /**
+         * Off: every question but an emergency gets {@code chat.ask.reply}; the emergency pre-check runs regardless. Off by
+         * default until a real Sonnet answer has been measured through the code checks ({@code ChatAnswerLiveTest}) and the
+         * web asks the route (CHAT-web): review of #164, finding 21.
+         */
+        private boolean enabled = false;
         /** Counted questions per asking account per day ({@link #zone}); emergency turns are never counted. */
         private int dailyCap = 50;
         private String zone = "Asia/Dhaka";
