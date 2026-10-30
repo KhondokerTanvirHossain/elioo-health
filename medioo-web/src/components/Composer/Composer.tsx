@@ -13,11 +13,11 @@ import "./Composer.css";
  * - `field`: the field's name (`chat.field`);
  * - `send`: the send button (`add.send`);
  * - `standing`: the line under the bar as the server renders it, without JavaScript, where there is no field
- *   (`chat.ask.nojs`: how to ask);
- * - `hint`: that line once JavaScript runs and the field is there (`chat.ask.hint`: answers come only from the papers);
+ *   (`chat.composer.nojs`: how to ask);
+ * - `hint`: that line once JavaScript runs and the field is there (`chat.composer.hint`: answers come only from the papers);
  * - `reply`: what Medioo says when no answer came (a refusal, a dead network, the timeout): `chat.ask.reply`, then
  *   `safety.red_flag_line` appended by code, as WhatsApp appends it to `wa.fallback`;
- * - `pending`: the bubble while Java answers (`chat.ask.pending`, the patient's possessive in it);
+ * - `pending`: the bubble while Java answers (`chat.composer.pending`, the patient's possessive in it);
  * - `call999`: the tel:999 link's words under an emergency answer, when Java says `call_999` (`now.call999`);
  * - `camera`: the owner's camera link (`chat.camera`).
  */
@@ -87,6 +87,14 @@ export function Composer({
   const inFlight = useRef(false);
   const nextId = useRef(0);
   useEffect(() => setReady(true), []);
+  // The docked composer keeps its own place just after the newest exchange (home.css, OpenAtNewest): when an exchange is
+  // drawn (the pending bubble) and when it is answered, the window goes to the page's end, so Medioo's bubble, an
+  // emergency answer and its 999 call above all, is in view and never left under the bar. Only on a change the family's
+  // own press made: nothing moves on mount, where OpenAtNewest decides.
+  useEffect(() => {
+    if (exchanges.length === 0) return;
+    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" });
+  }, [exchanges]);
 
   async function ask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

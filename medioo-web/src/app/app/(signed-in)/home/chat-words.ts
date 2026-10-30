@@ -19,10 +19,10 @@ export function composerWords(lang: Lang, possessive: string): ComposerWords {
   return {
     field: t(lang, "chat.field"),
     send: t(lang, "add.send"),
-    standing: t(lang, "chat.ask.nojs"),
-    hint: t(lang, "chat.ask.hint"),
+    standing: t(lang, "chat.composer.nojs"),
+    hint: t(lang, "chat.composer.hint"),
     reply: t(lang, "chat.ask.reply") + "\n" + t(lang, "safety.red_flag_line"),
-    pending: t(lang, "chat.ask.pending", possessive),
+    pending: t(lang, "chat.composer.pending", possessive),
     call999: call999Words(lang),
     camera: t(lang, "chat.camera"),
   };

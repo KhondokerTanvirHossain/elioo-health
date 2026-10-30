@@ -76,7 +76,7 @@ const seenButton = (page: Page) => alert(page).getByRole("button", { name: t("bn
 async function ask(page: Page, question: string): Promise<string> {
   await page.locator(".composer__field").fill(question);
   await page.getByRole("button", { name: t("bn", "add.send") }).click();
-  const pending = t("bn", "chat.ask.pending", ONE.patients[0]!.name_possessive);
+  const pending = t("bn", "chat.composer.pending", ONE.patients[0]!.name_possessive);
   const bubble = page.locator(".composer__lines .message-bubble--recv .message-bubble__body").last();
   await expect.poll(async () => ((await bubble.count()) === 0 ? pending : await bubble.textContent()), { message: "Medioo answered" }).not.toBe(pending);
   return (await bubble.textContent()) ?? "";
@@ -411,6 +411,26 @@ test.describe("the thread and the composer", () => {
     ]);
   });
 
+  test("theAnswerIsInViewAboveTheComposer", async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== "phone", "the phone's one column, where the docked composer lies over the thread");
+    // The emergency answer is the one that must be read at once: once drawn, its foot (and its 999 call) is inside the
+    // window and not under the docked composer, without the family scrolling (the board showed it under the bar).
+    const home = answerOf<AskJson>("chat-ask-emergency", "POST /app/api/patients/{id}/ask");
+    await open(page, "chat-ask-emergency");
+    await ask(page, home.question);
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    const where = await page.evaluate(() => {
+      const rect = (el: Element | null) => (el ? el.getBoundingClientRect().toJSON() : null);
+      return {
+        answer: rect(document.querySelector(".composer__lines .ask-answer:last-of-type")) as DOMRect | null,
+        composer: rect(document.querySelector(".chat > .composer")) as DOMRect | null,
+      };
+    });
+    expect(where.answer && where.composer, "both laid out").toBeTruthy();
+    expect(where.answer!.bottom, "the answer's foot is in the window").toBeGreaterThan(0);
+    expect(where.answer!.bottom, "and not under the composer").toBeLessThanOrEqual(where.composer!.top + 1);
+  });
+
   test("anEmergencyAbroadHasNoTelLink", async ({ page }) => {
     const abroad = answerOf<AskJson>("chat-ask-emergency-abroad", "POST /app/api/patients/{id}/ask");
     expect([abroad.kind, abroad.call_999]).toEqual(["emergency", false]);
@@ -491,7 +511,7 @@ test.describe("without JavaScript", () => {
     await expect(page.getByRole("button", { name: t("bn", "now.banner.seen") }), "no seen button without JavaScript").toHaveCount(0);
     // And the composer is no form that could post the typed text anywhere.
     expect(await page.locator("form").count()).toBe(0);
-    await expect(page.locator(".composer__standing")).toHaveText(t("bn", "chat.ask.nojs"));
+    await expect(page.locator(".composer__standing")).toHaveText(t("bn", "chat.composer.nojs"));
   });
 
   test("withoutJavaScriptThereIsNoFieldAndTheLineSaysHow", async ({ page }) => {
@@ -500,7 +520,7 @@ test.describe("without JavaScript", () => {
     const recorder = await open(page, "chat-with-asks");
     expect(await page.locator("input").count(), "inputs").toBe(0);
     expect(await page.locator("form").count(), "forms").toBe(0);
-    await expect(page.locator(".composer__standing")).toHaveText(t("bn", "chat.ask.nojs"));
+    await expect(page.locator(".composer__standing")).toHaveText(t("bn", "chat.composer.nojs"));
     const stored = answerOf<ThreadJson>("chat-with-asks", "GET /app/api/patients/{id}/thread").items.find((i) => i.kind === "ask");
     expect(stored?.kind, "with-asks holds an ask").toBe("ask");
     if (stored?.kind !== "ask") return;
