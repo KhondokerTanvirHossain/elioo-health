@@ -687,7 +687,7 @@ respected (test it through `FreeTierUseCase`, not `countInMonth`).
 "আম্মার বুকে ব্যথা", and "ok thanks" after a NOW. The answers are the same on both channels, sources are tappable,
 and the emergency reply arrives within 2 s. `ai_call_log` shows no `chat` rows.
 
-**Entry (all required):** **D11 signed by a clinician and the PO** (package below); D24 decided (`sendImage` vs a
+**Entry (all required):** **D11 signed by a clinician and the PO** (web chat: superseded by DR-50) (package below); D24 decided (`sendImage` vs a
 ruling that a link satisfies HC3 on WhatsApp); D40 (the HC4 reading for CHAT, URGENCY_NOTICE and EMERGENCY kinds);
 D18 only if the "সাহায্য" reply promises a person. Otherwise the help reply states no time and no person (principle 16).
 

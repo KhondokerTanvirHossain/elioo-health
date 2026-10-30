@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
  * rest. The model never sees them; nothing here is composed. {@link #verify} is the assertion the PO asked
  * for: every stored medicine string is in the body character for character, or the message fails closed.
  */
-final class MedicineTranscription {
+public final class MedicineTranscription {
 
     static final List<String> FIELDS = List.of("name", "dose_text", "frequency_text", "timing_text", "duration_text");
     static final String SEPARATOR = " · ";
@@ -56,7 +56,7 @@ final class MedicineTranscription {
      * hold it, otherwise the fields joined verbatim. One definition, so the block and the splitter can never
      * disagree about what a medicine line is.
      */
-    static String line(Map<String, Object> m) {
+    public static String line(Map<String, Object> m) {
         String whole = text(m.get("instruction_text"));
         if (!whole.isEmpty()) {
             String name = text(m.get("name"));
@@ -77,7 +77,7 @@ final class MedicineTranscription {
      * closed the way the digit and phrase checks do — an abbreviated dosing instruction is a safety defect,
      * not a formatting one.
      */
-    static List<String> elided(List<Map<String, Object>> medicines) {
+    public static List<String> elided(List<Map<String, Object>> medicines) {
         List<String> found = new ArrayList<>();
         for (Map<String, Object> m : medicines) {
             for (String f : List.of("name", "dose_text", "frequency_text", "timing_text",

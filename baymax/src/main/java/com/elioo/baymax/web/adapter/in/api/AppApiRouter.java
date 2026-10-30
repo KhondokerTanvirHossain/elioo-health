@@ -36,6 +36,7 @@ public class AppApiRouter {
                                                              AttentionApiHandler attention, PatientTimelineApiHandler timeline,
                                                              PreferencesApiHandler preferences,
                                                              ThreadApiHandler thread,
+                                                             AskApiHandler ask,
                                                              AppApiGuard guard) {
         return RouterFunctions.route()
                 .GET(BASE + "/me", me::me)
@@ -74,6 +75,8 @@ public class AppApiRouter {
                 .PUT(BASE + "/preferences", preferences::preferences)
                 .GET(BASE + "/patients/{id}/labs", health::labs)
                 .GET(BASE + "/patients/{id}/medicines", health::medicines)
+                // plan CHAT-api (PO ruling P7, DR-50): a question about one patient, answered from the patient's own papers
+                .POST(BASE + "/patients/{id}/ask", ask::ask)
                 .route(RequestPredicates.path(BASE + "/**"), request -> ApiReason.NOT_FOUND.respond())
                 .filter(guard)
                 .build();

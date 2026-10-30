@@ -221,13 +221,7 @@ public class UrgencyService {
 
     /** Whole-token match against the config phrases, both scripts; "urgently" is a token, "surgent" is not. */
     boolean containsEmergencyPhrase(String text) {
-        String hay = " " + text.toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}\\p{M}\\p{N}]+", " ") + " ";
-        for (String phrase : properties.getOutbound().getEmergencyPhrases()) {
-            if (hay.contains(" " + phrase.toLowerCase(Locale.ROOT).trim() + " ")) {
-                return true;
-            }
-        }
-        return false;
+        return com.elioo.baymax.outbound.domain.EmergencyPhrases.contains(text, properties.getOutbound().getEmergencyPhrases());
     }
 
 

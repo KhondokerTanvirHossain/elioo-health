@@ -36,6 +36,7 @@ public class BaymaxProperties {
     private Outbound outbound = new Outbound();
     private Nudge nudge = new Nudge();
     private Recovery recovery = new Recovery();
+    private Chat chat = new Chat();
     private List<Marker> markers = new ArrayList<>();
 
     @Data
@@ -481,6 +482,37 @@ public class BaymaxProperties {
          * recovering three values when it had simply failed the confidence gate and never been cropped.</p>
          */
         private boolean recoverCropsFromImage = true;
+    }
+
+    /**
+     * The web চ্যাট's answers (DR-50, plan CHAT-api). The model id lives in application.properties only
+     * ({@code BAYMAX_CHAT_MODEL}); blank here, so a context without it has no chat client and every question gets the
+     * fixed reply. {@code ChatPropertiesCheck} refuses a cap below one, an answer cap the fixed lines cannot fit, and a
+     * model with no price.
+     */
+    @Data
+    public static class Chat {
+        /**
+         * Off: every question but an emergency gets {@code chat.ask.reply}; the emergency pre-check runs regardless. Off by
+         * default until a real Sonnet answer has been measured through the code checks ({@code ChatAnswerLiveTest}) and the
+         * web asks the route (CHAT-web): review of #164, finding 21.
+         */
+        private boolean enabled = false;
+        /** Counted questions per asking account per day ({@link #zone}); emergency turns are never counted. */
+        private int dailyCap = 50;
+        private String zone = "Asia/Dhaka";
+        private String model = "";
+        private String effort = "low";
+        private int maxOutputTokens = 2048;
+        /** The whole assembled answer, the appended lines included. */
+        private int maxAnswerChars = 1200;
+        /** {@code ChatContext.estimateTokens} of the fact lines; older readings are dropped first above it. */
+        private int contextMaxTokens = 6000;
+        private int questionMaxChars = 1000;
+        /** One model call. */
+        private Duration modelTimeout = Duration.ofSeconds(20);
+        /** Both calls of one question together (the web gives up at fifty seconds). */
+        private Duration answerDeadline = Duration.ofSeconds(45);
     }
 
     /** A chronic marker the pipeline recognises by any of its aliases. Config, not code. */
