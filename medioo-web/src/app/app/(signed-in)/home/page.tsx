@@ -15,12 +15,15 @@ import "./home.css";
 
 type Reads = { attention: AttentionJson; thread: ThreadJson };
 
-/** The patient's attention stack and thread, read in parallel through javaGet (GET only, the cookie only). */
+/**
+ * The patient's attention stack and thread, read in parallel through javaGet (GET only, the cookie only). The thread is
+ * read with `asks=1` (plan CHAT-web): the questions asked here and the answers shown, so an answer survives a reload.
+ */
 async function reads(patient: MePatient, here: string): Promise<Reads> {
   const id = encodeURIComponent(patient.id);
   const [attention, thread] = await Promise.all([
     javaGet<AttentionJson>(`/app/api/patients/${id}/attention`),
-    javaGet<ThreadJson>(`/app/api/patients/${id}/thread`),
+    javaGet<ThreadJson>(`/app/api/patients/${id}/thread?asks=1`),
   ]);
   return { attention: signedIn(attention, here), thread: signedIn(thread, here) };
 }
@@ -92,7 +95,7 @@ export default async function HomePage() {
               </a>
             </p>
           )}
-          <Composer words={composerWords(lang)} owner={patient.owner} patientId={patient.id} preview={preview} />
+          <Composer words={composerWords(lang, patient.name_possessive)} owner={patient.owner} patientId={patient.id} preview={preview} />
           <OpenAtNewest hold={nowOnPage} />
         </div>
       );

@@ -81,6 +81,15 @@ import threadNow from "../../fixtures/api/thread/now.json";
 import threadRetake from "../../fixtures/api/thread/retake.json";
 import threadSecondPage from "../../fixtures/api/thread/second-page.json";
 import threadShareMember from "../../fixtures/api/thread/share-member.json";
+import threadWithAsks from "../../fixtures/api/thread/with-asks.json";
+// CHAT-api's generated POST /app/api/patients/{id}/ask answers (baymax AskApiContractTest), read by plan CHAT-web.
+import askAnswerDose from "../../fixtures/api/ask/answer-dose.json";
+import askAnswer from "../../fixtures/api/ask/answer.json";
+import askDeclined from "../../fixtures/api/ask/declined.json";
+import askEmergencyAbroad from "../../fixtures/api/ask/emergency-abroad.json";
+import askEmergency from "../../fixtures/api/ask/emergency.json";
+import askFallback from "../../fixtures/api/ask/fallback.json";
+import askLimit from "../../fixtures/api/ask/limit.json";
 // Each family scenario's `me`, read by FamilyApiContractTest from the same seeded family as its family body (W10 review).
 import meFamilyLongNameShared from "../../fixtures/api/me/family-long-name-shared.json";
 import meFamilyLongName from "../../fixtures/api/me/family-long-name.json";
@@ -95,6 +104,7 @@ import familyOwner from "../../fixtures/api/family/owner.json";
 import familyRemindersOff from "../../fixtures/api/family/reminders-off.json";
 import familyShareMember from "../../fixtures/api/family/share-member.json";
 import {
+  ASK_KINDS,
   ATTENTION_KINDS,
   BANNER_LEVELS,
   MESSAGE_KINDS,
@@ -105,6 +115,7 @@ import {
   REMINDER_STATES,
   SIDES,
   URGENCIES,
+  type AskJson,
   type AttentionJson,
   type FamilyAccountJson,
   type FamilyJson,
@@ -840,6 +851,7 @@ const THREADS: Record<string, Json<ThreadJson>> = {
   "retake.json": threadRetake.body,
   "second-page.json": threadSecondPage.body,
   "share-member.json": threadShareMember.body,
+  "with-asks.json": threadWithAsks.body,
 };
 const ATTENTION: Record<string, Json<AttentionJson>> = {
   "empty.json": attentionEmpty.body,
@@ -848,13 +860,47 @@ const ATTENTION: Record<string, Json<AttentionJson>> = {
 };
 const THREAD_MESSAGE_KEYS = ["at", "body", "document_id", "kind", "message_kind"];
 const THREAD_PAPER_KEYS = ["at", "card", "kind"];
+const THREAD_ASK_KEYS = ["answer", "answer_kind", "at", "call_999", "kind", "question", "turn_id"];
 // ATTENTION_KEYS is the papers page's, above: one key list per kind, typed against AttentionJson.
 
+/*
+ * POST /app/api/patients/{id}/ask (CHAT-api), posted by the composer (plan CHAT-web): every committed answer is assigned
+ * to AskJson (the compile-time half) and its keys and kind pinned here (the run-time half); the directory is read.
+ */
+const ASKS: Record<string, { status: number; body: Json<AskJson> }> = {
+  "answer-dose.json": askAnswerDose,
+  "answer.json": askAnswer,
+  "declined.json": askDeclined,
+  "emergency-abroad.json": askEmergencyAbroad,
+  "emergency.json": askEmergency,
+  "fallback.json": askFallback,
+  "limit.json": askLimit,
+};
+const ASK_KEYS = ["answer", "at", "call_999", "kind", "question", "turn_id"];
+
 describe("the chat page's bodies", () => {
+  it("everyAskFixtureIsAnAskJson", () => {
+    expect(readdirSync(join(fixtures, "ask")).filter((f) => f.endsWith(".json")).sort()).toEqual(Object.keys(ASKS).sort());
+    const kinds = new Set<string>();
+    for (const [file, { status, body }] of Object.entries(ASKS)) {
+      expect(status, file).toBe(200);
+      expect(keys(body), file).toEqual(ASK_KEYS);
+      expect(ASK_KINDS as readonly string[], `${file} kind`).toContain(body.kind);
+      expect(body.answer.trim(), `${file}: an answer to show`).not.toBe("");
+      kinds.add(body.kind);
+    }
+    // Guard: every kind Java answers with is among the fixtures, so each one was seen by the composer's tests.
+    expect([...kinds].sort(), "every ask kind").toEqual([...ASK_KINDS].sort());
+    // And 999 both ways: an emergency in Bangladesh offers it, one abroad does not.
+    expect(ASKS["emergency.json"]!.body.call_999).toBe(true);
+    expect(ASKS["emergency-abroad.json"]!.body.call_999).toBe(false);
+  });
+
   it("everyThreadFixtureIsAThreadJson", () => {
     expect(readdirSync(join(fixtures, "thread")).filter((f) => f.endsWith(".json")).sort()).toEqual(Object.keys(THREADS).sort());
     const kinds = new Set<string>();
     let papers = 0;
+    let asks = 0;
     for (const [file, thread] of Object.entries(THREADS)) {
       expect(keys(thread), file).toEqual(["items", "next_cursor"]);
       for (const item of thread.items) {
@@ -863,6 +909,10 @@ describe("the chat page's bodies", () => {
           const kind = (item as { message_kind: string }).message_kind;
           expect(MESSAGE_KINDS as readonly string[], `${file} message_kind`).toContain(kind);
           kinds.add(kind);
+        } else if (item.kind === "ask") {
+          expect(keys(item), file).toEqual(THREAD_ASK_KEYS);
+          expect(ASK_KINDS as readonly string[], `${file} answer_kind`).toContain((item as { answer_kind: string }).answer_kind);
+          asks++;
         } else {
           expect(item.kind, file).toBe("paper");
           expect(keys(item), file).toEqual(THREAD_PAPER_KEYS);
@@ -872,8 +922,9 @@ describe("the chat page's bodies", () => {
         }
       }
     }
-    // Guards: papers were walked, and the failure notice (V23) is among the kinds the fixtures carry.
+    // Guards: papers and asks were walked, and the failure notice (V23) is among the kinds the fixtures carry.
     expect(papers).toBeGreaterThan(0);
+    expect(asks, "ask items walked").toBeGreaterThan(0);
     expect([...kinds]).toEqual(expect.arrayContaining(["failure", "nudge", "detail", "retake"]));
   });
 

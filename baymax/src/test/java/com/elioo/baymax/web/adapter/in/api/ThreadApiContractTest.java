@@ -69,12 +69,12 @@ class ThreadApiContractTest {
     static final Path WRITTEN = Path.of("build/web-contract/thread");
     static final List<String> CASES = List.of("default", "now", "now-abroad", "retake", "failed", "first-run", "share-member", "second-page");
     /**
-     * Plan CHAT-api: the thread read with {@code ?asks=1}, in an area of its own. The web deployed today walks every file of
-     * {@code fixtures/api/thread/} as a thread it can draw, and an ask item is a kind it does not know yet; PR CHAT-web
-     * moves it beside the others when the web reads asks.
+     * Plan CHAT-api: the thread read with {@code ?asks=1}. CHAT-api kept it in an area of its own while the deployed web
+     * walked every file of {@code fixtures/api/thread/} as a thread it could draw and knew no ask item; plan CHAT-web's web
+     * reads asks and draws them, so the case sits beside the others, in the same area.
      */
-    static final Path COMMITTED_ASKS = Path.of("../medioo-web/fixtures/api/thread-asks");
-    static final Path WRITTEN_ASKS = Path.of("build/web-contract/thread-asks");
+    static final Path COMMITTED_ASKS = COMMITTED;
+    static final Path WRITTEN_ASKS = WRITTEN;
     static final List<String> ASK_CASES = List.of("with-asks");
     /** The keys a delivery, a review or a model leaves on a row, none of which the browser may receive. */
     static final Set<String> NEVER_SENT = Set.of("wamid", "delivery_status", "reviewer", "reject_reason", "gate_status", "confidence",
@@ -464,22 +464,17 @@ class ThreadApiContractTest {
             WebTestClient client = WebTestClient.bindToApplicationContext(context).build();
             for (String name : ASK_CASES) {
                 Seeded s = seed(context, "fixture-thread-" + name, name);
-                AttentionApiContractTest.write(ThreadApiContractTest.class, COMMITTED_ASKS, WRITTEN_ASKS, "thread-asks", name,
+                AttentionApiContractTest.write(ThreadApiContractTest.class, COMMITTED_ASKS, WRITTEN_ASKS, "thread", name,
                         "GET /app/api/patients/{id}/thread?asks=1 over the case " + name, answer(client, s, name));
             }
         });
     }
 
-    @Test
-    void everyCommittedAsksFixtureIsACurrentCase() throws IOException {
-        assertThat(AttentionApiContractTest.committed(COMMITTED_ASKS))
-                .containsExactlyInAnyOrderElementsOf(ASK_CASES.stream().map(n -> n + ".json").toList());
-    }
-
+    /** One area for both: every committed file is a current case, read without asks or with them (plan CHAT-web). */
     @Test
     void everyCommittedFixtureIsACurrentCase() throws IOException {
         assertThat(AttentionApiContractTest.committed(COMMITTED))
-                .containsExactlyInAnyOrderElementsOf(CASES.stream().map(n -> n + ".json").toList());
+                .containsExactlyInAnyOrderElementsOf(Stream.concat(CASES.stream(), ASK_CASES.stream()).map(n -> n + ".json").toList());
     }
 
     /**
