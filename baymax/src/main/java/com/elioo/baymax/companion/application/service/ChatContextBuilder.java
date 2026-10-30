@@ -34,7 +34,9 @@ import java.util.UUID;
  * <p>Under {@code baymax.chat.context-max-tokens} ({@link ChatContext#estimateTokens} of all lines): the oldest reading
  * of the longest series is dropped first, again and again. The prescription block and every series' newest reading are
  * never dropped that way; if they alone are over the cap, series are dropped whole, the oldest series first, and the
- * context says {@code truncated}. The closed set of numbers is built from the kept fields only.
+ * context says {@code truncated}. The closed set of numbers is built from the kept fields only: each value, its printed
+ * range and its paper's year. A paper's day and month are not free numbers; the checks accept them only inside a whole date
+ * matching a kept paper's (review of #164, findings 4, 11, 17).
  */
 @Component
 @RequiredArgsConstructor
@@ -45,8 +47,29 @@ public class ChatContextBuilder {
     private final HealthUseCase health;
     private final BaymaxProperties properties;
 
-    /** One reading as a line, the numbers it allows, and its paper. */
-    private record Fact(String line, Set<String> numbers, UUID documentId) {
+    /** One reading as a line, the numbers it allows, its paper, its date, and the record the checks bind numbers to. */
+    private record Fact(String line, Set<String> numbers, UUID documentId, LocalDate date, List<ChatContext.Fact> records) {
+    }
+
+    /**
+     * The latest prescription's medicine names, as words in normal form: what the question side of the dose-change guard
+     * counts as a medicine reference before any context is built (zero model calls). Empty with no prescription.
+     */
+    public Mono<Set<String>> medicineNames(UUID familyId, UUID patientId) {
+        return health.medicines(familyId, patientId).map(ChatContextBuilder::namesOf);
+    }
+
+    /** The names of a prescription's medicines whose line is shown; the same rule {@link #assemble} keeps lines by. */
+    static Set<String> namesOf(LatestPrescription rx) {
+        Set<String> names = new LinkedHashSet<>();
+        if (rx.found()) {
+            for (Map<String, Object> m : rx.medicines()) {
+                if (!MedicineTranscription.line(m).isEmpty() && MedicineTranscription.elided(List.of(m)).isEmpty()) {
+                    names.addAll(ChatContext.namesIn(m.get("name") == null ? "" : String.valueOf(m.get("name"))));
+                }
+            }
+        }
+        return names;
     }
 
     public Mono<ChatContext> build(UUID familyId, UUID patientId, String patientName) {
@@ -83,9 +106,10 @@ public class ChatContextBuilder {
         List<String> rxLines = new ArrayList<>();
         List<String> verbatim = new ArrayList<>();
         Set<String> rxNumbers = new LinkedHashSet<>();
+        Set<String> names = new LinkedHashSet<>();
         if (rx.found()) {
             rxLines.add("PRESCRIPTION " + (rx.date() == null ? "undated" : rx.date()));
-            rxNumbers.addAll(AnswerCheck.dateNumbers(rx.date()));
+            rxNumbers.addAll(AnswerCheck.yearOf(rx.date()));
             for (Map<String, Object> m : rx.medicines()) {
                 String line = MedicineTranscription.line(m);
                 // an abbreviated dosing line never reaches a family (DR-16); the model is not told of it either
@@ -94,6 +118,7 @@ public class ChatContextBuilder {
                 }
                 verbatim.add(line);
                 rxLines.add("{{rx:" + verbatim.size() + "}} = " + line);
+                names.addAll(ChatContext.namesIn(m.get("name") == null ? "" : String.valueOf(m.get("name"))));
             }
         }
 
@@ -124,10 +149,16 @@ public class ChatContextBuilder {
         lines.add(head);
         Set<String> numbers = new LinkedHashSet<>();
         Set<UUID> documents = new LinkedHashSet<>();
+        List<ChatContext.Fact> records = new ArrayList<>();
+        Set<LocalDate> dates = new LinkedHashSet<>();
         for (List<Fact> s : series) {
             for (Fact f : s) {
                 lines.add(f.line());
                 numbers.addAll(f.numbers());
+                records.addAll(f.records());
+                if (f.date() != null) {
+                    dates.add(f.date());
+                }
                 if (f.documentId() != null) {
                     documents.add(f.documentId());
                 }
@@ -135,13 +166,16 @@ public class ChatContextBuilder {
         }
         lines.addAll(rxLines);
         numbers.addAll(rxNumbers);
+        if (rx.found() && rx.date() != null) {
+            dates.add(rx.date());
+        }
         if (rx.found() && !verbatim.isEmpty()) {
             documents.add(rx.documentId());
         }
         if (dropped > 0) {
             lines.add(notShown(dropped));
         }
-        return new ChatContext(lines, numbers, verbatim, new ArrayList<>(documents), truncated);
+        return new ChatContext(lines, numbers, verbatim, new ArrayList<>(documents), truncated, records, dates, names);
     }
 
     private static int tokens(String head, List<List<Fact>> series, List<String> rxLines, int dropped) {
@@ -163,12 +197,13 @@ public class ChatContextBuilder {
         String rangeText = range == null || range.text() == null ? "none" : range.text();
         String line = "VALUE " + name + ": " + value + (unit == null || unit.isBlank() ? "" : " " + unit)
                 + " | printed range " + rangeText + " | " + verdict + " | paper " + (date == null ? "undated" : date);
-        Set<String> numbers = new LinkedHashSet<>(AnswerCheck.numbersIn(value));
+        Set<String> held = new LinkedHashSet<>(AnswerCheck.numbersIn(value));
         if (range != null) {
-            numbers.addAll(AnswerCheck.numbersIn(range.text()));
+            held.addAll(AnswerCheck.numbersIn(range.text()));
         }
-        numbers.addAll(AnswerCheck.dateNumbers(date));
-        return new Fact(line, numbers, document);
+        Set<String> numbers = new LinkedHashSet<>(held);
+        numbers.addAll(AnswerCheck.yearOf(date));
+        return new Fact(line, numbers, document, date, List.of(new ChatContext.Fact(name, unit, held, verdict)));
     }
 
     private static Fact bloodPressure(LabSeries.BpPoint p) {
@@ -178,12 +213,15 @@ public class ChatContextBuilder {
         String dr = p.diastolic().range() == null || p.diastolic().range().text() == null ? "none" : p.diastolic().range().text();
         String line = "VALUE " + BP_NAME + ": " + s + "/" + d + " | printed range " + sr + " / " + dr + " | "
                 + verdict(p.systolic()) + " / " + verdict(p.diastolic()) + " | paper " + (p.date() == null ? "undated" : p.date());
-        Set<String> numbers = new LinkedHashSet<>(AnswerCheck.numbersIn(s));
-        numbers.addAll(AnswerCheck.numbersIn(d));
-        numbers.addAll(AnswerCheck.numbersIn(p.systolic().range() == null ? null : p.systolic().range().text()));
-        numbers.addAll(AnswerCheck.numbersIn(p.diastolic().range() == null ? null : p.diastolic().range().text()));
-        numbers.addAll(AnswerCheck.dateNumbers(p.date()));
-        return new Fact(line, numbers, p.documentId());
+        Set<String> systolic = new LinkedHashSet<>(AnswerCheck.numbersIn(s));
+        systolic.addAll(AnswerCheck.numbersIn(p.systolic().range() == null ? null : p.systolic().range().text()));
+        Set<String> diastolic = new LinkedHashSet<>(AnswerCheck.numbersIn(d));
+        diastolic.addAll(AnswerCheck.numbersIn(p.diastolic().range() == null ? null : p.diastolic().range().text()));
+        Set<String> numbers = new LinkedHashSet<>(systolic);
+        numbers.addAll(diastolic);
+        numbers.addAll(AnswerCheck.yearOf(p.date()));
+        return new Fact(line, numbers, p.documentId(), p.date(), List.of(new ChatContext.Fact(BP_NAME, "", systolic, verdict(p.systolic())),
+                new ChatContext.Fact(BP_NAME, "", diastolic, verdict(p.diastolic()))));
     }
 
     /** The point's drawn kind as the paper page shows it; a critical reading is outside, its side as stored. */

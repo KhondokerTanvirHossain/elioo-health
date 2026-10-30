@@ -24,6 +24,7 @@ class DoseChangeGuardTest {
 
     static final String RX1 = "Tab. Demoprol 5 mg · 1+0+0 · খাবারের পরে";
     static final String RX2 = "Tab. Demoprol 5 mg · ১+০+০ · খাবারের পরে খাবেন · ৩০ দিন";
+    static final java.time.LocalDate RX_DATE = java.time.LocalDate.parse("2026-09-20");
 
     record Row(int line, String side, String expect, String text) {
     }
@@ -56,12 +57,14 @@ class DoseChangeGuardTest {
         assertThat(groups.keySet()).containsExactlyInAnyOrder("answer/flag", "answer/pass", "question/flag", "question/pass");
         groups.forEach((group, n) -> assertThat(n).as("rows in " + group).isGreaterThanOrEqualTo(20));
 
-        ChatContext ctx = new ChatContext(List.of(), Set.of(), List.of(RX1, RX2), List.of(), false);
+        // the prescription's date, so a row may name it whole; the medicine's name, as the builder reads it from the line
+        ChatContext ctx = new ChatContext(List.of(), AnswerCheck.yearOf(RX_DATE), List.of(RX1, RX2), List.of(), false, List.of(),
+                Set.of(RX_DATE), ChatContext.namesIn("Tab. Demoprol"));
         List<String> wrong = new ArrayList<>();
         for (Row r : rows) {
             boolean flagged = switch (r.side()) {
                 case "answer" -> AnswerCheck.violations(r.text(), ctx).stream().anyMatch(v -> v.startsWith("dose_change:"));
-                case "question" -> DoseChangeGuard.asksForChange(r.text());
+                case "question" -> DoseChangeGuard.asksForChange(r.text(), ctx.medicineNames());
                 default -> throw new AssertionError("row " + r.line() + ": unknown side " + r.side());
             };
             if (flagged != "flag".equals(r.expect())) {
@@ -75,5 +78,9 @@ class DoseChangeGuardTest {
     void anInstructionIsReportedByItsTerm() {
         assertThat(DoseChangeGuard.instructs("অর্ধেক করে খান")).contains("dose_change:অর্ধেক", "dose_change:খান");
         assertThat(DoseChangeGuard.instructs("Demoprol is generally used for blood pressure.")).isEmpty();
+        assertThat(DoseChangeGuard.instructs("Give her Demoprol only in the morning.", Set.of("demoprol")))
+                .as("a word harmless alone, beside a stored medicine's name").contains("dose_change:give+medicine");
+        assertThat(DoseChangeGuard.instructs("I can't give a reliable answer to this right now.", Set.of("demoprol")))
+                .as("the same word with no medicine in the sentence").isEmpty();
     }
 }

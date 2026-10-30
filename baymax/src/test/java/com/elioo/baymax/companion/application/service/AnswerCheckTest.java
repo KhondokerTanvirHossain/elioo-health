@@ -32,7 +32,7 @@ class AnswerCheckTest {
     void aDecimalIsOneNumberNotTwo() {
         ChatContext ctx = numbers("1.8", "0.7", "1.3");
         assertThat(AnswerCheck.violations("Ma-র ক্রিয়েটিনিন 1.8", ctx)).isEmpty();
-        assertThat(AnswerCheck.violations("8 mg", ctx)).isEqualTo(List.of("number_not_on_paper:8"));
+        assertThat(AnswerCheck.violations("Ma-র ক্রিয়েটিনিন 8", ctx)).isEqualTo(List.of("number_not_on_paper:8"));
     }
 
     @Test
@@ -47,10 +47,12 @@ class AnswerCheckTest {
 
     @Test
     void aDateOnThePaperIsAllowed() {
-        ChatContext ctx = new ChatContext(List.of(), Set.copyOf(AnswerCheck.dateNumbers(java.time.LocalDate.parse("2026-09-12"))), List.of(),
-                List.of(), false);
+        java.time.LocalDate paper = java.time.LocalDate.parse("2026-09-12");
+        ChatContext ctx = new ChatContext(List.of(), AnswerCheck.yearOf(paper), List.of(), List.of(), false, List.of(), Set.of(paper), Set.of());
         assertThat(AnswerCheck.violations("কাগজটা ১২ সেপ্টেম্বর ২০২৬ তারিখের", ctx)).isEmpty();
         assertThat(AnswerCheck.violations("কাগজটা ১৩ সেপ্টেম্বর ২০২৬ তারিখের", ctx)).isEqualTo(List.of("number_not_on_paper:13"));
+        assertThat(AnswerCheck.violations("Ma-র ক্রিয়েটিনিন ১২", ctx)).as("the day alone is not a value")
+                .isEqualTo(List.of("number_not_on_paper:12"));
     }
 
     @Test
@@ -66,7 +68,8 @@ class AnswerCheckTest {
         ChatContext ctx = new ChatContext(List.of(), Set.of(), List.of("Tab. Demoprol 5 mg · 1+0+0 · খাবারের পরে খাবেন"), List.of(), false);
         assertThat(AnswerCheck.violations("শেষ প্রেসক্রিপশনে লেখা: {{rx:1}}", ctx)).isEmpty();
         assertThat(AnswerCheck.violations("শেষ প্রেসক্রিপশনে লেখা: Tab. Demoprol 5 mg · 1+0+0 · খাবারের পরে খাবেন", ctx))
-                .as("the same line retyped by the model is the model's text").contains("number_not_on_paper:5", "dose_change:খাবেন");
+                .as("the same line retyped by the model is the model's text")
+                .contains("number_not_on_paper:5", "dose_change:amount", "dose_change:খাবেন");
     }
 
     @Test

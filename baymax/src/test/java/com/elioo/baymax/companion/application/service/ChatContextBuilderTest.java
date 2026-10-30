@@ -86,7 +86,9 @@ class ChatContextBuilderTest {
         ChatContext ctx = builder(6000).build(FAMILY, ASKED, "Ma").block();
 
         assertThat(values(ctx)).containsExactly("1.8");
-        assertThat(ctx.numbers()).contains("1.8", "0.7", "1.3", "2026", "9", "12").doesNotContain("7.77");
+        assertThat(ctx.numbers()).contains("1.8", "0.7", "1.3", "2026").doesNotContain("7.77")
+                .as("a paper's day and month are not free numbers (review of #164)").doesNotContain("9", "12");
+        assertThat(ctx.dates()).containsExactly(LocalDate.parse("2026-09-12"));
         assertThat(ctx.documentIds()).containsExactly(mine);
         assertThat(ctx.factLines().get(0)).isEqualTo("PATIENT Ma");
     }

@@ -27,15 +27,20 @@ public final class ChatPrompt {
                 1. Answer in %2$s. Begin by naming the patient, %1$s.
                 2. Use only the FACTS. When the FACTS do not show what is asked, say that the papers do not show it.
                 3. You may explain a medicine in one sentence as what it is generally used for. To show what the \
-                prescription says, write its {{rx:n}} token exactly as it appears in the FACTS; never retype a \
-                prescription line and never write a dose.
-                4. Never mention taking, starting, stopping, skipping, continuing or changing a medicine or a dose, not \
-                even to refuse: code adds the line about asking the doctor.
-                5. Write no number that is not in the FACTS (a value, a printed range or a paper's date), and no number \
-                words. Never repeat a number from the QUESTION that the FACTS do not hold.
-                6. No reassurance: never "normal", "fine", "nothing to worry", "স্বাভাবিক", "ভালো আছে", "চিন্তার কিছু \
-                নেই". Say only whether a value is inside or outside the range printed on its paper. Do not diagnose the \
-                patient and do not explain what a value means beyond its printed range.
+                prescription says, write its {{rx:n}} token exactly as it appears in the FACTS, in a sentence of its \
+                own with no number and no time of day; never retype a prescription line and never write a dose, an \
+                amount or a count of tablets.
+                4. Never write a word about taking, giving, using, starting, stopping, holding, skipping, continuing, \
+                keeping or changing a medicine or a dose (take, give, stop, start, keep, skip, avoid, খান, দিন, নিন, \
+                বন্ধ, উচিত, লাগবে না), not even to refuse: code adds the line about asking the doctor.
+                5. Write no number that is not in the FACTS (a value or a printed range), in digits only and never as a \
+                word (not even "one" or "একটা"). Write a paper's date only whole, as in "12 September 2026". When you \
+                state a value, write its name as the FACTS write it. Never repeat a number from the QUESTION that the \
+                FACTS do not hold.
+                6. No reassurance: never "normal", "fine", "ok", "all good", "nothing serious", "স্বাভাবিক", "ভালো \
+                আছে", "ঠিক আছে", "চিন্তার কিছু নেই". For a value, state only the verdict the FACTS give it: INSIDE or \
+                OUTSIDE its printed range; for UNKNOWN, say the paper's range cannot be compared, and never call it \
+                inside. Do not diagnose the patient and do not explain what a value means beyond its printed range.
                 7. Do not add a disclaimer, an emergency line or advice to see a doctor: code appends them.
                 8. At most %3$d characters. Plain text, no markdown, no headings, no bullet symbols.
                 """.formatted(patientName, language, bodyChars);
