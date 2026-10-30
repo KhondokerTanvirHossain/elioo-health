@@ -14,6 +14,7 @@ import twoPatients from "../../../../fixtures/api/now-banner/two-patients.json";
 import catalogNames from "../../../../fixtures/catalog/names.json";
 import { signInPath } from "@/routing/paths";
 import { NowBanner } from "./NowBanner";
+import { BANNER_ONLY_COOKIE, holdOnBannerRefresh } from "./banner-only";
 import { NowBannerHold } from "./NowBannerHold";
 import { NowBannerSeen } from "./NowBannerSeen";
 
@@ -329,6 +330,40 @@ describe("NowBanner", () => {
     fireEvent.click(alertOf(hidden.container).querySelector("button")!);
     await waitFor(() => expect(hidden.container.querySelectorAll('[role="alert"]').length).toBe(0));
     expect(router.refresh, "a hidden banner needs no re-read").toHaveBeenCalledTimes(1);
+  });
+
+  it("aStaleTapOnAHeldPageRefreshesBannerOnly", async () => {
+    // A paper page holds itself (KeptOnBannerRefresh, banner-only.ts): the marker naming it is written before the
+    // refresh, so the page reads no paper (one open, one DOCUMENT_VIEW), and cleared once the refresh has landed. A page
+    // that holds nothing refreshes with no marker, re-reading everything as before.
+    const marker = () => document.cookie.split("; ").find((c) => c.startsWith(`${BANNER_ONLY_COOKIE}=`)) ?? null;
+    const atRefresh: Array<string | null> = [];
+    router.refresh.mockImplementation(() => atRefresh.push(marker()));
+    const path = "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003";
+    // The marker is a cookie under /app: the document is at the paper's address, as on the paper page.
+    window.history.replaceState(null, "", path);
+    try {
+      const page = { path, patient: "5e9edf6d-0a2a-4913-8675-9d07a4100002" };
+      const release = holdOnBannerRefresh(page);
+      vi.stubGlobal("fetch", vi.fn(async () => answer(200, twoPatients.body)));
+      const held = live(one.body, patientsOf(one.body, [names.short]), "en");
+      fireEvent.click(alertOf(held.container).querySelector("button")!);
+      await waitFor(() => expect(router.refresh).toHaveBeenCalledTimes(1));
+      expect(atRefresh[0], "the marker is on the refresh").toBe(`${BANNER_ONLY_COOKIE}=${encodeURIComponent(JSON.stringify(page))}`);
+      await waitFor(() => expect(marker(), "the marker serves one refresh").toBeNull());
+      release();
+      cleanup();
+      vi.unstubAllGlobals();
+
+      vi.stubGlobal("fetch", vi.fn(async () => answer(200, twoPatients.body)));
+      const plain = live(one.body, patientsOf(one.body, [names.short]), "en");
+      fireEvent.click(alertOf(plain.container).querySelector("button")!);
+      await waitFor(() => expect(router.refresh).toHaveBeenCalledTimes(2));
+      expect(atRefresh[1], "a page that holds nothing gets no marker").toBeNull();
+    } finally {
+      router.refresh.mockReset();
+      window.history.replaceState(null, "", "/");
+    }
   });
 
   it("aRefusalKeepsTheBannerAndSaysSo", async () => {

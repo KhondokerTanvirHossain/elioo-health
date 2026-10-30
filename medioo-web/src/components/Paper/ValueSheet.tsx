@@ -4,7 +4,7 @@ import type { EarlierReadingJson, ValueSheetJson } from "@/api/types";
 import { Crop } from "@/components/Crop/Crop";
 import { StatusChip, chipKindOf } from "@/components/StatusChip/StatusChip";
 import { ValueBar, cropWords, sheetHref, type From } from "./PaperParts";
-import { paperHref } from "./PaperSummary";
+import { paperHref } from "./PaperShared";
 import { paperDateText, rangeText, typeText } from "./paper-text";
 import "./Paper.css";
 
