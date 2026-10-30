@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test, type Page } from "@playwright/test";
+import { MAX_CHECKS, RELOAD_SECONDS, waitBefore } from "../src/api/reading-check";
 import { t } from "../src/copy";
 import { useScenario } from "./support/browser-api";
 import { pngFor } from "./support/png.mjs";
@@ -32,6 +33,8 @@ type Scene = {
   };
   /** What to do on the page before the picture (type a number, press a button). */
   act?: (page: Page) => Promise<void>;
+  /** Before the page is opened: the page's clock, made Playwright's, so `act` can move the page's time (PO ruling P6). */
+  clock?: boolean;
   /** The widths to take it at, when not the phone and desktop pair (the shell: 390, 1024 and 1440, plan W4). */
   viewports?: Record<string, { width: number; height: number }>;
   /** "catalog": the page exists only in the catalog build (/app/shell-test), served on the catalog server. */
@@ -420,6 +423,38 @@ BOARD_SCENES.push(
   papers("flags-set", "papers-flags-set"),
 );
 
+// The papers page's quiet check (PO ruling P6), its own board: two papers being read with JavaScript on (no reload, an
+// empty live region); the same page re-rendered in place once Java has read them (the region says so, unseen); and the
+// check stopped after its cap, offering the plain link to this page.
+const refresh = (state: string, act?: (page: Page) => Promise<void>): Scene => ({
+  screen: "papers-refresh",
+  state,
+  route: "/app/timeline",
+  scenario: "papers-in-flight",
+  proto: { file: "phone.html", scene: "papers" },
+  clock: true,
+  act,
+});
+BOARD_SCENES.push(
+  refresh("being-read"),
+  refresh("read-in-place", async (page) => {
+    const url = new URL(page.url());
+    await page.context().addCookies([{ name: "e2e_scenario", value: "papers-settled", domain: url.hostname, path: "/app" }]);
+    await page.clock.fastForward(RELOAD_SECONDS * 1000);
+    await page.locator(".papers [role='status']").filter({ hasText: t("bn", "status.DONE") }).waitFor({ state: "attached" });
+    await page.locator(".month-list", { hasNotText: t("bn", "timeline.reading") }).waitFor();
+  }),
+  refresh("checks-stopped", async (page) => {
+    const again = page.getByRole("link", { name: t("bn", "attn.reading.action") });
+    for (let i = 0; i < MAX_CHECKS && (await again.count()) === 0; i++) {
+      await page.clock.fastForward(waitBefore(i));
+      // Each check's answers land before the next wait is moved through.
+      await page.waitForTimeout(150);
+    }
+    await again.waitFor();
+  }),
+);
+
 const VIEWPORTS = { phone: { width: 390, height: 844 }, desktop: { width: 1280, height: 800 } } as const;
 // The catalog build's server (playwright.config.ts starts it on the port after the production one).
 const CATALOG_URL = process.env.E2E_CATALOG_URL ?? `http://127.0.0.1:${Number(process.env.E2E_PORT ?? 3217) + 1}`;
@@ -434,6 +469,7 @@ for (const scene of BOARD_SCENES) {
         await page.setViewportSize(viewport);
         await page.emulateMedia({ colorScheme });
         await useScenario(page, scene.scenario);
+        if (scene.clock) await page.clock.install();
         await page.goto(scene.build === "catalog" ? new URL(scene.route, CATALOG_URL).href : scene.route);
         await page.evaluate(() => document.fonts.ready.then(() => undefined));
         if (scene.act) await scene.act(page);

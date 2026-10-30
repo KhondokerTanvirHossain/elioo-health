@@ -1,0 +1,10 @@
+{
+  "_meta": {
+    "generated_by": "baymax PatientTimelineApiContractTest",
+    "source": "GET /app/api/documents/{id}/status over the in-flight case's processing paper"
+  },
+  "body": {
+    "status": "PROCESSING"
+  },
+  "status": 200
+}

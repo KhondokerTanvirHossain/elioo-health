@@ -1,0 +1,127 @@
+{
+  "_meta": {
+    "generated_by": "baymax PatientTimelineApiContractTest",
+    "source": "GET /app/api/patients/{id}/timeline over the case in-flight-half"
+  },
+  "body": {
+    "entries": [
+      {
+        "chip": null,
+        "counts": {
+          "follow_ups": 0,
+          "medicines": 0,
+          "outside": 0,
+          "unverified": 0,
+          "values": 1
+        },
+        "date": "2026-10-21",
+        "date_is_upload_day": true,
+        "date_uncertain": false,
+        "document_id": "e00ffe64-4136-37ae-8521-c9c3eaa31029",
+        "document_type": "lab_report",
+        "facility": "Shapla Diagnostics",
+        "month": "2026-10",
+        "page_one": {
+          "src": "/app/documents/e00ffe64-4136-37ae-8521-c9c3eaa31029/page/1"
+        },
+        "retake_reason_key": null,
+        "review_pending": false,
+        "status": "DONE"
+      },
+      {
+        "chip": null,
+        "counts": {
+          "follow_ups": 0,
+          "medicines": 0,
+          "outside": 0,
+          "unverified": 0,
+          "values": 0
+        },
+        "date": "2026-10-21",
+        "date_is_upload_day": true,
+        "date_uncertain": false,
+        "document_id": "2a4900af-f128-3272-8999-600b11a88769",
+        "document_type": null,
+        "facility": "Shapla Diagnostics",
+        "month": "2026-10",
+        "page_one": {
+          "src": "/app/documents/2a4900af-f128-3272-8999-600b11a88769/page/1"
+        },
+        "retake_reason_key": null,
+        "review_pending": false,
+        "status": "RECEIVED"
+      },
+      {
+        "chip": "now",
+        "counts": {
+          "follow_ups": 0,
+          "medicines": 0,
+          "outside": 2,
+          "unverified": 0,
+          "values": 3
+        },
+        "date": "2026-10-19",
+        "date_is_upload_day": false,
+        "date_uncertain": false,
+        "document_id": "e084f103-940f-3a8a-8c4e-a8fb4258c127",
+        "document_type": "lab_report",
+        "facility": "Shapla Diagnostics",
+        "month": "2026-10",
+        "page_one": {
+          "src": "/app/documents/e084f103-940f-3a8a-8c4e-a8fb4258c127/page/1"
+        },
+        "retake_reason_key": null,
+        "review_pending": true,
+        "status": "DONE"
+      },
+      {
+        "chip": null,
+        "counts": {
+          "follow_ups": 0,
+          "medicines": 2,
+          "outside": 0,
+          "unverified": 0,
+          "values": 0
+        },
+        "date": "2026-10-18",
+        "date_is_upload_day": false,
+        "date_uncertain": false,
+        "document_id": "3c0aa1ae-d2ed-38df-96b3-c25dfff318c4",
+        "document_type": "prescription",
+        "facility": "Shapla Diagnostics",
+        "month": "2026-10",
+        "page_one": {
+          "src": "/app/documents/3c0aa1ae-d2ed-38df-96b3-c25dfff318c4/page/1"
+        },
+        "retake_reason_key": null,
+        "review_pending": false,
+        "status": "DONE"
+      },
+      {
+        "chip": null,
+        "counts": {
+          "follow_ups": 0,
+          "medicines": 0,
+          "outside": 0,
+          "unverified": 0,
+          "values": 1
+        },
+        "date": "2026-10-15",
+        "date_is_upload_day": true,
+        "date_uncertain": false,
+        "document_id": "91af8d7e-dda7-3270-bd26-31a23d26dfa9",
+        "document_type": "lab_report",
+        "facility": "Shapla Diagnostics",
+        "month": "2026-10",
+        "page_one": {
+          "src": "/app/documents/91af8d7e-dda7-3270-bd26-31a23d26dfa9/page/1"
+        },
+        "retake_reason_key": null,
+        "review_pending": false,
+        "status": "DONE"
+      }
+    ],
+    "next_cursor": null
+  },
+  "status": 200
+}

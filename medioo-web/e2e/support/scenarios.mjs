@@ -97,7 +97,8 @@ export function cursorOf(fixture) {
 /**
  * The papers page's four reads (plan W8): the timeline for its query (`?type=lab`, `?type=rx`, the first page's
  * cursor), the calendar for its month (September for the previous-month link; Java's own month otherwise), the
- * doctor's dates, and the attention stack.
+ * doctor's dates, and the attention stack; and, for a page with a paper being read, the status its quiet check polls
+ * (PO ruling P6, `GET /app/api/documents/{id}/status`, answered to the browser from Java's own fixture).
  */
 const papers = ({
   me = "me/one-patient.json",
@@ -107,6 +108,7 @@ const papers = ({
   follows = "follow-ups/some.json",
   attention = "attention/now-only.json",
   rx = "timeline/rx-only.json",
+  status,
 }) => ({
   ...NO_NOW,
   "GET /app/api/me": me,
@@ -124,7 +126,30 @@ const papers = ({
   },
   "GET /app/api/patients/{id}/follow-ups": follows,
   "GET /app/api/patients/{id}/attention": attention,
+  ...(status ? { "GET /app/api/documents/{id}/status": status } : {}),
 });
+
+/**
+ * The status poll answered per paper (`GET /app/api/documents/{id}/status`): the fixture `byId` names for the paper the
+ * path asks about, `otherwise` for any other. Each is a file Java's contract test wrote for that route, never a body
+ * written here.
+ */
+function statusById(byId, otherwise) {
+  const route = "GET /app/api/documents/{id}/status";
+  const read = (fixture) => {
+    const parsed = javaWrote(fixture, route);
+    return { status: parsed.status, body: parsed.body };
+  };
+  for (const fixture of [...Object.values(byId), otherwise]) read(fixture);
+  return ({ path }) => read(byId[path.split("/")[4] ?? ""] ?? otherwise);
+}
+
+/** The one paper of `status` a timeline fixture lists: the paper a scenario answers its own status for. */
+function readingIdOf(fixture, status) {
+  const ids = bodyOf(fixture).entries.filter((e) => e.status === status).map((e) => e.document_id);
+  if (ids.length !== 1) throw new Error(`${fixture} lists ${ids.length} papers ${status}, not one`);
+  return ids[0];
+}
 
 /** A fixture's body, as Java's contract test wrote it. */
 function bodyOf(fixture) {
@@ -562,7 +587,40 @@ export const SCENARIOS = {
   }),
   // Papers still being read (one PROCESSING, one RECEIVED) beside read ones: the page reloads itself while they are.
   // Its read rows carry the counts line's cases (values outside, medicines, an upload day) and a paper under review.
-  "papers-in-flight": papers({ timeline: "timeline/in-flight.json", calendar: "calendar/busy.json", attention: "attention/empty.json" }),
+  // With JavaScript the page checks quietly instead (PO ruling P6): both papers stay PROCESSING, so it never settles here.
+  "papers-in-flight": papers({
+    timeline: "timeline/in-flight.json",
+    calendar: "calendar/busy.json",
+    attention: "attention/empty.json",
+    status: "document-status/processing.json",
+  }),
+  // The same page once both have been read (timeline/in-flight-settled.json), its quiet check answered DONE: a test
+  // opens papers-in-flight and moves its scenario cookie here, as Java's own state moves when the reading ends.
+  "papers-settled": papers({
+    timeline: "timeline/in-flight-settled.json",
+    calendar: "calendar/busy.json",
+    attention: "attention/empty.json",
+    status: "document-status/done.json",
+  }),
+  // Between the two (timeline/in-flight-half.json): the PROCESSING lab report read first, the RECEIVED paper still being
+  // read. Its quiet check answers DONE for the paper read and PROCESSING for every other, so a test that passes through
+  // here sees two papers read at different times (PO ruling P6, each said once).
+  "papers-half": papers({
+    timeline: "timeline/in-flight-half.json",
+    calendar: "calendar/busy.json",
+    attention: "attention/empty.json",
+    status: statusById({ [readingIdOf("timeline/in-flight.json", "PROCESSING")]: "document-status/done.json" }, "document-status/processing.json"),
+  }),
+  // The settled page with a NOW paper the family has not seen (the banner, call_999 true, and the strip's NOW item): the
+  // in-place re-render brings the alert in as a reload did. Abroad: the same with call_999 false, so no 999 link.
+  "papers-settled-now": {
+    ...papers({ timeline: "timeline/in-flight-settled.json", calendar: "calendar/busy.json", status: "document-status/done.json" }),
+    "GET /app/api/now-banner": bannerFor("now-banner/one.json", "me/one-patient.json"),
+  },
+  "papers-settled-now-abroad": {
+    ...papers({ timeline: "timeline/in-flight-settled.json", calendar: "calendar/busy.json", status: "document-status/done.json" }),
+    "GET /app/api/now-banner": bannerFor("now-banner/abroad.json", "me/one-patient.json"),
+  },
   // The prescription filter over a patient with lab reports only: Java's empty filtered page (timeline/rx-none.json).
   "papers-filter-none": papers({
     timeline: "timeline/first-page.json",

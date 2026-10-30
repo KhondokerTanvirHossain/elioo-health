@@ -4,6 +4,7 @@
    primary press, 48 px. Nothing here is red or amber; a level is its tag's (safety/UrgencyTag: NOW red, THIS_WEEK
    amber, shape and word kept, PO ruling P5), never the strip card's. */
 .papers {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
@@ -234,12 +235,50 @@
   text-decoration: none;
   overflow-wrap: anywhere;
 }
+/* The quiet check (QuietCheck.tsx, PO ruling P6): its box takes no room in the column, so the page is laid out as
+   before. Its live region is heard, not seen: clipped to nothing rather than shrunk to a 1 px box, so it never reports
+   an overflow its box does not have. The link it offers after the cap is the page's other links' pill. Nothing here
+   moves: no transition and no animation, whatever the motion setting. */
+.papers__quiet {
+  display: contents;
+}
+/* The no-JavaScript reload (a meta refresh in a <noscript>): in force as soon as it is in the document, so it needs no
+   box, and a box would add a gap above the heading. */
+.papers__reload {
+  display: none;
+}
+/* One line at the top of the column (as home.css's .chat__title), never the whole column: a phone's screen reader
+   explores by touch against the element's frame, and a frame over the list would catch a finger feeling for a row. */
+.papers__said {
+  position: absolute;
+  inset: 0 0 auto;
+  margin: 0;
+  clip-path: inset(50%);
+  pointer-events: none;
+}
+.papers__again {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  min-height: var(--target-min);
+  max-width: 100%;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-pill);
+  background: var(--bg3);
+  color: var(--tint-ink);
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: 1.4;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
 .papers__add:hover,
 .papers__urgent:hover,
 .papers__month:hover,
 .papers__filter:hover,
 .papers__more:hover,
-.papers__ask-link:hover {
+.papers__ask-link:hover,
+.papers__again:hover {
   background: var(--hover);
 }
 .papers__add:focus-visible,
@@ -247,7 +286,8 @@
 .papers__month:focus-visible,
 .papers__filter:focus-visible,
 .papers__more:focus-visible,
-.papers__ask-link:focus-visible {
+.papers__ask-link:focus-visible,
+.papers__again:focus-visible {
   outline: var(--focus-width) solid var(--focus);
   outline-offset: var(--focus-offset);
 }
