@@ -247,9 +247,11 @@
 .papers__reload {
   display: none;
 }
+/* One line at the top of the column (as home.css's .chat__title), never the whole column: a phone's screen reader
+   explores by touch against the element's frame, and a frame over the list would catch a finger feeling for a row. */
 .papers__said {
   position: absolute;
-  inset: 0;
+  inset: 0 0 auto;
   margin: 0;
   clip-path: inset(50%);
   pointer-events: none;

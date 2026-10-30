@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test, type Page } from "@playwright/test";
-import { MAX_CHECKS, RELOAD_SECONDS, waitBefore } from "../src/app/app/(signed-in)/timeline/quiet-check";
+import { MAX_CHECKS, RELOAD_SECONDS, waitBefore } from "../src/api/reading-check";
 import { t } from "../src/copy";
 import { useScenario } from "./support/browser-api";
 import { pngFor } from "./support/png.mjs";

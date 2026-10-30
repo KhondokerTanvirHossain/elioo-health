@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { apiGet } from "@/api/browser";
 import type { PaperStatusJson } from "@/api/types";
-import { announcement, judge, MAX_CHECKS, waitBefore, type Seen } from "./quiet-check";
+import { announcement, judge, MAX_CHECKS, waitBefore, type Seen } from "@/api/reading-check";
 
 /** What the check says, resolved by its server parent from the bundle: each settled status's words, and the link's. */
 export type QuietWords = { settled: Readonly<Record<string, string>>; again: string };
@@ -20,18 +20,23 @@ export type QuietWords = { settled: Readonly<Record<string, string>>; again: str
  */
 export function QuietCheck({ reading, again, words }: { reading: string[]; again: string; words: QuietWords }) {
   const router = useRouter();
-  const [said, setSaid] = useState("");
+  // What the region says, numbered by settle. The words sit in a node keyed by the number, so each paper read is a new
+  // write a screen reader hears, even when it says what the one before said ("Read", then "Read" again for a second
+  // paper); a check that finds nothing new writes nothing.
+  const [said, setSaid] = useState({ n: 0, text: "" });
   const [gaveUp, setGaveUp] = useState(false);
-  // Bumped by each re-render this asked for, so the checks go on even if that render lists the same papers.
-  const [round, setRound] = useState(0);
+  // The papers this has found read (or gone): never asked again and never re-rendered for again, even while the
+  // re-render that drops them from `reading` is still on its way (a slow phone network). Until it lands the checks go on
+  // for the other papers only, so one paper read is one re-render and one TIMELINE_VIEW, however long it takes.
+  const [settled, setSettled] = useState<ReadonlySet<string>>(() => new Set());
   // The latest words and router, read when needed, so a re-render's new objects never restart the checks.
   const latest = useRef({ words, router });
   useEffect(() => {
     latest.current = { words, router };
   });
-  // One key per set of papers being read: a re-render that lists the same papers keeps the same checks going.
-  const key = reading.join(",");
-  // How many checks this set of papers has had, across rounds: the cap is the set's, never reset by a re-render.
+  // One key per set of papers still to check: a re-render that lists the same papers keeps the same checks going.
+  const key = reading.filter((id) => !settled.has(id)).join(",");
+  // How many checks this set of papers has had: the cap is the set's, never reset by a re-render that lists the same.
   const count = useRef({ key, done: 0 });
 
   useEffect(() => {
@@ -60,12 +65,15 @@ export function QuietCheck({ reading, again, words }: { reading: string[]; again
       asking = false;
       if (over) return;
       count.current.done += 1;
-      if (seen.some((s) => s.kind === "settled" || s.kind === "gone")) {
+      const done = ids.filter((_, i) => seen[i]?.kind === "settled" || seen[i]?.kind === "gone");
+      if (done.length > 0) {
+        // These leave the checks (the key changes, so the others are checked on without them), the page is asked to
+        // re-render once, and the region is written once.
         over = true;
-        const words = announcement(seen, latest.current.words.settled);
-        if (words !== "") setSaid(words);
+        const text = announcement(seen, latest.current.words.settled);
+        setSettled((before) => new Set([...before, ...done]));
+        if (text !== "") setSaid((before) => ({ n: before.n + 1, text }));
         latest.current.router.refresh();
-        setRound((r) => r + 1);
         return;
       }
       if (count.current.done >= MAX_CHECKS) {
@@ -91,12 +99,12 @@ export function QuietCheck({ reading, again, words }: { reading: string[]; again
       clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [key, round]);
+  }, [key]);
 
   return (
     <div className="papers__quiet">
       <p className="papers__said" role="status">
-        {said}
+        {said.text !== "" && <span key={said.n}>{said.text}</span>}
       </p>
       {gaveUp && (
         <a className="papers__again" href={again}>

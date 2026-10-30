@@ -1,6 +1,6 @@
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MAX_CHECKS, waitBefore } from "./quiet-check";
+import { MAX_CHECKS, waitBefore } from "@/api/reading-check";
 import { QuietCheck, type QuietWords } from "./QuietCheck";
 
 const apiGet = vi.fn();
@@ -71,6 +71,49 @@ describe("QuietCheck (PO ruling P6)", () => {
     expect(asked()).toEqual([B, B]);
     expect(refresh).toHaveBeenCalledTimes(1);
     expect(live(container).textContent).toBe("Read");
+  });
+
+  it("aSlowReRenderIsNeverAskedForTwice", async () => {
+    // The re-render router.refresh() asks for can take longer than a wait on a slow phone network (four Java reads).
+    // Until it lands the props still list the paper just read: the checks go on for the others only, and the page is
+    // never asked to re-render again for the same paper (each extra one would be one more TIMELINE_VIEW).
+    render(<QuietCheck reading={[A, B]} again="/app/timeline" words={WORDS} />);
+    await pass(waitBefore(0));
+    await pass(waitBefore(1));
+    apiGet.mockImplementation((path: string) => Promise.resolve(answer(statusOf(path) === A ? "DONE" : "PROCESSING")));
+    await pass(waitBefore(2));
+    expect(refresh).toHaveBeenCalledTimes(1);
+    apiGet.mockClear();
+    // No rerender: the refresh has not landed.
+    await pass(waitBefore(3));
+    await pass(waitBefore(4));
+    expect(refresh, "one re-render for the one paper read").toHaveBeenCalledTimes(1);
+    expect(asked(), "only the paper still being read is asked again").toEqual([B, B]);
+  });
+
+  it("aSecondPaperReadToTheSameStatusIsSaidAgain", async () => {
+    // Two papers read at different times, both DONE: each is one write to the live region, so a screen reader hears
+    // the second as it heard the first; and a check that finds nothing new between them writes nothing.
+    const { container, rerender } = render(<QuietCheck reading={[A, B]} again="/app/timeline" words={WORDS} />);
+    const region = live(container);
+    const writes: string[] = [];
+    new MutationObserver(() => writes.push(region.textContent ?? "")).observe(region, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+    });
+    apiGet.mockImplementation((path: string) => Promise.resolve(answer(statusOf(path) === A ? "DONE" : "PROCESSING")));
+    await pass(waitBefore(0));
+    expect(writes, "A read: one write").toEqual(["Read"]);
+    rerender(<QuietCheck reading={[B]} again="/app/timeline" words={WORDS} />);
+    await pass(waitBefore(0));
+    await pass(waitBefore(1));
+    expect(writes, "B still being read: nothing written by its checks").toEqual(["Read"]);
+    apiGet.mockResolvedValue(answer("DONE"));
+    await pass(waitBefore(2));
+    expect(writes, "B read: a second write, one per paper read").toEqual(["Read", "Read"]);
+    expect(region.textContent).toBe("Read");
+    expect(refresh).toHaveBeenCalledTimes(2);
   });
 
   it("nothingBeingReadAsksNothing", async () => {

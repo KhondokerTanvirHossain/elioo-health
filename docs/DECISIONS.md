@@ -994,12 +994,19 @@ background and update without a full reload; keep the 5 s reload only as the no-
 - With JavaScript no meta refresh is in the document. A client island (`timeline/QuietCheck.tsx`) polls
   `GET /app/api/documents/{id}/status` for each paper being read. That read records nothing (B4c). It polls at 5 s
   for the first six checks, then backs off ×1.5 to 30 s. When a paper is read or gone it re-renders the page's data
-  once (`router.refresh()`), and the status is said once in a polite live region, in the bundle's `status.*` words. It
-  asks nothing while nothing is being read or the tab is hidden, and asks again as soon as the tab is seen. After 20
-  checks (about 6.5 min, past Java's 5 min "taking longer" line) it stops and offers a plain link to the same page
-  (`attn.reading.action`).
+  once (`router.refresh()`), and is never asked again for that paper, even while a slow re-render is on its way. Each
+  paper read is said once in a polite live region, in the bundle's `status.*` words, a second paper read to the same
+  status included. It asks nothing while nothing is being read or the tab is hidden, and asks again as soon as the tab
+  is seen. After 20 checks (about 6.5 min, past Java's 5 min "taking longer" line) it stops and offers a plain link to
+  the same page (`attn.reading.action`).
 - The axe exception is gone: every rule judges the page being read. A re-render is still one TIMELINE_VIEW (S14), but
   there is now one per paper read, not one every 5 s.
+- The rules (the 5 s, the backoff, the cap, what a status answer means) live in one module,
+  `medioo-web/src/api/reading-check.ts`, so every reading page reads P6 the same way. The paper page's status poll
+  (PR #149, W6, not merged when this was written) does not follow them yet: as built there it asks every 5 s with no
+  backoff and no cap, keeps asking while the tab is hidden, and has no live region, beside the same `<noscript>`
+  reload. It is to adopt this module when it is rebased after PR #165; until then the two pages differ in exactly
+  those ways, which is a difference the PO can see.
 
 ## DR-43 | 2026-10-21 | Voice: typed commands first; the speech-to-text provider is chosen by a measured bake-off
 

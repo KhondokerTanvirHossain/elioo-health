@@ -11,7 +11,7 @@ import { UrgencyTag } from "@/components/safety/UrgencyTag/UrgencyTag";
 import { href } from "@/routing/paths";
 import { signedInPage, type ShellContext } from "../shell";
 import { shift } from "./months";
-import { IN_FLIGHT, RELOAD_SECONDS } from "./quiet-check";
+import { IN_FLIGHT, RELOAD_SECONDS } from "@/api/reading-check";
 import { QuietCheck } from "./QuietCheck";
 import "./papers.css";
 

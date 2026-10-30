@@ -54,7 +54,7 @@ class PatientTimelineApiContractTest {
     static final Path FIXTURES = Path.of("../medioo-web/fixtures/api");
     static final Path WRITTEN = Path.of("build/web-contract");
     static final List<String> TIMELINE = List.of("first-page", "last-page", "empty", "forty-five-first-page", "lab-only", "rx-only",
-            "in-flight", "in-flight-settled", "rx-none");
+            "in-flight", "in-flight-settled", "in-flight-half", "rx-none");
     static final List<String> CALENDAR = List.of("busy", "empty", "crowded", "forty-five", "september");
     /** A paper count above any one page (plan W8, master Review Focus 1): forty-five papers in one month. */
     static final int FORTY_FIVE = 45;
@@ -368,6 +368,14 @@ class PatientTimelineApiContractTest {
             assertThat(read.get(0).at("/counts/values").asInt()).as("the lab read from PROCESSING has its value").isEqualTo(1);
             assertThat(read.get(0).get("date_is_upload_day").asBoolean()).as("filed under its upload day").isTrue();
 
+            // in-flight-half (PO ruling P6): between the two, the PROCESSING lab read, the RECEIVED paper still being read
+            Seeded half = seedInFlight(context, k + "-half", true, false);
+            JsonNode between = ok(client, half.session(), timeline(half.patient())).get("entries");
+            assertThat(field(between, "status")).as("$.entries[*].status half read").containsExactly("DONE", "RECEIVED", "DONE", "DONE", "DONE");
+            assertThat(between.get(0).get("document_type").asText()).as("the lab read from PROCESSING").isEqualTo("lab_report");
+            assertThat(between.get(1).get("document_id").asText()).as("the paper still being read")
+                    .isEqualTo(FixedPapers.id(k + "-half", "received").toString());
+
             Seeded labsOnly = seedBusyMonth(context, k + "-labs", false);
             JsonNode none = ok(client, labsOnly.session(), timeline(labsOnly.patient()) + "?type=rx");
             assertThat(none.get("entries")).as("$.entries for ?type=rx over lab reports only").isEmpty();
@@ -442,6 +450,7 @@ class PatientTimelineApiContractTest {
                 case "forty-five-first-page" -> seedFortyFive(context, k);
                 case "in-flight" -> seedInFlight(context, k);
                 case "in-flight-settled" -> seedInFlight(context, k, true);
+                case "in-flight-half" -> seedInFlight(context, k, true, false);
                 case "rx-none" -> seedBusyMonth(context, k, false);
                 default -> seedTwentyFive(context, k);
             };
@@ -629,12 +638,21 @@ class PatientTimelineApiContractTest {
      * paper. Nothing else changes.
      */
     static Seeded seedInFlight(ApplicationContext context, String k, boolean settled) throws Exception {
+        return seedInFlight(context, k, settled, settled);
+    }
+
+    /**
+     * The in-flight case with each paper being read read or not on its own: {@code in-flight-half} (PO ruling P6) is the
+     * page between the two, the one that was PROCESSING read and the one just RECEIVED still being read, so the quiet
+     * check is judged on two papers read at different times.
+     */
+    static Seeded seedInFlight(ApplicationContext context, String k, boolean processingRead, boolean receivedRead) throws Exception {
         Seeded s = family(context, k, NOW);
         UUID processing = FixedPapers.paper(POSTGRES, FixedPapers.id(k, "processing"), s.patient(), "lab_report",
-                settled ? "DONE" : "PROCESSING", null, NOW.minus(Duration.ofMinutes(10)), settled ? "routine" : null);
-        FixedPapers.paper(POSTGRES, FixedPapers.id(k, "received"), s.patient(), settled ? "prescription" : null,
-                settled ? "DONE" : "RECEIVED", null, NOW.minus(Duration.ofMinutes(20)), settled ? "routine" : null);
-        if (settled) {
+                processingRead ? "DONE" : "PROCESSING", null, NOW.minus(Duration.ofMinutes(10)), processingRead ? "routine" : null);
+        FixedPapers.paper(POSTGRES, FixedPapers.id(k, "received"), s.patient(), receivedRead ? "prescription" : null,
+                receivedRead ? "DONE" : "RECEIVED", null, NOW.minus(Duration.ofMinutes(20)), receivedRead ? "routine" : null);
+        if (processingRead) {
             observation(processing, "Glucose", "inside");
         }
         UUID lab = FixedPapers.paper(POSTGRES, FixedPapers.id(k, "lab"), s.patient(), "lab_report", "DONE", "2026-10-19",

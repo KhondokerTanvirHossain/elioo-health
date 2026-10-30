@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import type { AttentionJson, AttentionUrgentJson, CalendarJson, FollowUpsJson, MeJson, TimelineJson } from "../src/api/types";
+import type { AttentionJson, AttentionUrgentJson, CalendarJson, FollowUpsJson, MeJson, NowBannerJson, TimelineJson } from "../src/api/types";
 import { shift } from "../src/app/app/(signed-in)/timeline/months";
-import { MAX_CHECKS, RELOAD_SECONDS, waitBefore } from "../src/app/app/(signed-in)/timeline/quiet-check";
+import { MAX_CHECKS, RELOAD_SECONDS, waitBefore } from "../src/api/reading-check";
 import { formatDate, formatMonthYear, t, type CopyKey, type Lang } from "../src/copy";
 import { useScenario, type CropRow, type Recorder } from "./support/browser-api";
 import { FIXTURES, longNameOf } from "./support/scenarios.mjs";
@@ -176,6 +176,9 @@ test.describe("with JavaScript, the page checks quietly (PO ruling P6)", () => {
   const STATUS = "/app/api/documents/{id}/status";
   const READING = IN_FLIGHT.entries.filter((e) => e.status === "RECEIVED" || e.status === "PROCESSING").map((e) => e.document_id);
   const SETTLED = body<TimelineJson>("timeline/in-flight-settled.json");
+  const HALF = body<TimelineJson>("timeline/in-flight-half.json");
+  const HALF_READING = HALF.entries.filter((e) => e.status === "RECEIVED" || e.status === "PROCESSING").map((e) => e.document_id);
+  const DONE = t("bn", "status.DONE");
   /** The browser's status checks so far, each by the paper it asked about. */
   const checks = (recorder: Recorder) => recorder.requests().filter((r) => isRead(r.path, STATUS)).map((r) => r.path.split("/")[4]!);
   const timelineReads = async (recorder: Recorder) =>
@@ -183,28 +186,58 @@ test.describe("with JavaScript, the page checks quietly (PO ruling P6)", () => {
   /** Marks this document, so a reload (a new document) is told apart from a re-render of the same one. */
   const mark = (page: Page) => page.evaluate(() => ((window as unknown as { __same?: boolean }).__same = true));
   const sameDocument = (page: Page) => page.evaluate(() => (window as unknown as { __same?: boolean }).__same === true);
+  /** How many checks so far, asked only of the marked document: a page that reloaded meanwhile answers so, by name. */
+  const checksHere = async (page: Page, recorder: Recorder) =>
+    (await sameDocument(page)) ? checks(recorder).length : "the page reloaded";
+  /** The papers listed, asked only of the marked document, likewise. */
+  const listedHere = async (page: Page) => ((await sameDocument(page)) ? listed(page) : "the page reloaded");
   /** Moves this test's scenario cookie, as Java's own state moves when the reading ends. */
   const moveTo = async (page: Page, scenario: string) => {
     const url = new URL(page.url());
     await page.context().addCookies([{ name: "e2e_scenario", value: scenario, domain: url.hostname, path: "/app" }]);
   };
-  /** Every text the live region was given, in order, from before the page's own script ran. */
+  /**
+   * Every write to the live region, from before the page's own script ran: one entry per DOM commit that touched the
+   * region (its text or its children, or, once the document is parsed, the region itself put in or taken out), holding
+   * the region's text after it, empty included. Nothing is de-duplicated: a region cleared and written again, or given
+   * the same words in a new node, is a write a screen reader announces, so it is counted. (One commit that swaps the
+   * region's node for a new one holding the same words is one write: the removal and the insertion land together.)
+   */
   const recordLiveRegion = (page: Page) =>
     page.addInitScript(() => {
-      const said: string[] = [];
-      (window as unknown as { __said: string[] }).__said = said;
-      new MutationObserver(() => {
-        const region = document.querySelector(".papers [role='status']");
-        const text = region?.textContent ?? "";
-        if (text !== "" && text !== said.at(-1)) said.push(text);
+      const writes: string[] = [];
+      (window as unknown as { __writes: string[] }).__writes = writes;
+      let parsed = false;
+      document.addEventListener("DOMContentLoaded", () => (parsed = true));
+      const holdsRegion = (n: Node) => n instanceof Element && (n.matches(".papers__said") || n.querySelector(".papers__said") !== null);
+      new MutationObserver((records) => {
+        const region = document.querySelector(".papers__said");
+        const touched = records.some(
+          (r) => (region !== null && region.contains(r.target)) || (parsed && [...r.addedNodes, ...r.removedNodes].some(holdsRegion)),
+        );
+        if (touched) writes.push(region?.textContent ?? "");
       }).observe(document, { subtree: true, childList: true, characterData: true });
     });
-  const said = (page: Page) => page.evaluate(() => (window as unknown as { __said: string[] }).__said);
+  const writes = (page: Page) => page.evaluate(() => (window as unknown as { __writes: string[] }).__writes);
+  /**
+   * Real time past the no-JavaScript reload, then the same document, no render nobody asked for, and no meta refresh. A
+   * meta refresh runs on the browser's own timer, which page.clock does not hold, so only real seconds can show that
+   * none fired; the fake-time steps before it cannot.
+   */
+  const noReloadInRealTime = async (page: Page, recorder: Recorder, reads: number) => {
+    await page.waitForTimeout((RELOAD_SECONDS + 3) * 1000);
+    expect(await sameDocument(page), "the page did not reload").toBe(true);
+    expect(await timelineReads(recorder), "no render nobody asked for").toBe(reads);
+    await expect(page.locator("meta[http-equiv='refresh']")).toHaveCount(0);
+  };
+  const beingRead = (page: Page) => page.locator(".month-list a[href^='/app/documents/']").filter({ hasText: t("bn", "timeline.reading") });
 
   test.beforeAll(() => {
-    // Guards: the case the page opens on lists two papers being read beside read ones, and the case it settles into
-    // lists the same page with nothing being read.
+    // Guards: the case the page opens on lists two papers being read beside read ones; the case between lists the same
+    // papers with one of them read; and the case it settles into lists the same page with nothing being read.
     expect(READING.length, "in-flight.json's papers being read").toBe(2);
+    expect(HALF_READING.length, "in-flight-half.json's papers being read").toBe(1);
+    expect(HALF.entries.length).toBe(IN_FLIGHT.entries.length);
     expect(reading(SETTLED), "in-flight-settled.json has nothing being read").toBe(false);
     expect(SETTLED.entries.length).toBe(IN_FLIGHT.entries.length);
   });
@@ -217,12 +250,13 @@ test.describe("with JavaScript, the page checks quietly (PO ruling P6)", () => {
     await mark(page);
     // Well past Java's 5 s reload, twice: the papers being read are checked, each, and the page is still the same page.
     await page.clock.fastForward(RELOAD_SECONDS * 1000);
-    await expect.poll(() => checks(recorder).length).toBe(READING.length);
+    await expect.poll(() => checksHere(page, recorder)).toBe(READING.length);
     await page.clock.fastForward(RELOAD_SECONDS * 1000);
-    await expect.poll(() => checks(recorder).length).toBe(2 * READING.length);
+    await expect.poll(() => checksHere(page, recorder)).toBe(2 * READING.length);
     expect([...new Set(checks(recorder))].sort(), "each paper being read, and only those").toEqual([...READING].sort());
     expect(await sameDocument(page), "the page did not reload").toBe(true);
     expect(await timelineReads(recorder), "one render, one timeline read").toBe(1);
+    await noReloadInRealTime(page, recorder, 1);
   });
 
   test("aPaperThatSettlesReRendersThePageOnceAndSaysSoOnce", async ({ page }) => {
@@ -230,28 +264,87 @@ test.describe("with JavaScript, the page checks quietly (PO ruling P6)", () => {
     await page.clock.install();
     const recorder = await open(page, "papers-in-flight");
     await mark(page);
-    const rows = page.locator(".month-list a[href^='/app/documents/']");
-    // Two checks that find both still being read: nothing re-rendered and nothing said.
+    // Two checks that find both still being read: nothing re-rendered and nothing written.
     for (let i = 1; i <= 2; i++) {
       await page.clock.fastForward(RELOAD_SECONDS * 1000);
-      await expect.poll(() => checks(recorder).length).toBe(i * READING.length);
+      await expect.poll(() => checksHere(page, recorder)).toBe(i * READING.length);
     }
-    expect(await said(page), "checks that find nothing new say nothing").toEqual([]);
+    expect(await writes(page), "checks that find nothing new write nothing").toEqual([]);
     expect(await timelineReads(recorder)).toBe(1);
     // Java has read both; the next check finds it and the page's data is rendered again, once, in the same document.
     await moveTo(page, "papers-settled");
     await page.clock.fastForward(RELOAD_SECONDS * 1000);
-    await expect.poll(() => listed(page)).toEqual(SETTLED.entries.map((e) => e.document_id));
+    await expect.poll(() => listedHere(page)).toEqual(SETTLED.entries.map((e) => e.document_id));
     expect(await sameDocument(page), "re-rendered, not reloaded").toBe(true);
-    await expect(page.locator(".papers [role='status']")).toHaveText(t("bn", "status.DONE"));
-    await expect(rows.filter({ hasText: t("bn", "timeline.reading") })).toHaveCount(0);
-    // Nothing is being read now: no more checks, no more renders, and the region is not told again.
+    await expect(page.locator(".papers [role='status']")).toHaveText(DONE);
+    await expect(beingRead(page)).toHaveCount(0);
+    // Nothing is being read now: no more checks, no more renders, and the region is not written again.
     const after = checks(recorder).length;
     for (let i = 0; i < 3; i++) await page.clock.fastForward(30_000);
     expect(checks(recorder).length, "no check once nothing is being read").toBe(after);
     expect(await timelineReads(recorder), "the first render and the one re-render").toBe(2);
-    expect(await said(page), "said once").toEqual([t("bn", "status.DONE")]);
+    expect(await writes(page), "one write, the settled status's words").toEqual([DONE]);
   });
+
+  test("twoPapersReadAtDifferentTimesAreEachSaidOnce", async ({ page }) => {
+    await recordLiveRegion(page);
+    await page.clock.install();
+    const recorder = await open(page, "papers-in-flight");
+    await mark(page);
+    // The lab report being read is read first: the page re-renders with the other still being read, one write.
+    await moveTo(page, "papers-half");
+    await page.clock.fastForward(RELOAD_SECONDS * 1000);
+    await expect.poll(() => listedHere(page)).toEqual(HALF.entries.map((e) => e.document_id));
+    await expect(beingRead(page)).toHaveCount(1);
+    await expect.poll(() => writes(page)).toEqual([DONE]);
+    expect(await timelineReads(recorder)).toBe(2);
+    // This render was built on the client with a paper still being read, its <noscript> included: no meta refresh came
+    // to life in it, and real time past the reload the page has not reloaded. The paper left is checked meanwhile, and
+    // checks that find it still being read write nothing.
+    await noReloadInRealTime(page, recorder, 2);
+    await page.clock.fastForward(RELOAD_SECONDS * 1000);
+    await expect.poll(() => checks(recorder).filter((id) => id === HALF_READING[0]).length).toBeGreaterThan(0);
+    expect(await writes(page), "a check that finds nothing new writes nothing").toEqual([DONE]);
+    // Then it is read too, to the same status: a second write with the same words, one per paper read.
+    await moveTo(page, "papers-settled");
+    await page.clock.fastForward(RELOAD_SECONDS * 1000);
+    await expect.poll(() => listedHere(page)).toEqual(SETTLED.entries.map((e) => e.document_id));
+    await expect.poll(() => writes(page)).toEqual([DONE, DONE]);
+    expect(await timelineReads(recorder), "one render per paper read").toBe(3);
+    expect(await sameDocument(page), "re-rendered, not reloaded").toBe(true);
+  });
+
+  // The rule's other direction (CLAUDE.md, a rule with two directions): quiet on a routine read, and still alerting
+  // when the paper read is NOW. Before P6 a reload brought the shell's NOW banner and the strip in; now only the
+  // in-place re-render does, so both must arrive in the same document, the 999 link only when Java says call_999.
+  for (const { scenario, call999 } of [
+    { scenario: "papers-settled-now", call999: true },
+    { scenario: "papers-settled-now-abroad", call999: false },
+  ]) {
+    test(`aPaperReadAsNowBringsTheAlertInPlace (${scenario})`, async ({ page }) => {
+      await page.clock.install();
+      await open(page, "papers-in-flight");
+      await mark(page);
+      const banner = page.locator("section[role='alert'].now-banner");
+      const nowInStrip = page.locator(".papers__strip .urgency-tag--now");
+      await expect(banner, "no banner before the paper is read").toHaveCount(0);
+      await expect(nowInStrip, "no NOW in the strip before").toHaveCount(0);
+      await moveTo(page, scenario);
+      await page.clock.fastForward(RELOAD_SECONDS * 1000);
+      await expect(banner).toHaveCount(1);
+      expect(await sameDocument(page), "re-rendered, not reloaded").toBe(true);
+      await expect(banner.locator("[data-shape='octagon']")).toHaveCount(1);
+      // The line verbatim, from the key Java sent (the same key in both fixtures), never a key written here.
+      const sent = body<NowBannerJson>(`now-banner/${call999 ? "one" : "abroad"}.json`);
+      expect(sent.call_999, "the fixture's call_999").toBe(call999);
+      await expect(banner.locator(".now-banner__line")).toHaveText(t("bn", sent.line_key as CopyKey));
+      await expect(banner.locator("a[href='tel:999']")).toHaveCount(call999 ? 1 : 0);
+      await expect(nowInStrip).toHaveCount(1);
+      const report = await axeReport(page);
+      expect(report.violations).toEqual([]);
+      expect(report.passes, "axe checked something").toBeGreaterThan(0);
+    });
+  }
 
   test("afterTheCapItStopsAndOffersALinkToThisPage", async ({ page }) => {
     await page.clock.install();
@@ -275,16 +368,32 @@ test.describe("with JavaScript, the page checks quietly (PO ruling P6)", () => {
     test.use({ reducedMotion: "reduce" });
 
     test("theReRenderMovesNothingAndKeepsThePlace", async ({ page }) => {
+      // Every transition and animation that starts anywhere on the page, from before its own script: getAnimations()
+      // lists only those still running when it is asked, so a short one that ran during the re-render and ended would
+      // not show there.
+      await page.addInitScript(() => {
+        const moved: string[] = [];
+        (window as unknown as { __moved: string[] }).__moved = moved;
+        const note = (e: Event) => {
+          const el = e.target instanceof Element ? `${e.target.tagName.toLowerCase()}.${[...e.target.classList].join(".")}` : "?";
+          moved.push(`${e.type} ${el} ${(e as TransitionEvent).propertyName ?? (e as AnimationEvent).animationName ?? ""}`);
+        };
+        document.addEventListener("transitionrun", note, true);
+        document.addEventListener("animationstart", note, true);
+      });
       await page.clock.install();
       const recorder = await open(page, "papers-in-flight");
       await page.evaluate(() => window.scrollTo(0, 300));
       const at = await page.evaluate(() => window.scrollY);
       expect(at, "the page scrolled, so keeping the place is judged").toBeGreaterThan(0);
+      const movedBefore = await page.evaluate(() => (window as unknown as { __moved: string[] }).__moved.length);
       await moveTo(page, "papers-settled");
       await page.clock.fastForward(RELOAD_SECONDS * 1000);
       await expect.poll(() => listed(page)).toEqual(SETTLED.entries.map((e) => e.document_id));
       expect(await timelineReads(recorder)).toBe(2);
-      // No animation or transition ran for the re-render, and the family's place on the page is where they left it.
+      // Nothing started moving for the re-render, and the family's place on the page is where they left it.
+      const moved = await page.evaluate(() => (window as unknown as { __moved: string[] }).__moved);
+      expect(moved.slice(movedBefore), "transitions or animations started by the re-render").toEqual([]);
       expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
       expect(await page.evaluate(() => window.scrollY)).toBe(at);
       const motion = await page.locator(".papers__quiet, .papers__quiet *").evaluateAll((els) =>
@@ -292,6 +401,16 @@ test.describe("with JavaScript, the page checks quietly (PO ruling P6)", () => {
       );
       expect(motion.length).toBeGreaterThan(0);
       for (const m of motion) expect(m).toBe("0s none");
+      // The live region's frame is one line at the top of the column, never the column: a phone's screen reader
+      // explores by touch against it, and a frame over the list would catch a finger feeling for a row.
+      await expect(page.locator(".papers [role='status']")).toHaveText(DONE);
+      const frame = await page.locator(".papers [role='status']").evaluate((el) => {
+        const style = getComputedStyle(el);
+        const line = Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize) * 1.6;
+        return { height: el.getBoundingClientRect().height, line };
+      });
+      expect(frame.height, "the region holds its words").toBeGreaterThan(0);
+      expect(frame.height, `the region's frame, against one line of ${frame.line} px`).toBeLessThanOrEqual(Math.ceil(frame.line) + 1);
     });
   });
 });
@@ -628,16 +747,23 @@ test.describe("the rows' and the strip's colour (PO ruling P5): NOW red, THIS_WE
       // JavaScript the page checks quietly and never reloads itself (PO ruling P6), so axe's meta-refresh rule (WCAG
       // F41), which PR #162 excepted here, has nothing to report and is no longer excepted.
       const AXE_CASES = [
-        { scenario: "papers-forty-five", coloured: [".urgency-tag--now", ".urgency-tag--week"] },
-        { scenario: "papers-in-flight", coloured: [".month-list .urgency-tag--now"] },
+        { scenario: "papers-forty-five", coloured: [".urgency-tag--now", ".urgency-tag--week"], inFlight: false },
+        { scenario: "papers-in-flight", coloured: [".month-list .urgency-tag--now"], inFlight: true },
       ] as const;
-      for (const { scenario, coloured } of AXE_CASES) {
+      for (const { scenario, coloured, inFlight } of AXE_CASES) {
         test(`axeReportsNoViolationOnTheColouredTags (${scenario})`, async ({ page }) => {
           await open(page, scenario);
           await expectSchemeIsPainted(page, colorScheme);
           // Guard: the coloured modifiers themselves sit inside what axe judges (every tag carried .urgency-tag before
           // P5, uncoloured).
           for (const sel of coloured) expect(await page.locator(sel).count(), `${sel} on the page axe judges`).toBeGreaterThan(0);
+          if (inFlight) {
+            // Guard against emptiness: the page axe judges is the one being read, the no-JavaScript reload in its
+            // <noscript> included, so "no meta refresh" is proved on a page that would have had one.
+            const rows = page.locator(".month-list a[href^='/app/documents/']");
+            expect(await rows.filter({ hasText: t("bn", "timeline.reading") }).count(), "papers being read on the page").toBeGreaterThan(0);
+            await expect(page.locator("noscript.papers__reload")).toHaveCount(1);
+          }
           const report = await axeReport(page);
           expect(report.violations).toEqual([]);
           expect(report.passes, "axe checked something").toBeGreaterThan(0);

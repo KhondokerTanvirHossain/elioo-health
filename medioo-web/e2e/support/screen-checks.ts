@@ -56,13 +56,12 @@ export async function expectSchemeIsPainted(page: Page, colorScheme: "light" | "
 }
 
 /**
- * axe over the page (or `include`), as `id: targets` lines, and how many rules passed. `disableRules` names the rules a
- * caller excepts, each one by its id, so every other rule still judges the whole scope.
+ * axe over the page (or `include`), as `id: targets` lines, and how many rules passed. Every rule judges: there is no
+ * way to except one here, so an exception would have to change this helper, where a review sees it.
  */
-export async function axeReport(page: Page, include?: string, disableRules: readonly string[] = []) {
+export async function axeReport(page: Page, include?: string) {
   let builder = new AxeBuilder({ page });
   if (include) builder = builder.include(include);
-  if (disableRules.length > 0) builder = builder.disableRules([...disableRules]);
   const results = await builder.analyze();
   return {
     violations: results.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`),

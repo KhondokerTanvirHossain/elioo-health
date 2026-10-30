@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { announcement, judge, MAX_CHECKS, MAX_WAIT_MS, RELOAD_SECONDS, STEADY_CHECKS, waitBefore } from "./quiet-check";
+import { announcement, judge, MAX_CHECKS, MAX_WAIT_MS, RELOAD_SECONDS, STEADY_CHECKS, waitBefore } from "./reading-check";
 
 const WORDS = { DONE: "Read", NEEDS_RETAKE: "Retake the photo", FAILED: "Could not be read" };
 

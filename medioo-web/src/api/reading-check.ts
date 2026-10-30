@@ -1,10 +1,13 @@
 /*
- * The papers page's quiet check (PO ruling P6, 2026-10-30), as rules with no React in them: how long to wait before
- * each check, when to give up, and what a status answer means. QuietCheck.tsx runs them; quiet-check.test.ts judges
- * them on their own.
+ * How a page that waits for a paper to be read checks on it with JavaScript (PO ruling P6, 2026-10-30; WCAG F41), as
+ * rules with no React in them: how long to wait before each check, when to give up, and what a status answer means.
+ * They are Medioo's one reading of P6, kept here rather than in one route's folder so that every reading page follows
+ * the same rules: the papers page's QuietCheck (timeline/QuietCheck.tsx) runs them today, and the paper page's status
+ * poll (pull request 149, not merged yet) is to adopt them when it is rebased (DR-42 amendment).
+ * reading-check.test.ts judges them on their own.
  */
 
-import { READING_STATUSES } from "@/api/types";
+import { READING_STATUSES } from "./types";
 
 /** A paper still being read (Java's AppTabs.papersBody `inFlight`, DocumentPages.inFlight). */
 export const IN_FLIGHT: ReadonlySet<string> = new Set(READING_STATUSES);

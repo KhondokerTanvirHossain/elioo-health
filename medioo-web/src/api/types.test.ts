@@ -35,6 +35,7 @@ import timelineEmpty from "../../fixtures/api/timeline/empty.json";
 import timelineFirst from "../../fixtures/api/timeline/first-page.json";
 import timelineFortyFive from "../../fixtures/api/timeline/forty-five-first-page.json";
 import timelineInFlight from "../../fixtures/api/timeline/in-flight.json";
+import timelineInFlightHalf from "../../fixtures/api/timeline/in-flight-half.json";
 import timelineInFlightSettled from "../../fixtures/api/timeline/in-flight-settled.json";
 import statusDone from "../../fixtures/api/document-status/done.json";
 import statusProcessing from "../../fixtures/api/document-status/processing.json";
@@ -589,6 +590,7 @@ describe("the papers page's reads are the generated fixtures", () => {
       ["forty-five-first-page", timelineFortyFive.body],
       ["in-flight", timelineInFlight.body],
       ["in-flight-settled", timelineInFlightSettled.body],
+      ["in-flight-half", timelineInFlightHalf.body],
       ["lab-only", timelineLab.body],
       ["last-page", timelineLast.body],
       ["rx-none", timelineRxNone.body],
