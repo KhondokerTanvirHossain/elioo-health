@@ -319,6 +319,84 @@ class PostgresThreadReadAdapterTest {
         });
     }
 
+    /** An answered চ্যাট turn (V29) asked by {@code viewer} at {@code at}, citing {@code documents}. */
+    private static UUID turn(UUID viewer, PatientProfile p, Instant at, List<UUID> documents) throws Exception {
+        UUID id = UUID.randomUUID();
+        String ids = documents.stream().map(UUID::toString).collect(java.util.stream.Collectors.joining(",", "{", "}"));
+        sql("INSERT INTO baymax.chat_turn (id, family_id, patient_id, lang, question, answer, kind, counted, handler, model_calls,"
+                + " document_ids, created_at, answered_at) VALUES ('" + id + "','" + viewer + "','" + p.id() + "','bn','প্রশ্ন','উত্তর',"
+                + "'answer',true,'model',1,'" + ids + "','" + at + "','" + at.plusSeconds(5) + "')");
+        return id;
+    }
+
+    @Test
+    void withoutAsksNoTurnIsListed() {
+        runner().run(context -> {
+            Holder a = owner(context);
+            UUID doc = paper(context, a.ma(), T0);
+            UUID asked = turn(a.family().id(), a.ma(), T0.plusSeconds(60), List.of(doc));
+            assertThat(ids(read(context, a.family().id(), a.ma()))).containsExactly(doc);
+            List<ThreadItem> with = context.getBean(ThreadReadPort.class)
+                    .page(a.family().id(), a.ma().id(), ThreadItem.Cursor.FIRST, 500, true).collectList().block();
+            assertThat(ids(with)).containsExactly(asked, doc);
+            assertThat(with.get(0)).isInstanceOfSatisfying(ThreadItem.Ask.class, ask -> {
+                assertThat(ask.question()).isEqualTo("প্রশ্ন");
+                assertThat(ask.answer()).isEqualTo("উত্তর");
+                assertThat(ask.order()).isEqualTo("ask");
+            });
+        });
+    }
+
+    @Test
+    void anAskIsListedOnlyForItsOwnAccountAndWhileItsPapersExist() {
+        runner().run(context -> {
+            Holder a = owner(context);
+            Holder b = owner(context);
+            UUID doc = paper(context, a.ma(), T0);
+            UUID mine = turn(a.family().id(), a.ma(), T0.plusSeconds(60), List.of());
+            UUID citing = turn(a.family().id(), a.ma(), T0.plusSeconds(120), List.of(doc));
+            UUID theirs = turn(b.family().id(), a.ma(), T0.plusSeconds(180), List.of());
+            ThreadReadPort port = context.getBean(ThreadReadPort.class);
+            assertThat(ids(port.page(a.family().id(), a.ma().id(), ThreadItem.Cursor.FIRST, 500, true).collectList().block()))
+                    .contains(mine, citing).doesNotContain(theirs);
+            context.getBean(com.elioo.baymax.extraction.application.port.out.DocumentRecordPort.class).deleteDocument(doc).block();
+            assertThat(ids(port.page(a.family().id(), a.ma().id(), ThreadItem.Cursor.FIRST, 500, true).collectList().block()))
+                    .containsExactly(mine);
+        });
+    }
+
+    @Test
+    void theCursorPagesAcrossAsksWithoutRepeatsOrGaps() {
+        runner().run(context -> {
+            Holder a = owner(context);
+            Set<UUID> all = new LinkedHashSet<>();
+            // 45 items: 15 papers, 15 delivered messages and 15 answered turns, a paper and a turn sharing each instant
+            for (int i = 0; i < 15; i++) {
+                Instant at = T0.plus(Duration.ofHours(i));
+                UUID doc = paper(context, a.ma(), at);
+                all.add(doc);
+                all.add(delivered(context, a.family().id(), a.ma(), doc, "detail", at.plusSeconds(1)));
+                all.add(turn(a.family().id(), a.ma(), at, List.of(doc)));
+            }
+            ThreadReadPort port = context.getBean(ThreadReadPort.class);
+            List<Integer> sizes = new ArrayList<>();
+            List<UUID> seen = new ArrayList<>();
+            ThreadItem.Cursor after = ThreadItem.Cursor.FIRST;
+            for (int guard = 0; guard < 10; guard++) {
+                List<ThreadItem> page = port.page(a.family().id(), a.ma().id(), after, 20, true).collectList().block();
+                if (page.isEmpty()) {
+                    break;
+                }
+                sizes.add(page.size());
+                seen.addAll(ids(page));
+                after = ThreadItem.Cursor.parse(ThreadItem.Cursor.after(page.get(page.size() - 1)).encode());
+            }
+            assertThat(all).hasSize(45);
+            assertThat(sizes).as("page sizes").containsExactly(20, 20, 5);
+            assertThat(seen).as("every id once").hasSize(45).doesNotHaveDuplicates().containsExactlyInAnyOrderElementsOf(all);
+        });
+    }
+
     static void sql(String statement) throws Exception {
         try (Connection c = connect(); Statement s = c.createStatement()) {
             s.execute(statement);

@@ -1,5 +1,6 @@
 package com.elioo.baymax.web.adapter.out.persistence;
 
+import com.elioo.baymax.companion.domain.AnswerKind;
 import com.elioo.baymax.config.BaymaxSchema;
 import com.elioo.baymax.outbound.adapter.out.persistence.PostgresOutboundMessageAdapter;
 import com.elioo.baymax.outbound.domain.OutboundMessage;
@@ -67,11 +68,55 @@ public class PostgresThreadReadAdapter implements ThreadReadPort {
             LIMIT :limit
             """.formatted(S, PostgresOutboundMessageAdapter.LATEST_OF_KIND_ORDER);
 
+    /**
+     * {@link #PAGE} with a third source (plan CHAT-api): every answered চ্যাট turn ({@code answer IS NOT NULL}) the viewer's own
+     * account asked about this patient, at the instant it was asked, whose cited papers all still exist (S10, the rule
+     * {@code PostgresChatTurnAdapter.answered} applies). {@code 'ask'} sorts below {@code 'message'} on a tie, and the
+     * cursor compares the same triple, so pages neither skip nor repeat across the three sources.
+     */
+    private static final String PAGE_WITH_ASKS = """
+            SELECT t.item, t.id, t.at, t.message_kind, t.document_id, t.body, t.question FROM (
+                SELECT 'paper' AS item, d.id, d.created_at AS at, NULL::text AS message_kind, d.id AS document_id, NULL::text AS body,
+                       NULL::text AS question
+                  FROM %1$s.document d
+                 WHERE d.patient_id = :patient
+                UNION ALL
+                SELECT 'message', m.id, m.sent_at, m.kind, m.document_id, m.body, NULL::text
+                  FROM %1$s.outbound_message m
+                 WHERE m.patient_id = :patient
+                   AND m.family_id = :viewer
+                   AND m.sent_at IS NOT NULL AND m.delivery_status = 'sent'
+                   AND (m.document_id IS NULL OR EXISTS (SELECT 1 FROM %1$s.document x WHERE x.id = m.document_id))
+                   AND NOT (m.kind = 'explanation' AND EXISTS (
+                        SELECT 1 FROM %1$s.document c
+                         WHERE c.id = m.document_id AND c.patient_id = :patient AND c.status = 'DONE'
+                           AND m.id = (SELECT e.id FROM %1$s.outbound_message e
+                                        WHERE e.document_id = c.id AND e.kind = 'explanation'
+                                        ORDER BY %2$s LIMIT 1)))
+                UNION ALL
+                SELECT 'ask', q.id, q.created_at, q.kind, NULL::uuid, q.answer, q.question
+                  FROM %1$s.chat_turn q
+                 WHERE q.patient_id = :patient
+                   AND q.family_id = :viewer
+                   AND q.answer IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM unnest(q.document_ids) cited
+                                    WHERE NOT EXISTS (SELECT 1 FROM %1$s.document y WHERE y.id = cited))
+            ) t
+            WHERE (t.at, t.item, t.id) < (:at, :item, :id)
+            ORDER BY t.at DESC, t.item DESC, t.id DESC
+            LIMIT :limit
+            """.formatted(S, PostgresOutboundMessageAdapter.LATEST_OF_KIND_ORDER);
+
     private final DatabaseClient db;
 
     @Override
     public Flux<ThreadItem> page(UUID viewerFamilyId, UUID patientId, ThreadItem.Cursor after, int limit) {
-        return db.sql(PAGE)
+        return page(viewerFamilyId, patientId, after, limit, false);
+    }
+
+    @Override
+    public Flux<ThreadItem> page(UUID viewerFamilyId, UUID patientId, ThreadItem.Cursor after, int limit, boolean asks) {
+        return db.sql(asks ? PAGE_WITH_ASKS : PAGE)
                 .bind("patient", patientId)
                 .bind("viewer", viewerFamilyId)
                 .bind("at", OffsetDateTime.ofInstant(after.at(), ZoneOffset.UTC))
@@ -86,6 +131,11 @@ public class PostgresThreadReadAdapter implements ThreadReadPort {
         var at = row.get("at", OffsetDateTime.class).toInstant();
         if ("paper".equals(row.get("item", String.class))) {
             return new ThreadItem.Paper(id, at);
+        }
+        if ("ask".equals(row.get("item", String.class))) {
+            // call999 is the viewer's, decided by the caller at read time (ThreadItem.Ask#forViewer)
+            return new ThreadItem.Ask(id, at, row.get("question", String.class), row.get("body", String.class),
+                    AnswerKind.fromDbValue(row.get("message_kind", String.class)), false);
         }
         // the stored kind through the one enum every writer uses: a kind the database allows and Java does not know fails
         // loudly here, never as a message silently dropped (everyOutboundKindIsListedWithItsKind reads the kinds from V23's CHECK)
