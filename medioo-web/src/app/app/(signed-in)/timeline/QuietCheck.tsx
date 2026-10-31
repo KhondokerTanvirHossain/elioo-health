@@ -38,6 +38,10 @@ export function QuietCheck({ reading, again, words }: { reading: string[]; again
   const key = reading.filter((id) => !settled.has(id)).join(",");
   // How many checks this set of papers has had: the cap is the set's, never reset by a re-render that lists the same.
   const count = useRef({ key, done: 0 });
+  // The box carries `data-armed` exactly while a check waits on its timer. Nothing reads it but the browser tests, which
+  // move a fake clock only once a check is armed: on a slow runner the island hydrates after the page's load, and a
+  // clock moved before the timer was set leaves the check waiting real seconds (main CI run 41050936769, attempt 2).
+  const box = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const ids = key === "" ? [] : key.split(",");
@@ -48,12 +52,16 @@ export function QuietCheck({ reading, again, words }: { reading: string[]; again
     let over = false;
 
     const visible = () => document.visibilityState !== "hidden";
+    const set = (next: ReturnType<typeof setTimeout> | undefined) => {
+      timer = next;
+      box.current?.toggleAttribute("data-armed", next !== undefined);
+    };
     const later = () => {
       clearTimeout(timer);
-      timer = visible() && !over ? setTimeout(check, waitBefore(count.current.done)) : undefined;
+      set(visible() && !over ? setTimeout(check, waitBefore(count.current.done)) : undefined);
     };
     const check = async () => {
-      timer = undefined;
+      set(undefined);
       if (over || asking || !visible()) return;
       if (count.current.done >= MAX_CHECKS) {
         over = true;
@@ -86,7 +94,7 @@ export function QuietCheck({ reading, again, words }: { reading: string[]; again
     const onVisibility = () => {
       if (!visible()) {
         clearTimeout(timer);
-        timer = undefined;
+        set(undefined);
       } else if (timer === undefined && !asking && !over) {
         void check();
       }
@@ -97,12 +105,13 @@ export function QuietCheck({ reading, again, words }: { reading: string[]; again
     return () => {
       over = true;
       clearTimeout(timer);
+      set(undefined);
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [key]);
 
   return (
-    <div className="papers__quiet">
+    <div className="papers__quiet" ref={box}>
       <p className="papers__said" role="status">
         {said.text !== "" && <span key={said.n}>{said.text}</span>}
       </p>
