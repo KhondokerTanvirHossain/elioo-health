@@ -249,7 +249,7 @@ const asking =
     await page.locator(".composer__send").click();
     const recv = page.locator(".composer__lines .message-bubble--recv .message-bubble__body").last();
     await recv.waitFor();
-    if (answered) await page.locator(".composer__send:enabled").waitFor();
+    if (answered) await page.locator('.composer__send:not([aria-disabled="true"])').waitFor();
   };
 
 // The chat page (plan W5): default, NOW, retake and first run beside phone.html's scenes, and the attention stack in the
@@ -284,6 +284,12 @@ BOARD_SCENES.push(
   chat("asked-declined", "chat-ask-declined", "phone.html", "chat", asking("chat-ask-declined")),
   chat("asked-offline", "chat-ask-offline", "phone.html", "chat", asking("chat-ask-offline")),
   chat("with-asks", "chat-with-asks", "phone.html", "chat"),
+  // Review of PR 166: the long answer read from its first line, the session that ended under a question, a stored dose
+  // answer with its line's crop, and a first-run patient who asked before the first paper.
+  chat("asked-long", "chat-ask-long", "phone.html", "chat", asking("chat-ask-long")),
+  chat("asked-signed-out", "chat-ask-401", "phone.html", "chat", asking("chat-ask-401")),
+  chat("with-asks-dose", "chat-with-asks-dose", "phone.html", "chat"),
+  chat("first-with-asks", "chat-first-with-asks", "phone.html", "first"),
   // A NOW result while the patient shown is a first-run one: the banner is global, Mio's introduction stays still.
   {
     ...chat("first-now", "chat-first-now", "phone.html", "first"),

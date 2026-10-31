@@ -81,9 +81,11 @@ import threadNow from "../../fixtures/api/thread/now.json";
 import threadRetake from "../../fixtures/api/thread/retake.json";
 import threadSecondPage from "../../fixtures/api/thread/second-page.json";
 import threadShareMember from "../../fixtures/api/thread/share-member.json";
+import threadWithAsksDose from "../../fixtures/api/thread/with-asks-dose.json";
 import threadWithAsks from "../../fixtures/api/thread/with-asks.json";
 // CHAT-api's generated POST /app/api/patients/{id}/ask answers (baymax AskApiContractTest), read by plan CHAT-web.
 import askAnswerDose from "../../fixtures/api/ask/answer-dose.json";
+import askAnswerLong from "../../fixtures/api/ask/answer-long.json";
 import askAnswer from "../../fixtures/api/ask/answer.json";
 import askDeclined from "../../fixtures/api/ask/declined.json";
 import askEmergencyAbroad from "../../fixtures/api/ask/emergency-abroad.json";
@@ -852,6 +854,7 @@ const THREADS: Record<string, Json<ThreadJson>> = {
   "second-page.json": threadSecondPage.body,
   "share-member.json": threadShareMember.body,
   "with-asks.json": threadWithAsks.body,
+  "with-asks-dose.json": threadWithAsksDose.body,
 };
 const ATTENTION: Record<string, Json<AttentionJson>> = {
   "empty.json": attentionEmpty.body,
@@ -860,7 +863,7 @@ const ATTENTION: Record<string, Json<AttentionJson>> = {
 };
 const THREAD_MESSAGE_KEYS = ["at", "body", "document_id", "kind", "message_kind"];
 const THREAD_PAPER_KEYS = ["at", "card", "kind"];
-const THREAD_ASK_KEYS = ["answer", "answer_kind", "at", "call_999", "kind", "question", "turn_id"];
+const THREAD_ASK_KEYS = ["answer", "answer_kind", "at", "call_999", "kind", "medicines", "question", "turn_id"];
 // ATTENTION_KEYS is the papers page's, above: one key list per kind, typed against AttentionJson.
 
 /*
@@ -869,6 +872,7 @@ const THREAD_ASK_KEYS = ["answer", "answer_kind", "at", "call_999", "kind", "que
  */
 const ASKS: Record<string, { status: number; body: Json<AskJson> }> = {
   "answer-dose.json": askAnswerDose,
+  "answer-long.json": askAnswerLong,
   "answer.json": askAnswer,
   "declined.json": askDeclined,
   "emergency-abroad.json": askEmergencyAbroad,
@@ -876,7 +880,7 @@ const ASKS: Record<string, { status: number; body: Json<AskJson> }> = {
   "fallback.json": askFallback,
   "limit.json": askLimit,
 };
-const ASK_KEYS = ["answer", "at", "call_999", "kind", "question", "turn_id"];
+const ASK_KEYS = ["answer", "at", "call_999", "kind", "medicines", "question", "turn_id"];
 
 describe("the chat page's bodies", () => {
   it("everyAskFixtureIsAnAskJson", () => {
@@ -885,6 +889,7 @@ describe("the chat page's bodies", () => {
     for (const [file, { status, body }] of Object.entries(ASKS)) {
       expect(status, file).toBe(200);
       expect(keys(body), file).toEqual(ASK_KEYS);
+      for (const m of body.medicines) expect([keys(m), keys(m.crop)], `${file} medicine`).toEqual([["crop", "document_id"], ["src"]]);
       expect(ASK_KINDS as readonly string[], `${file} kind`).toContain(body.kind);
       expect(body.answer.trim(), `${file}: an answer to show`).not.toBe("");
       kinds.add(body.kind);
@@ -911,6 +916,8 @@ describe("the chat page's bodies", () => {
           kinds.add(kind);
         } else if (item.kind === "ask") {
           expect(keys(item), file).toEqual(THREAD_ASK_KEYS);
+          for (const m of (item as { medicines: { crop: object }[] }).medicines)
+            expect([keys(m), keys(m.crop)], `${file} medicine`).toEqual([["crop", "document_id"], ["src"]]);
           expect(ASK_KINDS as readonly string[], `${file} answer_kind`).toContain((item as { answer_kind: string }).answer_kind);
           asks++;
         } else {

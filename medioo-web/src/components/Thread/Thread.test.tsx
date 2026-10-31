@@ -239,6 +239,32 @@ describe("Thread", () => {
     }
   });
 
+  it("aStoredQuoteIsDrawnWithItsCropBeforeTheAnswer", () => {
+    // Review of PR 166, finding 5: after a reload the dose answer's quoted line has the same crop as when it was asked, the
+    // prescription's own image of it (the paper card's medicine crop), before the bubble; an answer that quoted no line
+    // has none.
+    const items = thread("with-asks-dose").items;
+    const dose = items.find((i): i is Extract<ThreadItemJson, { kind: "ask" }> => i.kind === "ask");
+    const rx = items.find((i): i is Extract<ThreadItemJson, { kind: "paper" }> => i.kind === "paper");
+    expect(dose?.medicines.length, "with-asks-dose quotes a line").toBe(1);
+    expect(rx?.card.status === "DONE" ? rx.card.medicines.map((m) => m.crop.src) : [], "the paper's own crop of it").toEqual([
+      dose!.medicines[0]!.crop.src,
+    ]);
+    for (const lang of LANGS) {
+      const el = rendered(draw([dose!], lang))[0]!;
+      const img = el.querySelector<HTMLImageElement>(".ask-answer img");
+      expect(img?.getAttribute("src"), lang).toBe(dose!.medicines[0]!.crop.src);
+      expect(img?.getAttribute("alt"), lang).toBe(t(lang, "health.crop.alt"));
+      const answer = el.querySelector(".message-bubble--recv")!;
+      expect(img!.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING, `${lang}: before the bubble`).toBeTruthy();
+      cleanup();
+    }
+    for (const plain of asks()) {
+      expect(draw([plain]).querySelectorAll("img").length, `${plain.answer_kind}: no quoted line, no crop`).toBe(0);
+      cleanup();
+    }
+  });
+
   it("anAskWithCall999HasTheTelLinkAndAbroadNone", () => {
     const emergency = asks().find((a) => a.answer_kind === "emergency");
     expect(emergency?.call_999, "with-asks: an emergency, viewed in Bangladesh").toBe(true);

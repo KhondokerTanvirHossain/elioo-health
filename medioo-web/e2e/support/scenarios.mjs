@@ -101,6 +101,23 @@ export function withAsks(fixture) {
   };
 }
 
+/**
+ * A first-run patient's thread (no paper, no delivered message) once its owner has asked one question (review of PR 166,
+ * findings 1 and 13): read with `asks=1`, the first-run page plus the oldest ask of a fixture Java read with asks=1; read
+ * without it, the first-run page as Java wrote it. Java stores a turn whether or not answers are on (an emergency, a
+ * declined question), so a patient with no paper can hold one. Only items are joined, never a word changed.
+ */
+export function firstRunAsked(firstRun, asked) {
+  const first = javaWrote(firstRun, "GET /app/api/patients/{id}/thread");
+  if (first.body.items.length !== 0) throw new Error(`${firstRun} is not a first-run page: it lists ${first.body.items.length} items`);
+  const ask = javaWrote(asked, "GET /app/api/patients/{id}/thread?asks=1").body.items.filter((i) => i.kind === "ask").slice(-1);
+  if (ask.length !== 1) throw new Error(`${asked} holds no ask`);
+  return {
+    byQuery: [{ when: { asks: "1" }, answer: { status: first.status, body: { ...first.body, items: ask } } }],
+    otherwise: firstRun,
+  };
+}
+
 /** The `next_cursor` a timeline fixture hands its "more" link, so the next page is served for exactly that cursor. */
 export function cursorOf(fixture) {
   const cursor = JSON.parse(readFileSync(join(FIXTURES, fixture), "utf8")).body.next_cursor;
@@ -448,6 +465,14 @@ export const SCENARIOS = {
   "chat-ask-offline": chat({ "POST /app/api/patients/{id}/ask": { abort: "failed" } }),
   // The press answered by nothing while the board is taken: the pending bubble, send disabled.
   "chat-ask-held": chat({ "POST /app/api/patients/{id}/ask": { hold: true } }),
+  // Review of PR 166: an answer near Java's cap, taller than a phone's window above the composer (finding 9); the session
+  // that ended between typing and sending, refused by Java's guard before its emergency pre-check (finding 14).
+  "chat-ask-long": chat({ "POST /app/api/patients/{id}/ask": "ask/answer-long.json" }),
+  "chat-ask-401": chat({ "POST /app/api/patients/{id}/ask": UNAUTHENTICATED, "GET /app/api/sign-in/next": UNAUTHENTICATED }),
+  // A first-run patient whose owner asked one question before the first paper: still the introduction (findings 1, 13).
+  "chat-first-with-asks": chat({ "GET /app/api/patients/{id}/thread": firstRunAsked("thread/first-run.json", "thread/with-asks.json") }),
+  // A stored dose answer quoting the prescription's line, read back with the line's crop (finding 5).
+  "chat-with-asks-dose": chat({ "GET /app/api/patients/{id}/thread": withAsks("thread/with-asks-dose.json") }),
   // A thread holding asked questions (read with ?asks=1): the stored question and answer after a reload, and its
   // longest twin.
   "chat-with-asks": chat({

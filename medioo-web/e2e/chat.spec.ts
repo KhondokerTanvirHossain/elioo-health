@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import type { AskJson, AttentionJson, MeJson, NowBannerJson, ThreadJson } from "../src/api/types";
 import { t, type CopyKey } from "../src/copy";
 import { NEXT_PAGES, signInPath } from "../src/routing/paths";
@@ -71,7 +71,9 @@ const seenButton = (page: Page) => alert(page).getByRole("button", { name: t("bn
 
 /**
  * Types `question` into the composer and presses send; resolves with Medioo's bubble once it is no longer the pending one
- * (the answer, or the reply), its text exactly as drawn (textContent, line breaks kept).
+ * (the answer, or the reply), its text as drawn: innerText, which follows the rendered line breaks. textContent keeps
+ * Java's "\n" whether or not `white-space: pre-line` applies, so the answer, the disclaimer and the red-flag line run
+ * together in one paragraph on screen and textContent still reads them as three lines (review of PR 166, finding 3).
  */
 async function ask(page: Page, question: string): Promise<string> {
   await page.locator(".composer__field").fill(question);
@@ -79,7 +81,37 @@ async function ask(page: Page, question: string): Promise<string> {
   const pending = t("bn", "chat.composer.pending", ONE.patients[0]!.name_possessive);
   const bubble = page.locator(".composer__lines .message-bubble--recv .message-bubble__body").last();
   await expect.poll(async () => ((await bubble.count()) === 0 ? pending : await bubble.textContent()), { message: "Medioo answered" }).not.toBe(pending);
-  return (await bubble.textContent()) ?? "";
+  return bubble.innerText();
+}
+
+/**
+ * The quoted line's crop in an answer (review of PR 166, finding 5): its src, whether the image the stub served loaded,
+ * and whether it is drawn before Medioo's bubble and outside it.
+ */
+async function cropBeforeBubble(scope: Locator) {
+  const img = scope.locator(".ask-answer img");
+  await expect(img).toHaveCount(1);
+  await expect.poll(() => img.evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth > 0), { message: "the crop loaded" }).toBe(true);
+  return img.evaluate((i: HTMLImageElement) => {
+    const bubble = i.closest(".ask-answer")!.querySelector(".message-bubble--recv")!;
+    return {
+      src: i.getAttribute("src"),
+      loaded: i.naturalWidth > 0,
+      before: Boolean(i.compareDocumentPosition(bubble) & Node.DOCUMENT_POSITION_FOLLOWING) && !bubble.contains(i),
+    };
+  });
+}
+
+/**
+ * Java's answer as drawn: line for line what Java sent, its last two lines the disclaimer and then the red-flag line,
+ * each on its own line on screen (`drawn` is innerText).
+ */
+function drawnAsSent(drawn: string, answer: string, what: string) {
+  expect(drawn.split("\n"), `${what}: line for line`).toEqual(answer.split("\n"));
+  expect(drawn.split("\n").slice(-2), `${what}: the two appended lines, last, each its own`).toEqual([
+    t("bn", "disclaimer"),
+    t("bn", "safety.red_flag_line"),
+  ]);
 }
 
 test.describe("the NOW banner", () => {
@@ -377,8 +409,7 @@ test.describe("the thread and the composer", () => {
     expect([after.pathname, after.search], "the address after the send").toEqual([before.pathname, before.search]);
     expect(navigations, "navigations after the send").toEqual([]);
     await expect(page.locator(".composer__lines .message-bubble--sent")).toHaveText(answer.question);
-    expect(reply, "Medioo's bubble").toBe(answer.answer);
-    expect(reply.endsWith(`${t("bn", "disclaimer")}\n${t("bn", "safety.red_flag_line")}`), "ends with both appended lines").toBe(true);
+    drawnAsSent(reply, answer.answer, "Medioo's bubble");
     const posts = recorder.requests().filter((r) => r.method !== "GET");
     expect(posts.map((r) => `${r.method} ${r.path} ${r.answered}`)).toEqual([`POST /app/api/patients/${ONE.patients[0]!.id}/ask 200`]);
     expect(posts[0]!.body, "the parsed body").toEqual({ question: answer.question });
@@ -405,7 +436,7 @@ test.describe("the thread and the composer", () => {
     expect([home.kind, home.call_999]).toEqual(["emergency", true]);
     await open(page, "chat-ask-emergency");
     expect(await telLinks(page), "before the question").toEqual([]);
-    expect(await ask(page, home.question)).toBe(home.answer);
+    drawnAsSent(await ask(page, home.question), home.answer, "the emergency answer");
     expect(await page.locator(".composer__lines a[href^='tel:']").evaluateAll((as) => as.map((a) => a.getAttribute("href")))).toEqual([
       "tel:999",
     ]);
@@ -431,11 +462,95 @@ test.describe("the thread and the composer", () => {
     expect(where.answer!.bottom, "and not under the composer").toBeLessThanOrEqual(where.composer!.top + 1);
   });
 
+  test("aLongAnswerIsReadFromItsFirstLine", async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== "phone", "the phone's one column, where a long answer is taller than the window");
+    // Review of PR 166, finding 9: an answer near Java's cap is taller than the space between the toolbar and the docked
+    // composer. The window then goes to the sent question, so the answer's first line is in view, not its disclaimer.
+    const long = answerOf<AskJson>("chat-ask-long", "POST /app/api/patients/{id}/ask");
+    expect(long.answer.length, "answer-long is near the cap").toBeGreaterThan(900);
+    await open(page, "chat-ask-long");
+    drawnAsSent(await ask(page, long.question), long.answer, "the long answer");
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    const where = await page.evaluate(() => {
+      const body = document.querySelector(".composer__lines > li:last-child .ask-answer .message-bubble__body")!;
+      const first = document.createRange();
+      first.setStart(body.firstChild!, 0);
+      first.setEnd(body.firstChild!, 1);
+      return {
+        exchange: document.querySelector(".composer__lines > li:last-child")!.getBoundingClientRect().height,
+        firstLine: first.getBoundingClientRect().toJSON() as DOMRect,
+        toolbar: document.querySelector(".app-shell__toolbar")?.getBoundingClientRect().bottom ?? 0,
+        composer: document.querySelector(".chat > .composer")!.getBoundingClientRect().top,
+      };
+    });
+    expect(where.exchange, "the precondition: taller than the room above the composer").toBeGreaterThan(where.composer - where.toolbar);
+    expect(where.firstLine.top, "the answer's first line is below the toolbar").toBeGreaterThanOrEqual(where.toolbar - 1);
+    expect(where.firstLine.bottom, "and above the composer").toBeLessThanOrEqual(where.composer + 1);
+  });
+
+  test("theSendKeyKeepsTheKeyboardsFocus", async ({ page }) => {
+    // Review of PR 166, finding 6 (WCAG 2.4.3): a keyboard user who tabs to send and presses it keeps focus there while
+    // Java answers and after; a native `disabled` would blur the button and drop focus to the page.
+    for (const [scenario, settled] of [
+      ["chat-ask-held", false],
+      ["chat-ask-answer", true],
+    ] as const) {
+      await open(page, scenario);
+      await page.locator(".composer__field").fill(answerOf<AskJson>("chat-ask-answer", "POST /app/api/patients/{id}/ask").question);
+      await page.locator(".composer__field").press("Tab");
+      const send = page.getByRole("button", { name: t("bn", "add.send") });
+      await expect(send, `${scenario}: on send`).toBeFocused();
+      await page.keyboard.press("Enter");
+      await expect(page.locator(".composer__lines .message-bubble--sent"), scenario).toHaveCount(1);
+      const pending = t("bn", "chat.composer.pending", ONE.patients[0]!.name_possessive);
+      const recv = page.locator(".composer__lines .message-bubble--recv .message-bubble__body");
+      if (settled) await expect(recv, `${scenario}: answered`).not.toHaveText(pending);
+      else await expect(recv, `${scenario}: pending`).toHaveText(pending);
+      const focused = await page.evaluate(() => document.activeElement?.className || document.activeElement?.tagName);
+      expect(focused, `${scenario}: focus after the press`).toBe("composer__send");
+      // The press is still refused while pending, by aria-disabled (and the island's own guard), never natively.
+      if (!settled) await expect(send).toHaveAttribute("aria-disabled", "true");
+    }
+  });
+
+  test("anExpiredSessionKeepsTheRedFlagLineAndOffersSignIn", async ({ page }) => {
+    // Review of PR 166, finding 14: Java's guard answers 401 before its emergency pre-check, so an emergency typed after the
+    // session ended never reaches the emergency line. The reply, ending with the red-flag line, stays readable, with the
+    // sign-in link beside it; the page does not leave by itself.
+    await open(page, "chat-ask-401");
+    await page.locator(".composer__field").waitFor();
+    const navigations: string[] = [];
+    page.on("framenavigated", (frame) => {
+      if (frame === page.mainFrame()) navigations.push(frame.url());
+    });
+    const reply = await ask(page, answerOf<AskJson>("chat-ask-emergency", "POST /app/api/patients/{id}/ask").question);
+    expect(reply.split("\n")).toEqual([t("bn", "chat.ask.reply"), t("bn", "safety.red_flag_line")]);
+    await expect(page.locator(".composer__lines .message-bubble--recv").last()).toBeVisible();
+    const signIn = page.locator(".composer__lines a.composer__signin");
+    await expect(signIn).toHaveText(t("bn", "login.enter"));
+    await expect(signIn).toHaveAttribute("href", signInPath("/app/home"));
+    expect(navigations, "no navigation by itself").toEqual([]);
+    expect(new URL(page.url()).pathname).toBe("/app/home");
+  });
+
+  test("aQuotedLineIsShownWithItsCrop", async ({ page }) => {
+    // Review of PR 166, finding 5 (DR-12, DR-16): the dose answer's transcribed line comes with its crop, before the bubble.
+    const dose = answerOf<AskJson>("chat-ask-dose", "POST /app/api/patients/{id}/ask");
+    expect(dose.medicines.length, "answer-dose quotes a line").toBe(1);
+    await open(page, "chat-ask-dose");
+    drawnAsSent(await ask(page, dose.question), dose.answer, "the dose answer");
+    expect(await cropBeforeBubble(page.locator(".composer__lines > li").last())).toEqual({
+      src: dose.medicines[0]!.crop.src,
+      loaded: true,
+      before: true,
+    });
+  });
+
   test("anEmergencyAbroadHasNoTelLink", async ({ page }) => {
     const abroad = answerOf<AskJson>("chat-ask-emergency-abroad", "POST /app/api/patients/{id}/ask");
     expect([abroad.kind, abroad.call_999]).toEqual(["emergency", false]);
     await open(page, "chat-ask-emergency-abroad");
-    expect(await ask(page, abroad.question)).toBe(abroad.answer);
+    drawnAsSent(await ask(page, abroad.question), abroad.answer, "the emergency answer abroad");
     expect(await telLinks(page), "tel: links on the page").toEqual([]);
   });
 
@@ -446,10 +561,14 @@ test.describe("the thread and the composer", () => {
       .reverse();
     expect(stored.length, "with-asks holds answered turns").toBeGreaterThan(0);
     await open(page, "chat-with-asks");
+    // innerText, as drawn (finding 3): each stored answer's lines on their own lines on screen, the two appended last.
     const shown = await page.locator("[data-thread-item='ask']").evaluateAll((items) =>
-      items.map((el) => [...el.querySelectorAll(".message-bubble__body")].map((b) => b.textContent)),
+      items.map((el) => [...el.querySelectorAll<HTMLElement>(".message-bubble__body")].map((b) => b.innerText)),
     );
-    expect(shown).toEqual(stored.map((a) => (a.kind === "ask" ? [a.question, a.answer] : [])));
+    expect(shown.map((pair) => pair[0])).toEqual(stored.map((a) => (a.kind === "ask" ? a.question : "")));
+    stored.forEach((a, k) => {
+      if (a.kind === "ask") drawnAsSent(shown[k]![1]!, a.answer, `stored answer ${k}`);
+    });
     // The stored emergency, read in Bangladesh, keeps its 999 link; the stored answer has none.
     expect(
       await page.locator("[data-thread-item='ask'] a[href^='tel:']").evaluateAll((as) => as.map((a) => a.getAttribute("href"))),
@@ -457,10 +576,25 @@ test.describe("the thread and the composer", () => {
   });
 
   test("thePageAsksForAsks", async ({ page }) => {
+    // Two reads (review of PR 166, findings 1, 7, 13): without asks, the papers and messages that decide a first-run patient
+    // and that no question pushes off the page; with asks=1, the questions and Java's answers.
     const recorder = await open(page, "chat-with-asks");
     const reads = (await recorder.java()).filter((r) => r.method === "GET" && /^\/app\/api\/patients\/[^/]+\/thread$/.test(r.path));
-    expect(reads.length, "the page's server read of the thread").toBeGreaterThan(0);
-    expect(reads.map((r) => `${r.path}?${r.query}`)).toEqual(reads.map(() => `/app/api/patients/${ONE.patients[0]!.id}/thread?asks=1`));
+    expect(reads.length, "the page's server reads of the thread").toBeGreaterThan(0);
+    const thread = `/app/api/patients/${ONE.patients[0]!.id}/thread`;
+    expect([...new Set(reads.map((r) => `${r.path}?${r.query}`))].sort()).toEqual([`${thread}?`, `${thread}?asks=1`]);
+  });
+
+  test("aStoredQuoteIsShownWithItsCropAfterAReload", async ({ page }) => {
+    // Review of PR 166, finding 5: the stored dose answer, server-rendered, has the quoted line's crop before the bubble,
+    // the prescription's own image of it, loaded (not a broken image).
+    const dose = answerOf<ThreadJson>("chat-with-asks-dose", "GET /app/api/patients/{id}/thread").items.find((i) => i.kind === "ask");
+    expect(dose?.kind === "ask" ? dose.medicines.length : 0, "with-asks-dose quotes a line").toBe(1);
+    if (dose?.kind !== "ask") return;
+    await open(page, "chat-with-asks-dose");
+    const item = page.locator("[data-thread-item='ask']");
+    await expect(item).toHaveCount(1);
+    expect(await cropBeforeBubble(item)).toEqual({ src: dose.medicines[0]!.crop.src, loaded: true, before: true });
   });
 
   test("aFirstRunPatientGetsTheIntroAndOneCamera", async ({ page }) => {
@@ -474,6 +608,41 @@ test.describe("the thread and the composer", () => {
     await open(page, "chat-share-first", `/app/home?patient=${shared.id}`);
     await expect(page.locator(".message-bubble__body", { hasText: t("bn", "chat.intro") })).toHaveCount(1);
     await expect(page.locator('a[href^="/app/add"]')).toHaveCount(0);
+  });
+
+  test("aQuestionBeforeTheFirstPaperKeepsTheIntro", async ({ page }) => {
+    // Review of PR 166, findings 1 and 13, both directions. A first-run patient whose owner asked one question (Java stores
+    // the turn even with answers off): still Mio's introduction and the one camera, and no link to an empty Papers page;
+    // the stored question is drawn too.
+    const asked = answerOf<ThreadJson>("chat-first-with-asks", "GET /app/api/patients/{id}/thread");
+    expect(asked.items.map((i) => i.kind), "the first-run page holding one ask").toEqual(["ask"]);
+    expect(answerOf<ThreadJson>("chat-first-with-asks", "GET /app/api/patients/{id}/thread", "").items, "and no paper").toEqual([]);
+    await open(page, "chat-first-with-asks");
+    await expect(page.locator(".message-bubble__body", { hasText: t("bn", "chat.intro") })).toHaveCount(1);
+    await expect(page.locator('a[href^="/app/add"]')).toHaveCount(1);
+    await expect(page.locator(".chat__papers-link")).toHaveCount(0);
+    await expect(page.locator("[data-thread-item='ask']")).toHaveCount(1);
+    // The other direction: a patient with a paper (and asks) gets no introduction and the link to the papers.
+    expect(answerOf<ThreadJson>("chat-with-asks", "GET /app/api/patients/{id}/thread", "").items.some((i) => i.kind === "paper")).toBe(true);
+    await open(page, "chat-with-asks");
+    await expect(page.locator(".message-bubble__body", { hasText: t("bn", "chat.intro") })).toHaveCount(0);
+    await expect(page.locator(".chat__papers-link")).toHaveCount(1);
+  });
+
+  test("theJavaScriptPageNeverSaysToTurnJavaScriptOn", async ({ page }) => {
+    // Review of PR 166, finding 10: the server HTML a family with JavaScript on reads before hydration carries
+    // chat.composer.nojs as markup only inside a <noscript>; with JavaScript on it is never drawn. (The React flight data,
+    // inside <script> elements, carries every server-rendered string, the noscript's included: it is never drawn.)
+    await useScenario(page, "chat-default");
+    const response = await page.goto("/app/home");
+    const html = (await response!.text()).replace(/<!-- -->/g, "");
+    const nojs = t("bn", "chat.composer.nojs");
+    const markup = html.replace(/<script\b[\s\S]*?<\/script>/g, "");
+    expect(markup, "the line is in the page, for a browser without JavaScript").toContain(nojs);
+    expect(markup.replace(/<noscript>[\s\S]*?<\/noscript>/g, ""), "and only inside a <noscript>").not.toContain(nojs);
+    await page.waitForLoadState("load");
+    await expect(page.getByText(nojs)).toHaveCount(0);
+    await expect(page.locator(".composer__standing")).toHaveText(t("bn", "chat.composer.hint"));
   });
 
   test("theDisclaimerIsOnThePage", async ({ page }) => {
@@ -511,7 +680,7 @@ test.describe("without JavaScript", () => {
     await expect(page.getByRole("button", { name: t("bn", "now.banner.seen") }), "no seen button without JavaScript").toHaveCount(0);
     // And the composer is no form that could post the typed text anywhere.
     expect(await page.locator("form").count()).toBe(0);
-    await expect(page.locator(".composer__standing")).toHaveText(t("bn", "chat.composer.nojs"));
+    await expect(page.locator(".composer__nojs")).toHaveText(t("bn", "chat.composer.nojs"));
   });
 
   test("withoutJavaScriptThereIsNoFieldAndTheLineSaysHow", async ({ page }) => {
@@ -520,12 +689,14 @@ test.describe("without JavaScript", () => {
     const recorder = await open(page, "chat-with-asks");
     expect(await page.locator("input").count(), "inputs").toBe(0);
     expect(await page.locator("form").count(), "forms").toBe(0);
-    await expect(page.locator(".composer__standing")).toHaveText(t("bn", "chat.composer.nojs"));
+    await expect(page.locator(".composer__nojs")).toHaveText(t("bn", "chat.composer.nojs"));
     const stored = answerOf<ThreadJson>("chat-with-asks", "GET /app/api/patients/{id}/thread").items.find((i) => i.kind === "ask");
     expect(stored?.kind, "with-asks holds an ask").toBe("ask");
     if (stored?.kind !== "ask") return;
-    const answers = await page.locator("[data-thread-item='ask'] .message-bubble--recv .message-bubble__body").allTextContents();
-    expect(answers, "the stored answers on the page").toContain(stored.answer);
+    const answers = await page.locator("[data-thread-item='ask'] .message-bubble--recv .message-bubble__body").allInnerTexts();
+    expect(answers.length, "the stored answers on the page").toBeGreaterThan(0);
+    // Drawn as sent, line for line, without JavaScript too (innerText: what is on screen, finding 3).
+    drawnAsSent(answers.at(-1)!, stored.answer, "the newest stored answer");
     expect(recorder.requests().filter((r) => r.method !== "GET"), "nothing posted").toEqual([]);
   });
 });
@@ -551,6 +722,47 @@ test.describe("chat-ask-emergency", () =>
   screenChecks("/app/home", "chat-ask-emergency", {
     act: {
       state: "an emergency answer",
+      run: async (page) => {
+        await ask(page, answerOf<AskJson>("chat-ask-emergency", "POST /app/api/patients/{id}/ask").question);
+      },
+    },
+  }));
+// Review of PR 166: a dose answer with its quoted line's crop, as it arrives and after a reload (finding 5: each crop
+// decodes at its own width, and no other image is on the page); a first-run patient who asked (findings 1, 13); the
+// long answer drawn in place (finding 9); and the session that ended under a question (finding 14).
+const doseCrops = (medicines: { crop: { src: string } }[]): CropRow[] =>
+  medicines.map((m) => ({ crop: { src: m.crop.src, width: null, height: null } }));
+const askedDose = answerOf<AskJson>("chat-ask-dose", "POST /app/api/patients/{id}/ask");
+test.describe("chat-ask-dose", () =>
+  screenChecks("/app/home", "chat-ask-dose", {
+    images: doseCrops(askedDose.medicines),
+    act: {
+      state: "a dose answer",
+      run: async (page) => {
+        await ask(page, askedDose.question);
+      },
+    },
+  }));
+test.describe("chat-with-asks-dose", () =>
+  screenChecks("/app/home", "chat-with-asks-dose", {
+    images: answerOf<ThreadJson>("chat-with-asks-dose", "GET /app/api/patients/{id}/thread").items.flatMap((i) =>
+      i.kind === "ask" ? doseCrops(i.medicines) : [],
+    ),
+  }));
+test.describe("chat-first-with-asks", () => screenChecks("/app/home", "chat-first-with-asks"));
+test.describe("chat-ask-long", () =>
+  screenChecks("/app/home", "chat-ask-long", {
+    act: {
+      state: "a long answer",
+      run: async (page) => {
+        await ask(page, answerOf<AskJson>("chat-ask-long", "POST /app/api/patients/{id}/ask").question);
+      },
+    },
+  }));
+test.describe("chat-ask-401", () =>
+  screenChecks("/app/home", "chat-ask-401", {
+    act: {
+      state: "a question after the session ended",
       run: async (page) => {
         await ask(page, answerOf<AskJson>("chat-ask-emergency", "POST /app/api/patients/{id}/ask").question);
       },

@@ -28,6 +28,7 @@ export function bannerFor(fixture: string, meFixture: string, index?: number): A
 export function reRead(fixture: string, meFixture?: string): Answer;
 export function messagesOnly(fixture: string): Answer;
 export function withAsks(fixture: string): ByQuery;
+export function firstRunAsked(firstRun: string, asked: string): ByQuery;
 export function withNow(name: string, table?: Record<string, Value>): Record<string, Value>;
 export function withNowName(name: string): string;
 export function withStaleNowName(name: string): string;
