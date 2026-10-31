@@ -56,7 +56,10 @@ class AskApiContractTest {
     static final Instant NOW = Instant.parse("2026-10-30T06:00:00Z");
     static final Path COMMITTED = Path.of("../medioo-web/fixtures/api/ask");
     static final Path WRITTEN = Path.of("build/web-contract/ask");
-    static final List<String> CASES = List.of("answer", "answer-dose", "emergency", "emergency-abroad", "limit", "fallback", "declined");
+    static final List<String> CASES = List.of("answer", "answer-dose", "answer-long", "emergency", "emergency-abroad", "limit", "fallback",
+            "declined");
+    /** The answer-long case's body: one stored fact, said over and over, so the whole answer runs close to the cap. */
+    static final String LONG_LINE = "Ma-র ক্রিয়েটিনিন 1.8 mg/dL, কাগজে ছাপা সীমা 0.7–1.3-এর বাইরে।";
     static final Set<String> NEVER_SENT = Set.of("handler", "violations", "model", "model_calls", "input_tokens", "output_tokens",
             "cost_usd", "prompt", "counted", "latency_ms", "document_ids", "family_id");
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -70,6 +73,8 @@ class AskApiContractTest {
             String q = request.userPrompt().substring(request.userPrompt().indexOf("QUESTION:"));
             String text = q.contains("ক্রিয়েটিনিন") ? "Ma-র ক্রিয়েটিনিন 1.8 mg/dL, কাগজে ছাপা সীমা 0.7–1.3-এর বাইরে।"
                     : q.contains("অর্ধেক") ? "Ma-র শেষ প্রেসক্রিপশনে লেখা: {{rx:1}}"
+                    // review of #166, finding 9: an answer near the cap, taller than a phone's window above the composer
+                    : q.contains("সব কাগজে") ? String.join("\n", java.util.Collections.nCopies(15, LONG_LINE))
                     : "Ma-র প্রেশার 140/90।";
             return Mono.just(new LlmResponse(text, "end_turn", new TokenUsage(900, 120), "claude-sonnet-5", null, "anthropic", 7L));
         }
@@ -103,6 +108,7 @@ class AskApiContractTest {
         return switch (name) {
             case "answer", "limit", "declined" -> "আম্মার ক্রিয়েটিনিন কত?";
             case "answer-dose" -> "ওষুধটা অর্ধেক করব?";
+            case "answer-long" -> "আম্মার সব কাগজে কী লেখা?";
             case "emergency" -> "আম্মার বুকে ব্যথা";
             case "emergency-abroad" -> "আম্মার শ্বাসকষ্ট হচ্ছে";
             case "fallback" -> "আম্মার প্রেশার কত?";
@@ -122,8 +128,8 @@ class AskApiContractTest {
         UUID rx = FixedPapers.paper(POSTGRES, FixedPapers.id(k, "rx"), ma, "prescription", "DONE", "2026-10-15",
                 Instant.parse("2026-10-15T04:00:00Z"), "routine");
         FixedPapers.exec(POSTGRES, "INSERT INTO baymax.medication_event (id, patient_id, document_id, name, dose_text, timing_text, crop_key, at)"
-                        + " VALUES (?, ?, ?, 'Tab. Demoprol 5 mg', '1+0+0', 'খাবারের পরে', 'k', ?)",
-                FixedPapers.id(k, "demoprol"), ma.id(), rx, Timestamp.from(Instant.parse("2026-10-15T04:00:00Z")));
+                        + " VALUES (?, ?, ?, 'Tab. Demoprol 5 mg', '1+0+0', 'খাবারের পরে', ?, ?)",
+                FixedPapers.id(k, "demoprol"), ma.id(), rx, cropKey(rx), Timestamp.from(Instant.parse("2026-10-15T04:00:00Z")));
         String session = FixedPapers.session(context, f, NOW);
         if ("emergency-abroad".equals(name)) {
             String number = "+4477009000" + ABROAD.incrementAndGet();
@@ -138,6 +144,11 @@ class AskApiContractTest {
                     f, ma.id(), Timestamp.from(NOW.minusSeconds(600)), Timestamp.from(NOW.minusSeconds(590)));
         }
         return new Seeded(ma, session, question(name));
+    }
+
+    /** The seeded medicine line's stored crop key, on its prescription. */
+    static String cropKey(UUID rx) {
+        return "f/p/" + rx + "/crop-demoprol.jpg";
     }
 
     static ReactiveWebApplicationContextRunner runnerFor(String name) {
@@ -190,8 +201,8 @@ class AskApiContractTest {
 
     @Test
     void eachCaseHasItsKind() throws IOException {
-        Map<String, String> kinds = Map.of("answer", "answer", "answer-dose", "answer", "emergency", "emergency", "emergency-abroad",
-                "emergency", "limit", "limit", "fallback", "fallback", "declined", "declined");
+        Map<String, String> kinds = Map.of("answer", "answer", "answer-dose", "answer", "answer-long", "answer", "emergency", "emergency",
+                "emergency-abroad", "emergency", "limit", "limit", "fallback", "fallback", "declined", "declined");
         for (String name : CASES) {
             JsonNode body = JSON.readTree(COMMITTED.resolve(name + ".json").toFile()).get("body");
             assertThat(body.get("kind").asText()).as(name).isEqualTo(kinds.get(name));
@@ -227,6 +238,35 @@ class AskApiContractTest {
             }
         }
         return n;
+    }
+
+    /**
+     * Review of #166, finding 5 (DR-12, DR-16): a dose answer quotes the prescription line verbatim, and the line goes to the
+     * browser with its crop, the prescription's own image of that line, so the family can check what was transcribed. Every
+     * other case quotes no line and carries an empty list, never a missing field.
+     */
+    @Test
+    void aQuotedLineIsSentWithItsCrop() throws IOException {
+        UUID rx = FixedPapers.id("fixture-ask-answer-dose", "rx");
+        JsonNode dose = JSON.readTree(COMMITTED.resolve("answer-dose.json").toFile()).get("body").get("medicines");
+        assertThat(dose).as("answer-dose medicines").hasSize(1);
+        assertThat(dose.get(0).get("document_id").asText()).isEqualTo(rx.toString());
+        assertThat(dose.get(0).get("crop").get("src").asText()).isEqualTo(com.elioo.baymax.web.adapter.in.ImageRefs.crop(rx, cropKey(rx)));
+        for (String name : CASES) {
+            if (!"answer-dose".equals(name)) {
+                JsonNode none = JSON.readTree(COMMITTED.resolve(name + ".json").toFile()).get("body").get("medicines");
+                assertThat(none).as(name + " medicines").isNotNull();
+                assertThat(none.isArray() && none.isEmpty()).as(name + " quotes no line").isTrue();
+            }
+        }
+    }
+
+    /** Review of #166, finding 9: the long case is a real answer within the cap and long enough to outgrow a phone's window. */
+    @Test
+    void theLongAnswerIsNearTheCap() throws IOException {
+        JsonNode body = JSON.readTree(COMMITTED.resolve("answer-long.json").toFile()).get("body");
+        assertThat(body.get("kind").asText()).isEqualTo("answer");
+        assertThat(body.get("answer").asText().length()).as("characters").isBetween(900, 1200);
     }
 
     @Test

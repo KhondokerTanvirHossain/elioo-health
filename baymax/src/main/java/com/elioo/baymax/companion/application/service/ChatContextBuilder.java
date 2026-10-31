@@ -105,6 +105,7 @@ public class ChatContextBuilder {
 
         List<String> rxLines = new ArrayList<>();
         List<String> verbatim = new ArrayList<>();
+        List<String> crops = new ArrayList<>();
         Set<String> rxNumbers = new LinkedHashSet<>();
         Set<String> names = new LinkedHashSet<>();
         if (rx.found()) {
@@ -117,6 +118,9 @@ public class ChatContextBuilder {
                     continue;
                 }
                 verbatim.add(line);
+                // the line's own crop, by position (DR-12): an answer quoting it is shown beside it (review of #166, finding 5)
+                Object cropKey = m.get("crop_key");
+                crops.add(cropKey == null ? "" : String.valueOf(cropKey));
                 rxLines.add("{{rx:" + verbatim.size() + "}} = " + line);
                 names.addAll(ChatContext.namesIn(m.get("name") == null ? "" : String.valueOf(m.get("name"))));
             }
@@ -175,7 +179,10 @@ public class ChatContextBuilder {
         if (dropped > 0) {
             lines.add(notShown(dropped));
         }
-        return new ChatContext(lines, numbers, verbatim, new ArrayList<>(documents), truncated, records, dates, names);
+        // a line with no crop key cannot be shown with its crop: then no line's crop is claimed (DR-12, never a wrong crop)
+        boolean cropped = !verbatim.isEmpty() && crops.stream().noneMatch(String::isBlank);
+        return new ChatContext(lines, numbers, verbatim, new ArrayList<>(documents), truncated, records, dates, names,
+                verbatim.isEmpty() ? null : rx.documentId(), cropped ? crops : List.of());
     }
 
     private static int tokens(String head, List<List<Fact>> series, List<String> rxLines, int dropped) {

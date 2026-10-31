@@ -1,6 +1,7 @@
 package com.elioo.baymax.companion.application.service;
 
 import com.elioo.baymax.companion.domain.ChatContext;
+import com.elioo.baymax.companion.domain.CitedMedicine;
 import com.elioo.baymax.companion.domain.TextNormaliser;
 import com.elioo.baymax.outbound.application.service.DocumentFacts;
 
@@ -197,6 +198,29 @@ public final class AnswerCheck {
         }
         m.appendTail(sb);
         return sb.toString();
+    }
+
+    /**
+     * The prescription lines a model text quotes, each with its paper and crop, in the order first quoted, each once
+     * (review of #166, finding 5). A reference that does not resolve, or a line with no crop known, quotes nothing.
+     */
+    public static List<CitedMedicine> cited(String modelText, ChatContext ctx) {
+        if (modelText == null || ctx.prescriptionId() == null || ctx.verbatimCropKeys().isEmpty()) {
+            return List.of();
+        }
+        Set<Integer> seen = new LinkedHashSet<>();
+        Matcher m = REFERENCE.matcher(modelText);
+        while (m.find()) {
+            int n = Integer.parseInt(m.group(1));
+            if (n >= 1 && n <= ctx.verbatimCropKeys().size()) {
+                seen.add(n);
+            }
+        }
+        List<CitedMedicine> out = new ArrayList<>();
+        for (int n : seen) {
+            out.add(new CitedMedicine(ctx.prescriptionId(), ctx.verbatimCropKeys().get(n - 1)));
+        }
+        return out;
     }
 
     /** The whole final text against the cap: {@code too_long:<length>} when it is over. */

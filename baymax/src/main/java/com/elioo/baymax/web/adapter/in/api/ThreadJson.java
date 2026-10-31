@@ -41,7 +41,8 @@ final class ThreadJson {
 
     /**
      * Plan CHAT-api, only with {@code ?asks=1}: {@code {"kind": "ask", "at", "turn_id", "question", "answer", "answer_kind",
-     * "call_999"}}. {@code at} is when it was asked; {@code answer} is exactly what the family was shown; no handler,
+     * "call_999", "medicines"}}, {@code medicines} as AskJson's (each quoted line with its crop). {@code at} is when it was
+     * asked; {@code answer} is exactly what Java sent; no handler,
      * violation, model, token or cost field.
      */
     static Map<String, Object> ask(ThreadItem.Ask ask) {
@@ -53,6 +54,7 @@ final class ThreadJson {
         m.put("answer", ask.answer());
         m.put("answer_kind", ask.kind().dbValue());
         m.put("call_999", ask.call999());
+        m.put("medicines", AskJson.medicines(ask.medicines()));
         return m;
     }
 

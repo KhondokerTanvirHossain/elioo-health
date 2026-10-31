@@ -87,6 +87,37 @@ export function messagesOnly(fixture) {
   const parsed = javaWrote(fixture, "GET /app/api/patients/{id}/thread");
   return { status: parsed.status, body: { ...parsed.body, items: parsed.body.items.filter((i) => i.kind === "message") } };
 }
+/**
+ * A thread read with `?asks=1` (plan CHAT-web), answered as Java answers it: the fixture for `asks=1`, and the same page
+ * with its ask items left out for a read without it (ThreadApiContractTest.withoutAsksTheThreadIsUnchanged: the turns
+ * are listed only when asked for), so a page that forgot `asks=1` is served what Java would serve it. Only items are
+ * dropped, never a word changed.
+ */
+export function withAsks(fixture) {
+  const parsed = javaWrote(fixture, "GET /app/api/patients/{id}/thread?asks=1");
+  return {
+    byQuery: [{ when: { asks: "1" }, answer: fixture }],
+    otherwise: { status: parsed.status, body: { ...parsed.body, items: parsed.body.items.filter((i) => i.kind !== "ask") } },
+  };
+}
+
+/**
+ * A first-run patient's thread (no paper, no delivered message) once its owner has asked one question (review of PR 166,
+ * findings 1 and 13): read with `asks=1`, the first-run page plus the oldest ask of a fixture Java read with asks=1; read
+ * without it, the first-run page as Java wrote it. Java stores a turn whether or not answers are on (an emergency, a
+ * declined question), so a patient with no paper can hold one. Only items are joined, never a word changed.
+ */
+export function firstRunAsked(firstRun, asked) {
+  const first = javaWrote(firstRun, "GET /app/api/patients/{id}/thread");
+  if (first.body.items.length !== 0) throw new Error(`${firstRun} is not a first-run page: it lists ${first.body.items.length} items`);
+  const ask = javaWrote(asked, "GET /app/api/patients/{id}/thread?asks=1").body.items.filter((i) => i.kind === "ask").slice(-1);
+  if (ask.length !== 1) throw new Error(`${asked} holds no ask`);
+  return {
+    byQuery: [{ when: { asks: "1" }, answer: { status: first.status, body: { ...first.body, items: ask } } }],
+    otherwise: firstRun,
+  };
+}
+
 /** The `next_cursor` a timeline fixture hands its "more" link, so the next page is served for exactly that cursor. */
 export function cursorOf(fixture) {
   const cursor = JSON.parse(readFileSync(join(FIXTURES, fixture), "utf8")).body.next_cursor;
@@ -420,6 +451,39 @@ export const SCENARIOS = {
     "GET /app/api/me": "me/preview-on.json",
     "GET /app/api/now-banner": bannerFor("now-banner/one.json", "me/preview-on.json"),
   }),
+  // The composer asks (plan CHAT-web): what Java answers a question, each a body AskApiContractTest wrote. A model
+  // answer, a dose question (the doctor line appended by Java's code), an emergency in Bangladesh and abroad (no model
+  // call; 999 only at home), the day's cap, the fixed reply after a failed check, answers switched off, and a press
+  // whose connection dies (the composer's reply).
+  "chat-ask-answer": chat({ "POST /app/api/patients/{id}/ask": "ask/answer.json" }),
+  "chat-ask-dose": chat({ "POST /app/api/patients/{id}/ask": "ask/answer-dose.json" }),
+  "chat-ask-emergency": chat({ "POST /app/api/patients/{id}/ask": "ask/emergency.json" }),
+  "chat-ask-emergency-abroad": chat({ "POST /app/api/patients/{id}/ask": "ask/emergency-abroad.json" }),
+  "chat-ask-limit": chat({ "POST /app/api/patients/{id}/ask": "ask/limit.json" }),
+  "chat-ask-fallback": chat({ "POST /app/api/patients/{id}/ask": "ask/fallback.json" }),
+  "chat-ask-declined": chat({ "POST /app/api/patients/{id}/ask": "ask/declined.json" }),
+  "chat-ask-offline": chat({ "POST /app/api/patients/{id}/ask": { abort: "failed" } }),
+  // The press answered by nothing while the board is taken: the pending bubble, send disabled.
+  "chat-ask-held": chat({ "POST /app/api/patients/{id}/ask": { hold: true } }),
+  // Review of PR 166: an answer near Java's cap, taller than a phone's window above the composer (finding 9); the session
+  // that ended between typing and sending, refused by Java's guard before its emergency pre-check (finding 14).
+  "chat-ask-long": chat({ "POST /app/api/patients/{id}/ask": "ask/answer-long.json" }),
+  "chat-ask-401": chat({ "POST /app/api/patients/{id}/ask": UNAUTHENTICATED, "GET /app/api/sign-in/next": UNAUTHENTICATED }),
+  // A first-run patient whose owner asked one question before the first paper: still the introduction (findings 1, 13).
+  "chat-first-with-asks": chat({ "GET /app/api/patients/{id}/thread": firstRunAsked("thread/first-run.json", "thread/with-asks.json") }),
+  // A stored dose answer quoting the prescription's line, read back with the line's crop (finding 5).
+  "chat-with-asks-dose": chat({ "GET /app/api/patients/{id}/thread": withAsks("thread/with-asks-dose.json") }),
+  // A thread holding asked questions (read with ?asks=1): the stored question and answer after a reload, and its
+  // longest twin.
+  "chat-with-asks": chat({
+    "GET /app/api/patients/{id}/thread": withAsks("thread/with-asks.json"),
+    "POST /app/api/patients/{id}/ask": "ask/answer.json",
+  }),
+  "chat-with-asks-long": chat({
+    "GET /app/api/me": "me/long-name.json",
+    "GET /app/api/patients/{id}/thread": withAsks("thread/with-asks.json"),
+    "POST /app/api/patients/{id}/ask": "ask/answer.json",
+  }),
   // family (W10): each scenario's `me` is the one FamilyApiContractTest read from the same seeded family as its family
   // body (me/family-*.json), so the toolbar never names a patient the tab does not list (FAMILY_PAIRS, checked in
   // scenarios.test.ts). The owner (Ma remembered), the share member (every write refused VIEW_ONLY, as Java refuses a
@@ -652,6 +716,8 @@ export const LONGEST = {
   // The chat page (W5): the longest name, and the thread's longest real page (thread/second-page.json, twenty items).
   "chat-default": "chat-long",
   "chat-now": "chat-now-long",
+  // A thread with asked questions (plan CHAT-web): the longest name over the stored questions and answers.
+  "chat-with-asks": "chat-with-asks-long",
   // family (W10): the longest name on the tab's own cards (family/long-name.json, owned; long-name-shared.json, seen by a
   // share member), each with its own `me`, so the card headings are measured, not only the shell's toolbar.
   "family-owner": "family-owner-long",

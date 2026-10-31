@@ -1,10 +1,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test, type Page } from "@playwright/test";
+import type { AskJson } from "../src/api/types";
 import { t } from "../src/copy";
 import { useScenario } from "./support/browser-api";
 import { pngFor } from "./support/png.mjs";
-import { familyPatientId } from "./support/scenarios.mjs";
+import { FIXTURES, SCENARIOS, familyPatientId } from "./support/scenarios.mjs";
 
 /*
  * The screenshot board (plan A7, Wave 3 Shared interfaces): each screen state at phone 390×844 and desktop 1280×800,
@@ -232,6 +233,25 @@ BOARD_SCENES.push(
   upload("cap-reached", "upload-cap-reached"),
 );
 
+/**
+ * A press of the composer (plan CHAT-web) with the question Java answered in the scenario's ask fixture (a fixed line for
+ * a press that is cut or held): Java's answer drawn in place (`answered`), or only the pending bubble (a held request).
+ */
+const asking =
+  (scenario: string, answered = true): Scene["act"] =>
+  async (page) => {
+    const value = SCENARIOS[scenario]?.["POST /app/api/patients/{id}/ask"];
+    const question =
+      typeof value === "string"
+        ? (JSON.parse(readFileSync(join(FIXTURES, value), "utf8")) as { body: AskJson }).body.question
+        : "Is this value all right?";
+    await page.locator(".composer__field").fill(question);
+    await page.locator(".composer__send").click();
+    const recv = page.locator(".composer__lines .message-bubble--recv .message-bubble__body").last();
+    await recv.waitFor();
+    if (answered) await page.locator('.composer__send:not([aria-disabled="true"])').waitFor();
+  };
+
 // The chat page (plan W5): default, NOW, retake and first run beside phone.html's scenes, and the attention stack in the
 // conversation column and the first run beside desktop.html's.
 const chat = (state: string, scenario: string, file: "phone.html" | "desktop.html", scene: string, act?: Scene["act"]): Scene => ({
@@ -251,11 +271,25 @@ BOARD_SCENES.push(
   chat("first", "chat-first", "phone.html", "first"),
   chat("stack", "chat-stack", "desktop.html", "app"),
   chat("first-desktop", "chat-first", "desktop.html", "first"),
-  chat("asked", "chat-default", "phone.html", "chat", async (page) => {
-    await page.locator(".composer__field").fill("Is this all right?");
-    await page.locator(".composer__send").click();
-    await page.locator(".composer__lines .message-bubble--recv").waitFor();
-  }),
+  // The composer asks (plan CHAT-web, PO ruling P7): each answer Java gives, drawn in place after a press; the pending
+  // bubble while Java answers; the reply when the press dies; and the stored questions and answers after a reload.
+  chat("asked-pending", "chat-ask-held", "phone.html", "chat", asking("chat-ask-held", false)),
+  chat("asked-answer", "chat-ask-answer", "phone.html", "chat", asking("chat-ask-answer")),
+  chat("asked-answer-desktop", "chat-ask-answer", "desktop.html", "app", asking("chat-ask-answer")),
+  chat("asked-dose", "chat-ask-dose", "phone.html", "chat", asking("chat-ask-dose")),
+  chat("asked-emergency", "chat-ask-emergency", "phone.html", "chat", asking("chat-ask-emergency")),
+  chat("asked-emergency-abroad", "chat-ask-emergency-abroad", "phone.html", "chat", asking("chat-ask-emergency-abroad")),
+  chat("asked-limit", "chat-ask-limit", "phone.html", "chat", asking("chat-ask-limit")),
+  chat("asked-fallback", "chat-ask-fallback", "phone.html", "chat", asking("chat-ask-fallback")),
+  chat("asked-declined", "chat-ask-declined", "phone.html", "chat", asking("chat-ask-declined")),
+  chat("asked-offline", "chat-ask-offline", "phone.html", "chat", asking("chat-ask-offline")),
+  chat("with-asks", "chat-with-asks", "phone.html", "chat"),
+  // Review of PR 166: the long answer read from its first line, the session that ended under a question, a stored dose
+  // answer with its line's crop, and a first-run patient who asked before the first paper.
+  chat("asked-long", "chat-ask-long", "phone.html", "chat", asking("chat-ask-long")),
+  chat("asked-signed-out", "chat-ask-401", "phone.html", "chat", asking("chat-ask-401")),
+  chat("with-asks-dose", "chat-with-asks-dose", "phone.html", "chat"),
+  chat("first-with-asks", "chat-first-with-asks", "phone.html", "first"),
   // A NOW result while the patient shown is a first-run one: the banner is global, Mio's introduction stays still.
   {
     ...chat("first-now", "chat-first-now", "phone.html", "first"),

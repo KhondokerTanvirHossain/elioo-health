@@ -2,6 +2,7 @@ package com.elioo.baymax.companion.config;
 
 import com.elioo.baymax.aicall.application.service.AiCostCalculator;
 import com.elioo.baymax.companion.application.port.out.ChatCopyPort;
+import com.elioo.baymax.companion.application.service.ChatAnswerService;
 import com.elioo.baymax.companion.application.service.ChatAppendix;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.extraction.config.ExtractionModelConfiguration;
@@ -10,6 +11,7 @@ import com.elioo.healthcare.llm.config.LlmProperties;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 
@@ -21,13 +23,25 @@ import java.util.Optional;
  *       {@value #MIN_BODY} characters of body: the length cap runs on the whole assembled text, and a cap the fixed lines
  *       cannot fit would turn every answer, the fixed fallback included, into a refused one;</li>
  *   <li>{@code baymax.chat.model} with no price for its provider: every chat call would log a NULL cost, and the daily cost
- *       bound DR-50 reconciles against the console would be unknown.</li>
+ *       bound DR-50 reconciles against the console would be unknown;</li>
+ *   <li>{@code baymax.chat.answer-deadline} past what the web composer waits ({@link #WEB_ASK_TIMEOUT}) less the store's
+ *       grace and the network's margin: the web would show its fallback while Java went on to store an answer the family
+ *       never saw (review of #166, finding 4).</li>
  * </ul>
  */
 @Component
 public class ChatPropertiesCheck implements InitializingBean {
 
     static final int MIN_BODY = 200;
+
+    /**
+     * How long the web composer waits for an answer (medioo-web Composer.tsx {@code ASK_TIMEOUT_MS}, held equal to this by
+     * ChatModelConfigurationTest). Review of #166, finding 4.
+     */
+    public static final Duration WEB_ASK_TIMEOUT = Duration.ofSeconds(50);
+
+    /** What the network may add between Java's answer and the browser's clock. */
+    static final Duration NETWORK_MARGIN = Duration.ofSeconds(2);
 
     private final BaymaxProperties properties;
     private final LlmProperties llm;
@@ -51,6 +65,11 @@ public class ChatPropertiesCheck implements InitializingBean {
         if (chat.getMaxAnswerChars() < longest + MIN_BODY) {
             throw new IllegalStateException("baymax.chat.max-answer-chars is " + chat.getMaxAnswerChars()
                     + " but the fixed lines alone run to " + longest + " characters; it must be at least " + (longest + MIN_BODY));
+        }
+        Duration most = WEB_ASK_TIMEOUT.minus(ChatAnswerService.STORE_GRACE).minus(NETWORK_MARGIN);
+        if (chat.getAnswerDeadline() == null || chat.getAnswerDeadline().compareTo(most) > 0) {
+            throw new IllegalStateException("baymax.chat.answer-deadline is " + chat.getAnswerDeadline() + " but the web composer waits "
+                    + WEB_ASK_TIMEOUT + "; with the store's grace and the network's margin it must be at most " + most);
         }
         String model = chat.getModel();
         if (model != null && !model.isBlank()) {

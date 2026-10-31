@@ -8,6 +8,7 @@
     "at": "2026-10-30T06:00:00Z",
     "call_999": false,
     "kind": "declined",
+    "medicines": [ ],
     "question": "আম্মার ক্রিয়েটিনিন কত?",
     "turn_id": "cb62bcc3-a72f-3275-93dc-e01513241288"
   },

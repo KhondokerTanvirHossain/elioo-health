@@ -1,12 +1,14 @@
 package com.elioo.baymax.web.domain;
 
 import com.elioo.baymax.companion.domain.AnswerKind;
+import com.elioo.baymax.companion.domain.CitedMedicine;
 import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.outbound.domain.OutboundMessage;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -53,16 +55,23 @@ public sealed interface ThreadItem {
     /**
      * A question the viewer's own account typed in the চ্যাট and exactly what Medioo showed (plan CHAT-api, V29), at the
      * instant it was asked; listed only when the reader asks for asks ({@code ?asks=1}). {@code call999} is decided for the
-     * viewer at read time ({@code ViewerLocale}): only an emergency, only on a Bangladeshi number.
+     * viewer at read time ({@code ViewerLocale}): only an emergency, only on a Bangladeshi number. {@code medicines}: the
+     * prescription lines the answer quoted, each with its crop (V30; review of #166, finding 5).
      */
-    record Ask(UUID id, Instant at, String question, String answer, AnswerKind kind, boolean call999) implements ThreadItem {
+    record Ask(UUID id, Instant at, String question, String answer, AnswerKind kind, boolean call999, List<CitedMedicine> medicines)
+            implements ThreadItem {
+
+        public Ask {
+            medicines = medicines == null ? List.of() : List.copyOf(medicines);
+        }
+
         @Override
         public String order() {
             return "ask";
         }
 
         public Ask forViewer(ViewerLocale viewer) {
-            return new Ask(id, at, question, answer, kind, kind == AnswerKind.EMERGENCY && viewer.bangladesh());
+            return new Ask(id, at, question, answer, kind, kind == AnswerKind.EMERGENCY && viewer.bangladesh(), medicines);
         }
     }
 

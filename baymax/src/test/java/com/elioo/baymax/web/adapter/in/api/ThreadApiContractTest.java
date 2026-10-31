@@ -69,13 +69,13 @@ class ThreadApiContractTest {
     static final Path WRITTEN = Path.of("build/web-contract/thread");
     static final List<String> CASES = List.of("default", "now", "now-abroad", "retake", "failed", "first-run", "share-member", "second-page");
     /**
-     * Plan CHAT-api: the thread read with {@code ?asks=1}, in an area of its own. The web deployed today walks every file of
-     * {@code fixtures/api/thread/} as a thread it can draw, and an ask item is a kind it does not know yet; PR CHAT-web
-     * moves it beside the others when the web reads asks.
+     * Plan CHAT-api: the thread read with {@code ?asks=1}. CHAT-api kept it in an area of its own while the deployed web
+     * walked every file of {@code fixtures/api/thread/} as a thread it could draw and knew no ask item; plan CHAT-web's web
+     * reads asks and draws them, so the case sits beside the others, in the same area.
      */
-    static final Path COMMITTED_ASKS = Path.of("../medioo-web/fixtures/api/thread-asks");
-    static final Path WRITTEN_ASKS = Path.of("build/web-contract/thread-asks");
-    static final List<String> ASK_CASES = List.of("with-asks");
+    static final Path COMMITTED_ASKS = COMMITTED;
+    static final Path WRITTEN_ASKS = WRITTEN;
+    static final List<String> ASK_CASES = List.of("with-asks", "with-asks-dose");
     /** The keys a delivery, a review or a model leaves on a row, none of which the browser may receive. */
     static final Set<String> NEVER_SENT = Set.of("wamid", "delivery_status", "reviewer", "reject_reason", "gate_status", "confidence",
             "model", "status_reason", "provider_message_id", "delivery_error", "urgency_reasons");
@@ -174,7 +174,12 @@ class ThreadApiContractTest {
             throws Exception {
         FixedPapers.exec(POSTGRES, "INSERT INTO baymax.medication_event (id, patient_id, document_id, name, dose_text, frequency_text,"
                         + " duration_text, crop_key, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", id, p.id(), document, name, dose, frequency,
-                duration, p.familyId() + "/" + p.id() + "/" + document + "/med-" + id.toString().substring(0, 8) + ".jpg", Timestamp.from(at));
+                duration, medicineCrop(p, document, id), Timestamp.from(at));
+    }
+
+    /** The stored crop key {@link #medicine} gives a medicine. */
+    static String medicineCrop(PatientProfile p, UUID document, UUID id) {
+        return p.familyId() + "/" + p.id() + "/" + document + "/med-" + id.toString().substring(0, 8) + ".jpg";
     }
 
     /**
@@ -351,6 +356,27 @@ class ThreadApiContractTest {
                         Instant.parse("2026-10-21T05:59:00Z"));
                 papers.add(routine);
             }
+            case "with-asks-dose" -> {
+                // review of #166, finding 5: a dose question answered with the prescription's line, quoted by code, and the
+                // line's crop stored with the turn (V30), so the thread shows the crop beside the transcription after a reload
+                UUID rx = FixedPapers.paper(POSTGRES, FixedPapers.id(k, "rx"), ma, "prescription", "DONE", "2026-10-15",
+                        Instant.parse("2026-10-15T04:00:00Z"), "routine");
+                UUID demoprol = FixedPapers.id(k, "demoprol");
+                medicine(demoprol, ma, rx, "Tab. Demoprol", "5 mg", "1+0+0", "30 days", Instant.parse("2026-10-15T04:00:00Z"));
+                Map<String, Object> written = new LinkedHashMap<>();
+                written.put("name", "Tab. Demoprol");
+                written.put("dose_text", "5 mg");
+                written.put("frequency_text", "1+0+0");
+                written.put("duration_text", "30 days");
+                ChatCopyPort copy = context.getBean(ChatCopyPort.class);
+                String answer = "Ma-র শেষ প্রেসক্রিপশনে লেখা: " + com.elioo.baymax.outbound.application.service.MedicineTranscription.line(written)
+                        + ChatAppendix.tail(true, java.util.Optional.empty(), key -> copy.line("bn", key));
+                UUID turn = FixedPapers.id(k, "ask-dose");
+                turn(turn, f, ma, "ওষুধটা অর্ধেক করব?", answer, "answer", "model", 1, true, List.of(rx), Instant.parse("2026-10-16T05:00:00Z"));
+                FixedPapers.exec(POSTGRES, "UPDATE baymax.chat_turn SET medicine_document_ids = ARRAY[CAST(? AS uuid)],"
+                        + " medicine_crop_keys = ARRAY[CAST(? AS text)] WHERE id = ?", rx, medicineCrop(ma, rx, demoprol), turn);
+                papers.add(rx);
+            }
             default -> throw new IllegalArgumentException("no thread case " + shape);
         }
         return new Seeded(ma, session, papers);
@@ -383,7 +409,7 @@ class ThreadApiContractTest {
     /** The answer the case's fixture holds: the first page, or for {@code second-page} the page after it. */
     static EntityExchangeResult<byte[]> answer(WebTestClient client, Seeded s, String name) throws IOException {
         String uri = s.uri();
-        if ("with-asks".equals(name)) {
+        if (ASK_CASES.contains(name)) {
             return get(client, s.session(), uri + "?asks=1");
         }
         if ("second-page".equals(name)) {
@@ -458,28 +484,47 @@ class ThreadApiContractTest {
         });
     }
 
+    /**
+     * Review of #166, finding 5: a stored dose answer is listed with the crop of the line it quoted, the prescription's own
+     * image of it, after a reload as when it was asked; an answer that quoted no line lists an empty list.
+     */
+    @Test
+    void aStoredQuoteIsListedWithItsCrop() {
+        FixedPapers.runnerAt(POSTGRES, NOW).run(context -> {
+            WebTestClient client = WebTestClient.bindToApplicationContext(context).build();
+            String k = "quote-" + UUID.randomUUID();
+            Seeded s = seed(context, k, "with-asks-dose");
+            JsonNode ask = itemsOf(ok(client, s.session(), s.uri() + "?asks=1"), "ask").get(0);
+            UUID rx = FixedPapers.id(k, "rx");
+            assertThat(ask.get("medicines")).hasSize(1);
+            assertThat(ask.get("medicines").get(0).get("document_id").asText()).isEqualTo(rx.toString());
+            assertThat(ask.get("medicines").get(0).get("crop").get("src").asText())
+                    .isEqualTo(com.elioo.baymax.web.adapter.in.ImageRefs.crop(rx, medicineCrop(s.patient(), rx, FixedPapers.id(k, "demoprol"))));
+
+            Seeded plain = seed(context, "no-quote-" + UUID.randomUUID(), "with-asks");
+            for (JsonNode other : itemsOf(ok(client, plain.session(), plain.uri() + "?asks=1"), "ask")) {
+                assertThat(other.get("medicines").isArray() && other.get("medicines").isEmpty()).as("an answer quoting no line").isTrue();
+            }
+        });
+    }
+
     @Test
     void theAsksCaseIsItsCommittedMswFixture() {
         FixedPapers.runnerAt(POSTGRES, NOW).run(context -> {
             WebTestClient client = WebTestClient.bindToApplicationContext(context).build();
             for (String name : ASK_CASES) {
                 Seeded s = seed(context, "fixture-thread-" + name, name);
-                AttentionApiContractTest.write(ThreadApiContractTest.class, COMMITTED_ASKS, WRITTEN_ASKS, "thread-asks", name,
+                AttentionApiContractTest.write(ThreadApiContractTest.class, COMMITTED_ASKS, WRITTEN_ASKS, "thread", name,
                         "GET /app/api/patients/{id}/thread?asks=1 over the case " + name, answer(client, s, name));
             }
         });
     }
 
-    @Test
-    void everyCommittedAsksFixtureIsACurrentCase() throws IOException {
-        assertThat(AttentionApiContractTest.committed(COMMITTED_ASKS))
-                .containsExactlyInAnyOrderElementsOf(ASK_CASES.stream().map(n -> n + ".json").toList());
-    }
-
+    /** One area for both: every committed file is a current case, read without asks or with them (plan CHAT-web). */
     @Test
     void everyCommittedFixtureIsACurrentCase() throws IOException {
         assertThat(AttentionApiContractTest.committed(COMMITTED))
-                .containsExactlyInAnyOrderElementsOf(CASES.stream().map(n -> n + ".json").toList());
+                .containsExactlyInAnyOrderElementsOf(Stream.concat(CASES.stream(), ASK_CASES.stream()).map(n -> n + ".json").toList());
     }
 
     /**

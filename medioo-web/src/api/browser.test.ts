@@ -99,6 +99,56 @@ describe("apiSend", () => {
     vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new TypeError("Failed to fetch"))));
     expect(await apiSend("PUT", "/app/api/x", {})).toEqual({ kind: "offline" });
   });
+
+  /**
+   * A fetch that answers only when the request's own signal aborts it (as the browser's fetch rejects with an AbortError),
+   * or, with `headersFirst`, one whose headers arrive at once and whose body never does until the abort.
+   */
+  function quiet(headersFirst = false) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init: RequestInit) => {
+        calls.push({ url, init });
+        const aborted = () =>
+          new Promise<never>((_, reject) => {
+            init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+          });
+        if (!headersFirst) return aborted();
+        return Promise.resolve({ status: 200, text: aborted } as unknown as Response);
+      }),
+    );
+  }
+
+  // Plan CHAT-web: the composer's ask gives up at ASK_TIMEOUT_MS. A request that goes quiet resolves offline at the
+  // timeout, and not a moment before; one whose body stalls after its headers is offline too, never an empty ok.
+  it("aTimeoutResolvesOffline", async () => {
+    vi.useFakeTimers();
+    try {
+      for (const headersFirst of [false, true]) {
+        calls = [];
+        quiet(headersFirst);
+        let result: unknown = "pending";
+        void apiSend("POST", "/app/api/patients/p1/ask", { question: "q" }, { timeoutMs: 1_000 }).then((r) => (result = r));
+        await vi.advanceTimersByTimeAsync(999);
+        expect(result, `before the timeout (headers first: ${headersFirst})`).toBe("pending");
+        expect(calls[0]!.init.signal, "the request carries a signal").toBeInstanceOf(AbortSignal);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(result, `at the timeout (headers first: ${headersFirst})`).toEqual({ kind: "offline" });
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("noTimeoutIsTodaysCall", async () => {
+    answer(200, { ok: true });
+    expect(await apiSend("POST", "/app/api/x", { a: 1 })).toEqual({ kind: "ok", status: 200, body: { ok: true } });
+    // No option, no signal: the fetch is handed exactly what it was handed before the option existed.
+    expect(Object.keys(calls[0]!.init).sort()).toEqual(["body", "credentials", "headers", "method"]);
+    // And with a timeout, an answer that comes in time is that answer.
+    answer(200, { ok: true });
+    expect(await apiSend("POST", "/app/api/x", { a: 1 }, { timeoutMs: 1_000 })).toEqual({ kind: "ok", status: 200, body: { ok: true } });
+  });
 });
 
 describe("apiGet", () => {

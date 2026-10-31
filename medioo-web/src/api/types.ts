@@ -416,6 +416,36 @@ export type UploadOptionsJson = {
 /** `POST /app/api/uploads` answered (fixtures/api/uploads/*.json): the press's papers, and where the sheet goes next. */
 export type UploadAnswerJson = { documents: { id: string }[]; next: string };
 
+// ---- POST /app/api/patients/{id}/ask (CHAT-api, AskJson.java) -----------------------------------------------------------
+
+/**
+ * How Java answered a question (DR-50): a model answer that passed the code checks, the emergency line (no model call),
+ * the day's cap, the fixed reply after a failed check, or the decline while answers are switched off.
+ */
+export const ASK_KINDS = ["answer", "emergency", "limit", "fallback", "declined"] as const;
+export type AskKind = (typeof ASK_KINDS)[number];
+
+/**
+ * A prescription line an answer quotes (AskJson.medicines, review of PR 166 finding 5): the paper it is on and the crop of
+ * that line, the paper's own image of it, drawn beside the answer so the family can check the transcription (DR-12).
+ */
+export type AskMedicineJson = { document_id: string; crop: ImageJson };
+
+/**
+ * `POST /app/api/patients/{id}/ask` answered 200 (fixtures/api/ask/*.json): `answer` is the whole text the family is
+ * shown, assembled and capped by Java, the web adds nothing to it; `call_999` is the one switch for a tel:999 link;
+ * `medicines` the lines it quotes, each with its crop (empty when it quotes none).
+ */
+export type AskJson = {
+  turn_id: string;
+  kind: AskKind;
+  question: string;
+  answer: string;
+  call_999: boolean;
+  at: string;
+  medicines: AskMedicineJson[];
+};
+
 // ---- GET /app/api/patients/{id}/thread (W5-api, ThreadJson.java) -------------------------------------------------------
 
 /**
@@ -438,7 +468,23 @@ export type ThreadMessageJson = {
   body: string;
 };
 
-export type ThreadItemJson = ThreadPaperJson | ThreadMessageJson;
+/**
+ * A question the family asked and Java's answer (plan CHAT-api, listed only with `?asks=1`): `answer` exactly as Java
+ * sent it when it was asked (the disclaimer and the red-flag line already appended by Java's code), `call_999` judged
+ * for this viewer at read time, `medicines` the quoted lines with their crops.
+ */
+export type ThreadAskJson = {
+  kind: "ask";
+  at: string;
+  turn_id: string;
+  question: string;
+  answer: string;
+  answer_kind: AskKind;
+  call_999: boolean;
+  medicines: AskMedicineJson[];
+};
+
+export type ThreadItemJson = ThreadPaperJson | ThreadMessageJson | ThreadAskJson;
 
 /** `GET /app/api/patients/{id}/thread?cursor=` (W5-api): newest first, 20 a page. */
 export type ThreadJson = { items: ThreadItemJson[]; next_cursor: string | null };

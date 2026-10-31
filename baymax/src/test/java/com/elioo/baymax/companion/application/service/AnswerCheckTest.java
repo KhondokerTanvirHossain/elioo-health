@@ -28,6 +28,23 @@ class AnswerCheckTest {
         return new ChatContext(List.of(), Set.of(canonical), List.of(), List.of(), false);
     }
 
+    /**
+     * Review of #166, finding 5: the lines a text quotes, each once, in the order first quoted, with the paper and the crop
+     * of that position; a reference past the last line quotes nothing, and a context with no crop known quotes nothing.
+     */
+    @Test
+    void citedIsEachQuotedLineOnceWithItsCrop() {
+        java.util.UUID rx = java.util.UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100005");
+        ChatContext ctx = new ChatContext(List.of(), Set.of(), List.of("Tab. A · 1+0+0", "Tab. B · 0+0+1"), List.of(rx), false, List.of(),
+                Set.of(), Set.of(), rx, List.of("crop-a.jpg", "crop-b.jpg"));
+
+        assertThat(AnswerCheck.cited("{{rx:2}} আর {{rx:1}}, আবার {{rx:2}}; {{rx:3}}", ctx)).containsExactly(
+                new com.elioo.baymax.companion.domain.CitedMedicine(rx, "crop-b.jpg"),
+                new com.elioo.baymax.companion.domain.CitedMedicine(rx, "crop-a.jpg"));
+        assertThat(AnswerCheck.cited("Ma-র ক্রিয়েটিনিন 1.8।", ctx)).isEmpty();
+        assertThat(AnswerCheck.cited("{{rx:1}}", new ChatContext(List.of(), Set.of(), List.of("Tab. A"), List.of(rx), false))).isEmpty();
+    }
+
     @Test
     void aDecimalIsOneNumberNotTwo() {
         ChatContext ctx = numbers("1.8", "0.7", "1.3");
