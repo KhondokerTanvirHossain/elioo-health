@@ -79,6 +79,8 @@ class UploadApiRealServerTest {
     private static final String KEY = "7d1e0c2b-4a5f-4b6e-8c9d-0e1f2a3b4c50";
     private static final String BOUNDARY = "----mediooRealServerBoundary9xQ2";
     private static final int MB = 1024 * 1024;
+    /** Past the cap, the chunked press sends one megabyte per pace: ~440 MB then take ~4.4 s, its 413 milliseconds. */
+    private static final Duration PACE = Duration.ofMillis(10);
 
     /** What reached the use case: one entry per file, its byte count and its SHA-256. */
     record Received(int bytes, String sha256) {
@@ -227,21 +229,33 @@ class UploadApiRealServerTest {
      * <p>Two counts, so the test fails on unbounded reading and not only on the status. The server's: what the
      * application pulled off the socket, at most the cap and the one buffer that crossed it. The client's: what it had
      * handed the socket when the answer came, which must be short of the whole press. It is not held to the cap itself:
-     * once the application stops reading, reactor-netty discards the rest of the request on the floor (no disk, no heap)
-     * while the 413 is on its way, and on loopback that is ~120 MB in the few milliseconds it takes.
+     * once the 413 is written, reactor-netty keeps the connection and discards the rest of the request on the floor (no
+     * disk, no heap) until the client reads the answer and closes, and on loopback that is ~120 MB in a few milliseconds.
+     *
+     * <p>That drain is a race the test does not own: the client's event loop is the one writing the body, so how soon it
+     * reads the 413 is up to the runner, and on a fast one the whole press had gone before it did (CI run 41050936769:
+     * 524291749 bytes, every byte of the body, with the server's count at 62915275, correct). So the client sends up to
+     * the cap at full speed and the rest one megabyte every {@link #PACE}: the ~440 MB past the cap then take seconds,
+     * where a server that stopped reading answers in milliseconds. A server that reads on is still caught by both counts:
+     * its own read passes the cap, and the client, paced or not, has handed over the whole press before the answer.
      */
     @Test
     void aChunkedPressFarOverTheCapIsRefusedWhileItArrives() {
         AtomicLong emitted = new AtomicLong();
+        AtomicLong offered = new AtomicLong();
+        long cap = new BaymaxProperties().getUpload().getMaxRequestBytes();
         byte[] megabyte = files(1, MB).get(0);
         int files = 25;
-        Flux<DataBuffer> body = Flux.concat(
+        Flux<DataBuffer> press = Flux.concat(
                         Flux.just(field("patient", MA.toString()), field("upload_key", KEY), field("group", "separate")).map(MultipartWire::wrap),
                         Flux.range(0, files).concatMap(i -> Flux.concat(
                                 Mono.fromSupplier(() -> MultipartWire.wrap(filePartHeader(i))),
                                 Flux.range(0, 20).map(j -> MultipartWire.wrap(megabyte)),
                                 Mono.fromSupplier(() -> MultipartWire.wrap("\r\n".getBytes(StandardCharsets.US_ASCII))))),
-                        Mono.fromSupplier(() -> MultipartWire.wrap(("--" + BOUNDARY + "--\r\n").getBytes(StandardCharsets.US_ASCII))))
+                        Mono.fromSupplier(() -> MultipartWire.wrap(("--" + BOUNDARY + "--\r\n").getBytes(StandardCharsets.US_ASCII))));
+        // up to the cap as fast as the socket takes it; past it, paced, so the drain after the 413 cannot outrun the answer
+        Flux<DataBuffer> body = press
+                .concatMap(b -> offered.getAndAdd(b.readableByteCount()) < cap ? Mono.just(b) : Mono.just(b).delayElement(PACE))
                 .doOnNext(b -> emitted.addAndGet(b.readableByteCount()));
 
         ResponseEntity<String> r = exchange(body, null, Duration.ofSeconds(60));
@@ -250,7 +264,7 @@ class UploadApiRealServerTest {
 
         // what was read first: a server that read on and then answered 413 has the right status for the wrong reason
         assertThat(SERVER_READ.get()).as("bytes the server read of a %d-byte press", whole)
-                .isLessThanOrEqualTo(new BaymaxProperties().getUpload().getMaxRequestBytes() + MB);
+                .isLessThanOrEqualTo(cap + MB);
         assertThat(atAnswer).as("bytes the client had sent when the 413 came (of %d)", whole).isLessThan(whole);
         assertThat(r.getStatusCode().value()).as(r.getBody()).isEqualTo(413);
         assertThat(r.getBody()).isEqualTo("{\"reason\":\"TOO_LARGE\"}");
