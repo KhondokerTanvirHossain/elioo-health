@@ -3,6 +3,7 @@
    VerdictCard's) and never the week amber; a value's status is its StatusChip, shape and word. Every link and button
    is at least the 44 px target; the one primary action is 48. The bar's band is the printed range. */
 .paper {
+  position: relative;
   display: grid;
   gap: var(--space-4);
   max-width: 720px;
@@ -89,6 +90,22 @@
   text-decoration: none;
 }
 .paper__back {
+  justify-self: start;
+}
+/* The reading check (ReadingProgress.tsx, PO ruling P6), as the papers page's quiet check: its box takes no room in the
+   grid, so the page is laid out as before. Its live region is heard, not seen: one line at the top of the paper, clipped
+   to nothing. The link it offers after the cap is the page's own action pill. Nothing here moves. */
+.paper__quiet {
+  display: contents;
+}
+.paper__said {
+  position: absolute;
+  inset: 0 0 auto;
+  margin: 0;
+  clip-path: inset(50%);
+  pointer-events: none;
+}
+.paper__again {
   justify-self: start;
 }
 .paper__action,

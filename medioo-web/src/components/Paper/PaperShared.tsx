@@ -2,6 +2,7 @@ import { t, type Lang } from "@/copy";
 import type { PaperResultJson } from "@/api/types";
 import type { DeleteWords } from "@/components/DeletePaper/DeletePaper";
 import type { ZoomWords } from "@/components/PageImage/PageImage";
+import type { ReadingWords } from "@/components/ReadingProgress/ReadingProgress";
 import { href } from "@/routing/paths";
 import { MedicineRow, PaperQuote } from "./PaperParts";
 import { sectionText } from "./paper-text";
@@ -14,7 +15,7 @@ import { sectionText } from "./paper-text";
  */
 
 /** The island words a paper page resolves on the server (src/app/app/(signed-in)/documents/[id]/paper-words.ts). */
-export type PaperWords = { delete: DeleteWords; page: (n: number, label?: string) => ZoomWords };
+export type PaperWords = { delete: DeleteWords; page: (n: number, label?: string) => ZoomWords; reading: ReadingWords };
 
 /** The paper's own address, inside the preview on a preview page. */
 export function paperHref(id: string, preview: boolean, rest = ""): string {

@@ -1,11 +1,11 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { t, type CopyKey, type Lang } from "@/copy";
+import { RELOAD_SECONDS } from "@/api/reading-check";
 import { isReadingPaper, type PaperJson, type PaperReadingJson, type PaperResultJson, type PaperValueJson } from "@/api/types";
 import { DeletePaper } from "@/components/DeletePaper/DeletePaper";
 import { MessageBubble } from "@/components/MessageBubble/MessageBubble";
 import { PageImage } from "@/components/PageImage/PageImage";
-import { POLL_SECONDS } from "@/components/ReadingProgress/poll";
 import { ReadingProgress } from "@/components/ReadingProgress/ReadingProgress";
 import { NowBlock } from "@/components/safety/NowBlock/NowBlock";
 import { VerdictCard } from "@/components/safety/VerdictCard/VerdictCard";
@@ -259,11 +259,11 @@ function Failed({ paper, ctx }: { paper: PaperResultJson; ctx: Ctx }) {
 }
 
 /**
- * A paper still being read (DocumentPages.progressBody): three real steps, nothing about a result, and the poll. With
- * JavaScript, ReadingProgress asks the status quietly and draws the result once, with no reload; without it, the page
- * reloads itself every POLL_SECONDS (`<noscript>`, inert wherever script runs), as Java's reading page does, so a family
- * whose browser runs no script still moves on to the result (PO ruling P6). Each such reload is one read of the paper,
- * as each of Java's own reloads is.
+ * A paper still being read (DocumentPages.progressBody): three real steps and nothing about a result. With
+ * JavaScript, ReadingProgress (PaperSummary's, before this) asks the status quietly and draws the result once, with no
+ * reload; without it, the page reloads itself every RELOAD_SECONDS (`<noscript>`, inert wherever script runs), as Java's
+ * reading page does, so a family whose browser runs no script still moves on to the result (PO ruling P6). Each such
+ * reload is one read of the paper, as each of Java's own reloads is.
  */
 function Reading({ paper, ctx }: { paper: PaperReadingJson; ctx: Ctx }) {
   const { lang, preview } = ctx;
@@ -290,9 +290,8 @@ function Reading({ paper, ctx }: { paper: PaperReadingJson; ctx: Ctx }) {
       <a className="paper__action" href={papersHref(paper.patient.id, preview)}>
         {t(lang, "progress.timeline")}
       </a>
-      <ReadingProgress documentId={paper.id} />
       <noscript>
-        <meta httpEquiv="refresh" content={String(POLL_SECONDS)} />
+        <meta httpEquiv="refresh" content={String(RELOAD_SECONDS)} />
       </noscript>
     </section>
   );
@@ -305,10 +304,16 @@ function Reading({ paper, ctx }: { paper: PaperReadingJson; ctx: Ctx }) {
  */
 export function PaperSummary({ paper, lang, preview, words }: { paper: PaperJson; lang: Lang; preview: boolean; words: PaperWords }) {
   const ctx: Ctx = { lang, preview, words };
-  if (isReadingPaper(paper)) return <article className="paper"><Reading paper={paper} ctx={ctx} /></article>;
+  // The reading check comes first on every status, so the refresh that swaps the reading page for the result keeps its
+  // instance, and what its live region said (ReadingProgress).
+  const reading = isReadingPaper(paper);
+  const check = reading ? { documentId: paper.id, again: paperHref(paper.id, preview), words: words.reading } : null;
   return (
-    <article className="paper" data-status={paper.status}>
-      {paper.status === "NEEDS_RETAKE" && paper.retake ? (
+    <article className="paper" data-status={reading ? undefined : paper.status}>
+      <ReadingProgress check={check} />
+      {reading ? (
+        <Reading paper={paper} ctx={ctx} />
+      ) : paper.status === "NEEDS_RETAKE" && paper.retake ? (
         <Retake paper={paper} ctx={ctx} />
       ) : paper.status === "FAILED" ? (
         <Failed paper={paper} ctx={ctx} />
