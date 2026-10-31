@@ -2,6 +2,7 @@ import "server-only";
 import { t, type Lang } from "@/copy";
 import type { DeleteWords } from "@/components/DeletePaper/DeletePaper";
 import type { ZoomWords } from "@/components/PageImage/PageImage";
+import type { ReadingWords } from "@/components/ReadingProgress/ReadingProgress";
 import type { PaperWords } from "@/components/Paper/PaperShared";
 
 /*
@@ -28,6 +29,14 @@ export function zoomWords(lang: Lang, n: number, label?: string): ZoomWords {
   return { zoom: label ?? t(lang, "detail.page", n), title: t(lang, "detail.page", n), closeLabel: t(lang, "sheet.close") };
 }
 
+/** The reading check's words (PO ruling P6): each settled status's, as the papers page's QuietCheck says them, and its link's. */
+export function readingWords(lang: Lang): ReadingWords {
+  return {
+    settled: { DONE: t(lang, "status.DONE"), NEEDS_RETAKE: t(lang, "status.NEEDS_RETAKE"), FAILED: t(lang, "status.FAILED") },
+    again: t(lang, "attn.reading.action"),
+  };
+}
+
 export function paperWords(lang: Lang): PaperWords {
-  return { delete: deleteWords(lang), page: (n, label) => zoomWords(lang, n, label) };
+  return { delete: deleteWords(lang), page: (n, label) => zoomWords(lang, n, label), reading: readingWords(lang) };
 }

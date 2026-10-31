@@ -46,6 +46,7 @@ function result(file: string): PaperResultJson {
 const words: PaperWords = {
   delete: { open: "open", question: "q", warn: "w", yes: "y", no: "n", gone: "g", refused: "r", failed: "f" },
   page: (n, label) => ({ zoom: label ?? `page ${n}`, title: `page ${n}`, closeLabel: "close" }),
+  reading: { settled: { DONE: "read" }, again: "again" },
 };
 
 const summary = (paper: PaperJson, lang: Lang = "bn") =>

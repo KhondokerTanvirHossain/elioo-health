@@ -1002,11 +1002,15 @@ background and update without a full reload; keep the 5 s reload only as the no-
 - The axe exception is gone: every rule judges the page being read. A re-render is still one TIMELINE_VIEW (S14), but
   there is now one per paper read, not one every 5 s.
 - The rules (the 5 s, the backoff, the cap, what a status answer means) live in one module,
-  `medioo-web/src/api/reading-check.ts`, so every reading page reads P6 the same way. The paper page's status poll
-  (PR #149, W6, not merged when this was written) does not follow them yet: as built there it asks every 5 s with no
-  backoff and no cap, keeps asking while the tab is hidden, and has no live region, beside the same `<noscript>`
-  reload. It is to adopt this module when it is rebased after PR #165; until then the two pages differ in exactly
-  those ways, which is a difference the PO can see.
+  `medioo-web/src/api/reading-check.ts`, so every reading page reads P6 the same way. The paper page (PR #149, W6,
+  rebased after PR #165) follows them too: its reading check (`components/ReadingProgress`) asks only that paper's
+  `/status`, at the same 5 s, backoff and cap of 20, nothing while the tab is hidden, and says the result once in a
+  polite live region in the same `status.*` words, beside the same `<noscript>` 5 s reload
+  (`RELOAD_SECONDS`). The region sits before the page's content on every status, so it outlives the refresh that
+  swaps the reading page for the result. After the cap it offers a plain link to the paper's own page
+  (`attn.reading.action`). Two differences remain, neither a P6 rule: a signed-out answer stops its checks (apiGet's
+  sign-in hop is already on its way), and its one refresh first clears the banner-only marker (W6's stale-tap fix),
+  so that refresh is always a real read of the paper. The papers page and the paper page no longer differ on P6.
 
 ## DR-43 | 2026-10-21 | Voice: typed commands first; the speech-to-text provider is chosen by a measured bake-off
 

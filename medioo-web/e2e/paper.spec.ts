@@ -229,6 +229,21 @@ test.describe("one open is one read of the paper (Review Focus 4)", () => {
     expect(await paperReads(recorder), "and the poll stopped").toBe(5);
   });
 
+  test("aPaperReadInPlaceIsSaidOnceInThePoliteRegionWithNoReload", async ({ page }) => {
+    // PO ruling P6, by reading-check.ts as the papers page's QuietCheck: with JavaScript the reading page never reloads
+    // itself, and the result it moves on to is said once in a polite live region that outlives the swap.
+    test.setTimeout(45_000);
+    await open(page, "paper-processing");
+    const region = page.locator(".paper > .paper__quiet > .paper__said[role='status']");
+    await expect(region, "the reading page carries the region, empty").toHaveText("");
+    await page.evaluate(() => ((window as unknown as { kept: boolean }).kept = true));
+    await switchScenario(page, "paper-processing-done");
+    await page.locator("[data-value-row]").first().waitFor({ timeout: 15_000 });
+    await expect(region).toHaveText(t("bn", "status.DONE"));
+    expect(await page.evaluate(() => (window as unknown as { kept?: boolean }).kept), "moved on with no reload").toBe(true);
+    await expect(page.locator(".paper__said span"), "said once").toHaveCount(1);
+  });
+
   test("aStaleSeenKeepsThePaperAndReadsItNoMore", async ({ page }) => {
     // A stale `now.banner.seen` tap (Java answers `show: true`) refreshes the banner only (banner-only.ts): no read of
     // the paper or the sheet, the page still shows itself, the marker is gone once the refresh landed, and the next open

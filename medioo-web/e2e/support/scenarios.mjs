@@ -303,18 +303,18 @@ export const SHEET_OBS = "7af69ec6-676f-3bb9-b0bb-3e665c36ed57";
 const PAPER = "GET /app/api/documents/{id}";
 const STATUS = "GET /app/api/documents/{id}/status";
 const SHEET = "GET /app/api/documents/{id}/values/{obs}";
-const status = (s) => ({ status: 200, body: { status: s } });
 
 /**
- * A paper page (W6) under `me`: the paper Java sent, the status the reading page polls, and the two delete steps as
- * Java answers them (B4c: a confirm token, then the report). No contract fixture writes a status, a token or a delete
- * report, so those are literals in Java's shape (PaperStatusApiHandler, PaperDeleteApiHandler).
+ * A paper page (W6) under `me`: the paper Java sent, the status the reading page polls (the document-status fixtures,
+ * which PatientTimelineApiContractTest writes), and the two delete steps as Java answers them (B4c: a confirm token,
+ * then the report). No contract fixture writes a token or a delete report, so those are literals in Java's shape
+ * (PaperDeleteApiHandler).
  */
 const paper = (fixture, extra = {}, me = "me/one-patient.json") => ({
   ...NO_NOW,
   "GET /app/api/me": me,
   [PAPER]: fixture,
-  [STATUS]: status("DONE"),
+  [STATUS]: "document-status/done.json",
   "GET /app/api/documents/{id}/delete-token": {
     status: 200,
     body: { confirm_token: "e2e-confirm-token", expires_at: "2026-10-20T04:10:00Z" },
@@ -702,8 +702,8 @@ export const SCENARIOS = {
   "paper-unassessed": paper("documents/unassessed.json"),
   // A paper still being read, whose status Java still says is being read; then the same paper once read (the test
   // switches the scenario cookie between them, as the paper finishing between two polls does).
-  "paper-processing": paper("documents/processing.json", { [STATUS]: status("PROCESSING") }),
-  "paper-processing-done": paper("documents/routine-released.json", { [STATUS]: status("DONE") }),
+  "paper-processing": paper("documents/processing.json", { [STATUS]: "document-status/processing.json" }),
+  "paper-processing-done": paper("documents/routine-released.json", { [STATUS]: "document-status/done.json" }),
   // The longest twins (LONGEST): the longest name in the shell, over the longest paper.
   "paper-58-long": paper("documents/fifty-eight-values-multipage.json", {}, "me/long-name.json"),
   // A share member on the owner's paper: Java's `owner: false`, everything else the same body.
