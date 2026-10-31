@@ -14,8 +14,13 @@ export type ApiResult<T> =
   | { kind: "signed-out" }
   | { kind: "offline" };
 
-/** What a call may be given beyond its body: `timeoutMs`, after which it is given up on (see apiSend). */
-export type CallOptions = { timeoutMs?: number };
+/**
+ * What a call may be given beyond its body: `timeoutMs`, after which it is given up on (see apiSend); and `stayOnSignOut`,
+ * which answers a 401 with `signed-out` and leaves the page where it is, for a caller that must keep something on screen
+ * and offers the sign-in link itself (the composer's ask, whose reply carries the red-flag line: review of PR 166,
+ * finding 14). Without it a 401 goes to sign-in at once, as before.
+ */
+export type CallOptions = { timeoutMs?: number; stayOnSignOut?: boolean };
 
 async function call<T>(method: string, path: string, body?: object | FormData, options: CallOptions = {}): Promise<ApiResult<T>> {
   const headers: Record<string, string> = { "X-Medioo": "1" };
@@ -34,7 +39,7 @@ async function call<T>(method: string, path: string, body?: object | FormData, o
     } catch {
       return { kind: "offline" };
     }
-    return judged<T>(response.status, await response.text().catch(() => ""));
+    return judged<T>(response.status, await response.text().catch(() => ""), options.stayOnSignOut === true);
   };
   if (options.timeoutMs === undefined) return exchange();
   // The timeout ends the call whether or not the fetch honours its signal, and whether the headers or only the body are
@@ -76,7 +81,7 @@ export function apiGet<T>(path: string): Promise<ApiResult<T>> {
 }
 
 /** An answer's status and text, as `call` judges them: a body, a refusal by its reason, or the sign-in page. */
-function judged<T>(status: number, text: string): ApiResult<T> {
+function judged<T>(status: number, text: string, stay = false): ApiResult<T> {
   let json: unknown = null;
   try {
     json = text ? JSON.parse(text) : null;
@@ -86,7 +91,7 @@ function judged<T>(status: number, text: string): ApiResult<T> {
   if (status >= 200 && status < 300) return { kind: "ok", status, body: json as T | null };
   const reason = typeof (json as { reason?: unknown } | null)?.reason === "string" ? (json as { reason: string }).reason : "";
   if (status === 401 && reason === "UNAUTHENTICATED") {
-    location.assign(signInPath(location.pathname + location.search));
+    if (!stay) location.assign(signInPath(location.pathname + location.search));
     return { kind: "signed-out" };
   }
   return { kind: "refused", status, reason };

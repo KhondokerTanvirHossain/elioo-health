@@ -12,6 +12,34 @@
 .ask-answer .message-bubble__body {
   white-space: pre-line;
 }
+/* The crop of each prescription line the answer quotes (review of PR 166, finding 5), before the bubble, on the received
+   side, in one rounded group as the health screen's medicines are (MedicinesAsWritten.css): the paper's own image of the
+   line, at its own size and never wider than the column (Crop.css). */
+.ask-answer__crops {
+  display: flex;
+  flex-direction: column;
+  align-self: flex-start;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--sep);
+  border-radius: var(--radius-md);
+  background: var(--bg3);
+  list-style: none;
+}
+.ask-answer__crop-line {
+  display: grid;
+  min-width: 0;
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--sep);
+}
+.ask-answer__crop-line:first-child {
+  border-top: 0;
+}
+.ask-answer__crop {
+  justify-self: start;
+}
 .ask-answer__call {
   display: inline-flex;
   align-self: flex-start;

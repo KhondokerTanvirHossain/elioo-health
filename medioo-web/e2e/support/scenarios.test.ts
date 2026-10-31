@@ -7,6 +7,7 @@ import {
   SCENARIOS,
   UNAUTHENTICATED,
   bannerFor,
+  firstRunAsked,
   flagsSaved,
   longNameOf,
   messagesOnly,
@@ -223,6 +224,15 @@ describe("the scenario table is Java's", () => {
     const without = (asked.otherwise as { body: { items: { kind: string }[] } }).body.items;
     expect(all.filter((i) => i.kind === "ask").length, "with-asks holds asks").toBeGreaterThan(0);
     expect(without, "the same page without its asks").toEqual(all.filter((i) => i.kind !== "ask"));
+    // firstRunAsked (review of PR 166): only a first-run page, joined with one ask Java stored, and the page as written
+    // without asks=1.
+    expect(() => firstRunAsked("thread/default.json", "thread/with-asks.json")).toThrow("is not a first-run page");
+    expect(() => firstRunAsked("thread/first-run.json", "thread/default.json")).toThrow("was written for");
+    const first = firstRunAsked("thread/first-run.json", "thread/with-asks.json");
+    const joined = (first.byQuery[0]!.answer as { body: { items: { kind: string }[] } }).body.items;
+    expect(joined.map((i) => i.kind)).toEqual(["ask"]);
+    expect(joined[0]).toEqual(all.filter((i) => i.kind === "ask").at(-1));
+    expect(first.otherwise).toBe("thread/first-run.json");
   });
 
   it("everySignedInPageHasANowTwin", () => {
