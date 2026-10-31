@@ -75,6 +75,7 @@
   "chat.composer.hint": "Medioo answers only from what your papers say. I am not a doctor.",
   "chat.composer.nojs": "To ask a question, turn on JavaScript for this page. All papers and values are under Papers.",
   "chat.composer.pending": "Medioo is looking at {0} papers…",
+  "chat.composer.too_long": "That question is too long for me. Please write it in {0} characters or fewer and send it again.",
   "chat.dose.ask_doctor": "I can't decide whether to start, stop, skip or change a medicine or its dose — ask the doctor who wrote the prescription.",
   "chat.empty.action": "Take a photo",
   "chat.field": "Write to Medioo",

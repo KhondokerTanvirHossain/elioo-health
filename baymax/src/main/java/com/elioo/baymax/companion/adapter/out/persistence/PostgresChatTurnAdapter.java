@@ -4,6 +4,7 @@ import com.elioo.baymax.companion.application.port.out.ChatTurnPort;
 import com.elioo.baymax.companion.domain.AnswerKind;
 import com.elioo.baymax.companion.domain.ChatOutcome;
 import com.elioo.baymax.companion.domain.ChatTurn;
+import com.elioo.baymax.companion.domain.CitedMedicine;
 import com.elioo.baymax.config.BaymaxSchema;
 import io.r2dbc.spi.Readable;
 import org.springframework.r2dbc.connection.R2dbcTransactionManager;
@@ -57,7 +58,8 @@ public class PostgresChatTurnAdapter implements ChatTurnPort {
             UPDATE %1$s.chat_turn
                SET answer = :answer, kind = :kind, handler = :handler, violations = :violations, model_calls = :calls,
                    input_tokens = :inTokens, output_tokens = :outTokens, cost_usd = :cost, latency_ms = :latency,
-                   document_ids = :documents, answered_at = now()
+                   document_ids = :documents, medicine_document_ids = :medicineDocuments, medicine_crop_keys = :medicineCrops,
+                   answered_at = now()
              WHERE id = :id
             """.formatted(S);
 
@@ -107,7 +109,9 @@ public class PostgresChatTurnAdapter implements ChatTurnPort {
                 .bind("inTokens", outcome.inputTokens())
                 .bind("outTokens", outcome.outputTokens())
                 .bind("latency", outcome.latencyMs())
-                .bind("documents", outcome.documentIds().toArray(UUID[]::new));
+                .bind("documents", outcome.documentIds().toArray(UUID[]::new))
+                .bind("medicineDocuments", outcome.medicines().stream().map(CitedMedicine::documentId).toArray(UUID[]::new))
+                .bind("medicineCrops", outcome.medicines().stream().map(CitedMedicine::cropKey).toArray(String[]::new));
         spec = outcome.violationCodes().isEmpty() ? spec.bindNull("violations", String.class)
                 : spec.bind("violations", String.join(",", outcome.violationCodes()));
         spec = outcome.costUsd() == null ? spec.bindNull("cost", BigDecimal.class) : spec.bind("cost", outcome.costUsd());
@@ -128,7 +132,12 @@ public class PostgresChatTurnAdapter implements ChatTurnPort {
                 row.get("handler", String.class), row.get("violations", String.class), intOf(row, "model_calls"),
                 intOf(row, "input_tokens"), intOf(row, "output_tokens"), row.get("cost_usd", BigDecimal.class),
                 row.get("latency_ms", Long.class), documents == null ? List.of() : Arrays.asList(documents),
-                instant(row, "created_at"), instant(row, "answered_at"));
+                instant(row, "created_at"), instant(row, "answered_at"), medicines(row));
+    }
+
+    /** V30's two arrays, paired by position: the quoted lines, each with its crop. */
+    private static List<CitedMedicine> medicines(Readable row) {
+        return CitedMedicine.paired(row.get("medicine_document_ids", UUID[].class), row.get("medicine_crop_keys", String[].class));
     }
 
     private static int intOf(Readable row, String column) {

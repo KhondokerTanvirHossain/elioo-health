@@ -1,6 +1,7 @@
 package com.elioo.baymax.web.adapter.out.persistence;
 
 import com.elioo.baymax.companion.domain.AnswerKind;
+import com.elioo.baymax.companion.domain.CitedMedicine;
 import com.elioo.baymax.config.BaymaxSchema;
 import com.elioo.baymax.outbound.adapter.out.persistence.PostgresOutboundMessageAdapter;
 import com.elioo.baymax.outbound.domain.OutboundMessage;
@@ -75,13 +76,14 @@ public class PostgresThreadReadAdapter implements ThreadReadPort {
      * cursor compares the same triple, so pages neither skip nor repeat across the three sources.
      */
     private static final String PAGE_WITH_ASKS = """
-            SELECT t.item, t.id, t.at, t.message_kind, t.document_id, t.body, t.question FROM (
+            SELECT t.item, t.id, t.at, t.message_kind, t.document_id, t.body, t.question, t.medicine_document_ids, t.medicine_crop_keys
+              FROM (
                 SELECT 'paper' AS item, d.id, d.created_at AS at, NULL::text AS message_kind, d.id AS document_id, NULL::text AS body,
-                       NULL::text AS question
+                       NULL::text AS question, NULL::uuid[] AS medicine_document_ids, NULL::text[] AS medicine_crop_keys
                   FROM %1$s.document d
                  WHERE d.patient_id = :patient
                 UNION ALL
-                SELECT 'message', m.id, m.sent_at, m.kind, m.document_id, m.body, NULL::text
+                SELECT 'message', m.id, m.sent_at, m.kind, m.document_id, m.body, NULL::text, NULL::uuid[], NULL::text[]
                   FROM %1$s.outbound_message m
                  WHERE m.patient_id = :patient
                    AND m.family_id = :viewer
@@ -94,7 +96,7 @@ public class PostgresThreadReadAdapter implements ThreadReadPort {
                                         WHERE e.document_id = c.id AND e.kind = 'explanation'
                                         ORDER BY %2$s LIMIT 1)))
                 UNION ALL
-                SELECT 'ask', q.id, q.created_at, q.kind, NULL::uuid, q.answer, q.question
+                SELECT 'ask', q.id, q.created_at, q.kind, NULL::uuid, q.answer, q.question, q.medicine_document_ids, q.medicine_crop_keys
                   FROM %1$s.chat_turn q
                  WHERE q.patient_id = :patient
                    AND q.family_id = :viewer
@@ -135,7 +137,8 @@ public class PostgresThreadReadAdapter implements ThreadReadPort {
         if ("ask".equals(row.get("item", String.class))) {
             // call999 is the viewer's, decided by the caller at read time (ThreadItem.Ask#forViewer)
             return new ThreadItem.Ask(id, at, row.get("question", String.class), row.get("body", String.class),
-                    AnswerKind.fromDbValue(row.get("message_kind", String.class)), false);
+                    AnswerKind.fromDbValue(row.get("message_kind", String.class)), false,
+                    CitedMedicine.paired(row.get("medicine_document_ids", UUID[].class), row.get("medicine_crop_keys", String[].class)));
         }
         // the stored kind through the one enum every writer uses: a kind the database allows and Java does not know fails
         // loudly here, never as a message silently dropped (everyOutboundKindIsListedWithItsKind reads the kinds from V23's CHECK)

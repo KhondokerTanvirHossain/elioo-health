@@ -1,9 +1,11 @@
 package com.elioo.baymax.companion.application.port.in;
 
 import com.elioo.baymax.companion.domain.AnswerKind;
+import com.elioo.baymax.companion.domain.CitedMedicine;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -20,8 +22,19 @@ public interface AskUseCase {
 
     /**
      * What the family is shown: exactly the stored turn's answer. {@code call999} is true only for an emergency read on a
-     * Bangladeshi number ({@code ViewerLocale}).
+     * Bangladeshi number ({@code ViewerLocale}). {@code medicines}: the prescription lines the answer quotes, each with its
+     * crop, in the order quoted (review of #166, finding 5).
      */
-    record AskAnswer(UUID turnId, AnswerKind kind, String question, String answer, boolean call999, Instant at) {
+    record AskAnswer(UUID turnId, AnswerKind kind, String question, String answer, boolean call999, Instant at,
+                     List<CitedMedicine> medicines) {
+
+        public AskAnswer {
+            medicines = medicines == null ? List.of() : List.copyOf(medicines);
+        }
+
+        /** An answer quoting no prescription line. */
+        public AskAnswer(UUID turnId, AnswerKind kind, String question, String answer, boolean call999, Instant at) {
+            this(turnId, kind, question, answer, call999, at, List.of());
+        }
     }
 }

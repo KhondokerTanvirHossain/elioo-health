@@ -124,4 +124,27 @@ class ChatModelConfigurationTest {
         });
         runner().run(context -> assertThat(context).hasNotFailed());
     }
+
+    /** What the web composer waits for Java's answer (medioo-web ask-limits.ts), read from the shipped source. */
+    static final Path COMPOSER = Path.of("../medioo-web/src/components/Composer/ask-limits.ts");
+
+    /**
+     * Review of #166, finding 4: the web gives up on an answer at its own timeout, so an answer deadline the web would cut
+     * off (raised on the box past the web's timeout less the store's grace and the network's margin) stops startup, and the
+     * web's timeout this check holds the deadline to is the one the composer ships.
+     */
+    @Test
+    void anAnswerDeadlineTheWebWouldCutOffStopsStartup() throws Exception {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("export const ASK_TIMEOUT_MS = ([0-9_]+);")
+                .matcher(Files.readString(COMPOSER));
+        assertThat(m.find()).as("ASK_TIMEOUT_MS in " + COMPOSER).isTrue();
+        assertThat(java.time.Duration.ofMillis(Long.parseLong(m.group(1).replace("_", ""))))
+                .as("the composer's timeout is the one this check holds the deadline to").isEqualTo(ChatPropertiesCheck.WEB_ASK_TIMEOUT);
+
+        runner().withPropertyValues("baymax.chat.answer-deadline=PT46S").run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(context.getStartupFailure()).rootCause().hasMessageContaining("baymax.chat.answer-deadline");
+        });
+        runner().withPropertyValues("baymax.chat.answer-deadline=PT45S").run(context -> assertThat(context).hasNotFailed());
+    }
 }

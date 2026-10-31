@@ -4,6 +4,7 @@ import com.elioo.baymax.companion.application.port.out.ChatTurnPort;
 import com.elioo.baymax.companion.domain.AnswerKind;
 import com.elioo.baymax.companion.domain.ChatOutcome;
 import com.elioo.baymax.companion.domain.ChatTurn;
+import com.elioo.baymax.companion.domain.CitedMedicine;
 import com.elioo.baymax.extraction.application.port.out.DocumentRecordPort;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
@@ -213,6 +214,52 @@ class PostgresChatTurnAdapterTest {
 
             assertThat(ids(turns.answered(f.id(), p.id()).collectList().block())).as("after the paper's delete")
                     .contains(kept).doesNotContain(cites);
+        });
+    }
+
+    /** Review of #166, finding 5 (V30): the quoted lines' crops are stored with the turn and listed with it, in order. */
+    @Test
+    void aQuotedLinesCropIsStoredAndListed() {
+        runner().run(context -> {
+            ChatTurnPort turns = context.getBean(ChatTurnPort.class);
+            DocumentRecordPort documents = context.getBean(DocumentRecordPort.class);
+            FamilyAccount f = family(context);
+            PatientProfile p = patient(context, f.id());
+            UUID rx = documents.create(Document.received(p.id(), f.id(), 1, Instant.now())).block().id();
+            UUID id = turns.reserveCounted(f.id(), p.id(), "bn", "ওষুধটা অর্ধেক করব?", dayStart(), 50).block();
+            List<CitedMedicine> quoted = List.of(new CitedMedicine(rx, "f/p/rx/crop-m2.jpg"), new CitedMedicine(rx, "f/p/rx/crop-m1.jpg"));
+            turns.complete(id, new ChatOutcome("Tab. B · Tab. A", AnswerKind.ANSWER, "model", List.of(), 1, 1, 1, null, 9L, List.of(rx),
+                    quoted)).block();
+
+            List<ChatTurn> listed = turns.answered(f.id(), p.id()).collectList().block();
+            assertThat(listed).hasSize(1);
+            assertThat(listed.get(0).medicines()).containsExactlyElementsOf(quoted);
+        });
+    }
+
+    /**
+     * V30's constraints raise where a mock could not: a crop without its paper, and a quoted line on a paper the answer did
+     * not cite (which S10's rule would then never hide when that paper is deleted).
+     */
+    @Test
+    void aQuotedLineIsAlwaysOnACitedPaper() {
+        runner().run(context -> {
+            ChatTurnPort turns = context.getBean(ChatTurnPort.class);
+            DocumentRecordPort documents = context.getBean(DocumentRecordPort.class);
+            FamilyAccount f = family(context);
+            PatientProfile p = patient(context, f.id());
+            UUID rx = documents.create(Document.received(p.id(), f.id(), 1, Instant.now())).block().id();
+            UUID id = turns.reserveCounted(f.id(), p.id(), "bn", "প্রশ্ন", dayStart(), 50).block();
+            turns.complete(id, answer("উত্তর", List.of(rx))).block();
+
+            assertThatThrownBy(() -> sql("UPDATE baymax.chat_turn SET medicine_document_ids = '{" + rx + "}' WHERE id = '" + id + "'"))
+                    .as("a paper without its crop")
+                    .isInstanceOfSatisfying(SQLException.class, e -> assertThat(e.getSQLState()).as(e.getMessage()).isEqualTo("23514"));
+            assertThatThrownBy(() -> sql("UPDATE baymax.chat_turn SET medicine_document_ids = '{" + UUID.randomUUID() + "}',"
+                    + " medicine_crop_keys = '{k}' WHERE id = '" + id + "'"))
+                    .as("a quoted line on a paper the answer did not cite")
+                    .isInstanceOfSatisfying(SQLException.class, e -> assertThat(e.getMessage()).contains("chat_turn_medicine_on_a_cited_paper"));
+            sql("UPDATE baymax.chat_turn SET medicine_document_ids = '{" + rx + "}', medicine_crop_keys = '{k}' WHERE id = '" + id + "'");
         });
     }
 

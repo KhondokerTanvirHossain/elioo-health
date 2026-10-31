@@ -23,9 +23,13 @@ import java.util.UUID;
  * @param dates         every kept paper's date and the prescription's
  * @param medicineNames the prescription's medicine names as words in {@link TextNormaliser}'s form ("demoprol"): a
  *                      medicine reference for the dose-change guard on both sides
+ * @param prescriptionId the paper {@link #verbatimLines} are on, or null with no line
+ * @param verbatimCropKeys the stored crop key of each of {@link #verbatimLines}, by position (DR-12): what an answer that
+ *                      quotes line {@code n} is shown beside it (review of #166, finding 5); empty only with no crop known
  */
 public record ChatContext(List<String> factLines, Set<String> numbers, List<String> verbatimLines, List<UUID> documentIds,
-                          boolean truncated, List<Fact> facts, Set<LocalDate> dates, Set<String> medicineNames) {
+                          boolean truncated, List<Fact> facts, Set<LocalDate> dates, Set<String> medicineNames, UUID prescriptionId,
+                          List<String> verbatimCropKeys) {
 
     /** The verdict word of a fact line that lets an answer say "inside". */
     public static final String INSIDE = "INSIDE";
@@ -66,6 +70,16 @@ public record ChatContext(List<String> factLines, Set<String> numbers, List<Stri
         facts = List.copyOf(facts);
         dates = Set.copyOf(dates);
         medicineNames = Set.copyOf(medicineNames);
+        verbatimCropKeys = verbatimCropKeys == null ? List.of() : List.copyOf(verbatimCropKeys);
+        if (!verbatimCropKeys.isEmpty() && (verbatimCropKeys.size() != verbatimLines.size() || prescriptionId == null)) {
+            throw new IllegalArgumentException("each verbatim line has its crop key and its paper, or none has");
+        }
+    }
+
+    /** A context whose lines have no crop known (tests, and a context with no prescription). */
+    public ChatContext(List<String> factLines, Set<String> numbers, List<String> verbatimLines, List<UUID> documentIds, boolean truncated,
+                       List<Fact> facts, Set<LocalDate> dates, Set<String> medicineNames) {
+        this(factLines, numbers, verbatimLines, documentIds, truncated, facts, dates, medicineNames, null, List.of());
     }
 
     /** A context with no fact records and no dates; the medicine names are read from the lines' name field. */
