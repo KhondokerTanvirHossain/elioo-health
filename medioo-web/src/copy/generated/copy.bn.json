@@ -110,6 +110,7 @@
   "doc.deleted": "কাগজটা মুছে ফেলা হয়েছে",
   "doc.deleted.objects": "ছবি মুছেছে: {0}",
   "doc.deleted.rows": "রেকর্ড মুছেছে: {0}",
+  "doc.gone": "এই কাগজটা আর নেই",
   "doc.pages": "মূল ছবি",
   "doctor.title": "ডাক্তার লিখেছেন",
   "due.date": "{0} তারিখে",

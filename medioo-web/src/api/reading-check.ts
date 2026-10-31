@@ -2,8 +2,8 @@
  * How a page that waits for a paper to be read checks on it with JavaScript (PO ruling P6, 2026-10-30; WCAG F41), as
  * rules with no React in them: how long to wait before each check, when to give up, and what a status answer means.
  * They are Medioo's one reading of P6, kept here rather than in one route's folder so that every reading page follows
- * the same rules: the papers page's QuietCheck (timeline/QuietCheck.tsx) runs them today, and the paper page's status
- * poll (pull request 149, not merged yet) is to adopt them when it is rebased (DR-42 amendment).
+ * the same rules: the papers page's QuietCheck (timeline/QuietCheck.tsx) and the paper page's reading check
+ * (components/ReadingProgress, plan W6) both run them (DR-42 amendment).
  * reading-check.test.ts judges them on their own.
  */
 

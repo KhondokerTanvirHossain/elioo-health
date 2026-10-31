@@ -92,15 +92,30 @@ function Band({ level, line }: { level: BannerLevel; line: string }) {
  *
  * The not-a-doctor line and the 999 link come straight under the band and the title, before any row, so a NOW card is
  * read in that order however many values the paper printed.
+ *
+ * `wording` false leaves the wording out (the paper page, W6, shows it in its own labelled bubble below, so it is not
+ * said twice); it never shows a wording the gate withheld.
  */
-export function VerdictCard({ paper, lang, link, mio }: { paper: PaperJson; lang: Lang; link?: string; mio?: boolean }) {
+export function VerdictCard({
+  paper,
+  lang,
+  link,
+  mio,
+  wording: withWording = true,
+}: {
+  paper: PaperJson;
+  lang: Lang;
+  link?: string;
+  mio?: boolean;
+  wording?: boolean;
+}) {
   const banner = paper.banner ?? null;
   const className = ["verdict-card"];
   if (banner) className.push(BAND_CLASS[banner.level]);
   if (link !== undefined) className.push("verdict-card--link");
   const counts = paper.counts ?? null;
   const title = counts ? t(lang, counts.line_key, counts.values, counts.outside) : t(lang, STATUS_TITLE[paper.status]);
-  const wording = paper.gate === "RELEASED" && paper.wording ? paper.wording : null;
+  const wording = withWording && paper.gate === "RELEASED" && paper.wording ? paper.wording : null;
   const pending = paper.gate === "PENDING" && typeof paper.review_hours === "number" ? paper.review_hours : null;
   const now = paper.now ?? null;
   const values = link !== undefined && banner && paper.values ? threadRows(paper.values) : [];

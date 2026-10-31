@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { t, type CopyKey, type Lang } from "@/copy";
 import failed from "../../fixtures/api/documents/failed.json";
+import failedSafety from "../../fixtures/api/documents/failed-safety.json";
+import fiftyEightValues from "../../fixtures/api/documents/fifty-eight-values-multipage.json";
 import notFound from "../../fixtures/api/documents/not-found.json";
 import nowAbroad from "../../fixtures/api/documents/now-abroad.json";
 import nowBd from "../../fixtures/api/documents/now-bd.json";
@@ -11,6 +13,7 @@ import retakeThird from "../../fixtures/api/documents/retake-third.json";
 import routineReleased from "../../fixtures/api/documents/routine-released.json";
 import thisWeekPending from "../../fixtures/api/documents/this-week-pending.json";
 import unassessed from "../../fixtures/api/documents/unassessed.json";
+import withheldRejected from "../../fixtures/api/documents/withheld-rejected.json";
 // B3's generated GET /app/api/now-banner bodies (baymax NowBannerApiContractTest), imported as JSON so the assignments
 // below are checked by `pnpm typecheck`: a field the type names that a fixture drops or retypes does not compile. A
 // field Java ADDS compiles silently (an imported value gets no excess-property check), so the key sets are pinned at
@@ -99,11 +102,21 @@ import familyMixed from "../../fixtures/api/family/mixed.json";
 import familyOwner from "../../fixtures/api/family/owner.json";
 import familyRemindersOff from "../../fixtures/api/family/reminders-off.json";
 import familyShareMember from "../../fixtures/api/family/share-member.json";
+// W6-api's generated value sheets (baymax ValueSheetApiContractTest), plan W6.
+import sheetEarlierNone from "../../fixtures/api/value-sheet/earlier-none.json";
+import sheetEarlierOtherUnit from "../../fixtures/api/value-sheet/earlier-other-unit.json";
+import sheetEarlierThree from "../../fixtures/api/value-sheet/earlier-three.json";
+import sheetInside from "../../fixtures/api/value-sheet/inside.json";
+import sheetNoHistory from "../../fixtures/api/value-sheet/no-history.json";
+import sheetNotFound from "../../fixtures/api/value-sheet/not-found.json";
+import sheetOutsideHigh from "../../fixtures/api/value-sheet/outside-high.json";
+import sheetUnknownOneSided from "../../fixtures/api/value-sheet/unknown-one-sided.json";
 import {
   ATTENTION_KINDS,
   BANNER_LEVELS,
   MESSAGE_KINDS,
   DISPLAY_KINDS,
+  EARLIER_LINE_KEYS,
   GATES,
   PAPER_STATUSES,
   READING_STATUSES,
@@ -131,6 +144,7 @@ import {
   type TimelineCountsJson,
   type TimelineEntryJson,
   type TimelineJson,
+  type EarlierReadingJson,
   type Json,
   type LabSeriesJson,
   type LabsJson,
@@ -142,11 +156,13 @@ import {
   type NowBannerJson,
   type NowSeenJson,
   type PaperJson,
+  type PaperValueJson,
   type ThreadJson,
   type TrendPointJson,
   type UploadAnswerJson,
   type UploadOptionsJson,
   type UploadPatientJson,
+  type ValueSheetJson,
 } from "./types";
 
 const nowBannerDir = join(__dirname, "..", "..", "fixtures/api/now-banner");
@@ -240,6 +256,9 @@ describe("API types", () => {
 // Compile time. A result body cannot pass as a reading one: PaperReadingJson declares every result key `never`.
 const PAPERS: Record<string, Json<PaperJson>> = {
   "failed.json": failed.body,
+  "failed-safety.json": failedSafety.body,
+  "fifty-eight-values-multipage.json": fiftyEightValues.body,
+  "withheld-rejected.json": withheldRejected.body,
   "now-abroad.json": nowAbroad.body,
   "now-bd.json": nowBd.body,
   "processing.json": processing.body,
@@ -252,6 +271,9 @@ const PAPERS: Record<string, Json<PaperJson>> = {
 const REFUSALS: Record<string, { reason: string }> = { "not-found.json": notFound.body };
 const STATUS: Record<string, number> = {
   "failed.json": failed.status,
+  "failed-safety.json": failedSafety.status,
+  "fifty-eight-values-multipage.json": fiftyEightValues.status,
+  "withheld-rejected.json": withheldRejected.status,
   "not-found.json": notFound.status,
   "now-abroad.json": nowAbroad.status,
   "now-bd.json": nowBd.status,
@@ -983,5 +1005,74 @@ describe("GET /app/api/family", () => {
     expect(all.some((p) => p.chronic_flags.some((f) => f.label_key === null)), "a typed flag").toBe(true);
     expect(bodies.some(([, b]) => b.account.reminders_stopped), "a family stop").toBe(true);
     for (const state of REMINDER_STATES) expect(all.some((p) => p.reminders === state), `a patient whose reminders are ${state}`).toBe(true);
+  });
+});
+
+/*
+ * GET /app/api/documents/{id}/values/{obs} (W6-api, plan W6): every committed sheet is assigned to ValueSheetJson (the
+ * compile-time half) and compared key for key with the lists below (the run-time half), the value row with the paper's
+ * own row keys, and the heading key with the keys the type names, so a key Java adds or a new heading fails here.
+ */
+const SHEET_KEYS = ["earlier", "earlier_line_key", "paper", "value"] as const;
+const SHEET_PAPER_KEYS = ["date", "date_is_upload_day", "date_uncertain", "document_type", "id", "patient"] as const;
+const SHEET_PATIENT_KEYS = ["id", "name", "name_possessive"] as const;
+const SHEET_VALUE_KEYS = [
+  "chip_key",
+  "crop",
+  "display_kind",
+  "id",
+  "in_now_block",
+  "name",
+  "pin",
+  "ref_high",
+  "ref_low",
+  "side",
+  "unit",
+  "value",
+] as const;
+const EARLIER_KEYS = ["crop", "date", "date_is_upload_day", "document_id", "observation_id", "unit", "value"] as const;
+const sheetKeyListsAreTheTypes: [
+  Equal<(typeof SHEET_KEYS)[number], keyof ValueSheetJson>,
+  Equal<(typeof SHEET_PAPER_KEYS)[number], keyof ValueSheetJson["paper"]>,
+  Equal<(typeof SHEET_PATIENT_KEYS)[number], keyof ValueSheetJson["paper"]["patient"]>,
+  Equal<(typeof SHEET_VALUE_KEYS)[number], keyof PaperValueJson>,
+  Equal<(typeof EARLIER_KEYS)[number], keyof EarlierReadingJson>,
+] = [true, true, true, true, true];
+
+describe("GET /app/api/documents/{id}/values/{obs}", () => {
+  it("everyValueSheetFixtureIsAValueSheetJson", () => {
+    expect(sheetKeyListsAreTheTypes.every(Boolean)).toBe(true);
+    const sheets: Array<[string, Json<ValueSheetJson>]> = [
+      ["earlier-none.json", sheetEarlierNone.body],
+      ["earlier-other-unit.json", sheetEarlierOtherUnit.body],
+      ["earlier-three.json", sheetEarlierThree.body],
+      ["inside.json", sheetInside.body],
+      ["no-history.json", sheetNoHistory.body],
+      ["outside-high.json", sheetOutsideHigh.body],
+      ["unknown-one-sided.json", sheetUnknownOneSided.body],
+    ];
+    const refusals: Array<[string, { reason: string }, number]> = [["not-found.json", sheetNotFound.body, sheetNotFound.status]];
+    expect(readdirSync(join(fixtures, "value-sheet")).filter((f) => f.endsWith(".json")).sort()).toEqual(
+      [...sheets.map(([f]) => f), ...refusals.map(([f]) => f)].sort(),
+    );
+    expect(refusals.map(([, body, status]) => [body.reason, status])).toEqual([["NOT_FOUND", 404]]);
+    const lineKeys = new Set<string | null>();
+    let earlier = 0;
+    for (const [file, sheet] of sheets) {
+      expect(keys(sheet), file).toEqual([...SHEET_KEYS]);
+      expect(keys(sheet.paper), `${file} paper`).toEqual([...SHEET_PAPER_KEYS]);
+      expect(keys(sheet.paper.patient), `${file} patient`).toEqual([...SHEET_PATIENT_KEYS]);
+      expect(keys(sheet.value), `${file} value`).toEqual([...SHEET_VALUE_KEYS]);
+      for (const e of sheet.earlier) {
+        expect(keys(e), `${file} earlier`).toEqual([...EARLIER_KEYS]);
+        earlier++;
+      }
+      const key = sheet.earlier_line_key;
+      expect(key === null || (EARLIER_LINE_KEYS as readonly string[]).includes(key), `${file} earlier_line_key ${key}`).toBe(true);
+      lineKeys.add(key);
+    }
+    // Guard: the fixtures hold a sheet with no line, one with "the first time" and one with readings, and readings.
+    expect([...lineKeys]).toEqual(expect.arrayContaining([null, "sheet.earlier.none", "sheet.earlier"]));
+    expect(earlier, "earlier readings walked").toBeGreaterThan(0);
   });
 });

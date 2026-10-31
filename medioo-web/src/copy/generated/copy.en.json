@@ -110,6 +110,7 @@
   "doc.deleted": "The paper was deleted",
   "doc.deleted.objects": "Images deleted: {0}",
   "doc.deleted.rows": "Records deleted: {0}",
+  "doc.gone": "This paper is no longer here",
   "doc.pages": "Original",
   "doctor.title": "The doctor wrote",
   "due.date": "On {0}",
