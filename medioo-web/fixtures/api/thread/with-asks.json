@@ -11,6 +11,7 @@
         "at": "2026-10-14T05:00:00Z",
         "call_999": true,
         "kind": "ask",
+        "medicines": [ ],
         "question": "আম্মার বুকে ব্যথা",
         "turn_id": "eb6da572-b84a-3b7d-afdb-d1cdfe14b528"
       },
@@ -20,6 +21,7 @@
         "at": "2026-10-13T05:00:00Z",
         "call_999": false,
         "kind": "ask",
+        "medicines": [ ],
         "question": "আম্মার ক্রিয়েটিনিন কত?",
         "turn_id": "835f8d74-df97-3351-a112-8ad8a47618f7"
       },

@@ -8,6 +8,7 @@
     "at": "2026-10-30T06:00:00Z",
     "call_999": true,
     "kind": "emergency",
+    "medicines": [ ],
     "question": "আম্মার বুকে ব্যথা",
     "turn_id": "273c1d71-9e53-354b-9118-274e998067a8"
   },

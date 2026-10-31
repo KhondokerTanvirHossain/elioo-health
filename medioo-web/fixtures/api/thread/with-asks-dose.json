@@ -1,0 +1,85 @@
+{
+  "_meta": {
+    "generated_by": "baymax ThreadApiContractTest",
+    "source": "GET /app/api/patients/{id}/thread?asks=1 over the case with-asks-dose"
+  },
+  "body": {
+    "items": [
+      {
+        "answer": "Ma-র শেষ প্রেসক্রিপশনে লেখা: Tab. Demoprol · 5 mg · 1+0+0 · 30 days\n\nওষুধ শুরু, বন্ধ, বাদ বা ডোজ বদলানোর সিদ্ধান্ত আমি দিতে পারি না — যিনি প্রেসক্রিপশন লিখেছেন, সেই ডাক্তারকে জিজ্ঞেস করুন।\nএটি একটি তথ্য ও রেকর্ড রাখার সেবা, চিকিৎসা পরামর্শ নয়। সব সময় ডাক্তারের সাথে নিশ্চিত হয়ে নিন।\nরোগী যদি অজ্ঞান হন, শ্বাস নিতে কষ্ট হয়, বা বুকে ব্যথা হয় — সরাসরি নিকটস্থ হাসপাতালের জরুরি বিভাগে যান।",
+        "answer_kind": "answer",
+        "at": "2026-10-16T05:00:00Z",
+        "call_999": false,
+        "kind": "ask",
+        "medicines": [
+          {
+            "crop": {
+              "src": "/app/documents/59ed8a65-8c83-3ac3-a1dd-5179afbf8d9a/image?key=62af4347-c981-30d4-8bef-911d4b26bf76%2F9582c2b2-90ec-32e7-a577-36b96a85cd46%2F59ed8a65-8c83-3ac3-a1dd-5179afbf8d9a%2Fmed-1b7fd164.jpg"
+            },
+            "document_id": "59ed8a65-8c83-3ac3-a1dd-5179afbf8d9a"
+          }
+        ],
+        "question": "ওষুধটা অর্ধেক করব?",
+        "turn_id": "97f9e866-594a-3512-be9c-13ec5417aa46"
+      },
+      {
+        "at": "2026-10-15T04:00:00Z",
+        "card": {
+          "banner": null,
+          "counts": null,
+          "date": "2026-10-15",
+          "date_is_upload_day": false,
+          "date_uncertain": false,
+          "doctor": { },
+          "document_type": "prescription",
+          "facility": "Shapla Diagnostics",
+          "filed": true,
+          "follow_up": [ ],
+          "gate": "NONE",
+          "id": "59ed8a65-8c83-3ac3-a1dd-5179afbf8d9a",
+          "medicines": [
+            {
+              "crop": {
+                "height": null,
+                "src": "/app/documents/59ed8a65-8c83-3ac3-a1dd-5179afbf8d9a/image?key=62af4347-c981-30d4-8bef-911d4b26bf76%2F9582c2b2-90ec-32e7-a577-36b96a85cd46%2F59ed8a65-8c83-3ac3-a1dd-5179afbf8d9a%2Fmed-1b7fd164.jpg",
+                "width": null
+              },
+              "dose_text": "5 mg",
+              "duration_text": "30 days",
+              "frequency_text": "1+0+0",
+              "name": "Tab. Demoprol"
+            }
+          ],
+          "owner": true,
+          "page_count": 1,
+          "pages": [
+            {
+              "n": 1,
+              "src": "/app/documents/59ed8a65-8c83-3ac3-a1dd-5179afbf8d9a/page/1"
+            }
+          ],
+          "patient": {
+            "age": 64,
+            "id": "9582c2b2-90ec-32e7-a577-36b96a85cd46",
+            "name": "Ma",
+            "name_objective": "Ma-কে",
+            "name_possessive": "Ma-র"
+          },
+          "printed_date": "2026-10-15",
+          "reasons": [ ],
+          "received_at": "2026-10-15T04:00:00Z",
+          "status": "DONE",
+          "unverified": null,
+          "urgency": "routine",
+          "values": [ ],
+          "viewer": {
+            "bangladesh": true
+          }
+        },
+        "kind": "paper"
+      }
+    ],
+    "next_cursor": null
+  },
+  "status": 200
+}

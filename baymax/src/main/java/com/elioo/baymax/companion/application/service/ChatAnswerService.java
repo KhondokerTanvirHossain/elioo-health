@@ -11,6 +11,7 @@ import com.elioo.baymax.companion.config.ChatModelConfiguration;
 import com.elioo.baymax.companion.domain.AnswerKind;
 import com.elioo.baymax.companion.domain.ChatContext;
 import com.elioo.baymax.companion.domain.ChatOutcome;
+import com.elioo.baymax.companion.domain.CitedMedicine;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.extraction.config.BaymaxModelClient;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
@@ -27,9 +28,11 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -38,6 +41,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
 /**
@@ -74,6 +78,13 @@ import java.util.function.Function;
 @Slf4j
 @Service
 public class ChatAnswerService implements AskUseCase {
+
+    /**
+     * What storing the turn may add after the answer deadline: the whole request ends by {@code answer-deadline} plus this,
+     * inside the web composer's wait (ChatPropertiesCheck), so the web never shows its fallback for a turn Java goes on to
+     * answer (review of #166, finding 4).
+     */
+    public static final Duration STORE_GRACE = Duration.ofSeconds(3);
 
     private final BaymaxProperties properties;
     private final HealthRecordPort records;
@@ -114,7 +125,12 @@ public class ChatAnswerService implements AskUseCase {
     }
 
     /** Where a turn's body came from, before the appendix. */
-    private record Body(String text, AnswerKind kind, String handler, List<UUID> documents) {
+    private record Body(String text, AnswerKind kind, String handler, List<UUID> documents, List<CitedMedicine> medicines) {
+
+        /** A body that quotes no prescription line. */
+        Body(String text, AnswerKind kind, String handler, List<UUID> documents) {
+            this(text, kind, handler, documents, List.of());
+        }
     }
 
     @Override
@@ -132,13 +148,20 @@ public class ChatAnswerService implements AskUseCase {
         // what is stored and returned: an over-long emergency is cut to the column's limit (V29's CHECK), on a code point
         String q = cut(asked, chat.getQuestionMaxChars());
         long started = System.nanoTime();
-        return records.visiblePatient(familyId, patientId)
+        // the answer deadline runs from here, on the scheduler's clock the timeouts use (review of #166, finding 4)
+        long startMs = Schedulers.parallel().now(TimeUnit.MILLISECONDS);
+        Duration deadline = chat.getAnswerDeadline();
+        Mono<AskAnswer> answered = records.visiblePatient(familyId, patientId)
                 .switchIfEmpty(Mono.error(BaymaxException.notFound("patient_not_found", "no patient with id " + patientId)))
                 .flatMap(access -> records.findFamily(familyId)
                         .switchIfEmpty(Mono.error(BaymaxException.unauthorized("session_family_gone", "the family no longer exists")))
                         .map(f -> ViewerLocale.of(f.whatsappNumber()))
                         .flatMap(viewer -> emergency ? emergency(familyId, access.patient(), q, l, viewer, started)
-                                : route(familyId, access.patient(), q, l, viewer, started)));
+                                : route(familyId, access.patient(), q, l, viewer, started, startMs)));
+        // the whole request, reads and store included, ends inside the web's wait (ChatPropertiesCheck): past it the web has
+        // shown its fallback, so no answer may be stored after it that the family would only meet on a reload. An emergency
+        // is pure copy and is returned at its own bound below.
+        return emergency ? answered : answered.timeout(deadline.plus(STORE_GRACE));
     }
 
     /**
@@ -153,6 +176,8 @@ public class ChatAnswerService implements AskUseCase {
                 viewer.bangladesh(), clock.instant()));
         return turns.reserveUncounted(familyId, patient.id(), l, q)
                 .flatMap(id -> finish(id, patient, q, l, viewer, body, "", new Tally(), started))
+                // a store that hangs never holds the emergency lines back past the deadline
+                .timeout(properties.getChat().getAnswerDeadline())
                 .switchIfEmpty(Mono.defer(() -> {
                     log.warn("[baymax] chat emergency for patient={} not stored: no turn reserved", patient.id());
                     return unstored;
@@ -167,7 +192,8 @@ public class ChatAnswerService implements AskUseCase {
     private record Asked(boolean dose, MedicinePurposeGuard.Route purpose) {
     }
 
-    private Mono<AskAnswer> route(UUID familyId, PatientProfile patient, String q, String l, ViewerLocale viewer, long started) {
+    private Mono<AskAnswer> route(UUID familyId, PatientProfile patient, String q, String l, ViewerLocale viewer, long started,
+                                  long startMs) {
         Function<String, String> line = key -> copy.line(l, key);
         // whether code appends the ask-the-doctor line: the stored medicines' names count as medicine words, since a family
         // names the drug (review of #164, finding 3); a names read that fails appends the line rather than drop it. The same
@@ -189,16 +215,17 @@ public class ChatAnswerService implements AskUseCase {
             // 4. what a medicine is for, and nothing else (P14): code answers from the stored lines, before the model, the
             // client and the cap, since it costs nothing
             if (purpose == MedicinePurposeGuard.Route.CODE && !dose) {
-                return purposeReply(familyId, patient, q, l, viewer, open, started);
+                return purposeReply(familyId, patient, q, l, viewer, open, started, startMs);
             }
             boolean purposeLine = purpose != MedicinePurposeGuard.Route.NONE;
-            return byModel(familyId, patient, q, dose, purposeLine, l, viewer, ChatAppendix.tail(dose, purposeLine, open, line), started);
+            return byModel(familyId, patient, q, dose, purposeLine, l, viewer, ChatAppendix.tail(dose, purposeLine, open, line), started,
+                    startMs);
         });
     }
 
     /** 5. no model, the cap, then the model: every question code does not answer itself. */
     private Mono<AskAnswer> byModel(UUID familyId, PatientProfile patient, String q, boolean dose, boolean purpose, String l,
-                                    ViewerLocale viewer, String tail, long started) {
+                                    ViewerLocale viewer, String tail, long started, long startMs) {
         LlmClient client = BaymaxModelClient.unwrap(chatClient.getIfAvailable());
         if (client == null) {
             return fixed(familyId, patient, q, l, viewer, AnswerKind.DECLINED, "no_model", "chat.ask.reply", tail, started);
@@ -208,7 +235,7 @@ public class ChatAnswerService implements AskUseCase {
                 .map(Optional::of)
                 .defaultIfEmpty(Optional.empty())
                 .flatMap(reserved -> reserved.isPresent()
-                        ? modelled(reserved.get(), client, familyId, patient, q, dose, purpose, l, viewer, tail, started)
+                        ? modelled(reserved.get(), client, familyId, patient, q, dose, purpose, l, viewer, tail, started, startMs)
                         : fixed(familyId, patient, q, l, viewer, AnswerKind.LIMIT, "cap", "chat.ask.limit", tail, started));
     }
 
@@ -220,7 +247,7 @@ public class ChatAnswerService implements AskUseCase {
      * model. A context that cannot be read gives {@code chat.ask.failed}, still with no model call.
      */
     private Mono<AskAnswer> purposeReply(UUID familyId, PatientProfile patient, String q, String l, ViewerLocale viewer,
-                                         Optional<Urgency> open, long started) {
+                                         Optional<Urgency> open, long started, long startMs) {
         Function<String, String> line = key -> copy.line(l, key);
         String tail = ChatAppendix.tail(false, true, open, line);
         return Mono.fromCallable(() -> ChatLabels.of(l, copy))
@@ -242,7 +269,7 @@ public class ChatAnswerService implements AskUseCase {
                     if (again != MedicinePurposeGuard.Route.CODE) {
                         boolean purposeLine = again != MedicinePurposeGuard.Route.NONE;
                         return byModel(familyId, patient, q, false, purposeLine, l, viewer, ChatAppendix.tail(false, purposeLine, open, line),
-                                started);
+                                started, startMs);
                     }
                     MedicinePurposeReply.Reply reply = MedicinePurposeReply.of(q, ctx, patient.name(), l, copy,
                             properties.getChat().getMaxAnswerChars() - tail.length());
@@ -256,6 +283,12 @@ public class ChatAnswerService implements AskUseCase {
                                    String tail, long started) {
         return turns.reserveUncounted(familyId, patient.id(), l, q)
                 .flatMap(id -> finish(id, patient, q, l, viewer, body, tail, new Tally(), started));
+    }
+
+    /** The deadline less what has passed since {@code startMs}, on the timeouts' clock; never negative. */
+    private static Duration remaining(Duration deadline, long startMs) {
+        long left = deadline.toMillis() - (Schedulers.parallel().now(TimeUnit.MILLISECONDS) - startMs);
+        return Duration.ofMillis(Math.max(0, left));
     }
 
     /** The first {@code max} characters of a text, never splitting a code point. */
@@ -276,7 +309,8 @@ public class ChatAnswerService implements AskUseCase {
      * {@code purpose} is likewise the decision that appends {@code chat.purpose.ask} (review of #171, finding 3).
      */
     private Mono<AskAnswer> modelled(UUID turnId, LlmClient client, UUID familyId, PatientProfile patient, String q, boolean dose,
-                                     boolean purpose, String l, ViewerLocale viewer, String tail, long started) {
+                                     boolean purpose, String l, ViewerLocale viewer, String tail, long started,
+                                     long startMs) {
         BaymaxProperties.Chat chat = properties.getChat();
         Tally tally = new Tally();
         Function<String, String> line = key -> copy.line(l, key);
@@ -291,14 +325,16 @@ public class ChatAnswerService implements AskUseCase {
                     return call(client, ctx, labels, patient.name(), q, dose, purpose, bodyChars, List.of(), tally).flatMap(first -> {
                         List<String> v1 = check(first, ctx, tail, asked);
                         if (v1.isEmpty()) {
-                            return Mono.just(new Body(AnswerCheck.resolve(first.strip(), ctx), AnswerKind.ANSWER, "model", ctx.documentIds()));
+                            return Mono.just(new Body(AnswerCheck.resolve(first.strip(), ctx), AnswerKind.ANSWER, "model", ctx.documentIds(),
+                                    AnswerCheck.cited(first.strip(), ctx)));
                         }
                         tally.violations.addAll(v1);
                         log.debug("[baymax] chat turn={} refused first answer: {}", turnId, v1);
                         return call(client, ctx, labels, patient.name(), q, dose, purpose, bodyChars, v1, tally).map(second -> {
                             List<String> v2 = check(second, ctx, tail, asked);
                             if (v2.isEmpty()) {
-                                return new Body(AnswerCheck.resolve(second.strip(), ctx), AnswerKind.ANSWER, "repair", ctx.documentIds());
+                                return new Body(AnswerCheck.resolve(second.strip(), ctx), AnswerKind.ANSWER, "repair", ctx.documentIds(),
+                                        AnswerCheck.cited(second.strip(), ctx));
                             }
                             tally.violations.addAll(v2);
                             log.debug("[baymax] chat turn={} refused the repair: {}", turnId, v2);
@@ -309,7 +345,8 @@ public class ChatAnswerService implements AskUseCase {
         // a context read or a call that completes empty is a model error, never an empty turn: a reserved, counted turn is
         // always completed (review of #164, finding 6)
         return work.switchIfEmpty(Mono.fromSupplier(() -> new Body(failed.text(), AnswerKind.FALLBACK, "model_error", List.of())))
-                .timeout(chat.getAnswerDeadline())
+                // what is left of the deadline, counted from the request: the reads before the model count against it
+                .timeout(remaining(chat.getAnswerDeadline(), startMs))
                 .onErrorResume(e -> {
                     log.warn("[baymax] chat turn={} model failed after {} call(s): {}", turnId, tally.calls, e.getClass().getSimpleName());
                     return Mono.just(new Body(failed.text(), AnswerKind.FALLBACK, "model_error", List.of()));
@@ -377,7 +414,7 @@ public class ChatAnswerService implements AskUseCase {
         long ms = (System.nanoTime() - started) / 1_000_000;
         List<String> codes = AnswerCheck.forLog(tally.violations);
         ChatOutcome outcome = new ChatOutcome(answer, body.kind(), body.handler(), codes, tally.calls, tally.in, tally.out, tally.usd, ms,
-                body.documents());
+                body.documents(), body.medicines());
         boolean call999 = body.kind() == AnswerKind.EMERGENCY && viewer.bangladesh();
         return turns.complete(turnId, outcome)
                 .then(Mono.fromSupplier(() -> {
@@ -385,7 +422,7 @@ public class ChatAnswerService implements AskUseCase {
                                     + " violations={}", turnId, patient.id(), body.kind().dbValue(), body.handler(), q.length(), answer.length(),
                             tally.calls, tally.in, tally.out, tally.usd, ms, String.join(",", codes));
                     log.debug("[baymax] chat turn={} question={} answer={}", turnId, q, answer);
-                    return new AskAnswer(turnId, body.kind(), q, answer, call999, clock.instant());
+                    return new AskAnswer(turnId, body.kind(), q, answer, call999, clock.instant(), body.medicines());
                 }));
     }
 

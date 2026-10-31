@@ -30,10 +30,12 @@ import java.util.UUID;
  * @param unshownNames  the names of the latest prescription's medicines whose line is never shown, an abbreviated one
  *                      (DR-16) or an empty one, in normal form: still a medicine on the paper, so a question that names one
  *                      is never told the paper does not hold it (review of #171, finding 6)
+ * @param verbatimCropKeys the stored crop key of each of {@link #verbatimLines}, by position (DR-12): what an answer that
+ *                      quotes line {@code n} is shown beside it (review of #166, finding 5); empty only with no crop known
  */
 public record ChatContext(List<String> factLines, Set<String> numbers, List<String> verbatimLines, List<UUID> documentIds,
                           boolean truncated, List<Fact> facts, Set<LocalDate> dates, Set<String> medicineNames,
-                          Set<String> foreignLabels, UUID prescriptionId, Set<String> unshownNames) {
+                          Set<String> foreignLabels, UUID prescriptionId, Set<String> unshownNames, List<String> verbatimCropKeys) {
 
     /** The canonical verdict that lets an answer say "inside". */
     public static final String INSIDE = "INSIDE";
@@ -77,6 +79,18 @@ public record ChatContext(List<String> factLines, Set<String> numbers, List<Stri
         medicineNames = Set.copyOf(medicineNames);
         foreignLabels = Set.copyOf(foreignLabels);
         unshownNames = Set.copyOf(unshownNames);
+        verbatimCropKeys = verbatimCropKeys == null ? List.of() : List.copyOf(verbatimCropKeys);
+        if (!verbatimCropKeys.isEmpty() && (verbatimCropKeys.size() != verbatimLines.size() || prescriptionId == null)) {
+            throw new IllegalArgumentException("each verbatim line has its crop key and its paper, or none has");
+        }
+    }
+
+    /** A context with no crop known for its lines (review of #166, finding 5): what #171's callers and tests build. */
+    public ChatContext(List<String> factLines, Set<String> numbers, List<String> verbatimLines, List<UUID> documentIds, boolean truncated,
+                       List<Fact> facts, Set<LocalDate> dates, Set<String> medicineNames, Set<String> foreignLabels,
+                       UUID prescriptionId, Set<String> unshownNames) {
+        this(factLines, numbers, verbatimLines, documentIds, truncated, facts, dates, medicineNames, foreignLabels, prescriptionId,
+                unshownNames, List.of());
     }
 
     /** A context with no prescription paper named and no unshown line: what a test builds by hand. */
@@ -85,10 +99,10 @@ public record ChatContext(List<String> factLines, Set<String> numbers, List<Stri
         this(factLines, numbers, verbatimLines, documentIds, truncated, facts, dates, medicineNames, foreignLabels, null, Set.of());
     }
 
-    /** This context with the prescription's paper and its unshown medicines' names. */
+    /** This context with the prescription's paper and its unshown medicines' names; the lines' crop keys are kept. */
     public ChatContext withPrescription(UUID prescription, Set<String> unshown) {
         return new ChatContext(factLines, numbers, verbatimLines, documentIds, truncated, facts, dates, medicineNames, foreignLabels,
-                prescription, unshown);
+                prescription, unshown, verbatimCropKeys);
     }
 
     /** A context with no foreign labels: what an English ask is built with. */
