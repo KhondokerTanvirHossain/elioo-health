@@ -116,6 +116,47 @@ answer	pass	Ma-র ২০ সেপ্টেম্বর ২০২৬-এর প
 answer	pass	Ma's prescription dated 2026-09-20 lists {{rx:1}} and {{rx:2}}.
 answer	pass	Demoprol is generally prescribed for high blood pressure.
 answer	pass	The papers do not say what Demoprol is for.
+# PO ruling P12 (2026-11-01), proposal (A) of #170: a change word beside a medicine, or a change instruction anywhere, is
+# refused; a lab value that changed, with no medicine in the sentence, is not. Rows written before the guard change.
+answer	flag	Change Demoprol.
+answer	flag	Ma can change {{rx:1}}.
+answer	flag	ওষুধটা বদলে ফেলুন।
+answer	flag	Demoprol বদলান।
+answer	flag	ওষুধটা বদলানোর বিষয়ে ডাক্তারকে জিজ্ঞেস করুন।
+answer	pass	Ma-র ক্রিয়েটিনিনের মান আগের কাগজের তুলনায় বদলেছে।
+answer	pass	The creatinine changed between the two papers.
+# P12, further forms a family could be shown: other change verbs, inflections and romanizations (listed in #170's body)
+answer	flag	ওষুধটা বদলে দিন।
+answer	flag	{{rx:1}} পাল্টে নিন।
+answer	flag	Switch {{rx:1}} for Napa.
+answer	flag	Replace Demoprol with Napa.
+answer	flag	Ma can swap {{rx:1}} for another one.
+answer	flag	Substitute Napa for Demoprol.
+answer	flag	Ma can change it.
+answer	flag	Demoprol পরিবর্তন করুন।
+answer	flag	ওষুধটা পরিবর্তন করতে পারেন।
+answer	flag	এটা পরিবর্তন করুন।
+answer	flag	এটা বদলিয়ে ফেলুন।
+answer	flag	এটা বদলাতে পারেন।
+answer	flag	এটা পাল্টাতে পারেন।
+answer	flag	Demoprol পাল্টাতে পারেন।
+answer	flag	Demoprol badle felun.
+answer	flag	osudh ta bodlan.
+answer	flag	Demoprol paltan.
+answer	flag	এটা পাল্টিয়ে ফেলুন।
+answer	flag	এটা পরিবর্তন করবেন।
+answer	flag	ওষুধটা পরিবর্তন করা যায়।
+answer	flag	osudh ta bodle felun.
+answer	flag	Demoprol badlan.
+answer	flag	Ma changes {{rx:1}}.
+answer	flag	Ma is changing Demoprol.
+answer	flag	Ma changed Demoprol.
+answer	pass	ক্রিয়েটিনিনের মান আগের কাগজের তুলনায় পরিবর্তন হয়েছে।
+answer	pass	ল্যাব রেফারেন্স সীমা পরিবর্তন করেছে।
+answer	pass	রিপোর্টে ছাপা সীমা পাল্টেছে।
+answer	pass	The lab replaced the old printed range on the new paper.
+answer	pass	The lab did not change its printed range.
+answer	pass	Ma-র HbA1c দুই কাগজে বদলায়নি।
 question	flag	ওষুধটা অর্ধেক করব?
 question	flag	Demoprol বন্ধ করে দেব?
 question	flag	should I stop the medicine
@@ -172,3 +213,8 @@ question	pass	can we see the trend of creatinine?
 question	pass	Demoprol কীসের ওষুধ?
 question	pass	what does Demoprol do?
 question	pass	when was Demoprol prescribed?
+# P12: a question that asks to change a medicine, in the words (A) adds
+question	flag	ওষুধটা কি বদলাব?
+question	flag	Demoprol কি পাল্টে ফেলব?
+question	flag	Should we replace Demoprol?
+question	pass	ক্রিয়েটিনিন কি বদলেছে?

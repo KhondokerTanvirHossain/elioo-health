@@ -316,6 +316,26 @@ class ChatAnswerServiceTest {
     }
 
     /**
+     * PO ruling P12 (proposal A of #170): a question asking to change a medicine in a বদল- word is a dose question, so code
+     * appends its own doctor line; and that line is shown, though it holds the very change words the guard now refuses in
+     * the model's text, because it is Medioo's copy and exempt from the content checks ({@link ChatAppendix}).
+     */
+    @Test
+    void aChangeQuestionGetsTheDoctorLineThoughTheLineHoldsTheWordsTheGuardRefuses() {
+        model(Mono.just(reply("Ma-র শেষ প্রেসক্রিপশনে লেখা আছে: {{rx:1}}", 1, 1)));
+
+        AskAnswer a = ask("ওষুধটা কি বদলাব?");
+
+        assertThat(a.answer()).as("a change question gets code's doctor line").contains(line("bn", "chat.dose.ask_doctor"));
+        assertThat(a.kind()).isEqualTo(AnswerKind.ANSWER);
+        assertThat(a.answer()).contains(RX1);
+        assertThat(stored().violationCodes()).isEmpty();
+        // the line, were it the model's text, would be refused in both languages: so it must never pass through the checks
+        assertThat(AnswerCheck.violations(line("bn", "chat.dose.ask_doctor"), CTX)).contains("dose_change:বদল+medicine");
+        assertThat(AnswerCheck.violations(line("en", "chat.dose.ask_doctor"), CTX)).contains("dose_change:change+medicine");
+    }
+
+    /**
      * Plan CHATCOPY, finding 1 of the live Sonnet test: a Bangla answer that copies an English label is refused and repaired,
      * never shown and never rewritten by code. The context is the builder's, made with the labels the service passed, so this
      * also asserts a Bangla ask is given Bangla labels.

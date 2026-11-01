@@ -23,7 +23,7 @@ import java.util.regex.Pattern;
  *             (take, stop, start, keep, skip, dose, tablet, খান, নিন, দিন, বন্ধ, উচিত, লাগবে না…);</li>
  *         <li>{@link #NEAR_MEDICINE}, refused in a sentence that also refers to a medicine (the {@value #RX_LINE} word, a
  *             stored medicine's name, or a {@link #MEDICINE_WORDS} word): words harmless alone and an instruction beside a
- *             medicine (give, use, avoid, hold, need, tonight, সকালে, রাতে, আজ…).</li>
+ *             medicine (give, use, avoid, hold, need, change, tonight, সকালে, রাতে, আজ, বদল-, পাল্ট-…).</li>
  *       </ol>
  *       Any hit refuses the text, a refusal included ("ওষুধ বন্ধ করবেন কিনা, সেটা ডাক্তার বলবেন"): the refusal is code's
  *       job.</li>
@@ -50,6 +50,10 @@ public final class DoseChangeGuard {
             "নিন", "নেবেন", "নিবেন", "নিতে হবে", "নিতে পারেন", "নিতে থাকুন", "নিতে থাকবেন", "খেতে হবে", "খাওয়াতে হবে", "খাওয়া উচিত",
             "খাওয়া দরকার", "খাওয়ার দরকার", "দরকার নেই", "উচিত", "ছেড়ে দি*", "ছেড়ে দে*", "থামান", "থামাবেন", "থামিয়ে*", "লাগবে না",
             "দিন", "দেবেন", "দিবেন", "দিতে হবে", "দিয়ে দিন", "দিনে", "বেলা", "খালি পেটে", "ট্যাবলেট*", "ক্যাপসুল*",
+            // PO ruling P12, proposal (A) of #170, then the further forms of the same instruction found with it
+            "বদলান", "বদলাবেন", "বদলে ফেলুন", "পাল্টান", "পাল্টে ফেলুন",
+            "বদলিয়ে ফেলুন", "পাল্টিয়ে ফেলুন", "বদলাতে পারেন", "পাল্টাতে পারেন", "পরিবর্তন করুন", "পরিবর্তন করবেন",
+            "পরিবর্তন করতে পারেন",
             // Banglish
             "kheye nin", "khaben", "khete paren", "bondho kor*", "shuru kor*", "bad din", "bad diben", "bariye*", "komiye*",
             "ordhek", "digun", "nin", "neben", "niben", "khete hobe", "khawa uchit", "uchit", "chere*", "bondho rakh*", "bondho",
@@ -59,19 +63,26 @@ public final class DoseChangeGuard {
             "started", "continu*", "keep", "keeps", "keeping", "resum*", "quit*", "discontinu*", "paus*", "skip*", "halve*", "half",
             "double*", "increas*", "decreas*", "reduc*", "lower the dose", "raise the dose", "switch*", "cut the", "cut it",
             "no need", "do not need", "does not need", "don t need", "doesn t need", "not needed", "no more", "any more", "anymore",
-            "no longer", "safe to", "dose*", "dosage*", "tablet*", "pill*", "capsule*", "a day", "per day");
+            "no longer", "safe to", "dose*", "dosage*", "tablet*", "pill*", "capsule*", "a day", "per day",
+            // P12: the pronoun form of a change, which names no medicine for NEAR_MEDICINE to see
+            "change it");
 
     /** Words refused only in a sentence that also refers to a medicine. */
     static final List<String> NEAR_MEDICINE = List.of(
             // Bangla
             "দিতে", "শুরু", "বাদ", "আর না", "দরকার", "লাগবে", "খাওয়া", "খাওয়ার", "খাওয়ানো", "চালু", "একসাথে", "আজ", "কাল", "এখন",
             "সকালে", "দুপুরে", "বিকেলে", "রাতে", "খাবারের পরে", "খাবারের আগে", "প্রতিদিন", "রোজ", "নিয়মিত",
+            // PO ruling P12, proposal (A) of #170: a change word, harmless beside a lab value ("মান বদলেছে"), never beside a
+            // medicine; then the formal word and the other romanizations found with it
+            "বদল*", "পাল্ট*", "পরিবর্তন*",
             // Banglish
             "dite", "deya", "khawa", "aj", "kal", "rate e", "sokale",
+            "badla*", "palt*", "badle*", "bodla*", "bodle*",
             // English
             "give", "gives", "giving", "use", "uses", "using", "avoid*", "hold", "holds", "holding", "need", "needs", "must", "should",
             "today", "tonight", "tomorrow", "morning", "evening", "night", "daily", "days", "weeks", "now", "after food",
-            "before food", "with food", "empty stomach", "bedtime");
+            "before food", "with food", "empty stomach", "bedtime",
+            "change", "changes", "changing", "changed", "replac*", "swap*", "substitut*");
 
     /** Change words that only a question uses ("বাড়াব?"), each enough on its own. */
     static final List<String> QUESTION_CHANGES = List.of("বাড়াব", "বাড়াবো", "কমাব", "কমাবো", "পাল্টাব", "পাল্টাবো", "বাদ দেব", "বাদ দিব",

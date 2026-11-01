@@ -12,7 +12,6 @@ import com.elioo.baymax.web.domain.LabSeries;
 import com.elioo.baymax.web.domain.LatestPrescription;
 import com.elioo.baymax.web.domain.PrintedBand;
 import org.assertj.core.api.SoftAssertions;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
@@ -143,17 +142,19 @@ class ChatAnswerWordingTest {
      * guard refuses the dose's noun and the question's own change word wherever they stand, a sentence that sends the
      * family to the doctor included: by design ("the refusal is code's job", corpus line 7), since code appends
      * {@code chat.dose.ask_doctor} to every dose question. A draft that restates the line through its token, says what the
-     * medicine is for, or points to the doctor without those words passes. The prompt now steers to that shape; the guard
-     * is unchanged (PO ruling P7); a proposal for the PO is in the PR body.
+     * medicine is for, or points to the doctor without those words passes. The prompt now steers to that shape. Since PO
+     * ruling P12 (proposal A of #170) a change word beside the dose noun is refused as well; the doctor pointer is not
+     * loosened (proposal B, not approved).
      */
     @Test
     void whatTheGuardRefusesInASafeDoseDraft() {
         ChatContext bn = live(BN);
         assertThat(AnswerCheck.violations("ডোজ বদলানোর আগে ডাক্তারকে জিজ্ঞেস করুন।", bn)).as("the doctor pointer with the word dose")
-                .containsExactly("dose_change:ডোজ");
+                .containsExactly("dose_change:ডোজ", "dose_change:বদল+medicine");
         assertThat(AnswerCheck.violations("Ma-র প্রেসক্রিপশনে ওষুধটা অর্ধেক করার কথা লেখা নেই।", bn)).as("the question's own word, negated")
                 .containsExactly("number_word:অর্ধেক", "dose_change:অর্ধেক");
-        assertThat(AnswerCheck.violations("Ask the doctor before changing the dose.", live(EN))).containsExactly("dose_change:dose");
+        assertThat(AnswerCheck.violations("Ask the doctor before changing the dose.", live(EN)))
+                .containsExactly("dose_change:dose", "dose_change:changing+medicine");
         assertThat(AnswerCheck.violations("প্রেসক্রিপশনে সকালে একটা করে লেখা আছে।", bn)).as("the written dose retold in words")
                 .contains("number_word:একটা");
         // review of #170, finding 4: the written line copied in digits, the draft an unscoped "copy every number" invites
@@ -204,12 +205,11 @@ class ChatAnswerWordingTest {
     }
 
     /**
-     * Proposal (A) of #170, awaiting the PO (review of #170, findings 6, 9, 14): today these drafts tell the family to change
-     * a medicine and pass every check, because "change", বদল- and পাল্ট- are on neither of {@link DoseChangeGuard}'s lists.
-     * A test asserting they pass would hold the gap in place; this one asserts the rule as proposed, in both directions, and
-     * is red on the current guard. It is turned on with the guard change, if the PO approves it, and is the replay.
+     * Proposal (A) of #170, approved by the PO (ruling P12, 2026-11-01; review of #170, findings 6, 9, 14): these drafts told
+     * the family to change a medicine and passed every check, because "change", বদল- and পাল্ট- were on neither of
+     * {@link DoseChangeGuard}'s lists. The rule in both directions: refused beside a medicine, or as an instruction anywhere;
+     * a lab value that changed is not refused. Red on the guard before P12, every flag row with {@code []}.
      */
-    @Disabled("Proposal A, awaiting the PO")
     @Test
     void proposalAChangeBesideAMedicineIsRefusedAndAChangedValueIsNot() {
         ChatContext bn = live(BN);
