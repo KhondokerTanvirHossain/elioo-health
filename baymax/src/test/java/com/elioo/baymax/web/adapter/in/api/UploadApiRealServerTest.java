@@ -8,6 +8,7 @@ import com.elioo.baymax.web.adapter.in.ui.UiCopy;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.extraction.domain.Document;
 import com.elioo.baymax.extraction.domain.Upload;
+import com.elioo.baymax.web.adapter.in.MultipartUploads;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.application.port.in.AttentionUseCase;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
@@ -59,6 +60,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.SoftAssertions.assertSoftly;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -79,6 +81,10 @@ class UploadApiRealServerTest {
     private static final String KEY = "7d1e0c2b-4a5f-4b6e-8c9d-0e1f2a3b4c50";
     private static final String BOUNDARY = "----mediooRealServerBoundary9xQ2";
     private static final int MB = 1024 * 1024;
+    /** How long the far-over-the-cap press takes to send what lies past the cap, paced; its 413 takes milliseconds. */
+    private static final Duration PAST_THE_CAP = Duration.ofSeconds(8);
+    /** The caps the server below is built with, and the far-over-the-cap press is shaped from. */
+    private static final BaymaxProperties PROPERTIES = new BaymaxProperties();
 
     /** What reached the use case: one entry per file, its byte count and its SHA-256. */
     record Received(int bytes, String sha256) {
@@ -96,7 +102,7 @@ class UploadApiRealServerTest {
         WebAuthUseCase auth = mock(WebAuthUseCase.class);
         when(auth.authenticate(anyString())).thenReturn(Mono.empty());
         when(auth.authenticate("tok")).thenReturn(Mono.just(new WebSession(UUID.randomUUID(), FAMILY, NOW, NOW, NOW.plusSeconds(600))));
-        BaymaxProperties properties = new BaymaxProperties();
+        BaymaxProperties properties = PROPERTIES;
         properties.getWeb().setPublicOrigin(AppApiGuardTest.ORIGIN);
         AppApiGuard guard = new AppApiGuard(new SessionAuthFilter(auth, properties), properties);
         var router = new AppApiRouter().mediooAppApiRoutes(
@@ -219,42 +225,70 @@ class UploadApiRealServerTest {
     }
 
     /**
-     * A chunked press far over the cap is refused while it arrives, never received whole first. 500 MB in 20 MB files,
-     * each under the file cap, so only the count of the body itself can stop it before the end: the 60 MB check on the
-     * joined files ran after Spring had spooled every part to disk (the EC2 root disk, shared with n8n and bddrug), and a
-     * status check alone cannot tell the two apart.
+     * A chunked press far over the cap is refused while it arrives, never received whole first: the 60 MB check on the
+     * joined files runs only after Spring has spooled every part to disk (the EC2 root disk, shared with n8n and bddrug),
+     * so a server with that check alone answers this press 413 TOO_LARGE too: the right status, for the wrong reason.
      *
-     * <p>Two counts, so the test fails on unbounded reading and not only on the status. The server's: what the
-     * application pulled off the socket, at most the cap and the one buffer that crossed it. The client's: what it had
-     * handed the socket when the answer came, which must be short of the whole press. It is not held to the cap itself:
-     * once the application stops reading, reactor-netty discards the rest of the request on the floor (no disk, no heap)
-     * while the 413 is on its way, and on loopback that is ~120 MB in the few milliseconds it takes.
+     * <p>The press is shaped from the server's own caps so that only the count of the body itself can stop it before
+     * its end: as many files as one press may carry ({@code max-pages}, so the part count never refuses it), each a
+     * megabyte under the file cap (so the per-part disk limit never does). The earlier shape, 25 files of 20 MB, broke
+     * this rule: the part count refused it at the 17th file, so a server with no body count answered 400 TOO_MANY_FILES
+     * at ~357 MB read, and the client count passed on that server.
+     *
+     * <p>Two counts, so the test fails on unbounded reading and not only on the status, asserted softly so a red run names
+     * every one that fails. The server's: what the application pulled off the socket, at most the cap and the one buffer
+     * that crossed it. That is what catches a server that reads past the cap. The client's: what it had handed the socket
+     * when the answer came, which must be short of the whole press. That catches only a server that reads the whole
+     * press before it answers, which with this shape is what a server with no body count does. It is not held to the cap
+     * itself: once the 413 is written, reactor-netty keeps the connection and discards the rest of the request on the
+     * floor (no disk, no heap) until the client reads the answer and closes.
+     *
+     * <p>That drain is a race the test does not own: the client's event loop is the one writing the body, so how soon it
+     * reads the 413 is up to the runner, and on a fast one the whole press had gone before it did (CI run 41050936769:
+     * 524291749 bytes, every byte of the body, with the server's count at 62915275, correct). So the client sends up to
+     * the cap at full speed and the rest a megabyte at a time, spread over {@link #PAST_THE_CAP}: the client then has
+     * seconds of read lag in hand, where a server that stopped reading answers in milliseconds.
      */
     @Test
     void aChunkedPressFarOverTheCapIsRefusedWhileItArrives() {
+        long cap = PROPERTIES.getUpload().getMaxRequestBytes();
+        long fileCap = PROPERTIES.getUpload().getMaxFileBytes();
+        int files = MultipartUploads.maxFiles(PROPERTIES);
+        int size = Math.toIntExact(fileCap - MB);
+        long whole = (long) files * size;
+        // Guards on the shape, should the caps change: each file is under the file cap and whole megabytes, and the press
+        // is still far over the request cap. (The file count is max-pages itself, so the part count cannot refuse it.)
+        assertThat(size).as("each file, in bytes").isPositive();
+        assertThat((long) size).as("each file, against the file cap").isLessThan(fileCap);
+        assertThat(size % MB).as("each file, in whole megabytes").isZero();
+        assertThat(whole).as("the press, against three times the cap").isGreaterThan(3 * cap);
+        Duration pace = PAST_THE_CAP.dividedBy((whole - cap) / MB);
+
         AtomicLong emitted = new AtomicLong();
+        AtomicLong offered = new AtomicLong();
         byte[] megabyte = files(1, MB).get(0);
-        int files = 25;
-        Flux<DataBuffer> body = Flux.concat(
+        Flux<DataBuffer> press = Flux.concat(
                         Flux.just(field("patient", MA.toString()), field("upload_key", KEY), field("group", "separate")).map(MultipartWire::wrap),
                         Flux.range(0, files).concatMap(i -> Flux.concat(
                                 Mono.fromSupplier(() -> MultipartWire.wrap(filePartHeader(i))),
-                                Flux.range(0, 20).map(j -> MultipartWire.wrap(megabyte)),
+                                Flux.range(0, size / MB).map(j -> MultipartWire.wrap(megabyte)),
                                 Mono.fromSupplier(() -> MultipartWire.wrap("\r\n".getBytes(StandardCharsets.US_ASCII))))),
-                        Mono.fromSupplier(() -> MultipartWire.wrap(("--" + BOUNDARY + "--\r\n").getBytes(StandardCharsets.US_ASCII))))
+                        Mono.fromSupplier(() -> MultipartWire.wrap(("--" + BOUNDARY + "--\r\n").getBytes(StandardCharsets.US_ASCII))));
+        // up to the cap as fast as the socket takes it; past it, paced, so the drain after the 413 cannot outrun the answer
+        Flux<DataBuffer> body = press
+                .concatMap(b -> offered.getAndAdd(b.readableByteCount()) < cap ? Mono.just(b) : Mono.just(b).delayElement(pace))
                 .doOnNext(b -> emitted.addAndGet(b.readableByteCount()));
 
         ResponseEntity<String> r = exchange(body, null, Duration.ofSeconds(60));
         long atAnswer = emitted.get();
-        long whole = (long) files * 20 * MB;
 
-        // what was read first: a server that read on and then answered 413 has the right status for the wrong reason
-        assertThat(SERVER_READ.get()).as("bytes the server read of a %d-byte press", whole)
-                .isLessThanOrEqualTo(new BaymaxProperties().getUpload().getMaxRequestBytes() + MB);
-        assertThat(atAnswer).as("bytes the client had sent when the 413 came (of %d)", whole).isLessThan(whole);
-        assertThat(r.getStatusCode().value()).as(r.getBody()).isEqualTo(413);
-        assertThat(r.getBody()).isEqualTo("{\"reason\":\"TOO_LARGE\"}");
-        assertThat(RECEIVED).as("nothing reached the upload").isEmpty();
+        assertSoftly(s -> {
+            s.assertThat(SERVER_READ.get()).as("bytes the server read of a %d-byte press", whole).isLessThanOrEqualTo(cap + MB);
+            s.assertThat(atAnswer).as("bytes the client had sent when the answer came (of %d)", whole).isLessThan(whole);
+            s.assertThat(r.getStatusCode().value()).as("the status, answering %s", r.getBody()).isEqualTo(413);
+            s.assertThat(r.getBody()).as("the answer").isEqualTo("{\"reason\":\"TOO_LARGE\"}");
+            s.assertThat(RECEIVED).as("nothing reached the upload").isEmpty();
+        });
     }
 
     /**
