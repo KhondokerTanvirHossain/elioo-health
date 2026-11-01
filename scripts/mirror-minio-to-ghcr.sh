@@ -6,7 +6,8 @@
 #
 # WHY THIS EXISTS. quay.io began answering "unauthorized: access to the requested resource is not authorized"
 # for quay.io/minio/minio on 2026-09-25, for every tag. The runner confirmed it: postgres:17-alpine and
-# testcontainers/ryuk:0.7.0 pull fine from the same job, so Docker Hub is reachable and only quay is
+# testcontainers/ryuk:0.7.0 (that day's pre-pull tag; 0.12.0 since Testcontainers 1.21.4) pull fine from
+# the same job, so Docker Hub is reachable and only quay is
 # refusing. Four acceptance tests — every one that needs MinIO — then failed with ContainerFetchException,
 # and because the image is pinned on main since PR #5, EVERY merge was blocked, hotfixes included.
 #

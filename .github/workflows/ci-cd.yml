@@ -13,7 +13,13 @@ env:
 jobs:
   build:
     name: Build and test
-    runs-on: ubuntu-latest
+    # One explicit image for both jobs, never ubuntu-latest: on 2026-11-01 ubuntu-latest moved main to ubuntu-26.04
+    # (Docker API 1.54) while the PR runs of the same commit had built on ubuntu-24.04 (API 1.48), so the PR was green
+    # and main went red in every Testcontainers class (run 41288228021). A PR check on another image than main's
+    # cannot fail for main's reason. Move this label and the deploy job's together, in their own PR: that PR's CI proves
+    # the build job on the new image; the deploy job runs only on main, so the first main deploy after the merge is the
+    # only proof of it there — watch it. scripts/check-runner-labels.sh (a step below) refuses two labels or a *-latest.
+    runs-on: ubuntu-26.04
     # Read-only token: this job runs third-party actions and the repo's own scripts, and writes nothing to GitHub.
     permissions:
       contents: read
@@ -39,6 +45,13 @@ jobs:
       # it fails in seconds rather than after 30 minutes of tests.
       - name: Refuse undeclared test fixtures
         run: scripts/check-test-fixtures.sh
+      # The runs-on rule above, held in code: one explicit label for every job of every workflow, never *-latest, and
+      # no runs-on found is a failure, not a pass. The deploy job never runs on a PR, so a label moved on it alone
+      # would otherwise show up only on main. Its cases first (both directions), then the repo's workflows.
+      - name: Refuse a runner label that differs between jobs or moves (never ubuntu-latest)
+        run: |
+          bash scripts/test_check_runner_labels.sh
+          bash scripts/check-runner-labels.sh
       # Flyway runs with outOfOrder=false and every merge deploys: a migration numbered at or below what main already
       # holds (two branches that each took "the next free number") stops the deployable at startup. Numbers are taken
       # at merge time; this fails the required check on the PR instead. test_check_migration_order.sh covers it both ways.
@@ -101,13 +114,16 @@ jobs:
       # be a MinIO access change or could be local, and the CI log could not tell the two apart.
       #
       # continue-on-error so this diagnoses without becoming a second way to block the build.
+      #
+      # The Ryuk tag is the one the Testcontainers jar itself names (RyukContainer: testcontainers/ryuk:0.12.0 in
+      # 1.21.4), so it moves with ext['testcontainers.version'] in build.gradle; a stale tag pre-pulls an unused image.
       - name: Pre-pull test container images
         continue-on-error: true
         run: |
           for image in \
             postgres:17-alpine \
             docker.io/bitnamilegacy/minio@sha256:6dabb4a2088c9a79908de3bc05f4586c23ad2182c8908e7e3acbf61c1467fb20 \
-            testcontainers/ryuk:0.7.0
+            testcontainers/ryuk:0.12.0
           do
             echo "::group::docker pull $image"
             docker pull "$image" || echo "::warning::pull failed for $image (see output above for the registry's reason)"
@@ -197,11 +213,14 @@ jobs:
       - name: medioo-web Playwright version
         id: playwright
         working-directory: medioo-web
-        run: echo "version=$(node -p 'require("@playwright/test/package.json").version')" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "version=$(node -p 'require("@playwright/test/package.json").version')" >> "$GITHUB_OUTPUT"
+          echo "image=${ImageOS:?the runner image names itself in ImageOS}" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: ms-playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+          # ImageOS (ubuntu24, ubuntu26) in the key: a browser cached on one runner image is not reused on another
+          key: ms-playwright-${{ runner.os }}-${{ steps.playwright.outputs.image }}-${{ steps.playwright.outputs.version }}
       - name: medioo-web browser install
         working-directory: medioo-web
         run: |
@@ -257,7 +276,8 @@ jobs:
     name: Build image and deploy to EC2
     needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    # The build job's label, same reason; move both together. No PR runs this job, so no PR proves it on a new image.
+    runs-on: ubuntu-26.04
     # One deploy at a time: two merges landing close together queue here instead of running deploy.sh on the box at
     # once. Never cancelled: a deploy stopped halfway leaves the server between images, so the later one waits.
     # The group serializes deploys but does not order them, so the first step, run inside the group, lets only the
