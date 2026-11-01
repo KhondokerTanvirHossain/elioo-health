@@ -1,5 +1,6 @@
 package com.elioo.baymax.web.domain;
 
+import com.elioo.baymax.companion.domain.AnswerKind;
 import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.outbound.domain.OutboundMessage;
 
@@ -50,6 +51,22 @@ public sealed interface ThreadItem {
     }
 
     /**
+     * A question the viewer's own account typed in the চ্যাট and exactly what Medioo showed (plan CHAT-api, V29), at the
+     * instant it was asked; listed only when the reader asks for asks ({@code ?asks=1}). {@code call999} is decided for the
+     * viewer at read time ({@code ViewerLocale}): only an emergency, only on a Bangladeshi number.
+     */
+    record Ask(UUID id, Instant at, String question, String answer, AnswerKind kind, boolean call999) implements ThreadItem {
+        @Override
+        public String order() {
+            return "ask";
+        }
+
+        public Ask forViewer(ViewerLocale viewer) {
+            return new Ask(id, at, question, answer, kind, kind == AnswerKind.EMERGENCY && viewer.bangladesh());
+        }
+    }
+
+    /**
      * Where a thread page starts: strictly after (at, order, id) in the thread's newest-first order. Sent to the client
      * as an opaque {@code t1.} token, so a link cannot be edited into an instant.
      */
@@ -79,7 +96,7 @@ public sealed interface ThreadItem {
                 try {
                     String clear = new String(Base64.getUrlDecoder().decode(raw.substring(PREFIX.length())), StandardCharsets.UTF_8);
                     String[] parts = clear.split("\\|", -1);
-                    if (parts.length == 3 && ("paper".equals(parts[1]) || "message".equals(parts[1]))) {
+                    if (parts.length == 3 && ("paper".equals(parts[1]) || "message".equals(parts[1]) || "ask".equals(parts[1]))) {
                         return new Cursor(Instant.parse(parts[0]), parts[1], UUID.fromString(parts[2]));
                     }
                 } catch (RuntimeException undecodable) {

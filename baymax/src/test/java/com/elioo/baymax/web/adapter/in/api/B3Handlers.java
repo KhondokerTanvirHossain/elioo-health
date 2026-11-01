@@ -1,5 +1,6 @@
 package com.elioo.baymax.web.adapter.in.api;
 
+import com.elioo.baymax.companion.application.port.in.AskUseCase;
 import com.elioo.baymax.storage.application.port.in.DocumentStorageUseCase;
 import com.elioo.baymax.web.adapter.in.ui.UiCopy;
 import com.elioo.baymax.web.application.port.in.AttentionUseCase;
@@ -33,6 +34,11 @@ final class B3Handlers {
     /** Plan W5-api's thread handler, for the same tests: they never call the thread route, tested in ThreadApiContractTest. */
     static ThreadApiHandler thread() {
         return new ThreadApiHandler(mock(ThreadUseCase.class), new UiCopy(), mock(DocumentStorageUseCase.class));
+    }
+
+    /** Plan CHAT-api's ask handler, for the same tests: they never call the ask route, tested in AskApiContractTest. */
+    static AskApiHandler ask() {
+        return new AskApiHandler(mock(AskUseCase.class));
     }
 
     static PatientTimelineApiHandler timeline() {

@@ -404,6 +404,8 @@ Copy is direction for Tanvir's wife, who owns the wording (`messages_bn.properti
   routes (D18).
 
 ### 4.13 `companion-thread` — asking about it
+
+> Web chat: superseded by DR-50 (PO ruling P7, 2026-10-30) where this section keeps medicines out of the prompt and out of model text; see DR-50 for what code enforces instead.
 - **Purpose:** the intelligent companion: any question, any phrasing, grounded in this patient's records.
 - **Content:** header with patient chip and a scope chip when opened from a document. Family bubbles on the right,
   Medioo on the left. **Answer anatomy:** (1) first line names the patient; (2) an optional short "Medioo-র কথা" bubble

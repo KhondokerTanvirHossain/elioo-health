@@ -181,7 +181,8 @@ Key files when changing behaviour:
   with `git check-ignore <file>` — and check the file itself, not a glob, which `-q` treats differently.
 - Model prices come from the provider's API (Groq `/v1/models` `pricing` field, the equivalent elsewhere),
   never a docs or marketing page: the pricing page carried no Qwen rates at all while the API did. Every
-  entry in the price table records its source and the date fetched.
+  entry in the price table records its source and the date fetched. Anthropic publishes no price via its Models
+  API; the pricing page with a fetch date is the documented exception (DR-50).
 - Never point a destructive command (`mv`, `rm`, a redirect that overwrites) at a glob that could match
   production credentials. Copy, with an exact filename.
 - Branching (since 2026-09-12): `main` is protected (re-enabled 2026-10-20 once the repo went public, DR-38): the

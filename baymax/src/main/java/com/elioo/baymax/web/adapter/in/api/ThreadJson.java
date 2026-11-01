@@ -39,6 +39,23 @@ final class ThreadJson {
         return m;
     }
 
+    /**
+     * Plan CHAT-api, only with {@code ?asks=1}: {@code {"kind": "ask", "at", "turn_id", "question", "answer", "answer_kind",
+     * "call_999"}}. {@code at} is when it was asked; {@code answer} is exactly what the family was shown; no handler,
+     * violation, model, token or cost field.
+     */
+    static Map<String, Object> ask(ThreadItem.Ask ask) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("kind", "ask");
+        m.put("at", ask.at().toString());
+        m.put("turn_id", ask.id().toString());
+        m.put("question", ask.question());
+        m.put("answer", ask.answer());
+        m.put("answer_kind", ask.kind().dbValue());
+        m.put("call_999", ask.call999());
+        return m;
+    }
+
     static Map<String, Object> message(ThreadItem.Message message) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("kind", "message");

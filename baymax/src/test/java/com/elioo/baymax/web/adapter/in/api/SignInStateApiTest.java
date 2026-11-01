@@ -78,7 +78,7 @@ class SignInStateApiTest {
                         new UiCopy(), properties),
                 new HealthApiHandler(mock(HealthUseCase.class)),
                 B3Handlers.nowBanner(), B3Handlers.attention(), B3Handlers.timeline(),
-                new PreferencesApiHandler(properties), B3Handlers.thread(),
+                new PreferencesApiHandler(properties), B3Handlers.thread(), B3Handlers.ask(),
                 guard)).build();
     }
 

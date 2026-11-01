@@ -6,6 +6,7 @@ import com.elioo.baymax.web.application.port.in.ResultUseCase;
 import com.elioo.baymax.web.application.port.in.ThreadUseCase;
 import com.elioo.baymax.web.application.port.out.ThreadReadPort;
 import com.elioo.baymax.web.domain.ThreadItem;
+import com.elioo.baymax.web.domain.ViewerLocale;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -37,10 +38,16 @@ public class ThreadService implements ThreadUseCase {
 
     @Override
     public Mono<Page> thread(UUID familyId, UUID patientId, String cursor) {
+        return thread(familyId, patientId, cursor, false);
+    }
+
+    @Override
+    public Mono<Page> thread(UUID familyId, UUID patientId, String cursor, boolean asks) {
         return Mono.fromCallable(() -> ThreadItem.Cursor.parse(cursor))
                 .flatMap(after -> records.visiblePatient(familyId, patientId)
                         .switchIfEmpty(Mono.error(BaymaxException.notFound("patient_not_found", "no patient with id " + patientId)))
-                        .flatMap(access -> reads.page(familyId, patientId, after, PAGE_SIZE + 1).collectList()))
+                        .flatMap(access -> asks ? withAsks(familyId, patientId, after)
+                                : reads.page(familyId, patientId, after, PAGE_SIZE + 1).collectList()))
                 .flatMap(rows -> {
                     boolean more = rows.size() > PAGE_SIZE;
                     List<ThreadItem> shown = more ? rows.subList(0, PAGE_SIZE) : rows;
@@ -53,12 +60,23 @@ public class ThreadService implements ThreadUseCase {
                 });
     }
 
+    /** The page with the viewer's asks, each ask's call999 decided for this viewer's own number (ViewerLocale). */
+    private Mono<List<ThreadItem>> withAsks(UUID familyId, UUID patientId, ThreadItem.Cursor after) {
+        return records.findFamily(familyId)
+                .switchIfEmpty(Mono.error(BaymaxException.unauthorized("session_family_gone", "the family no longer exists")))
+                .map(f -> ViewerLocale.of(f.whatsappNumber()))
+                .flatMap(viewer -> reads.page(familyId, patientId, after, PAGE_SIZE + 1, true)
+                        .map(item -> item instanceof ThreadItem.Ask ask ? (ThreadItem) ask.forViewer(viewer) : item)
+                        .collectList());
+    }
+
     private Mono<Entry> entry(UUID familyId, ThreadItem item) {
         return switch (item) {
             case ThreadItem.Paper paper -> results.card(familyId, paper.documentId())
                     .map(card -> new Entry(item, card))
                     .onErrorResume(ThreadService::gone, e -> Mono.empty());
             case ThreadItem.Message message -> Mono.just(new Entry(message, null));
+            case ThreadItem.Ask ask -> Mono.just(new Entry(ask, null));
         };
     }
 

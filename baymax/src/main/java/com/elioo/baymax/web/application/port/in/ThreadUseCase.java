@@ -17,6 +17,14 @@ public interface ThreadUseCase {
 
     Mono<Page> thread(UUID familyId, UUID patientId, String cursor);
 
+    /**
+     * Plan CHAT-api: with {@code asks}, the page also lists the viewer's own answered চ্যাট turns about this patient
+     * ({@link ThreadItem.Ask}, call999 decided for the viewer). Without it, exactly {@link #thread(UUID, UUID, String)}.
+     */
+    default Mono<Page> thread(UUID familyId, UUID patientId, String cursor, boolean asks) {
+        return thread(familyId, patientId, cursor);
+    }
+
     /** One page: its entries in order, and the cursor of the next page (null on the last). */
     record Page(List<Entry> items, String nextCursor) {
     }

@@ -1,0 +1,110 @@
+# Review of #164 (findings 2, 10, 13): the emergency pre-check's recall corpus, written from how a Bangladeshi family
+# types an emergency (and a routine question), NOT from chat-red-flags.properties. ShippedChatRedFlagsTest asserts every row
+# by itself, with its own message; it is the guard against an omission, which a test built from the file cannot be.
+# script	expect	text      (tab-separated; script is bn, banglish or en; expect is flag or pass)
+bn	flag	আব্বার বুকে খুব ব্যথা হচ্ছে
+bn	flag	আম্মার বুক ব্যথা করছে, ঘামছে
+bn	flag	Abba বুকব্যথা করছে
+bn	flag	আব্বার হার্ট অ্যাটাক হয়েছে মনে হয়
+bn	flag	মনে হয় হার্ট এটাক করেছে
+bn	flag	মা স্ট্রোক করেছে
+bn	flag	আব্বার স্ট্রোক হয়েছে
+bn	flag	আম্মা শ্বাস নিতে পারছে না
+bn	flag	আব্বা শ্বাস নিতে পারছেন না
+bn	flag	আব্বা হঠাৎ পড়ে গেছেন, সাড়া দিচ্ছেন না
+bn	flag	আম্মার হুঁশ নেই
+bn	flag	আব্বা অচেতন হয়ে আছেন
+bn	flag	মা বিষ খেয়েছে
+bn	flag	আব্বাকে সাপে কেটেছে
+bn	flag	আম্মার রক্তবমি হচ্ছে
+bn	flag	আম্মার খিঁচুনি হচ্ছে
+bn	flag	আম্মার ঠোঁট আর গলা ফুলে যাচ্ছে
+bn	flag	আম্মার সুগার অনেক কমে গেছে, কাঁপছে
+bn	flag	মা বাবার প্রেশারের ওষুধ খেয়ে ফেলেছে
+bn	flag	আম্মা ভুল করে আব্বার ওষুধ খেয়েছেন
+bn	flag	Ma বাবার প্রেশারের ওষুধ খেয়ে নিয়েছে, কী হবে?
+bn	flag	Ma বাবার প্রেশারের ওষুধ খেয়ে নিয়েছে, কী হবে?
+bn	flag	আমি আর বাঁচতে চাই না
+bn	flag	আব্বা মাথায় আঘাত পেয়েছেন, বমি করছেন
+bn	flag	আম্মার মুখ বেঁকে গেছে, কথা জড়িয়ে যাচ্ছে
+bn	flag	আম্মার এক পাশ অবশ হয়ে গেছে
+bn	flag	ডাক্তার বলেছেন জরুরি ভর্তি, এখন বুকে ব্যথা
+bn	pass	আম্মার বুকের এক্স-রে রিপোর্ট কী বলছে?
+bn	pass	আব্বার সুগার রিপোর্ট কত?
+bn	pass	আম্মার রিপোর্টে কি জরুরি কিছু আছে?
+bn	pass	জরুরি কিছু আছে?
+bn	pass	আব্বা কবে ভর্তি হয়েছিলেন?
+bn	pass	ভর্তির তারিখ কবে?
+bn	pass	এই বিষয়ে কাগজে কী লেখা?
+bn	pass	আম্মার প্রেশারের ওষুধের নাম কী?
+bn	pass	হার্টের রিপোর্টটা কবে করা?
+bn	pass	আব্বার কোলেস্টেরল কত ছিল?
+bn	pass	আম্মার থাইরয়েড রিপোর্ট কী বলছে?
+banglish	flag	abbar buke khub betha hocche
+banglish	flag	ammar buk betha korche
+banglish	flag	abbar heart attack hoyeche mone hoy
+banglish	flag	ammar stroke hoyeche
+banglish	flag	Abbar stroke hoyeche
+banglish	flag	amma shash nite parche na
+banglish	flag	abba nishash nite parche na
+banglish	flag	ammar shash kosto hocche
+banglish	flag	abba oggan hoye geche
+banglish	flag	amma sara dicche na
+banglish	flag	ammar hush nei
+banglish	flag	amma bish kheyeche
+banglish	flag	abbake shape keteche
+banglish	flag	ammar rokto bomi hocche
+banglish	flag	ammar khichuni hocche
+banglish	flag	ammar thot fule geche
+banglish	flag	abbar sugar kome geche, kapche
+banglish	flag	amma vul kore duto osudh kheye feleche
+banglish	flag	ami more jete chai
+banglish	flag	ammar mukh beke geche
+banglish	flag	abbar kotha joriye jacche
+banglish	pass	ammar creatinine koto?
+banglish	pass	abbar sugar report ki bolche?
+banglish	pass	ammar report e ki joruri kichu ache?
+banglish	pass	abba kobe bhorti hoyechilen?
+banglish	pass	ammar buker xray report ki bolche?
+banglish	pass	heart er report ta kobe kora?
+banglish	pass	ei osudh ta kiser?
+banglish	pass	ammar pressure koto chilo?
+banglish	pass	ok thanks
+banglish	pass	dhonnobad
+en	flag	I think Abba is having a heart attack
+en	flag	I think she is having a heart attack
+en	flag	Ma had a stroke?
+en	flag	Abba is not breathing
+en	flag	Abba cant breathe
+en	flag	Ma is struggling to breathe
+en	flag	she is having difficulty breathing
+en	flag	he has trouble breathing
+en	flag	I feel suicidal
+en	flag	I want to die
+en	flag	Ma's sugar is very low and she is shaking
+en	flag	Ma's sugar is 2.1 and she is shaking
+en	flag	Ma took Abba's pressure tablets by mistake
+en	flag	she took 10 tablets
+en	flag	she collapsed in the bathroom
+en	flag	pain in my chest
+en	flag	my chest is hurting badly
+en	flag	she swallowed poison
+en	flag	he was bitten by a snake
+en	flag	she fainted
+en	flag	he is unconscious
+en	flag	her lips are swelling
+en	flag	she is vomiting blood
+en	flag	he had a seizure
+en	flag	she fell and hit her head
+en	pass	Is Ma's report urgent?
+en	pass	is this report urgent?
+en	pass	what was the admission date?
+en	pass	what are the benefits of this medicine
+en	pass	what does the chest X-ray say?
+en	pass	is her sugar report in the papers?
+en	pass	when was the heart scan done?
+en	pass	what is her hypothyroidism report
+en	pass	what is Demoprol for?
+en	pass	can I see the last report?
+en	pass	what was her blood pressure?
+en	pass	what does the breathing test show?
