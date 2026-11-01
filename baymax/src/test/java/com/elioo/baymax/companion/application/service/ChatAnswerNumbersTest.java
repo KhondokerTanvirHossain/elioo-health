@@ -10,6 +10,8 @@ import com.elioo.baymax.web.domain.LabSeries;
 import com.elioo.baymax.web.domain.LatestPrescription;
 import com.elioo.baymax.web.domain.PrintedBand;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
@@ -29,9 +31,11 @@ class ChatAnswerNumbersTest {
 
     /**
      * English labels: an English ask has no foreign labels, so these checks, which mix Bangla and English sentences, are about
-     * numbers only. A Bangla ask's labels are {@link ChatContextBuilderTest} and {@link AnswerCheckTest}'s.
+     * numbers only; changed in plan CHATCOPY (#170) to step around foreign_label, which these sentences are not about. That
+     * the numbers outcome does not depend on the label language is {@link #aBanglaSentenceGetsTheSameNumberCodesUnderBanglaLabels}.
      */
     static final ChatLabels EN = ChatLabels.of("en", new UiChatCopyAdapter(new UiCopy(), new Copy()));
+    static final ChatLabels BN = ChatLabels.of("bn", new UiChatCopyAdapter(new UiCopy(), new Copy()));
 
     static final UUID PAPER = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4200001");
     static final UUID RX = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4200002");
@@ -46,6 +50,10 @@ class ChatAnswerNumbersTest {
 
     /** Creatinine 1.8 (0.6–1.2, outside high) on 2 March 2026; HbA1c 7.2 % (one-sided "<6.5", unknown) on 14 October 2026. */
     static ChatContext ctx() {
+        return ctx(EN);
+    }
+
+    static ChatContext ctx(ChatLabels labels) {
         LabSeries creatinine = series("Creatinine", "mg/dL",
                 point("1.8", "2026-03-02", ValueVerdict.Kind.OUTSIDE, "high", PrintedBand.of("0.6", "1.2")));
         LabSeries hba1c = series("HbA1c", "%", point("7.2", "2026-10-14", ValueVerdict.Kind.UNKNOWN, null, new PrintedBand(null, 6.5, "<6.5")));
@@ -55,7 +63,7 @@ class ChatAnswerNumbersTest {
         med.put("frequency_text", "1+0+0");
         LatestPrescription rx = new LatestPrescription(RX, LocalDate.parse("2026-09-20"), false, false, List.of(med), Optional.empty());
         return ChatContextBuilder.assemble("Ma", new HealthUseCase.HealthLabs(List.of(creatinine, hba1c), new LabSeries.BpSeries(List.of())), rx,
-                6000, EN);
+                6000, labels);
     }
 
     /** A context with one INSIDE fact, two-sided: Potassium 4.1 (3.5–5.1). */
@@ -147,5 +155,27 @@ class ChatAnswerNumbersTest {
         assertThat(AnswerCheck.violations("nothing serious, no problem", ctx())).anyMatch(v -> v.startsWith("reassurance:"));
         assertThat(AnswerCheck.violations("Ma-r report thik ache", ctx())).anyMatch(v -> v.startsWith("reassurance:"));
         assertThat(AnswerCheck.violations("এর মানে কী, তা ডাক্তার ঠিক করবেন।", ctx())).isEmpty();
+    }
+
+    /**
+     * Review of #170, finding 11: the tests above build their contexts with English labels since plan CHATCOPY, so their
+     * mixed sentences meet no foreign_label refusal. This test shows the switch hides nothing about numbers: each Bangla
+     * sentence of this class, against the context production builds for a Bangla ask, gets exactly the codes it gets under
+     * English labels, and those are number codes only.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "Ma-র creatinine 3, সীমার বাইরে।",
+            "Ma-র creatinine 1.8 mg/dL, কাগজটা ২ মার্চ ২০২৬ তারিখের।",
+            "কাগজটা ১৩ সেপ্টেম্বর ২০২৬ তারিখের।",
+            "Ma-র ক্রিয়েটিনিন ১.৮, কাগজে ছাপা সীমার বাইরে।",
+            "Ma-র চাপ একশো চল্লিশ, সীমার বাইরে।",
+            "Ma-র ক্রিয়েটিনিন ১.৮।"})
+    void aBanglaSentenceGetsTheSameNumberCodesUnderBanglaLabels(String sentence) {
+        ChatContext bn = ctx(BN);
+        assertThat(bn.foreignLabels()).as("the Bangla context really carries foreign labels").isNotEmpty();
+        List<String> underBangla = AnswerCheck.violations(sentence, bn);
+        assertThat(underBangla).as(sentence).isEqualTo(AnswerCheck.violations(sentence, ctx(EN)))
+                .allMatch(v -> v.startsWith("number_"));
     }
 }

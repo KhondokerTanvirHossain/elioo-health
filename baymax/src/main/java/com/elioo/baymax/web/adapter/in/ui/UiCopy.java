@@ -217,11 +217,7 @@ public class UiCopy {
      * argument exactly once. No bundle glues a case ending to a name (GlossaryTest's GLUED_CASE holds that).
      */
     public String poss(Lang lang, String name) {
-        if (lang == Lang.BN) {
-            return NameGrammar.possessive(name);
-        }
-        String n = name == null ? "" : name.strip();
-        return n.isEmpty() ? "" : n + (n.endsWith("s") ? "'" : "'s");
+        return NameGrammar.possessiveIn(lang == Lang.BN ? "bn" : "en", name);
     }
 
     /** The objective of the name (F8): "আম্মাকে" on a Bangla page, the name itself on an English one. Not escaped, as {@link #poss}. */

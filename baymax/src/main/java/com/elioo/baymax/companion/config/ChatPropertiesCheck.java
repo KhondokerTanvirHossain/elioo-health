@@ -49,7 +49,18 @@ public class ChatPropertiesCheck implements InitializingBean {
         if (chat.getDailyCap() < 1) {
             throw new IllegalStateException("baymax.chat.daily-cap must be at least 1, was " + chat.getDailyCap());
         }
-        // the context's labels (plan CHATCOPY) are read per answer; a missing one refuses the boot, not a family's question
+        // the context's labels (plan CHATCOPY) are read per answer; a missing one refuses the boot, not a family's question.
+        // Every key in both languages, whether answers are on or off: a Bangla ask reads the English ones too (review of #170)
+        for (String lang : List.of("bn", "en")) {
+            for (String key : ChatLabels.KEYS) {
+                try {
+                    copy.line(lang, key);
+                } catch (RuntimeException e) {
+                    throw new IllegalStateException("the chat label " + lang + ":" + key + " cannot be read ("
+                            + e.getClass().getSimpleName() + "); every ChatLabels key must be in both ui bundles", e);
+                }
+            }
+        }
         for (String lang : List.of("bn", "en")) {
             ChatLabels.of(lang, copy);
         }

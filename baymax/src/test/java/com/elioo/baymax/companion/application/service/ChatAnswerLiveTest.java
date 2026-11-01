@@ -105,7 +105,9 @@ class ChatAnswerLiveTest {
         ChatContext ctx = ChatContextBuilder.assemble("Ma", new HealthUseCase.HealthLabs(List.of(creatinine), new LabSeries.BpSeries(List.of())),
                 rx, 6000, ChatLabels.of("bn", new UiChatCopyAdapter(new UiCopy(), new Copy())));
         ChatContextBuilder contexts = mock(ChatContextBuilder.class);
-        when(contexts.build(eq(FAMILY), eq(PATIENT), eq("Ma"), any())).thenReturn(Mono.just(ctx));
+        // built from the labels the service passes (review of #170, finding 3), never a pre-built context that ignores them
+        when(contexts.build(eq(FAMILY), eq(PATIENT), eq("Ma"), any())).thenAnswer(i -> Mono.just(ChatContextBuilder.assemble("Ma",
+                new HealthUseCase.HealthLabs(List.of(creatinine), new LabSeries.BpSeries(List.of())), rx, 6000, i.getArgument(3))));
         when(contexts.medicineNames(FAMILY, PATIENT)).thenReturn(Mono.just(ctx.medicineNames()));
         when(turns.reserveUncounted(any(), any(), anyString(), anyString())).thenReturn(Mono.just(UUID.randomUUID()));
         properties.getChat().setEnabled(true);

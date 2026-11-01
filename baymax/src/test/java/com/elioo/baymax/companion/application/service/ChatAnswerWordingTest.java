@@ -11,9 +11,12 @@ import com.elioo.baymax.web.application.port.in.HealthUseCase;
 import com.elioo.baymax.web.domain.LabSeries;
 import com.elioo.baymax.web.domain.LatestPrescription;
 import com.elioo.baymax.web.domain.PrintedBand;
+import org.assertj.core.api.SoftAssertions;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -21,6 +24,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -37,6 +41,11 @@ class ChatAnswerWordingTest {
     static final ChatLabels EN = ChatLabels.of("en", COPY);
 
     static ChatContext live(ChatLabels labels) {
+        return live(labels, "Ma", List.of());
+    }
+
+    /** The live test's context for a patient of this name, with further lab series beside the creatinine. */
+    static ChatContext live(ChatLabels labels, String name, List<LabSeries> more) {
         Map<String, Object> med = new LinkedHashMap<>();
         med.put("name", "Tab. Demoprol");
         med.put("dose_text", "5 mg");
@@ -47,8 +56,9 @@ class ChatAnswerWordingTest {
                 PrintedBand.of("0.7", "1.3"))));
         LatestPrescription rx = new LatestPrescription(UUID.randomUUID(), LocalDate.parse("2026-09-20"), false, false, List.of(med),
                 Optional.empty());
-        return ChatContextBuilder.assemble("Ma", new HealthUseCase.HealthLabs(List.of(creatinine), new LabSeries.BpSeries(List.of())), rx,
-                6000, labels);
+        List<LabSeries> series = new ArrayList<>(List.of(creatinine));
+        series.addAll(more);
+        return ChatContextBuilder.assemble(name, new HealthUseCase.HealthLabs(series, new LabSeries.BpSeries(List.of())), rx, 6000, labels);
     }
 
     @Test
@@ -93,6 +103,31 @@ class ChatAnswerWordingTest {
                 .isEmpty();
     }
 
+    /**
+     * Review of #170, finding 2: the stored names are taken out before the foreign labels are matched, and only they. A lab
+     * series stored as "Blood Pressure" collides with the English {@code health.bp} label ("Blood pressure"), which a Bangla
+     * context names "রক্তচাপ": its own printed name is the paper's word, never a copied label. The same context still
+     * refuses an English verdict or rule word copied beside it. "Demoprol" and "Creatinine" collide with no label, so
+     * without this case deleting the stripping left every test green.
+     */
+    @Test
+    void aStoredNameThatIsAlsoAnEnglishLabelIsThePapersWordAndALabelBesideItIsStillRefused() {
+        LabSeries bp = new LabSeries("blood pressure", "mmHg", "Blood Pressure", "mmHg", List.of(new LabSeries.Point(UUID.randomUUID(),
+                UUID.randomUUID(), "150", LocalDate.parse("2026-09-12"), false, false, ValueVerdict.Kind.OUTSIDE, "high", "k",
+                PrintedBand.of("90", "140"))));
+        ChatContext bn = live(BN, "Ma", List.of(bp));
+        assertThat(bn.foreignLabels()).as("the collision is real: the English label is a foreign one")
+                .contains(EN.bloodPressure());
+        assertThat(EN.bloodPressure()).isEqualToIgnoringCase("Blood Pressure");
+
+        assertThat(AnswerCheck.violations("Ma-র Blood Pressure 150 mmHg, " + BN.verdict(ValueVerdict.Kind.OUTSIDE, "high") + "।", bn))
+                .as("the stored series name").isEmpty();
+        assertThat(AnswerCheck.violations("Ma-র Blood Pressure 150 mmHg, " + EN.verdict(ValueVerdict.Kind.OUTSIDE, "high") + "।", bn))
+                .as("an English verdict beside it").containsExactly("foreign_label:" + EN.verdict(ValueVerdict.Kind.OUTSIDE, "high"));
+        assertThat(AnswerCheck.violations("Ma-র Blood Pressure 150 mmHg, printed range 90–140।", bn)).as("a rule word beside it")
+                .containsExactly("foreign_label:printed range");
+    }
+
     @Test
     void anEnglishAnswerMayUseEnglishWords() {
         ChatContext en = live(EN);
@@ -121,25 +156,80 @@ class ChatAnswerWordingTest {
         assertThat(AnswerCheck.violations("Ask the doctor before changing the dose.", live(EN))).containsExactly("dose_change:dose");
         assertThat(AnswerCheck.violations("প্রেসক্রিপশনে সকালে একটা করে লেখা আছে।", bn)).as("the written dose retold in words")
                 .contains("number_word:একটা");
+        // review of #170, finding 4: the written line copied in digits, the draft an unscoped "copy every number" invites
+        assertThat(AnswerCheck.violations("Ma-র প্রেসক্রিপশনে Demoprol 5 mg, 1+0+0 লেখা আছে।", bn)).as("the written dose retyped in digits")
+                .containsExactly(DIGIT_RESTATEMENT);
 
         assertThat(AnswerCheck.violations("এই বিষয়ে ডাক্তারকে জিজ্ঞেস করুন।", bn)).as("the doctor pointer without the word").isEmpty();
         assertThat(AnswerCheck.violations("Ask the doctor who wrote the prescription.", live(EN))).isEmpty();
         assertThat(AnswerCheck.violations("Ma-র প্রেসক্রিপশনে লেখা আছে: {{rx:1}}", bn)).as("the written dose, as its token").isEmpty();
     }
 
-    /** The answer the prompt gives as the shape of a dose answer passes every check, in both languages: it is never a trap. */
+    /** What the guard and the closed set refuse in the written line retyped in digits (finding 4 of the review of #170). */
+    static final String[] DIGIT_RESTATEMENT = {"number_not_on_paper:5", "number_not_on_paper:1", "number_not_on_paper:0",
+            "dose_change:amount"};
+
+    /** A glued "-এর" after a name that ends in a Bangla letter: what NameGrammar exists to prevent (spec §2 F8, D2 #89). */
+    static final Pattern GLUED_AFTER_BANGLA = Pattern.compile("[\\u0980-\\u09FF]-এর");
+
+    /**
+     * The answer the prompt gives as the shape of a dose answer, for the names a family enters, is built by NameGrammar's
+     * possessive (review of #170, findings 1, 8, 13: never a glued "-এর" or "'s"), and its line-1 instance passes every check
+     * in both languages: it is never a trap. The prompt shows the line as {{rx:n}} (finding 7), so the check runs on n = 1.
+     */
     @Test
     void thePromptsDoseAnswerPassesEveryCheck() {
+        record Case(ChatLabels labels, String name, String shown) {
+        }
+        for (Case c : List.of(
+                new Case(BN, "আম্মা", "আম্মার শেষ প্রেসক্রিপশনে লেখা আছে: {{rx:n}}"),
+                new Case(BN, "রহিম", "রহিমের শেষ প্রেসক্রিপশনে লেখা আছে: {{rx:n}}"),
+                new Case(BN, "Ma", "Ma-র শেষ প্রেসক্রিপশনে লেখা আছে: {{rx:n}}"),
+                new Case(EN, "Ma", "Ma's latest prescription says: {{rx:n}}"),
+                new Case(EN, "Chris", "Chris' latest prescription says: {{rx:n}}"))) {
+            ChatContext ctx = live(c.labels(), c.name(), List.of());
+            String system = ChatPrompt.of(ctx, c.labels(), c.name(), "ওষুধটা অর্ধেক করব?", true, 700, List.of(), 2048).systemPrompt();
+            assertThat(system).as(c.name()).contains(c.shown());
+            assertThat(GLUED_AFTER_BANGLA.matcher(system).find()).as(c.name() + ": no glued -এর after a Bangla letter").isFalse();
+            String lineOne = c.shown().replace("{{rx:n}}", "{{rx:1}}");
+            assertThat(AnswerCheck.violations(lineOne, ctx)).as(c.labels().lang() + ": " + lineOne).isEmpty();
+        }
         for (ChatLabels labels : List.of(BN, EN)) {
             ChatContext ctx = live(labels);
-            String example = ChatPrompt.doseAnswer(labels, "Ma");
-            assertThat(ChatPrompt.of(ctx, labels, "Ma", "q", 700, List.of(), 2048).systemPrompt()).contains(example);
-            assertThat(AnswerCheck.violations(example, ctx)).as(labels.lang() + ": " + example).isEmpty();
             // the date the prompt shows is the live paper's own, so a sentence written that way passes too
             String date = ChatPrompt.dateExample(labels);
-            assertThat(ChatPrompt.of(ctx, labels, "Ma", "q", 700, List.of(), 2048).systemPrompt()).contains("\"" + date + "\"");
+            assertThat(ChatPrompt.of(ctx, labels, "Ma", "q", false, 700, List.of(), 2048).systemPrompt()).contains("\"" + date + "\"");
             assertThat(AnswerCheck.violations("Ma: Creatinine 1.8 mg/dL, " + date + ".", ctx)).as(labels.lang() + ": " + date).isEmpty();
         }
+    }
+
+    /**
+     * Proposal (A) of #170, awaiting the PO (review of #170, findings 6, 9, 14): today these drafts tell the family to change
+     * a medicine and pass every check, because "change", বদল- and পাল্ট- are on neither of {@link DoseChangeGuard}'s lists.
+     * A test asserting they pass would hold the gap in place; this one asserts the rule as proposed, in both directions, and
+     * is red on the current guard. It is turned on with the guard change, if the PO approves it, and is the replay.
+     */
+    @Disabled("Proposal A, awaiting the PO")
+    @Test
+    void proposalAChangeBesideAMedicineIsRefusedAndAChangedValueIsNot() {
+        ChatContext bn = live(BN);
+        ChatContext en = live(EN);
+        record Draft(String text, ChatContext ctx) {
+        }
+        // soft, so a replay reports every row, not the first that fails
+        SoftAssertions.assertSoftly(soft -> {
+            for (Draft d : List.of(new Draft("Change Demoprol.", en), new Draft("Ma can change {{rx:1}}.", en),
+                    new Draft("ওষুধটা বদলে ফেলুন।", bn), new Draft("Demoprol বদলান।", bn),
+                    new Draft("ওষুধটা বদলানোর বিষয়ে ডাক্তারকে জিজ্ঞেস করুন।", bn))) {
+                soft.assertThat(AnswerCheck.violations(d.text(), d.ctx())).as("flag: " + d.text())
+                        .anyMatch(v -> v.startsWith("dose_change:"));
+            }
+            for (Draft d : List.of(new Draft("Ma-র ক্রিয়েটিনিনের মান আগের কাগজের তুলনায় বদলেছে।", bn),
+                    new Draft("The creatinine changed between the two papers.", en))) {
+                soft.assertThat(AnswerCheck.violations(d.text(), d.ctx())).as("pass: " + d.text())
+                        .noneMatch(v -> v.startsWith("dose_change:"));
+            }
+        });
     }
 
     // ---- finding 2: number words; the prompt's list is the check's own, never a rule the check does not hold ----

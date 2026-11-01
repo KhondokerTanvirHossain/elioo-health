@@ -178,7 +178,7 @@ public class ChatAnswerService implements AskUseCase {
                     .map(Optional::of)
                     .defaultIfEmpty(Optional.empty())
                     .flatMap(reserved -> reserved.isPresent()
-                            ? modelled(reserved.get(), client, familyId, patient, q, l, viewer, tail, started)
+                            ? modelled(reserved.get(), client, familyId, patient, q, t.getT2(), l, viewer, tail, started)
                             : fixed(familyId, patient, q, l, viewer, AnswerKind.LIMIT, "cap", "chat.ask.limit", tail, started));
         });
     }
@@ -195,9 +195,12 @@ public class ChatAnswerService implements AskUseCase {
         return text.substring(0, end);
     }
 
-    /** 5–6: the context, one call, the checks, one repair, else the fixed reply. Never empty. */
-    private Mono<AskAnswer> modelled(UUID turnId, LlmClient client, UUID familyId, PatientProfile patient, String q, String l,
-                                     ViewerLocale viewer, String tail, long started) {
+    /**
+     * 5–6: the context, one call, the checks, one repair, else the fixed reply. Never empty. {@code dose} is the decision that
+     * also appends the ask-the-doctor line, so the prompt's dose rule and the appended line never disagree (review of #170).
+     */
+    private Mono<AskAnswer> modelled(UUID turnId, LlmClient client, UUID familyId, PatientProfile patient, String q, boolean dose,
+                                     String l, ViewerLocale viewer, String tail, long started) {
         BaymaxProperties.Chat chat = properties.getChat();
         Tally tally = new Tally();
         Function<String, String> line = key -> copy.line(l, key);
@@ -206,14 +209,14 @@ public class ChatAnswerService implements AskUseCase {
         Mono<Body> work = Mono.fromCallable(() -> ChatLabels.of(l, copy)).flatMap(labels ->
                 contexts.build(familyId, patient.id(), patient.name(), labels).flatMap(ctx -> {
                     int bodyChars = chat.getMaxAnswerChars() - tail.length();
-                    return call(client, ctx, labels, patient.name(), q, bodyChars, List.of(), tally).flatMap(first -> {
+                    return call(client, ctx, labels, patient.name(), q, dose, bodyChars, List.of(), tally).flatMap(first -> {
                         List<String> v1 = check(first, ctx, tail);
                         if (v1.isEmpty()) {
                             return Mono.just(new Body(AnswerCheck.resolve(first.strip(), ctx), AnswerKind.ANSWER, "model", ctx.documentIds()));
                         }
                         tally.violations.addAll(v1);
                         log.debug("[baymax] chat turn={} refused first answer: {}", turnId, v1);
-                        return call(client, ctx, labels, patient.name(), q, bodyChars, v1, tally).map(second -> {
+                        return call(client, ctx, labels, patient.name(), q, dose, bodyChars, v1, tally).map(second -> {
                             List<String> v2 = check(second, ctx, tail);
                             if (v2.isEmpty()) {
                                 return new Body(AnswerCheck.resolve(second.strip(), ctx), AnswerKind.ANSWER, "repair", ctx.documentIds());
@@ -236,13 +239,14 @@ public class ChatAnswerService implements AskUseCase {
     }
 
     /** One metered call under the per-call timeout; a {@code max_tokens} stop is a failure, never a truncated answer. */
-    private Mono<String> call(LlmClient client, ChatContext ctx, ChatLabels labels, String name, String q, int bodyChars,
-                              List<String> prior, Tally tally) {
+    private Mono<String> call(LlmClient client, ChatContext ctx, ChatLabels labels, String name, String q, boolean dose,
+                              int bodyChars, List<String> prior, Tally tally) {
         BaymaxProperties.Chat chat = properties.getChat();
         return Mono.defer(() -> {
             tally.calls++;
             return metered.using(client)
-                    .invoke(AiCallPurpose.CHAT, null, ChatPrompt.of(ctx, labels, name, q, bodyChars, prior, chat.getMaxOutputTokens()))
+                    .invoke(AiCallPurpose.CHAT, null,
+                            ChatPrompt.of(ctx, labels, name, q, dose, bodyChars, prior, chat.getMaxOutputTokens()))
                     .timeout(chat.getModelTimeout())
                     .map(response -> {
                         count(tally, response);

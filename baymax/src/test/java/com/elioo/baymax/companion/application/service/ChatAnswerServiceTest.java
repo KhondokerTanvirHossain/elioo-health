@@ -8,6 +8,7 @@ import com.elioo.baymax.aicall.application.service.AiCostCalculator;
 import com.elioo.baymax.aicall.application.service.MeteredLlmClient;
 import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.companion.application.port.in.AskUseCase.AskAnswer;
+import com.elioo.baymax.companion.application.port.out.ChatCopyPort;
 import com.elioo.baymax.companion.application.port.out.ChatTurnPort;
 import com.elioo.baymax.companion.domain.AnswerKind;
 import com.elioo.baymax.companion.domain.ChatContext;
@@ -134,8 +135,12 @@ class ChatAnswerServiceTest {
     }
 
     private ChatAnswerService service() {
+        return service(copy);
+    }
+
+    private ChatAnswerService service(ChatCopyPort lines) {
         AiCostCalculator costs = new AiCostCalculator(properties);
-        return new ChatAnswerService(properties, records, turns, new RedFlagMatcher(properties), contexts, copy, attention,
+        return new ChatAnswerService(properties, records, turns, new RedFlagMatcher(properties), contexts, lines, attention,
                 new MeteredLlmClient(mock(LlmClient.class), callLog, costs), costs, chatClients, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
@@ -335,6 +340,72 @@ class ChatAnswerServiceTest {
         assertThat(stored().handler()).isEqualTo("repair");
         assertThat(stored().violationCodes()).containsExactly("foreign_label");
         assertThat(a.answer()).startsWith("Ma-র Creatinine 1.8 mg/dL।").doesNotContain(copied);
+    }
+
+    /**
+     * Review of #170, finding 3: the English direction of the same wiring. An English ask is given English labels and no
+     * foreign set, so an English answer written in the screen's own English labels is shown on the first call. Were the
+     * labels wired to the wrong language, or to Bangla always, this answer would be refused as foreign_label into the fixed
+     * reply. Also finding 10: a question that asks for no change gets no dose rule in its prompt.
+     */
+    @Test
+    void anEnglishAskIsGivenEnglishLabelsAndAnEnglishAnswerIsShown() {
+        List<ChatLabels> passed = new ArrayList<>();
+        when(contexts.build(eq(FAMILY), eq(PATIENT), eq("Ma"), any())).thenAnswer(i -> {
+            ChatLabels labels = i.getArgument(3);
+            passed.add(labels);
+            return Mono.just(ChatAnswerWordingTest.live(labels));
+        });
+        String english = "Ma's Creatinine 1.8 mg/dL is above the range, Range printed on the report: 0.7–1.3.";
+        model(Mono.just(reply(english, 1, 1)));
+
+        AskAnswer a = service().ask(FAMILY, PATIENT, "What is Ma's creatinine?", "en").block(Duration.ofSeconds(10));
+
+        assertThat(passed).extracting(ChatLabels::lang).containsExactly("en");
+        assertThat(passed.get(0).foreign()).as("an English ask has no foreign labels").isEmpty();
+        ArgumentCaptor<LlmRequest> requests = ArgumentCaptor.forClass(LlmRequest.class);
+        verify(model, times(1)).invoke(requests.capture());
+        assertThat(requests.getValue().systemPrompt()).as("not a dose question: no dose rule")
+                .doesNotContain("This QUESTION asks to change a medicine");
+        assertThat(stored().handler()).isEqualTo("model");
+        assertThat(stored().violationCodes()).isEmpty();
+        assertThat(a.kind()).isEqualTo(AnswerKind.ANSWER);
+        assertThat(a.answer()).startsWith(english);
+    }
+
+    /** Finding 10, the other direction: code's own dose decision puts the dose rule in the prompt. */
+    @Test
+    void aQuestionCodeCallsADoseQuestionGetsTheDoseRule() {
+        model(Mono.just(reply("Ma-র শেষ প্রেসক্রিপশনে লেখা আছে: {{rx:1}}", 1, 1)));
+
+        ask("ওষুধটা অর্ধেক করব?");
+
+        ArgumentCaptor<LlmRequest> requests = ArgumentCaptor.forClass(LlmRequest.class);
+        verify(model, times(1)).invoke(requests.capture());
+        assertThat(requests.getValue().systemPrompt()).contains("This QUESTION asks to change a medicine");
+    }
+
+    /**
+     * Review of #170, finding 5: a label key that cannot be read is read inside the counted turn's chain, so it is a model
+     * error and the fixed reply, never a 500, and no model call is made without the labels.
+     */
+    @Test
+    void aLabelKeyThatCannotBeReadIsAModelErrorAndTheFixedReply() {
+        ChatCopyPort missing = (lang, key, args) -> {
+            if (ChatLabels.UNKNOWN_KEY.equals(key)) {
+                throw new IllegalArgumentException("no UI copy for key " + key);
+            }
+            return copy.line(lang, key, args);
+        };
+
+        AskAnswer a = service(missing).ask(FAMILY, PATIENT, "আম্মার ক্রিয়েটিনিন কত?", "bn").block(Duration.ofSeconds(10));
+
+        verify(model, never()).invoke(any());
+        assertThat(a.kind()).isEqualTo(AnswerKind.FALLBACK);
+        assertThat(a.answer()).startsWith(line("bn", "chat.ask.failed"));
+        assertThat(stored().kind()).isEqualTo(AnswerKind.FALLBACK);
+        assertThat(stored().handler()).isEqualTo("model_error");
+        assertThat(stored().modelCalls()).isZero();
     }
 
     @Test

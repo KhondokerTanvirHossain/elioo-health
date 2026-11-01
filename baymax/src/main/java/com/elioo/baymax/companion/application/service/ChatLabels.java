@@ -1,5 +1,6 @@
 package com.elioo.baymax.companion.application.service;
 
+import com.elioo.baymax.common.text.NameGrammar;
 import com.elioo.baymax.companion.application.port.out.ChatCopyPort;
 import com.elioo.baymax.outbound.domain.ValueVerdict;
 import com.elioo.baymax.web.domain.PaperDisplay;
@@ -24,6 +25,8 @@ import java.util.Set;
  *   <li>the paper's date: {@code timeline.paper} before it, or {@code timeline.sum.nodate} without one;</li>
  *   <li>the paired blood-pressure readings' name: {@code health.bp}, as the health screen names them.</li>
  * </ul>
+ * One more line is read here, never a label: the shape of a dose answer the prompt shows ({@code chat.dose.example}, review
+ * of #170), so that sentence is bundle copy too and its possessive is NameGrammar's ({@link #doseAnswer}).
  * The tags that start a fact line ({@link #TAGS}) are structure for the model, never labels, and the prompt says so.
  *
  * <p>{@link #foreign} is what an answer in this language may not hold: for a Bangla ask, every English label above, every tag
@@ -38,10 +41,11 @@ import java.util.Set;
  * @param paper      {@code timeline.paper}
  * @param undated    {@code timeline.sum.nodate}
  * @param bloodPressure {@code health.bp}
+ * @param doseExample {@code chat.dose.example}: the shape of a dose answer the prompt shows, never a fact label
  * @param foreign    the phrases an answer in {@code lang} may not hold, in any case
  */
 public record ChatLabels(String lang, String rangeOne, String rangeNone, Map<String, String> verdicts, String paper, String undated,
-                         String bloodPressure, Set<String> foreign) {
+                         String bloodPressure, String doseExample, Set<String> foreign) {
 
     /** The tags a fact line starts with, and the user message's two headings: structure, never words for the family. */
     public static final List<String> TAGS = List.of("PATIENT", "VALUE", "PRESCRIPTION", "NOT SHOWN", "FACTS", "QUESTION");
@@ -50,6 +54,7 @@ public record ChatLabels(String lang, String rangeOne, String rangeNone, Map<Str
     public static final List<String> RULE_WORDS = List.of("printed range", "INSIDE", "OUTSIDE", "UNKNOWN");
 
     static final String UNKNOWN_KEY = "value.chip.unknown";
+    static final String DOSE_EXAMPLE_KEY = "chat.dose.example";
     static final List<String> VERDICT_KEYS = List.of("value.chip.inside", "value.chip.outside.high", "value.chip.outside.low",
             "value.chip.critical.high", "value.chip.critical.low", UNKNOWN_KEY);
 
@@ -79,7 +84,8 @@ public record ChatLabels(String lang, String rangeOne, String rangeNone, Map<Str
             verdicts.put(key, withoutArrow(copy.line(lang, key)));
         }
         return new ChatLabels(lang, copy.line(lang, "value.range.one"), copy.line(lang, "value.range.none"), verdicts,
-                copy.line(lang, "timeline.paper"), copy.line(lang, "timeline.sum.nodate"), copy.line(lang, "health.bp"), foreign);
+                copy.line(lang, "timeline.paper"), copy.line(lang, "timeline.sum.nodate"), copy.line(lang, "health.bp"),
+                copy.line(lang, DOSE_EXAMPLE_KEY), foreign);
     }
 
     /** The range field: the printed range's text under its label, or the no-range label. */
@@ -98,6 +104,14 @@ public record ChatLabels(String lang, String rangeOne, String rangeNone, Map<Str
     /** The paper field: its date under the paper label, or the no-date label. */
     public String paper(Object date) {
         return date == null ? undated : paper + " " + date;
+    }
+
+    /**
+     * The dose answer's shape ({@code chat.dose.example}) for this patient and line token: the possessive built in code
+     * ({@link NameGrammar#possessiveIn}: "আম্মার", "রহিমের", "Ma-র", "Ma's", "Chris'"), never an ending glued to the name.
+     */
+    public String doseAnswer(String patientName, String token) {
+        return doseExample.replace("{0}", NameGrammar.possessiveIn(lang, patientName)).replace("{1}", token);
     }
 
     /** The label alone of the range field, its placeholder and separator taken off ("রিপোর্টে লেখা সীমা"). */
@@ -146,7 +160,7 @@ public record ChatLabels(String lang, String rangeOne, String rangeNone, Map<Str
     private static List<String> keys() {
         List<String> k = new ArrayList<>(List.of("value.range.one", "value.range.none"));
         k.addAll(VERDICT_KEYS);
-        k.addAll(List.of("timeline.paper", "timeline.sum.nodate", "health.bp"));
+        k.addAll(List.of("timeline.paper", "timeline.sum.nodate", "health.bp", DOSE_EXAMPLE_KEY));
         return List.copyOf(k);
     }
 }

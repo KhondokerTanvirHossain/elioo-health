@@ -292,6 +292,52 @@ class ChatContextBuilderTest {
         assertThat(ctx.foreignLabels()).as("an English word is not foreign in an English answer").isEmpty();
     }
 
+    /** How many VALUE lines a context keeps under the shipped cap, from 400 series of one reading or one series of 400. */
+    static int keptUnderTheShippedCap(ChatLabels labels, boolean oneSeries) {
+        int cap = new BaymaxProperties().getChat().getContextMaxTokens();
+        List<LabSeries> all = new ArrayList<>();
+        List<LabSeries.Point> history = new ArrayList<>();
+        for (int i = 0; i < 400; i++) {
+            LabSeries.Point p = point(UUID.randomUUID(), "1." + String.format("%03d", i), LocalDate.parse("2026-09-30").minusDays(i));
+            if (oneSeries) {
+                history.add(p);
+            } else {
+                all.add(series("Marker" + i, "mg/dL", List.of(p)));
+            }
+        }
+        if (oneSeries) {
+            all.add(series("Creatinine", "mg/dL", history));
+        }
+        ChatContext ctx = assemble(all, cap, labels);
+        assertThat(ChatContext.estimateTokens(String.join("\n", ctx.factLines()))).isLessThanOrEqualTo(cap);
+        return valueLines(ctx).size();
+    }
+
+    static ChatContext assemble(List<LabSeries> series, int cap, ChatLabels labels) {
+        return ChatContextBuilder.assemble("Ma", new HealthUseCase.HealthLabs(series, new LabSeries.BpSeries(List.of())),
+                LatestPrescription.none(Optional.empty()), cap, labels);
+    }
+
+    /**
+     * Review of #170, finding 12, measured rather than claimed: Bangla labels make each VALUE line longer in
+     * {@link ChatContext#estimateTokens}, which counts a non-ASCII character as a token, so under the shipped cap a Bangla ask
+     * keeps fewer series whole (the rest are dropped, oldest series first, and the context is truncated) and fewer older
+     * readings of one series. The numbers are in the PR body; the bound here says Bangla keeps fewer, but not under a third.
+     */
+    @Test
+    void aBanglaAskKeepsFewerReadingsUnderTheShippedCapAndTheCountIsMeasured() {
+        int bnSeries = keptUnderTheShippedCap(BN, false);
+        int enSeries = keptUnderTheShippedCap(EN, false);
+        int bnHistory = keptUnderTheShippedCap(BN, true);
+        int enHistory = keptUnderTheShippedCap(EN, true);
+        String measured = "single-reading series kept: bn " + bnSeries + ", en " + enSeries + "; readings of one series kept: bn "
+                + bnHistory + ", en " + enHistory;
+        assertThat(bnSeries).as(measured).isLessThan(enSeries).isGreaterThan(enSeries / 3);
+        assertThat(bnHistory).as(measured).isLessThan(enHistory).isGreaterThan(enHistory / 3);
+        assertThat(assemble(List.of(series("Marker", "mg/dL", List.of(point(UUID.randomUUID(), "1.8", LocalDate.parse("2026-09-30"))))),
+                new BaymaxProperties().getChat().getContextMaxTokens(), BN).truncated()).as("one series is never truncated").isFalse();
+    }
+
     static Map<String, Object> medicine() {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("name", "Tab. Demoprol 5 mg");
