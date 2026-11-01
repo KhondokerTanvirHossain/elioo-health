@@ -147,7 +147,11 @@ public final class AnswerCheck {
             }
         }
         out.addAll(doseCodes);
-        out.addAll(DoseChangeGuard.instructs(own, ctx.medicineNames()));
+        Set<String> labNames = new LinkedHashSet<>();
+        for (ChatContext.Fact f : ctx.facts()) {
+            labNames.add(TextNormaliser.normalise(f.name()));
+        }
+        out.addAll(DoseChangeGuard.instructs(own, ctx.medicineNames(), labNames));
         for (String r : REASSURANCE) {
             if (DoseChangeGuard.hits(hay, r)) {
                 out.add("reassurance:" + r);

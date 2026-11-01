@@ -26,7 +26,8 @@ class DoseChangeGuardTest {
     static final String RX2 = "Tab. Demoprol 5 mg · ১+০+০ · খাবারের পরে খাবেন · ৩০ দিন";
     static final java.time.LocalDate RX_DATE = java.time.LocalDate.parse("2026-09-20");
 
-    record Row(int line, String side, String expect, String text) {
+    /** {@code code}, when the row has a 4th column, is the {@code dose_change:} code that must refuse it; else null. */
+    record Row(int line, String side, String expect, String text, String code) {
     }
 
     static List<Row> corpus() throws IOException {
@@ -39,9 +40,15 @@ class DoseChangeGuardTest {
                 if (l.isBlank() || l.startsWith("#")) {
                     continue;
                 }
-                String[] cols = l.split("\t", 3);
-                assertThat(cols).as("line " + (i + 1) + " has three tab-separated columns").hasSize(3);
-                rows.add(new Row(i + 1, cols[0], cols[1], cols[2]));
+                String[] cols = l.split("\t", 4);
+                assertThat(cols.length).as("line " + (i + 1) + " has three or four tab-separated columns").isBetween(3, 4);
+                String code = cols.length == 4 ? cols[3] : null;
+                if (code != null) {
+                    assertThat(cols[0] + "/" + cols[1]).as("line " + (i + 1) + ": a code names the rule of an answer flag")
+                            .isEqualTo("answer/flag");
+                    assertThat(code).as("line " + (i + 1)).startsWith("dose_change:");
+                }
+                rows.add(new Row(i + 1, cols[0], cols[1], cols[2], code));
             }
         }
         return rows;
@@ -61,9 +68,17 @@ class DoseChangeGuardTest {
         ChatContext ctx = new ChatContext(List.of(), AnswerCheck.yearOf(RX_DATE), List.of(RX1, RX2), List.of(), false, List.of(),
                 Set.of(RX_DATE), ChatContext.namesIn("Tab. Demoprol"));
         List<String> wrong = new ArrayList<>();
+        int coded = 0;
         for (Row r : rows) {
+            List<String> codes = "answer".equals(r.side()) ? AnswerCheck.violations(r.text(), ctx) : List.of();
+            if (r.code() != null) {
+                coded++;
+                if (!codes.contains(r.code())) {
+                    wrong.add("row " + r.line() + ": expected " + r.code() + " but was " + codes + ": " + r.text());
+                }
+            }
             boolean flagged = switch (r.side()) {
-                case "answer" -> AnswerCheck.violations(r.text(), ctx).stream().anyMatch(v -> v.startsWith("dose_change:"));
+                case "answer" -> codes.stream().anyMatch(v -> v.startsWith("dose_change:"));
                 case "question" -> DoseChangeGuard.asksForChange(r.text(), ctx.medicineNames());
                 default -> throw new AssertionError("row " + r.line() + ": unknown side " + r.side());
             };
@@ -72,6 +87,7 @@ class DoseChangeGuardTest {
             }
         }
         assertThat(wrong).isEmpty();
+        assertThat(coded).as("rows that name the rule which refuses them").isGreaterThanOrEqualTo(6);
     }
 
     @Test

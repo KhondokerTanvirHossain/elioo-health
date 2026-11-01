@@ -232,6 +232,58 @@ class ChatAnswerWordingTest {
         });
     }
 
+    /** One reading of a lab series on 12 September 2026, outside high, as the builder reads it. */
+    static LabSeries series(String name, String unit, String value) {
+        return new LabSeries(name.toLowerCase(java.util.Locale.ROOT), unit, name, unit, List.of(new LabSeries.Point(UUID.randomUUID(),
+                UUID.randomUUID(), value, LocalDate.parse("2026-09-12"), false, false, ValueVerdict.Kind.OUTSIDE, "high", "k",
+                PrintedBand.of("0.7", "1.3"))));
+    }
+
+    /** Ma, with labs Vitamin D, Calcium and Insulin, and one prescribed medicine whose name shares two of their words. */
+    static ChatContext sharedWords(ChatLabels labels) {
+        Map<String, Object> med = new LinkedHashMap<>();
+        med.put("name", "Tab. Vitamin D3 Calcium");
+        med.put("dose_text", "500 mg");
+        med.put("frequency_text", "0+0+1");
+        med.put("timing_text", "খাবারের পরে");
+        LatestPrescription rx = new LatestPrescription(UUID.randomUUID(), LocalDate.parse("2026-09-20"), false, false, List.of(med),
+                Optional.empty());
+        List<LabSeries> labs = List.of(series("Vitamin D", "ng/mL", "18"), series("Calcium", "mg/dL", "8.1"),
+                series("Insulin", "µIU/mL", "30"));
+        return ChatContextBuilder.assemble("Ma", new HealthUseCase.HealthLabs(labs, new LabSeries.BpSeries(List.of())), rx, 6000, labels);
+    }
+
+    /**
+     * Review 1 of #170, finding 3: a lab whose stored name shares a word with a stored medicine's name ("Vitamin D" and
+     * "Tab. Vitamin D3 Calcium"), or is a medicine word ("Insulin"), is the paper's value, so a change word in a sentence
+     * about that value is not a change to a medicine. Both directions: the lab-trend sentences are shown; the same
+     * context still refuses every instruction to change the medicine, and a change word beside the shared word with no
+     * value in the sentence. Only P12's change words read the lab this way: every older rule is unchanged.
+     */
+    @Test
+    void aLabThatSharesAWordWithAMedicineIsAValueNotAMedicineForAChangeWord() {
+        ChatContext bn = sharedWords(BN);
+        ChatContext en = sharedWords(EN);
+        record Draft(String text, ChatContext ctx) {
+        }
+        SoftAssertions.assertSoftly(soft -> {
+            for (Draft d : List.of(new Draft("Ma-র Vitamin D মান আগের কাগজের তুলনায় বদলেছে।", bn),
+                    new Draft("Ma's Insulin changed between the papers.", en),
+                    new Draft("Ma-র Calcium রিপোর্টে আগের কাগজের তুলনায় পাল্টেছে।", bn))) {
+                soft.assertThat(AnswerCheck.violations(d.text(), d.ctx())).as("pass: " + d.text())
+                        .noneMatch(v -> v.startsWith("dose_change:"));
+            }
+            for (Draft d : List.of(new Draft("Change Calcium.", en), new Draft("Ma can change Calcium.", en),
+                    new Draft("Calcium বদলান।", bn), new Draft("Calcium বদলে ফেলুন।", bn), new Draft("Ma changed Calcium.", en),
+                    new Draft("Ma's Insulin can be changed.", en), new Draft("Replace Vitamin D3 Calcium with Napa.", en),
+                    new Draft("Ma-র Vitamin D3 Calcium বদলানো যায়।", bn), new Draft("{{rx:1}}: Calcium changed on the paper.", en),
+                    new Draft("Give Ma Insulin tonight.", en), new Draft("Ma-র Calcium এখন বদলাবেন।", bn))) {
+                soft.assertThat(AnswerCheck.violations(d.text(), d.ctx())).as("flag: " + d.text())
+                        .anyMatch(v -> v.startsWith("dose_change:"));
+            }
+        });
+    }
+
     // ---- finding 2: number words; the prompt's list is the check's own, never a rule the check does not hold ----
 
     @Test
