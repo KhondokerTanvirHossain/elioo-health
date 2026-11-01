@@ -185,6 +185,9 @@ Key files when changing behaviour:
   API; the pricing page with a fetch date is the documented exception (DR-50).
 - Never point a destructive command (`mv`, `rm`, a redirect that overwrites) at a glob that could match
   production credentials. Copy, with an exact filename.
+- PR and main CI run on one explicitly pinned runner image (`runs-on: ubuntu-26.04`, both jobs), never `ubuntu-latest`.
+  `ubuntu-latest` moved under us on 2026-11-01: main landed on a Docker 29 image while the PR's runs had stayed on the
+  old one, so the PR was green and main went red in every Testcontainers class — a check that could not fail for main's reason.
 - Branching (since 2026-09-12): `main` is protected (re-enabled 2026-10-20 once the repo went public, DR-38): the
   "Build and test" check must pass, admins included, and force-push and deletion are refused. Merge only when the PR
   is rebased, `mergeStateStatus` is `CLEAN` and checks are green. Work on a branch (`feat/...`, `fix/...`), open a PR with

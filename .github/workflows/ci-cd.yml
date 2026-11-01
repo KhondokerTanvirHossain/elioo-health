@@ -13,7 +13,11 @@ env:
 jobs:
   build:
     name: Build and test
-    runs-on: ubuntu-latest
+    # One explicit image for both jobs, never ubuntu-latest: on 2026-11-01 ubuntu-latest moved main to ubuntu-26.04
+    # (Docker API 1.54) while the PR runs of the same commit had built on ubuntu-24.04 (API 1.48), so the PR was green
+    # and main went red in every Testcontainers class (run 41288228021). A PR check on another image than main's
+    # cannot fail for main's reason. Move this label and the deploy job's together, in a PR whose CI proves the new one.
+    runs-on: ubuntu-26.04
     # Read-only token: this job runs third-party actions and the repo's own scripts, and writes nothing to GitHub.
     permissions:
       contents: read
@@ -197,11 +201,14 @@ jobs:
       - name: medioo-web Playwright version
         id: playwright
         working-directory: medioo-web
-        run: echo "version=$(node -p 'require("@playwright/test/package.json").version')" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "version=$(node -p 'require("@playwright/test/package.json").version')" >> "$GITHUB_OUTPUT"
+          echo "image=${ImageOS:?the runner image names itself in ImageOS}" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: ms-playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+          # ImageOS (ubuntu24, ubuntu26) in the key: a browser cached on one runner image is not reused on another
+          key: ms-playwright-${{ runner.os }}-${{ steps.playwright.outputs.image }}-${{ steps.playwright.outputs.version }}
       - name: medioo-web browser install
         working-directory: medioo-web
         run: |
@@ -257,7 +264,7 @@ jobs:
     name: Build image and deploy to EC2
     needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04 # the build job's label, same reason
     # One deploy at a time: two merges landing close together queue here instead of running deploy.sh on the box at
     # once. Never cancelled: a deploy stopped halfway leaves the server between images, so the later one waits.
     # The group serializes deploys but does not order them, so the first step, run inside the group, lets only the
