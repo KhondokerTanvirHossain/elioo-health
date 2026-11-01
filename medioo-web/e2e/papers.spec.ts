@@ -186,6 +186,16 @@ test.describe("with JavaScript, the page checks quietly (PO ruling P6)", () => {
   /** Marks this document, so a reload (a new document) is told apart from a re-render of the same one. */
   const mark = (page: Page) => page.evaluate(() => ((window as unknown as { __same?: boolean }).__same = true));
   const sameDocument = (page: Page) => page.evaluate(() => (window as unknown as { __same?: boolean }).__same === true);
+  /**
+   * Moves the fake clock `ms` once the next check is armed (QuietCheck's `data-armed`), never before. On a slow runner
+   * the island hydrates after the page's load, and after each check it re-arms only once the answers are in: a clock
+   * moved before the timer was set leaves that check waiting real seconds, past the poll's deadline. That race failed
+   * main's CI on 2026-10-31 (run 41050936769, attempt 2) with `Expected: 2 Received: 0`, and so did a 6x CPU throttle here.
+   */
+  const forwardOnceArmed = async (page: Page, ms: number) => {
+    await expect(page.locator(".papers__quiet[data-armed]"), "a check is armed before the clock moves").toHaveCount(1);
+    await page.clock.fastForward(ms);
+  };
   /** How many checks so far, asked only of the marked document: a page that reloaded meanwhile answers so, by name. */
   const checksHere = async (page: Page, recorder: Recorder) =>
     (await sameDocument(page)) ? checks(recorder).length : "the page reloaded";
@@ -249,9 +259,9 @@ test.describe("with JavaScript, the page checks quietly (PO ruling P6)", () => {
     await expect(page.locator("meta[http-equiv='refresh']")).toHaveCount(0);
     await mark(page);
     // Well past Java's 5 s reload, twice: the papers being read are checked, each, and the page is still the same page.
-    await page.clock.fastForward(RELOAD_SECONDS * 1000);
+    await forwardOnceArmed(page, RELOAD_SECONDS * 1000);
     await expect.poll(() => checksHere(page, recorder)).toBe(READING.length);
-    await page.clock.fastForward(RELOAD_SECONDS * 1000);
+    await forwardOnceArmed(page, RELOAD_SECONDS * 1000);
     await expect.poll(() => checksHere(page, recorder)).toBe(2 * READING.length);
     expect([...new Set(checks(recorder))].sort(), "each paper being read, and only those").toEqual([...READING].sort());
     expect(await sameDocument(page), "the page did not reload").toBe(true);
@@ -266,14 +276,14 @@ test.describe("with JavaScript, the page checks quietly (PO ruling P6)", () => {
     await mark(page);
     // Two checks that find both still being read: nothing re-rendered and nothing written.
     for (let i = 1; i <= 2; i++) {
-      await page.clock.fastForward(RELOAD_SECONDS * 1000);
+      await forwardOnceArmed(page, RELOAD_SECONDS * 1000);
       await expect.poll(() => checksHere(page, recorder)).toBe(i * READING.length);
     }
     expect(await writes(page), "checks that find nothing new write nothing").toEqual([]);
     expect(await timelineReads(recorder)).toBe(1);
     // Java has read both; the next check finds it and the page's data is rendered again, once, in the same document.
     await moveTo(page, "papers-settled");
-    await page.clock.fastForward(RELOAD_SECONDS * 1000);
+    await forwardOnceArmed(page, RELOAD_SECONDS * 1000);
     await expect.poll(() => listedHere(page)).toEqual(SETTLED.entries.map((e) => e.document_id));
     expect(await sameDocument(page), "re-rendered, not reloaded").toBe(true);
     await expect(page.locator(".papers [role='status']")).toHaveText(DONE);
@@ -293,7 +303,7 @@ test.describe("with JavaScript, the page checks quietly (PO ruling P6)", () => {
     await mark(page);
     // The lab report being read is read first: the page re-renders with the other still being read, one write.
     await moveTo(page, "papers-half");
-    await page.clock.fastForward(RELOAD_SECONDS * 1000);
+    await forwardOnceArmed(page, RELOAD_SECONDS * 1000);
     await expect.poll(() => listedHere(page)).toEqual(HALF.entries.map((e) => e.document_id));
     await expect(beingRead(page)).toHaveCount(1);
     await expect.poll(() => writes(page)).toEqual([DONE]);
@@ -302,12 +312,12 @@ test.describe("with JavaScript, the page checks quietly (PO ruling P6)", () => {
     // to life in it, and real time past the reload the page has not reloaded. The paper left is checked meanwhile, and
     // checks that find it still being read write nothing.
     await noReloadInRealTime(page, recorder, 2);
-    await page.clock.fastForward(RELOAD_SECONDS * 1000);
+    await forwardOnceArmed(page, RELOAD_SECONDS * 1000);
     await expect.poll(() => checks(recorder).filter((id) => id === HALF_READING[0]).length).toBeGreaterThan(0);
     expect(await writes(page), "a check that finds nothing new writes nothing").toEqual([DONE]);
     // Then it is read too, to the same status: a second write with the same words, one per paper read.
     await moveTo(page, "papers-settled");
-    await page.clock.fastForward(RELOAD_SECONDS * 1000);
+    await forwardOnceArmed(page, RELOAD_SECONDS * 1000);
     await expect.poll(() => listedHere(page)).toEqual(SETTLED.entries.map((e) => e.document_id));
     await expect.poll(() => writes(page)).toEqual([DONE, DONE]);
     expect(await timelineReads(recorder), "one render per paper read").toBe(3);
@@ -330,7 +340,7 @@ test.describe("with JavaScript, the page checks quietly (PO ruling P6)", () => {
       await expect(banner, "no banner before the paper is read").toHaveCount(0);
       await expect(nowInStrip, "no NOW in the strip before").toHaveCount(0);
       await moveTo(page, scenario);
-      await page.clock.fastForward(RELOAD_SECONDS * 1000);
+      await forwardOnceArmed(page, RELOAD_SECONDS * 1000);
       await expect(banner).toHaveCount(1);
       expect(await sameDocument(page), "re-rendered, not reloaded").toBe(true);
       await expect(banner.locator("[data-shape='octagon']")).toHaveCount(1);
@@ -352,7 +362,7 @@ test.describe("with JavaScript, the page checks quietly (PO ruling P6)", () => {
     const again = page.getByRole("link", { name: t("bn", "attn.reading.action") });
     await expect(again).toHaveCount(0);
     for (let i = 0; i < MAX_CHECKS; i++) {
-      await page.clock.fastForward(waitBefore(i));
+      await forwardOnceArmed(page, waitBefore(i));
       await expect.poll(() => checks(recorder).length).toBe((i + 1) * READING.length);
     }
     // The link is this very page, a plain link that reloads it; and nothing is asked after the cap.
@@ -388,7 +398,7 @@ test.describe("with JavaScript, the page checks quietly (PO ruling P6)", () => {
       expect(at, "the page scrolled, so keeping the place is judged").toBeGreaterThan(0);
       const movedBefore = await page.evaluate(() => (window as unknown as { __moved: string[] }).__moved.length);
       await moveTo(page, "papers-settled");
-      await page.clock.fastForward(RELOAD_SECONDS * 1000);
+      await forwardOnceArmed(page, RELOAD_SECONDS * 1000);
       await expect.poll(() => listed(page)).toEqual(SETTLED.entries.map((e) => e.document_id));
       expect(await timelineReads(recorder)).toBe(2);
       // Nothing started moving for the re-render, and the family's place on the page is where they left it.

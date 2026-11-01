@@ -116,6 +116,26 @@ describe("QuietCheck (PO ruling P6)", () => {
     expect(refresh).toHaveBeenCalledTimes(2);
   });
 
+  it("theBoxSaysArmedExactlyWhileACheckWaitsOnItsTimer", async () => {
+    // What the browser tests move their fake clock on: armed while waiting, never while asking, hidden, settled or over.
+    let answerNow: (v: unknown) => void = () => {};
+    apiGet.mockImplementation(() => new Promise((resolve) => (answerNow = resolve)));
+    const { container } = render(<QuietCheck reading={[A]} again="/app/timeline" words={WORDS} />);
+    const armed = () => (container.firstElementChild as HTMLElement).hasAttribute("data-armed");
+    expect(armed(), "armed on mount").toBe(true);
+    await pass(waitBefore(0));
+    expect(apiGet).toHaveBeenCalledTimes(1);
+    expect(armed(), "not armed while the answer is awaited").toBe(false);
+    await act(async () => answerNow(answer("PROCESSING")));
+    expect(armed(), "armed again once the answer is in").toBe(true);
+    setHidden(true);
+    expect(armed(), "not armed while the tab is hidden").toBe(false);
+    setHidden(false);
+    await act(async () => answerNow(answer("DONE")));
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(armed(), "not armed once the paper is read").toBe(false);
+  });
+
   it("nothingBeingReadAsksNothing", async () => {
     render(<QuietCheck reading={[]} again="/app/timeline" words={WORDS} />);
     await pass(10 * 60_000);
