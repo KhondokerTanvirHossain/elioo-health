@@ -114,7 +114,7 @@ class ChatAnswerServiceTest {
         when(turns.reserveCounted(any(), any(), anyString(), anyString(), any(), anyInt())).thenReturn(Mono.just(TURN));
         when(turns.reserveUncounted(any(), any(), anyString(), anyString())).thenReturn(Mono.just(TURN));
         when(turns.complete(any(), any())).thenReturn(Mono.empty());
-        when(contexts.build(FAMILY, PATIENT, "Ma")).thenReturn(Mono.just(CTX));
+        when(contexts.build(eq(FAMILY), eq(PATIENT), eq("Ma"), any())).thenReturn(Mono.just(CTX));
         when(contexts.medicineNames(FAMILY, PATIENT)).thenReturn(Mono.just(CTX.medicineNames()));
         properties.getChat().setEnabled(true);
         when(attention.urgent(FAMILY, PATIENT)).thenReturn(Mono.just(List.of()));
@@ -310,6 +310,33 @@ class ChatAnswerServiceTest {
         assertThat(a.answer()).doesNotContain("{{rx:");
     }
 
+    /**
+     * Plan CHATCOPY, finding 1 of the live Sonnet test: a Bangla answer that copies an English label is refused and repaired,
+     * never shown and never rewritten by code. The context is the builder's, made with the labels the service passed, so this
+     * also asserts a Bangla ask is given Bangla labels.
+     */
+    @Test
+    void aBanglaAnswerWithAnEnglishLabelIsRepairedNotShown() {
+        List<ChatLabels> passed = new ArrayList<>();
+        when(contexts.build(eq(FAMILY), eq(PATIENT), eq("Ma"), any())).thenAnswer(i -> {
+            ChatLabels labels = i.getArgument(3);
+            passed.add(labels);
+            return Mono.just(ChatAnswerWordingTest.live(labels));
+        });
+        String copied = "Ma-র Creatinine 1.8 mg/dL, printed range 0.7–1.3।";
+        model(Mono.just(reply(copied, 1, 1)), Mono.just(reply("Ma-র Creatinine 1.8 mg/dL।", 1, 1)));
+
+        AskAnswer a = ask("আম্মার ক্রিয়েটিনিন কত?");
+
+        assertThat(passed).extracting(ChatLabels::lang).containsExactly("bn");
+        ArgumentCaptor<LlmRequest> requests = ArgumentCaptor.forClass(LlmRequest.class);
+        verify(model, times(2)).invoke(requests.capture());
+        assertThat(requests.getAllValues().get(1).userPrompt()).contains("foreign_label:printed range");
+        assertThat(stored().handler()).isEqualTo("repair");
+        assertThat(stored().violationCodes()).containsExactly("foreign_label");
+        assertThat(a.answer()).startsWith("Ma-র Creatinine 1.8 mg/dL।").doesNotContain(copied);
+    }
+
     @Test
     void thanksAfterANowRepeatsTheNowLine() {
         when(attention.urgent(FAMILY, PATIENT)).thenReturn(Mono.just(List.of(urgent(Urgency.NOW))));
@@ -411,7 +438,7 @@ class ChatAnswerServiceTest {
      */
     @Test
     void anEmptyContextCompletesTheCountedTurn() {
-        when(contexts.build(FAMILY, PATIENT, "Ma")).thenReturn(Mono.empty());
+        when(contexts.build(eq(FAMILY), eq(PATIENT), eq("Ma"), any())).thenReturn(Mono.empty());
 
         Optional<AskAnswer> a = service().ask(FAMILY, PATIENT, "আম্মার ক্রিয়েটিনিন কত?", "bn").blockOptional(Duration.ofSeconds(10));
 

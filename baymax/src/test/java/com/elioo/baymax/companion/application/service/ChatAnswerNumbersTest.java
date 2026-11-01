@@ -1,6 +1,9 @@
 package com.elioo.baymax.companion.application.service;
 
 import com.elioo.baymax.companion.domain.ChatContext;
+import com.elioo.baymax.outbound.application.service.Copy;
+import com.elioo.baymax.web.adapter.in.ui.UiChatCopyAdapter;
+import com.elioo.baymax.web.adapter.in.ui.UiCopy;
 import com.elioo.baymax.outbound.domain.ValueVerdict;
 import com.elioo.baymax.web.application.port.in.HealthUseCase;
 import com.elioo.baymax.web.domain.LabSeries;
@@ -24,6 +27,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class ChatAnswerNumbersTest {
 
+    /**
+     * English labels: an English ask has no foreign labels, so these checks, which mix Bangla and English sentences, are about
+     * numbers only. A Bangla ask's labels are {@link ChatContextBuilderTest} and {@link AnswerCheckTest}'s.
+     */
+    static final ChatLabels EN = ChatLabels.of("en", new UiChatCopyAdapter(new UiCopy(), new Copy()));
+
     static final UUID PAPER = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4200001");
     static final UUID RX = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4200002");
 
@@ -46,7 +55,7 @@ class ChatAnswerNumbersTest {
         med.put("frequency_text", "1+0+0");
         LatestPrescription rx = new LatestPrescription(RX, LocalDate.parse("2026-09-20"), false, false, List.of(med), Optional.empty());
         return ChatContextBuilder.assemble("Ma", new HealthUseCase.HealthLabs(List.of(creatinine, hba1c), new LabSeries.BpSeries(List.of())), rx,
-                6000);
+                6000, EN);
     }
 
     /** A context with one INSIDE fact, two-sided: Potassium 4.1 (3.5–5.1). */
@@ -54,7 +63,7 @@ class ChatAnswerNumbersTest {
         LabSeries potassium = series("Potassium", "mmol/L",
                 point("4.1", "2026-09-12", ValueVerdict.Kind.INSIDE, null, PrintedBand.of("3.5", "5.1")));
         return ChatContextBuilder.assemble("Ma", new HealthUseCase.HealthLabs(List.of(potassium), new LabSeries.BpSeries(List.of())),
-                LatestPrescription.none(Optional.empty()), 6000);
+                LatestPrescription.none(Optional.empty()), 6000, EN);
     }
 
     // finding 4b, 11, 17: a paper's day or month is not a value or a dose

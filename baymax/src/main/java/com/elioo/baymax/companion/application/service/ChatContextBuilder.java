@@ -27,9 +27,13 @@ import java.util.UUID;
  * screen shows.
  *
  * <p>Lines, in order: {@code PATIENT <name>}; per series (newest point's date first), its readings newest first, each
- * {@code VALUE <name>: <value> <unit> | printed range <text|none> | <INSIDE|OUTSIDE high|OUTSIDE low|OUTSIDE|UNKNOWN> |
- * paper <yyyy-MM-dd>}; blood-pressure pairs as one series; {@code PRESCRIPTION <date>} and {@code {{rx:n}} = <line>};
- * {@code NOT SHOWN <k> older readings} when the cap dropped any.
+ * {@code VALUE <name>: <value> <unit> | <range> | <verdict> | <paper>}; blood-pressure pairs as one series, named
+ * {@code health.bp}; {@code PRESCRIPTION <date>} and {@code {{rx:n}} = <line>}; {@code NOT SHOWN <k>} when the cap dropped
+ * {@code k} older readings. The capitalised words are tags, the model's structure; every other field is a label in the
+ * ask's language from the paper page's own bundles ({@link ChatLabels}: "রিপোর্টে লেখা সীমা: 0.7–1.3 | সীমার বেশি |
+ * কাগজ 2026-09-12" for a Bangla ask), so a Bangla answer has no English label to copy (plan CHATCOPY, the live Sonnet test
+ * of #164). The checks' own records ({@link ChatContext.Fact}) keep the canonical verdict ({@code INSIDE},
+ * {@code OUTSIDE high}…), which is what backs an inside-word, whatever language the line is written in.
  *
  * <p>Under {@code baymax.chat.context-max-tokens} ({@link ChatContext#estimateTokens} of all lines): the oldest reading
  * of the longest series is dropped first, again and again. The prescription block and every series' newest reading are
@@ -41,8 +45,6 @@ import java.util.UUID;
 @Component
 @RequiredArgsConstructor
 public class ChatContextBuilder {
-
-    static final String BP_NAME = "Blood pressure";
 
     private final HealthUseCase health;
     private final BaymaxProperties properties;
@@ -72,12 +74,12 @@ public class ChatContextBuilder {
         return names;
     }
 
-    public Mono<ChatContext> build(UUID familyId, UUID patientId, String patientName) {
+    public Mono<ChatContext> build(UUID familyId, UUID patientId, String patientName, ChatLabels labels) {
         return Mono.zip(health.labs(familyId, patientId), health.medicines(familyId, patientId))
-                .map(t -> assemble(patientName, t.getT1(), t.getT2(), properties.getChat().getContextMaxTokens()));
+                .map(t -> assemble(patientName, t.getT1(), t.getT2(), properties.getChat().getContextMaxTokens(), labels));
     }
 
-    static ChatContext assemble(String patientName, HealthUseCase.HealthLabs labs, LatestPrescription rx, int cap) {
+    static ChatContext assemble(String patientName, HealthUseCase.HealthLabs labs, LatestPrescription rx, int cap, ChatLabels labels) {
         // each series with its newest reading's date; blood-pressure pairs are one series among them, ordered alike
         record Dated(LocalDate newest, List<Fact> facts) {
         }
@@ -85,7 +87,7 @@ public class ChatContextBuilder {
         for (LabSeries s : labs.series()) {
             List<Fact> facts = new ArrayList<>();
             for (LabSeries.Point p : s.points()) {
-                facts.add(value(s.name(), p.value(), s.unit(), p.range(), verdict(p), p.date(), p.documentId()));
+                facts.add(value(s.name(), p, s.unit(), labels));
             }
             if (!facts.isEmpty()) {
                 dated.add(new Dated(s.points().get(0).date(), facts));
@@ -94,7 +96,7 @@ public class ChatContextBuilder {
         if (!labs.bp().points().isEmpty()) {
             List<Fact> bp = new ArrayList<>();
             for (LabSeries.BpPoint p : labs.bp().points()) {
-                bp.add(bloodPressure(p));
+                bp.add(bloodPressure(p, labels));
             }
             dated.add(new Dated(labs.bp().points().get(0).date(), bp));
         }
@@ -108,7 +110,7 @@ public class ChatContextBuilder {
         Set<String> rxNumbers = new LinkedHashSet<>();
         Set<String> names = new LinkedHashSet<>();
         if (rx.found()) {
-            rxLines.add("PRESCRIPTION " + (rx.date() == null ? "undated" : rx.date()));
+            rxLines.add("PRESCRIPTION " + (rx.date() == null ? labels.undated() : rx.date()));
             rxNumbers.addAll(AnswerCheck.yearOf(rx.date()));
             for (Map<String, Object> m : rx.medicines()) {
                 String line = MedicineTranscription.line(m);
@@ -175,7 +177,7 @@ public class ChatContextBuilder {
         if (dropped > 0) {
             lines.add(notShown(dropped));
         }
-        return new ChatContext(lines, numbers, verbatim, new ArrayList<>(documents), truncated, records, dates, names);
+        return new ChatContext(lines, numbers, verbatim, new ArrayList<>(documents), truncated, records, dates, names, labels.foreign());
     }
 
     private static int tokens(String head, List<List<Fact>> series, List<String> rxLines, int dropped) {
@@ -189,14 +191,20 @@ public class ChatContextBuilder {
         return ChatContext.estimateTokens(String.join("\n", lines));
     }
 
+    /** The tag of the dropped readings' line: the count alone, which the prompt explains; no words to copy. */
     private static String notShown(int k) {
-        return "NOT SHOWN " + k + " older readings";
+        return "NOT SHOWN " + k;
     }
 
-    private static Fact value(String name, String value, String unit, PrintedBand range, String verdict, LocalDate date, UUID document) {
-        String rangeText = range == null || range.text() == null ? "none" : range.text();
+    private static Fact value(String name, LabSeries.Point p, String unit, ChatLabels labels) {
+        String value = p.value();
+        PrintedBand range = p.range();
+        LocalDate date = p.date();
+        UUID document = p.documentId();
+        String verdict = verdict(p);
         String line = "VALUE " + name + ": " + value + (unit == null || unit.isBlank() ? "" : " " + unit)
-                + " | printed range " + rangeText + " | " + verdict + " | paper " + (date == null ? "undated" : date);
+                + " | " + labels.range(range == null ? null : range.text()) + " | " + labels.verdict(p.kind(), p.side())
+                + " | " + labels.paper(date);
         Set<String> held = new LinkedHashSet<>(AnswerCheck.numbersIn(value));
         if (range != null) {
             held.addAll(AnswerCheck.numbersIn(range.text()));
@@ -206,13 +214,15 @@ public class ChatContextBuilder {
         return new Fact(line, numbers, document, date, List.of(new ChatContext.Fact(name, unit, held, verdict)));
     }
 
-    private static Fact bloodPressure(LabSeries.BpPoint p) {
+    private static Fact bloodPressure(LabSeries.BpPoint p, ChatLabels labels) {
         String s = p.systolic().value();
         String d = p.diastolic().value();
-        String sr = p.systolic().range() == null || p.systolic().range().text() == null ? "none" : p.systolic().range().text();
-        String dr = p.diastolic().range() == null || p.diastolic().range().text() == null ? "none" : p.diastolic().range().text();
-        String line = "VALUE " + BP_NAME + ": " + s + "/" + d + " | printed range " + sr + " / " + dr + " | "
-                + verdict(p.systolic()) + " / " + verdict(p.diastolic()) + " | paper " + (p.date() == null ? "undated" : p.date());
+        String sr = p.systolic().range() == null ? null : p.systolic().range().text();
+        String dr = p.diastolic().range() == null ? null : p.diastolic().range().text();
+        String name = labels.bloodPressure();
+        String line = "VALUE " + name + ": " + s + "/" + d + " | " + labels.range(sr) + " / " + labels.range(dr) + " | "
+                + labels.verdict(p.systolic().kind(), p.systolic().side()) + " / " + labels.verdict(p.diastolic().kind(), p.diastolic().side())
+                + " | " + labels.paper(p.date());
         Set<String> systolic = new LinkedHashSet<>(AnswerCheck.numbersIn(s));
         systolic.addAll(AnswerCheck.numbersIn(p.systolic().range() == null ? null : p.systolic().range().text()));
         Set<String> diastolic = new LinkedHashSet<>(AnswerCheck.numbersIn(d));
@@ -220,11 +230,14 @@ public class ChatContextBuilder {
         Set<String> numbers = new LinkedHashSet<>(systolic);
         numbers.addAll(diastolic);
         numbers.addAll(AnswerCheck.yearOf(p.date()));
-        return new Fact(line, numbers, p.documentId(), p.date(), List.of(new ChatContext.Fact(BP_NAME, "", systolic, verdict(p.systolic())),
-                new ChatContext.Fact(BP_NAME, "", diastolic, verdict(p.diastolic()))));
+        return new Fact(line, numbers, p.documentId(), p.date(), List.of(new ChatContext.Fact(name, "", systolic, verdict(p.systolic())),
+                new ChatContext.Fact(name, "", diastolic, verdict(p.diastolic()))));
     }
 
-    /** The point's drawn kind as the paper page shows it; a critical reading is outside, its side as stored. */
+    /**
+     * The point's canonical verdict, for the checks' records only (never written in a line): a critical reading is outside,
+     * its side as stored.
+     */
     static String verdict(LabSeries.Point p) {
         ValueVerdict.Kind kind = p.kind();
         if (kind == ValueVerdict.Kind.INSIDE) {

@@ -3,6 +3,7 @@ package com.elioo.baymax.companion.config;
 import com.elioo.baymax.aicall.application.service.AiCostCalculator;
 import com.elioo.baymax.companion.application.port.out.ChatCopyPort;
 import com.elioo.baymax.companion.application.service.ChatAppendix;
+import com.elioo.baymax.companion.application.service.ChatLabels;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.extraction.config.ExtractionModelConfiguration;
 import com.elioo.baymax.outbound.domain.Urgency;
@@ -17,6 +18,7 @@ import java.util.Optional;
  * Refuses to start on a চ্যাট configuration that would break DR-50's envelope at run time rather than at boot:
  * <ul>
  *   <li>{@code baymax.chat.daily-cap} below one (every question would be refused);</li>
+ *   <li>a bundle key of the context's labels ({@link ChatLabels#KEYS}) missing in either language;</li>
  *   <li>{@code baymax.chat.max-answer-chars} below the longest set of fixed lines code appends, in either language, plus
  *       {@value #MIN_BODY} characters of body: the length cap runs on the whole assembled text, and a cap the fixed lines
  *       cannot fit would turn every answer, the fixed fallback included, into a refused one;</li>
@@ -46,6 +48,10 @@ public class ChatPropertiesCheck implements InitializingBean {
         BaymaxProperties.Chat chat = properties.getChat();
         if (chat.getDailyCap() < 1) {
             throw new IllegalStateException("baymax.chat.daily-cap must be at least 1, was " + chat.getDailyCap());
+        }
+        // the context's labels (plan CHATCOPY) are read per answer; a missing one refuses the boot, not a family's question
+        for (String lang : List.of("bn", "en")) {
+            ChatLabels.of(lang, copy);
         }
         int longest = longestAppendix();
         if (chat.getMaxAnswerChars() < longest + MIN_BODY) {
