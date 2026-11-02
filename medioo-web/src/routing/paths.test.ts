@@ -103,5 +103,16 @@ describe("paths", () => {
     expect(FLIPPED).toContain("/app/timeline");
     expect(servedByNext("/app/timeline?patient=5e9edf6d-0a2a-4913-8675-9d07a4100001", false)).toBe(true);
     expect(servedByNext("/app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001", false)).toBe(false);
+    // F6: Caddy sends the paper, its /all page and a value's sheet to Next, query and all, so a link to any of them (a
+    // papers row, the chat page's paper link, the sheet's `?from=`) is Next's for every viewer; the images, the status
+    // poll and the delete under a paper are still Java's (PO ruling P4), never a soft navigation.
+    const paper = "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003";
+    expect(FLIPPED).toEqual(expect.arrayContaining(["/app/documents/{id}", "/app/documents/{id}/all", "/app/documents/{id}/values/{obs}"]));
+    expect(servedByNext(paper, false)).toBe(true);
+    expect(servedByNext(`${paper}/all`, false)).toBe(true);
+    expect(servedByNext(`${paper}/values/5e9edf6d-0a2a-4913-8675-9d07a4100004?from=summary`, false)).toBe(true);
+    for (const sub of ["/image?key=x", "/page/1", "/status", "/delete"]) {
+      expect(servedByNext(`${paper}${sub}`, false), sub).toBe(false);
+    }
   });
 });

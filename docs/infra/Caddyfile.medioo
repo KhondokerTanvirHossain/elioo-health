@@ -36,7 +36,8 @@
 # sheet (F7; POST /app/add, the upload, stays Java's); GET and HEAD /app, /app/ and /app/verify, the sign-in pages
 # (F3); GET and HEAD /app/home, the chat page (F5); GET and HEAD /app/family and /app/patients/<uuid>/profile, the
 # family tab and a patient's profile (F10; POST to the profile, its save, stays Java's); GET and HEAD /app/health, the
-# health tab (F9); GET and HEAD /app/timeline, the papers page (F8). Every other page, every POST to a page and every /app/api/** path is still Java's; each screen's own paths come in its flip PR. scripts/caddy-route-probe.sh runs this file in a
+# health tab (F9); GET and HEAD /app/timeline, the papers page (F8); GET and HEAD /app/documents/<uuid>, its /all and
+# /values/<uuid>, the paper (F6; the images, /page/<n>, /status, /delete and every POST under a paper stay Java's). Every other page, every POST to a page and every /app/api/** path is still Java's; each screen's own paths come in its flip PR. scripts/caddy-route-probe.sh runs this file in a
 # local Caddy and checks every row of scripts/smoke-https.sh reaches the upstream its class names.
 #
 # Referrer-Policy stays strict-origin-when-cross-origin, the value production has sent since before the rebuild
@@ -182,6 +183,21 @@ medioo.eliooo.org {
 		path /app/timeline
 	}
 	handle @medioo_papers {
+		reverse_proxy medioo-web:3000
+	}
+
+	# F6 (PO ruling P4, 2026-10-23): the paper, everything on it and one value's sheet (plan W6). This is where a
+	# WhatsApp link and the post-upload landing open. GET and HEAD only, and exactly three pages: one lower-case uuid
+	# (as every link writes it), then nothing, `/all`, or `/values/` and a second uuid, anchored at both ends (the query,
+	# `?from=` on a sheet, is not part of the path). So, per P4, Java keeps the page images and crops (/image, /page/<n>),
+	# the status poll, the delete page and every POST under a paper (POST .../delete is the delete itself), and so do
+	# /app/documents/<id>/ and an id that is not a uuid. Turning the old pages back on is deleting this block (RUNBOOK ->
+	# Rollback).
+	@medioo_paper {
+		method GET HEAD
+		path_regexp ^/app/documents/[0-9a-f-]{36}(/all|/values/[0-9a-f-]{36})?$
+	}
+	handle @medioo_paper {
 		reverse_proxy medioo-web:3000
 	}
 
