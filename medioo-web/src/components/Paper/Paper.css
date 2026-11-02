@@ -1,0 +1,283 @@
+/* One paper (PaperSummary, PaperAll, ValueSheet, PaperParts): the prototype's paper sheet laid out as a page that reads
+   top to bottom on a phone and sits in the main column on a desktop. Never the NOW red here (that is NowBlock's and
+   VerdictCard's) and never the week amber; a value's status is its StatusChip, shape and word. Every link and button
+   is at least the 44 px target; the one primary action is 48. The bar's band is the printed range. */
+.paper {
+  position: relative;
+  display: grid;
+  gap: var(--space-4);
+  max-width: 720px;
+  padding: var(--space-4) 0 var(--space-6);
+  color: var(--label);
+  font-family: var(--font-bn);
+  font-size: var(--text-lg);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.paper__head,
+.paper__group,
+.paper__section,
+.paper__card,
+.paper__says,
+.paper__gate {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.paper__card {
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--bg2);
+}
+.paper__title {
+  margin: 0;
+  font-size: var(--text-title);
+  font-weight: 700;
+  line-height: 1.3;
+}
+.paper__heading {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-lg);
+  font-weight: 700;
+}
+.paper__subheading {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--label2);
+}
+.paper__patient,
+.paper__meta,
+.paper__note,
+.paper__why,
+.paper__line,
+.paper__lead,
+.paper__says-label {
+  margin: 0;
+}
+.paper__patient,
+.paper__meta,
+.paper__note,
+.paper__why,
+.paper__says-label {
+  font-size: var(--text-md);
+  color: var(--label2);
+}
+.paper__lead {
+  font-weight: 600;
+}
+.paper__review {
+  justify-self: start;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--tint-soft);
+  color: var(--tint-ink);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.paper__back,
+.paper__more,
+.paper__action,
+.paper__seg-link,
+.paper__close,
+.paper__zoom {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  min-width: var(--target-min);
+  color: var(--tint-ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+.paper__back {
+  justify-self: start;
+}
+/* The reading check (ReadingProgress.tsx, PO ruling P6), as the papers page's quiet check: its box takes no room in the
+   grid, so the page is laid out as before. Its live region is heard, not seen: one line at the top of the paper, clipped
+   to nothing. The link it offers after the cap is the page's own action pill. Nothing here moves. */
+.paper__quiet {
+  display: contents;
+}
+.paper__said {
+  position: absolute;
+  inset: 0 0 auto;
+  margin: 0;
+  clip-path: inset(50%);
+  pointer-events: none;
+}
+.paper__again {
+  justify-self: start;
+}
+.paper__action,
+.paper__seg-link {
+  justify-content: center;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--bg3);
+}
+.paper__action[data-primary] {
+  min-height: var(--target-primary);
+  background: var(--tint);
+  color: var(--on-tint);
+}
+.paper__back:focus-visible,
+.paper__more:focus-visible,
+.paper__action:focus-visible,
+.paper__seg-link:focus-visible,
+.paper__close:focus-visible,
+.paper__zoom:focus-visible,
+.value-row__open:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.paper__actions,
+.paper__pages,
+.paper__seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.paper__actions {
+  flex-direction: column;
+}
+.paper__tips,
+.paper__steps {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding-left: var(--space-5);
+}
+.paper__step-note {
+  display: block;
+  font-size: var(--text-md);
+  color: var(--label2);
+}
+.paper__step--current {
+  font-weight: 700;
+}
+.paper__step--done {
+  color: var(--label2);
+}
+.paper__sheet-head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  gap: var(--space-2);
+}
+.paper__page {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+}
+.paper__page-img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+}
+
+/* One value: name and value open its sheet, its own crop below, the bar, then the printed range and the chip. */
+.value-row {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--sep);
+}
+.value-row__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+  min-height: var(--target-min);
+  margin: 0;
+  color: var(--label);
+  text-decoration: none;
+}
+.value-row__name {
+  font-weight: 600;
+}
+.value-row__reading {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  margin: 0;
+}
+.value-row__value {
+  font-family: var(--font-sys);
+  font-size: var(--text-xl);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.value-row__reading--big .value-row__value {
+  font-size: var(--text-xxl);
+}
+.value-row__unit {
+  font-family: var(--font-sys);
+  font-size: var(--text-sm);
+  color: var(--label2);
+}
+.value-row__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--label2);
+}
+.value-bar {
+  display: grid;
+  gap: var(--space-1);
+}
+.value-bar__drawing {
+  display: block;
+  width: 100%;
+  height: 10px;
+}
+.value-bar__line {
+  fill: var(--sep);
+}
+.value-bar__band {
+  fill: var(--tint);
+  fill-opacity: 0.3;
+}
+.value-bar__pin {
+  fill: var(--label);
+}
+.value-bar__ends {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-sys);
+  font-size: var(--text-xs);
+  color: var(--label2);
+}
+
+/* A line from the paper, verbatim, under its label and beside its crop; a medicine, its crop first. */
+.paper-quote,
+.medicine-row {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--sep);
+}
+.paper-quote__label {
+  font-size: var(--text-sm);
+  color: var(--label2);
+}
+.paper-quote__text {
+  margin: 0;
+  padding-left: var(--space-3);
+  border-left: 3px solid var(--sep);
+}
+.paper-quote__due,
+.medicine-row__writing {
+  margin: 0;
+  font-size: var(--text-md);
+}
+.crop--big {
+  width: 100%;
+}

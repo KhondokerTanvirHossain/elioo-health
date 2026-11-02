@@ -77,7 +77,7 @@ describe("MedicinesAsWritten", () => {
   });
 
   it("aNewerUnreadPrescriptionIsSaidAndLinked", () => {
-    // Java's paper page today (/app/documents/{id} is not this build's), so a preview page links it as it is.
+    // The paper is a Next page (W6), so a preview page links it inside the preview, and any other page links it as it is.
     const paper = `/app/documents/${NEWER.newer_document_id}`;
     expect(paper).toBe("/app/documents/b6b6b6b6-0000-4000-8000-0000000000d5");
     for (const preview of [false, true]) {
@@ -85,7 +85,9 @@ describe("MedicinesAsWritten", () => {
         const { container } = render(<MedicinesAsWritten medicines={NEWER} lang={lang} preview={preview} />);
         const link = container.querySelector<HTMLAnchorElement>(".medicines__newer a");
         expect(link?.textContent).toBe(t(lang, "health.medicines.newer_unread"));
-        expect(link?.getAttribute("href"), `preview ${preview}`).toBe("/app/documents/b6b6b6b6-0000-4000-8000-0000000000d5");
+        expect(link?.getAttribute("href"), `preview ${preview}`).toBe(
+          preview ? "/app/preview/documents/b6b6b6b6-0000-4000-8000-0000000000d5" : "/app/documents/b6b6b6b6-0000-4000-8000-0000000000d5",
+        );
         // The read one is still shown, as what it is.
         expect(rows(container)).toHaveLength(NEWER.medicines.length);
         cleanup();

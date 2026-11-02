@@ -1,0 +1,58 @@
+/* The NOW part of a paper (NowBlock.tsx), the prototype's emergency box laid out for reading: the NOW tint behind the
+   whole block, its leads in the NOW ink, everything else in the page's own ink. The NOW tokens are used only under
+   .now-block (NOW_ALLOWED, built/now-usage.built.test.ts), and the block is rendered only for a paper Java sent `now`
+   for. The red is never the only signal: every lead says why in words. */
+.now-block {
+  display: grid;
+  gap: var(--space-4);
+  margin: var(--space-4) 0 0;
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--now-soft);
+  color: var(--label);
+  font-family: var(--font-bn);
+  overflow-wrap: anywhere;
+}
+.now-block__reason,
+.now-block__remote,
+.now-block__flags {
+  display: grid;
+  gap: var(--space-2);
+}
+.now-block__lead {
+  margin: 0;
+  color: var(--now-ink);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  line-height: 1.4;
+}
+.now-block__line,
+.now-block__notdoctor,
+.now-block__small {
+  margin: 0;
+  font-size: var(--text-md);
+  line-height: 1.5;
+}
+.now-block__small,
+.now-block__notdoctor {
+  color: var(--label2);
+}
+.now-block__jump,
+.now-block__share {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--target-min);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--bg2);
+  color: var(--tint-ink);
+  font-size: var(--text-md);
+  font-weight: 600;
+  text-decoration: none;
+}
+.now-block__jump:focus-visible,
+.now-block__share:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}

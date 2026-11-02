@@ -47,13 +47,18 @@ function askedPatient(here: string): string | null {
  * - `asksItself` (the add sheet, W7): a page that asks whose it is in its own words, from its own read (whom the
  *   viewer may send for, which is not whom they may see). With two or more and no choice it gets `main` with no
  *   patient, never the chooser in its place; the toolbar still names nobody.
+ * - `patient`, for a page that is about one patient's thing (a paper, W6): that patient, whose id Java sent with the
+ *   thing, in place of `?patient=` and of the remembered choice, so a paper opened from WhatsApp shows the paper and not
+ *   the chooser; `null` for a page about nobody (a paper that is gone), which names nobody and shows no chooser.
  * - `everyone` (plan W10, family): the page is about every patient this family sees, not one, so the chooser never
  *   stands in for it. Nothing is decided either: with two or more and no choice, `patient` is null and the toolbar
  *   names nobody, exactly as under the chooser. An asked `?patient=` is still checked (not found is still not found).
  * - `asked` (plan W10, the profile page): a patient the page's own address names (`/app/patients/{id}/profile`),
  *   resolved through activePatient in place of `?patient=`, as Java's ProfilePages chooses the patient its link names:
  *   the toolbar names that patient, and one this family does not see is the not-found page.
- * Both are amendments of the plan's Global Constraint "a screen never decides a patient", approved by the PO 2026-10-23 (P2).
+ * `everyone` and `asked` are amendments of the plan's Global Constraint "a screen never decides a patient", approved by
+ * the PO 2026-10-23 (P2). `patient` (W6) is a third, put to the PO for sight (the plan's Global Constraints): like
+ * `asked` it resolves through activePatient, so a paper about a patient this family's `me` does not list is not found.
  */
 export async function signedInPage({
   tab,
@@ -62,6 +67,7 @@ export async function signedInPage({
   asksItself = false,
   everyone,
   asked,
+  patient: about,
 }: {
   tab: Tab | null;
   main: Slot;
@@ -69,13 +75,15 @@ export async function signedInPage({
   asksItself?: boolean;
   everyone?: boolean;
   asked?: string;
+  patient?: string | null;
 }) {
   const { lang, preview, here } = await requestContext();
   const [meAnswer, bannerAnswer] = await Promise.all([javaGet<MeJson>("/app/api/me"), javaGet<NowBannerJson>("/app/api/now-banner")]);
   const me = signedIn(meAnswer, here);
   if (preview && me.preview !== true) notFound();
   const banner = signedIn(bannerAnswer, here);
-  const view = activePatient(me, asked ?? askedPatient(here));
+  const view: ReturnType<typeof activePatient> =
+    about === null ? { kind: "none" } : activePatient(me, about ?? asked ?? askedPatient(here));
   if (view.kind === "not-found") notFound();
   const patient = view.kind === "patient" ? view.patient : null;
   const ctx: ShellContext = { lang, preview, me, patient, nowShown: banner.show };
