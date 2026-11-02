@@ -111,8 +111,18 @@ class ChatQuestionsAcceptanceTest {
             assertThat(dose.kind()).isEqualTo(AnswerKind.ANSWER);
             assertThat(dose.answer()).contains("Tab. Demoprol 5 mg · 1+0+0 · খাবারের পরে").contains(copy.line("bn", "chat.dose.ask_doctor"));
 
+            // PO ruling P14: what a medicine is for is answered by code, with no model call, and stored as such (V30)
+            int beforeNapa = stub.calls.get();
             AskAnswer napa = ask(asks, f, ma, "Napa কীসের?");
-            assertThat(napa.kind()).isEqualTo(AnswerKind.ANSWER);
+            assertThat(napa.kind()).isEqualTo(AnswerKind.DECLINED);
+            assertThat(handler(napa)).isEqualTo("medicine_purpose");
+            assertThat(stub.calls.get()).as("model calls for what a medicine is for").isEqualTo(beforeNapa);
+            assertThat(napa.answer()).startsWith(copy.line("bn", "chat.purpose.not_written", "Ma-র"))
+                    .contains(copy.line("bn", "chat.purpose.ask")).doesNotContain("জ্বর");
+            AskAnswer demoprol = ask(asks, f, ma, "Demoprol কীসের ওষুধ?");
+            assertThat(handler(demoprol)).isEqualTo("medicine_purpose");
+            assertThat(demoprol.answer()).startsWith(copy.line("bn", "chat.purpose.written", "Ma-র") + "\nTab. Demoprol 5 mg · 1+0+0 · খাবারের পরে");
+            assertThat(stub.calls.get()).isEqualTo(beforeNapa);
 
             int before = stub.calls.get();
             long logBefore = count("SELECT count(*) FROM baymax.ai_call_log WHERE purpose = 'chat'");
@@ -127,15 +137,15 @@ class ChatQuestionsAcceptanceTest {
             assertThat(thanks.kind()).isEqualTo(AnswerKind.ANSWER);
             assertThat(thanks.answer()).contains(copy.line("bn", "urgency.now"));
 
-            assertThat(count("SELECT count(*) FROM baymax.ai_call_log WHERE purpose = 'chat'") - chatRows).as("chat cost rows").isEqualTo(4);
+            assertThat(count("SELECT count(*) FROM baymax.ai_call_log WHERE purpose = 'chat'") - chatRows).as("chat cost rows").isEqualTo(3);
             assertThat(count("SELECT count(*) FROM baymax.ai_call_log WHERE purpose = 'chat' AND (document_id IS NOT NULL OR cost_usd IS NULL)"))
                     .as("chat cost rows naming a paper, or with no cost").isZero();
-            assertThat(count("SELECT count(*) FROM baymax.chat_turn WHERE family_id = '" + f.id() + "'")).isEqualTo(5);
-            assertThat(count("SELECT count(*) FROM baymax.chat_turn WHERE family_id = '" + f.id() + "' AND counted")).isEqualTo(4);
+            assertThat(count("SELECT count(*) FROM baymax.chat_turn WHERE family_id = '" + f.id() + "'")).isEqualTo(6);
+            assertThat(count("SELECT count(*) FROM baymax.chat_turn WHERE family_id = '" + f.id() + "' AND counted")).isEqualTo(3);
             // askingRecordsNoView: reading the papers into a context is not opening a paper
             assertThat(count("SELECT count(*) FROM baymax.audit_event WHERE kind = 'document_view'")).isEqualTo(views);
             // what was shown is what is stored, byte for byte
-            for (AskAnswer a : List.of(creatinine, dose, napa, chest, thanks)) {
+            for (AskAnswer a : List.of(creatinine, dose, napa, demoprol, chest, thanks)) {
                 assertThat(text("SELECT answer FROM baymax.chat_turn WHERE id = '" + a.turnId() + "'")).isEqualTo(a.answer());
             }
         });
