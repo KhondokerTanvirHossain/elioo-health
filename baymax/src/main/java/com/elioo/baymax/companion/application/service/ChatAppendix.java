@@ -12,16 +12,17 @@ import java.util.function.Function;
  * content checks (they are Medioo's own copy, not the model's), and the length cap runs on the body with them.
  *
  * <p>After the body, in this order: {@code chat.dose.ask_doctor} when the question asks for a change
- * ({@link DoseChangeGuard#asksForChange}); the urgency line of the patient's highest open stored level ({@code urgency.now}
- * or {@code urgency.this_week}; ROUTINE has none, D27); {@code disclaimer}; {@code safety.red_flag_line}. The emergency
- * reply is {@link #emergency}: it leads with the red-flag line and {@code now.notdoctor}, and ends, like every answer, with
- * the disclaimer and the red-flag line.
+ * ({@link DoseChangeGuard#asksForChange}); {@code chat.purpose.ask} when it asks what a medicine is for (PO ruling P14,
+ * {@link MedicinePurposeGuard#route}), which sends that to the doctor or the pharmacist; the urgency line of the patient's
+ * highest open stored level ({@code urgency.now} or {@code urgency.this_week}; ROUTINE has none, D27); {@code disclaimer};
+ * {@code safety.red_flag_line}. The emergency reply is {@link #emergency}: it leads with the red-flag line and
+ * {@code now.notdoctor}, and ends, like every answer, with the disclaimer and the red-flag line.
  */
 public final class ChatAppendix {
 
     /** Every key this class reads, and nothing else. */
-    public static final List<String> KEYS = List.of("chat.dose.ask_doctor", "urgency.now", "urgency.this_week", "disclaimer",
-            "safety.red_flag_line", "now.notdoctor");
+    public static final List<String> KEYS = List.of("chat.dose.ask_doctor", "chat.purpose.ask", "urgency.now", "urgency.this_week",
+            "disclaimer", "safety.red_flag_line", "now.notdoctor");
 
     static final String BEFORE = "\n\n";
     static final String BETWEEN = "\n";
@@ -36,9 +37,17 @@ public final class ChatAppendix {
 
     /** Only what {@link #append} adds after the body, its separator included: what the body's room is computed against. */
     public static String tail(boolean doseQuestion, Optional<Urgency> open, Function<String, String> line) {
+        return tail(doseQuestion, false, open, line);
+    }
+
+    /** {@link #tail(boolean, Optional, Function)}, with {@code chat.purpose.ask} after the dose line when the question asks it. */
+    public static String tail(boolean doseQuestion, boolean purposeQuestion, Optional<Urgency> open, Function<String, String> line) {
         List<String> lines = new ArrayList<>();
         if (doseQuestion) {
             lines.add(line.apply("chat.dose.ask_doctor"));
+        }
+        if (purposeQuestion) {
+            lines.add(line.apply("chat.purpose.ask"));
         }
         open.filter(u -> u == Urgency.NOW || u == Urgency.THIS_WEEK)
                 .ifPresent(u -> lines.add(line.apply(u == Urgency.NOW ? "urgency.now" : "urgency.this_week")));

@@ -176,4 +176,50 @@ class ChatPromptTest {
         assertThat(other).doesNotContain("This QUESTION asks to change a medicine").doesNotContain("শেষ প্রেসক্রিপশনে লেখা আছে")
                 .doesNotContain("Do not repeat the QUESTION's words about the change");
     }
+
+    /**
+     * PO ruling P14 ("Only what the papers say"), layer 3: the live re-measure of #170 found the model writing "এটি সাধারণত
+     * রক্তচাপ নিয়ন্ত্রণে ব্যবহৃত হয়" about the fictional Demoprol, which the prompt then allowed ("You may explain a
+     * medicine in one sentence as what it is generally used for"). Every prompt, for a Bangla and an English ask, a dose
+     * question or not, now says plainly that চ্যাট never says what a medicine is for, treats or what kind it is, even if it
+     * knows; and that it states only what is written. The permission is gone. That code adds the doctor or pharmacist line
+     * is said only when code decided the question asks it, as the dose rule is (review of #171, finding 3).
+     */
+    @Test
+    void everyPromptSaysChatNeverSaysWhatAMedicineIsFor() {
+        for (ChatLabels labels : List.of(BN, EN)) {
+            ChatContext ctx = ChatAnswerWordingTest.live(labels);
+            for (boolean dose : List.of(false, true)) {
+                String system = ChatPrompt.of(ctx, labels, "Ma", "q", dose, 700, List.of(), 2048).systemPrompt();
+                String as = labels.lang() + (dose ? " dose" : "");
+                assertThat(system).as(as)
+                        .contains("Never say what a medicine is for, what it treats or helps with, or what kind of medicine it is, even if you know it")
+                        .contains("State only what the prescription writes about it, through its {{rx:n}} token")
+                        .doesNotContain(ChatPrompt.PURPOSE_ASKED).doesNotContain("code adds the line that sends")
+                        .contains("\"ব্যবহৃত হয়\"").contains("\"used for\"")
+                        .doesNotContain("generally used for").doesNotContain("You may explain a medicine")
+                        .doesNotContain("what the medicine is generally used for");
+            }
+        }
+    }
+
+    /** Only a question code routes as a purpose question is told that code adds the doctor or pharmacist line. */
+    @Test
+    void onlyAPurposeQuestionIsToldCodeAddsThePurposeLine() {
+        for (ChatLabels labels : List.of(BN, EN)) {
+            ChatContext ctx = ChatAnswerWordingTest.live(labels);
+            String asked = ChatPrompt.of(ctx, labels, "Ma", "q", false, true, 700, List.of(), 2048).systemPrompt();
+            assertThat(asked).as(labels.lang()).contains(ChatPrompt.PURPOSE_ASKED)
+                    .contains("code adds the line that sends that to the doctor or the pharmacist after your answer");
+            assertThat(ChatPrompt.of(ctx, labels, "Ma", "q", false, false, 700, List.of(), 2048).systemPrompt()).as(labels.lang())
+                    .doesNotContain(ChatPrompt.PURPOSE_ASKED);
+        }
+    }
+
+    @Test
+    void aRepairSaysHowToFixAPurposeClaim() {
+        LlmRequest r = ChatPrompt.of(CTX, BN, "Ma", "q", false, 700, List.of("medicine_purpose:used for"), 2048);
+        assertThat(r.userPrompt()).contains("refused for: medicine_purpose:used for");
+        assertThat(hints(r)).contains("Leave out every sentence about what a medicine is for, treats, helps with or what kind of medicine it is");
+    }
 }

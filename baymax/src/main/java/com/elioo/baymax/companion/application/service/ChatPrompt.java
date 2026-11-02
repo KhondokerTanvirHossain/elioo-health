@@ -45,6 +45,27 @@ public final class ChatPrompt {
     static final List<String> DOSE_WORDS_NAMED = List.of("ডোজ", "dose", "ট্যাবলেট", "tablet", "অর্ধেক", "half", "দ্বিগুণ", "double",
             "বন্ধ", "stop");
 
+    /**
+     * PO ruling P14 ("Only what the papers say"), said plainly in every prompt, for a Bangla ask and an English one: the
+     * live re-measure of #170 found the model writing "এটি সাধারণত রক্তচাপ নিয়ন্ত্রণে ব্যবহৃত হয়" about the fictional
+     * Demoprol, under the old rule that allowed "what it is generally used for". The words named are each refused in code
+     * ({@link MedicinePurposeGuard}); the prompt only asks for what the check requires.
+     */
+    static final String PURPOSE_RULE = "Never say what a medicine is for, what it treats or helps with, or what kind of medicine "
+            + "it is, even if you know it, and not with \"usually\", \"generally\" or \"may\": never write \"used for\", \"is for\", "
+            + "\"treats\", \"helps\", \"a blood pressure medicine\", \"কীসের জন্য দেওয়া হয়\", \"ব্যবহৃত হয়\", \"জন্য দেওয়া হয়\", "
+            + "\"জ্বরের ওষুধ\", \"ব্যথার ওষুধ\" or a kind of medicine (\"antibiotic\", \"অ্যান্টিবায়োটিক\"). State only what the "
+            + "prescription writes about it, through its {{rx:n}} token.";
+
+    /**
+     * Only for a question code decided asks what a medicine is for ({@link MedicinePurposeGuard#route} MIXED): code appends
+     * {@code chat.purpose.ask} after the answer, so the prompt says so only then, as the dose rule is said only for a dose
+     * question (review of #171, finding 3: said in every prompt, it was false wherever code adds no line).
+     */
+    static final String PURPOSE_ASKED = "This QUESTION asks, among other things, what a medicine is for (code decided so, and code "
+            + "adds the line that sends that to the doctor or the pharmacist after your answer): say nothing about what it is for, "
+            + "and answer the rest.";
+
     /** The token the example shows: any line, the one the question names (review of #170, finding 7). */
     static final String ANY_LINE = "{{rx:n}}";
 
@@ -79,6 +100,15 @@ public final class ChatPrompt {
      */
     public static LlmRequest of(ChatContext ctx, ChatLabels labels, String patientName, String question, boolean doseQuestion,
                                 int bodyChars, List<String> priorViolations, int maxTokens) {
+        return of(ctx, labels, patientName, question, doseQuestion, false, bodyChars, priorViolations, maxTokens);
+    }
+
+    /**
+     * @param purposeQuestion code's decision that the question asks what a medicine is for and code appends
+     *                        {@code chat.purpose.ask}: only then does the prompt say code adds that line
+     */
+    public static LlmRequest of(ChatContext ctx, ChatLabels labels, String patientName, String question, boolean doseQuestion,
+                                boolean purposeQuestion, int bodyChars, List<String> priorViolations, int maxTokens) {
         boolean english = "en".equals(labels.lang());
         String language = english ? "English" : "Bangla";
         String bangla = english ? "" : " Write Bangla words only, apart from a name or a unit the FACTS write in English: never "
@@ -90,10 +120,14 @@ public final class ChatPrompt {
         List<String> rules = new ArrayList<>();
         rules.add("Answer in %s. Begin by naming the patient, %s.%s".formatted(language, patientName, bangla));
         rules.add("Use only the FACTS. When the FACTS do not show what is asked, say that the papers do not show it.");
+        rules.add(PURPOSE_RULE);
+        if (purposeQuestion) {
+            rules.add(PURPOSE_ASKED);
+        }
         rules.add("""
-                You may explain a medicine in one sentence as what it is generally used for. To show what the prescription \
-                says, write its {{rx:n}} token exactly as it appears in the FACTS, in a sentence of its own with no number and \
-                no time of day; never retype a prescription line and never write a dose, an amount or a count of tablets.""");
+                To show what the prescription says, write its {{rx:n}} token exactly as it appears in the FACTS, in a \
+                sentence of its own with no number and no time of day; never retype a prescription line and never write a \
+                dose, an amount or a count of tablets.""");
         rules.add("""
                 Never write a word about taking, giving, using, starting, stopping, holding, skipping, continuing, keeping or \
                 changing a medicine or a dose (take, give, stop, start, keep, skip, avoid, খান, দিন, নিন, বন্ধ, উচিত, লাগবে না), \
@@ -150,8 +184,7 @@ public final class ChatPrompt {
         String answer = ctx.verbatimLines().isEmpty()
                 ? "The FACTS hold no prescription line, so say only that the papers do not show it."
                 : "Answer it with only the patient's name and the {{rx:n}} token of the medicine it is about, in a sentence of "
-                + "its own, as in: " + doseAnswer(labels, patientName, ANY_LINE) + " — " + WHICH_LINE + " You may add one "
-                + "sentence on what the medicine is generally used for.";
+                + "its own, as in: " + doseAnswer(labels, patientName, ANY_LINE) + " — " + WHICH_LINE;
         return "This QUESTION asks to change a medicine (code decided so, and code adds the line about asking the doctor after "
                 + "your answer). " + answer + " Do not repeat the QUESTION's words about the change, and never write "
                 + quoted(DOSE_WORDS_NAMED) + ", not even to say you cannot answer.";
@@ -173,6 +206,10 @@ public final class ChatPrompt {
                         + WHICH_LINE));
                 case "foreign_label" -> out.putIfAbsent(code, "Write the FACTS' labels exactly as the FACTS write them, in "
                         + language + ", and never a tag.");
+                case "medicine_purpose" -> out.putIfAbsent(code, "Leave out every sentence about what a medicine is for, treats, "
+                        + "helps with or what kind of medicine it is, a hedged one included (\"usually\", \"may\"); for a medicine, "
+                        + "give only its {{rx:n}} token in a sentence of its own: code adds the line about asking the doctor or "
+                        + "the pharmacist.");
                 default -> {
                 }
             }

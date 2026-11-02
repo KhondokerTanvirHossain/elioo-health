@@ -9,7 +9,9 @@ import java.util.Locale;
  *   <li>{@code EMERGENCY}: the emergency lines, decided in code before any model call;</li>
  *   <li>{@code LIMIT}: the day's question cap was reached;</li>
  *   <li>{@code FALLBACK}: the model failed, or its answer failed the checks twice; a fixed reply;</li>
- *   <li>{@code DECLINED}: answers are switched off, or no chat model is configured; the old fixed reply.</li>
+ *   <li>{@code DECLINED}: answers are switched off, or no chat model is configured; the old fixed reply. Also a question
+ *       that asks only what a medicine is for (PO ruling P14, handler {@code medicine_purpose}): code shows what the papers
+ *       write and declines the rest to the doctor or the pharmacist, with no model call (V30).</li>
  * </ul>
  */
 public enum AnswerKind {

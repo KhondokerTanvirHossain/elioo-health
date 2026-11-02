@@ -178,6 +178,33 @@ class PostgresChatTurnAdapterTest {
         });
     }
 
+    /**
+     * PO ruling P14 (V30): a question about what a medicine is for is answered by code, from the stored lines, with no model
+     * call. Its row is stored under handler medicine_purpose, and the database holds that such a row is a DECLINED one, never
+     * counted and never modelled, so no code path can store a model's answer under code's handler.
+     */
+    @Test
+    void aCodeBuiltPurposeReplyIsStoredAndCannotClaimAModel() {
+        runner().run(context -> {
+            ChatTurnPort turns = context.getBean(ChatTurnPort.class);
+            FamilyAccount f = family(context);
+            PatientProfile p = patient(context, f.id());
+            UUID id = turns.reserveUncounted(f.id(), p.id(), "bn", "Napa কীসের?").block();
+            turns.complete(id, new ChatOutcome("Ma-র শেষ প্রেসক্রিপশনে এই ওষুধের নাম নেই।", AnswerKind.DECLINED, "medicine_purpose", List.of(),
+                    0, 0, 0, null, 3L, List.of())).block();
+
+            assertThat(row(id, "handler")).isEqualTo("medicine_purpose");
+            assertThat(row(id, "kind")).isEqualTo("declined");
+            assertThat(row(id, "model_calls")).isEqualTo("0");
+            assertThat(row(id, "counted")).isEqualTo("f");
+            // an answer kind with a model call passes every V29 constraint: only V30's names the handler
+            assertThatThrownBy(() -> sql("UPDATE baymax.chat_turn SET kind = 'answer', model_calls = 1 WHERE id = '" + id + "'"))
+                    .isInstanceOfSatisfying(SQLException.class, e -> assertThat(e.getMessage()).contains("chat_turn_purpose_by_code"));
+            assertThatThrownBy(() -> sql("UPDATE baymax.chat_turn SET kind = 'fallback' WHERE id = '" + id + "'"))
+                    .isInstanceOfSatisfying(SQLException.class, e -> assertThat(e.getMessage()).contains("chat_turn_purpose_by_code"));
+        });
+    }
+
     @Test
     void aRowCannotBeAnsweredWithoutAKind() {
         runner().run(context -> {

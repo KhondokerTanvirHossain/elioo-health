@@ -36,6 +36,7 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 
@@ -48,7 +49,14 @@ import java.util.function.Function;
  *   <li>an emergency gets the existing emergency lines ({@link ChatAppendix#emergency}): zero model calls, before the
  *       switch, the cap and the context; never counted; stored cut to {@code question-max-chars}; and returned even when
  *       storing it fails;</li>
- *   <li>answers switched off, or no chat client: {@code chat.ask.reply} (DECLINED);</li>
+ *   <li>answers switched off: {@code chat.ask.reply} (DECLINED), as before PO ruling P14;</li>
+ *   <li>a question that asks only what a medicine is for, does or treats (P14, {@link MedicinePurposeGuard#route}): the
+ *       stored line(s), every line when no stored one is named (never that the medicine is missing), built by code
+ *       ({@link MedicinePurposeReply}), then
+ *       {@code chat.purpose.ask}; zero model calls, before the client and the cap, never counted (DECLINED, handler
+ *       {@code medicine_purpose}, V30). A question that also asks something else goes on to the model, and code still
+ *       appends {@code chat.purpose.ask};</li>
+ *   <li>no chat client: {@code chat.ask.reply} (DECLINED);</li>
  *   <li>the daily cap, reserved atomically ({@link ChatTurnPort#reserveCounted}): {@code chat.ask.limit} (LIMIT);</li>
  *   <li>the context of stored facts ({@link ChatContextBuilder}) and one model call through {@link MeteredLlmClient}
  *       (one {@code ai_call_log} row each, {@code document_id} NULL);</li>
@@ -56,7 +64,8 @@ import java.util.function.Function;
  *       one repair call naming the violations, then {@code chat.ask.failed} (FALLBACK). A model error, a timeout, a
  *       {@code max_tokens} stop or the answer deadline goes straight to FALLBACK. The raw text of a refused answer is never
  *       returned and never stored;</li>
- *   <li>code appends, after the body: {@code chat.dose.ask_doctor} for a dose question, the patient's open urgency line,
+ *   <li>code appends, after the body: {@code chat.dose.ask_doctor} for a dose question, {@code chat.purpose.ask} for a
+ *       purpose question, the patient's open urgency line,
  *       {@code disclaimer}, {@code safety.red_flag_line} ({@link ChatAppendix});</li>
  *   <li>the turn is completed with exactly what is returned.</li>
  * </ol>
@@ -154,33 +163,99 @@ public class ChatAnswerService implements AskUseCase {
                 });
     }
 
+    /** What code decided about the question before any context or model: a dose question, and where a purpose one goes. */
+    private record Asked(boolean dose, MedicinePurposeGuard.Route purpose) {
+    }
+
     private Mono<AskAnswer> route(UUID familyId, PatientProfile patient, String q, String l, ViewerLocale viewer, long started) {
         Function<String, String> line = key -> copy.line(l, key);
         // whether code appends the ask-the-doctor line: the stored medicines' names count as medicine words, since a family
-        // names the drug (review of #164, finding 3); a names read that fails appends the line rather than drop it
-        Mono<Boolean> doseQuestion = contexts.medicineNames(familyId, patient.id())
-                .map(names -> DoseChangeGuard.asksForChange(q, names))
-                .defaultIfEmpty(DoseChangeGuard.asksForChange(q))
-                .onErrorReturn(true);
-        return Mono.zip(openUrgency(familyId, patient.id()), doseQuestion).flatMap(t -> {
+        // names the drug (review of #164, finding 3); a names read that fails appends the line rather than drop it. The same
+        // names route a question about what a medicine is for (PO ruling P14); routed again once the context is read
+        Mono<Asked> asked = contexts.medicineNames(familyId, patient.id())
+                .map(names -> new Asked(DoseChangeGuard.asksForChange(q, names),
+                        MedicinePurposeGuard.route(q, names, Set.of(), patient.name())))
+                .defaultIfEmpty(new Asked(DoseChangeGuard.asksForChange(q), MedicinePurposeGuard.route(q, Set.of(), Set.of(), patient.name())))
+                .onErrorReturn(new Asked(true, MedicinePurposeGuard.route(q, Set.of(), Set.of(), patient.name())));
+        return Mono.zip(openUrgency(familyId, patient.id()), asked).flatMap(t -> {
             Optional<Urgency> open = t.getT1();
-            String tail = ChatAppendix.tail(t.getT2(), open, line);
-            // 3. switched off, or no model
+            boolean dose = t.getT2().dose();
+            MedicinePurposeGuard.Route purpose = t.getT2().purpose();
+            // 3. switched off: the reply as before P14, so nothing changes while answers are off
             if (!properties.getChat().isEnabled()) {
-                return fixed(familyId, patient, q, l, viewer, AnswerKind.DECLINED, "off", "chat.ask.reply", tail, started);
+                return fixed(familyId, patient, q, l, viewer, AnswerKind.DECLINED, "off", "chat.ask.reply",
+                        ChatAppendix.tail(dose, open, line), started);
             }
-            LlmClient client = BaymaxModelClient.unwrap(chatClient.getIfAvailable());
-            if (client == null) {
-                return fixed(familyId, patient, q, l, viewer, AnswerKind.DECLINED, "no_model", "chat.ask.reply", tail, started);
+            // 4. what a medicine is for, and nothing else (P14): code answers from the stored lines, before the model, the
+            // client and the cap, since it costs nothing
+            if (purpose == MedicinePurposeGuard.Route.CODE && !dose) {
+                return purposeReply(familyId, patient, q, l, viewer, open, started);
             }
-            // 4. the daily cap, reserved atomically; only the reservation's own emptiness is the cap (review of #164, finding 6)
-            return turns.reserveCounted(familyId, patient.id(), l, q, dayStart(), properties.getChat().getDailyCap())
-                    .map(Optional::of)
-                    .defaultIfEmpty(Optional.empty())
-                    .flatMap(reserved -> reserved.isPresent()
-                            ? modelled(reserved.get(), client, familyId, patient, q, t.getT2(), l, viewer, tail, started)
-                            : fixed(familyId, patient, q, l, viewer, AnswerKind.LIMIT, "cap", "chat.ask.limit", tail, started));
+            boolean purposeLine = purpose != MedicinePurposeGuard.Route.NONE;
+            return byModel(familyId, patient, q, dose, purposeLine, l, viewer, ChatAppendix.tail(dose, purposeLine, open, line), started);
         });
+    }
+
+    /** 5. no model, the cap, then the model: every question code does not answer itself. */
+    private Mono<AskAnswer> byModel(UUID familyId, PatientProfile patient, String q, boolean dose, boolean purpose, String l,
+                                    ViewerLocale viewer, String tail, long started) {
+        LlmClient client = BaymaxModelClient.unwrap(chatClient.getIfAvailable());
+        if (client == null) {
+            return fixed(familyId, patient, q, l, viewer, AnswerKind.DECLINED, "no_model", "chat.ask.reply", tail, started);
+        }
+        // the daily cap, reserved atomically; only the reservation's own emptiness is the cap (review of #164, finding 6)
+        return turns.reserveCounted(familyId, patient.id(), l, q, dayStart(), properties.getChat().getDailyCap())
+                .map(Optional::of)
+                .defaultIfEmpty(Optional.empty())
+                .flatMap(reserved -> reserved.isPresent()
+                        ? modelled(reserved.get(), client, familyId, patient, q, dose, purpose, l, viewer, tail, started)
+                        : fixed(familyId, patient, q, l, viewer, AnswerKind.LIMIT, "cap", "chat.ask.limit", tail, started));
+    }
+
+    /**
+     * PO ruling P14, "Only what the papers say": a question that asks only what a medicine is for is answered by code from
+     * the stored lines ({@link MedicinePurposeReply}), then {@code chat.purpose.ask} and the usual lines; zero model calls, an
+     * uncounted DECLINED turn under handler {@value MedicinePurposeGuard#HANDLER} (V30 holds it so). Routed again once the
+     * context is read: a question that names a stored lab ("what is creatinine for?") is not a medicine's and goes to the
+     * model. A context that cannot be read gives {@code chat.ask.failed}, still with no model call.
+     */
+    private Mono<AskAnswer> purposeReply(UUID familyId, PatientProfile patient, String q, String l, ViewerLocale viewer,
+                                         Optional<Urgency> open, long started) {
+        Function<String, String> line = key -> copy.line(l, key);
+        String tail = ChatAppendix.tail(false, true, open, line);
+        return Mono.fromCallable(() -> ChatLabels.of(l, copy))
+                .flatMap(labels -> contexts.build(familyId, patient.id(), patient.name(), labels))
+                .map(Optional::of)
+                .defaultIfEmpty(Optional.empty())
+                .onErrorResume(e -> {
+                    log.warn("[baymax] chat purpose reply for patient={} read no context: {}", patient.id(), e.getClass().getSimpleName());
+                    return Mono.just(Optional.empty());
+                })
+                .flatMap(read -> {
+                    if (read.isEmpty()) {
+                        return stored(familyId, patient, q, l, viewer, new Body(line.apply("chat.ask.failed"), AnswerKind.DECLINED,
+                                MedicinePurposeGuard.HANDLER, List.of()), tail, started);
+                    }
+                    ChatContext ctx = read.get();
+                    MedicinePurposeGuard.Route again = MedicinePurposeGuard.route(q, ctx.medicineNames(), MedicinePurposeGuard.labNames(ctx),
+                            patient.name());
+                    if (again != MedicinePurposeGuard.Route.CODE) {
+                        boolean purposeLine = again != MedicinePurposeGuard.Route.NONE;
+                        return byModel(familyId, patient, q, false, purposeLine, l, viewer, ChatAppendix.tail(false, purposeLine, open, line),
+                                started);
+                    }
+                    MedicinePurposeReply.Reply reply = MedicinePurposeReply.of(q, ctx, patient.name(), l, copy,
+                            properties.getChat().getMaxAnswerChars() - tail.length());
+                    return stored(familyId, patient, q, l, viewer, new Body(reply.text(), AnswerKind.DECLINED, MedicinePurposeGuard.HANDLER,
+                            reply.documents()), tail, started);
+                });
+    }
+
+    /** A code-built body on an uncounted turn. */
+    private Mono<AskAnswer> stored(UUID familyId, PatientProfile patient, String q, String l, ViewerLocale viewer, Body body,
+                                   String tail, long started) {
+        return turns.reserveUncounted(familyId, patient.id(), l, q)
+                .flatMap(id -> finish(id, patient, q, l, viewer, body, tail, new Tally(), started));
     }
 
     /** The first {@code max} characters of a text, never splitting a code point. */
@@ -197,10 +272,11 @@ public class ChatAnswerService implements AskUseCase {
 
     /**
      * 5–6: the context, one call, the checks, one repair, else the fixed reply. Never empty. {@code dose} is the decision that
-     * also appends the ask-the-doctor line, so the prompt's dose rule and the appended line never disagree (review of #170).
+     * also appends the ask-the-doctor line, so the prompt's dose rule and the appended line never disagree (review of #170);
+     * {@code purpose} is likewise the decision that appends {@code chat.purpose.ask} (review of #171, finding 3).
      */
     private Mono<AskAnswer> modelled(UUID turnId, LlmClient client, UUID familyId, PatientProfile patient, String q, boolean dose,
-                                     String l, ViewerLocale viewer, String tail, long started) {
+                                     boolean purpose, String l, ViewerLocale viewer, String tail, long started) {
         BaymaxProperties.Chat chat = properties.getChat();
         Tally tally = new Tally();
         Function<String, String> line = key -> copy.line(l, key);
@@ -209,15 +285,18 @@ public class ChatAnswerService implements AskUseCase {
         Mono<Body> work = Mono.fromCallable(() -> ChatLabels.of(l, copy)).flatMap(labels ->
                 contexts.build(familyId, patient.id(), patient.name(), labels).flatMap(ctx -> {
                     int bodyChars = chat.getMaxAnswerChars() - tail.length();
-                    return call(client, ctx, labels, patient.name(), q, dose, bodyChars, List.of(), tally).flatMap(first -> {
-                        List<String> v1 = check(first, ctx, tail);
+                    // the name the family typed in a purpose question is a medicine to the purpose rule (finding 1 b)
+                    Set<String> asked = MedicinePurposeGuard.askedNames(q, ctx.medicineNames(), MedicinePurposeGuard.labNames(ctx),
+                            patient.name());
+                    return call(client, ctx, labels, patient.name(), q, dose, purpose, bodyChars, List.of(), tally).flatMap(first -> {
+                        List<String> v1 = check(first, ctx, tail, asked);
                         if (v1.isEmpty()) {
                             return Mono.just(new Body(AnswerCheck.resolve(first.strip(), ctx), AnswerKind.ANSWER, "model", ctx.documentIds()));
                         }
                         tally.violations.addAll(v1);
                         log.debug("[baymax] chat turn={} refused first answer: {}", turnId, v1);
-                        return call(client, ctx, labels, patient.name(), q, dose, bodyChars, v1, tally).map(second -> {
-                            List<String> v2 = check(second, ctx, tail);
+                        return call(client, ctx, labels, patient.name(), q, dose, purpose, bodyChars, v1, tally).map(second -> {
+                            List<String> v2 = check(second, ctx, tail, asked);
                             if (v2.isEmpty()) {
                                 return new Body(AnswerCheck.resolve(second.strip(), ctx), AnswerKind.ANSWER, "repair", ctx.documentIds());
                             }
@@ -240,13 +319,13 @@ public class ChatAnswerService implements AskUseCase {
 
     /** One metered call under the per-call timeout; a {@code max_tokens} stop is a failure, never a truncated answer. */
     private Mono<String> call(LlmClient client, ChatContext ctx, ChatLabels labels, String name, String q, boolean dose,
-                              int bodyChars, List<String> prior, Tally tally) {
+                              boolean purpose, int bodyChars, List<String> prior, Tally tally) {
         BaymaxProperties.Chat chat = properties.getChat();
         return Mono.defer(() -> {
             tally.calls++;
             return metered.using(client)
                     .invoke(AiCallPurpose.CHAT, null,
-                            ChatPrompt.of(ctx, labels, name, q, dose, bodyChars, prior, chat.getMaxOutputTokens()))
+                            ChatPrompt.of(ctx, labels, name, q, dose, purpose, bodyChars, prior, chat.getMaxOutputTokens()))
                     .timeout(chat.getModelTimeout())
                     .map(response -> {
                         count(tally, response);
@@ -269,8 +348,8 @@ public class ChatAnswerService implements AskUseCase {
     }
 
     /** The content checks on the model's words, and the length of the whole text the family would be shown. */
-    private List<String> check(String modelText, ChatContext ctx, String tail) {
-        List<String> v = new ArrayList<>(AnswerCheck.violations(modelText, ctx));
+    private List<String> check(String modelText, ChatContext ctx, String tail, Set<String> asked) {
+        List<String> v = new ArrayList<>(AnswerCheck.violations(modelText, ctx, asked));
         if (v.stream().noneMatch(c -> c.startsWith("unresolved_reference"))) {
             v.addAll(AnswerCheck.length(AnswerCheck.resolve(modelText.strip(), ctx) + tail, properties.getChat().getMaxAnswerChars()));
         }

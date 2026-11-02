@@ -137,9 +137,12 @@ class AnswerCheckTest {
             return "<" + key + ">";
         };
         for (boolean dose : List.of(true, false)) {
-            for (Optional<Urgency> open : List.of(Optional.<Urgency>empty(), Optional.of(Urgency.NOW), Optional.of(Urgency.THIS_WEEK),
-                    Optional.of(Urgency.ROUTINE))) {
-                ChatAppendix.append("body", dose, open, line);
+            for (boolean purpose : List.of(true, false)) {
+                for (Optional<Urgency> open : List.of(Optional.<Urgency>empty(), Optional.of(Urgency.NOW), Optional.of(Urgency.THIS_WEEK),
+                        Optional.of(Urgency.ROUTINE))) {
+                    ChatAppendix.append("body", dose, open, line);
+                    ChatAppendix.tail(dose, purpose, open, line);
+                }
             }
         }
         ChatAppendix.emergency(line);
@@ -152,6 +155,9 @@ class AnswerCheckTest {
         assertThat(ChatAppendix.append("body", true, Optional.of(Urgency.NOW), line))
                 .isEqualTo("body\n\n<chat.dose.ask_doctor>\n<urgency.now>\n<disclaimer>\n<safety.red_flag_line>");
         assertThat(ChatAppendix.append("body", false, Optional.empty(), line)).isEqualTo("body\n\n<disclaimer>\n<safety.red_flag_line>");
+        // PO ruling P14: the purpose line after the dose line, before the urgency line
+        assertThat("body" + ChatAppendix.tail(true, true, Optional.of(Urgency.NOW), line))
+                .isEqualTo("body\n\n<chat.dose.ask_doctor>\n<chat.purpose.ask>\n<urgency.now>\n<disclaimer>\n<safety.red_flag_line>");
         assertThat(ChatAppendix.emergency(line))
                 .isEqualTo("<safety.red_flag_line>\n<now.notdoctor>\n\n<disclaimer>\n<safety.red_flag_line>");
     }

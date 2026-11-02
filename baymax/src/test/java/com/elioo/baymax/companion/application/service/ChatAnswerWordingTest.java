@@ -98,8 +98,13 @@ class ChatAnswerWordingTest {
         assertThat(AnswerCheck.violations(answer, bn)).isEmpty();
         assertThat(AnswerCheck.violations("Ma-র শেষ প্রেসক্রিপশনে লেখা আছে: {{rx:1}}", bn)).as("Demoprol's line, in English, is the paper")
                 .isEmpty();
-        assertThat(AnswerCheck.violations("Demoprol সাধারণত রক্তচাপের জন্য দেওয়া হয়।", bn)).as("a stored medicine's name is not a label")
+        assertThat(AnswerCheck.violations("Ma-র কাগজে Demoprol ছাড়া আর কোনো ওষুধ লেখা নেই।", bn)).as("a stored medicine's name is not a label")
                 .isEmpty();
+        // PO ruling P14: the sentence this row held until #170 says what Demoprol is for. Its name is still no label; the
+        // sentence is now refused, for what it says and for nothing else
+        assertThat(AnswerCheck.violations("Demoprol সাধারণত রক্তচাপের জন্য দেওয়া হয়।", bn))
+                .as("a stored medicine's name is not a label, and what it is for is not the model's to say")
+                .noneMatch(c -> c.startsWith("foreign_label")).isNotEmpty().allMatch(c -> c.startsWith("medicine_purpose"));
     }
 
     /**

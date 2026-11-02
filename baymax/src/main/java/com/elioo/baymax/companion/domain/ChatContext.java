@@ -25,10 +25,15 @@ import java.util.UUID;
  *                      medicine reference for the dose-change guard on both sides
  * @param foreignLabels the label phrases an answer to this ask may not hold: for a Bangla ask, the English labels, tags and
  *                      rule words ({@code ChatLabels.foreign}); empty for an English ask
+ * @param prescriptionId the paper {@link #verbatimLines} are on, or null with no prescription: the one paper a reply that
+ *                      quotes only prescription lines cites (review of #171, finding 9)
+ * @param unshownNames  the names of the latest prescription's medicines whose line is never shown, an abbreviated one
+ *                      (DR-16) or an empty one, in normal form: still a medicine on the paper, so a question that names one
+ *                      is never told the paper does not hold it (review of #171, finding 6)
  */
 public record ChatContext(List<String> factLines, Set<String> numbers, List<String> verbatimLines, List<UUID> documentIds,
                           boolean truncated, List<Fact> facts, Set<LocalDate> dates, Set<String> medicineNames,
-                          Set<String> foreignLabels) {
+                          Set<String> foreignLabels, UUID prescriptionId, Set<String> unshownNames) {
 
     /** The canonical verdict that lets an answer say "inside". */
     public static final String INSIDE = "INSIDE";
@@ -71,6 +76,19 @@ public record ChatContext(List<String> factLines, Set<String> numbers, List<Stri
         dates = Set.copyOf(dates);
         medicineNames = Set.copyOf(medicineNames);
         foreignLabels = Set.copyOf(foreignLabels);
+        unshownNames = Set.copyOf(unshownNames);
+    }
+
+    /** A context with no prescription paper named and no unshown line: what a test builds by hand. */
+    public ChatContext(List<String> factLines, Set<String> numbers, List<String> verbatimLines, List<UUID> documentIds, boolean truncated,
+                       List<Fact> facts, Set<LocalDate> dates, Set<String> medicineNames, Set<String> foreignLabels) {
+        this(factLines, numbers, verbatimLines, documentIds, truncated, facts, dates, medicineNames, foreignLabels, null, Set.of());
+    }
+
+    /** This context with the prescription's paper and its unshown medicines' names. */
+    public ChatContext withPrescription(UUID prescription, Set<String> unshown) {
+        return new ChatContext(factLines, numbers, verbatimLines, documentIds, truncated, facts, dates, medicineNames, foreignLabels,
+                prescription, unshown);
     }
 
     /** A context with no foreign labels: what an English ask is built with. */
@@ -107,10 +125,15 @@ public record ChatContext(List<String> factLines, Set<String> numbers, List<Stri
     static Set<String> namesOfLines(List<String> lines) {
         Set<String> out = new LinkedHashSet<>();
         for (String line : lines) {
-            int cut = line.indexOf(" · ");
-            out.addAll(namesIn(cut < 0 ? line : line.substring(0, cut)));
+            out.addAll(namesOfLine(line));
         }
         return out;
+    }
+
+    /** The medicine names of one verbatim line, read from its first field (PO ruling P14: which line a question names). */
+    public static Set<String> namesOfLine(String line) {
+        int cut = line.indexOf(" · ");
+        return namesIn(cut < 0 ? line : line.substring(0, cut));
     }
 
     /**
