@@ -4,6 +4,7 @@ import com.elioo.baymax.aicall.application.service.AiCostCalculator;
 import com.elioo.baymax.companion.application.port.out.ChatCopyPort;
 import com.elioo.baymax.companion.application.service.ChatAppendix;
 import com.elioo.baymax.companion.application.service.ChatLabels;
+import com.elioo.baymax.companion.application.service.MedicinePurposeReply;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.extraction.config.ExtractionModelConfiguration;
 import com.elioo.baymax.outbound.domain.Urgency;
@@ -18,7 +19,9 @@ import java.util.Optional;
  * Refuses to start on a চ্যাট configuration that would break DR-50's envelope at run time rather than at boot:
  * <ul>
  *   <li>{@code baymax.chat.daily-cap} below one (every question would be refused);</li>
- *   <li>a bundle key of the context's labels ({@link ChatLabels#KEYS}) missing in either language;</li>
+ *   <li>a bundle key of the context's labels ({@link ChatLabels#KEYS}), of the purpose reply
+ *       ({@link MedicinePurposeReply#KEYS}, PO ruling P14) or of the appended lines ({@link ChatAppendix#KEYS}) missing in
+ *       either language;</li>
  *   <li>{@code baymax.chat.max-answer-chars} below the longest set of fixed lines code appends, in either language, plus
  *       {@value #MIN_BODY} characters of body: the length cap runs on the whole assembled text, and a cap the fixed lines
  *       cannot fit would turn every answer, the fixed fallback included, into a refused one;</li>
@@ -51,8 +54,12 @@ public class ChatPropertiesCheck implements InitializingBean {
         }
         // the context's labels (plan CHATCOPY) are read per answer; a missing one refuses the boot, not a family's question.
         // Every key in both languages, whether answers are on or off: a Bangla ask reads the English ones too (review of #170)
+        List<String> keys = new java.util.ArrayList<>(ChatLabels.KEYS);
+        // PO ruling P14: the purpose reply and its appended line are read per answer too
+        keys.addAll(MedicinePurposeReply.KEYS);
+        keys.addAll(ChatAppendix.KEYS);
         for (String lang : List.of("bn", "en")) {
-            for (String key : ChatLabels.KEYS) {
+            for (String key : keys) {
                 try {
                     copy.line(lang, key);
                 } catch (RuntimeException e) {
@@ -84,8 +91,8 @@ public class ChatPropertiesCheck implements InitializingBean {
     int longestAppendix() {
         int longest = 0;
         for (String lang : List.of("bn", "en")) {
-            longest = Math.max(longest, ChatAppendix.tail(true, Optional.of(Urgency.THIS_WEEK), k -> copy.line(lang, k)).length());
-            longest = Math.max(longest, ChatAppendix.tail(true, Optional.of(Urgency.NOW), k -> copy.line(lang, k)).length());
+            longest = Math.max(longest, ChatAppendix.tail(true, true, Optional.of(Urgency.THIS_WEEK), k -> copy.line(lang, k)).length());
+            longest = Math.max(longest, ChatAppendix.tail(true, true, Optional.of(Urgency.NOW), k -> copy.line(lang, k)).length());
             longest = Math.max(longest, ChatAppendix.emergency(k -> copy.line(lang, k)).length());
         }
         return longest;

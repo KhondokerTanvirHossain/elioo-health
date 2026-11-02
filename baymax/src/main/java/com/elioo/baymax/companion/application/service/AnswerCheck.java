@@ -37,7 +37,9 @@ import java.util.regex.Pattern;
  * fact's numbers ({@code number_unbound}). A number written as a word, a fraction sign or a superscript is refused, as is
  * a dose amount ("10 mg", "2 tablets", "২টা") and any number in a sentence that holds a prescription line. "Inside" is
  * refused unless an INSIDE verdict backs it (finding 12). A Bangla answer holding an English label, tag or rule word is
- * refused ({@code foreign_label}, plan CHATCOPY), so it is repaired, never shown.
+ * refused ({@code foreign_label}, plan CHATCOPY), so it is repaired, never shown. A sentence that says what a medicine is
+ * for, treats or helps with, or what kind of medicine it is, is refused ({@code medicine_purpose}, PO ruling P14,
+ * {@link MedicinePurposeGuard#states}): only what the papers say, and the stored line itself is exempt as ever.
  */
 public final class AnswerCheck {
 
@@ -152,6 +154,8 @@ public final class AnswerCheck {
             labNames.add(TextNormaliser.normalise(f.name()));
         }
         out.addAll(DoseChangeGuard.instructs(own, ctx.medicineNames(), labNames));
+        // PO ruling P14: what a medicine is for, treats or what kind it is, never the model's to say
+        out.addAll(MedicinePurposeGuard.states(own, ctx.medicineNames(), labNames, MedicinePurposeGuard.patientOf(ctx)));
         for (String r : REASSURANCE) {
             if (DoseChangeGuard.hits(hay, r)) {
                 out.add("reassurance:" + r);

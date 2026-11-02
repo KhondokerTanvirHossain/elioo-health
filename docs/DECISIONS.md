@@ -229,7 +229,7 @@ promises and the open medicines-in-explanation question are recorded in docs/MED
 
 ## DR-16 | 2026-09-19 | Medicines may appear in outbound explanations as verbatim transcription with crops, never as model-generated text
 
-> Web chat: superseded by DR-50 (2026-10-30) for "medicines remain out of the model prompt" and "what a medicine is for"; unchanged for explanations, nudges and WhatsApp.
+> Web chat: superseded by DR-50 (2026-10-30) for "medicines remain out of the model prompt" and "what a medicine is for"; unchanged for explanations, nudges and WhatsApp. Since PO ruling P14 (DR-50's amendment "Only what the papers say") web chat again never says what a medicine is for: only the prompt half stays superseded.
 
 **Decision:** Medicines may appear in outbound explanations as verbatim transcription with crops, never as
 model-generated text; medicines remain out of the model prompt.
@@ -1528,3 +1528,39 @@ CHAT-web asks the route; the emergency pre-check runs either way.
   row names can still pass. The alternative is a fixed form: a sentence that refers to a medicine, and the sentence after
   it, may hold only `chat.dose.example`'s frame, and a dose question's answer only that frame. It only tightens, but it
   changes how the safety rule works, so it is the PO's call.
+
+**Amendment, after P12 (PO rulings P13, P14 and P15, Tanvir, in the session; P14 built in `feat/baymax-chat-papers-only`):**
+- **P13.** After a red-team found 99 of 107 change instructions passing main's word-list dose guard (#170 now blocks all
+  126 known), he chose "#170 first, then switch on (Recommended)": chat answers are switched on only after #170 **and**
+  the P14 PR are on origin/main and deployed. This supersedes P12's order. #166's description carries a HOLD block
+  saying so.
+- **P14.** Asked what chat may say about what a medicine is for (the live test of #170 invented "Demoprol is usually used
+  to control blood pressure", "এটি সাধারণত রক্তচাপ নিয়ন্ত্রণে ব্যবহৃত হয়", for a fictional medicine), he chose "Only what
+  the papers say (Recommended)": chat tells what is written (name, strength, how to take it) and sends "what is it for"
+  to the doctor or pharmacist. Grounding in a drug database (bddrug) is a **later, separate PR for his approval**, not
+  built now. This **narrows P7's "Explain"**: "and what the medicine is generally for" above no longer holds for web chat,
+  and the line "'What the medicine is generally for' names conditions by nature, so the spec's condition-word rule is not
+  enforced on chat answers" is withdrawn: a condition beside a medicine is now refused. Built in three layers, the two in
+  code carrying the guarantee:
+  1. *Question routing, in code* (`MedicinePurposeGuard.route`): a question that asks only what a medicine is for, does,
+     treats, whether it is for X or what kind it is (bn, en, Banglish) gets a code-built reply with **no model call**
+     (`MedicinePurposeReply`): the medicine's stored line(s) through the `{{rx:n}}` rendering, or that the latest
+     prescription does not hold it, then `chat.purpose.ask` (the doctor or pharmacist line), then the usual lines. An
+     uncounted DECLINED turn under handler `medicine_purpose`; V30's `chat_turn_purpose_by_code` holds that such a row is
+     never modelled and never counted. A question about a stored lab or a paper is not a medicine's. **A mixed question**
+     (purpose and something else) goes to the model whole, with layers 2 and 3, and code still appends
+     `chat.purpose.ask`: code does not split a family's sentence for it.
+  2. *A refuse-only check, in code* (`AnswerCheck` violation `medicine_purpose`): a sentence of the model's that states
+     what a medicine is for, treats, helps with or what kind of medicine it is, when it refers to a medicine (the dose
+     guard's medicine reference, #170's fuzzy name match, a pronoun or a dropped Bangla subject after a medicine
+     sentence), goes to the one repair, then the fixed reply; never a silent rewrite. The stored line itself is exempt, a
+     printed indication included; the model retyping that indication is refused, as a retyped dose is. A sentence about a
+     stored lab and no medicine is not this rule's: what a value means stays the prompt-only rule above. Corpus
+     `chat/medicine-purpose-corpus.tsv`, written before the guard and red on the code before it.
+  3. *The prompt* says plainly, for a Bangla and an English ask, that chat never says what a medicine is for, treats or
+     what kind it is, even if it knows, states only what is written, and that code adds the doctor or pharmacist line.
+  No existing rule is loosened. The new copy (`chat.purpose.*`) is a draft for the copy owner.
+- **P15.** He chose "Add a model check, refuse-only (Recommended)": a small separate Claude call reads each answer that
+  mentions a medicine and can only **refuse** it (never edit, never approve past the code checks), about +$0.003 per
+  such answer; a refusal gives the safe fixed reply and the doctor line. Built as its own PR, shipped after chat is
+  live; nothing of it is in the P14 PR.

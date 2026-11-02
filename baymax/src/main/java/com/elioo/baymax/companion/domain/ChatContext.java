@@ -107,10 +107,15 @@ public record ChatContext(List<String> factLines, Set<String> numbers, List<Stri
     static Set<String> namesOfLines(List<String> lines) {
         Set<String> out = new LinkedHashSet<>();
         for (String line : lines) {
-            int cut = line.indexOf(" · ");
-            out.addAll(namesIn(cut < 0 ? line : line.substring(0, cut)));
+            out.addAll(namesOfLine(line));
         }
         return out;
+    }
+
+    /** The medicine names of one verbatim line, read from its first field (PO ruling P14: which line a question names). */
+    public static Set<String> namesOfLine(String line) {
+        int cut = line.indexOf(" · ");
+        return namesIn(cut < 0 ? line : line.substring(0, cut));
     }
 
     /**
