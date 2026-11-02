@@ -137,7 +137,7 @@
 # 307 holding /app/timeline/, so a matcher widened to `/app/timeline*` fails that row. The plan's other F8 row,
 # /app/patients/<id> still Java's 303, is F10's boundary row above (Next answers it with its HTML 404, measured again
 # through the same replica): a matcher that took the patient page fails there.
-# The F6 rows (plan Wave 3, Task F; PO ruling P4, 2026-10-23, in place of the on-device step) were measured on
+# The F6 rows (plan Wave 3, Task F; DR-49, PO ruling 2026-10-23, in place of the on-device step) were measured on
 # 2026-11-02. Before the flip, production answered GET on the paper /app/documents/<id>, its /all page and a value's
 # sheet /app/documents/<id>/values/<obs>?from=summary signed out with Java's session filter: 303 to /app/ (no held
 # place), Java's CSP; HEAD on each with Java's JSON 404 (Java routes GET alone). After it, medioo-web's paper pages
@@ -151,14 +151,17 @@
 # 303 and the add sheet's JSON `next`, one paper sent), and `{old}/app/documents/<id>` is that WhatsApp link as sent
 # before DR-15, which must still reach it: the old hostname answers 301 to the same path on medioo.eliooo.org
 # (production, 2026-11-02). The HEAD rows are PROBE rows, as F7's to F8's are, until the #155 follow-up. Java routes no
-# POST /app/documents/<id> (docs/infra/app-routes.txt), so a POST there is the JSON 404 its HEAD measured (not POSTed
-# to production). Per PO ruling P4, Java keeps everything else under a paper, and these rows prove it, each Java's on
-# production 2026-11-02 (read-only GET), each answered by Next with its HTML 404 through the replica (so a matcher that
-# took it fails here): the page image /app/documents/<id>/image?key=x, a page /page/1, the status poll /status, the
-# delete confirm page /delete (GET; Java's session filter's 303 to /app/, its CSP), and POST /app/documents/<id>/delete,
+# POST /app/documents/<id> (docs/infra/app-routes.txt); its PROBE row is never sent here and is UNMEASURED, inferred
+# from the HEAD answer that was measured (the same no-route JSON 404, not POSTed to production): its 404 and
+# statusCode are not asserted by anything, the route probe reads its class (Java) alone. Per DR-49, Java keeps
+# everything else under a paper, and these rows prove it, each Java's on production 2026-11-02 (read-only GET), each
+# answered by Next with its HTML 404 through the replica (so a matcher that took it fails here): the page image
+# /app/documents/<id>/image?key=x, a page /page/1, the status poll /status, the delete confirm page /delete (GET;
+# Java's session filter's 303 to /app/, its CSP), and POST /app/documents/<id>/delete,
 # the delete itself, a PROBE row never sent here (UNMEASURED, from the code: DocumentPages routes it under the same
-# requireSession filter as the GET, so signed out it is the same 303; the route probe reads its class alone). The
-# boundary rows: /app/documents/<id>/ and /app/documents/<id>/allx answer Java's JSON 404 (production), where Next
+# requireSession filter as the GET, so signed out it is the same 303 to /app/; neither the 303 nor the Location is
+# asserted by anything, the route probe reads its class (Java) alone, and `paper-wide-any-method` is its red replay).
+# The boundary rows: /app/documents/<id>/ and /app/documents/<id>/allx answer Java's JSON 404 (production), where Next
 # answers a 307 holding the slash and its HTML 404 (a regexp without its `$`, or `/all.*`, fails there); an id that is
 # not a uuid (/app/documents/x) and a value id that is not one (/values/x) answer Java's 303 to /app/, where Next
 # answers its HTML 404 (a regexp of `[^/]+` for either id fails there). Rejected papers do not change (plan, W6-fix):

@@ -64,10 +64,10 @@
 #   fails that row and only that row, and so does a held place that lost the query (`timeline-patient-location`);
 #   /app/timeline/ just outside the exact matcher passes on Java's JSON 404 and fails on Next's 307 there
 #   (`timeline-slash-next`); /app/patients/<id> (the plan's other F8 row) is F10's boundary row (`patient-next`);
-# - F6 (plan Wave 3, Task F; PO ruling P4): GET on the paper /app/documents/<id> (the WhatsApp link and the post-upload
+# - F6 (plan Wave 3, Task F; DR-49, PO ruling 2026-10-23): GET on the paper /app/documents/<id> (the WhatsApp link and the post-upload
 #   landing), its /all and a value's sheet /values/<obs>?from=summary is medioo-web's, signed out a 307 to the sign-in
 #   page holding the place with its query; Java's 303 there before the flip fails that row and only that row, and so
-#   does a held place that names the wrong page or lost the sheet's query (`paper-*-location`). Per P4 everything else
+#   does a held place that names the wrong page or lost the sheet's query (`paper-*-location`). Per DR-49 everything else
 #   under a paper stays Java's, each its session filter's 303, passing on Java's answer and failing on Next's HTML 404
 #   there, one row each: the page image /image?key=x, /page/1, /status and the delete confirm page /delete
 #   (`paper-<sub>-next`); the boundary rows /app/documents/<id>/ and /allx (Java's JSON 404; Next's 307 and HTML 404)
@@ -428,7 +428,7 @@ const server = http.createServer((req, res) => {
     case `/app/documents/${DOC}/values/x`:
       if (brk === "paper-sheet-not-uuid-next") return send(res, path, 404, "text/html; charset=utf-8", NEXT_404, NEXT_CSP);
       return send(res, path, 303, "text/html", "", JAVA_CSP, { Location: "/app/" });
-    // PO ruling P4: the page image, a page, the status poll and the delete confirm page stay Java's (its session
+    // DR-49 (PO ruling 2026-10-23): the page image, a page, the status poll and the delete confirm page stay Java's (its session
     // filter's 303, production 2026-11-02). Next has no route for any of them: through the replica each is its HTML 404,
     // which is what a matcher that took them (`path /app/documents/*`, the plan's Step 5 replay) would answer.
     case `/app/documents/${DOC}/image?key=x`:

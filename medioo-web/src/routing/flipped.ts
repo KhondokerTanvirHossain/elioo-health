@@ -20,11 +20,11 @@
  * F8 (DR-49, PO ruling 2026-10-23): `/app/timeline`, the papers page (plan W8), GET and HEAD only; Java routes no
  * POST /app/timeline. Java's old page is still behind the path, so turning it back on is deleting the Caddy block
  * (RUNBOOK -> Rollback), as for F7, F5 and F10; flipped.test.ts then needs this entry out in the repo too.
- * F6 (PO ruling P4, 2026-10-23, in place of the on-device step): the paper `/app/documents/{id}`, everything on it
+ * F6 (DR-49, PO ruling 2026-10-23, in place of the on-device step): the paper `/app/documents/{id}`, everything on it
  * `/app/documents/{id}/all` and one value's sheet `/app/documents/{id}/values/{obs}` (plan W6), GET and HEAD only.
  * Caddy matches the three with one `path_regexp` (lower-case uuids, anchored at both ends), which flipped.test.ts reads
  * as these three patterns. The page images, `/page/{n}`, `/status`, `/delete` and every POST under a paper stay Java's
- * (P4). Java's old pages are still behind the paths, so turning them back on is deleting the Caddy block (RUNBOOK ->
+ * (DR-49). Java's old pages are still behind the paths, so turning them back on is deleting the Caddy block (RUNBOOK ->
  * Rollback); flipped.test.ts then needs these entries out in the repo too.
  */
 export const FLIPPED: readonly string[] = [

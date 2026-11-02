@@ -186,10 +186,10 @@ medioo.eliooo.org {
 		reverse_proxy medioo-web:3000
 	}
 
-	# F6 (PO ruling P4, 2026-10-23): the paper, everything on it and one value's sheet (plan W6). This is where a
+	# F6 (DR-49, PO ruling 2026-10-23): the paper, everything on it and one value's sheet (plan W6). This is where a
 	# WhatsApp link and the post-upload landing open. GET and HEAD only, and exactly three pages: one lower-case uuid
 	# (as every link writes it), then nothing, `/all`, or `/values/` and a second uuid, anchored at both ends (the query,
-	# `?from=` on a sheet, is not part of the path). So, per P4, Java keeps the page images and crops (/image, /page/<n>),
+	# `?from=` on a sheet, is not part of the path). So, per DR-49, Java keeps the page images and crops (/image, /page/<n>),
 	# the status poll, the delete page and every POST under a paper (POST .../delete is the delete itself), and so do
 	# /app/documents/<id>/ and an id that is not a uuid. Turning the old pages back on is deleting this block (RUNBOOK ->
 	# Rollback).

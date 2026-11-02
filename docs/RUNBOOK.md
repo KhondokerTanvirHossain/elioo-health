@@ -542,10 +542,10 @@ tab (Java never had a page there and routes no `POST /app/health`, so a POST sta
 is exact, so `/app/health/` stays Java's, and `/app/healthz` is medioo-web's own check, routed on its own). From F8,
 `GET` and `HEAD /app/timeline`, the papers page (Java routes no `POST /app/timeline`, so a POST stays Java's JSON 404;
 `path /app/timeline` is exact and ignores the query, so `/app/timeline?patient=<id>`, the address every link to the tab
-carries, is Next's, while `/app/timeline/` and the patient page `/app/patients/<id>` stay Java's). From F6 (PO ruling
-P4), `GET` and `HEAD` on the paper `/app/documents/<uuid>` (where a WhatsApp link and the post-upload landing open), its
+carries, is Next's, while `/app/timeline/` and the patient page `/app/patients/<id>` stay Java's). From F6 (DR-49, PO
+ruling 2026-10-23), `GET` and `HEAD` on the paper `/app/documents/<uuid>` (where a WhatsApp link and the post-upload landing open), its
 `/all` and a value's sheet `/app/documents/<uuid>/values/<uuid>`, one `path_regexp` of lower-case uuids anchored at both
-ends; per P4 Java keeps the page images and crops (`/image`, `/page/<n>`), the status poll `/status`, the delete page
+ends; per DR-49 Java keeps the page images and crops (`/image`, `/page/<n>`), the status poll `/status`, the delete page
 `/delete` and every POST under a paper (`POST .../delete` is the delete itself; Java routes no `POST
 /app/documents/<id>`), and so do `/app/documents/<id>/` and an id that is not a uuid. Every other page is still Java's, and so are every POST to a page (S3: `POST /app/login` and `POST /app/verify`
 included), the no-JS sign-in fallback `/app/basic*` (S1) and every `/app/api/**` path; each screen's own paths come in its

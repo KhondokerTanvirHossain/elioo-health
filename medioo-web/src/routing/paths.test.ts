@@ -105,14 +105,21 @@ describe("paths", () => {
     expect(servedByNext("/app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001", false)).toBe(false);
     // F6: Caddy sends the paper, its /all page and a value's sheet to Next, query and all, so a link to any of them (a
     // papers row, the chat page's paper link, the sheet's `?from=`) is Next's for every viewer; the images, the status
-    // poll and the delete under a paper are still Java's (PO ruling P4), never a soft navigation.
+    // poll and the delete under a paper are still Java's (DR-49, PO ruling 2026-10-23), never a soft navigation.
     const paper = "/app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003";
     expect(FLIPPED).toEqual(expect.arrayContaining(["/app/documents/{id}", "/app/documents/{id}/all", "/app/documents/{id}/values/{obs}"]));
     expect(servedByNext(paper, false)).toBe(true);
     expect(servedByNext(`${paper}/all`, false)).toBe(true);
     expect(servedByNext(`${paper}/values/5e9edf6d-0a2a-4913-8675-9d07a4100004?from=summary`, false)).toBe(true);
+    // This build serves none of the four, so `servedByNext` over its own lists is false for them whatever FLIPPED says.
+    // Judged instead over a build that did serve them, with this PR's FLIPPED: only FLIPPED can make them Next's, so
+    // this goes red the moment FLIPPED takes one. (Caddy's side is flipped.test.ts's `takes <java-only pattern>` check
+    // and the route probe's /image, /page/1, /status, /delete and PROBE POST .../delete rows.)
+    const javaOnly = ["/app/documents/{id}/image", "/app/documents/{id}/page/{n}", "/app/documents/{id}/status", "/app/documents/{id}/delete"];
+    const ifNextServedThem = pathsFor({ next: [...NEXT_PAGES, ...javaOnly], java: JAVA_PAGES, flipped: FLIPPED });
     for (const sub of ["/image?key=x", "/page/1", "/status", "/delete"]) {
-      expect(servedByNext(`${paper}${sub}`, false), sub).toBe(false);
+      expect(ifNextServedThem.servedByNext(`${paper}${sub}`, true), `${sub}: the premise, Next would serve it`).toBe(true);
+      expect(ifNextServedThem.servedByNext(`${paper}${sub}`, false), `${sub}: Caddy still sends it to Java`).toBe(false);
     }
   });
 });
