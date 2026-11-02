@@ -117,7 +117,8 @@ class ChatQuestionsAcceptanceTest {
             assertThat(napa.kind()).isEqualTo(AnswerKind.DECLINED);
             assertThat(handler(napa)).isEqualTo("medicine_purpose");
             assertThat(stub.calls.get()).as("model calls for what a medicine is for").isEqualTo(beforeNapa);
-            assertThat(napa.answer()).startsWith(copy.line("bn", "chat.purpose.not_written", "Ma-র"))
+            // a name no stored line holds: every stored line, never that the medicine is missing (review of #171, finding 6)
+            assertThat(napa.answer()).startsWith(copy.line("bn", "chat.purpose.unmatched", "Ma-র") + "\nTab. Demoprol 5 mg · 1+0+0 · খাবারের পরে")
                     .contains(copy.line("bn", "chat.purpose.ask")).doesNotContain("জ্বর");
             AskAnswer demoprol = ask(asks, f, ma, "Demoprol কীসের ওষুধ?");
             assertThat(handler(demoprol)).isEqualTo("medicine_purpose");

@@ -6,14 +6,19 @@ import com.elioo.baymax.outbound.application.service.Copy;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.baymax.web.adapter.in.ui.UiChatCopyAdapter;
 import com.elioo.baymax.web.adapter.in.ui.UiCopy;
+import com.elioo.baymax.web.application.port.in.HealthUseCase;
+import com.elioo.baymax.web.domain.LabSeries;
+import com.elioo.baymax.web.domain.LatestPrescription;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -84,11 +89,9 @@ class MedicinePurposeGuardTest {
         assertThat(MedicinePurposeReply.of("এটা কিসের ওষুধ?", ctx, "আম্মা", "bn", COPY, 1000).text())
                 .as("no medicine named: every line, under the possessive NameGrammar builds, never a glued ending")
                 .isEqualTo("আম্মার শেষ প্রেসক্রিপশনে লেখা আছে:\n" + PurposeCorpus.RX1 + "\n" + PurposeCorpus.RX2);
-        MedicinePurposeReply.Reply napa = MedicinePurposeReply.of("Napa কীসের?", ctx, "রহিম", "bn", COPY, 1000);
-        assertThat(napa.text()).isEqualTo("রহিমের শেষ প্রেসক্রিপশনে এই ওষুধের নাম নেই।");
-        assertThat(napa.documents()).isEmpty();
-        ChatContext none = new ChatContext(List.of("PATIENT Ma"), java.util.Set.of(), List.of(), List.of(), false);
-        assertThat(MedicinePurposeReply.of("Napa কীসের?", none, "Ma", "bn", COPY, 1000).text()).isEqualTo("কাগজপত্রে Ma-র কোনো ওষুধের লাইন নেই।");
+        assertThat(MedicinePurposeReply.of("Napa কীসের?", ctx, "রহিম", "bn", COPY, 1000).text())
+                .as("a name no line holds: every line, under the possessive NameGrammar builds, never that it is missing")
+                .startsWith(COPY.line("bn", "chat.purpose.unmatched", "রহিমের") + "\n" + PurposeCorpus.RX1);
         // the room: the first line and the pointer to the rest fit, the long second line does not
         String longLine = "Cap. Examplazole 20 mg · 0+0+1 · রাতে খাবারের আগে, পানি দিয়ে, প্রতিদিন একই সময়ে, ১৪ দিন, তারপর ডাক্তার দেখাবেন";
         ChatContext two = new ChatContext(List.of("PATIENT Ma"), java.util.Set.of(), List.of(PurposeCorpus.RX1, longLine),
@@ -101,6 +104,102 @@ class MedicinePurposeGuardTest {
                 .isEqualTo(frame + "\n" + PurposeCorpus.RX1 + "\n" + more).hasSizeLessThanOrEqualTo(room);
         assertThat(MedicinePurposeReply.of("what is this medicine for?", two, "Ma", "en", COPY, 1000).text())
                 .isEqualTo(frame + "\n" + PurposeCorpus.RX1 + "\n" + longLine);
+    }
+
+    /**
+     * Review of #171, finding 6, the dangerous direction: code never tells a family that a medicine on the prescription is
+     * not there. A stored name typed in Bangla script, a typo of a stored name, "which one is the X medicine", and a
+     * prescription whose only line is elided (DR-16) each show what is stored, never "এই ওষুধের নাম নেই" and never that
+     * the papers hold no line. Uses only the reply's text, so it replays unchanged against the code before the fix.
+     */
+    @Test
+    void aMedicineOnThePrescriptionIsNeverCalledMissing() {
+        ChatContext ctx = PurposeCorpus.context();
+        for (String q : List.of("ডেমোপ্রল কীসের ওষুধ?", "Demopral কী কাজ করে?", "আম্মার প্রেশারের ওষুধ কোনটা?")) {
+            String text = MedicinePurposeReply.of(q, ctx, "Ma", "bn", COPY, 1000).text();
+            assertThat(text).as(q).contains(PurposeCorpus.RX1).doesNotContain("এই ওষুধের নাম নেই");
+        }
+    }
+
+    /** Finding 6 again: a prescription whose only line is elided holds a medicine; code never says it holds none. */
+    @Test
+    void anElidedLineIsNeverCalledMissing() {
+        ChatContext elided = elidedOnly();
+        String none = COPY.line("bn", "chat.purpose.none", NameGrammar.possessiveIn("bn", "Ma"));
+        for (String q : List.of("Xyzolam কীসের?", "এটা কিসের ওষুধ?")) {
+            String text = MedicinePurposeReply.of(q, elided, "Ma", "bn", COPY, 1000).text();
+            assertThat(text).as(q + " with only an elided line").isNotEqualTo(none).doesNotContain("এই ওষুধের নাম নেই")
+                    .doesNotContain("কোনো ওষুধের লাইন নেই");
+        }
+    }
+
+    /**
+     * Review of #171, findings 6, 9 and 16: what the code-built reply says when no stored line is named (every line, after
+     * "I could not match that name"), what it says about an elided line (it is on the paper: see the photo), and that it
+     * returns the lines it quoted, in order, and only the prescription's paper, so each quoted line can be shown beside its
+     * crop (DR-12) once #166 lands.
+     */
+    @Test
+    void theCodeReplyNamesTheLinesItQuotedAndOnlyThePrescription() {
+        ChatContext ctx = PurposeCorpus.context();
+        String poss = NameGrammar.possessiveIn("bn", "Ma");
+        MedicinePurposeReply.Reply napa = MedicinePurposeReply.of("Napa কীসের?", ctx, "Ma", "bn", COPY, 1000);
+        assertThat(napa.text()).isEqualTo(COPY.line("bn", "chat.purpose.unmatched", poss) + "\n" + PurposeCorpus.RX1 + "\n"
+                + PurposeCorpus.RX2);
+        assertThat(napa.quoted()).containsExactly(1, 2);
+        assertThat(napa.documents()).containsExactly(PurposeCorpus.PAPER);
+        MedicinePurposeReply.Reply bangla = MedicinePurposeReply.of("ডেমোপ্রল কীসের ওষুধ?", ctx, "Ma", "bn", COPY, 1000);
+        assertThat(bangla.text()).isEqualTo(COPY.line("bn", "chat.purpose.written", poss) + "\n" + PurposeCorpus.RX1);
+        assertThat(bangla.quoted()).containsExactly(1);
+        assertThat(MedicinePurposeReply.of("Demopral কী কাজ করে?", ctx, "Ma", "bn", COPY, 1000).quoted()).containsExactly(1);
+        MedicinePurposeReply.Reply which = MedicinePurposeReply.of("আম্মার প্রেশারের ওষুধ কোনটা?", ctx, "Ma", "bn", COPY, 1000);
+        assertThat(which.text()).as("no name typed, only \"which one\": every line under the written frame")
+                .startsWith(COPY.line("bn", "chat.purpose.written", poss) + "\n");
+        assertThat(which.quoted()).containsExactly(1, 2);
+        // every reply's body lines are exactly its quoted lines, rendered, in order
+        for (MedicinePurposeReply.Reply r : List.of(napa, bangla, which)) {
+            List<String> body = List.of(r.text().split("\n"));
+            List<String> expected = r.quoted().stream().map(n -> AnswerCheck.resolve("{{rx:" + n + "}}", ctx)).toList();
+            assertThat(body.subList(1, body.size())).isEqualTo(expected);
+        }
+        ChatContext elided = elidedOnly();
+        assertThat(elided.unshownNames()).containsExactly("xyzolam");
+        MedicinePurposeReply.Reply unshown = MedicinePurposeReply.of("Xyzolam কীসের?", elided, "Ma", "bn", COPY, 1000);
+        assertThat(unshown.text()).isEqualTo(COPY.line("bn", "chat.purpose.unshown", poss));
+        assertThat(unshown.quoted()).isEmpty();
+        assertThat(unshown.documents()).containsExactly(ELIDED_PAPER);
+        // a shown line and an elided one: the elided one asked about is on the paper, never "not there"
+        ChatContext both = withMedicines(List.of(med("Tab. Demoprol", "5 mg", "1+0+0"), med("Tab. Xyzolam", "2 mg", "1+0+…")));
+        assertThat(MedicinePurposeReply.of("Xyzolam কীসের?", both, "Ma", "bn", COPY, 1000).text())
+                .isEqualTo(COPY.line("bn", "chat.purpose.unshown", poss));
+        assertThat(MedicinePurposeReply.of("Demoprol কীসের?", both, "Ma", "bn", COPY, 1000).quoted()).containsExactly(1);
+        ChatContext none = new ChatContext(List.of("PATIENT Ma"), java.util.Set.of(), List.of(), List.of(), false);
+        MedicinePurposeReply.Reply nothing = MedicinePurposeReply.of("Napa কীসের?", none, "Ma", "en", COPY, 1000);
+        assertThat(nothing.text()).isEqualTo(COPY.line("en", "chat.purpose.none", "Ma's")).contains("latest prescription");
+        assertThat(nothing.quoted()).isEmpty();
+        assertThat(nothing.documents()).isEmpty();
+    }
+
+    static final UUID ELIDED_PAPER = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100015");
+
+    /** A prescription whose one medicine line is elided ("…"), so it is never shown (DR-16), built as production builds it. */
+    static ChatContext elidedOnly() {
+        return withMedicines(List.of(med("Tab. Xyzolam", "2 mg", "1+0+…")));
+    }
+
+    static ChatContext withMedicines(List<Map<String, Object>> medicines) {
+        LatestPrescription rx = new LatestPrescription(ELIDED_PAPER, LocalDate.parse("2026-09-20"), false, false, medicines,
+                Optional.empty());
+        return ChatContextBuilder.assemble("Ma", new HealthUseCase.HealthLabs(List.of(), new LabSeries.BpSeries(List.of())), rx, 6000,
+                ChatLabels.of("bn", COPY));
+    }
+
+    static Map<String, Object> med(String name, String dose, String frequency) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("name", name);
+        m.put("dose_text", dose);
+        m.put("frequency_text", frequency);
+        return m;
     }
 
     @Test

@@ -86,7 +86,7 @@ class ChatAnswerServiceTest {
     static final ChatContext CTX = new ChatContext(
             List.of("PATIENT Ma", "VALUE Creatinine: 1.8 mg/dL | printed range 0.7–1.3 | OUTSIDE high | paper 2026-09-12",
                     "PRESCRIPTION 2026-09-20", "{{rx:1}} = " + RX1),
-            Set.of("1.8", "0.7", "1.3", "2026", "9", "12", "20"), List.of(RX1), List.of(PAPER), false);
+            Set.of("1.8", "0.7", "1.3", "2026", "9", "12", "20"), List.of(RX1), List.of(PAPER), false).withPrescription(PAPER, Set.of());
 
     private final BaymaxProperties properties = new BaymaxProperties();
     private final HealthRecordPort records = mock(HealthRecordPort.class);
@@ -650,7 +650,11 @@ class ChatAnswerServiceTest {
         assertThat(stored().costUsd()).isNull();
     }
 
-    /** "Napa কীসের?" names a medicine the patient's latest prescription does not hold: said so in code, no model call. */
+    /**
+     * "Napa কীসের?" names a word no stored line holds: code shows every stored line after "I could not match that name",
+     * never that the medicine is not there (review of #171, finding 6: the word may be a stored name typed otherwise), no
+     * model call.
+     */
     @Test
     void aPurposeQuestionAboutAMedicineNotOnThePapersIsAnsweredByCode() {
         model(Mono.just(reply("Napa সাধারণত জ্বর আর ব্যথার জন্য দেওয়া হয়।", 1, 1)));
@@ -659,8 +663,8 @@ class ChatAnswerServiceTest {
 
         assertAnsweredByCode();
         assertThat(a.kind()).isEqualTo(AnswerKind.DECLINED);
-        assertThat(a.answer()).isEqualTo(copy.line("bn", "chat.purpose.not_written", "Ma-র") + purposeTail("bn"));
-        assertThat(a.answer()).doesNotContain("জ্বর").doesNotContain(RX1);
+        assertThat(a.answer()).isEqualTo(copy.line("bn", "chat.purpose.unmatched", "Ma-র") + "\n" + RX1 + purposeTail("bn"));
+        assertThat(a.answer()).doesNotContain("জ্বর");
         assertThat(stored().answer()).isEqualTo(a.answer());
     }
 
@@ -742,17 +746,53 @@ class ChatAnswerServiceTest {
         assertThat(a.answer()).isEqualTo("Ma-র ক্রিয়েটিনিন 1.8 mg/dL।" + purposeTail("bn"));
     }
 
-    /** A purpose question about a stored LAB ("what is creatinine for?") is not a medicine's: the model answers it. */
+    /**
+     * A purpose question about a stored LAB is not a medicine's: the model answers it. The lab is Ferritin, which no
+     * built-in lab word holds, so the first route (no lab names yet) sends it to code, and only the route run again once
+     * the context is read sends it to the model (review of #171, finding 4: "creatinine" was a built-in lab word, so the
+     * re-route never ran).
+     */
     @Test
     void aPurposeQuestionAboutAStoredLabGoesToTheModel() {
-        when(contexts.build(eq(FAMILY), eq(PATIENT), eq("Ma"), any())).thenAnswer(i -> Mono.just(ChatAnswerWordingTest.live(i.getArgument(3))));
-        model(Mono.just(reply("Ma's Creatinine 1.8 mg/dL is above the range.", 1, 1)));
+        ChatContext ferritin = new ChatContext(List.of("PATIENT Ma", "VALUE Ferritin: 9 ng/mL | printed range 13–150 | OUTSIDE low | paper 2026-09-12",
+                "PRESCRIPTION 2026-09-20", "{{rx:1}} = " + RX1), Set.of("9", "13", "150", "2026"), List.of(RX1), List.of(PAPER), false,
+                List.of(new ChatContext.Fact("Ferritin", "ng/mL", Set.of("9", "13", "150"), "OUTSIDE low")), Set.of(), CTX.medicineNames());
+        when(contexts.build(eq(FAMILY), eq(PATIENT), eq("Ma"), any())).thenReturn(Mono.just(ferritin));
+        model(Mono.just(reply("Ma's Ferritin 9 ng/mL is below the range printed on the report.", 1, 1)));
 
-        AskAnswer a = service().ask(FAMILY, PATIENT, "what is creatinine for?", "en").block(Duration.ofSeconds(10));
+        AskAnswer a = service().ask(FAMILY, PATIENT, "what is ferritin for?", "en").block(Duration.ofSeconds(10));
 
+        verify(contexts, org.mockito.Mockito.atLeastOnce()).build(eq(FAMILY), eq(PATIENT), eq("Ma"), any());
+        assertThat(stored().handler() + " calls=" + stored().modelCalls()).as("the path: handler and model calls").isEqualTo("model calls=1");
         verify(model, times(1)).invoke(any());
-        assertThat(stored().handler()).isEqualTo("model");
+        verify(turns).reserveCounted(eq(FAMILY), eq(PATIENT), anyString(), anyString(), any(), anyInt());
         assertThat(a.answer()).doesNotContain(line("en", "chat.purpose.ask"));
+    }
+
+    /**
+     * Review of #171, finding 1 (b): the name the family typed in a purpose question is a medicine to the answer check, so
+     * a sentence about it that no stored name or medicine word marks ("Napa প্যারাসিটামল জাতীয়।", what kind it is) is
+     * refused and repaired, never shown.
+     */
+    @Test
+    void theNameTheFamilyTypedIsAMedicineToTheAnswerCheck() {
+        model(Mono.just(reply("Napa প্যারাসিটামল জাতীয়। Ma-র ক্রিয়েটিনিন 1.8 mg/dL।", 1, 1)), Mono.just(reply("Ma-র ক্রিয়েটিনিন 1.8 mg/dL।", 1, 1)));
+
+        AskAnswer a = ask("Napa কীসের? আর ক্রিয়েটিনিন কত?");
+
+        assertThat(stored().handler()).as("the draft says what kind of medicine Napa is").isEqualTo("repair");
+        assertThat(stored().violationCodes()).contains("medicine_purpose");
+        verify(model, times(2)).invoke(any());
+        assertThat(a.answer()).doesNotContain("জাতীয়");
+    }
+
+    /** Review of #171, finding 6: a stored name typed in Bangla script is the stored medicine, never "not on the prescription". */
+    @Test
+    void aStoredNameTypedInBanglaShowsItsLine() {
+        AskAnswer a = ask("ডেমোপ্রল কীসের ওষুধ?");
+
+        assertAnsweredByCode();
+        assertThat(a.answer()).startsWith(copy.line("bn", "chat.purpose.written", "Ma-র") + "\n" + RX1).doesNotContain("এই ওষুধের নাম নেই");
     }
 
     /**
@@ -818,18 +858,24 @@ class ChatAnswerServiceTest {
             int calls = org.mockito.Mockito.mockingDetails(model).getInvocations().stream()
                     .filter(inv -> inv.getMethod().getName().equals("invoke")).toList().size();
             boolean purposeLine = a.answer().contains(line("bn", "chat.purpose.ask"));
+            // a question code also calls a dose question ("Does Napa reduce fever?" holds "reduce") keeps the dose path it had
+            // before P14: the model, with the dose rule and both code lines, never code's reply without the dose line
+            boolean dose = DoseChangeGuard.asksForChange(r.text(), ctx.medicineNames());
+            boolean doseLine = a.answer().contains(line("bn", "chat.dose.ask_doctor"));
             boolean ok = switch (r.expect()) {
-                case "code" -> "medicine_purpose".equals(handler) && calls == 0 && purposeLine;
+                case "code" -> dose
+                        ? !"medicine_purpose".equals(handler) && calls >= 1 && purposeLine && doseLine
+                        : "medicine_purpose".equals(handler) && calls == 0 && purposeLine;
                 case "mixed" -> !"medicine_purpose".equals(handler) && calls >= 1 && purposeLine;
                 case "none" -> !"medicine_purpose".equals(handler) && calls >= 1 && !purposeLine;
                 default -> throw new AssertionError("row " + r.line() + ": unknown expectation " + r.expect());
             };
             if (!ok) {
-                wrong.add("row " + r.line() + ": expected " + r.expect() + " but handler=" + handler + " calls=" + calls + " purpose_line="
-                        + purposeLine + ": " + r.text());
+                wrong.add("row " + r.line() + ": expected " + r.expect() + (dose ? " (dose)" : "") + " but handler=" + handler
+                        + " calls=" + calls + " purpose_line=" + purposeLine + ": " + r.text());
             }
         }
-        assertThat(rows).as("question rows run").isGreaterThanOrEqualTo(40);
+        assertThat(rows).as("question rows run").isGreaterThanOrEqualTo(75);
         assertThat(wrong).isEmpty();
     }
 }

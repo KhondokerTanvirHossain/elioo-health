@@ -60,7 +60,7 @@ final class PurposeCorpus {
         names.addAll(ChatContext.namesIn("Tab. Calmora"));
         return new ChatContext(List.of("PATIENT Ma", "VALUE Creatinine: 1.8 mg/dL | 0.7–1.3 | OUTSIDE high | 2026-09-12",
                 "PRESCRIPTION 2026-09-20", "{{rx:1}} = " + RX1, "{{rx:2}} = " + RX2), numbers, List.of(RX1, RX2), List.of(PAPER),
-                false, facts, Set.of(RX_DATE), names);
+                false, facts, Set.of(RX_DATE), names).withPrescription(PAPER, Set.of());
     }
 
     /** The stored labs' names in normal form, as AnswerCheck reads them. */

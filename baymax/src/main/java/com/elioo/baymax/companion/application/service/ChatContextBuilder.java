@@ -109,13 +109,16 @@ public class ChatContextBuilder {
         List<String> verbatim = new ArrayList<>();
         Set<String> rxNumbers = new LinkedHashSet<>();
         Set<String> names = new LinkedHashSet<>();
+        Set<String> unshown = new LinkedHashSet<>();
         if (rx.found()) {
             rxLines.add("PRESCRIPTION " + (rx.date() == null ? labels.undated() : rx.date()));
             rxNumbers.addAll(AnswerCheck.yearOf(rx.date()));
             for (Map<String, Object> m : rx.medicines()) {
                 String line = MedicineTranscription.line(m);
-                // an abbreviated dosing line never reaches a family (DR-16); the model is not told of it either
+                // an abbreviated dosing line never reaches a family (DR-16); the model is not told of it either. Its name is
+                // kept apart: the medicine is on the paper, and code never says it is not (review of #171, finding 6)
                 if (line.isEmpty() || !MedicineTranscription.elided(List.of(m)).isEmpty()) {
+                    unshown.addAll(ChatContext.namesIn(m.get("name") == null ? "" : String.valueOf(m.get("name"))));
                     continue;
                 }
                 verbatim.add(line);
@@ -177,7 +180,8 @@ public class ChatContextBuilder {
         if (dropped > 0) {
             lines.add(notShown(dropped));
         }
-        return new ChatContext(lines, numbers, verbatim, new ArrayList<>(documents), truncated, records, dates, names, labels.foreign());
+        return new ChatContext(lines, numbers, verbatim, new ArrayList<>(documents), truncated, records, dates, names, labels.foreign(),
+                rx.found() ? rx.documentId() : null, unshown);
     }
 
     private static int tokens(String head, List<List<Fact>> series, List<String> rxLines, int dropped) {

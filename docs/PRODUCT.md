@@ -131,7 +131,7 @@ Answers questions grounded in the patient's own timeline plus general medical kn
 | May | Never |
 |-------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------|
 | Suggest what a report or prescription points to — always framed “this suggests X, confirm with a doctor” and grounded in what is written. | Tell anyone to start, stop or change a medicine or dose.   |
-| Explain what a medicine is for, in plain Bangla.                                                                                          | Downgrade urgency. When uncertain, escalate.               |
+| Explain what a medicine is for, in plain Bangla. *(Withdrawn: DR-16 for explanations, nudges and WhatsApp; DR-50 amendment P14 for web chat: only what the papers say, the purpose question goes to the doctor or pharmacist.)* | Downgrade urgency. When uncertain, escalate.               |
 | Say “see a doctor” plus exactly what to bring.                                                                                            | Interpret imaging beyond the radiologist's written report. |
 | Say “I couldn't read this clearly — retake in daylight, flat.”                                                                            | Answer when extraction confidence is low.                  |
 

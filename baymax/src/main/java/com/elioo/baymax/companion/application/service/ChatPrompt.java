@@ -55,8 +55,16 @@ public final class ChatPrompt {
             + "it is, even if you know it, and not with \"usually\", \"generally\" or \"may\": never write \"used for\", \"is for\", "
             + "\"treats\", \"helps\", \"a blood pressure medicine\", \"কীসের জন্য দেওয়া হয়\", \"ব্যবহৃত হয়\", \"জন্য দেওয়া হয়\", "
             + "\"জ্বরের ওষুধ\", \"ব্যথার ওষুধ\" or a kind of medicine (\"antibiotic\", \"অ্যান্টিবায়োটিক\"). State only what the "
-            + "prescription writes about it, through its {{rx:n}} token, and when the QUESTION asks what a medicine is for, say "
-            + "nothing about it: code adds the line that sends what it is for to the doctor or the pharmacist.";
+            + "prescription writes about it, through its {{rx:n}} token.";
+
+    /**
+     * Only for a question code decided asks what a medicine is for ({@link MedicinePurposeGuard#route} MIXED): code appends
+     * {@code chat.purpose.ask} after the answer, so the prompt says so only then, as the dose rule is said only for a dose
+     * question (review of #171, finding 3: said in every prompt, it was false wherever code adds no line).
+     */
+    static final String PURPOSE_ASKED = "This QUESTION asks, among other things, what a medicine is for (code decided so, and code "
+            + "adds the line that sends that to the doctor or the pharmacist after your answer): say nothing about what it is for, "
+            + "and answer the rest.";
 
     /** The token the example shows: any line, the one the question names (review of #170, finding 7). */
     static final String ANY_LINE = "{{rx:n}}";
@@ -92,6 +100,15 @@ public final class ChatPrompt {
      */
     public static LlmRequest of(ChatContext ctx, ChatLabels labels, String patientName, String question, boolean doseQuestion,
                                 int bodyChars, List<String> priorViolations, int maxTokens) {
+        return of(ctx, labels, patientName, question, doseQuestion, false, bodyChars, priorViolations, maxTokens);
+    }
+
+    /**
+     * @param purposeQuestion code's decision that the question asks what a medicine is for and code appends
+     *                        {@code chat.purpose.ask}: only then does the prompt say code adds that line
+     */
+    public static LlmRequest of(ChatContext ctx, ChatLabels labels, String patientName, String question, boolean doseQuestion,
+                                boolean purposeQuestion, int bodyChars, List<String> priorViolations, int maxTokens) {
         boolean english = "en".equals(labels.lang());
         String language = english ? "English" : "Bangla";
         String bangla = english ? "" : " Write Bangla words only, apart from a name or a unit the FACTS write in English: never "
@@ -104,6 +121,9 @@ public final class ChatPrompt {
         rules.add("Answer in %s. Begin by naming the patient, %s.%s".formatted(language, patientName, bangla));
         rules.add("Use only the FACTS. When the FACTS do not show what is asked, say that the papers do not show it.");
         rules.add(PURPOSE_RULE);
+        if (purposeQuestion) {
+            rules.add(PURPOSE_ASKED);
+        }
         rules.add("""
                 To show what the prescription says, write its {{rx:n}} token exactly as it appears in the FACTS, in a \
                 sentence of its own with no number and no time of day; never retype a prescription line and never write a \

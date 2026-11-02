@@ -91,6 +91,15 @@ public final class AnswerCheck {
 
     /** The content violations of the model's text, in a fixed order, each once. */
     public static List<String> violations(String modelText, ChatContext ctx) {
+        return violations(modelText, ctx, Set.of());
+    }
+
+    /**
+     * {@link #violations(String, ChatContext)}, with the names the family typed in a question about what a medicine is for
+     * ({@link MedicinePurposeGuard#askedNames}, "napa"), which the purpose rule counts as medicines beside the stored ones,
+     * and the names of lines never shown (review of #171, finding 1 b).
+     */
+    public static List<String> violations(String modelText, ChatContext ctx, Set<String> askedNames) {
         Set<String> out = new LinkedHashSet<>();
         if (modelText == null || modelText.isBlank()) {
             out.add("empty_body");
@@ -155,7 +164,10 @@ public final class AnswerCheck {
         }
         out.addAll(DoseChangeGuard.instructs(own, ctx.medicineNames(), labNames));
         // PO ruling P14: what a medicine is for, treats or what kind it is, never the model's to say
-        out.addAll(MedicinePurposeGuard.states(own, ctx.medicineNames(), labNames, MedicinePurposeGuard.patientOf(ctx)));
+        Set<String> medicines = new LinkedHashSet<>(ctx.medicineNames());
+        medicines.addAll(ctx.unshownNames());
+        medicines.addAll(askedNames == null ? Set.of() : askedNames);
+        out.addAll(MedicinePurposeGuard.states(own, medicines, labNames, MedicinePurposeGuard.patientOf(ctx)));
         for (String r : REASSURANCE) {
             if (DoseChangeGuard.hits(hay, r)) {
                 out.add("reassurance:" + r);

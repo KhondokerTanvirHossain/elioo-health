@@ -79,6 +79,31 @@ answer	flag	Demoprole is used for blood pressure.
 # does; the model retyping the indication a paper prints is refused like any other purpose sentence
 answer	flag	Calmora ঘুমের জন্য।
 answer	flag	The prescription says Calmora is for sleep.
+# review of #171, finding 1: a condition and what the medicine does to it, with NO strong term, about a medicine the
+# family typed that is not on the papers (Napa) or a stored name in Bangla script (ডেমোপ্রল): refused with or without a
+# medicine reference the code recognises
+answer	flag	Napa সাধারণত জ্বর কমায়।
+answer	flag	ডেমোপ্রল প্রেশার কমায়।
+answer	flag	ডেমোপ্রল উচ্চ রক্তচাপে দেওয়া হয়।
+answer	flag	Napa সাধারণত মাথাব্যথায় দেওয়া হয়।
+answer	flag	Napa jor komay
+answer	flag	নাপা প্যারাসিটামল, জ্বর নামায়।
+answer	flag	Ma-র শেষ প্রেসক্রিপশনে লেখা আছে: {{rx:1}}। ডেমোপ্রল রক্তচাপ নিয়ন্ত্রণে রাখে।
+# a stored name in Bangla script is the stored medicine (NameSkeleton): what kind it is, with no strong term
+answer	flag	ডেমোপ্রল প্যারাসিটামল জাতীয়।
+# review of #171, finding 7: a pronoun or a following sentence beside a value word or a lab, with an effect verb, "used
+# for" next to a lab, and "prescribe this when" a condition (no FOR word): each says what the medicine is for
+answer	flag	{{rx:1}}. It lowers the blood sugar level.
+answer	flag	{{rx:1}}. It is used for high creatinine.
+answer	flag	{{rx:1}}. It keeps your HbA1c in range.
+answer	flag	{{rx:1}}। এটি সুগারের মান কমায়।
+answer	flag	{{rx:1}}. This brings the glucose result down.
+answer	flag	{{rx:1}}. It will help your sugar readings.
+answer	flag	{{rx:1}}. Doctors often prescribe this when the sugar is high.
+# review of #171, finding 10: the subject-drop rule reaches only the sentence right after a medicine sentence; a claim two
+# sentences on is still refused by the rules that need no medicine reference
+answer	flag	{{rx:1}}। ডাক্তার লিখেছেন। সাধারণত প্রেশারের জন্য।
+answer	flag	Ma's latest prescription says: {{rx:1}}. The doctor wrote it. It is usually given when the pressure is high.
 #
 # --- answers that stay shown: the written line, a deferral, a lab, the papers
 answer	pass	{{rx:1}}
@@ -112,6 +137,13 @@ answer	pass	Ma-র ক্রিয়েটিনিন 1.8 mg/dL, কাগজ�
 answer	pass	Ma's latest prescription says: {{rx:1}}. The range printed on the report is 0.7–1.3, so it is above the range for this test.
 answer	pass	ধন্যবাদ। Ma-র কাগজগুলো কাগজপত্রে আছে।
 answer	pass	এটি কাগজে ছাপা সীমার উপরে।
+# review of #171, finding 5: a lab explained in Bangla, its name transliterated, is the lab's, not a medicine's
+answer	pass	ক্রিয়েটিনিন কিডনির কাজ দেখার জন্য করা হয়।
+answer	pass	Ma-র ক্রিয়েটিনিন বেশি, এটা কিডনির সাথে সম্পর্কিত।
+# review of #171, finding 10 (decision): the sentence after a medicine sentence whose own subject is the papers is about the
+# papers, so the dose example the prompt teaches may be followed by an ordinary sentence
+answer	pass	Ma's latest prescription says: {{rx:1}}. Bring the papers to the doctor for the next visit.
+answer	pass	আম্মার শেষ প্রেসক্রিপশনে লেখা আছে: {{rx:1}}। পরের বার দেখানোর জন্য কাগজটা সাথে নিন।
 #
 # --- questions: what a medicine is for, does, treats, whether it is for X, what kind it is: code answers, no model call
 question	code	Napa কীসের?
@@ -142,12 +174,36 @@ question	code	ধন্যবাদ, Napa কীসের?
 question	code	Napa আর Demoprol কিসের ওষুধ?
 question	code	Demo-prol কীসের?
 question	code	what's Calmora for?
+# review of #171, finding 3: whether it is for X, what it does to X, what kind it is, asked yes/no or "for what"
+question	code	does Demoprol lower blood pressure?
+question	code	Demoprol প্রেশার কমায়?
+question	code	Demoprol কি প্রেশার কমায়?
+question	code	Napa কি জ্বর কমায়?
+question	code	Does Napa reduce fever?
+question	code	can Demoprol treat fever?
+question	code	Will Demoprol help her sleep?
+question	code	Is Demoprol an antibiotic?
+question	code	Demoprol কি অ্যান্টিবায়োটিক?
+question	code	Is Demoprol a painkiller?
+question	code	what condition is Demoprol for?
+question	code	Demoprol is for what?
+question	code	Demoprol, what for?
+# review of #171, finding 6: a stored name in Bangla script, a typo of a stored name, and "which one is the X medicine"
+question	code	ডেমোপ্রল কীসের ওষুধ?
+question	code	Demopral কী কাজ করে?
+question	code	আম্মার প্রেশারের ওষুধ কোনটা?
 # a purpose question with another question in it: the model answers, the checks run, code still appends chat.purpose.ask
 question	mixed	Napa কীসের? আর ক্রিয়েটিনিন কত?
 question	mixed	what is Demoprol for and what is Ma's creatinine?
 question	mixed	Demoprol কিসের ওষুধ, আর রিপোর্টটা কবে করা?
 question	mixed	Napa কীসের? বন্ধ করব?
 question	mixed	Demoprol কীসের ওষুধ? শেষ প্রেসক্রিপশনটা কবে লেখা?
+# review of #171, finding 8: a purpose question that also reports an allergy, a reaction or asks if it is safe: the model
+# answers the whole question, so the report is never lost behind code's reply
+question	mixed	why was she given Napa, she is allergic
+question	mixed	what is Napa for? she vomited after it
+question	mixed	Napa কীসের? খাওয়ার পর থেকে বমি হচ্ছে
+question	mixed	is Napa safe for fever in pregnancy?
 # not a purpose question
 question	none	আম্মার ক্রিয়েটিনিন কত?
 question	none	শেষ প্রেসক্রিপশনে কী লেখা?
@@ -169,3 +225,9 @@ question	none	can we see the trend of creatinine?
 question	none	কোন ডাক্তার প্রেসক্রিপশন লিখেছেন?
 question	none	Has Ma's creatinine dropped since the last paper?
 question	none	Demoprol কি শুরু করব?
+# review of #171, finding 2: "for" or "কিসের জন্য" in a question about something that is not a medicine
+question	none	what is the date for the next appointment?
+question	none	What was the doctor's advice for Ma?
+question	none	what is the reason for her fever?
+question	none	আম্মার পেটে ব্যথা কিসের জন্য?
+question	none	কাল কিসের জন্য যেতে হবে?
