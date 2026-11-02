@@ -51,6 +51,18 @@
 #   /app/patients/<id>, /app/patients/x/profile and the /profile/ boundary rows and no other, so the plan's second F8
 #   row (the patient page stays Java's) has a red replay on the papers block itself. Each edit is anchored on the
 #   papers block;
+# - F6's one regexp (the paper, /all and /values/<uuid>), each way it could be wrong, each edit anchored on the paper
+#   block: `paper-missing` fails the three pages' GET and PROBE HEAD rows (six lines); `paper-get-only` the three HEAD
+#   rows alone; `paper-any-method` the PROBE POST on the paper alone (Java routes no POST there; POST .../delete is
+#   outside the regexp either way); `paper-no-all` and `paper-no-sheet` each drop one alternative and fail that page's
+#   GET and HEAD alone; `paper-any-id` and `paper-any-value-id` (`[^/]+` for either uuid) fail /app/documents/x and
+#   /values/x alone; `paper-unanchored` (no `$`) takes every GET under a paper and fails the seven Java rows there (the
+#   slash, /allx, /values/x, and DR-49's /image, /page/1, /status and /delete). `paper-wide` is the plan's Step 5 replay
+#   of Review Focus 1, the regexp replaced by `path /app/documents/*`: it fails those seven and /app/documents/x, and
+#   among them `FAIL /app/documents/<uuid>/image?key=x got 298 (next), expected 299 (java)`; `paper-wide-any-method`
+#   is that wide path with the method dropped too, the one edit that lets a POST under a paper reach Next: it fails
+#   paper-wide's eight and both PROBE POST rows, among them `FAIL PROBE POST /app/documents/<uuid>/delete got 298
+#   (next), expected 299 (java)`, so DR-49's POST-only row (the delete itself stays Java's) has a red replay;
 # - a table with no rows, a file with no medioo.eliooo.org block, and a file with an upstream the probe does not know
 #   each fail, rather than pass vacuously or send a row somewhere unreplaced.
 set -uo pipefail
@@ -71,9 +83,11 @@ CASES=0
 # /app/home/, PROBE HEAD /app/home and PROBE POST /app/home, and F10's /app/family, /app/family/, PROBE HEAD and PROBE
 # POST /app/family, /app/patients/<id>/profile, its /profile/, /app/patients/x/profile, /app/patients/<id>, and PROBE
 # HEAD and PROBE POST on the profile, and F9's /app/health, /app/health/, PROBE HEAD and PROBE POST /app/health, and
-# F8's /app/timeline, /app/timeline?patient=<id>, /app/timeline/, PROBE HEAD and PROBE POST /app/timeline (the probe
-# sends PROBE rows; the production run never does)
-ROWS=56
+# F8's /app/timeline, /app/timeline?patient=<id>, /app/timeline/, PROBE HEAD and PROBE POST /app/timeline, and F6's
+# paper, its /all and the sheet (each also as PROBE HEAD), PROBE POST on the paper, /app/documents/<id>/, /allx,
+# /app/documents/x, /values/x, /image?key=x, /page/1, /status, /delete and PROBE POST .../delete (the probe sends PROBE
+# rows; the production run never does)
+ROWS=72
 
 fail() { echo "FAIL: $1"; FAILED=1; }
 
@@ -111,7 +125,12 @@ for line in 'PASS /app/ 298 (next)' 'PASS /app 298 (next)' 'PASS HEAD /app/ 298 
   'PASS /app/health 298 (next)' 'PASS PROBE HEAD /app/health 298 (next)' 'PASS PROBE POST /app/health 299 (java)' \
   'PASS /app/health/ 299 (java)' \
   'PASS /app/timeline 298 (next)' 'PASS /app/timeline?patient=5e9edf6d-0a2a-4913-8675-9d07a4100001 298 (next)' 'PASS PROBE HEAD /app/timeline 298 (next)' \
-  'PASS PROBE POST /app/timeline 299 (java)' 'PASS /app/timeline/ 299 (java)'; do
+  'PASS PROBE POST /app/timeline 299 (java)' 'PASS /app/timeline/ 299 (java)' \
+  'PASS /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003 298 (next)' 'PASS /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/all 298 (next)' 'PASS /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/values/5e9edf6d-0a2a-4913-8675-9d07a4100004?from=summary 298 (next)' \
+  'PASS PROBE HEAD /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003 298 (next)' 'PASS PROBE HEAD /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/all 298 (next)' 'PASS PROBE HEAD /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/values/5e9edf6d-0a2a-4913-8675-9d07a4100004?from=summary 298 (next)' \
+  'PASS PROBE POST /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003 299 (java)' 'PASS PROBE POST /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/delete 299 (java)' \
+  'PASS /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=x 299 (java)' 'PASS /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/page/1 299 (java)' 'PASS /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/status 299 (java)' 'PASS /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/delete 299 (java)' \
+  'PASS /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/ 299 (java)' 'PASS /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/allx 299 (java)' 'PASS /app/documents/x 299 (java)' 'PASS /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/values/x 299 (java)'; do
   grep -qxF "$line" "$WORK/out.log" || fail "repo: no '$line' line: $(out)"
 done
 # the probe prints each row's spec as written, so an {old} row it asked would print the literal {old}
@@ -121,20 +140,19 @@ grep -qF '{old}' "$WORK/out.log" && fail "repo: an {old} row was asked of the pr
 grep -q '^PASS /app/healthz 298 (next)$' "$WORK/out.log" || fail "theProbeSpeaksPlainHttp: no 'PASS /app/healthz 298 (next)' line: $(out)"
 grep -qE ' (got )?308( |$)' "$WORK/out.log" && fail "theProbeSpeaksPlainHttp: a row was answered 308: $(out)"
 
-# 3. one wrong route at a time: <name>|<perl edit>|<a FAIL line, exactly>[|<a second FAIL line>[|<a third>]]; the run
-#    must print those lines and no other FAIL line (one, or more when the edit takes a whole block that several rows
-#    ask)
-while IFS='|' read -r name edit line line2 line3; do
+# 3. one wrong route at a time: <name>|<perl edit>|<a FAIL line, exactly>[|<another FAIL line>...]; the run must print
+#    those lines and no other FAIL line (one, or more when the edit takes a whole block, or a pattern, that several
+#    rows ask). The perl edit holds no `|` (the separator): a literal one in the file is matched as \x7c.
+while IFS='|' read -r name edit rest; do
   [ -n "$name" ] || continue
+  IFS='|' read -r -a lines <<< "$rest"
+  [ "${#lines[@]}" -gt 0 ] || { fail "$name: the case names no FAIL line"; continue; }
   variant "$name" "$edit" || continue
   if probe "$WORK/$name.Caddyfile"; then fail "$name: exited 0: $(out)"; continue; fi
-  want=0
-  for expected in "$line" "$line2" "$line3"; do
-    [ -n "$expected" ] || continue
-    want=$((want + 1))
+  for expected in "${lines[@]}"; do
     grep -qxF -- "$expected" "$WORK/out.log" || fail "$name: no '$expected' line: $(out)"
   done
-  [ "$(fails)" = "$want" ] || fail "$name: $(fails) FAIL rows, expected exactly $want: $(out)"
+  [ "$(fails)" = "${#lines[@]}" ] || fail "$name: $(fails) FAIL rows, expected exactly ${#lines[@]}: $(out)"
 done <<'TABLE'
 api-to-next|s/(\n\thandle \{\n)/\n\thandle \/app\/api\/* {\n\t\treverse_proxy medioo-web:3000\n\t}\n$1/|FAIL /app/api/me got 298 (next), expected 299 (java)
 preview-star-only|s/\n\t\tpath \/app\/preview \/app\/preview\/\*\n/\n\t\tpath \/app\/preview\/*\n/|FAIL /app/preview got 299 (java), expected 298 (next)
@@ -172,6 +190,16 @@ timeline-get-only|s/\n\t\tmethod GET HEAD\n(\t\tpath \/app\/timeline\n)/\n\t\tme
 timeline-wide|s/(\n\t\tmethod GET HEAD\n\t\tpath \/app\/timeline)\n/$1*\n/|FAIL /app/timeline/ got 298 (next), expected 299 (java)
 timeline-missing|s/\t\@medioo_papers \{\n\t\tmethod GET HEAD\n\t\tpath \/app\/timeline\n\t\}\n\thandle \@medioo_papers \{\n\t\treverse_proxy medioo-web:3000\n\t\}\n//|FAIL /app/timeline got 299 (java), expected 298 (next)|FAIL /app/timeline?patient=5e9edf6d-0a2a-4913-8675-9d07a4100001 got 299 (java), expected 298 (next)|FAIL PROBE HEAD /app/timeline got 299 (java), expected 298 (next)
 timeline-takes-patient|s/(\n\t\tpath \/app\/timeline)\n/$1 \/app\/patients\/*\n/|FAIL /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001/profile/ got 298 (next), expected 299 (java)|FAIL /app/patients/x/profile got 298 (next), expected 299 (java)|FAIL /app/patients/5e9edf6d-0a2a-4913-8675-9d07a4100001 got 298 (next), expected 299 (java)
+paper-any-method|s/\n\t\tmethod GET HEAD\n(\t\tpath_regexp \^\/app\/documents\/)/\n$1/|FAIL PROBE POST /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003 got 298 (next), expected 299 (java)
+paper-get-only|s/\n\t\tmethod GET HEAD\n(\t\tpath_regexp \^\/app\/documents\/)/\n\t\tmethod GET\n$1/|FAIL PROBE HEAD /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003 got 299 (java), expected 298 (next)|FAIL PROBE HEAD /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/all got 299 (java), expected 298 (next)|FAIL PROBE HEAD /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/values/5e9edf6d-0a2a-4913-8675-9d07a4100004?from=summary got 299 (java), expected 298 (next)
+paper-unanchored|s/(\n\t\tpath_regexp \^\/app\/documents\/[^\n]*)\$\n/$1\n/|FAIL /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/ got 298 (next), expected 299 (java)|FAIL /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/allx got 298 (next), expected 299 (java)|FAIL /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/values/x got 298 (next), expected 299 (java)|FAIL /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=x got 298 (next), expected 299 (java)|FAIL /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/page/1 got 298 (next), expected 299 (java)|FAIL /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/status got 298 (next), expected 299 (java)|FAIL /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/delete got 298 (next), expected 299 (java)
+paper-any-id|s/(\n\t\tpath_regexp \^\/app\/documents\/)\[0-9a-f-\]\{36\}/$1\[^\/\]+/|FAIL /app/documents/x got 298 (next), expected 299 (java)
+paper-any-value-id|s/(\n\t\tpath_regexp \^\/app\/documents\/[^\n]*\/values\/)\[0-9a-f-\]\{36\}/$1\[^\/\]+/|FAIL /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/values/x got 298 (next), expected 299 (java)
+paper-no-all|s/(\n\t\tpath_regexp \^\/app\/documents\/\[0-9a-f-\]\{36\}\()\/all\x7c(\/values\/)/$1$2/|FAIL /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/all got 299 (java), expected 298 (next)|FAIL PROBE HEAD /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/all got 299 (java), expected 298 (next)
+paper-no-sheet|s/(\n\t\tpath_regexp \^\/app\/documents\/\[0-9a-f-\]\{36\}\(\/all)\x7c\/values\/\[0-9a-f-\]\{36\}(\)\?\$\n)/$1$2/|FAIL /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/values/5e9edf6d-0a2a-4913-8675-9d07a4100004?from=summary got 299 (java), expected 298 (next)|FAIL PROBE HEAD /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/values/5e9edf6d-0a2a-4913-8675-9d07a4100004?from=summary got 299 (java), expected 298 (next)
+paper-wide|s/\n\t\tpath_regexp \^\/app\/documents\/[^\n]*\n/\n\t\tpath \/app\/documents\/*\n/|FAIL /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/ got 298 (next), expected 299 (java)|FAIL /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/allx got 298 (next), expected 299 (java)|FAIL /app/documents/x got 298 (next), expected 299 (java)|FAIL /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/values/x got 298 (next), expected 299 (java)|FAIL /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=x got 298 (next), expected 299 (java)|FAIL /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/page/1 got 298 (next), expected 299 (java)|FAIL /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/status got 298 (next), expected 299 (java)|FAIL /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/delete got 298 (next), expected 299 (java)
+paper-wide-any-method|s/\n\t\tmethod GET HEAD\n\t\tpath_regexp \^\/app\/documents\/[^\n]*\n/\n\t\tpath \/app\/documents\/*\n/|FAIL /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/ got 298 (next), expected 299 (java)|FAIL /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/allx got 298 (next), expected 299 (java)|FAIL /app/documents/x got 298 (next), expected 299 (java)|FAIL /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/values/x got 298 (next), expected 299 (java)|FAIL /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/image?key=x got 298 (next), expected 299 (java)|FAIL /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/page/1 got 298 (next), expected 299 (java)|FAIL /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/status got 298 (next), expected 299 (java)|FAIL /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/delete got 298 (next), expected 299 (java)|FAIL PROBE POST /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003 got 298 (next), expected 299 (java)|FAIL PROBE POST /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/delete got 298 (next), expected 299 (java)
+paper-missing|s/\t\@medioo_paper \{\n\t\tmethod GET HEAD\n\t\tpath_regexp [^\n]*\n\t\}\n\thandle \@medioo_paper \{\n\t\treverse_proxy medioo-web:3000\n\t\}\n//|FAIL /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003 got 299 (java), expected 298 (next)|FAIL /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/all got 299 (java), expected 298 (next)|FAIL /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/values/5e9edf6d-0a2a-4913-8675-9d07a4100004?from=summary got 299 (java), expected 298 (next)|FAIL PROBE HEAD /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003 got 299 (java), expected 298 (next)|FAIL PROBE HEAD /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/all got 299 (java), expected 298 (next)|FAIL PROBE HEAD /app/documents/5e9edf6d-0a2a-4913-8675-9d07a4100003/values/5e9edf6d-0a2a-4913-8675-9d07a4100004?from=summary got 299 (java), expected 298 (next)
 TABLE
 
 # 4. a table with no rows: refused, not passed
