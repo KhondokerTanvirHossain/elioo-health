@@ -8,6 +8,7 @@ import com.elioo.baymax.aicall.application.service.AiCostCalculator;
 import com.elioo.baymax.aicall.application.service.MeteredLlmClient;
 import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.companion.application.port.in.AskUseCase.AskAnswer;
+import com.elioo.baymax.companion.application.port.out.ChatCopyPort;
 import com.elioo.baymax.companion.application.port.out.ChatTurnPort;
 import com.elioo.baymax.companion.domain.AnswerKind;
 import com.elioo.baymax.companion.domain.ChatContext;
@@ -114,7 +115,7 @@ class ChatAnswerServiceTest {
         when(turns.reserveCounted(any(), any(), anyString(), anyString(), any(), anyInt())).thenReturn(Mono.just(TURN));
         when(turns.reserveUncounted(any(), any(), anyString(), anyString())).thenReturn(Mono.just(TURN));
         when(turns.complete(any(), any())).thenReturn(Mono.empty());
-        when(contexts.build(FAMILY, PATIENT, "Ma")).thenReturn(Mono.just(CTX));
+        when(contexts.build(eq(FAMILY), eq(PATIENT), eq("Ma"), any())).thenReturn(Mono.just(CTX));
         when(contexts.medicineNames(FAMILY, PATIENT)).thenReturn(Mono.just(CTX.medicineNames()));
         properties.getChat().setEnabled(true);
         when(attention.urgent(FAMILY, PATIENT)).thenReturn(Mono.just(List.of()));
@@ -134,8 +135,12 @@ class ChatAnswerServiceTest {
     }
 
     private ChatAnswerService service() {
+        return service(copy);
+    }
+
+    private ChatAnswerService service(ChatCopyPort lines) {
         AiCostCalculator costs = new AiCostCalculator(properties);
-        return new ChatAnswerService(properties, records, turns, new RedFlagMatcher(properties), contexts, copy, attention,
+        return new ChatAnswerService(properties, records, turns, new RedFlagMatcher(properties), contexts, lines, attention,
                 new MeteredLlmClient(mock(LlmClient.class), callLog, costs), costs, chatClients, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
@@ -310,6 +315,119 @@ class ChatAnswerServiceTest {
         assertThat(a.answer()).doesNotContain("{{rx:");
     }
 
+    /**
+     * PO ruling P12 (proposal A of #170): a question asking to change a medicine in a বদল- word is a dose question, so code
+     * appends its own doctor line; and that line is shown, though it holds the very change words the guard now refuses in
+     * the model's text, because it is Medioo's copy and exempt from the content checks ({@link ChatAppendix}).
+     */
+    @Test
+    void aChangeQuestionGetsTheDoctorLineThoughTheLineHoldsTheWordsTheGuardRefuses() {
+        model(Mono.just(reply("Ma-র শেষ প্রেসক্রিপশনে লেখা আছে: {{rx:1}}", 1, 1)));
+
+        AskAnswer a = ask("ওষুধটা কি বদলাব?");
+
+        assertThat(a.answer()).as("a change question gets code's doctor line").contains(line("bn", "chat.dose.ask_doctor"));
+        assertThat(a.kind()).isEqualTo(AnswerKind.ANSWER);
+        assertThat(a.answer()).contains(RX1);
+        assertThat(stored().violationCodes()).isEmpty();
+        // the line, were it the model's text, would be refused in both languages: so it must never pass through the checks
+        assertThat(AnswerCheck.violations(line("bn", "chat.dose.ask_doctor"), CTX)).contains("dose_change:বদল+medicine");
+        assertThat(AnswerCheck.violations(line("en", "chat.dose.ask_doctor"), CTX)).contains("dose_change:change+medicine");
+    }
+
+    /**
+     * Plan CHATCOPY, finding 1 of the live Sonnet test: a Bangla answer that copies an English label is refused and repaired,
+     * never shown and never rewritten by code. The context is the builder's, made with the labels the service passed, so this
+     * also asserts a Bangla ask is given Bangla labels.
+     */
+    @Test
+    void aBanglaAnswerWithAnEnglishLabelIsRepairedNotShown() {
+        List<ChatLabels> passed = new ArrayList<>();
+        when(contexts.build(eq(FAMILY), eq(PATIENT), eq("Ma"), any())).thenAnswer(i -> {
+            ChatLabels labels = i.getArgument(3);
+            passed.add(labels);
+            return Mono.just(ChatAnswerWordingTest.live(labels));
+        });
+        String copied = "Ma-র Creatinine 1.8 mg/dL, printed range 0.7–1.3।";
+        model(Mono.just(reply(copied, 1, 1)), Mono.just(reply("Ma-র Creatinine 1.8 mg/dL।", 1, 1)));
+
+        AskAnswer a = ask("আম্মার ক্রিয়েটিনিন কত?");
+
+        assertThat(passed).extracting(ChatLabels::lang).containsExactly("bn");
+        ArgumentCaptor<LlmRequest> requests = ArgumentCaptor.forClass(LlmRequest.class);
+        verify(model, times(2)).invoke(requests.capture());
+        assertThat(requests.getAllValues().get(1).userPrompt()).contains("foreign_label:printed range");
+        assertThat(stored().handler()).isEqualTo("repair");
+        assertThat(stored().violationCodes()).containsExactly("foreign_label");
+        assertThat(a.answer()).startsWith("Ma-র Creatinine 1.8 mg/dL।").doesNotContain(copied);
+    }
+
+    /**
+     * Review of #170, finding 3: the English direction of the same wiring. An English ask is given English labels and no
+     * foreign set, so an English answer written in the screen's own English labels is shown on the first call. Were the
+     * labels wired to the wrong language, or to Bangla always, this answer would be refused as foreign_label into the fixed
+     * reply. Also finding 10: a question that asks for no change gets no dose rule in its prompt.
+     */
+    @Test
+    void anEnglishAskIsGivenEnglishLabelsAndAnEnglishAnswerIsShown() {
+        List<ChatLabels> passed = new ArrayList<>();
+        when(contexts.build(eq(FAMILY), eq(PATIENT), eq("Ma"), any())).thenAnswer(i -> {
+            ChatLabels labels = i.getArgument(3);
+            passed.add(labels);
+            return Mono.just(ChatAnswerWordingTest.live(labels));
+        });
+        String english = "Ma's Creatinine 1.8 mg/dL is above the range, Range printed on the report: 0.7–1.3.";
+        model(Mono.just(reply(english, 1, 1)));
+
+        AskAnswer a = service().ask(FAMILY, PATIENT, "What is Ma's creatinine?", "en").block(Duration.ofSeconds(10));
+
+        assertThat(passed).extracting(ChatLabels::lang).containsExactly("en");
+        assertThat(passed.get(0).foreign()).as("an English ask has no foreign labels").isEmpty();
+        ArgumentCaptor<LlmRequest> requests = ArgumentCaptor.forClass(LlmRequest.class);
+        verify(model, times(1)).invoke(requests.capture());
+        assertThat(requests.getValue().systemPrompt()).as("not a dose question: no dose rule")
+                .doesNotContain("This QUESTION asks to change a medicine");
+        assertThat(stored().handler()).isEqualTo("model");
+        assertThat(stored().violationCodes()).isEmpty();
+        assertThat(a.kind()).isEqualTo(AnswerKind.ANSWER);
+        assertThat(a.answer()).startsWith(english);
+    }
+
+    /** Finding 10, the other direction: code's own dose decision puts the dose rule in the prompt. */
+    @Test
+    void aQuestionCodeCallsADoseQuestionGetsTheDoseRule() {
+        model(Mono.just(reply("Ma-র শেষ প্রেসক্রিপশনে লেখা আছে: {{rx:1}}", 1, 1)));
+
+        ask("ওষুধটা অর্ধেক করব?");
+
+        ArgumentCaptor<LlmRequest> requests = ArgumentCaptor.forClass(LlmRequest.class);
+        verify(model, times(1)).invoke(requests.capture());
+        assertThat(requests.getValue().systemPrompt()).contains("This QUESTION asks to change a medicine");
+    }
+
+    /**
+     * Review of #170, finding 5: a label key that cannot be read is read inside the counted turn's chain, so it is a model
+     * error and the fixed reply, never a 500, and no model call is made without the labels.
+     */
+    @Test
+    void aLabelKeyThatCannotBeReadIsAModelErrorAndTheFixedReply() {
+        ChatCopyPort missing = (lang, key, args) -> {
+            if (ChatLabels.UNKNOWN_KEY.equals(key)) {
+                throw new IllegalArgumentException("no UI copy for key " + key);
+            }
+            return copy.line(lang, key, args);
+        };
+
+        AskAnswer a = service(missing).ask(FAMILY, PATIENT, "আম্মার ক্রিয়েটিনিন কত?", "bn").block(Duration.ofSeconds(10));
+
+        verify(model, never()).invoke(any());
+        assertThat(a.kind()).isEqualTo(AnswerKind.FALLBACK);
+        assertThat(a.answer()).startsWith(line("bn", "chat.ask.failed"));
+        assertThat(stored().kind()).isEqualTo(AnswerKind.FALLBACK);
+        assertThat(stored().handler()).isEqualTo("model_error");
+        assertThat(stored().modelCalls()).isZero();
+    }
+
     @Test
     void thanksAfterANowRepeatsTheNowLine() {
         when(attention.urgent(FAMILY, PATIENT)).thenReturn(Mono.just(List.of(urgent(Urgency.NOW))));
@@ -411,7 +529,7 @@ class ChatAnswerServiceTest {
      */
     @Test
     void anEmptyContextCompletesTheCountedTurn() {
-        when(contexts.build(FAMILY, PATIENT, "Ma")).thenReturn(Mono.empty());
+        when(contexts.build(eq(FAMILY), eq(PATIENT), eq("Ma"), any())).thenReturn(Mono.empty());
 
         Optional<AskAnswer> a = service().ask(FAMILY, PATIENT, "আম্মার ক্রিয়েটিনিন কত?", "bn").blockOptional(Duration.ofSeconds(10));
 

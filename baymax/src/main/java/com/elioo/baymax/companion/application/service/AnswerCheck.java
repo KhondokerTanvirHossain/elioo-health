@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -35,7 +36,8 @@ import java.util.regex.Pattern;
  * paper's year but never its day or month. A sentence that names a fact (its printed name or unit) may state only that
  * fact's numbers ({@code number_unbound}). A number written as a word, a fraction sign or a superscript is refused, as is
  * a dose amount ("10 mg", "2 tablets", "২টা") and any number in a sentence that holds a prescription line. "Inside" is
- * refused unless an INSIDE verdict backs it (finding 12).
+ * refused unless an INSIDE verdict backs it (finding 12). A Bangla answer holding an English label, tag or rule word is
+ * refused ({@code foreign_label}, plan CHATCOPY), so it is repaired, never shown.
  */
 public final class AnswerCheck {
 
@@ -145,14 +147,50 @@ public final class AnswerCheck {
             }
         }
         out.addAll(doseCodes);
-        out.addAll(DoseChangeGuard.instructs(own, ctx.medicineNames()));
+        Set<String> labNames = new LinkedHashSet<>();
+        for (ChatContext.Fact f : ctx.facts()) {
+            labNames.add(TextNormaliser.normalise(f.name()));
+        }
+        out.addAll(DoseChangeGuard.instructs(own, ctx.medicineNames(), labNames));
         for (String r : REASSURANCE) {
             if (DoseChangeGuard.hits(hay, r)) {
                 out.add("reassurance:" + r);
             }
         }
         out.addAll(insideCodes);
+        out.addAll(foreignLabels(own, ctx));
         return new ArrayList<>(out);
+    }
+
+    /**
+     * The labels of another language the model copied (plan CHATCOPY): for a Bangla ask, an English label, tag or rule word
+     * ({@link ChatContext#foreignLabels}), as a whole word or phrase in any case, as {@code foreign_label:<label>}, in a fixed
+     * order. A stored value's or unit's printed name and a stored medicine's name are taken out first: "Creatinine" and
+     * "mg/dL" are the paper's words, never labels, in either language. A repair trigger only: code never rewrites the text.
+     */
+    static List<String> foreignLabels(String own, ChatContext ctx) {
+        if (ctx.foreignLabels().isEmpty()) {
+            return List.of();
+        }
+        String hay = DoseChangeGuard.hay(own);
+        List<String> stored = new ArrayList<>(ctx.medicineNames());
+        for (ChatContext.Fact f : ctx.facts()) {
+            stored.add(TextNormaliser.normalise(f.name()));
+            stored.add(TextNormaliser.normalise(f.unit()));
+        }
+        for (String s : stored) {
+            String word = " " + s + " ";
+            while (!s.isBlank() && hay.contains(word)) {
+                hay = hay.replace(word, "  ");
+            }
+        }
+        List<String> out = new ArrayList<>();
+        for (String label : new TreeSet<>(ctx.foreignLabels())) {
+            if (DoseChangeGuard.hits(hay, label)) {
+                out.add("foreign_label:" + label);
+            }
+        }
+        return out;
     }
 
     /** Whether a sentence names a fact: its printed name, or a unit with a letter in it, as a whole word or phrase. */

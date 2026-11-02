@@ -1,6 +1,8 @@
 package com.elioo.baymax.companion.config;
 
 import com.elioo.baymax.aicall.application.service.AiCostCalculator;
+import com.elioo.baymax.companion.application.port.out.ChatCopyPort;
+import com.elioo.baymax.companion.application.service.ChatLabels;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.extraction.config.BaymaxModelClient;
 import com.elioo.baymax.outbound.application.service.Copy;
@@ -123,5 +125,34 @@ class ChatModelConfigurationTest {
             assertThat(context.getStartupFailure()).rootCause().hasMessageContaining("baymax.chat.model");
         });
         runner().run(context -> assertThat(context).hasNotFailed());
+    }
+
+    /**
+     * Review of #170, findings 5 and 16: every label key ({@link ChatLabels#KEYS}) is read in both languages at boot, whether
+     * answers are on or off, so a renamed key stops startup and CI before a family asks. The key is missing in English only,
+     * so a Bangla-only check, or one that read only the ask's own language, would start; the failure names the key.
+     */
+    @Test
+    void aLabelKeyMissingInEnglishStopsStartupAndNamesTheKey() {
+        UiChatCopyAdapter real = new UiChatCopyAdapter(new UiCopy(), new Copy());
+        ChatCopyPort missing = (lang, key, args) -> {
+            if ("en".equals(lang) && "value.chip.unknown".equals(key)) {
+                throw new IllegalArgumentException("not in the bundle");
+            }
+            return real.line(lang, key, args);
+        };
+        assertThat(ChatLabels.KEYS).contains("value.chip.unknown");
+        new ApplicationContextRunner()
+                .withUserConfiguration(Props.class, ChatModelConfiguration.class, ChatPropertiesCheck.class, AiCostCalculator.class)
+                .withBean(ChatCopyPort.class, () -> missing)
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    Throwable refused = context.getStartupFailure();
+                    while (refused != null && !(refused instanceof IllegalStateException)) {
+                        refused = refused.getCause();
+                    }
+                    assertThat(refused).as("the check's own refusal in " + context.getStartupFailure()).isNotNull()
+                            .hasMessageContaining("en:value.chip.unknown");
+                });
     }
 }

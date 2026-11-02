@@ -1506,3 +1506,25 @@ question before its length and answers even when the turn cannot be stored. Both
 from how families and the model phrase things, not from the lists. **Answers ship switched off**
 (`BAYMAX_CHAT_ENABLED` absent = false) until `ChatAnswerLiveTest` has run the five D11 questions against real Sonnet and
 CHAT-web asks the route; the emergency pre-check runs either way.
+
+**Amendment 2026-11-01 (PO rulings P11 and P12, Tanvir, in the session; PR #170):**
+- **P11**, in his words: "yes for the one extra live Sonnet run": exactly one run of `ChatAnswerLiveTest` re-measures
+  #170 (P10 allowed the earlier one, spent on #164). The result goes in #170's body.
+- **P12**, on #170's "Proposal for the PO", he chose "Switch on now, fix right after": chat answers switch on as planned
+  with #166, and #170 merges right after it. **Proposal (A) is approved**: "change", বদল- and পাল্ট- (and পরিবর্তন-,
+  replace, swap, substitute) beside a medicine are refused, and their instruction forms anywhere ("বদলান", "পাল্টে
+  ফেলুন", "change it"…). **Proposal (B), loosening the guard for a sentence that points to the doctor, is not approved
+  and is not built.**
+- Engineering, within P7 ("Explain, never change") and P12, no scope change: the two reviews of #170 found further
+  drafts that told the family to change a medicine and passed every check (drop, omit, taper, "Ma can…", পরিবর্তে,
+  জায়গায়, কমিয়ে ফেলুন, আধা, "চলবে", Banglish koman/bodole/jaygay, pronoun forms, a name spelled otherwise). Each is a
+  corpus flag row, red first, and the guard only refuses more: further instruction forms anywhere, further words beside
+  a medicine, an imperative opening a sentence, a stored medicine's name matched as a stem and across an inner hyphen.
+  One precision fix, for P12's own words only: in a sentence about a value (মান, রিপোর্ট, কাগজ, value, report, paper), a
+  stored lab's name that shares a word with a medicine ("Vitamin D" beside "Tab. Vitamin D3 Calcium", "Insulin") is the
+  value, so "Ma-র Vitamin D মান আগের কাগজের তুলনায় বদলেছে।" is shown; every older rule, and every instruction form, still
+  counts that word as the medicine.
+- **Open for the PO (proposal C, not built):** the guard is a blocklist checked a sentence at a time, so a phrasing no
+  row names can still pass. The alternative is a fixed form: a sentence that refers to a medicine, and the sentence after
+  it, may hold only `chat.dose.example`'s frame, and a dose question's answer only that frame. It only tightens, but it
+  changes how the safety rule works, so it is the PO's call.

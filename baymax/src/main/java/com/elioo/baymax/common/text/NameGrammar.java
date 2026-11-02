@@ -44,6 +44,19 @@ public final class NameGrammar {
     }
 
     /**
+     * The possessive in a page's or an answer's language: {@link #possessive} for Bangla ({@code "bn"}, and anything not
+     * {@code "en"}), and for English the name with "'s", or "'" after a final s ("Ma's", "Chris'"); null or blank → "". The
+     * one rule the web pages (UiCopy.poss) and a চ্যাট answer's example (ChatPrompt) both write a name by.
+     */
+    public static String possessiveIn(String lang, String name) {
+        if (!"en".equals(lang)) {
+            return possessive(name);
+        }
+        String n = name == null ? "" : name.strip();
+        return n.isEmpty() ? "" : n + (n.endsWith("s") ? "'" : "'s");
+    }
+
+    /**
      * The objective of the name (spec §2 F8: "কে" always attaches): "আম্মা" → "আম্মাকে", "রহিম" → "রহিমকে"; a trailing
      * hasanta is dropped first, as in {@link #possessive} ("জন্" → "জনকে"); a name that does not end in a Bangla letter
      * keeps a hyphen ("Rina-কে"); null or blank → "".

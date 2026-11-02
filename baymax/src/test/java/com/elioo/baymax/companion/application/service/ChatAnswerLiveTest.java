@@ -47,6 +47,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -102,9 +103,11 @@ class ChatAnswerLiveTest {
         LatestPrescription rx = new LatestPrescription(UUID.randomUUID(), LocalDate.parse("2026-09-20"), false, false, List.of(med),
                 Optional.empty());
         ChatContext ctx = ChatContextBuilder.assemble("Ma", new HealthUseCase.HealthLabs(List.of(creatinine), new LabSeries.BpSeries(List.of())),
-                rx, 6000);
+                rx, 6000, ChatLabels.of("bn", new UiChatCopyAdapter(new UiCopy(), new Copy())));
         ChatContextBuilder contexts = mock(ChatContextBuilder.class);
-        when(contexts.build(FAMILY, PATIENT, "Ma")).thenReturn(Mono.just(ctx));
+        // built from the labels the service passes (review of #170, finding 3), never a pre-built context that ignores them
+        when(contexts.build(eq(FAMILY), eq(PATIENT), eq("Ma"), any())).thenAnswer(i -> Mono.just(ChatContextBuilder.assemble("Ma",
+                new HealthUseCase.HealthLabs(List.of(creatinine), new LabSeries.BpSeries(List.of())), rx, 6000, i.getArgument(3))));
         when(contexts.medicineNames(FAMILY, PATIENT)).thenReturn(Mono.just(ctx.medicineNames()));
         when(turns.reserveUncounted(any(), any(), anyString(), anyString())).thenReturn(Mono.just(UUID.randomUUID()));
         properties.getChat().setEnabled(true);

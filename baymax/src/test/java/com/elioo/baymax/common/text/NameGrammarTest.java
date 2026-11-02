@@ -40,4 +40,11 @@ class NameGrammarTest {
     void theObjectiveAttachesKeToABanglaNameAndHyphensAnyOther(String name, String expected) {
         assertThat(NameGrammar.objective(name)).isEqualTo(expected);
     }
+
+    /** The one rule the web pages and a চ্যাট answer's example share (review of #170): Bangla by possessive, English by 's or '. */
+    @ParameterizedTest
+    @CsvSource({"bn,আম্মা,আম্মার", "bn,রহিম,রহিমের", "bn,Ma,Ma-র", "en,Ma,Ma's", "en,Chris,Chris'", "en,'  Rina ',Rina's", "en,'',''"})
+    void thePossessiveInALanguageIsNameGrammarsInBanglaAndApostropheSInEnglish(String lang, String name, String expected) {
+        assertThat(NameGrammar.possessiveIn(lang, name)).isEqualTo(expected);
+    }
 }

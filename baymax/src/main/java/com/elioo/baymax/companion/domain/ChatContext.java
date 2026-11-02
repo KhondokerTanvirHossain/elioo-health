@@ -23,11 +23,14 @@ import java.util.UUID;
  * @param dates         every kept paper's date and the prescription's
  * @param medicineNames the prescription's medicine names as words in {@link TextNormaliser}'s form ("demoprol"): a
  *                      medicine reference for the dose-change guard on both sides
+ * @param foreignLabels the label phrases an answer to this ask may not hold: for a Bangla ask, the English labels, tags and
+ *                      rule words ({@code ChatLabels.foreign}); empty for an English ask
  */
 public record ChatContext(List<String> factLines, Set<String> numbers, List<String> verbatimLines, List<UUID> documentIds,
-                          boolean truncated, List<Fact> facts, Set<LocalDate> dates, Set<String> medicineNames) {
+                          boolean truncated, List<Fact> facts, Set<LocalDate> dates, Set<String> medicineNames,
+                          Set<String> foreignLabels) {
 
-    /** The verdict word of a fact line that lets an answer say "inside". */
+    /** The canonical verdict that lets an answer say "inside". */
     public static final String INSIDE = "INSIDE";
 
     /** A form word on a medicine's name, never the medicine itself. */
@@ -42,7 +45,8 @@ public record ChatContext(List<String> factLines, Set<String> numbers, List<Stri
      * @param name    its printed name
      * @param unit    its unit as stored, possibly empty
      * @param numbers the canonical numbers of its value and printed range
-     * @param verdict its verdict word as the fact line writes it ({@code INSIDE}, {@code OUTSIDE high}, {@code UNKNOWN}…)
+     * @param verdict its canonical verdict ({@code INSIDE}, {@code OUTSIDE high}, {@code UNKNOWN}…), whatever language the
+     *                fact line labels it in ({@code ChatLabels})
      */
     public record Fact(String name, String unit, Set<String> numbers, String verdict) {
 
@@ -66,6 +70,13 @@ public record ChatContext(List<String> factLines, Set<String> numbers, List<Stri
         facts = List.copyOf(facts);
         dates = Set.copyOf(dates);
         medicineNames = Set.copyOf(medicineNames);
+        foreignLabels = Set.copyOf(foreignLabels);
+    }
+
+    /** A context with no foreign labels: what an English ask is built with. */
+    public ChatContext(List<String> factLines, Set<String> numbers, List<String> verbatimLines, List<UUID> documentIds, boolean truncated,
+                       List<Fact> facts, Set<LocalDate> dates, Set<String> medicineNames) {
+        this(factLines, numbers, verbatimLines, documentIds, truncated, facts, dates, medicineNames, Set.of());
     }
 
     /** A context with no fact records and no dates; the medicine names are read from the lines' name field. */
