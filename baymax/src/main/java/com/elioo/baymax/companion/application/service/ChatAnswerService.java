@@ -273,8 +273,9 @@ public class ChatAnswerService implements AskUseCase {
                     }
                     MedicinePurposeReply.Reply reply = MedicinePurposeReply.of(q, ctx, patient.name(), l, copy,
                             properties.getChat().getMaxAnswerChars() - tail.length());
+                    // the lines shown carry their crops, as a model answer's quoted lines do (DR-12; review of #171 on #166)
                     return stored(familyId, patient, q, l, viewer, new Body(reply.text(), AnswerKind.DECLINED, MedicinePurposeGuard.HANDLER,
-                            reply.documents()), tail, started);
+                            reply.documents(), AnswerCheck.citedLines(reply.quoted(), ctx)), tail, started);
                 });
     }
 

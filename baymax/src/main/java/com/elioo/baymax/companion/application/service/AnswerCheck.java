@@ -262,10 +262,25 @@ public final class AnswerCheck {
         if (modelText == null || ctx.prescriptionId() == null || ctx.verbatimCropKeys().isEmpty()) {
             return List.of();
         }
-        Set<Integer> seen = new LinkedHashSet<>();
+        List<Integer> quoted = new ArrayList<>();
         Matcher m = REFERENCE.matcher(modelText);
         while (m.find()) {
-            int n = Integer.parseInt(m.group(1));
+            quoted.add(Integer.parseInt(m.group(1)));
+        }
+        return citedLines(quoted, ctx);
+    }
+
+    /**
+     * The stored lines {@code lines} (from 1) with their paper and crop, each once, in the given order: what a reply code
+     * builds from the stored lines quotes ({@code MedicinePurposeReply.Reply#quoted}, review of #171 on #166). A line past the
+     * last, or a context with no crop known, quotes nothing (DR-12: never a wrong crop).
+     */
+    public static List<CitedMedicine> citedLines(List<Integer> lines, ChatContext ctx) {
+        if (lines == null || ctx.prescriptionId() == null || ctx.verbatimCropKeys().isEmpty()) {
+            return List.of();
+        }
+        Set<Integer> seen = new LinkedHashSet<>();
+        for (int n : lines) {
             if (n >= 1 && n <= ctx.verbatimCropKeys().size()) {
                 seen.add(n);
             }
