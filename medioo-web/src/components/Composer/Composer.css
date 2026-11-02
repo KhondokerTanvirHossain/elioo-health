@@ -98,8 +98,40 @@
   font-weight: 600;
   cursor: pointer;
 }
-.composer__send:hover {
+.composer__send:hover:not([aria-disabled="true"]) {
   background: var(--hover);
+}
+/* While Java answers a question (Composer.tsx): one question at a time. aria-disabled, never disabled, so the keyboard's
+   focus stays on the button it pressed (WCAG 2.4.3); the island refuses the second press itself. */
+.composer__send[aria-disabled="true"] {
+  color: var(--label2);
+  cursor: default;
+}
+/* A session that ended while Java was asked (Composer.tsx): the reply, its red-flag line kept on screen, and beside it
+   the link to sign in again, on the received side, at the minimum target size. */
+.composer__signed-out {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.composer__signin {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--target-min);
+  min-height: var(--target-min);
+  margin-left: var(--space-3);
+  padding: 0 var(--space-3);
+  color: var(--tint-ink);
+  font-family: var(--font-bn);
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+.composer__signin:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
 }
 .composer__camera:focus-visible,
 .composer__field:focus-visible,

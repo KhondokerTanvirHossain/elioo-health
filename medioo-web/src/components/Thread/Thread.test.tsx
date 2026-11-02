@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { PaperJson, PaperResultJson, ThreadItemJson, ThreadJson } from "@/api/types";
 import { t, type CopyKey, type Lang } from "@/copy";
 import { VerdictCard } from "@/components/safety/VerdictCard/VerdictCard";
+import { call999Words } from "@/components/safety/AskAnswer/call999";
 import { Thread } from "./Thread";
 
 afterEach(cleanup);
@@ -204,6 +205,94 @@ describe("Thread", () => {
     // The other direction: in Bangladesh, exactly the 999 link.
     const bd = draw(thread("now").items);
     expect([...bd.querySelectorAll('a[href^="tel:"]')].map((a) => a.getAttribute("href"))).toEqual(["tel:999"]);
+  });
+
+  // Plan CHAT-web: a stored question and what the family was shown, read with ?asks=1 (thread/with-asks.json).
+  const asks = () => thread("with-asks").items.filter((i): i is Extract<ThreadItemJson, { kind: "ask" }> => i.kind === "ask");
+
+  it("anAskIsTheQuestionSentAndTheAnswerReceived", () => {
+    const items = thread("with-asks").items;
+    expect(asks().length, "with-asks holds answered turns").toBeGreaterThanOrEqual(2);
+    for (const lang of LANGS) {
+      const root = draw(items, lang);
+      const drawn = rendered(root);
+      expect(drawn.length, "every item drawn").toBe(items.length);
+      // Oldest first, as for every item; an ask is its own item, the question sent, then the answer received.
+      const oldestFirst = [...items].reverse();
+      drawn.forEach((el, k) => {
+        const item = oldestFirst[k]!;
+        expect(el.dataset.threadItem, `item ${k}`).toBe(item.kind);
+        if (item.kind !== "ask") return;
+        const bubbles = [...el.querySelectorAll(".message-bubble")];
+        expect(
+          bubbles.map((b) => [b.classList.contains("message-bubble--sent") ? "sent" : "recv", b.querySelector(".message-bubble__body")!.textContent]),
+          `item ${k}`,
+        ).toEqual([
+          ["sent", item.question],
+          ["recv", item.answer],
+        ]);
+        // The answer exactly as stored, and nothing else inside its bubble.
+        expect(el.querySelector(".message-bubble--recv .message-bubble__body")!.children.length).toBe(0);
+        expect(item.answer.endsWith(`${t("bn", "disclaimer")}\n${t("bn", "safety.red_flag_line")}`), "stored with both lines").toBe(true);
+      });
+      cleanup();
+    }
+  });
+
+  it("aStoredQuoteIsDrawnWithItsCropBeforeTheAnswer", () => {
+    // Review of PR 166, finding 5: after a reload the dose answer's quoted line has the same crop as when it was asked, the
+    // prescription's own image of it (the paper card's medicine crop), before the bubble; an answer that quoted no line
+    // has none.
+    const items = thread("with-asks-dose").items;
+    const dose = items.find((i): i is Extract<ThreadItemJson, { kind: "ask" }> => i.kind === "ask");
+    const rx = items.find((i): i is Extract<ThreadItemJson, { kind: "paper" }> => i.kind === "paper");
+    expect(dose?.medicines.length, "with-asks-dose quotes a line").toBe(1);
+    expect(rx?.card.status === "DONE" ? rx.card.medicines.map((m) => m.crop.src) : [], "the paper's own crop of it").toEqual([
+      dose!.medicines[0]!.crop.src,
+    ]);
+    for (const lang of LANGS) {
+      const el = rendered(draw([dose!], lang))[0]!;
+      const img = el.querySelector<HTMLImageElement>(".ask-answer img");
+      expect(img?.getAttribute("src"), lang).toBe(dose!.medicines[0]!.crop.src);
+      expect(img?.getAttribute("alt"), lang).toBe(t(lang, "health.crop.alt"));
+      const answer = el.querySelector(".message-bubble--recv")!;
+      expect(img!.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING, `${lang}: before the bubble`).toBeTruthy();
+      cleanup();
+    }
+    for (const plain of asks()) {
+      expect(draw([plain]).querySelectorAll("img").length, `${plain.answer_kind}: no quoted line, no crop`).toBe(0);
+      cleanup();
+    }
+  });
+
+  it("anAskWithCall999HasTheTelLinkAndAbroadNone", () => {
+    const emergency = asks().find((a) => a.answer_kind === "emergency");
+    expect(emergency?.call_999, "with-asks: an emergency, viewed in Bangladesh").toBe(true);
+    const answer = asks().find((a) => a.answer_kind === "answer");
+    expect(answer?.call_999, "and an answer, which offers no call").toBe(false);
+    for (const lang of LANGS) {
+      const bd = draw([emergency!], lang);
+      expect([...bd.querySelectorAll('a[href^="tel:"]')].map((a) => [a.getAttribute("href"), a.textContent])).toEqual([
+        ["tel:999", call999Words(lang)],
+      ]);
+      cleanup();
+      // The same turn read by a viewer abroad: Java judges call_999 for the viewer at read time.
+      expect(draw([{ ...emergency!, call_999: false }], lang).querySelectorAll('a[href^="tel:"]').length, "abroad").toBe(0);
+      cleanup();
+      expect(draw([answer!], lang).querySelectorAll('a[href^="tel:"]').length, "not an emergency").toBe(0);
+      cleanup();
+    }
+  });
+
+  it("anUnknownKindIsNotDrawnAsAPaper", () => {
+    // The guard for the next additive kind: an item this build does not know is left out, never drawn as a paper (whose
+    // card it does not have) and never thrown on.
+    const later = { kind: "later", at: "2026-10-30T00:00:00Z" } as unknown as ThreadItemJson;
+    const known = thread("default").items;
+    const root = draw([later, ...known]);
+    expect(rendered(root).length).toBe(known.length);
+    expect(root.querySelector('[data-thread-item="later"]')).toBeNull();
+    expect(() => draw([later])).not.toThrow();
   });
 
   it("everyCommittedThreadFixtureRenders", () => {

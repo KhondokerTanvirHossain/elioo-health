@@ -338,6 +338,31 @@ class ChatContextBuilderTest {
                 new BaymaxProperties().getChat().getContextMaxTokens(), BN).truncated()).as("one series is never truncated").isFalse();
     }
 
+    /**
+     * Review of #166, finding 5: each verbatim line keeps its own stored crop key, by position, and the paper it is on, so a
+     * quoted line is shown beside its crop. A line left out (no transcription) takes its crop with it: positions never shift.
+     */
+    @Test
+    void eachVerbatimLineKeepsItsCrop() {
+        labs(ASKED, List.of());
+        UUID rx = UUID.randomUUID();
+        Map<String, Object> blank = new LinkedHashMap<>();
+        blank.put("crop_key", "crop-blank.jpg");
+        Map<String, Object> second = medicine();
+        second.put("name", "Tab. Fictazide 25 mg");
+        second.put("crop_key", "crop-fictazide.jpg");
+        Map<String, Object> first = medicine();
+        first.put("crop_key", "crop-demoprol.jpg");
+        when(health.medicines(FAMILY, ASKED)).thenReturn(Mono.just(new LatestPrescription(rx, LocalDate.parse("2026-09-20"),
+                false, false, List.of(first, blank, second), Optional.empty())));
+
+        ChatContext ctx = builder(6000).build(FAMILY, ASKED, "Ma", EN).block();
+
+        assertThat(ctx.verbatimLines()).hasSize(2);
+        assertThat(ctx.verbatimCropKeys()).containsExactly("crop-demoprol.jpg", "crop-fictazide.jpg");
+        assertThat(ctx.prescriptionId()).isEqualTo(rx);
+    }
+
     static Map<String, Object> medicine() {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("name", "Tab. Demoprol 5 mg");

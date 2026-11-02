@@ -8,6 +8,14 @@
     "at": "2026-10-30T06:00:00Z",
     "call_999": false,
     "kind": "answer",
+    "medicines": [
+      {
+        "crop": {
+          "src": "/app/documents/e3aa925f-c677-396f-ac1b-352c1e4f14f3/image?key=f%2Fp%2Fe3aa925f-c677-396f-ac1b-352c1e4f14f3%2Fcrop-demoprol.jpg"
+        },
+        "document_id": "e3aa925f-c677-396f-ac1b-352c1e4f14f3"
+      }
+    ],
     "question": "ওষুধটা অর্ধেক করব?",
     "turn_id": "18d0a2fa-6422-3c9d-9852-3ebb647e6b86"
   },

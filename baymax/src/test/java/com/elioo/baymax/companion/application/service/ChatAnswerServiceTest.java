@@ -13,6 +13,7 @@ import com.elioo.baymax.companion.application.port.out.ChatTurnPort;
 import com.elioo.baymax.companion.domain.AnswerKind;
 import com.elioo.baymax.companion.domain.ChatContext;
 import com.elioo.baymax.companion.domain.ChatOutcome;
+import com.elioo.baymax.companion.domain.CitedMedicine;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.extraction.config.BaymaxModelClient;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
@@ -428,6 +429,88 @@ class ChatAnswerServiceTest {
         assertThat(stored().modelCalls()).isZero();
     }
 
+    static final UUID RX_PAPER = UUID.fromString("5e9edf6d-0a2a-4913-8675-9d07a4100005");
+    static final String RX1_CROP = "f/p/rx/crop-m1.jpg";
+    /** CTX with the prescription's paper and its line's crop known, as ChatContextBuilder builds it. */
+    static final ChatContext CTX_CROPS = new ChatContext(CTX.factLines(), CTX.numbers(), CTX.verbatimLines(), List.of(PAPER, RX_PAPER),
+            false, CTX.facts(), CTX.dates(), CTX.medicineNames(), CTX.foreignLabels(), RX_PAPER, Set.of(), List.of(RX1_CROP));
+
+    /**
+     * Review of #166, finding 5: a prescription line the answer quotes goes to the family with its crop, and is stored with
+     * it, so the thread shows the same crop after a reload. The crop is the paper's own, by the line's position.
+     */
+    @Test
+    void aQuotedLineGoesWithItsCrop() {
+        when(contexts.build(eq(FAMILY), eq(PATIENT), eq("Ma"), any())).thenReturn(Mono.just(CTX_CROPS));
+        model(Mono.just(reply("Ma-র শেষ প্রেসক্রিপশনে লেখা: {{rx:1}}", 1, 1)));
+
+        AskAnswer a = ask("ওষুধটা অর্ধেক করব?");
+
+        assertThat(a.kind()).isEqualTo(AnswerKind.ANSWER);
+        assertThat(a.answer()).contains(RX1);
+        assertThat(a.medicines()).as("sent").containsExactly(new CitedMedicine(RX_PAPER, RX1_CROP));
+        assertThat(stored().medicines()).as("stored").containsExactly(new CitedMedicine(RX_PAPER, RX1_CROP));
+    }
+
+    /** The other direction: an answer that quotes no line, and the fixed reply after a refused quote, carry no crop. */
+    @Test
+    void anAnswerQuotingNoLineHasNoCrop() {
+        when(contexts.build(eq(FAMILY), eq(PATIENT), eq("Ma"), any())).thenReturn(Mono.just(CTX_CROPS));
+        model(Mono.just(reply("Ma-র ক্রিয়েটিনিন 1.8।", 1, 1)));
+
+        AskAnswer a = ask("আম্মার ক্রিয়েটিনিন কত?");
+
+        assertThat(a.kind()).isEqualTo(AnswerKind.ANSWER);
+        assertThat(a.medicines()).isEmpty();
+        assertThat(stored().medicines()).isEmpty();
+    }
+
+    @Test
+    void aRefusedQuoteFallsBackWithoutItsCrop() {
+        when(contexts.build(eq(FAMILY), eq(PATIENT), eq("Ma"), any())).thenReturn(Mono.just(CTX_CROPS));
+        // "half" beside the quoted line is a dose change, refused twice: the fixed reply quotes nothing
+        model(Mono.just(reply("{{rx:1}} — অর্ধেক করুন", 1, 1)), Mono.just(reply("{{rx:1}} — অর্ধেক করুন", 1, 1)));
+
+        AskAnswer a = ask("ওষুধটা অর্ধেক করব?");
+
+        assertThat(a.kind()).isEqualTo(AnswerKind.FALLBACK);
+        assertThat(a.medicines()).isEmpty();
+        assertThat(stored().medicines()).isEmpty();
+    }
+
+    /**
+     * Review of #166, finding 4: the answer deadline runs from the request, not from the model call, so slow reads before
+     * the model count against it. Without it, 40 s of reads and a 10 s answer reach the family at 50 s: the moment the web
+     * has already shown its fallback, while the stored answer would say something else on the next reload.
+     */
+    @Test
+    void theAnswerDeadlineRunsFromTheRequest() {
+        properties.getChat().setAnswerDeadline(Duration.ofSeconds(45));
+        // thenAnswer, so each delay is assembled inside the virtual-time run and waits on the virtual clock
+        when(attention.urgent(FAMILY, PATIENT)).thenAnswer(i -> Mono.delay(Duration.ofSeconds(40)).thenReturn(List.of()));
+        when(model.invoke(any())).thenAnswer(i -> Mono.delay(Duration.ofSeconds(10)).map(t -> reply("Ma-র ক্রিয়েটিনিন 1.8।", 1, 1)));
+
+        StepVerifier.withVirtualTime(() -> service().ask(FAMILY, PATIENT, "আম্মার ক্রিয়েটিনিন কত?", "bn"))
+                .thenAwait(Duration.ofSeconds(45))
+                .assertNext(a -> assertThat(a.kind()).as("answered by the deadline, from the request").isEqualTo(AnswerKind.FALLBACK))
+                .expectComplete()
+                .verify(Duration.ofSeconds(5));
+        assertThat(stored().handler()).isEqualTo("model_error");
+    }
+
+    /** And reads that alone outlast the deadline end the request inside the web's wait, storing no answer. */
+    @Test
+    void readsPastTheDeadlineEndTheRequest() {
+        properties.getChat().setAnswerDeadline(Duration.ofSeconds(45));
+        when(attention.urgent(FAMILY, PATIENT)).thenAnswer(i -> Mono.delay(Duration.ofSeconds(120)).thenReturn(List.of()));
+
+        StepVerifier.withVirtualTime(() -> service().ask(FAMILY, PATIENT, "আম্মার ক্রিয়েটিনিন কত?", "bn"))
+                .thenAwait(Duration.ofSeconds(45).plus(ChatAnswerService.STORE_GRACE))
+                .expectError(java.util.concurrent.TimeoutException.class)
+                .verify(Duration.ofSeconds(5));
+        verify(turns, never()).complete(any(), any());
+    }
+
     @Test
     void thanksAfterANowRepeatsTheNowLine() {
         when(attention.urgent(FAMILY, PATIENT)).thenReturn(Mono.just(List.of(urgent(Urgency.NOW))));
@@ -676,6 +759,61 @@ class ChatAnswerServiceTest {
         assertAnsweredByCode();
         assertThat(a.answer()).isEqualTo(copy.line("en", "chat.purpose.written", "Ma's") + "\n" + RX1 + purposeTail("en"));
         assertThat(stored().documentIds()).containsExactly(PAPER);
+    }
+
+    static final String RX2 = "Tab. Fictazide 25 mg · 0+0+1 · খাবারের আগে";
+    static final String RX2_CROP = "f/p/rx/crop-m2.jpg";
+    /** Two stored lines on the prescription's paper, each with its own crop, as ChatContextBuilder builds them. */
+    static final ChatContext TWO_LINES_CROPS = new ChatContext(
+            List.of("PATIENT Ma", "PRESCRIPTION 2026-09-20", "{{rx:1}} = " + RX1, "{{rx:2}} = " + RX2), Set.of("2026", "9", "20"),
+            List.of(RX1, RX2), List.of(RX_PAPER), false, List.of(), Set.of(LocalDate.parse("2026-09-20")),
+            Set.of("demoprol", "fictazide"), Set.of(), RX_PAPER, Set.of(), List.of(RX1_CROP, RX2_CROP));
+
+    private void twoLinesWithCrops() {
+        when(contexts.build(eq(FAMILY), eq(PATIENT), eq("Ma"), any())).thenReturn(Mono.just(TWO_LINES_CROPS));
+        when(contexts.medicineNames(FAMILY, PATIENT)).thenReturn(Mono.just(TWO_LINES_CROPS.medicineNames()));
+    }
+
+    /**
+     * Review of #171 on #166 (DR-12): the lines a medicine-purpose reply shows are the prescription's stored lines, so each
+     * goes to the family with its own crop and is stored with it, exactly as a model answer's quoted line does, never
+     * {@code List.of()}. The crop is the one of the line shown (the second here), not the first line's or every line's.
+     */
+    @Test
+    void aPurposeReplyShowsTheLineItQuotesWithThatLinesCrop() {
+        twoLinesWithCrops();
+
+        AskAnswer a = service().ask(FAMILY, PATIENT, "what is Fictazide for?", "en").block(Duration.ofSeconds(10));
+
+        assertAnsweredByCode();
+        assertThat(a.answer()).isEqualTo(copy.line("en", "chat.purpose.written", "Ma's") + "\n" + RX2 + purposeTail("en"));
+        assertThat(a.medicines()).as("sent").containsExactly(new CitedMedicine(RX_PAPER, RX2_CROP));
+        assertThat(stored().medicines()).as("stored").containsExactly(new CitedMedicine(RX_PAPER, RX2_CROP));
+        assertThat(stored().documentIds()).containsExactly(RX_PAPER);
+    }
+
+    /** Every line shown, when the question names none: each with its crop, in the order shown. */
+    @Test
+    void aPurposeReplyShowingEveryLineCarriesEveryCropInOrder() {
+        twoLinesWithCrops();
+
+        AskAnswer a = ask("এটা কিসের ওষুধ?");
+
+        assertAnsweredByCode();
+        assertThat(a.answer()).startsWith(copy.line("bn", "chat.purpose.written", "Ma-র") + "\n" + RX1 + "\n" + RX2);
+        assertThat(a.medicines()).containsExactly(new CitedMedicine(RX_PAPER, RX1_CROP), new CitedMedicine(RX_PAPER, RX2_CROP));
+        assertThat(stored().medicines()).containsExactly(new CitedMedicine(RX_PAPER, RX1_CROP), new CitedMedicine(RX_PAPER, RX2_CROP));
+    }
+
+    /** The other direction: a purpose reply whose lines have no crop known claims none (DR-12: never a wrong crop). */
+    @Test
+    void aPurposeReplyWithNoCropKnownClaimsNone() {
+        AskAnswer a = service().ask(FAMILY, PATIENT, "what is Demoprol for?", "en").block(Duration.ofSeconds(10));
+
+        assertAnsweredByCode();
+        assertThat(a.answer()).contains(RX1);
+        assertThat(a.medicines()).isEmpty();
+        assertThat(stored().medicines()).isEmpty();
     }
 
     /** No medicine named ("this medicine"): every written line, as the model is told to write them. */

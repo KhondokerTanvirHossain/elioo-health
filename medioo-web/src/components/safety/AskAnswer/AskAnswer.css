@@ -1,0 +1,62 @@
+/* Medioo's answer (AskAnswer.tsx): the received bubble keeps the line breaks Java sent (the answer, then the disclaimer
+   and the red-flag line on lines of their own), and an emergency answer in Bangladesh has the 999 call under it, on the
+   received side, at the primary target size. It is the tint's call button (VerdictCard's outside a NOW card), not the
+   NOW red: that red names a NOW result read off a paper (plan W2a), and an emergency question is not one. */
+/* The bubble row keeps the column's full width (its body's 76% cap is of that width); only the call shrinks to fit. */
+.ask-answer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.ask-answer .message-bubble__body {
+  white-space: pre-line;
+}
+/* The crop of each prescription line the answer quotes (review of PR 166, finding 5), before the bubble, on the received
+   side, in one rounded group as the health screen's medicines are (MedicinesAsWritten.css): the paper's own image of the
+   line, at its own size and never wider than the column (Crop.css). */
+.ask-answer__crops {
+  display: flex;
+  flex-direction: column;
+  align-self: flex-start;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--sep);
+  border-radius: var(--radius-md);
+  background: var(--bg3);
+  list-style: none;
+}
+.ask-answer__crop-line {
+  display: grid;
+  min-width: 0;
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--sep);
+}
+.ask-answer__crop-line:first-child {
+  border-top: 0;
+}
+.ask-answer__crop {
+  justify-self: start;
+}
+.ask-answer__call {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--target-primary);
+  margin-left: var(--space-3);
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--tint);
+  color: var(--on-tint);
+  font-family: var(--font-bn);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  text-decoration: none;
+}
+.ask-answer__call:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}

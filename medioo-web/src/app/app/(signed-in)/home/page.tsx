@@ -7,22 +7,29 @@ import { Composer } from "@/components/Composer/Composer";
 import { MessageBubble } from "@/components/MessageBubble/MessageBubble";
 import { MioAvatar } from "@/components/MioAvatar/MioAvatar";
 import { Thread } from "@/components/Thread/Thread";
+import { mergeAsks } from "@/components/Thread/merge";
 import { href } from "@/routing/paths";
 import { signedInPage, type ShellContext } from "../shell";
-import { composerWords } from "./chat-words";
+import { composerNoJs, composerWords } from "./chat-words";
 import { OpenAtNewest } from "./OpenAtNewest";
 import "./home.css";
 
-type Reads = { attention: AttentionJson; thread: ThreadJson };
+type Reads = { attention: AttentionJson; papers: ThreadJson; asked: ThreadJson };
 
-/** The patient's attention stack and thread, read in parallel through javaGet (GET only, the cookie only). */
+/**
+ * The patient's attention stack and thread, read in parallel through javaGet (GET only, the cookie only). The thread is
+ * read twice (review of PR 166, findings 1, 7, 13): without asks, the first page of papers and delivered messages, which
+ * decides a first-run patient and is never pushed off by questions; and with `asks=1` (plan CHAT-web), for the
+ * questions asked here and Java's answers, so an answer survives a reload. mergeAsks draws them as one thread.
+ */
 async function reads(patient: MePatient, here: string): Promise<Reads> {
   const id = encodeURIComponent(patient.id);
-  const [attention, thread] = await Promise.all([
+  const [attention, papers, asked] = await Promise.all([
     javaGet<AttentionJson>(`/app/api/patients/${id}/attention`),
     javaGet<ThreadJson>(`/app/api/patients/${id}/thread`),
+    javaGet<ThreadJson>(`/app/api/patients/${id}/thread?asks=1`),
   ]);
-  return { attention: signedIn(attention, here), thread: signedIn(thread, here) };
+  return { attention: signedIn(attention, here), papers: signedIn(papers, here), asked: signedIn(asked, here) };
 }
 
 /** Medioo's greeting: a template, no model call and no time of day (ChatView.greeting). */
@@ -68,10 +75,13 @@ export default async function HomePage() {
           </div>
         );
       }
-      const { attention, thread } = await load(patient);
-      // Java's ChatView: a patient with no paper and nothing to look at gets the introduction. The thread lists every
-      // paper and every delivered message, so its first page empty is a patient with none.
-      const first = thread.items.length === 0 && attention.items.length === 0;
+      const { attention, papers, asked } = await load(patient);
+      // Java's ChatView: a patient with no paper and nothing to look at gets the introduction. The thread read without
+      // asks lists every paper and every delivered message, so its first page empty is a patient with none; a question
+      // asked before the first paper does not end the introduction (review of PR 166, findings 1, 13).
+      const first = papers.items.length === 0 && attention.items.length === 0;
+      const items = mergeAsks(papers.items, asked.items);
+      const answered = items.flatMap((i) => (i.kind === "ask" ? [i.turn_id] : []));
       const nowOnPage = ctx.nowShown || attention.items.some((i) => i.kind === "urgent" && i.level === "now");
       return (
         <div className="chat" data-page="chat">
@@ -84,7 +94,7 @@ export default async function HomePage() {
           <MessageBubble surface="recv">{greeting(lang, me)}</MessageBubble>
           {first && <MessageBubble surface="recv">{t(lang, "chat.intro")}</MessageBubble>}
           {stack(ctx, "inline", attention, patient)}
-          <Thread items={thread.items} lang={lang} preview={preview} />
+          <Thread items={items} lang={lang} preview={preview} />
           {!first && (
             <p className="chat__papers">
               <a className="chat__papers-link" href={href(`/app/timeline?patient=${encodeURIComponent(patient.id)}`, preview)}>
@@ -92,7 +102,18 @@ export default async function HomePage() {
               </a>
             </p>
           )}
-          <Composer words={composerWords(lang)} owner={patient.owner} patientId={patient.id} preview={preview} />
+          <Composer
+            words={composerWords(lang, patient.name_possessive)}
+            owner={patient.owner}
+            patientId={patient.id}
+            preview={preview}
+            answered={answered}
+            nojs={
+              <noscript>
+                <p className="composer__standing composer__nojs">{composerNoJs(lang)}</p>
+              </noscript>
+            }
+          />
           <OpenAtNewest hold={nowOnPage} />
         </div>
       );

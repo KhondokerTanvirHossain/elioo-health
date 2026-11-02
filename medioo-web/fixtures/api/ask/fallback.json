@@ -8,6 +8,7 @@
     "at": "2026-10-30T06:00:00Z",
     "call_999": false,
     "kind": "fallback",
+    "medicines": [ ],
     "question": "আম্মার প্রেশার কত?",
     "turn_id": "8aac596c-9dd7-310a-94db-b7d24a8659aa"
   },
