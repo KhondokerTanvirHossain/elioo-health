@@ -1085,6 +1085,63 @@ class ChatAnswerServiceTest {
         assertThat(o.documentIds()).containsExactly(PAPER);
     }
 
+    // ---- The check and #166's quoted lines (V31's medicine columns), both directions, on the path: the judge's own
+    // invocations are asserted, so a crop kept or dropped is known to have gone through the check, or never to it.
+
+    /** A refusal after an answer that quoted a line quotes nothing: no crop sent, none stored, no paper cited. */
+    @Test
+    void aCheckRefusalOfAQuotedLineCarriesNoCrop() {
+        when(contexts.build(eq(FAMILY), eq(PATIENT), eq("Ma"), any())).thenReturn(Mono.just(CTX_CROPS));
+        model(Mono.just(reply(RX_ANSWER, 1, 1)));
+        when(judge.invoke(any())).thenReturn(Mono.just(verdict("{\"verdict\":\"refuse\"}")));
+        assertThat(AnswerCheck.cited(RX_ANSWER, CTX_CROPS)).as("the refused answer did quote a line with its crop")
+                .containsExactly(new CitedMedicine(RX_PAPER, RX1_CROP));
+
+        AskAnswer a = ask(PLAIN_QUESTION);
+
+        verify(judge, times(1)).invoke(any());
+        assertThat(stored().handler()).isEqualTo("model_check");
+        assertThat(a.answer()).isEqualTo(line("bn", "chat.ask.failed") + tail(true)).doesNotContain(RX1);
+        assertThat(a.medicines()).as("sent").isEmpty();
+        assertThat(stored().medicines()).as("stored").isEmpty();
+        assertThat(stored().documentIds()).as("cited").isEmpty();
+    }
+
+    /** The other direction: a pass leaves the answer byte-equal, and with it the quoted line and that line's crop. */
+    @Test
+    void aCheckPassOfAQuotedLineKeepsItsCrop() {
+        when(contexts.build(eq(FAMILY), eq(PATIENT), eq("Ma"), any())).thenReturn(Mono.just(CTX_CROPS));
+        model(Mono.just(reply(RX_ANSWER, 1, 1)));
+
+        AskAnswer a = ask(PLAIN_QUESTION);
+
+        verify(judge, times(1)).invoke(any());
+        assertThat(stored().handler()).isEqualTo("model");
+        assertThat(a.answer()).isEqualTo(AnswerCheck.resolve(RX_ANSWER, CTX_CROPS) + tail(false));
+        assertThat(a.medicines()).as("sent").containsExactly(new CitedMedicine(RX_PAPER, RX1_CROP));
+        assertThat(stored().medicines()).as("stored").containsExactly(new CitedMedicine(RX_PAPER, RX1_CROP));
+        assertThat(stored().documentIds()).as("cited").containsExactly(PAPER, RX_PAPER);
+    }
+
+    /**
+     * A P14 reply is code's, built from the stored lines: it is never sent to the check (here a check that would refuse it)
+     * and keeps the lines it shows with their crops (#166's {@code MedicinePurposeReply.Reply#quoted}).
+     */
+    @Test
+    void aCodeBuiltPurposeReplyKeepsItsCropsAndIsNeverChecked() {
+        twoLinesWithCrops();
+        when(judge.invoke(any())).thenReturn(Mono.just(verdict("{\"verdict\":\"refuse\"}")));
+
+        AskAnswer a = service().ask(FAMILY, PATIENT, "what is Fictazide for?", "en").block(Duration.ofSeconds(10));
+
+        verify(judge, never()).invoke(any());
+        assertAnsweredByCode();
+        assertThat(stored().checkCalls()).isZero();
+        assertThat(a.answer()).isEqualTo(copy.line("en", "chat.purpose.written", "Ma's") + "\n" + RX2 + purposeTail("en"));
+        assertThat(a.medicines()).as("sent").containsExactly(new CitedMedicine(RX_PAPER, RX2_CROP));
+        assertThat(stored().medicines()).as("stored").containsExactly(new CitedMedicine(RX_PAPER, RX2_CROP));
+    }
+
     /** Fail closed: anything but the one fixed verdict "pass" is a refusal, and each says which way it failed. */
     @Test
     void anyCheckFailureIsARefusal() {

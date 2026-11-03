@@ -6,6 +6,7 @@ import com.elioo.baymax.companion.application.port.out.ChatCopyPort;
 import com.elioo.baymax.companion.config.ChatCheckModelConfiguration;
 import com.elioo.baymax.companion.config.ChatModelConfiguration;
 import com.elioo.baymax.companion.domain.AnswerKind;
+import com.elioo.baymax.companion.domain.CitedMedicine;
 import com.elioo.baymax.extraction.config.BaymaxModelClient;
 import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
@@ -18,6 +19,7 @@ import com.elioo.healthcare.llm.model.LlmResponse;
 import com.elioo.healthcare.llm.model.TokenUsage;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ReactiveWebApplicationContextRunner;
+import org.springframework.context.ApplicationContext;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -32,6 +34,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -78,7 +81,32 @@ class ChatQuestionsAcceptanceTest {
         return runner(stub, new PassingChatCheck());
     }
 
-    private ReactiveWebApplicationContextRunner runner(StubModel stub, PassingChatCheck check) {
+    /**
+     * A stand-in for the refuse-only model check (PO ruling P15) that answers the verdict it is set to, {@code pass} or
+     * {@code refuse}, and counts the answers it was asked to read.
+     */
+    static final class ScriptedCheck implements LlmClient {
+        final AtomicReference<String> verdict;
+        final AtomicInteger calls = new AtomicInteger();
+
+        ScriptedCheck(String verdict) {
+            this.verdict = new AtomicReference<>(verdict);
+        }
+
+        @Override
+        public Mono<LlmResponse> invoke(LlmRequest request) {
+            calls.incrementAndGet();
+            return Mono.just(new LlmResponse("{\"verdict\":\"" + verdict.get() + "\"}", "end_turn", new TokenUsage(400, 8),
+                    PassingChatCheck.MODEL, null, "anthropic", 2L));
+        }
+
+        @Override
+        public String providerName() {
+            return "anthropic";
+        }
+    }
+
+    private ReactiveWebApplicationContextRunner runner(StubModel stub, LlmClient check) {
         return PostgresNudgeAdapterTest.runnerFor(POSTGRES)
                 .withPropertyValues("baymax.wa.enabled=false", "baymax.nudge.enabled=false", "baymax.chat.enabled=true",
                         "baymax.llm.prices.anthropic.[claude-sonnet-5].input=2.00",
@@ -87,7 +115,7 @@ class ChatQuestionsAcceptanceTest {
                         "baymax.llm.prices.anthropic.[" + PassingChatCheck.MODEL + "].input=0.10",
                         "baymax.llm.prices.anthropic.[" + PassingChatCheck.MODEL + "].output=0.50")
                 .withBean(ChatModelConfiguration.CHAT_CLIENT, BaymaxModelClient.class, () -> new BaymaxModelClient(stub))
-                .withBean(ChatCheckModelConfiguration.CHECK_CLIENT, BaymaxModelClient.class, check::client);
+                .withBean(ChatCheckModelConfiguration.CHECK_CLIENT, BaymaxModelClient.class, () -> new BaymaxModelClient(check));
     }
 
     @Test
@@ -173,6 +201,118 @@ class ChatQuestionsAcceptanceTest {
             for (AskAnswer a : List.of(creatinine, dose, napa, demoprol, chest, thanks)) {
                 assertThat(text("SELECT answer FROM baymax.chat_turn WHERE id = '" + a.turnId() + "'")).isEqualTo(a.answer());
             }
+        });
+    }
+
+    // ---- The model check (PO ruling P15) and #166's quoted lines (V31: medicine_document_ids, medicine_crop_keys), on real
+    // Postgres: the real service, context builder and adapter write the row, and each assertion reads one column of it.
+
+    /** The stored crop of the prescription's one line: what a quoted line is shown beside (DR-12). */
+    static final String RX_CROP = "fam/rx/crop-m1.jpg";
+    static final String WRITTEN = "Tab. Demoprol 5 mg · 1+0+0 · খাবারের পরে";
+
+    /** A family, its patient Ma, and Ma's latest prescription, one line with that line's crop. */
+    private record Seeded(FamilyAccount family, PatientProfile ma, UUID rx) {
+    }
+
+    private static Seeded seed(ApplicationContext context, String number) throws Exception {
+        Instant t = Instant.now();
+        HealthRecordPort records = context.getBean(HealthRecordPort.class);
+        FamilyAccount f = records.createFamily(new FamilyAccount(null, number, "Rahim", FamilyAccount.Plan.FAMILY, t, t)).block();
+        PatientProfile ma = records.createPatient(new PatientProfile(null, f.id(), "Ma", 68, PatientProfile.Sex.FEMALE, List.of(), t, t))
+                .block();
+        UUID rx = paper(ma, "prescription", "routine");
+        sql("INSERT INTO baymax.medication_event (patient_id, document_id, name, dose_text, timing_text, crop_key, at) VALUES ('"
+                + ma.id() + "','" + rx + "','Tab. Demoprol 5 mg','1+0+0','খাবারের পরে','" + RX_CROP + "',now())");
+        return new Seeded(f, ma, rx);
+    }
+
+    /** One stored turn's quoted lines, as {@code <papers>|<crops>}, each array comma-joined in its stored order. */
+    private static String quoted(AskAnswer a) throws Exception {
+        return text("SELECT array_to_string(medicine_document_ids, ',') || '|' || array_to_string(medicine_crop_keys, ',')"
+                + " FROM baymax.chat_turn WHERE id = '" + a.turnId() + "'");
+    }
+
+    /** One stored turn's path: {@code handler/kind/model_calls/check_calls}. */
+    private static String path(AskAnswer a) throws Exception {
+        return text("SELECT handler || '/' || kind || '/' || model_calls || '/' || check_calls FROM baymax.chat_turn WHERE id = '"
+                + a.turnId() + "'");
+    }
+
+    /** A pass leaves the answer as the code checks passed it, and the row keeps the line it quotes with that line's crop. */
+    @Test
+    void aCheckPassKeepsTheQuotedLineAndItsCropInTheRow() {
+        StubModel stub = new StubModel();
+        ScriptedCheck check = new ScriptedCheck("pass");
+        runner(stub, check).run(context -> {
+            Seeded s = seed(context, "+8801700000772");
+            AskUseCase asks = context.getBean(AskUseCase.class);
+
+            AskAnswer dose = ask(asks, s.family(), s.ma(), "ওষুধটা অর্ধেক করব?");
+
+            assertThat(check.calls.get()).as("model check calls").isEqualTo(1);
+            assertThat(path(dose)).isEqualTo("model/answer/1/1");
+            assertThat(dose.answer()).startsWith("Ma-র শেষ প্রেসক্রিপশনে লেখা: " + WRITTEN);
+            assertThat(text("SELECT answer FROM baymax.chat_turn WHERE id = '" + dose.turnId() + "'")).isEqualTo(dose.answer());
+            assertThat(quoted(dose)).as("papers|crops of the passed turn").isEqualTo(s.rx() + "|" + RX_CROP);
+            assertThat(text("SELECT ('" + s.rx() + "' = ANY(document_ids))::text FROM baymax.chat_turn WHERE id = '" + dose.turnId() + "'"))
+                    .as("the quoted line's paper is cited").isEqualTo("true");
+            assertThat(dose.medicines()).containsExactly(new CitedMedicine(s.rx(), RX_CROP));
+        });
+    }
+
+    /**
+     * A refusal after an answer that quoted a line stores the fixed reply and nothing the refused answer quoted: no paper,
+     * no crop (V31's two arrays empty), and no cited paper. The same family's turn just before, passed, shows the fixture
+     * does quote a line with its crop, so the empty arrays are the refusal's, not the fixture's.
+     */
+    @Test
+    void aCheckRefusalAfterAQuotedLineStoresNoMedicineInTheRow() {
+        StubModel stub = new StubModel();
+        ScriptedCheck check = new ScriptedCheck("pass");
+        runner(stub, check).run(context -> {
+            Seeded s = seed(context, "+8801700000773");
+            AskUseCase asks = context.getBean(AskUseCase.class);
+            ChatCopyPort copy = context.getBean(ChatCopyPort.class);
+            AskAnswer passed = ask(asks, s.family(), s.ma(), "ওষুধটা অর্ধেক করব?");
+            assertThat(quoted(passed)).as("precondition: the same answer, passed, quotes the line with its crop")
+                    .isEqualTo(s.rx() + "|" + RX_CROP);
+
+            check.verdict.set("refuse");
+            AskAnswer refused = ask(asks, s.family(), s.ma(), "ওষুধটা অর্ধেক করব?");
+
+            assertThat(check.calls.get()).as("model check calls").isEqualTo(2);
+            assertThat(path(refused)).isEqualTo("model_check/fallback/1/1");
+            assertThat(refused.answer()).startsWith(copy.line("bn", "chat.ask.failed")).doesNotContain(WRITTEN);
+            assertThat(text("SELECT answer FROM baymax.chat_turn WHERE id = '" + refused.turnId() + "'")).isEqualTo(refused.answer());
+            assertThat(quoted(refused)).as("papers|crops of the refused turn").isEqualTo("|");
+            assertThat(text("SELECT cardinality(medicine_document_ids) || '/' || cardinality(medicine_crop_keys) || '/'"
+                    + " || cardinality(document_ids) FROM baymax.chat_turn WHERE id = '" + refused.turnId() + "'"))
+                    .as("quoted papers/crops/cited papers of the refused turn").isEqualTo("0/0/0");
+            assertThat(refused.medicines()).isEmpty();
+        });
+    }
+
+    /**
+     * A P14 reply is built by code from the stored lines: it is never sent to the model check, and its row keeps the line it
+     * shows with that line's crop (#166, {@code MedicinePurposeReply.Reply#quoted}).
+     */
+    @Test
+    void aPurposeReplyIsNeverCheckedAndKeepsItsCropInTheRow() {
+        StubModel stub = new StubModel();
+        ScriptedCheck check = new ScriptedCheck("pass");
+        runner(stub, check).run(context -> {
+            Seeded s = seed(context, "+8801700000774");
+            AskUseCase asks = context.getBean(AskUseCase.class);
+
+            AskAnswer demoprol = ask(asks, s.family(), s.ma(), "Demoprol কীসের ওষুধ?");
+
+            assertThat(check.calls.get()).as("model check calls for a code-built reply").isZero();
+            assertThat(stub.calls.get()).as("chat model calls for a code-built reply").isZero();
+            assertThat(path(demoprol)).isEqualTo("medicine_purpose/declined/0/0");
+            assertThat(demoprol.answer()).contains(WRITTEN);
+            assertThat(quoted(demoprol)).as("papers|crops of the purpose reply").isEqualTo(s.rx() + "|" + RX_CROP);
+            assertThat(demoprol.medicines()).containsExactly(new CitedMedicine(s.rx(), RX_CROP));
         });
     }
 
