@@ -1626,16 +1626,19 @@ CHAT-web asks the route; the emergency pre-check runs either way.
   `model_check` is always a counted FALLBACK (`chat_turn_check_refusal_is_fallback`). The daily cap counts questions, not
   cost: a checked answer is the same one counted turn; there is no cost cap for the check to count toward. The migration
   is `V32__chat_model_check.sql`: #166 (CHATWEB) shipped first and took `V31__chat_turn_medicines.sql`, and the restack
-  onto it renamed this file from V31 (2026-11-03; it was never applied anywhere). A refusal quotes no line, so its turn
-  stores empty `medicine_document_ids` and `medicine_crop_keys` (#166's columns).
+  onto it renamed this file from V31 (2026-11-03). The old V31 name was never on origin/main, so it was never deployed;
+  the local dev database (Docker, :5433) was not checked, because Docker was down when this was written. A refusal quotes
+  no line, so its turn stores empty `document_ids`, `medicine_document_ids` and `medicine_crop_keys` (#166's columns),
+  and the migration holds it (`chat_turn_check_refusal_quotes_nothing`, second review of #173): no later writer can
+  store a refusal that draws a crop or cites a paper.
 - **Model, by property.** `baymax.chat.check.model` (`BAYMAX_CHAT_CHECK_MODEL`, default `claude-haiku-5-5`, the cheapest
   current Claude), `baymax.chat.check.enabled` (`BAYMAX_CHAT_CHECK_ENABLED`, default true, so on whenever answers are
   on), `baymax.chat.check.effort` (low), `baymax.chat.check.timeout`, `baymax.chat.check.max-output-tokens` (4096). Its
   client mirrors the chat's (`ChatCheckModelConfiguration`): a `claude-*` id on the Anthropic key, else
   `llm.provider`'s key. Haiku 5.5 thinks adaptively, at medium unless told: `AnthropicLlmClient` now withholds thinking
-  and effort from Haiku 4.x and the Claude 3 Haikus only, so the check runs at effort low. **Price UNVERIFIED:** $0.10 /
-  $0.50 per 1M tokens from the current-models table of Anthropic's API reference (cached 2026-10-06, read 2026-11-02);
-  the Models API carries no price and no key was used. A typical check is about $0.0002; the worst case (2,000 in, 4,096
+  and effort from Haiku 4.x and the Claude 3 Haikus only, so the check runs at effort low. **Price:** $0.10 /
+  $0.50 per 1M tokens for a prompt up to 100,000 tokens, fetched from https://platform.claude.com/docs/en/about-claude/pricing
+  on 2026-11-03 (it matched the rate first read from the cached API reference; the Models API carries no price). A typical check is about $0.0002; the worst case (2,000 in, 4,096
   out) about $0.002, under the ruling's +$0.003. `ChatPropertiesCheck` refuses to start on an unpriced check model while
   the check is on, and on answers on with the check on and no check client (a blank `BAYMAX_CHAT_CHECK_MODEL`, a missing
   key), which would otherwise refuse every medicine answer as `check_no_client` with nothing on the box to say why.
@@ -1647,4 +1650,6 @@ CHAT-web asks the route; the emergency pre-check runs either way.
   yes/no refusal by code; (c) whether to check every modelled answer instead (about $0.0002 each), which would close the
   gaps a word-based gate keeps (a lowercase or Bangla-script name no list holds, a pronoun answer to a question about an
   unknown medicine); (d) whether to send the check the question with names and digits masked, so it can judge a bare
-  answer itself. Built defaults: (a) and (b) on, (c) and (d) not built.
+  answer itself. Built defaults: (a) and (b) on, (c) and (d) not built. **(a) and (b) are ON as built and go live with
+  the merge, so the PO's answer on them is asked together with the live-run approval**, and recorded here before #173
+  goes back to ready for review.
