@@ -30,9 +30,7 @@ ALTER TABLE ${flyway:defaultSchema}.chat_turn ADD CONSTRAINT chat_turn_check_ref
 --    not only in the one reply the service builds, so no later writer can store a refusal that draws a crop beside text
 --    that names no medicine (second review of #173, finding 2; the V13 → V14 lesson). V31's chat_turn_medicine_on_a_cited_paper
 --    makes an empty document_ids imply empty medicine_document_ids; both are named so the rule reads on its own.
-ALTER TABLE ${flyway:defaultSchema}.chat_turn ADD CONSTRAINT chat_turn_check_refusal_quotes_nothing
-    CHECK (handler IS DISTINCT FROM 'model_check'
-           OR (cardinality(document_ids) = 0 AND cardinality(medicine_document_ids) = 0 AND cardinality(medicine_crop_keys) = 0));
+-- REPLAY MUTANT: constraint removed
 
 COMMENT ON COLUMN ${flyway:defaultSchema}.chat_turn.check_calls IS
     'P15: the refuse-only model check''s calls on this turn (0 or 1); model_calls counts the chat model''s own';

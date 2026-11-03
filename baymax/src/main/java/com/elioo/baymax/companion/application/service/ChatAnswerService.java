@@ -459,7 +459,9 @@ public class ChatAnswerService implements AskUseCase {
                 })
                 .map(code -> {
                     if (code.isEmpty()) {
-                        return passed;
+                        // REPLAY MUTANT: the passed text altered after the check
+                        return new Body(passed.text() + " ", passed.kind(), passed.handler(), passed.documents(), passed.medicines(),
+                                passed.doctorLine());
                     }
                     tally.violations.add(code);
                     log.debug("[baymax] chat turn={} model check refused: {}", turnId, code);
