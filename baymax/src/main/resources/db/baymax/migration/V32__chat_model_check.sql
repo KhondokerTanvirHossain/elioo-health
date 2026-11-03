@@ -9,8 +9,8 @@
 --    as the fixed reply under handler 'model_check': a FALLBACK on a counted, modelled turn, never an answer.
 --
 -- Version 32: #166 (CHATWEB) shipped first and took V31__chat_turn_medicines.sql; this file was V31 on its branch and was
--- renamed on the restack onto #166, before it was applied anywhere. Nothing in code names it by number (review of #173,
--- finding 20).
+-- renamed on the restack onto #166; the V31 name was never on origin/main, so never deployed. Nothing in code names it
+-- by number (review of #173, finding 20).
 ALTER TABLE ${flyway:defaultSchema}.ai_call_log DROP CONSTRAINT ai_call_log_purpose_check;
 ALTER TABLE ${flyway:defaultSchema}.ai_call_log ADD CONSTRAINT ai_call_log_purpose_check
     CHECK (purpose IN ('ocr', 'extract', 'explain', 'chat', 'nudge', 'summary', 'crop_verify', 'chat_check'));
@@ -26,6 +26,13 @@ ALTER TABLE ${flyway:defaultSchema}.chat_turn ADD CONSTRAINT chat_turn_check_aft
     CHECK (check_calls = 0 OR model_calls >= 1);
 ALTER TABLE ${flyway:defaultSchema}.chat_turn ADD CONSTRAINT chat_turn_check_refusal_is_fallback
     CHECK (handler IS DISTINCT FROM 'model_check' OR (kind IS NOT DISTINCT FROM 'fallback' AND counted AND model_calls >= 1));
+-- 4. A check refusal is the fixed reply: it cites no paper and quotes no line, so it stores and returns no crop. Held here,
+--    not only in the one reply the service builds, so no later writer can store a refusal that draws a crop beside text
+--    that names no medicine (second review of #173, finding 2; the V13 → V14 lesson). V31's chat_turn_medicine_on_a_cited_paper
+--    makes an empty document_ids imply empty medicine_document_ids; both are named so the rule reads on its own.
+ALTER TABLE ${flyway:defaultSchema}.chat_turn ADD CONSTRAINT chat_turn_check_refusal_quotes_nothing
+    CHECK (handler IS DISTINCT FROM 'model_check'
+           OR (cardinality(document_ids) = 0 AND cardinality(medicine_document_ids) = 0 AND cardinality(medicine_crop_keys) = 0));
 
 COMMENT ON COLUMN ${flyway:defaultSchema}.chat_turn.check_calls IS
     'P15: the refuse-only model check''s calls on this turn (0 or 1); model_calls counts the chat model''s own';

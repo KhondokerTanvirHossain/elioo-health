@@ -230,8 +230,8 @@ class PostgresChatTurnAdapterTest {
         });
     }
 
-    // Review of #173, finding 4: each of the chat_model_check migration's three rules on its own test, each named by its constraint, so a replay that
-    // drops one shows that one red whatever the others do.
+    // Review of #173, finding 4: each of the chat_model_check migration's rules on its own test (four since the second
+    // review), each named by its constraint, so a replay that drops one shows that one red whatever the others do.
 
     /** chat_turn_check_refusal_is_fallback: the check's refusal is never stored as an answer shown. */
     @Test
@@ -271,6 +271,39 @@ class PostgresChatTurnAdapterTest {
             assertThatThrownBy(() -> sql("UPDATE baymax.chat_turn SET check_calls = 1 WHERE id = '" + emergency + "'"))
                     .as("a check call on a turn no model answered")
                     .isInstanceOfSatisfying(SQLException.class, e -> assertThat(e.getMessage()).contains("chat_turn_check_after_model"));
+        });
+    }
+
+    /**
+     * chat_turn_check_refusal_quotes_nothing (second review of #173, finding 2): a check refusal is the fixed reply, so it
+     * cites no paper and quotes no line. The rule lives in the schema, not only in the one Body the service builds, so no
+     * later writer can store a refusal that draws a crop beside a reply that names no medicine.
+     */
+    @Test
+    void aModelCheckRefusalCitesNoPaperAndQuotesNoLine() {
+        runner().run(context -> {
+            ChatTurnPort turns = context.getBean(ChatTurnPort.class);
+            DocumentRecordPort documents = context.getBean(DocumentRecordPort.class);
+            FamilyAccount f = family(context);
+            PatientProfile p = patient(context, f.id());
+            UUID rx = documents.create(Document.received(p.id(), f.id(), 1, Instant.now())).block().id();
+            List<CitedMedicine> quoted = List.of(new CitedMedicine(rx, "f/p/rx/crop-m1.jpg"));
+            UUID refused = turns.reserveCounted(f.id(), p.id(), "bn", "আম্মার ওষুধ কখন?", dayStart(), 50).block();
+
+            assertThatThrownBy(() -> turns.complete(refused, new ChatOutcome("ঠিক উত্তর", AnswerKind.FALLBACK, "model_check",
+                    List.of("check_refused"), 1, 1300, 160, null, 2100L, List.of(rx), quoted, 1)).block())
+                    .as("a check refusal stored with a quoted line and its crop")
+                    .hasMessageContaining("chat_turn_check_refusal_quotes_nothing");
+            assertThatThrownBy(() -> turns.complete(refused, new ChatOutcome("ঠিক উত্তর", AnswerKind.FALLBACK, "model_check",
+                    List.of("check_refused"), 1, 1300, 160, null, 2100L, List.of(rx), 1)).block())
+                    .as("a check refusal citing a paper")
+                    .hasMessageContaining("chat_turn_check_refusal_quotes_nothing");
+
+            UUID answered = turns.reserveCounted(f.id(), p.id(), "bn", "আম্মার ওষুধ কখন?", dayStart(), 50).block();
+            turns.complete(answered, new ChatOutcome("Tab. A", AnswerKind.ANSWER, "model", List.of(), 1, 1300, 160, null, 2100L,
+                    List.of(rx), quoted, 1)).block();
+            assertThat(row(answered, "medicine_crop_keys")).as("the same line and crop on an answer the check passed")
+                    .isEqualTo("{f/p/rx/crop-m1.jpg}");
         });
     }
 

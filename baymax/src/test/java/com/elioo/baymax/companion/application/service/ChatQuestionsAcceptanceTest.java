@@ -239,9 +239,26 @@ class ChatQuestionsAcceptanceTest {
                 + a.turnId() + "'");
     }
 
-    /** A pass leaves the answer as the code checks passed it, and the row keeps the line it quotes with that line's crop. */
+    /**
+     * A pass leaves the answer as the code checks passed it, and the row keeps the line it quotes with that line's crop.
+     * Byte-equal is asserted on real Postgres against a twin family asking the same question with the check switched off
+     * (second review of #173, finding 1): the unread answer is what the code checks passed, so a pass that rebuilt, trimmed
+     * or appended to that text shows as a difference between the two stored rows, not only on mocked ports.
+     */
     @Test
     void aCheckPassKeepsTheQuotedLineAndItsCropInTheRow() {
+        AtomicReference<String> unread = new AtomicReference<>();
+        StubModel twin = new StubModel();
+        ScriptedCheck unused = new ScriptedCheck("refuse");
+        runner(twin, unused).withPropertyValues("baymax.chat.check.enabled=false").run(context -> {
+            Seeded s = seed(context, "+8801700000775");
+            AskAnswer dose = ask(context.getBean(AskUseCase.class), s.family(), s.ma(), "ওষুধটা অর্ধেক করব?");
+            assertThat(unused.calls.get()).as("precondition: the twin's answer is never read by the check").isZero();
+            assertThat(path(dose)).as("precondition: the twin's answer is the model's, shown").isEqualTo("model/answer/1/0");
+            unread.set(text("SELECT answer FROM baymax.chat_turn WHERE id = '" + dose.turnId() + "'"));
+        });
+        assertThat(unread.get()).as("precondition: the twin stored its answer").isNotBlank();
+
         StubModel stub = new StubModel();
         ScriptedCheck check = new ScriptedCheck("pass");
         runner(stub, check).run(context -> {
@@ -254,6 +271,8 @@ class ChatQuestionsAcceptanceTest {
             assertThat(path(dose)).isEqualTo("model/answer/1/1");
             assertThat(dose.answer()).startsWith("Ma-র শেষ প্রেসক্রিপশনে লেখা: " + WRITTEN);
             assertThat(text("SELECT answer FROM baymax.chat_turn WHERE id = '" + dose.turnId() + "'")).isEqualTo(dose.answer());
+            assertThat(text("SELECT answer FROM baymax.chat_turn WHERE id = '" + dose.turnId() + "'"))
+                    .as("the passed answer, stored, against the same answer the check never read").isEqualTo(unread.get());
             assertThat(quoted(dose)).as("papers|crops of the passed turn").isEqualTo(s.rx() + "|" + RX_CROP);
             assertThat(text("SELECT ('" + s.rx() + "' = ANY(document_ids))::text FROM baymax.chat_turn WHERE id = '" + dose.turnId() + "'"))
                     .as("the quoted line's paper is cited").isEqualTo("true");
