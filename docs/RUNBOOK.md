@@ -266,6 +266,9 @@ absent on any server where Baymax should not run.
 | `BAYMAX_CHAT_MODEL` | absent (default `claude-sonnet-5`, DR-10's tier) | the chat model, by property. An Anthropic model needs the Anthropic key the extraction already uses; a model with no price row for its provider **refuses to start** (`ChatPropertiesCheck`), because every chat call's cost would be logged NULL. Self-test: the `chat client:` startup line names it |
 | `BAYMAX_CHAT_DAILY_CAP` | absent (default `50`) | model answers per asking account per Dhaka day; past it a question gets `chat.ask.limit` (never counted: an emergency). A blank line is not a number: delete the line rather than blank it. Self-test: none beyond the startup line; the cap is reconciled against the Anthropic console weekly (DR-50) |
 | `BAYMAX_WEB_PREVIEW_FAMILIES` | absent, or bare comma-separated family UUIDs: no quotes, no spaces, no comment. Check with `cat -A` before the redeploy | the families that see the Next.js screens before a route flips (`/app/api/me` → `preview`). Absent or blank = nobody previews. An entry that is not a family id (a typo, a truncated id) is skipped — that family simply does not preview — and startup logs one WARN with the count of skipped entries; it never refuses to start. Quotes `docker --env-file` keeps are stripped, but do not rely on it |
+| `BAYMAX_CHAT_ENABLED` | `true` by PO rulings P10 and P13 (switched on once #170 and #171 are deployed), set with a backup of the env first; absent = answers off | the web চ্যাট's model answers (DR-50). Off, every question but an emergency gets the old fixed reply. With it `true` and the model check on, startup **refuses** when the check has no client (see the next two rows) |
+| `BAYMAX_CHAT_CHECK_ENABLED` | **absent** (defaults `true`). `false` only by PO ruling. **Never a blank line** | PO ruling P15's refuse-only model check of every chat answer that mentions a medicine. Off, those answers are shown on the code checks alone |
+| `BAYMAX_CHAT_CHECK_MODEL` | **absent** (defaults `claude-haiku-5-5`, on the Anthropic key). **Never a blank line** | `${VAR:default}` falls back only when the variable is unset: a present-but-blank line is a blank model, no check client, and with answers on startup refuses (`no chat check client`), which takes MedScribe down too. Before the fix in #173 the same line booted and refused every medicine answer as `check_no_client` with nothing to say why. Any other id must be priced in `baymax.llm.prices` or startup refuses |
 
 **Must be blank** in production:
 
@@ -471,6 +474,7 @@ curl -s -D - https://medioo.eliooo.org/app/api/me                               
 curl -s -D - -X POST https://medioo.eliooo.org/app/api/sign-in/request -H 'X-Medioo: 1' -H 'Content-Type: application/json' -d '{}'  # 403 {"reason":"FORBIDDEN_ORIGIN"}, Cache-Control: no-store: the sessionless sign-in refuses a request with no Origin, and Caddy sends it to Java; sends nothing
 curl -s -o /dev/null -w '%{http_code}\n' https://medioo.eliooo.org/baymax/home                               # 301 → /app/home
 curl -s -o /dev/null -w '%{http_code}\n' https://medioo.eliooo.org/medscribeai/                              # 200, MedScribe PoC UI
+docker logs medscribe-ai --since 15m 2>&1 | grep -c 'chat check client: provider=anthropic model=claude-haiku-5-5 effort=low'  # 1 once #173 is deployed: P15's check has its client
 curl -s -o /dev/null -w '%{http_code}\n' https://medioo.eliooo.org/api/v1/baymax/admin/storage/selftest  # 401 without the token
 ```
 

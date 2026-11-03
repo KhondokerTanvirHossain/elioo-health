@@ -2,6 +2,7 @@ package com.elioo.baymax.companion.config;
 
 import com.elioo.baymax.aicall.application.service.AiCostCalculator;
 import com.elioo.baymax.companion.application.port.out.ChatCopyPort;
+import com.elioo.baymax.companion.application.service.ChatAnswerService;
 import com.elioo.baymax.companion.application.service.ChatLabels;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.extraction.config.BaymaxModelClient;
@@ -46,9 +47,11 @@ class ChatModelConfigurationTest {
 
     private ApplicationContextRunner runner() {
         return new ApplicationContextRunner()
-                .withUserConfiguration(Props.class, ChatModelConfiguration.class, ChatPropertiesCheck.class, AiCostCalculator.class,
-                        UiCopy.class, Copy.class, UiChatCopyAdapter.class)
+                .withUserConfiguration(Props.class, ChatModelConfiguration.class, ChatCheckModelConfiguration.class, ChatPropertiesCheck.class,
+                        AiCostCalculator.class, UiCopy.class, Copy.class, UiChatCopyAdapter.class)
                 .withPropertyValues("baymax.llm.prices.anthropic.[claude-haiku-4-5].input=1.00",
+                        "baymax.llm.prices.anthropic.[claude-haiku-5-5].input=0.10",
+                        "baymax.llm.prices.anthropic.[claude-haiku-5-5].output=0.50",
                         "baymax.llm.prices.anthropic.[claude-haiku-4-5].output=5.00",
                         "baymax.llm.prices.anthropic.[claude-sonnet-5].input=2.00",
                         "baymax.llm.prices.anthropic.[claude-sonnet-5].output=10.00");
@@ -108,6 +111,101 @@ class ChatModelConfigurationTest {
         assertThat(bound.getChat().isEnabled()).as("answers ship off until the live measurement and CHAT-web (review of #164)")
                 .isFalse();
         assertThat(bound.getChat().getDailyCap()).isEqualTo(50);
+
+        // PO ruling P15: the refuse-only model check ships on, on a priced Claude model
+        BaymaxProperties.Chat.Check check = bound.getChat().getCheck();
+        assertThat(check.isEnabled()).as("the model check is on whenever answers are").isTrue();
+        assertThat(check.getModel()).as("baymax.chat.check.model in the shipped properties").isNotBlank().startsWith("claude-");
+        assertThat(new AiCostCalculator(bound).llmCost("anthropic", check.getModel(), 1_000_000, 1_000_000))
+                .as("the price of " + check.getModel()).isPresent();
+        // the end-to-end budget, not the check alone (review of #173, finding 5): an answer with no repair leaves the check its
+        // whole timeout inside the deadline; after a repair the service gives it what is left (ChatAnswerServiceTest)
+        assertThat(bound.getChat().getModelTimeout().plus(check.getTimeout()).plus(ChatAnswerService.CHECK_MARGIN))
+                .isLessThanOrEqualTo(bound.getChat().getAnswerDeadline());
+        // a one-line verdict at effort low, with room for its thinking, and its worst case still inside the ruling's +$0.003
+        assertThat(check.getEffort()).isEqualTo("low");
+        assertThat(check.getMaxOutputTokens()).isEqualTo(4096);
+        assertThat(new AiCostCalculator(bound).llmCost("anthropic", check.getModel(), 2000, check.getMaxOutputTokens()).orElseThrow())
+                .isLessThan(new BigDecimal("0.003"));
+    }
+
+    /**
+     * Review of #173, findings 13 and 18: with answers on and the check on, no check client (no key for its provider, or a
+     * blank model, which a present-but-blank BAYMAX_CHAT_CHECK_MODEL gives) stops startup and says why, rather than refusing
+     * every medicine answer as check_no_client with nothing on the box to say so.
+     */
+    @Test
+    void answersOnWithNoCheckClientStopsStartup() {
+        runner().withPropertyValues("baymax.chat.enabled=true", "baymax.chat.check.model=claude-haiku-5-5").run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(context.getStartupFailure()).rootCause().hasMessageContaining("no chat check client");
+        });
+        runner().withPropertyValues("baymax.chat.enabled=true", "baymax.chat.check.model=", "llm.anthropic.api-key=test-key").run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(context.getStartupFailure()).rootCause().hasMessageContaining("no chat check client");
+        });
+        runner().withPropertyValues("baymax.chat.enabled=true", "baymax.chat.check.model=claude-haiku-5-5", "llm.anthropic.api-key=test-key")
+                .run(context -> assertThat(context).hasNotFailed());
+        runner().withPropertyValues("baymax.chat.enabled=true", "baymax.chat.check.enabled=false", "baymax.chat.check.model=")
+                .run(context -> assertThat(context).hasNotFailed());
+        runner().withPropertyValues("baymax.chat.enabled=false", "baymax.chat.check.model=claude-haiku-5-5")
+                .run(context -> assertThat(context).hasNotFailed());
+    }
+
+    /** Review of #173, finding 5: a check timeout that one model call leaves no room for inside the deadline stops startup. */
+    @Test
+    void aCheckTimeoutPastTheDeadlineStopsStartup() {
+        runner().withPropertyValues("baymax.chat.check.model=claude-haiku-5-5", "baymax.chat.model-timeout=PT20S",
+                "baymax.chat.check.timeout=PT25S", "baymax.chat.answer-deadline=PT45S").run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(context.getStartupFailure()).rootCause().hasMessageContaining("baymax.chat.answer-deadline");
+        });
+        runner().withPropertyValues("baymax.chat.check.model=claude-haiku-5-5", "baymax.chat.model-timeout=PT20S",
+                "baymax.chat.check.timeout=PT8S", "baymax.chat.answer-deadline=PT45S").run(context -> assertThat(context).hasNotFailed());
+    }
+
+    /** Review of #173, findings 7 and 10: the check's client carries the check's own effort, never the chat's. */
+    @Test
+    void theCheckClientCarriesItsOwnEffort() {
+        runner().withPropertyValues("baymax.chat.check.model=claude-haiku-5-5", "baymax.chat.effort=high", "llm.anthropic.api-key=test-key")
+                .run(context -> {
+                    BaymaxModelClient bean = context.getBean(ChatCheckModelConfiguration.CHECK_CLIENT, BaymaxModelClient.class);
+                    assertThat(((LlmProperties.Anthropic) ReflectionTestUtils.getField(bean.delegate(), "cfg")).getEffort()).isEqualTo("low");
+                });
+        runner().withPropertyValues("baymax.chat.check.model=claude-haiku-5-5", "baymax.chat.check.effort=medium",
+                "llm.anthropic.api-key=test-key").run(context -> {
+                    BaymaxModelClient bean = context.getBean(ChatCheckModelConfiguration.CHECK_CLIENT, BaymaxModelClient.class);
+                    assertThat(((LlmProperties.Anthropic) ReflectionTestUtils.getField(bean.delegate(), "cfg")).getEffort()).isEqualTo("medium");
+                });
+    }
+
+    /** PO ruling P15: the check's client follows its own property and key, as the chat's does; no key, no client. */
+    @Test
+    void theCheckClientFollowsItsModelProperty() {
+        runner().withPropertyValues("baymax.chat.check.model=claude-haiku-5-5", "llm.anthropic.api-key=test-key").run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(configuredModel(context.getBean(ChatCheckModelConfiguration.CHECK_CLIENT, BaymaxModelClient.class)))
+                    .isEqualTo("claude-haiku-5-5");
+        });
+        runner().withPropertyValues("baymax.chat.check.model=claude-haiku-5-5").run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context).doesNotHaveBean(ChatCheckModelConfiguration.CHECK_CLIENT);
+        });
+        runner().withPropertyValues("baymax.chat.check.model=", "llm.anthropic.api-key=test-key").run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context).doesNotHaveBean(ChatCheckModelConfiguration.CHECK_CLIENT);
+        });
+    }
+
+    /** An unpriced check model stops startup while the check is on, and not once it is switched off. */
+    @Test
+    void anUnpricedCheckModelStopsStartup() {
+        runner().withPropertyValues("baymax.chat.check.model=claude-unpriced-9").run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(context.getStartupFailure()).rootCause().hasMessageContaining("baymax.chat.check.model");
+        });
+        runner().withPropertyValues("baymax.chat.check.model=claude-unpriced-9", "baymax.chat.check.enabled=false")
+                .run(context -> assertThat(context).hasNotFailed());
     }
 
     @Test

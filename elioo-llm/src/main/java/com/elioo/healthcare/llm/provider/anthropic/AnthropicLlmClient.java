@@ -141,11 +141,15 @@ public class AnthropicLlmClient implements LlmClient {
      * quietly losing thinking with nothing in the logs to say so.
      *
      * <p>Checked against the Models API on 2026-09-17: Haiku 4.5 reports {@code effort.supported=false}
-     * and {@code thinking.types.adaptive.supported=false}.
+     * and {@code thinking.types.adaptive.supported=false}. Haiku 5.5 thinks adaptively by default at
+     * effort {@code medium} and takes effort low to max (Anthropic's Claude API reference, cached
+     * 2026-10-06), so the denial is Haiku 4.x and the Claude 3 Haikus only, never "haiku" as such: a
+     * Haiku 5.5 caller that sets effort low would otherwise think at medium with nothing in the logs
+     * to say so (review of #173, findings 7 and 10).
      */
     static boolean supportsAdaptiveThinking(String modelId) {
         String id = modelId == null ? "" : modelId.toLowerCase(Locale.ROOT);
-        return !id.contains("haiku");
+        return !(id.contains("haiku-4") || id.contains("3-haiku") || id.contains("3-5-haiku"));
     }
 
     private static OutputConfig.Effort effort(String value) {

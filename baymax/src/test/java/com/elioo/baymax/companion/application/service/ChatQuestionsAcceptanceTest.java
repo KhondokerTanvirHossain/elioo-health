@@ -3,6 +3,7 @@ package com.elioo.baymax.companion.application.service;
 import com.elioo.baymax.companion.application.port.in.AskUseCase;
 import com.elioo.baymax.companion.application.port.in.AskUseCase.AskAnswer;
 import com.elioo.baymax.companion.application.port.out.ChatCopyPort;
+import com.elioo.baymax.companion.config.ChatCheckModelConfiguration;
 import com.elioo.baymax.companion.config.ChatModelConfiguration;
 import com.elioo.baymax.companion.domain.AnswerKind;
 import com.elioo.baymax.extraction.config.BaymaxModelClient;
@@ -10,6 +11,7 @@ import com.elioo.baymax.healthrecord.application.port.out.HealthRecordPort;
 import com.elioo.baymax.healthrecord.domain.FamilyAccount;
 import com.elioo.baymax.healthrecord.domain.PatientProfile;
 import com.elioo.baymax.nudge.adapter.out.persistence.PostgresNudgeAdapterTest;
+import com.elioo.baymax.testsupport.PassingChatCheck;
 import com.elioo.healthcare.llm.api.LlmClient;
 import com.elioo.healthcare.llm.model.LlmRequest;
 import com.elioo.healthcare.llm.model.LlmResponse;
@@ -73,17 +75,26 @@ class ChatQuestionsAcceptanceTest {
     }
 
     private ReactiveWebApplicationContextRunner runner(StubModel stub) {
+        return runner(stub, new PassingChatCheck());
+    }
+
+    private ReactiveWebApplicationContextRunner runner(StubModel stub, PassingChatCheck check) {
         return PostgresNudgeAdapterTest.runnerFor(POSTGRES)
                 .withPropertyValues("baymax.wa.enabled=false", "baymax.nudge.enabled=false", "baymax.chat.enabled=true",
                         "baymax.llm.prices.anthropic.[claude-sonnet-5].input=2.00",
-                        "baymax.llm.prices.anthropic.[claude-sonnet-5].output=10.00")
-                .withBean(ChatModelConfiguration.CHAT_CLIENT, BaymaxModelClient.class, () -> new BaymaxModelClient(stub));
+                        "baymax.llm.prices.anthropic.[claude-sonnet-5].output=10.00",
+                        "baymax.chat.check.model=" + PassingChatCheck.MODEL,
+                        "baymax.llm.prices.anthropic.[" + PassingChatCheck.MODEL + "].input=0.10",
+                        "baymax.llm.prices.anthropic.[" + PassingChatCheck.MODEL + "].output=0.50")
+                .withBean(ChatModelConfiguration.CHAT_CLIENT, BaymaxModelClient.class, () -> new BaymaxModelClient(stub))
+                .withBean(ChatCheckModelConfiguration.CHECK_CLIENT, BaymaxModelClient.class, check::client);
     }
 
     @Test
     void theFiveQuestionsOnASyntheticFamily() {
         StubModel stub = new StubModel();
-        runner(stub).run(context -> {
+        PassingChatCheck check = new PassingChatCheck();
+        runner(stub, check).run(context -> {
             Instant t = Instant.now();
             HealthRecordPort records = context.getBean(HealthRecordPort.class);
             FamilyAccount f = records.createFamily(new FamilyAccount(null, "+8801700000771", "Rahim", FamilyAccount.Plan.FAMILY, t, t)).block();
@@ -98,6 +109,9 @@ class ChatQuestionsAcceptanceTest {
             paper(ma, "lab_report", "now");
             long views = count("SELECT count(*) FROM baymax.audit_event WHERE kind = 'document_view'");
             long chatRows = count("SELECT count(*) FROM baymax.ai_call_log WHERE purpose = 'chat'");
+            long checkRows = count("SELECT count(*) FROM baymax.ai_call_log WHERE purpose = 'chat_check'");
+            long unpricedChecks = count("SELECT count(*) FROM baymax.ai_call_log WHERE purpose = 'chat_check' AND (document_id IS NOT NULL"
+                    + " OR cost_usd IS NULL)");
 
             AskUseCase asks = context.getBean(AskUseCase.class);
             ChatCopyPort copy = context.getBean(ChatCopyPort.class);
@@ -141,6 +155,16 @@ class ChatQuestionsAcceptanceTest {
             assertThat(count("SELECT count(*) FROM baymax.ai_call_log WHERE purpose = 'chat'") - chatRows).as("chat cost rows").isEqualTo(3);
             assertThat(count("SELECT count(*) FROM baymax.ai_call_log WHERE purpose = 'chat' AND (document_id IS NOT NULL OR cost_usd IS NULL)"))
                     .as("chat cost rows naming a paper, or with no cost").isZero();
+            // PO ruling P15, on real Postgres: of the three modelled answers only the dose one is read by the model check (the
+            // other two name no medicine), one ai_call_log row under chat_check (migration chat_model_check), priced, and the turn counts it
+            assertThat(check.calls.get()).as("model check calls").isEqualTo(1);
+            assertThat(count("SELECT count(*) FROM baymax.ai_call_log WHERE purpose = 'chat_check'") - checkRows)
+                    .as("model check cost rows").isEqualTo(1);
+            assertThat(count("SELECT count(*) FROM baymax.ai_call_log WHERE purpose = 'chat_check' AND (document_id IS NOT NULL"
+                    + " OR cost_usd IS NULL)")).as("model check rows naming a paper, or with no cost").isEqualTo(unpricedChecks);
+            assertThat(text("SELECT check_calls || '/' || model_calls || '/' || handler FROM baymax.chat_turn WHERE id = '"
+                    + dose.turnId() + "'")).isEqualTo("1/1/model");
+            assertThat(text("SELECT check_calls FROM baymax.chat_turn WHERE id = '" + creatinine.turnId() + "'")).isEqualTo("0");
             assertThat(count("SELECT count(*) FROM baymax.chat_turn WHERE family_id = '" + f.id() + "'")).isEqualTo(6);
             assertThat(count("SELECT count(*) FROM baymax.chat_turn WHERE family_id = '" + f.id() + "' AND counted")).isEqualTo(3);
             // askingRecordsNoView: reading the papers into a context is not opening a paper

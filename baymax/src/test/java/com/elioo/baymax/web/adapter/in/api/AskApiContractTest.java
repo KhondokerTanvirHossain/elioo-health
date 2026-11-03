@@ -90,7 +90,10 @@ class AskApiContractTest {
                 .withPropertyValues("baymax.chat.enabled=true", "baymax.llm.prices.anthropic.[claude-sonnet-5].input=2.00",
                         "baymax.llm.prices.anthropic.[claude-sonnet-5].output=10.00")
                 .withPropertyValues(extra)
-                .withBean(ChatModelConfiguration.CHAT_CLIENT, BaymaxModelClient.class, () -> new BaymaxModelClient(new StubModel()));
+                .withBean(ChatModelConfiguration.CHAT_CLIENT, BaymaxModelClient.class, () -> new BaymaxModelClient(new StubModel()))
+                // PO ruling P15: a check that passes leaves every case's answer byte-equal, so the fixtures do not change
+                .withBean(com.elioo.baymax.companion.config.ChatCheckModelConfiguration.CHECK_CLIENT, BaymaxModelClient.class,
+                        () -> new com.elioo.baymax.testsupport.PassingChatCheck().client());
     }
 
     static Stream<String> cases() {
