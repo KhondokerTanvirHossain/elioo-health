@@ -1625,8 +1625,9 @@ CHAT-web asks the route; the emergency pre-check runs either way.
   model's own; the migration holds that a check call is only on a modelled turn (`chat_turn_check_after_model`) and that
   `model_check` is always a counted FALLBACK (`chat_turn_check_refusal_is_fallback`). The daily cap counts questions, not
   cost: a checked answer is the same one counted turn; there is no cost cap for the check to count toward. The migration
-  is V31 on the branch while #166 (CHATWEB) is unmerged, since the sequence test allows no gap; #166 ships first and takes
-  `V31__chat_turn_medicines.sql`, and on the rebase onto it this file becomes `V32__chat_model_check.sql`.
+  is `V32__chat_model_check.sql`: #166 (CHATWEB) shipped first and took `V31__chat_turn_medicines.sql`, and the restack
+  onto it renamed this file from V31 (2026-11-03; it was never applied anywhere). A refusal quotes no line, so its turn
+  stores empty `medicine_document_ids` and `medicine_crop_keys` (#166's columns).
 - **Model, by property.** `baymax.chat.check.model` (`BAYMAX_CHAT_CHECK_MODEL`, default `claude-haiku-5-5`, the cheapest
   current Claude), `baymax.chat.check.enabled` (`BAYMAX_CHAT_CHECK_ENABLED`, default true, so on whenever answers are
   on), `baymax.chat.check.effort` (low), `baymax.chat.check.timeout`, `baymax.chat.check.max-output-tokens` (4096). Its

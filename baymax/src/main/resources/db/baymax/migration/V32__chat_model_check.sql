@@ -8,9 +8,9 @@
 -- 3. An answer the check refused, or could not read (an error, a timeout, an unreadable verdict, no check client), is shown
 --    as the fixed reply under handler 'model_check': a FALLBACK on a counted, modelled turn, never an answer.
 --
--- Version 31 only while #166 is unmerged (BaymaxMigrationSequenceTest allows no gap). #166 (CHATWEB) ships first and takes
--- V31__chat_turn_medicines.sql; on this PR's rebase onto it, this file is renamed V32__chat_model_check.sql, a pure move:
--- nothing in code names this migration by number (review of #173, finding 20).
+-- Version 32: #166 (CHATWEB) shipped first and took V31__chat_turn_medicines.sql; this file was V31 on its branch and was
+-- renamed on the restack onto #166, before it was applied anywhere. Nothing in code names it by number (review of #173,
+-- finding 20).
 ALTER TABLE ${flyway:defaultSchema}.ai_call_log DROP CONSTRAINT ai_call_log_purpose_check;
 ALTER TABLE ${flyway:defaultSchema}.ai_call_log ADD CONSTRAINT ai_call_log_purpose_check
     CHECK (purpose IN ('ocr', 'extract', 'explain', 'chat', 'nudge', 'summary', 'crop_verify', 'chat_check'));
