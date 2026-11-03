@@ -2,6 +2,7 @@ package com.elioo.baymax.companion.config;
 
 import com.elioo.baymax.aicall.application.service.AiCostCalculator;
 import com.elioo.baymax.companion.application.port.out.ChatCopyPort;
+import com.elioo.baymax.companion.application.service.ChatAnswerCheck;
 import com.elioo.baymax.companion.application.service.ChatAnswerService;
 import com.elioo.baymax.companion.application.service.ChatAppendix;
 import com.elioo.baymax.companion.application.service.ChatLabels;
@@ -25,8 +26,8 @@ import java.util.Optional;
  * <ul>
  *   <li>{@code baymax.chat.daily-cap} below one (every question would be refused);</li>
  *   <li>a bundle key of the context's labels ({@link ChatLabels#KEYS}), of the purpose reply
- *       ({@link MedicinePurposeReply#KEYS}, PO ruling P14) or of the appended lines ({@link ChatAppendix#KEYS}) missing in
- *       either language;</li>
+ *       ({@link MedicinePurposeReply#KEYS}, PO ruling P14), of the appended lines ({@link ChatAppendix#KEYS}) or of the model
+ *       check's refusal ({@link ChatAnswerCheck#KEYS}, PO ruling P16(d)) missing in either language;</li>
  *   <li>{@code baymax.chat.max-answer-chars} below the longest set of fixed lines code appends, in either language, plus
  *       {@value #MIN_BODY} characters of body: the length cap runs on the whole assembled text, and a cap the fixed lines
  *       cannot fit would turn every answer, the fixed fallback included, into a refused one;</li>
@@ -38,7 +39,7 @@ import java.util.Optional;
  *   <li>{@code baymax.chat.check.model} with no price while the check is on (PO ruling P15), for the same reason: the
  *       check's calls are logged as {@code chat_check} and added to the turn's cost;</li>
  *   <li>answers on and the check on with no check client (a blank {@code BAYMAX_CHAT_CHECK_MODEL}, or no key for the
- *       provider its id selects): every answer that mentions a medicine would be refused as {@code check_no_client}, and
+ *       provider its id selects): every answer the model writes would be refused as {@code check_no_client} (P16(c)), and
  *       nothing on the box would say why (review of #173, findings 13 and 18);</li>
  *   <li>the check's timeout plus one model call not inside the answer deadline: an answer with no repair always leaves the
  *       check its whole timeout (review of #173, finding 5); after a repair the service gives it what is left.</li>
@@ -85,6 +86,8 @@ public class ChatPropertiesCheck implements InitializingBean {
         // PO ruling P14: the purpose reply and its appended line are read per answer too
         keys.addAll(MedicinePurposeReply.KEYS);
         keys.addAll(ChatAppendix.KEYS);
+        // PO ruling P16(d): the model check's refusal shows its own line, read per refusal
+        keys.addAll(ChatAnswerCheck.KEYS);
         for (String lang : List.of("bn", "en")) {
             for (String key : keys) {
                 try {

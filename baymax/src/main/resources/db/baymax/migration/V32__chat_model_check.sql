@@ -1,5 +1,6 @@
--- PO ruling P15 (2026-11-01, "Add a model check, refuse-only"): after every code check has passed, a চ্যাট answer that
--- mentions a medicine is read by a second, small model call that can only refuse it (ChatAnswerCheck).
+-- PO ruling P15 (2026-11-01, "Add a model check, refuse-only"), widened by P16(c) (2026-11-03, "Check every answer"):
+-- after every code check has passed, every চ্যাট answer the model wrote is read by a second, small model call that can
+-- only refuse it (ChatAnswerCheck). Not yet on origin/main when this header was last edited, so never applied anywhere.
 --
 -- 1. The check is metered like every model call: one ai_call_log row each, under its own purpose 'chat_check', so what the
 --    check costs per answer has an answer in the data and never blends into 'chat'.

@@ -137,15 +137,16 @@ class ChatAnswerLiveTest {
             verify(turns, atLeastOnce()).complete(any(), outcome.capture());
             ChatOutcome o = outcome.getValue();
             System.out.println("[live] q_chars=" + q.length() + " kind=" + o.kind() + " handler=" + o.handler() + " calls=" + o.modelCalls()
-                    + " violations=" + o.violationCodes());
+                    + " checks=" + o.checkCalls() + " violations=" + o.violationCodes());
             assertThat(each.answer()).endsWith(copy.line("bn", "disclaimer") + "\n" + copy.line("bn", "safety.red_flag_line"));
         }
     }
 
     /**
      * The refuse-only model check as production builds it (PO ruling P15): the shipped check model on the same key, priced
-     * as the shipped table prices it, so a live run measures the chat and its check together. A live run needs the PO's
-     * go-ahead; none is approved for P15.
+     * as the shipped table prices it, so a live run measures the chat and its check together; since P16(c) the check reads
+     * every modelled answer, so each line above prints checks=1 for a modelled turn. A live run needs the PO's go-ahead:
+     * P16(a) approved exactly one on #173, run by its own stage, never by a build.
      */
     private static ObjectProvider<BaymaxModelClient> checks(String key, BaymaxProperties properties) {
         String model = "claude-haiku-5-5";

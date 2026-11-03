@@ -517,10 +517,11 @@ public class BaymaxProperties {
         private Check check = new Check();
 
         /**
-         * PO ruling P15, "Add a model check, refuse-only": after every code check has passed, an answer that mentions a
-         * medicine is read by a second, small model call that can only refuse it ({@code ChatAnswerCheck}). On by default
-         * whenever answers are on; blank {@link #model} here, as {@link Chat#model}, so a context without the shipped property
-         * has no check client and every such answer is refused (fail closed), never passed unchecked.
+         * PO rulings P15, "Add a model check, refuse-only", and P16(c), "Check every answer": after every code check has
+         * passed, every answer the model wrote is read by a second, small model call that can only refuse it
+         * ({@code ChatAnswerCheck}). On by default whenever answers are on; blank {@link #model} here, as {@link Chat#model},
+         * so a context without the shipped property has no check client and every model answer is refused (fail closed),
+         * never passed unchecked.
          */
         @Data
         public static class Check {

@@ -38,7 +38,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -71,14 +70,14 @@ import java.util.function.Function;
  *       one repair call naming the violations, then {@code chat.ask.failed} (FALLBACK). A model error, a timeout, a
  *       {@code max_tokens} stop or the answer deadline goes straight to FALLBACK. The raw text of a refused answer is never
  *       returned and never stored;</li>
- *   <li>PO ruling P15: an answer that passed every code check and mentions a medicine (a name the question typed
- *       included), or answers a dose or a purpose question, is read by the refuse-only model check ({@link ChatAnswerCheck},
- *       one metered call, {@code ai_call_log} purpose {@code chat_check}), given at most what is left of the answer
- *       deadline. Its pass leaves the answer byte-equal; its refusal, and any error, timeout, unreadable verdict or missing
- *       check client, gives {@code chat.ask.failed} with {@code chat.dose.ask_doctor} (FALLBACK, handler
- *       {@value ChatAnswerCheck#HANDLER}), with no repair after it. Code refuses the same way, with no call, an answer or a
- *       written line holding a block marker and a bare yes or no to a dose or purpose question. Code-built replies are never
- *       sent to it;</li>
+ *   <li>PO rulings P15 and P16(c): every answer the model wrote that passed every code check (the first or the repair) is
+ *       read by the refuse-only model check ({@link ChatAnswerCheck}, one metered call, {@code ai_call_log} purpose
+ *       {@code chat_check}), given at most what is left of the answer deadline. Its pass leaves the answer byte-equal; its
+ *       refusal, and any error, timeout, unreadable verdict or missing check client, gives
+ *       {@value ChatAnswerCheck#REFUSED_LINE} (P16(d)) with {@code chat.dose.ask_doctor} (FALLBACK, handler
+ *       {@value ChatAnswerCheck#HANDLER}), with no repair after it. Code refuses the same way, with no call (P16(b)), an
+ *       answer or a written line holding a block marker and a bare yes or no to a dose or purpose question. Code-built
+ *       replies are never sent to it;</li>
  *   <li>code appends, after the body: {@code chat.dose.ask_doctor} for a dose question, {@code chat.purpose.ask} for a
  *       purpose question, the patient's open urgency line,
  *       {@code disclaimer}, {@code safety.red_flag_line} ({@link ChatAppendix});</li>
@@ -358,16 +357,11 @@ public class ChatAnswerService implements AskUseCase {
                     // the name the family typed in a purpose question is a medicine to the purpose rule (finding 1 b)
                     Set<String> asked = MedicinePurposeGuard.askedNames(q, ctx.medicineNames(), MedicinePurposeGuard.labNames(ctx),
                             patient.name());
-                    // the model check reads every name the question typed, whatever the question (review of #173, finding 1);
-                    // the code checks keep their own names
-                    Set<String> named = new LinkedHashSet<>(asked);
-                    named.addAll(ChatAnswerCheck.questionNames(q, ctx, patient.name()));
                     return call(client, ctx, labels, patient.name(), q, dose, purpose, bodyChars, List.of(), tally).flatMap(first -> {
                         List<String> v1 = check(first, ctx, tail, asked);
                         if (v1.isEmpty()) {
                             return checked(turnId, new Body(AnswerCheck.resolve(first.strip(), ctx), AnswerKind.ANSWER, "model",
-                                    ctx.documentIds(), AnswerCheck.cited(first.strip(), ctx)), first, ctx, named, dose || purpose, l, tally,
-                                    startMs);
+                                    ctx.documentIds(), AnswerCheck.cited(first.strip(), ctx)), ctx, dose || purpose, l, tally, startMs);
                         }
                         tally.violations.addAll(v1);
                         log.debug("[baymax] chat turn={} refused first answer: {}", turnId, v1);
@@ -375,8 +369,7 @@ public class ChatAnswerService implements AskUseCase {
                             List<String> v2 = check(second, ctx, tail, asked);
                             if (v2.isEmpty()) {
                                 return checked(turnId, new Body(AnswerCheck.resolve(second.strip(), ctx), AnswerKind.ANSWER, "repair",
-                                        ctx.documentIds(), AnswerCheck.cited(second.strip(), ctx)), second, ctx, named, dose || purpose, l,
-                                        tally, startMs);
+                                        ctx.documentIds(), AnswerCheck.cited(second.strip(), ctx)), ctx, dose || purpose, l, tally, startMs);
                             }
                             tally.violations.addAll(v2);
                             log.debug("[baymax] chat turn={} refused the repair: {}", turnId, v2);
@@ -397,25 +390,25 @@ public class ChatAnswerService implements AskUseCase {
     }
 
     /**
-     * PO ruling P15: the refuse-only model check of an answer every code check passed. Read only when the model's text
-     * mentions a medicine ({@link ChatAnswerCheck#mentionsMedicine}, {@code named} holding every name the question typed) or
-     * the question is one code calls a dose or a purpose question ({@code medicineQuestion}); otherwise, and with the check
-     * switched off, the answer stands unread. The check is given the written lines and the answer as shown, nothing else,
-     * for at most what is left of the answer deadline. Only the exact verdict "pass" lets {@code passed} stand, the same
-     * object, byte-equal; anything else is the fixed reply with the doctor line, and the code that says why is the turn's
-     * violation. Code refuses the same way, with no call: a block marker in the answer or a written line, a bare yes or no to
-     * a medicine question, no check client, no time left. Never empty, never an error: a failure of the check is its refusal.
+     * PO rulings P15 and P16(c), "Check every answer": the refuse-only model check of every answer the model wrote that every
+     * code check passed, whatever it names and whatever was asked; only with the check switched off does an answer stand
+     * unread. Code-built replies never reach here. The check is given the written lines and the answer as shown, nothing
+     * else, for at most what is left of the answer deadline. Only the exact verdict "pass" lets {@code passed} stand, the
+     * same object, byte-equal; anything else is the check's own line ({@value ChatAnswerCheck#REFUSED_LINE}, P16(d)) with the
+     * doctor line, and the code that says why is the turn's violation. Code refuses the same way, with no call (P16(b)): a
+     * block marker in the answer or a written line, a bare yes or no to a dose or purpose question ({@code medicineQuestion}),
+     * no check client, no time left. Never empty, never an error: a failure of the check is its refusal.
      */
-    private Mono<Body> checked(UUID turnId, Body passed, String modelText, ChatContext ctx, Set<String> named, boolean medicineQuestion,
-                               String l, Tally tally, long startMs) {
+    private Mono<Body> checked(UUID turnId, Body passed, ChatContext ctx, boolean medicineQuestion, String l, Tally tally,
+                               long startMs) {
         BaymaxProperties.Chat.Check check = properties.getChat().getCheck();
-        if (!check.isEnabled() || !(medicineQuestion || ChatAnswerCheck.mentionsMedicine(modelText, ctx, named))) {
+        if (!check.isEnabled()) {
             return Mono.just(passed);
         }
-        // the refusal cites no paper and quotes no line: the fixed reply stands alone (review of #173, finding 20)
+        // the refusal cites no paper and quotes no line: the check's line stands alone (review of #173, finding 20)
         // nor carries a crop: medicines is empty, so V31's medicine columns store {} (chat_turn_medicine_on_a_cited_paper)
-        Body refused = new Body(copy.line(l, "chat.ask.failed"), AnswerKind.FALLBACK, ChatAnswerCheck.HANDLER, List.of(), List.of(),
-                true);
+        Body refused = new Body(copy.line(l, ChatAnswerCheck.REFUSED_LINE), AnswerKind.FALLBACK, ChatAnswerCheck.HANDLER, List.of(),
+                List.of(), true);
         String byCode = ChatAnswerCheck.hasMarker(passed.text(), ctx.verbatimLines()) ? ChatAnswerCheck.MARKER
                 : medicineQuestion && ChatAnswerCheck.bareReply(passed.text()) ? ChatAnswerCheck.BARE : null;
         if (byCode != null) {

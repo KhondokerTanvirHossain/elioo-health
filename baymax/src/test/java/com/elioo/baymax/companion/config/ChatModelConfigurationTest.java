@@ -132,7 +132,7 @@ class ChatModelConfigurationTest {
     /**
      * Review of #173, findings 13 and 18: with answers on and the check on, no check client (no key for its provider, or a
      * blank model, which a present-but-blank BAYMAX_CHAT_CHECK_MODEL gives) stops startup and says why, rather than refusing
-     * every medicine answer as check_no_client with nothing on the box to say so.
+     * every model answer (P16(c)) as check_no_client with nothing on the box to say so.
      */
     @Test
     void answersOnWithNoCheckClientStopsStartup() {
@@ -251,6 +251,33 @@ class ChatModelConfigurationTest {
                     }
                     assertThat(refused).as("the check's own refusal in " + context.getStartupFailure()).isNotNull()
                             .hasMessageContaining("en:value.chip.unknown");
+                });
+    }
+
+    /**
+     * PO ruling P16(d): a model-check refusal reads chat.check.refused per refusal, so a bundle without it in either language
+     * stops startup and names the key, rather than turning the first refusal into a model error.
+     */
+    @Test
+    void theCheckRefusalLineMissingInEnglishStopsStartupAndNamesTheKey() {
+        UiChatCopyAdapter real = new UiChatCopyAdapter(new UiCopy(), new Copy());
+        ChatCopyPort missing = (lang, key, args) -> {
+            if ("en".equals(lang) && "chat.check.refused".equals(key)) {
+                throw new IllegalArgumentException("not in the bundle");
+            }
+            return real.line(lang, key, args);
+        };
+        new ApplicationContextRunner()
+                .withUserConfiguration(Props.class, ChatModelConfiguration.class, ChatPropertiesCheck.class, AiCostCalculator.class)
+                .withBean(ChatCopyPort.class, () -> missing)
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    Throwable refused = context.getStartupFailure();
+                    while (refused != null && !(refused instanceof IllegalStateException)) {
+                        refused = refused.getCause();
+                    }
+                    assertThat(refused).as("the check's own refusal in " + context.getStartupFailure()).isNotNull()
+                            .hasMessageContaining("en:chat.check.refused");
                 });
     }
 

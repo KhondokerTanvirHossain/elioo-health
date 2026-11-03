@@ -1033,13 +1033,13 @@ class ChatAnswerServiceTest {
         assertThat(wrong).isEmpty();
     }
 
-    // ---- PO ruling P15, "Add a model check, refuse-only": after every code check has passed, an answer that mentions a
-    // medicine is read by a second model call that can only refuse it. Each asserts the PATH (handler, check calls, the
-    // judge's own invocations), not only the text, since a refusal and a code-check fallback show the same body.
+    // ---- PO ruling P15, "Add a model check, refuse-only", and P16(c), "Check every answer": after every code check has
+    // passed, every answer the model wrote is read by a second model call that can only refuse it. Each asserts the PATH
+    // (handler, check calls, the judge's own invocations), not only the text.
 
     /** An answer that passes every code check and mentions a medicine: its stored line, by reference. */
     static final String RX_ANSWER = "শেষ প্রেসক্রিপশনে লেখা আছে: {{rx:1}}";
-    /** A question code calls neither a dose nor a purpose question, so only the answer's medicine sends it to the check. */
+    /** A question code calls neither a dose nor a purpose question, so no code rule of its own touches the answer. */
     static final String PLAIN_QUESTION = "প্রেসক্রিপশনে কী লেখা আছে?";
     /** The fixture patient's name as a whole word, at any script's word breaks. */
     static final String PATIENT_WORD = "(?<![\\p{L}\\p{M}])Ma(?![\\p{L}\\p{M}])";
@@ -1059,7 +1059,7 @@ class ChatAnswerServiceTest {
 
         verify(judge, times(1)).invoke(any());
         assertThat(a.kind()).isEqualTo(AnswerKind.FALLBACK);
-        assertThat(a.answer()).isEqualTo(line("bn", "chat.ask.failed") + tail(true)).doesNotContain(RX1);
+        assertThat(a.answer()).isEqualTo(line("bn", "chat.check.refused") + tail(true)).doesNotContain(RX1);
         ChatOutcome o = stored();
         assertThat(o.answer()).isEqualTo(a.answer());
         assertThat(o.handler()).isEqualTo("model_check");
@@ -1101,7 +1101,7 @@ class ChatAnswerServiceTest {
 
         verify(judge, times(1)).invoke(any());
         assertThat(stored().handler()).isEqualTo("model_check");
-        assertThat(a.answer()).isEqualTo(line("bn", "chat.ask.failed") + tail(true)).doesNotContain(RX1);
+        assertThat(a.answer()).isEqualTo(line("bn", "chat.check.refused") + tail(true)).doesNotContain(RX1);
         assertThat(a.medicines()).as("sent").isEmpty();
         assertThat(stored().medicines()).as("stored").isEmpty();
         assertThat(stored().documentIds()).as("cited").isEmpty();
@@ -1169,7 +1169,7 @@ class ChatAnswerServiceTest {
 
             AskAnswer a = ask(PLAIN_QUESTION);
 
-            assertThat(a.answer()).as(f.getKey()).isEqualTo(line("bn", "chat.ask.failed") + tail(true));
+            assertThat(a.answer()).as(f.getKey()).isEqualTo(line("bn", "chat.check.refused") + tail(true));
             ArgumentCaptor<ChatOutcome> all = ArgumentCaptor.forClass(ChatOutcome.class);
             verify(turns, atLeastOnce()).complete(eq(TURN), all.capture());
             ChatOutcome o = all.getValue();
@@ -1190,26 +1190,107 @@ class ChatAnswerServiceTest {
 
         AskAnswer a = ask(PLAIN_QUESTION);
 
-        assertThat(a.answer()).isEqualTo(line("bn", "chat.ask.failed") + tail(true));
+        assertThat(a.answer()).isEqualTo(line("bn", "chat.check.refused") + tail(true));
         assertThat(stored().handler()).isEqualTo("model_check");
         assertThat(stored().violationCodes()).containsExactly("check_no_client");
         assertThat(stored().checkCalls()).isZero();
         verify(judge, never()).invoke(any());
     }
 
+    /**
+     * PO ruling P16(c), "Check every answer": an answer about labs only, which names no medicine and answers neither a dose
+     * nor a purpose question, is read by the check too: one judge call, and its pass leaves the answer byte-equal. Before
+     * P16(c) the check read only answers a word list called a medicine reference, so this answer was shown unread.
+     */
     @Test
-    void anAnswerWithoutAMedicineMakesNoCheckCall() {
-        model(Mono.just(reply("Ma-র ক্রিয়েটিনিন 1.8, কাগজে ছাপা সীমার বাইরে।", 1000, 100)));
+    void aLabsOnlyAnswerIsCheckedToo() {
+        String answer = "Ma-র ক্রিয়েটিনিন 1.8 mg/dL, কাগজে ছাপা সীমা 0.7–1.3-এর বাইরে।";
+        String q = "আম্মার ক্রিয়েটিনিন কি বেশি?";
+        assertThat(AnswerCheck.violations(answer, CTX)).as("the code checks pass it").isEmpty();
+        assertThat(DoseChangeGuard.asksForChange(q, CTX.medicineNames())).as("not a dose question").isFalse();
+        assertThat(MedicinePurposeGuard.route(q, CTX.medicineNames(), MedicinePurposeGuard.labNames(CTX), "Ma"))
+                .as("not a purpose question").isEqualTo(MedicinePurposeGuard.Route.NONE);
+        model(Mono.just(reply(answer, 1, 1)));
+
+        AskAnswer a = ask(q);
+
+        ArgumentCaptor<LlmRequest> checked = ArgumentCaptor.forClass(LlmRequest.class);
+        verify(judge, times(1)).invoke(checked.capture());
+        assertThat(checked.getValue().userPrompt()).contains(answer);
+        assertThat(a.kind()).isEqualTo(AnswerKind.ANSWER);
+        assertThat(a.answer()).isEqualTo(answer + tail(false));
+        assertThat(stored().handler()).isEqualTo("model");
+        assertThat(stored().checkCalls()).isEqualTo(1);
+    }
+
+    /** The same kind of labs-only answer, refused by the check: the check's own line with the doctor line, never the answer. */
+    @Test
+    void aLabsOnlyAnswerTheCheckRefusesIsTheChecksLine() {
+        String answer = "Ma-র ক্রিয়েটিনিন 1.8, কাগজে ছাপা সীমার বাইরে।";
+        model(Mono.just(reply(answer, 1, 1)));
+        when(judge.invoke(any())).thenReturn(Mono.just(verdict("{\"verdict\":\"refuse\"}")));
 
         AskAnswer a = ask("আম্মার ক্রিয়েটিনিন কত?");
 
-        verify(judge, never()).invoke(any());
-        assertThat(a.kind()).isEqualTo(AnswerKind.ANSWER);
-        assertThat(stored().handler()).isEqualTo("model");
-        assertThat(stored().checkCalls()).isZero();
+        verify(judge, times(1)).invoke(any());
+        assertThat(a.kind()).isEqualTo(AnswerKind.FALLBACK);
+        assertThat(a.answer()).isEqualTo(line("bn", "chat.check.refused") + tail(true)).doesNotContain("1.8");
+        assertThat(stored().handler()).isEqualTo("model_check");
+        assertThat(stored().violationCodes()).containsExactly("check_refused");
+        assertThat(stored().checkCalls()).isEqualTo(1);
     }
 
-    /** Only the model's words are read: an emergency, a purpose reply, answers off and the cap are code's, never checked. */
+    /**
+     * PO ruling P16(d): a refusal of the check shows chat.check.refused, in the ask's own language, and not the code checks'
+     * chat.ask.failed. The two lines differ in both languages, so the assertion can tell which one ran.
+     */
+    @Test
+    void aCheckRefusalShowsTheChecksOwnLineInBothLanguages() {
+        for (String lang : List.of("bn", "en")) {
+            assertThat(line(lang, "chat.check.refused")).as(lang).isNotEqualTo(line(lang, "chat.ask.failed"));
+        }
+        model(Mono.just(reply(RX_ANSWER, 1, 1)), Mono.just(reply(RX_ANSWER, 1, 1)));
+        when(judge.invoke(any())).thenReturn(Mono.just(verdict("{\"verdict\":\"refuse\"}")));
+
+        AskAnswer bn = service().ask(FAMILY, PATIENT, PLAIN_QUESTION, "bn").block(Duration.ofSeconds(10));
+        AskAnswer en = service().ask(FAMILY, PATIENT, "What does the prescription say?", "en").block(Duration.ofSeconds(10));
+
+        verify(judge, times(2)).invoke(any());
+        assertThat(bn.answer()).isEqualTo(line("bn", "chat.check.refused") + tail(true));
+        assertThat(en.answer()).isEqualTo(line("en", "chat.check.refused")
+                + ChatAppendix.tail(true, false, Optional.empty(), k -> line("en", k)));
+        ArgumentCaptor<ChatOutcome> all = ArgumentCaptor.forClass(ChatOutcome.class);
+        verify(turns, times(2)).complete(eq(TURN), all.capture());
+        assertThat(all.getAllValues()).extracting(ChatOutcome::handler).containsExactly("model_check", "model_check");
+        assertThat(all.getAllValues()).extracting(ChatOutcome::answer).containsExactly(bn.answer(), en.answer());
+    }
+
+    /**
+     * The other direction of P16(d): the code checks' own fixed reply, after an answer and its repair both failed them, is
+     * still chat.ask.failed in both languages, and neither refused draft is ever sent to the check.
+     */
+    @Test
+    void theCodeChecksFixedReplyStaysChatAskFailedAndIsNeverChecked() {
+        String refused = "Demoprol বন্ধ করুন।";
+        model(Mono.just(reply(refused, 1, 1)), Mono.just(reply(refused, 1, 1)), Mono.just(reply("Stop Demoprol.", 1, 1)),
+                Mono.just(reply("Stop Demoprol.", 1, 1)));
+
+        AskAnswer bn = service().ask(FAMILY, PATIENT, PLAIN_QUESTION, "bn").block(Duration.ofSeconds(10));
+        AskAnswer en = service().ask(FAMILY, PATIENT, "What does the prescription say?", "en").block(Duration.ofSeconds(10));
+
+        verify(judge, never()).invoke(any());
+        assertThat(bn.answer()).startsWith(line("bn", "chat.ask.failed")).doesNotContain(line("bn", "chat.check.refused"));
+        assertThat(en.answer()).startsWith(line("en", "chat.ask.failed")).doesNotContain(line("en", "chat.check.refused"));
+        ArgumentCaptor<ChatOutcome> all = ArgumentCaptor.forClass(ChatOutcome.class);
+        verify(turns, times(2)).complete(eq(TURN), all.capture());
+        assertThat(all.getAllValues()).extracting(ChatOutcome::handler).containsExactly("fixed_after_repair", "fixed_after_repair");
+        assertThat(all.getAllValues()).allSatisfy(o -> assertThat(o.checkCalls()).isZero());
+    }
+
+    /**
+     * Only the model's words are read (PO ruling P16(c) keeps it so): an emergency, a purpose reply, answers off, the cap and
+     * no chat model are code's, never checked.
+     */
     @Test
     void aCodeBuiltReplyIsNeverSentToTheCheck() {
         ask("আম্মার বুকে ব্যথা");
@@ -1219,11 +1300,14 @@ class ChatAnswerServiceTest {
         properties.getChat().setEnabled(true);
         when(turns.reserveCounted(any(), any(), anyString(), anyString(), any(), anyInt())).thenReturn(Mono.empty());
         ask("ওষুধটা অর্ধেক করব?");
+        when(chatClients.getIfAvailable()).thenReturn(null);
+        ask("আম্মার ক্রিয়েটিনিন কত?");
 
         verify(judge, never()).invoke(any());
         ArgumentCaptor<ChatOutcome> all = ArgumentCaptor.forClass(ChatOutcome.class);
-        verify(turns, times(4)).complete(eq(TURN), all.capture());
-        assertThat(all.getAllValues()).extracting(ChatOutcome::handler).containsExactly("red_flag", "medicine_purpose", "off", "cap");
+        verify(turns, times(5)).complete(eq(TURN), all.capture());
+        assertThat(all.getAllValues()).extracting(ChatOutcome::handler)
+                .containsExactly("red_flag", "medicine_purpose", "off", "cap", "no_model");
         assertThat(all.getAllValues()).allSatisfy(o -> assertThat(o.checkCalls()).isZero());
     }
 
@@ -1239,7 +1323,7 @@ class ChatAnswerServiceTest {
         ArgumentCaptor<LlmRequest> checked = ArgumentCaptor.forClass(LlmRequest.class);
         verify(judge, times(1)).invoke(checked.capture());
         assertThat(checked.getValue().userPrompt()).doesNotContain(refused).contains(AnswerCheck.resolve(RX_ANSWER, CTX));
-        assertThat(a.answer()).isEqualTo(line("bn", "chat.ask.failed") + tail(true));
+        assertThat(a.answer()).isEqualTo(line("bn", "chat.check.refused") + tail(true));
         assertThat(stored().handler()).isEqualTo("model_check");
         assertThat(stored().modelCalls()).isEqualTo(2);
         assertThat(stored().checkCalls()).isEqualTo(1);
@@ -1271,91 +1355,6 @@ class ChatAnswerServiceTest {
         assertThat(r.maxTokens()).isEqualTo(properties.getChat().getCheck().getMaxOutputTokens());
     }
 
-    /** A dose question is checked even when the answer names no medicine: the doctor line is code's, the rest is the model's. */
-    @Test
-    void aDoseQuestionIsCheckedWhateverTheAnswerNames() {
-        String answer = "কাগজে এ নিয়ে কিছু লেখা নেই।";
-        String q = "ওষুধটা অর্ধেক করব?";
-        // the path: the answer itself names no medicine, so only the dose question can send it (review of #173, finding 3)
-        assertThat(ChatAnswerCheck.mentionsMedicine(answer, CTX, ChatAnswerCheck.questionNames(q, CTX, "Ma"))).isFalse();
-        assertThat(DoseChangeGuard.asksForChange(q, CTX.medicineNames())).isTrue();
-        model(Mono.just(reply(answer, 1, 1)));
-
-        ask(q);
-
-        verify(judge, times(1)).invoke(any());
-        assertThat(stored().handler()).isEqualTo("model");
-        assertThat(stored().checkCalls()).isEqualTo(1);
-    }
-
-    /** The same for a purpose question the model answers (a mixed one): checked though the answer names no medicine. */
-    @Test
-    void aPurposeQuestionTheModelAnswersIsCheckedWhateverTheAnswerNames() {
-        String q = "Demoprol কীসের ওষুধ, আর আম্মার ক্রিয়েটিনিন কত?";
-        String answer = "Ma-র ক্রিয়েটিনিন 1.8, কাগজে ছাপা সীমার বাইরে।";
-        assertThat(MedicinePurposeGuard.route(q, CTX.medicineNames(), MedicinePurposeGuard.labNames(CTX), "Ma"))
-                .isEqualTo(MedicinePurposeGuard.Route.MIXED);
-        assertThat(DoseChangeGuard.asksForChange(q, CTX.medicineNames())).isFalse();
-        assertThat(ChatAnswerCheck.mentionsMedicine(answer, CTX, ChatAnswerCheck.questionNames(q, CTX, "Ma"))).isFalse();
-        model(Mono.just(reply(answer, 1, 1)));
-
-        ask(q);
-
-        verify(judge, times(1)).invoke(any());
-        assertThat(stored().handler()).isEqualTo("model");
-        assertThat(stored().checkCalls()).isEqualTo(1);
-    }
-
-    /**
-     * Review of #173, finding 1, the dangerous direction: a medicine the family names in a question that is neither a dose nor
-     * a purpose question, and that no list holds, still sends the answer that names it to the check.
-     */
-    @Test
-    void aMedicineTheFamilyNamesInAnyQuestionIsChecked() {
-        String q = "নাপা কেমন?";
-        String answer = "নাপা নিয়ে কাগজে কিছু লেখা নেই, এটা ভালো।";
-        assertThat(DoseChangeGuard.asksForChange(q, CTX.medicineNames())).as("not a dose question").isFalse();
-        assertThat(MedicinePurposeGuard.route(q, CTX.medicineNames(), MedicinePurposeGuard.labNames(CTX), "Ma"))
-                .as("not a purpose question").isEqualTo(MedicinePurposeGuard.Route.NONE);
-        assertThat(AnswerCheck.violations(answer, CTX, MedicinePurposeGuard.askedNames(q, CTX.medicineNames(),
-                MedicinePurposeGuard.labNames(CTX), "Ma"))).as("the code checks pass it").isEmpty();
-        model(Mono.just(reply(answer, 1, 1)));
-        when(judge.invoke(any())).thenReturn(Mono.just(verdict("{\"verdict\":\"refuse\"}")));
-
-        AskAnswer a = ask(q);
-
-        verify(judge, times(1)).invoke(any());
-        assertThat(a.answer()).isEqualTo(line("bn", "chat.ask.failed") + tail(true));
-        assertThat(stored().handler()).isEqualTo("model_check");
-        assertThat(stored().violationCodes()).containsExactly("check_refused");
-    }
-
-    /** The other direction: an answer about labs only, units and all, makes no check call. */
-    @Test
-    void aLabsOnlyAnswerStillMakesNoCheckCall() {
-        model(Mono.just(reply("Ma-র ক্রিয়েটিনিন 1.8 mg/dL, কাগজে ছাপা সীমা 0.7–1.3-এর বাইরে।", 1, 1)));
-
-        AskAnswer a = ask("আম্মার ক্রিয়েটিনিন কি বেশি?");
-
-        verify(judge, never()).invoke(any());
-        assertThat(a.kind()).isEqualTo(AnswerKind.ANSWER);
-        assertThat(stored().checkCalls()).isZero();
-    }
-
-    /** Review of #173, finding 9: a form word the lists do not hold sends the answer to the check. */
-    @Test
-    void anAnswerNamingAFormIsChecked() {
-        String answer = "কাগজে ইনহেলার নিয়ে কিছু লেখা নেই।";
-        assertThat(AnswerCheck.violations(answer, CTX)).as("the code checks pass it").isEmpty();
-        model(Mono.just(reply(answer, 1, 1)));
-        when(judge.invoke(any())).thenReturn(Mono.just(verdict("{\"verdict\":\"refuse\"}")));
-
-        ask(PLAIN_QUESTION);
-
-        verify(judge, times(1)).invoke(any());
-        assertThat(stored().handler()).isEqualTo("model_check");
-    }
-
     /**
      * Review of #173, finding 12: the check never sees the question, so a bare yes to a dose question is refused by code, with
      * no check call; a yes to a question about a lab is an answer.
@@ -1369,13 +1368,14 @@ class ChatAnswerServiceTest {
         AskAnswer a = ask("ওষুধটা অর্ধেক করব?");
 
         verify(judge, never()).invoke(any());
-        assertThat(a.answer()).isEqualTo(line("bn", "chat.ask.failed") + tail(true));
+        assertThat(a.answer()).isEqualTo(line("bn", "chat.check.refused") + tail(true));
         assertThat(stored().handler()).isEqualTo("model_check");
         assertThat(stored().violationCodes()).containsExactly("check_bare_answer");
         assertThat(stored().checkCalls()).isZero();
         assertThat(stored().modelCalls()).isEqualTo(1);
     }
 
+    /** The other direction: code never refuses a yes to a lab question; the check reads it (P16(c)) and its pass stands. */
     @Test
     void aYesToALabQuestionIsAnAnswer() {
         String answer = "হ্যাঁ, Ma-র ক্রিয়েটিনিন 1.8, কাগজে ছাপা সীমার বাইরে।";
@@ -1383,10 +1383,12 @@ class ChatAnswerServiceTest {
 
         AskAnswer a = ask("আম্মার ক্রিয়েটিনিন কি বেশি?");
 
-        verify(judge, never()).invoke(any());
+        verify(judge, times(1)).invoke(any());
         assertThat(a.kind()).isEqualTo(AnswerKind.ANSWER);
         assertThat(a.answer()).startsWith(answer);
         assertThat(stored().handler()).isEqualTo("model");
+        assertThat(stored().violationCodes()).isEmpty();
+        assertThat(stored().checkCalls()).isEqualTo(1);
     }
 
     /**
@@ -1401,7 +1403,7 @@ class ChatAnswerServiceTest {
         AskAnswer a = ask(PLAIN_QUESTION);
 
         verify(judge, never()).invoke(any());
-        assertThat(a.answer()).isEqualTo(line("bn", "chat.ask.failed") + tail(true));
+        assertThat(a.answer()).isEqualTo(line("bn", "chat.check.refused") + tail(true));
         assertThat(stored().handler()).isEqualTo("model_check");
         assertThat(stored().violationCodes()).contains("check_marker");
         assertThat(stored().checkCalls()).isZero();
@@ -1427,7 +1429,7 @@ class ChatAnswerServiceTest {
 
         assertThat(stored().handler()).isEqualTo("model_check");
         assertThat(stored().violationCodes()).contains("check_timeout");
-        assertThat(a.answer()).isEqualTo(line("bn", "chat.ask.failed") + tail(true));
+        assertThat(a.answer()).isEqualTo(line("bn", "chat.check.refused") + tail(true));
         assertThat(stored().modelCalls()).isEqualTo(2);
     }
 

@@ -40,11 +40,8 @@ public record ChatContext(List<String> factLines, Set<String> numbers, List<Stri
     /** The canonical verdict that lets an answer say "inside". */
     public static final String INSIDE = "INSIDE";
 
-    /**
-     * A form word on a medicine's name, never the medicine itself. Public for the চ্যাট's model check (PO ruling P15), which
-     * reads a form word in an answer as a medicine reference.
-     */
-    public static final Set<String> FORM_WORDS = Set.of("tab", "tabs", "tablet", "tablets", "cap", "caps", "capsule", "capsules", "syp",
+    /** A form word on a medicine's name, never the medicine itself. */
+    private static final Set<String> FORM_WORDS = Set.of("tab", "tabs", "tablet", "tablets", "cap", "caps", "capsule", "capsules", "syp",
             "syrup", "inj", "injection", "drop", "drops", "oint", "ointment", "cream", "gel", "susp", "suspension", "sol", "solution", "inh",
             "inhaler", "spray", "supp", "mg", "mcg", "ml", "gm", "iu", "sr", "xr", "er", "cr", "mr", "ds", "plus", "forte", "extra",
             "ট্যাব", "ট্যাবলেট", "ক্যাপ", "ক্যাপসুল", "সিরাপ", "ইনজেকশন", "ড্রপ", "মলম");

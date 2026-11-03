@@ -7,7 +7,7 @@ public enum AiCallPurpose {
     OCR, EXTRACT, EXPLAIN, CHAT, NUDGE, SUMMARY,
     /** Re-reading a cut crop to confirm it shows the value, before it may be stored (DR-12). */
     CROP_VERIFY,
-    /** The refuse-only model check of a চ্যাট answer that mentions a medicine (PO ruling P15, DR-50, migration chat_model_check). */
+    /** The refuse-only model check of every চ্যাট answer the model wrote (PO rulings P15, P16(c), DR-50, migration chat_model_check). */
     CHAT_CHECK;
 
     public String dbValue() {

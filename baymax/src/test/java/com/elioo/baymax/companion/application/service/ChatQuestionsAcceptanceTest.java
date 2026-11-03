@@ -183,16 +183,22 @@ class ChatQuestionsAcceptanceTest {
             assertThat(count("SELECT count(*) FROM baymax.ai_call_log WHERE purpose = 'chat'") - chatRows).as("chat cost rows").isEqualTo(3);
             assertThat(count("SELECT count(*) FROM baymax.ai_call_log WHERE purpose = 'chat' AND (document_id IS NOT NULL OR cost_usd IS NULL)"))
                     .as("chat cost rows naming a paper, or with no cost").isZero();
-            // PO ruling P15, on real Postgres: of the three modelled answers only the dose one is read by the model check (the
-            // other two name no medicine), one ai_call_log row under chat_check (migration chat_model_check), priced, and the turn counts it
-            assertThat(check.calls.get()).as("model check calls").isEqualTo(1);
+            // PO rulings P15 and P16(c), on real Postgres: each of the three modelled answers is read by the model check, the two
+            // that name no medicine included; the two purpose replies and the emergency are code's and never are. One
+            // ai_call_log row each under chat_check (migration chat_model_check), priced, and each turn counts its one check
+            assertThat(check.calls.get()).as("model check calls").isEqualTo(3);
             assertThat(count("SELECT count(*) FROM baymax.ai_call_log WHERE purpose = 'chat_check'") - checkRows)
-                    .as("model check cost rows").isEqualTo(1);
+                    .as("model check cost rows").isEqualTo(3);
             assertThat(count("SELECT count(*) FROM baymax.ai_call_log WHERE purpose = 'chat_check' AND (document_id IS NOT NULL"
                     + " OR cost_usd IS NULL)")).as("model check rows naming a paper, or with no cost").isEqualTo(unpricedChecks);
             assertThat(text("SELECT check_calls || '/' || model_calls || '/' || handler FROM baymax.chat_turn WHERE id = '"
                     + dose.turnId() + "'")).isEqualTo("1/1/model");
-            assertThat(text("SELECT check_calls FROM baymax.chat_turn WHERE id = '" + creatinine.turnId() + "'")).isEqualTo("0");
+            assertThat(text("SELECT check_calls || '/' || model_calls || '/' || handler FROM baymax.chat_turn WHERE id = '"
+                    + creatinine.turnId() + "'")).as("a labs-only answer, checked (P16(c))").isEqualTo("1/1/model");
+            assertThat(text("SELECT check_calls || '/' || model_calls || '/' || handler FROM baymax.chat_turn WHERE id = '"
+                    + napa.turnId() + "'")).as("a code-built purpose reply, never checked").isEqualTo("0/0/medicine_purpose");
+            assertThat(text("SELECT check_calls || '/' || model_calls || '/' || handler FROM baymax.chat_turn WHERE id = '"
+                    + chest.turnId() + "'")).as("an emergency, never checked").isEqualTo("0/0/red_flag");
             assertThat(count("SELECT count(*) FROM baymax.chat_turn WHERE family_id = '" + f.id() + "'")).isEqualTo(6);
             assertThat(count("SELECT count(*) FROM baymax.chat_turn WHERE family_id = '" + f.id() + "' AND counted")).isEqualTo(3);
             // askingRecordsNoView: reading the papers into a context is not opening a paper
@@ -302,7 +308,9 @@ class ChatQuestionsAcceptanceTest {
 
             assertThat(check.calls.get()).as("model check calls").isEqualTo(2);
             assertThat(path(refused)).isEqualTo("model_check/fallback/1/1");
-            assertThat(refused.answer()).startsWith(copy.line("bn", "chat.ask.failed")).doesNotContain(WRITTEN);
+            // PO ruling P16(d): the check's own line, never the code checks' chat.ask.failed
+            assertThat(refused.answer()).startsWith(copy.line("bn", "chat.check.refused")).doesNotContain(WRITTEN)
+                    .doesNotContain(copy.line("bn", "chat.ask.failed"));
             assertThat(text("SELECT answer FROM baymax.chat_turn WHERE id = '" + refused.turnId() + "'")).isEqualTo(refused.answer());
             assertThat(quoted(refused)).as("papers|crops of the refused turn").isEqualTo("|");
             assertThat(text("SELECT cardinality(medicine_document_ids) || '/' || cardinality(medicine_crop_keys) || '/'"
