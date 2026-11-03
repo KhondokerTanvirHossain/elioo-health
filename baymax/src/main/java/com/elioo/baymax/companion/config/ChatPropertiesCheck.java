@@ -7,10 +7,13 @@ import com.elioo.baymax.companion.application.service.ChatAppendix;
 import com.elioo.baymax.companion.application.service.ChatLabels;
 import com.elioo.baymax.companion.application.service.MedicinePurposeReply;
 import com.elioo.baymax.config.BaymaxProperties;
+import com.elioo.baymax.extraction.config.BaymaxModelClient;
 import com.elioo.baymax.extraction.config.ExtractionModelConfiguration;
 import com.elioo.baymax.outbound.domain.Urgency;
 import com.elioo.healthcare.llm.config.LlmProperties;
 import org.springframework.beans.factory.InitializingBean;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
@@ -31,7 +34,14 @@ import java.util.Optional;
  *       bound DR-50 reconciles against the console would be unknown;</li>
  *   <li>{@code baymax.chat.answer-deadline} past what the web composer waits ({@link #WEB_ASK_TIMEOUT}) less the store's
  *       grace and the network's margin: the web would show its fallback while Java went on to store an answer the family
- *       never saw (review of #166, finding 4).</li>
+ *       never saw (review of #166, finding 4);</li>
+ *   <li>{@code baymax.chat.check.model} with no price while the check is on (PO ruling P15), for the same reason: the
+ *       check's calls are logged as {@code chat_check} and added to the turn's cost;</li>
+ *   <li>answers on and the check on with no check client (a blank {@code BAYMAX_CHAT_CHECK_MODEL}, or no key for the
+ *       provider its id selects): every answer that mentions a medicine would be refused as {@code check_no_client}, and
+ *       nothing on the box would say why (review of #173, findings 13 and 18);</li>
+ *   <li>the check's timeout plus one model call not inside the answer deadline: an answer with no repair always leaves the
+ *       check its whole timeout (review of #173, finding 5); after a repair the service gives it what is left.</li>
  * </ul>
  */
 @Component
@@ -52,12 +62,15 @@ public class ChatPropertiesCheck implements InitializingBean {
     private final LlmProperties llm;
     private final AiCostCalculator costs;
     private final ChatCopyPort copy;
+    private final ObjectProvider<BaymaxModelClient> checkClient;
 
-    public ChatPropertiesCheck(BaymaxProperties properties, LlmProperties llm, AiCostCalculator costs, ChatCopyPort copy) {
+    public ChatPropertiesCheck(BaymaxProperties properties, LlmProperties llm, AiCostCalculator costs, ChatCopyPort copy,
+                               @Qualifier(ChatCheckModelConfiguration.CHECK_CLIENT) ObjectProvider<BaymaxModelClient> checkClient) {
         this.properties = properties;
         this.llm = llm;
         this.costs = costs;
         this.copy = copy;
+        this.checkClient = checkClient;
     }
 
     @Override
@@ -95,14 +108,33 @@ public class ChatPropertiesCheck implements InitializingBean {
             throw new IllegalStateException("baymax.chat.answer-deadline is " + chat.getAnswerDeadline() + " but the web composer waits "
                     + WEB_ASK_TIMEOUT + "; with the store's grace and the network's margin it must be at most " + most);
         }
-        String model = chat.getModel();
-        if (model != null && !model.isBlank()) {
-            String provider = ExtractionModelConfiguration.isAnthropicModel(model) ? "anthropic"
-                    : "openai".equalsIgnoreCase(llm.getProvider()) ? "openai" : "groq";
-            if (costs.llmCost(provider, model, 0, 0).isEmpty()) {
-                throw new IllegalStateException("baymax.chat.model is " + model + " and baymax.llm.prices." + provider + ".[" + model
-                        + "] has no price; add it (USD per 1M tokens, with its source and date)");
+        priced("baymax.chat.model", chat.getModel());
+        BaymaxProperties.Chat.Check check = chat.getCheck();
+        if (check.isEnabled()) {
+            priced("baymax.chat.check.model", check.getModel());
+            if (chat.getModelTimeout().plus(check.getTimeout()).plus(ChatAnswerService.CHECK_MARGIN).compareTo(chat.getAnswerDeadline()) > 0) {
+                throw new IllegalStateException("baymax.chat.model-timeout (" + chat.getModelTimeout() + ") plus baymax.chat.check.timeout ("
+                        + check.getTimeout() + ") plus " + ChatAnswerService.CHECK_MARGIN + " must fit inside baymax.chat.answer-deadline ("
+                        + chat.getAnswerDeadline() + ")");
             }
+            if (chat.isEnabled() && checkClient.getIfAvailable() == null) {
+                throw new IllegalStateException("baymax.chat.enabled and baymax.chat.check.enabled are both true but there is no chat"
+                        + " check client: baymax.chat.check.model is '" + check.getModel() + "' and needs a non-blank id and the key of"
+                        + " the provider it selects (BAYMAX_CHAT_CHECK_MODEL absent from the env, never blank; docs/RUNBOOK.md)");
+            }
+        }
+    }
+
+    /** A model named by {@code property}, when one is named, must have a price for the provider its id selects. */
+    private void priced(String property, String model) {
+        if (model == null || model.isBlank()) {
+            return;
+        }
+        String provider = ExtractionModelConfiguration.isAnthropicModel(model) ? "anthropic"
+                : "openai".equalsIgnoreCase(llm.getProvider()) ? "openai" : "groq";
+        if (costs.llmCost(provider, model, 0, 0).isEmpty()) {
+            throw new IllegalStateException(property + " is " + model + " and baymax.llm.prices." + provider + ".[" + model
+                    + "] has no price; add it (USD per 1M tokens, with its source and date)");
         }
     }
 

@@ -195,6 +195,10 @@ class AppApiLogSafetyTest {
                                 return "anthropic";
                             }
                         }))
+                // PO ruling P15: the model check passes, so the medicine question's answer is still shown and its log scanned
+                .withBean(com.elioo.baymax.companion.config.ChatCheckModelConfiguration.CHECK_CLIENT,
+                        com.elioo.baymax.extraction.config.BaymaxModelClient.class,
+                        () -> new com.elioo.baymax.testsupport.PassingChatCheck().client())
                 .run(context -> {
             FamilyAccount family = AppApiContext.family(context, NUMBER, OWNER);
             PatientProfile rokeya = AppApiContext.patient(context, family.id(), NAME);

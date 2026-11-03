@@ -2,6 +2,7 @@ package com.elioo.healthcare.llm.provider.anthropic;
 
 import com.anthropic.client.AnthropicClient;
 import com.anthropic.models.messages.MessageCreateParams;
+import com.anthropic.models.messages.OutputConfig;
 import com.elioo.healthcare.llm.config.LlmProperties;
 import com.elioo.healthcare.llm.exception.LlmException;
 import com.elioo.healthcare.llm.model.LlmRequest;
@@ -79,10 +80,40 @@ class AnthropicLlmClientTest {
         assertThat(p.outputConfig()).isPresent();
     }
 
-    /** An unrecognised id is assumed modern: better a loud 400 than a silent downgrade. */
+    /**
+     * Haiku 5.5 thinks adaptively by default at effort {@code medium} and takes {@code output_config.effort} from low to max
+     * (Anthropic's Claude API reference, cached 2026-10-06): the denylist written for Haiku 4.5 must not take its effort away,
+     * or a one-line verdict (the চ্যাট's model check, PO ruling P15) thinks at medium inside a small max_tokens.
+     */
+    @Test
+    void haiku55GetsAdaptiveThinkingAndTheConfiguredEffort() {
+        LlmProperties props = new LlmProperties();
+        props.getAnthropic().setApiKey("test-key");
+        props.getAnthropic().setModel("claude-haiku-5-5");
+        props.getAnthropic().setEffort("low");
+        AnthropicLlmClient haiku = new AnthropicLlmClient(mock(AnthropicClient.class), props.getAnthropic(), props);
+
+        MessageCreateParams p = haiku.buildParams(LlmRequest.custom("hi", null, "claude-haiku-5-5", 4096, null));
+
+        assertThat(p.thinking()).isPresent();
+        assertThat(p.thinking().get().isAdaptive()).isTrue();
+        assertThat(p.outputConfig()).isPresent();
+        assertThat(p.outputConfig().get().effort()).contains(OutputConfig.Effort.LOW);
+        // and Haiku 4.5, which rejects both, still gets neither
+        MessageCreateParams old = haiku.buildParams(LlmRequest.custom("hi", null, "claude-haiku-4-5", 300, null));
+        assertThat(old.thinking()).isEmpty();
+        assertThat(old.outputConfig()).isEmpty();
+    }
+
+    /** An unrecognised id is assumed modern: better a loud 400 than a silent downgrade. Only Haiku 4.x and older are denied. */
     @Test
     void anUnknownModelKeepsTheModernParameters() {
         assertThat(AnthropicLlmClient.supportsAdaptiveThinking("claude-something-7")).isTrue();
-        assertThat(AnthropicLlmClient.supportsAdaptiveThinking("claude-haiku-9")).isFalse();
+        assertThat(AnthropicLlmClient.supportsAdaptiveThinking("claude-haiku-5-5")).isTrue();
+        assertThat(AnthropicLlmClient.supportsAdaptiveThinking("claude-haiku-9")).isTrue();
+        assertThat(AnthropicLlmClient.supportsAdaptiveThinking("claude-haiku-4-5")).isFalse();
+        assertThat(AnthropicLlmClient.supportsAdaptiveThinking("claude-haiku-4-5-20251001")).isFalse();
+        assertThat(AnthropicLlmClient.supportsAdaptiveThinking("claude-3-5-haiku-20241022")).isFalse();
+        assertThat(AnthropicLlmClient.supportsAdaptiveThinking("claude-3-haiku-20240307")).isFalse();
     }
 }

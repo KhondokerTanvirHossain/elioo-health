@@ -148,6 +148,26 @@ class AiCallLogPersistenceAdapterTest {
         });
     }
 
+    /**
+     * PO ruling P15 (migration chat_model_check): every purpose the code can log is one the table accepts, the chat's model check included. Derived
+     * from the enum, never a hand list, so a purpose added later without its migration fails here and not on production,
+     * where {@code MeteredLlmClient} would swallow the failed write and leave the call's cost unrecorded. Guarded against an
+     * empty sweep.
+     */
+    @Test
+    void everyPurposeTheCodeLogsIsOneTheTableAccepts() {
+        runner().run(context -> {
+            AiCallLogPort port = context.getBean(AiCallLogPort.class);
+            assertThat(AiCallPurpose.values()).as("the purposes swept").hasSizeGreaterThan(1).contains(AiCallPurpose.CHAT_CHECK);
+            for (AiCallPurpose purpose : AiCallPurpose.values()) {
+                AiCallRecord saved = port.save(new AiCallRecord(null, null, purpose, "anthropic", "claude-haiku-5-5",
+                        10, 5, new BigDecimal("0.0000035"), 100L, null, OUTSIDE)).block();
+                assertThat(sqlScalar("select purpose from baymax.ai_call_log where id = '" + saved.id() + "'"))
+                        .as("purpose " + purpose + " stored").isEqualTo(purpose.dbValue());
+            }
+        });
+    }
+
     /** One family and patient owning these papers (fictional number), so a call's document_id names a real row. */
     private static void papers(String number, UUID... documents) throws Exception {
         UUID family = UUID.randomUUID();

@@ -121,7 +121,7 @@ class ChatAnswerLiveTest {
         UiChatCopyAdapter copy = new UiChatCopyAdapter(new UiCopy(), new Copy());
         AiCostCalculator costs = new AiCostCalculator(properties);
         ChatAnswerService service = new ChatAnswerService(properties, records, turns, new RedFlagMatcher(properties), contexts, copy,
-                attention, new MeteredLlmClient(claude, log, costs), costs, clients, Clock.systemUTC());
+                attention, new MeteredLlmClient(claude, log, costs), costs, clients, checks(key, properties), Clock.systemUTC());
 
         AskAnswer a = service.ask(FAMILY, PATIENT, "ওষুধটা অর্ধেক করব? আর ক্রিয়েটিনিন কত?", "bn").block(Duration.ofSeconds(60));
 
@@ -140,5 +140,28 @@ class ChatAnswerLiveTest {
                     + " violations=" + o.violationCodes());
             assertThat(each.answer()).endsWith(copy.line("bn", "disclaimer") + "\n" + copy.line("bn", "safety.red_flag_line"));
         }
+    }
+
+    /**
+     * The refuse-only model check as production builds it (PO ruling P15): the shipped check model on the same key, priced
+     * as the shipped table prices it, so a live run measures the chat and its check together. A live run needs the PO's
+     * go-ahead; none is approved for P15.
+     */
+    private static ObjectProvider<BaymaxModelClient> checks(String key, BaymaxProperties properties) {
+        String model = "claude-haiku-5-5";
+        properties.getChat().getCheck().setModel(model);
+        BaymaxProperties.Price haiku = new BaymaxProperties.Price();
+        haiku.setInput(new BigDecimal("0.10"));
+        haiku.setOutput(new BigDecimal("0.50"));
+        properties.getLlm().getPrices().get("anthropic").put(model, haiku);
+        LlmProperties.Anthropic cfg = new LlmProperties.Anthropic();
+        cfg.setApiKey(key);
+        cfg.setModel(model);
+        // the check's own effort, as ChatCheckModelConfiguration sets it (review of #173): the live run measures what ships
+        cfg.setEffort(properties.getChat().getCheck().getEffort());
+        @SuppressWarnings("unchecked")
+        ObjectProvider<BaymaxModelClient> checks = mock(ObjectProvider.class);
+        when(checks.getIfAvailable()).thenReturn(new BaymaxModelClient(new AnthropicLlmClient(cfg, new LlmProperties())));
+        return checks;
     }
 }
