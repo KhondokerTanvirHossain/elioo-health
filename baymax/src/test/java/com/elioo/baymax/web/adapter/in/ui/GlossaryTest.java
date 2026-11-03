@@ -4,11 +4,19 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.io.IOException;
+import java.io.Reader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -147,5 +155,68 @@ class GlossaryTest {
     @ValueSource(strings = {"See {0} papers", "Only {0} file is here, so {1} is chosen", "Ma's papers", "it's {0}", "{0} details"})
     void anEnglishWordAfterANameIsNotAPossessive(String copy) {
         assertThat(GLUED_CASE_EN.matcher(copy).find()).as(copy).isFalse();
+    }
+
+    /**
+     * PO ruling P16(d): bn chat.ask.failed said "কাগজপত্রে কাগজে যা লেখা দেখুন" — the tab's name, then the word for paper
+     * again. The tab name in any case form followed at once by a কাগজ word is that defect; "কাগজপত্রে সব কাগজ" is copy.
+     * The English twin: "Papers" followed at once by "paper".
+     */
+    static final Pattern PAPERS_THEN_PAPER = Pattern.compile("কাগজপত্র[\\u0980-\\u09FF]*\\s+কাগজ|\\bPapers\\s+papers?\\b");
+
+    /**
+     * Derived from the directories, never a list of files: every bundle under {@code src/main/resources/baymax} (values as
+     * Properties reads them), every generated web copy file and every MSW fixture Java writes (as text), so the line is
+     * gone wherever a family could read it. Each directory must yield files, or the sweep would pass vacuously.
+     */
+    @Test
+    void noLineNamesThePapersTabAndThenPaperAgain() throws IOException {
+        List<String> found = new ArrayList<>();
+        int bundles = 0;
+        try (Stream<Path> listing = Files.list(Path.of("src/main/resources/baymax"))) {
+            for (Path file : listing.filter(f -> f.getFileName().toString().matches(".*_(bn|en)\\.properties")).sorted().toList()) {
+                bundles++;
+                Properties p = new Properties();
+                try (Reader r = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+                    p.load(r);
+                }
+                for (String key : p.stringPropertyNames()) {
+                    if (PAPERS_THEN_PAPER.matcher(p.getProperty(key)).find()) {
+                        found.add(file.getFileName() + ":" + key + " = " + p.getProperty(key));
+                    }
+                }
+            }
+        }
+        assertThat(bundles).as("bundle files read; an empty listing would pass vacuously").isGreaterThanOrEqualTo(14);
+        for (Path dir : List.of(Path.of("../medioo-web/src/copy/generated"), Path.of("../medioo-web/fixtures"))) {
+            int here = 0;
+            try (Stream<Path> walk = Files.walk(dir)) {
+                for (Path file : walk.filter(f -> f.toString().endsWith(".json")).sorted().toList()) {
+                    here++;
+                    List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
+                    for (int i = 0; i < lines.size(); i++) {
+                        if (PAPERS_THEN_PAPER.matcher(lines.get(i)).find()) {
+                            found.add(dir.relativize(file) + ":" + (i + 1) + " = " + lines.get(i).strip());
+                        }
+                    }
+                }
+            }
+            assertThat(here).as(".json files under " + dir + "; an empty walk would pass vacuously").isPositive();
+        }
+        assertThat(found).as("the Papers tab named and then paper again (PO ruling P16(d))").isEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"কাগজপত্রে কাগজে যা লেখা দেখুন", "কাগজপত্রে  কাগজটা দেখুন", "কাগজপত্রের কাগজে", "under Papers paper",
+            "See Papers papers"})
+    void thePapersTabThenPaperIsCaught(String copy) {
+        assertThat(PAPERS_THEN_PAPER.matcher(copy).find()).as(copy).isTrue();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"কাগজপত্রে যা লেখা আছে দেখুন", "কাগজপত্রে সব কাগজ আর মান দেখুন", "কাগজপত্রে প্রেসক্রিপশনের ছবিটা দেখুন",
+            "See what the papers say under Papers, and ask", "Papers. The paper"})
+    void thePapersTabThenAnotherWordIsCopy(String copy) {
+        assertThat(PAPERS_THEN_PAPER.matcher(copy).find()).as(copy).isFalse();
     }
 }

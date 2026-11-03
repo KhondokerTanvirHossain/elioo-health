@@ -119,7 +119,10 @@ class AnswerCheckTest {
                 .isEqualTo(List.of("number_not_on_paper", "dose_change", "too_long:1300"));
     }
 
-    /** Derived from the bundles: every fixed চ্যাট body Medioo may show in place of a model's passes the same checks. */
+    /**
+     * Derived from the bundles: every fixed চ্যাট body Medioo may show in place of a model's passes the same checks —
+     * chat.ask.* and, since PO ruling P16(d), chat.check.* (the line shown when the model check refuses an answer, #173).
+     */
     @Test
     void everyFixedChatBodyPassesTheContentChecks() throws Exception {
         int seen = 0;
@@ -130,19 +133,22 @@ class AnswerCheckTest {
                 p.load(new InputStreamReader(in, StandardCharsets.UTF_8));
             }
             int here = 0;
+            int checkLines = 0;
             for (String key : p.stringPropertyNames()) {
-                if (key.startsWith("chat.ask.")) {
+                if (key.startsWith("chat.ask.") || key.startsWith("chat.check.")) {
                     here++;
+                    checkLines += key.startsWith("chat.check.") ? 1 : 0;
                     List<String> v = AnswerCheck.violations(p.getProperty(key), ChatContext.empty());
                     if (!v.isEmpty()) {
                         failing.add(lang + " " + key + ": " + v);
                     }
                 }
             }
-            assertThat(here).as("chat.ask.* keys in ui-chat_" + lang).isGreaterThanOrEqualTo(1);
+            assertThat(here).as("chat.ask.* and chat.check.* keys in ui-chat_" + lang).isGreaterThanOrEqualTo(4);
+            assertThat(checkLines).as("chat.check.* keys in ui-chat_" + lang + " (chat.check.refused, P16(d))").isGreaterThanOrEqualTo(1);
             seen += here;
         }
-        assertThat(seen).isGreaterThanOrEqualTo(2);
+        assertThat(seen).isGreaterThanOrEqualTo(8);
         assertThat(failing).isEmpty();
     }
 
