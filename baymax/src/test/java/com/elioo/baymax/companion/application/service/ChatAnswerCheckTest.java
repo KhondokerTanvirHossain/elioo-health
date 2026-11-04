@@ -1,6 +1,8 @@
 package com.elioo.baymax.companion.application.service;
 
 import com.elioo.baymax.companion.application.service.ChatAnswerCheck.Verdict;
+import com.elioo.baymax.companion.domain.AnswerKind;
+import com.elioo.baymax.companion.domain.ChatOutcome;
 import com.elioo.healthcare.llm.model.LlmRequest;
 import org.junit.jupiter.api.Test;
 
@@ -89,5 +91,23 @@ class ChatAnswerCheckTest {
             assertThat(rules).as(asked).contains(asked);
         }
         assertThat(Optional.ofNullable(rules)).isPresent();
+    }
+
+    /**
+     * Review of #173 (third review), finding 6: the live run prints the labs-only question's check outcome on its own line,
+     * and the line says what happened: a pass, the check's refusal, or never checked. Codes only, no question or answer text.
+     */
+    @Test
+    void theLiveRunSaysWhetherTheLabsOnlyAnswerSurvivedTheCheck() {
+        java.util.function.BiFunction<String, Integer, String> line = (handler, checks) -> ChatAnswerLiveTest.labsOnlyLine(
+                new ChatOutcome("a", "model".equals(handler) || "repair".equals(handler) ? AnswerKind.ANSWER : AnswerKind.FALLBACK, handler,
+                        "model_check".equals(handler) ? List.of("check_refused") : List.of(), 1, 1, 1, null, 1L, List.of(), checks));
+        assertThat(line.apply("model", 1)).startsWith("[live] labs-only question: check PASS handler=model checks=1");
+        assertThat(line.apply("repair", 1)).contains("check PASS handler=repair");
+        assertThat(line.apply("model_check", 1)).startsWith("[live] labs-only question: check REFUSE handler=model_check checks=1")
+                .endsWith("violations=[check_refused]");
+        assertThat(line.apply("fixed_after_repair", 0)).contains("check NOT CHECKED");
+        assertThat(line.apply("model", 0)).as("check switched off: shown unread").contains("check NOT CHECKED");
+        assertThat(line.apply("model", 1)).doesNotContain(ChatAnswerLiveTest.LABS_ONLY);
     }
 }

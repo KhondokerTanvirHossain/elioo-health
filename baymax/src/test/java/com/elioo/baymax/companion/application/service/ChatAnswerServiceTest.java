@@ -584,6 +584,9 @@ class ChatAnswerServiceTest {
                 .verifyComplete();
         assertThat(stored().handler()).isEqualTo("model_error");
         assertThat(stored().modelCalls()).isEqualTo(1);
+        // the deadline's own fallback is code's, never the model check's (review of #173, third review, finding 3)
+        verify(judge, never()).invoke(any());
+        assertThat(stored().checkCalls()).isZero();
     }
 
     /**
@@ -620,6 +623,8 @@ class ChatAnswerServiceTest {
         assertThat(a.answer()).doesNotContain(cutShort);
         assertThat(stored().answer()).isEqualTo(line("bn", "chat.ask.failed") + ChatAppendix.tail(false, Optional.empty(), k -> line("bn", k)));
         assertThat(stored().handler()).isEqualTo("model_error");
+        verify(judge, never()).invoke(any());
+        assertThat(stored().checkCalls()).isZero();
     }
 
     /**
@@ -637,6 +642,8 @@ class ChatAnswerServiceTest {
         verify(turns, times(1)).complete(eq(TURN), any());
         assertThat(stored().handler()).isEqualTo("model_error");
         verify(turns, never()).reserveUncounted(any(), any(), anyString(), anyString());
+        verify(judge, never()).invoke(any());
+        assertThat(stored().checkCalls()).isZero();
     }
 
     /** Review of #164, findings 7 and 14: a long, frantic emergency gets the emergency lines, stored cut to the column. */
@@ -1223,7 +1230,12 @@ class ChatAnswerServiceTest {
         assertThat(stored().checkCalls()).isEqualTo(1);
     }
 
-    /** The same kind of labs-only answer, refused by the check: the check's own line with the doctor line, never the answer. */
+    /**
+     * The same kind of labs-only answer, refused by the check: the check's own line with the doctor line, never the answer.
+     * The doctor line on a question about a lab value is the copy P15/P16(d) set when only medicine answers reached the
+     * check; it is put to the PO as an observation (DR-50, third review of #173), not changed here. If he approves the
+     * option there, this test expects {@code tail(false)} and a medicine-question refusal keeps {@code tail(true)}.
+     */
     @Test
     void aLabsOnlyAnswerTheCheckRefusesIsTheChecksLine() {
         String answer = "Ma-র ক্রিয়েটিনিন 1.8, কাগজে ছাপা সীমার বাইরে।";
@@ -1284,6 +1296,26 @@ class ChatAnswerServiceTest {
         ArgumentCaptor<ChatOutcome> all = ArgumentCaptor.forClass(ChatOutcome.class);
         verify(turns, times(2)).complete(eq(TURN), all.capture());
         assertThat(all.getAllValues()).extracting(ChatOutcome::handler).containsExactly("fixed_after_repair", "fixed_after_repair");
+        assertThat(all.getAllValues()).allSatisfy(o -> assertThat(o.checkCalls()).isZero());
+    }
+
+    /**
+     * Review of #173 (third review), finding 3: a chat model that fails is the code's {@code model_error}, shown as
+     * {@code chat.ask.failed} with no doctor line of the check's, and never sent to the model check, in bn and en.
+     */
+    @Test
+    void aModelErrorStaysChatAskFailedAndIsNeverChecked() {
+        model(Mono.error(new IllegalStateException("provider down")), Mono.error(new IllegalStateException("provider down")));
+
+        AskAnswer bn = service().ask(FAMILY, PATIENT, PLAIN_QUESTION, "bn").block(Duration.ofSeconds(10));
+        AskAnswer en = service().ask(FAMILY, PATIENT, "What does the prescription say?", "en").block(Duration.ofSeconds(10));
+
+        verify(judge, never()).invoke(any());
+        assertThat(bn.answer()).startsWith(line("bn", "chat.ask.failed")).doesNotContain(line("bn", "chat.check.refused"));
+        assertThat(en.answer()).startsWith(line("en", "chat.ask.failed")).doesNotContain(line("en", "chat.check.refused"));
+        ArgumentCaptor<ChatOutcome> all = ArgumentCaptor.forClass(ChatOutcome.class);
+        verify(turns, times(2)).complete(eq(TURN), all.capture());
+        assertThat(all.getAllValues()).extracting(ChatOutcome::handler).containsExactly("model_error", "model_error");
         assertThat(all.getAllValues()).allSatisfy(o -> assertThat(o.checkCalls()).isZero());
     }
 

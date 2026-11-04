@@ -31,6 +31,9 @@ import java.util.Optional;
  *   <li>{@code baymax.chat.max-answer-chars} below the longest set of fixed lines code appends, in either language, plus
  *       {@value #MIN_BODY} characters of body: the length cap runs on the whole assembled text, and a cap the fixed lines
  *       cannot fit would turn every answer, the fixed fallback included, into a refused one;</li>
+ *   <li>a fixed body ({@link #FIXED_BODIES}: {@code chat.check.refused}, {@code chat.ask.failed}) that, with the longest
+ *       appendix after it, is over {@code baymax.chat.max-answer-chars} in either language: it would be sent over the cap
+ *       (review of #173, third review, finding 2);</li>
  *   <li>{@code baymax.chat.model} with no price for its provider: every chat call would log a NULL cost, and the daily cost
  *       bound DR-50 reconciles against the console would be unknown;</li>
  *   <li>{@code baymax.chat.answer-deadline} past what the web composer waits ({@link #WEB_ASK_TIMEOUT}) less the store's
@@ -49,6 +52,12 @@ import java.util.Optional;
 public class ChatPropertiesCheck implements InitializingBean {
 
     static final int MIN_BODY = 200;
+
+    /**
+     * The fixed bodies a model turn can end in: the model check's refusal ({@link ChatAnswerCheck#REFUSED_LINE}, P16(d))
+     * and the code checks' own fixed reply ({@code chat.ask.failed}); each, plus the longest appendix, must fit the cap.
+     */
+    static final List<String> FIXED_BODIES = List.of(ChatAnswerCheck.REFUSED_LINE, "chat.ask.failed");
 
     /**
      * How long the web composer waits for an answer (medioo-web Composer.tsx {@code ASK_TIMEOUT_MS}, held equal to this by
@@ -88,6 +97,7 @@ public class ChatPropertiesCheck implements InitializingBean {
         keys.addAll(ChatAppendix.KEYS);
         // PO ruling P16(d): the model check's refusal shows its own line, read per refusal
         keys.addAll(ChatAnswerCheck.KEYS);
+        keys.addAll(FIXED_BODIES);
         for (String lang : List.of("bn", "en")) {
             for (String key : keys) {
                 try {
@@ -105,6 +115,17 @@ public class ChatPropertiesCheck implements InitializingBean {
         if (chat.getMaxAnswerChars() < longest + MIN_BODY) {
             throw new IllegalStateException("baymax.chat.max-answer-chars is " + chat.getMaxAnswerChars()
                     + " but the fixed lines alone run to " + longest + " characters; it must be at least " + (longest + MIN_BODY));
+        }
+        // a fixed body is sent with the appendix after it: the cap is asserted on that whole text, never on the body alone
+        // (review of #173, third review, finding 2)
+        for (String lang : List.of("bn", "en")) {
+            for (String key : FIXED_BODIES) {
+                int sent = copy.line(lang, key).length() + longest;
+                if (sent > chat.getMaxAnswerChars()) {
+                    throw new IllegalStateException("the fixed reply " + lang + ":" + key + " plus the longest appendix runs to " + sent
+                            + " characters, over baymax.chat.max-answer-chars (" + chat.getMaxAnswerChars() + ")");
+                }
+            }
         }
         Duration most = WEB_ASK_TIMEOUT.minus(ChatAnswerService.STORE_GRACE).minus(NETWORK_MARGIN);
         if (chat.getAnswerDeadline() == null || chat.getAnswerDeadline().compareTo(most) > 0) {

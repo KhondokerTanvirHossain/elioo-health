@@ -24,10 +24,11 @@ import java.util.Optional;
  *   <li>{@link #parse}: the one fixed verdict, read strictly. {@code {"verdict":"pass"}} is the only text that lets an answer
  *       stand, byte-equal; {@code {"verdict":"refuse"}} refuses it; anything else, an error, a timeout, a {@code max_tokens}
  *       stop or no check client refuses it too (fail closed);</li>
- *   <li>what code refuses before any call (approved by the PO, P16(b)): an answer or a written line holding a block marker
- *       ({@link #hasMarker}, so model text a question can steer never closes its block and speaks to the check), and a bare
- *       yes, no or okay to a dose or purpose question ({@link #bareReply}), which the check, never shown the question, could
- *       not judge.</li>
+ *   <li>what code refuses before any call: a bare yes, no or okay to a dose or purpose question ({@link #bareReply}),
+ *       which the check, never shown the question, could not judge (approved by the PO, P16(b)); and an answer or a
+ *       written line holding a block marker ({@link #hasMarker}, so model text a question can steer never closes its block
+ *       and speaks to the check; engineering within P15's fail-closed rule, review of #173, findings 8 and 14, not a PO
+ *       ruling).</li>
  * </ul>
  * The check can only refuse: it never edits, adds to or approves an answer the code checks refused, since it never sees one.
  * A refusal is the check's own fixed line ({@value #REFUSED_LINE}, PO ruling P16(d)) with the ask-the-doctor line
@@ -123,7 +124,7 @@ public final class ChatAnswerCheck {
     }
 
     /** The check's one request: the fixed rules, then the written lines, numbered, and the answer as it would be shown. */
-    static LlmRequest request(List<String> writtenLines, String answer, int maxTokens) {
+    public static LlmRequest request(List<String> writtenLines, String answer, int maxTokens) {
         StringBuilder user = new StringBuilder("WRITTEN LINES (between the markers):\n<<<LINES\n");
         if (writtenLines == null || writtenLines.isEmpty()) {
             user.append("(none)\n");

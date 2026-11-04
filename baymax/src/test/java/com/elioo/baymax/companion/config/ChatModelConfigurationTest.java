@@ -3,13 +3,16 @@ package com.elioo.baymax.companion.config;
 import com.elioo.baymax.aicall.application.service.AiCostCalculator;
 import com.elioo.baymax.companion.application.port.out.ChatCopyPort;
 import com.elioo.baymax.companion.application.service.ChatAnswerService;
+import com.elioo.baymax.companion.application.service.ChatAnswerCheck;
 import com.elioo.baymax.companion.application.service.ChatLabels;
+import com.elioo.baymax.companion.domain.ChatContext;
 import com.elioo.baymax.config.BaymaxProperties;
 import com.elioo.baymax.extraction.config.BaymaxModelClient;
 import com.elioo.baymax.outbound.application.service.Copy;
 import com.elioo.baymax.web.adapter.in.ui.UiChatCopyAdapter;
 import com.elioo.baymax.web.adapter.in.ui.UiCopy;
 import com.elioo.healthcare.llm.config.LlmProperties;
+import com.elioo.healthcare.llm.model.LlmRequest;
 import com.elioo.healthcare.llm.provider.anthropic.AnthropicLlmClient;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -26,6 +29,7 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
 
@@ -122,11 +126,62 @@ class ChatModelConfigurationTest {
         // whole timeout inside the deadline; after a repair the service gives it what is left (ChatAnswerServiceTest)
         assertThat(bound.getChat().getModelTimeout().plus(check.getTimeout()).plus(ChatAnswerService.CHECK_MARGIN))
                 .isLessThanOrEqualTo(bound.getChat().getAnswerDeadline());
-        // a one-line verdict at effort low, with room for its thinking, and its worst case still inside the ruling's +$0.003
+        // a one-line verdict at effort low, with room for its thinking, and its worst case still inside the ruling's +$0.003:
+        // priced on the largest request the code can build from the shipped configuration, never on a typed-in size
         assertThat(check.getEffort()).isEqualTo("low");
         assertThat(check.getMaxOutputTokens()).isEqualTo(4096);
-        assertThat(new AiCostCalculator(bound).llmCost("anthropic", check.getModel(), 2000, check.getMaxOutputTokens()).orElseThrow())
-                .isLessThan(new BigDecimal("0.003"));
+        int worstIn = worstCaseCheckInputTokens(bound.getChat().getContextMaxTokens(), bound.getChat().getMaxAnswerChars(),
+                check.getMaxOutputTokens());
+        assertThat(new AiCostCalculator(bound).llmCost("anthropic", check.getModel(), worstIn, check.getMaxOutputTokens()).orElseThrow())
+                .as("the check's worst case: " + worstIn + " in, " + check.getMaxOutputTokens() + " out")
+                .isLessThan(PER_ANSWER_CEILING);
+    }
+
+    /** PO ruling P15: the model check adds at most about +$0.003 to an answer. */
+    static final BigDecimal PER_ANSWER_CEILING = new BigDecimal("0.003");
+
+    /**
+     * Tokens per character assumed for the check's input: one, the figure {@link ChatContext#estimateTokens} gives every
+     * non-ASCII character, and so an over-estimate for English (about a quarter) and, by that method's own reading, for
+     * Bangla. Stated, not measured: the one live run (P16(a)) logs the provider's real count.
+     */
+    static final int TOKENS_PER_CHAR = 1;
+
+    /**
+     * Review of #173 (third review), findings 1 and 12: the largest input the check can be sent, built by the code that
+     * builds it ({@link ChatAnswerCheck#request}) from what is configured, not from a typed-in size: the fixed RULES, the
+     * prescription's written lines at the context's own cap ({@code context-max-tokens}, in {@link ChatContext#estimateTokens}
+     * units, where one Bangla character is one token), and an answer at {@code max-answer-chars}, all in Bangla, at
+     * {@link #TOKENS_PER_CHAR}. The context cap bounds the written lines only while lab readings are what it drops: a
+     * prescription block over the cap on its own is kept whole (ChatContextBuilder), and is not bounded here.
+     */
+    static int worstCaseCheckInputTokens(int contextMaxTokens, int maxAnswerChars, int maxOut) {
+        String lines = "ক".repeat(contextMaxTokens);
+        assertThat(ChatContext.estimateTokens(lines)).as("the written lines fill the context cap exactly").isEqualTo(contextMaxTokens);
+        String answer = "ক".repeat(maxAnswerChars);
+        LlmRequest largest = ChatAnswerCheck.request(List.of(lines), answer, maxOut);
+        assertThat(largest.userPrompt()).as("the largest request carries the lines and the answer").contains(lines).contains(answer);
+        assertThat(largest.systemPrompt()).as("and the fixed rules").isNotBlank();
+        return (largest.systemPrompt().length() + largest.userPrompt().length()) * TOKENS_PER_CHAR;
+    }
+
+    /**
+     * And the derivation can fail: the same check priced on a context cap of 8,000 is over the ruling's ceiling, so the
+     * shipped figure is green because of the shipped configuration, not whatever the input is.
+     */
+    @Test
+    void theCheckWorstCaseFollowsTheConfiguredSizes() {
+        BaymaxProperties props = new BaymaxProperties();
+        BaymaxProperties.Price haiku = new BaymaxProperties.Price();
+        haiku.setInput(new BigDecimal("0.10"));
+        haiku.setOutput(new BigDecimal("0.50"));
+        props.getLlm().getPrices().put("anthropic", new java.util.LinkedHashMap<>(java.util.Map.of("claude-haiku-5-5", haiku)));
+        AiCostCalculator calc = new AiCostCalculator(props);
+        int shipped = worstCaseCheckInputTokens(6000, 1200, 4096);
+        int wider = worstCaseCheckInputTokens(8000, 1200, 4096);
+        assertThat(wider - shipped).isEqualTo(2000);
+        assertThat(calc.llmCost("anthropic", "claude-haiku-5-5", shipped, 4096).orElseThrow()).isLessThan(PER_ANSWER_CEILING);
+        assertThat(calc.llmCost("anthropic", "claude-haiku-5-5", wider, 4096).orElseThrow()).isGreaterThan(PER_ANSWER_CEILING);
     }
 
     /**
@@ -256,28 +311,58 @@ class ChatModelConfigurationTest {
 
     /**
      * PO ruling P16(d): a model-check refusal reads chat.check.refused per refusal, so a bundle without it in either language
-     * stops startup and names the key, rather than turning the first refusal into a model error.
+     * stops startup and names the key, rather than turning the first refusal into a model error. Both languages, each on
+     * its own (review of #173, third review, finding 2).
      */
     @Test
-    void theCheckRefusalLineMissingInEnglishStopsStartupAndNamesTheKey() {
-        UiChatCopyAdapter real = new UiChatCopyAdapter(new UiCopy(), new Copy());
-        ChatCopyPort missing = (lang, key, args) -> {
-            if ("en".equals(lang) && "chat.check.refused".equals(key)) {
-                throw new IllegalArgumentException("not in the bundle");
+    void theCheckRefusalLineMissingInEitherLanguageStopsStartupAndNamesTheKey() {
+        for (String lang : List.of("bn", "en")) {
+            assertStartupRefused(stub(lang, "chat.check.refused", null), lang + ":chat.check.refused");
+        }
+    }
+
+    /**
+     * Review of #173 (third review), finding 2: a fixed body is sent with the appendix after it, so the length cap is
+     * asserted at startup on the body plus the longest appendix, in each language, for the check's refusal and the code
+     * checks' fixed reply alike. A 1,100-character line stops startup and names the key; the shipped lines start.
+     */
+    @Test
+    void aFixedBodyThatCannotFitWithItsAppendixStopsStartupAndNamesTheKey() {
+        String longLine = "ক".repeat(1100);
+        for (String lang : List.of("bn", "en")) {
+            for (String key : List.of("chat.check.refused", "chat.ask.failed")) {
+                assertStartupRefused(stub(lang, key, longLine), lang + ":" + key);
             }
-            return real.line(lang, key, args);
+        }
+        runner().run(context -> assertThat(context).hasNotFailed());
+    }
+
+    /** The real bundles, with one key in one language missing ({@code line == null}) or replaced by {@code line}. */
+    private static ChatCopyPort stub(String lang, String key, String line) {
+        UiChatCopyAdapter real = new UiChatCopyAdapter(new UiCopy(), new Copy());
+        return (l, k, args) -> {
+            if (lang.equals(l) && key.equals(k)) {
+                if (line == null) {
+                    throw new IllegalArgumentException("not in the bundle");
+                }
+                return line;
+            }
+            return real.line(l, k, args);
         };
+    }
+
+    private static void assertStartupRefused(ChatCopyPort copy, String naming) {
         new ApplicationContextRunner()
                 .withUserConfiguration(Props.class, ChatModelConfiguration.class, ChatPropertiesCheck.class, AiCostCalculator.class)
-                .withBean(ChatCopyPort.class, () -> missing)
+                .withBean(ChatCopyPort.class, () -> copy)
                 .run(context -> {
-                    assertThat(context).hasFailed();
+                    assertThat(context).as(naming).hasFailed();
                     Throwable refused = context.getStartupFailure();
                     while (refused != null && !(refused instanceof IllegalStateException)) {
                         refused = refused.getCause();
                     }
                     assertThat(refused).as("the check's own refusal in " + context.getStartupFailure()).isNotNull()
-                            .hasMessageContaining("en:chat.check.refused");
+                            .hasMessageContaining(naming);
                 });
     }
 

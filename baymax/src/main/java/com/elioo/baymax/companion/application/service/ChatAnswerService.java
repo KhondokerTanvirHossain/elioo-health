@@ -75,9 +75,10 @@ import java.util.function.Function;
  *       {@code chat_check}), given at most what is left of the answer deadline. Its pass leaves the answer byte-equal; its
  *       refusal, and any error, timeout, unreadable verdict or missing check client, gives
  *       {@value ChatAnswerCheck#REFUSED_LINE} (P16(d)) with {@code chat.dose.ask_doctor} (FALLBACK, handler
- *       {@value ChatAnswerCheck#HANDLER}), with no repair after it. Code refuses the same way, with no call (P16(b)), an
- *       answer or a written line holding a block marker and a bare yes or no to a dose or purpose question. Code-built
- *       replies are never sent to it;</li>
+ *       {@value ChatAnswerCheck#HANDLER}), with no repair after it. Code refuses the same way, with no call, a bare yes or
+ *       no to a dose or purpose question (approved by the PO, P16(b)) and an answer or a written line holding a block
+ *       marker ({@code check_marker}; engineering within P15's fail-closed rule, review of #173, findings 8 and 14).
+ *       Code-built replies are never sent to it;</li>
  *   <li>code appends, after the body: {@code chat.dose.ask_doctor} for a dose question, {@code chat.purpose.ask} for a
  *       purpose question, the patient's open urgency line,
  *       {@code disclaimer}, {@code safety.red_flag_line} ({@link ChatAppendix});</li>
@@ -395,9 +396,10 @@ public class ChatAnswerService implements AskUseCase {
      * unread. Code-built replies never reach here. The check is given the written lines and the answer as shown, nothing
      * else, for at most what is left of the answer deadline. Only the exact verdict "pass" lets {@code passed} stand, the
      * same object, byte-equal; anything else is the check's own line ({@value ChatAnswerCheck#REFUSED_LINE}, P16(d)) with the
-     * doctor line, and the code that says why is the turn's violation. Code refuses the same way, with no call (P16(b)): a
-     * block marker in the answer or a written line, a bare yes or no to a dose or purpose question ({@code medicineQuestion}),
-     * no check client, no time left. Never empty, never an error: a failure of the check is its refusal.
+     * doctor line, and the code that says why is the turn's violation. Code refuses the same way, with no call: a bare yes
+     * or no to a dose or purpose question ({@code medicineQuestion}; approved by the PO, P16(b)); and, as engineering within
+     * P15's fail-closed rule (review of #173, findings 8 and 14), a block marker in the answer or a written line, no check
+     * client, no time left. Never empty, never an error: a failure of the check is its refusal.
      */
     private Mono<Body> checked(UUID turnId, Body passed, ChatContext ctx, boolean medicineQuestion, String l, Tally tally,
                                long startMs) {
