@@ -110,4 +110,24 @@ class ChatAnswerCheckTest {
         assertThat(line.apply("model", 0)).as("check switched off: shown unread").contains("check NOT CHECKED");
         assertThat(line.apply("model", 1)).doesNotContain(ChatAnswerLiveTest.LABS_ONLY);
     }
+
+    /**
+     * The live run's table (P16(a)) names the check's verdict from the turn's own codes, and keeps the code checks' codes
+     * apart from the check's: a refusal, a timeout and an error are told apart, and a turn the check never read says so.
+     */
+    @Test
+    void theLiveRunNamesTheChecksVerdictFromTheTurnsCodes() {
+        java.util.function.BiFunction<List<String>, Integer, ChatOutcome> turn = (codes, checks) -> new ChatOutcome("a",
+                AnswerKind.FALLBACK, "model_check", codes, 1, 1, 1, null, 1L, List.of(), checks);
+        assertThat(ChatAnswerLiveTest.verdict(turn.apply(List.of(), 1))).isEqualTo("pass");
+        assertThat(ChatAnswerLiveTest.verdict(turn.apply(List.of("dose_change"), 1))).as("repaired, then passed").isEqualTo("pass");
+        assertThat(ChatAnswerLiveTest.verdict(turn.apply(List.of("check_refused"), 1))).isEqualTo("refuse");
+        assertThat(ChatAnswerLiveTest.verdict(turn.apply(List.of("check_timeout"), 1))).isEqualTo("timeout");
+        assertThat(ChatAnswerLiveTest.verdict(turn.apply(List.of("check_unparseable"), 1))).isEqualTo("error");
+        assertThat(ChatAnswerLiveTest.verdict(turn.apply(List.of("check_error"), 1))).isEqualTo("error");
+        assertThat(ChatAnswerLiveTest.verdict(turn.apply(List.of("check_bare_answer"), 0))).isEqualTo("not_run(code:bare)");
+        assertThat(ChatAnswerLiveTest.verdict(turn.apply(List.of("dose_change"), 0))).as("code refused, never checked").isEqualTo("not_run");
+        assertThat(ChatAnswerLiveTest.codeViolations(turn.apply(List.of("dose_change", "check_refused"), 1))).containsExactly("dose_change");
+        assertThat(ChatAnswerLiveTest.codeViolations(turn.apply(List.of("check_bare_answer"), 0))).containsExactly("check_bare_answer");
+    }
 }
