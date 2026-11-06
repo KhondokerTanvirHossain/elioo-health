@@ -6,7 +6,8 @@ import { TipsSheet } from "./TipsSheet";
 
 /**
  * The actions under a retake card (plan desktop-parity Task 7; desktop.html's `.suggest` under a blurry photo; P19:
- * actions only, no chip sends a question to the model):
+ * actions only, no chip sends a question to the model). Conversation offers them under the newest paper only, as the
+ * design shows one `.suggest` after the newest paper:
  * - `desk.quick.resend`, the add page for this patient with `?replaces=` this paper, the query today's retake link uses
  *   (D1: Java judges the replacement on the press). Left out once Java says the paper was sent again (`replaced`);
  * - `desk.quick.tips`, the add sheet's own tips in a sheet (TipsSheet).

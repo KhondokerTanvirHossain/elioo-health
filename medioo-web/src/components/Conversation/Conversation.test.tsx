@@ -274,6 +274,27 @@ describe("Conversation", () => {
     expect(draw(member, { patient: { ...patientOf(items), owner: false } }).querySelectorAll(".quick-actions").length).toBe(0);
   });
 
+  it("onlyTheNewestPaperOffersQuickActions", () => {
+    // desktop.html's `.suggest` comes once, after the newest paper, and only when that paper is a retake: a retake card
+    // further up the thread (sent again since, or followed by other papers) offers nothing in the conversation.
+    const items = thread("proto-amma");
+    const blur = papersOf(items).find((p): p is PaperResultJson => p.status === "NEEDS_RETAKE")!;
+    const cbc = resultOf(items, (p) => p.status === "DONE");
+    expect(papersOf(items)[0]!.id, "the blur is proto-amma's newest paper").toBe(blur.id);
+    const newer = (card: PaperJson): ThreadItemJson => ({ kind: "paper", at: "2026-10-21T04:00:00Z", card });
+
+    // A routine paper sent after the retake: no actions anywhere.
+    const afterRoutine = draw([newer({ ...cbc, id: "newer-cbc" }), ...items]);
+    expect(afterRoutine.querySelectorAll(".quick-actions").length, "an older retake card offers nothing").toBe(0);
+    cleanup();
+
+    // A second retake after the first: the actions under the newest only.
+    const afterRetake = draw([newer({ ...blur, id: "newer-blur" }), ...items]);
+    const actions = [...afterRetake.querySelectorAll<HTMLElement>(".quick-actions")];
+    expect(actions.map((a) => a.closest<HTMLElement>("[data-talk-item]")!.dataset.paper), "one set, under the newest retake").toEqual(["newer-blur"]);
+    expect(actions[0]!.querySelector(".quick-actions__chip")!.getAttribute("href")).toContain(`replaces=${encodeURIComponent("newer-blur")}`);
+  });
+
   it("aRoutineCardOffersNoQuickReplies", () => {
     for (const name of ["proto-abbu", "default", "share-member", "now", "with-asks"]) {
       const items = thread(name);
@@ -355,6 +376,23 @@ describe("Conversation", () => {
       ["2026-10-19", "early"],
       ["2026-10-20", "late"],
     ]);
+  });
+
+  it("aListOutOfOrderStillDrawsWithUniqueKeys", () => {
+    // Conversation trusts its caller's order (mergeAsks sorts by `at`); a list that is not in order shows a day's line
+    // again where the day comes back, and React must still be able to tell those lines apart.
+    const items = thread("proto-amma");
+    const cbc = resultOf(items, (p) => p.status === "DONE");
+    const at = (id: string, when: string) => ({ kind: "paper", at: when, card: { ...cbc, id } as PaperJson }) as ThreadItemJson;
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const root = draw([at("c", "2026-10-20T05:00:00Z"), at("b", "2026-10-19T17:00:00Z"), at("a", "2026-10-20T04:00:00Z")]);
+      expect([...root.querySelectorAll<HTMLElement>(".day-separator")].map((d) => d.dataset.day)).toEqual(["2026-10-20", "2026-10-19", "2026-10-20"]);
+      const keyWarnings = errors.mock.calls.filter((c) => c.some((a) => String(a).includes("same key")));
+      expect(keyWarnings, "two children with the same key").toEqual([]);
+    } finally {
+      errors.mockRestore();
+    }
   });
 
   it("theConversationOpensOnTheSelectedCardElseTheNewest", async () => {

@@ -18,7 +18,10 @@ const COLUMN = ".conversation";
 /** The selected paper's item, which the column opens on. */
 const SELECTED = "[data-talk-selected]";
 
-/** One paper: the photo the family sent (its first page, on their side), then Medioo's card, then a retake's actions. */
+/**
+ * One paper: the photo the family sent (its first page, on their side), then Medioo's card, then, on the newest paper
+ * only (`newest`), a retake's actions.
+ */
 function PaperItem({
   lang,
   preview,
@@ -26,6 +29,7 @@ function PaperItem({
   at,
   link,
   selected,
+  newest,
 }: {
   lang: Lang;
   preview: boolean;
@@ -33,6 +37,7 @@ function PaperItem({
   at: string;
   link: string;
   selected: boolean;
+  newest: boolean;
 }) {
   const first = paper.pages[0];
   return (
@@ -52,7 +57,7 @@ function PaperItem({
         </div>
       )}
       <TalkCard lang={lang} paper={paper} link={link} selected={selected} />
-      {!isReadingPaper(paper) && <QuickActions lang={lang} preview={preview} paper={paper} />}
+      {newest && !isReadingPaper(paper) && <QuickActions lang={lang} preview={preview} paper={paper} />}
     </li>
   );
 }
@@ -64,10 +69,11 @@ function PaperItem({
  * - the header: Mio, Medioo, and whose papers this is about with "not a doctor" (`desk.talk.sub`): the desktop's
  *   footer disclaimer is gone (X1), and this is where it is said;
  * - the thread, oldest first so the newest is beside the composer, a day line (DaySeparator) before each day's first
- *   item:
+ *   item (keyed on its place, so a list out of order, which shows a day's line again, still draws):
  *   - a paper is the photo the family sent (page 1, linking to `hrefFor(id)`), then Medioo's card (TalkCard: the phone's
- *     VerdictCard, the red band and 999 verbatim, outlined when `selectedId` is its paper, with `desk.panel.open`), then
- *     a retake card's actions (QuickActions);
+ *     VerdictCard, the red band and 999 verbatim, outlined when `selectedId` is its paper, with `desk.panel.open`), then,
+ *     when it is the newest paper and a retake card, its actions (QuickActions; desktop.html's one `.suggest`, after the
+ *     newest paper only);
  *   - a delivered message is its `web_body`, the WhatsApp text without the lines that held a link (Java's), in Medioo's
  *     bubble; a `detail` message (WhatsApp's "details" reply) is left out, because the card and the panel show it, and so
  *     is a message with nothing left to show;
@@ -95,13 +101,14 @@ export function Conversation({
   hold?: boolean;
 }) {
   const rows: ReactNode[] = [];
+  const newestPaper = items.find((i): i is Extract<ThreadItemJson, { kind: "paper" }> => i.kind === "paper")?.card.id ?? null;
   let day: string | null = null;
   for (const [k, item] of [...items].reverse().entries()) {
     const row = drawn(item, k);
     if (row === null) continue;
     const itemDay = dhakaDay(item.at);
     if (itemDay !== day) {
-      rows.push(<DaySeparator key={`d${itemDay}`} lang={lang} at={item.at} />);
+      rows.push(<DaySeparator key={`d${rows.length}`} lang={lang} at={item.at} />);
       day = itemDay;
     }
     rows.push(row);
@@ -121,6 +128,7 @@ export function Conversation({
             at={item.at}
             link={hrefFor(item.card.id)}
             selected={item.card.id === selectedId}
+            newest={item.card.id === newestPaper}
           />
         );
       case "message":
