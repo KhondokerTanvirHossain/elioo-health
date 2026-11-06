@@ -1,0 +1,464 @@
+{
+  "_meta": {
+    "generated_by": "baymax ProtoFamilyContractTest",
+    "source": "GET /app/api/patients/{id}/thread?asks=1 over the prototype family (desktop.html), case proto-amma"
+  },
+  "body": {
+    "items": [
+      {
+        "at": "2026-10-20T06:21:00Z",
+        "body": "ছবিটা স্পষ্ট বোঝা যাচ্ছে না।\nদিনের আলোয়, কাগজটা সমান করে রেখে আরেকবার ছবি তুলে পাঠান।\nঅনুমান করে কিছু বলতে চাই না — তাই আগে ছবিটা দেখে নিই।",
+        "document_id": "18418393-805f-3003-a471-a1c43e543c8a",
+        "kind": "message",
+        "message_kind": "retake",
+        "web_body": "ছবিটা স্পষ্ট বোঝা যাচ্ছে না।\nদিনের আলোয়, কাগজটা সমান করে রেখে আরেকবার ছবি তুলে পাঠান।\nঅনুমান করে কিছু বলতে চাই না — তাই আগে ছবিটা দেখে নিই।"
+      },
+      {
+        "at": "2026-10-20T06:20:00Z",
+        "card": {
+          "banner": null,
+          "counts": null,
+          "date": "2026-10-20",
+          "date_is_upload_day": true,
+          "date_uncertain": false,
+          "doctor": { },
+          "document_type": null,
+          "facility": null,
+          "filed": false,
+          "follow_up": [ ],
+          "gate": "NONE",
+          "id": "18418393-805f-3003-a471-a1c43e543c8a",
+          "medicines": [ ],
+          "owner": true,
+          "page_count": 1,
+          "pages": [
+            {
+              "n": 1,
+              "src": "/app/documents/18418393-805f-3003-a471-a1c43e543c8a/page/1"
+            }
+          ],
+          "patient": {
+            "age": 68,
+            "id": "75eb5081-4fff-3f99-a3b4-2771844eafef",
+            "name": "আম্মা",
+            "name_objective": "আম্মাকে",
+            "name_possessive": "আম্মার"
+          },
+          "printed_date": null,
+          "reasons": [ ],
+          "received_at": "2026-10-20T06:20:00Z",
+          "retake": {
+            "ordinal": 1,
+            "reason_key": "retake.reason.low_overall",
+            "replaced": false
+          },
+          "status": "NEEDS_RETAKE",
+          "unverified": null,
+          "urgency": null,
+          "values": [ ],
+          "viewer": {
+            "bangladesh": true
+          }
+        },
+        "kind": "paper"
+      },
+      {
+        "at": "2026-10-20T02:30:00Z",
+        "card": {
+          "banner": null,
+          "counts": {
+            "line_key": "result.counts.none",
+            "outside": 0,
+            "values": 3
+          },
+          "date": "2026-10-20",
+          "date_is_upload_day": false,
+          "date_uncertain": false,
+          "doctor": { },
+          "document_type": "lab_report",
+          "facility": "Shapla Diagnostics",
+          "filed": true,
+          "follow_up": [ ],
+          "gate": "RELEASED",
+          "id": "4f6cf8bc-9f53-336f-aa83-6d09e252c357",
+          "medicines": [ ],
+          "owner": true,
+          "page_count": 1,
+          "pages": [
+            {
+              "n": 1,
+              "src": "/app/documents/4f6cf8bc-9f53-336f-aa83-6d09e252c357/page/1"
+            }
+          ],
+          "patient": {
+            "age": 68,
+            "id": "75eb5081-4fff-3f99-a3b4-2771844eafef",
+            "name": "আম্মা",
+            "name_objective": "আম্মাকে",
+            "name_possessive": "আম্মার"
+          },
+          "printed_date": "2026-10-20",
+          "reasons": [ ],
+          "received_at": "2026-10-20T02:30:00Z",
+          "status": "DONE",
+          "unverified": null,
+          "urgency": "routine",
+          "values": [
+            {
+              "chip_key": "value.chip.inside",
+              "crop": {
+                "height": null,
+                "src": "/app/documents/4f6cf8bc-9f53-336f-aa83-6d09e252c357/image?key=d29155e3-3319-325b-9d8e-b5ff73b8d2b6%2F75eb5081-4fff-3f99-a3b4-2771844eafef%2F4f6cf8bc-9f53-336f-aa83-6d09e252c357%2Fcrop-10789091.jpg",
+                "width": null
+              },
+              "display_kind": "inside",
+              "id": "10789091-9fca-3c78-8ff2-f68348c4937c",
+              "in_now_block": false,
+              "name": "Haemoglobin",
+              "pin": 38.8,
+              "ref_high": "15.5",
+              "ref_low": "11.5",
+              "side": null,
+              "unit": "g/dL",
+              "value": "12.6"
+            },
+            {
+              "chip_key": "value.chip.inside",
+              "crop": {
+                "height": null,
+                "src": "/app/documents/4f6cf8bc-9f53-336f-aa83-6d09e252c357/image?key=d29155e3-3319-325b-9d8e-b5ff73b8d2b6%2F75eb5081-4fff-3f99-a3b4-2771844eafef%2F4f6cf8bc-9f53-336f-aa83-6d09e252c357%2Fcrop-77e9a784.jpg",
+                "width": null
+              },
+              "display_kind": "inside",
+              "id": "77e9a784-937f-34ab-b621-3dbcad2adb28",
+              "in_now_block": false,
+              "name": "HbA1c",
+              "pin": 68.8,
+              "ref_high": "5.6",
+              "ref_low": "4.0",
+              "side": null,
+              "unit": "%",
+              "value": "5.4"
+            },
+            {
+              "chip_key": "value.chip.inside",
+              "crop": {
+                "height": null,
+                "src": "/app/documents/4f6cf8bc-9f53-336f-aa83-6d09e252c357/image?key=d29155e3-3319-325b-9d8e-b5ff73b8d2b6%2F75eb5081-4fff-3f99-a3b4-2771844eafef%2F4f6cf8bc-9f53-336f-aa83-6d09e252c357%2Fcrop-ab7b3c38.jpg",
+                "width": null
+              },
+              "display_kind": "inside",
+              "id": "ab7b3c38-1057-3371-a5de-301752a2c4e3",
+              "in_now_block": false,
+              "name": "Platelet Count",
+              "pin": 40.8,
+              "ref_high": "450",
+              "ref_low": "150",
+              "side": null,
+              "unit": "10^3/µL",
+              "value": "245"
+            }
+          ],
+          "viewer": {
+            "bangladesh": true
+          },
+          "wording": "রিপোর্টটি পেয়েছি — ল্যাব রিপোর্ট, ২০ অক্টোবর।\nসব কিছু স্বাভাবিক সীমার মধ্যে আছে।\nআম্মা-এর টাইমলাইনে রেখে দিলাম: https://baymax.eliooo.org/app/documents/4f6cf8bc-9f53-336f-aa83-6d09e252c357\nবিস্তারিত জানতে চাইলে লিখুন \"বিস্তারিত\"।"
+        },
+        "kind": "paper"
+      },
+      {
+        "at": "2026-10-15T11:40:00Z",
+        "card": {
+          "banner": null,
+          "counts": null,
+          "date": "2026-10-15",
+          "date_is_upload_day": false,
+          "date_uncertain": false,
+          "doctor": { },
+          "document_type": "prescription",
+          "facility": "Shapla Nagar Clinic",
+          "filed": true,
+          "follow_up": [
+            {
+              "crop": {
+                "height": null,
+                "src": "/app/documents/4ee8dc9d-41e9-3f40-a299-20baa694dd13/image?key=d29155e3-3319-325b-9d8e-b5ff73b8d2b6%2F75eb5081-4fff-3f99-a3b4-2771844eafef%2F4ee8dc9d-41e9-3f40-a299-20baa694dd13%2Fcrop-fb900376a.jpg",
+                "width": null
+              },
+              "due_date": "2026-10-22",
+              "instruction": "৭ দিন পর আবার আসবেন"
+            }
+          ],
+          "gate": "RELEASED",
+          "id": "4ee8dc9d-41e9-3f40-a299-20baa694dd13",
+          "medicines": [
+            {
+              "crop": {
+                "height": null,
+                "src": "/app/documents/4ee8dc9d-41e9-3f40-a299-20baa694dd13/image?key=d29155e3-3319-325b-9d8e-b5ff73b8d2b6%2F75eb5081-4fff-3f99-a3b4-2771844eafef%2F4ee8dc9d-41e9-3f40-a299-20baa694dd13%2Fmed-177613d2.jpg",
+                "width": null
+              },
+              "dose_text": "5 mg",
+              "duration_text": "১ মাস",
+              "frequency_text": "১+০+১",
+              "name": "Tab. Demoprol",
+              "timing_text": "খাবার পরে"
+            },
+            {
+              "crop": {
+                "height": null,
+                "src": "/app/documents/4ee8dc9d-41e9-3f40-a299-20baa694dd13/image?key=d29155e3-3319-325b-9d8e-b5ff73b8d2b6%2F75eb5081-4fff-3f99-a3b4-2771844eafef%2F4ee8dc9d-41e9-3f40-a299-20baa694dd13%2Fmed-58a9539f.jpg",
+                "width": null
+              },
+              "dose_text": "500",
+              "duration_text": "১৪ দিন",
+              "frequency_text": "০+০+১",
+              "name": "Tab. Exampin",
+              "timing_text": "রাতে খাবার পরে"
+            }
+          ],
+          "owner": true,
+          "page_count": 1,
+          "pages": [
+            {
+              "n": 1,
+              "src": "/app/documents/4ee8dc9d-41e9-3f40-a299-20baa694dd13/page/1"
+            }
+          ],
+          "patient": {
+            "age": 68,
+            "id": "75eb5081-4fff-3f99-a3b4-2771844eafef",
+            "name": "আম্মা",
+            "name_objective": "আম্মাকে",
+            "name_possessive": "আম্মার"
+          },
+          "printed_date": "2026-10-15",
+          "reasons": [ ],
+          "received_at": "2026-10-15T11:40:00Z",
+          "status": "DONE",
+          "unverified": null,
+          "urgency": "routine",
+          "values": [ ],
+          "viewer": {
+            "bangladesh": true
+          },
+          "wording": "রিপোর্টটি পেয়েছি — প্রেসক্রিপশন, ১৫ অক্টোবর।\nআম্মা-এর টাইমলাইনে রেখে দিলাম: https://baymax.eliooo.org/app/documents/4ee8dc9d-41e9-3f40-a299-20baa694dd13\nকাগজে যা লেখা আছে নিচে তুলে দিলাম।\nবিস্তারিত জানতে চাইলে লিখুন \"বিস্তারিত\"।\n\nপ্রেসক্রিপশনে যা লেখা আছে:\nTab. Demoprol · 5 mg · ১+০+১ · খাবার পরে · ১ মাস\nTab. Exampin · 500 · ০+০+১ · রাতে খাবার পরে · ১৪ দিন"
+        },
+        "kind": "paper"
+      },
+      {
+        "at": "2026-10-14T03:12:00Z",
+        "card": {
+          "banner": {
+            "level": "this_week",
+            "line_key": "urgency.this_week"
+          },
+          "counts": {
+            "line_key": "result.counts",
+            "outside": 1,
+            "values": 3
+          },
+          "date": "2026-10-14",
+          "date_is_upload_day": false,
+          "date_uncertain": false,
+          "doctor": { },
+          "document_type": "lab_report",
+          "facility": "Shapla Diagnostics",
+          "filed": false,
+          "follow_up": [ ],
+          "gate": "RELEASED",
+          "id": "55cc0558-ebee-3050-aea5-d18dcddec5b0",
+          "medicines": [ ],
+          "owner": true,
+          "page_count": 1,
+          "pages": [
+            {
+              "n": 1,
+              "src": "/app/documents/55cc0558-ebee-3050-aea5-d18dcddec5b0/page/1"
+            }
+          ],
+          "patient": {
+            "age": 68,
+            "id": "75eb5081-4fff-3f99-a3b4-2771844eafef",
+            "name": "আম্মা",
+            "name_objective": "আম্মাকে",
+            "name_possessive": "আম্মার"
+          },
+          "printed_date": "2026-10-14",
+          "reasons": [ ],
+          "received_at": "2026-10-14T03:12:00Z",
+          "status": "DONE",
+          "unverified": null,
+          "urgency": "this_week",
+          "values": [
+            {
+              "chip_key": "value.chip.inside",
+              "crop": {
+                "height": null,
+                "src": "/app/documents/55cc0558-ebee-3050-aea5-d18dcddec5b0/image?key=d29155e3-3319-325b-9d8e-b5ff73b8d2b6%2F75eb5081-4fff-3f99-a3b4-2771844eafef%2F55cc0558-ebee-3050-aea5-d18dcddec5b0%2Fcrop-fb2738f3.jpg",
+                "width": null
+              },
+              "display_kind": "inside",
+              "id": "fb2738f3-6a49-3b95-96b3-b288c8c996f5",
+              "in_now_block": false,
+              "name": "Blood Urea",
+              "pin": 59.0,
+              "ref_high": "40",
+              "ref_low": "15",
+              "side": null,
+              "unit": "mg/dL",
+              "value": "32"
+            },
+            {
+              "chip_key": "value.chip.outside.high",
+              "crop": {
+                "height": null,
+                "src": "/app/documents/55cc0558-ebee-3050-aea5-d18dcddec5b0/image?key=d29155e3-3319-325b-9d8e-b5ff73b8d2b6%2F75eb5081-4fff-3f99-a3b4-2771844eafef%2F55cc0558-ebee-3050-aea5-d18dcddec5b0%2Fcrop-e09dc674.jpg",
+                "width": null
+              },
+              "display_kind": "outside",
+              "id": "e09dc674-8a05-3979-9db9-fc9e705f2ac5",
+              "in_now_block": false,
+              "name": "Serum Creatinine",
+              "pin": 96.4,
+              "ref_high": "1.3",
+              "ref_low": "0.6",
+              "side": "high",
+              "unit": "mg/dL",
+              "value": "1.6"
+            },
+            {
+              "chip_key": "value.chip.inside",
+              "crop": {
+                "height": null,
+                "src": "/app/documents/55cc0558-ebee-3050-aea5-d18dcddec5b0/image?key=d29155e3-3319-325b-9d8e-b5ff73b8d2b6%2F75eb5081-4fff-3f99-a3b4-2771844eafef%2F55cc0558-ebee-3050-aea5-d18dcddec5b0%2Fcrop-ff51d408.jpg",
+                "width": null
+              },
+              "display_kind": "inside",
+              "id": "ff51d408-5f7d-3c69-8dc4-02dfe27ebb2d",
+              "in_now_block": false,
+              "name": "Serum Potassium",
+              "pin": 50.0,
+              "ref_high": "5.1",
+              "ref_low": "3.5",
+              "side": null,
+              "unit": "mmol/L",
+              "value": "4.3"
+            }
+          ],
+          "viewer": {
+            "bangladesh": true
+          },
+          "wording": "রিপোর্টটি পেয়েছি — ল্যাব রিপোর্ট, ১৪ অক্টোবর।\nSerum Creatinine এসেছে 1.6 mg/dL, রিপোর্টে লেখা সীমা 0.6–1.3।\nএ সপ্তাহের মধ্যে একজন ডাক্তার দেখান। সাথে নিয়ে যাবেন: এই রিপোর্ট এবং আগের প্রেসক্রিপশনগুলো।\nটাইমলাইন: https://baymax.eliooo.org/app/documents/55cc0558-ebee-3050-aea5-d18dcddec5b0 · বিস্তারিত জানতে লিখুন \"বিস্তারিত\"।"
+        },
+        "kind": "paper"
+      },
+      {
+        "at": "2026-10-13T05:02:00Z",
+        "card": {
+          "banner": null,
+          "counts": {
+            "line_key": "result.counts.none",
+            "outside": 0,
+            "values": 3
+          },
+          "date": "2026-10-13",
+          "date_is_upload_day": false,
+          "date_uncertain": false,
+          "doctor": { },
+          "document_type": "lab_report",
+          "facility": "Shapla Diagnostics",
+          "filed": true,
+          "follow_up": [ ],
+          "gate": "RELEASED",
+          "id": "83a4c9d9-9ffa-33fc-a3c1-325ede176a7a",
+          "medicines": [ ],
+          "owner": true,
+          "page_count": 1,
+          "pages": [
+            {
+              "n": 1,
+              "src": "/app/documents/83a4c9d9-9ffa-33fc-a3c1-325ede176a7a/page/1"
+            }
+          ],
+          "patient": {
+            "age": 68,
+            "id": "75eb5081-4fff-3f99-a3b4-2771844eafef",
+            "name": "আম্মা",
+            "name_objective": "আম্মাকে",
+            "name_possessive": "আম্মার"
+          },
+          "printed_date": "2026-10-13",
+          "reasons": [ ],
+          "received_at": "2026-10-13T05:02:00Z",
+          "status": "DONE",
+          "unverified": null,
+          "urgency": "routine",
+          "values": [
+            {
+              "chip_key": "value.chip.unknown",
+              "crop": {
+                "height": null,
+                "src": "/app/documents/83a4c9d9-9ffa-33fc-a3c1-325ede176a7a/image?key=d29155e3-3319-325b-9d8e-b5ff73b8d2b6%2F75eb5081-4fff-3f99-a3b4-2771844eafef%2F83a4c9d9-9ffa-33fc-a3c1-325ede176a7a%2Fcrop-00881890.jpg",
+                "width": null
+              },
+              "display_kind": "unknown",
+              "id": "00881890-d113-3be9-97b1-61b26f2ad4b9",
+              "in_now_block": false,
+              "name": "HDL Cholesterol",
+              "pin": null,
+              "ref_high": null,
+              "ref_low": "40",
+              "side": null,
+              "unit": "mg/dL",
+              "value": "52"
+            },
+            {
+              "chip_key": "value.chip.unknown",
+              "crop": {
+                "height": null,
+                "src": "/app/documents/83a4c9d9-9ffa-33fc-a3c1-325ede176a7a/image?key=d29155e3-3319-325b-9d8e-b5ff73b8d2b6%2F75eb5081-4fff-3f99-a3b4-2771844eafef%2F83a4c9d9-9ffa-33fc-a3c1-325ede176a7a%2Fcrop-3d7c5d41.jpg",
+                "width": null
+              },
+              "display_kind": "unknown",
+              "id": "3d7c5d41-873c-396c-a69e-ae593a4e042d",
+              "in_now_block": false,
+              "name": "LDL Cholesterol",
+              "pin": null,
+              "ref_high": "100",
+              "ref_low": null,
+              "side": null,
+              "unit": "mg/dL",
+              "value": "90"
+            },
+            {
+              "chip_key": "value.chip.unknown",
+              "crop": {
+                "height": null,
+                "src": "/app/documents/83a4c9d9-9ffa-33fc-a3c1-325ede176a7a/image?key=d29155e3-3319-325b-9d8e-b5ff73b8d2b6%2F75eb5081-4fff-3f99-a3b4-2771844eafef%2F83a4c9d9-9ffa-33fc-a3c1-325ede176a7a%2Fcrop-6c4867d4.jpg",
+                "width": null
+              },
+              "display_kind": "unknown",
+              "id": "6c4867d4-2897-381b-9453-9bda23d23713",
+              "in_now_block": false,
+              "name": "Triglycerides",
+              "pin": null,
+              "ref_high": "150",
+              "ref_low": null,
+              "side": null,
+              "unit": "mg/dL",
+              "value": "120"
+            }
+          ],
+          "viewer": {
+            "bangladesh": true
+          },
+          "wording": "রিপোর্টটি পেয়েছি — ল্যাব রিপোর্ট, ১৩ অক্টোবর।\nআম্মা-এর টাইমলাইনে রেখে দিলাম: https://baymax.eliooo.org/app/documents/83a4c9d9-9ffa-33fc-a3c1-325ede176a7a\nকাগজে যা লেখা আছে নিচে তুলে দিলাম।\nবিস্তারিত জানতে চাইলে লিখুন \"বিস্তারিত\"।"
+        },
+        "kind": "paper"
+      }
+    ],
+    "next_cursor": null
+  },
+  "status": 200
+}

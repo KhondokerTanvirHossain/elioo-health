@@ -523,7 +523,7 @@ class ThreadApiContractTest {
     /** One area for both: every committed file is a current case, read without asks or with them (plan CHAT-web). */
     @Test
     void everyCommittedFixtureIsACurrentCase() throws IOException {
-        assertThat(AttentionApiContractTest.committed(COMMITTED))
+        assertThat(AttentionApiContractTest.ownCommitted(COMMITTED))
                 .containsExactlyInAnyOrderElementsOf(Stream.concat(CASES.stream(), ASK_CASES.stream()).map(n -> n + ".json").toList());
     }
 
@@ -625,13 +625,69 @@ class ThreadApiContractTest {
             JsonNode detail = body.get("items").get(2);
             assertThat(detail.get("document_id").asText()).isEqualTo(FixedPapers.id(k, "routine").toString());
             assertThat(detail.get("body").asText()).isEqualTo(ComposedBodies.detail(context, FixedPapers.id(k, "routine")).body());
-            assertThat(fieldNames(detail)).containsExactly("kind", "at", "message_kind", "document_id", "body");
+            assertThat(fieldNames(detail)).containsExactly("kind", "at", "message_kind", "document_id", "body", "web_body");
             JsonNode paper = body.get("items").get(3);
             assertThat(fieldNames(paper)).containsExactly("kind", "at", "card");
             assertThat(paper.get("at").asText()).isEqualTo(paper.get("card").get("received_at").asText());
             assertThat(body.get("items").get(1).get("card").get("gate").asText()).as("the pending explanation's paper says so")
                     .isEqualTo("PENDING");
         });
+    }
+
+    // ---- web_body: the text without its WhatsApp links (plan desktop-parity Task 3) -----------------------------------
+
+    /**
+     * Both directions, over the real handler: the nudge loses exactly its opt-out line and the detail exactly its
+     * timeline line, each built here from its own template ({@code nudge.optout}, {@code detail.footer}), never by the
+     * rule under test; a notice with no link ({@code retake}) is unchanged character for character. {@code body} is
+     * still the text as sent.
+     */
+    @Test
+    void webBodyDropsOnlyTheLinkLines() {
+        FixedPapers.runnerAt(POSTGRES, NOW).run(context -> {
+            WebTestClient client = WebTestClient.bindToApplicationContext(context).build();
+            Copy copy = context.getBean(Copy.class);
+            String base = context.getBean(BaymaxProperties.class).getOutbound().getPublicBaseUrl();
+            String k = "web-body";
+            Seeded s = seed(context, k, "default");
+            JsonNode body = ok(client, s.session(), s.uri());
+            JsonNode nudge = itemsOf(body, "message").stream().filter(m -> "nudge".equals(m.get("message_kind").asText())).findFirst()
+                    .orElseThrow();
+            String sent = nudge(context, s.patient()).body();
+            String optout = copy.bn("nudge.optout", Map.of("optout_link",
+                    base + "/app/nudges/opt-out?p=" + s.patient().id() + "&t=" + OPTOUT_TOKEN));
+            assertThat(sent).as("the nudge as sent ends with its opt-out line").endsWith("\n" + optout);
+            assertThat(nudge.get("body").asText()).as("$.items[nudge].body, as sent").isEqualTo(sent);
+            assertThat(nudge.path("web_body").asText(null)).as("$.items[nudge].web_body")
+                    .isEqualTo(sent.substring(0, sent.length() - optout.length() - 1));
+
+            UUID routine = FixedPapers.id(k, "routine");
+            JsonNode detail = itemsOf(body, "message").stream().filter(m -> "detail".equals(m.get("message_kind").asText())).findFirst()
+                    .orElseThrow();
+            String detailSent = ComposedBodies.detail(context, routine).body();
+            String footer = copy.bn("detail.footer", Map.of("link", base + "/app/documents/" + routine));
+            assertThat(detailSent).as("the detail as sent carries its timeline line").contains("\n" + footer);
+            assertThat(detail.path("web_body").asText(null)).as("$.items[detail].web_body")
+                    .isEqualTo(detailSent.replace("\n" + footer, ""));
+
+            Seeded retake = seed(context, k + "-retake", "retake");
+            JsonNode notice = itemsOf(ok(client, retake.session(), retake.uri()), "message").get(0);
+            String noticeSent = ComposedBodies.retake(context).body();
+            assertThat(noticeSent).as("the retake notice: several lines, no link").contains("\n").doesNotContain("://");
+            assertThat(notice.path("web_body").asText(null)).as("$.items[retake].web_body, unchanged").isEqualTo(noticeSent);
+        });
+    }
+
+    /** The rule alone, on the plan's own example: the link line goes, the line before it stays exactly as it was. */
+    @Test
+    void webBodyOfThePlansExample() {
+        String kept = "Ma-এর ফলো-আপের তারিখ কাছে এসে গেছে: ২৪ অক্টোবর।\nসম্ভব হলে সেই দিন ডাক্তার দেখিয়ে নিন।";
+        assertThat(ThreadJson.webBody(kept + "\nএই ধরনের বার্তা আর চান না? এখানে ক্লিক করুন: https://medioo.eliooo.org/app/nudges/opt-out?p=x&t=y"))
+                .isEqualTo(kept);
+        assertThat(ThreadJson.webBody("লাইন এক\nটাইমলাইন: http://localhost:8086/app/documents/x · বিস্তারিত\nলাইন তিন"))
+                .as("a link line in the middle; http as well as https").isEqualTo("লাইন এক\nলাইন তিন");
+        assertThat(ThreadJson.webBody(kept)).as("no link: unchanged").isEqualTo(kept);
+        assertThat(ThreadJson.webBody("এক\n\nদুই\n")).as("blank lines and a trailing newline kept").isEqualTo("এক\n\nদুই\n");
     }
 
     /**

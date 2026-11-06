@@ -536,7 +536,7 @@ class PatientTimelineApiContractTest {
                 .containsExactlyInAnyOrderElementsOf(TIMELINE.stream().map(n -> n + ".json").toList());
         assertThat(AttentionApiContractTest.committed(FIXTURES.resolve("calendar")))
                 .containsExactlyInAnyOrderElementsOf(CALENDAR.stream().map(n -> n + ".json").toList());
-        assertThat(AttentionApiContractTest.committed(FIXTURES.resolve("follow-ups")))
+        assertThat(AttentionApiContractTest.ownCommitted(FIXTURES.resolve("follow-ups")))
                 .containsExactlyInAnyOrderElementsOf(FOLLOW_UPS.stream().map(n -> n + ".json").toList());
         assertThat(AttentionApiContractTest.committed(FIXTURES.resolve("document-status")))
                 .containsExactlyInAnyOrderElementsOf(DOCUMENT_STATUS.stream().map(n -> n + ".json").toList());

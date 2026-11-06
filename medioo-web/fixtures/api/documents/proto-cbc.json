@@ -1,0 +1,107 @@
+{
+  "_meta": {
+    "generated_by": "baymax ProtoFamilyContractTest",
+    "source": "GET /app/api/documents/{id} over the prototype family (desktop.html), case proto-cbc"
+  },
+  "body": {
+    "banner": null,
+    "counts": {
+      "line_key": "result.counts.none",
+      "outside": 0,
+      "values": 3
+    },
+    "date": "2026-10-20",
+    "date_is_upload_day": false,
+    "date_uncertain": false,
+    "doctor": { },
+    "document_type": "lab_report",
+    "facility": "Shapla Diagnostics",
+    "filed": true,
+    "follow_up": [ ],
+    "gate": "RELEASED",
+    "id": "4f6cf8bc-9f53-336f-aa83-6d09e252c357",
+    "medicines": [ ],
+    "owner": true,
+    "page_count": 1,
+    "pages": [
+      {
+        "n": 1,
+        "src": "/app/documents/4f6cf8bc-9f53-336f-aa83-6d09e252c357/page/1"
+      }
+    ],
+    "patient": {
+      "age": 68,
+      "id": "75eb5081-4fff-3f99-a3b4-2771844eafef",
+      "name": "আম্মা",
+      "name_objective": "আম্মাকে",
+      "name_possessive": "আম্মার"
+    },
+    "printed_date": "2026-10-20",
+    "reasons": [ ],
+    "received_at": "2026-10-20T02:30:00Z",
+    "status": "DONE",
+    "unverified": null,
+    "urgency": "routine",
+    "values": [
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": null,
+          "src": "/app/documents/4f6cf8bc-9f53-336f-aa83-6d09e252c357/image?key=d29155e3-3319-325b-9d8e-b5ff73b8d2b6%2F75eb5081-4fff-3f99-a3b4-2771844eafef%2F4f6cf8bc-9f53-336f-aa83-6d09e252c357%2Fcrop-10789091.jpg",
+          "width": null
+        },
+        "display_kind": "inside",
+        "id": "10789091-9fca-3c78-8ff2-f68348c4937c",
+        "in_now_block": false,
+        "name": "Haemoglobin",
+        "pin": 38.8,
+        "ref_high": "15.5",
+        "ref_low": "11.5",
+        "side": null,
+        "unit": "g/dL",
+        "value": "12.6"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": null,
+          "src": "/app/documents/4f6cf8bc-9f53-336f-aa83-6d09e252c357/image?key=d29155e3-3319-325b-9d8e-b5ff73b8d2b6%2F75eb5081-4fff-3f99-a3b4-2771844eafef%2F4f6cf8bc-9f53-336f-aa83-6d09e252c357%2Fcrop-77e9a784.jpg",
+          "width": null
+        },
+        "display_kind": "inside",
+        "id": "77e9a784-937f-34ab-b621-3dbcad2adb28",
+        "in_now_block": false,
+        "name": "HbA1c",
+        "pin": 68.8,
+        "ref_high": "5.6",
+        "ref_low": "4.0",
+        "side": null,
+        "unit": "%",
+        "value": "5.4"
+      },
+      {
+        "chip_key": "value.chip.inside",
+        "crop": {
+          "height": null,
+          "src": "/app/documents/4f6cf8bc-9f53-336f-aa83-6d09e252c357/image?key=d29155e3-3319-325b-9d8e-b5ff73b8d2b6%2F75eb5081-4fff-3f99-a3b4-2771844eafef%2F4f6cf8bc-9f53-336f-aa83-6d09e252c357%2Fcrop-ab7b3c38.jpg",
+          "width": null
+        },
+        "display_kind": "inside",
+        "id": "ab7b3c38-1057-3371-a5de-301752a2c4e3",
+        "in_now_block": false,
+        "name": "Platelet Count",
+        "pin": 40.8,
+        "ref_high": "450",
+        "ref_low": "150",
+        "side": null,
+        "unit": "10^3/µL",
+        "value": "245"
+      }
+    ],
+    "viewer": {
+      "bangladesh": true
+    },
+    "wording": "রিপোর্টটি পেয়েছি — ল্যাব রিপোর্ট, ২০ অক্টোবর।\nসব কিছু স্বাভাবিক সীমার মধ্যে আছে।\nআম্মা-এর টাইমলাইনে রেখে দিলাম: https://baymax.eliooo.org/app/documents/4f6cf8bc-9f53-336f-aa83-6d09e252c357\nবিস্তারিত জানতে চাইলে লিখুন \"বিস্তারিত\"।"
+  },
+  "status": 200
+}

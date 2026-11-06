@@ -1,0 +1,83 @@
+{
+  "_meta": {
+    "generated_by": "baymax ProtoFamilyContractTest",
+    "source": "GET /app/api/documents/{id} over the prototype family (desktop.html), case proto-rx"
+  },
+  "body": {
+    "banner": null,
+    "counts": null,
+    "date": "2026-10-15",
+    "date_is_upload_day": false,
+    "date_uncertain": false,
+    "doctor": { },
+    "document_type": "prescription",
+    "facility": "Shapla Nagar Clinic",
+    "filed": true,
+    "follow_up": [
+      {
+        "crop": {
+          "height": null,
+          "src": "/app/documents/4ee8dc9d-41e9-3f40-a299-20baa694dd13/image?key=d29155e3-3319-325b-9d8e-b5ff73b8d2b6%2F75eb5081-4fff-3f99-a3b4-2771844eafef%2F4ee8dc9d-41e9-3f40-a299-20baa694dd13%2Fcrop-fb900376a.jpg",
+          "width": null
+        },
+        "due_date": "2026-10-22",
+        "instruction": "৭ দিন পর আবার আসবেন"
+      }
+    ],
+    "gate": "RELEASED",
+    "id": "4ee8dc9d-41e9-3f40-a299-20baa694dd13",
+    "medicines": [
+      {
+        "crop": {
+          "height": null,
+          "src": "/app/documents/4ee8dc9d-41e9-3f40-a299-20baa694dd13/image?key=d29155e3-3319-325b-9d8e-b5ff73b8d2b6%2F75eb5081-4fff-3f99-a3b4-2771844eafef%2F4ee8dc9d-41e9-3f40-a299-20baa694dd13%2Fmed-177613d2.jpg",
+          "width": null
+        },
+        "dose_text": "5 mg",
+        "duration_text": "১ মাস",
+        "frequency_text": "১+০+১",
+        "name": "Tab. Demoprol",
+        "timing_text": "খাবার পরে"
+      },
+      {
+        "crop": {
+          "height": null,
+          "src": "/app/documents/4ee8dc9d-41e9-3f40-a299-20baa694dd13/image?key=d29155e3-3319-325b-9d8e-b5ff73b8d2b6%2F75eb5081-4fff-3f99-a3b4-2771844eafef%2F4ee8dc9d-41e9-3f40-a299-20baa694dd13%2Fmed-58a9539f.jpg",
+          "width": null
+        },
+        "dose_text": "500",
+        "duration_text": "১৪ দিন",
+        "frequency_text": "০+০+১",
+        "name": "Tab. Exampin",
+        "timing_text": "রাতে খাবার পরে"
+      }
+    ],
+    "owner": true,
+    "page_count": 1,
+    "pages": [
+      {
+        "n": 1,
+        "src": "/app/documents/4ee8dc9d-41e9-3f40-a299-20baa694dd13/page/1"
+      }
+    ],
+    "patient": {
+      "age": 68,
+      "id": "75eb5081-4fff-3f99-a3b4-2771844eafef",
+      "name": "আম্মা",
+      "name_objective": "আম্মাকে",
+      "name_possessive": "আম্মার"
+    },
+    "printed_date": "2026-10-15",
+    "reasons": [ ],
+    "received_at": "2026-10-15T11:40:00Z",
+    "status": "DONE",
+    "unverified": null,
+    "urgency": "routine",
+    "values": [ ],
+    "viewer": {
+      "bangladesh": true
+    },
+    "wording": "রিপোর্টটি পেয়েছি — প্রেসক্রিপশন, ১৫ অক্টোবর।\nআম্মা-এর টাইমলাইনে রেখে দিলাম: https://baymax.eliooo.org/app/documents/4ee8dc9d-41e9-3f40-a299-20baa694dd13\nকাগজে যা লেখা আছে নিচে তুলে দিলাম।\nবিস্তারিত জানতে চাইলে লিখুন \"বিস্তারিত\"।\n\nপ্রেসক্রিপশনে যা লেখা আছে:\nTab. Demoprol · 5 mg · ১+০+১ · খাবার পরে · ১ মাস\nTab. Exampin · 500 · ০+০+১ · রাতে খাবার পরে · ১৪ দিন"
+  },
+  "status": 200
+}

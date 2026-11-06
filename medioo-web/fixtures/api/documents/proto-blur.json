@@ -1,0 +1,52 @@
+{
+  "_meta": {
+    "generated_by": "baymax ProtoFamilyContractTest",
+    "source": "GET /app/api/documents/{id} over the prototype family (desktop.html), case proto-blur"
+  },
+  "body": {
+    "banner": null,
+    "counts": null,
+    "date": "2026-10-20",
+    "date_is_upload_day": true,
+    "date_uncertain": false,
+    "doctor": { },
+    "document_type": null,
+    "facility": null,
+    "filed": false,
+    "follow_up": [ ],
+    "gate": "NONE",
+    "id": "18418393-805f-3003-a471-a1c43e543c8a",
+    "medicines": [ ],
+    "owner": true,
+    "page_count": 1,
+    "pages": [
+      {
+        "n": 1,
+        "src": "/app/documents/18418393-805f-3003-a471-a1c43e543c8a/page/1"
+      }
+    ],
+    "patient": {
+      "age": 68,
+      "id": "75eb5081-4fff-3f99-a3b4-2771844eafef",
+      "name": "আম্মা",
+      "name_objective": "আম্মাকে",
+      "name_possessive": "আম্মার"
+    },
+    "printed_date": null,
+    "reasons": [ ],
+    "received_at": "2026-10-20T06:20:00Z",
+    "retake": {
+      "ordinal": 1,
+      "reason_key": "retake.reason.low_overall",
+      "replaced": false
+    },
+    "status": "NEEDS_RETAKE",
+    "unverified": null,
+    "urgency": null,
+    "values": [ ],
+    "viewer": {
+      "bangladesh": true
+    }
+  },
+  "status": 200
+}

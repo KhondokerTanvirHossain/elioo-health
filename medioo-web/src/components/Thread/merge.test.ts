@@ -38,7 +38,7 @@ describe("mergeAsks", () => {
     const at = "2026-10-12T04:00:00Z";
     const [paper] = WITH_ASKS.items.filter((i) => i.kind === "paper");
     const ask = { ...asksOf(WITH_ASKS.items)[0]!, at };
-    const message: ThreadItemJson = { kind: "message", at, message_kind: "nudge", document_id: null, body: "b" };
+    const message: ThreadItemJson = { kind: "message", at, message_kind: "nudge", document_id: null, body: "b", web_body: "b" };
     expect(mergeAsks([message, { ...paper!, at }], [ask]).map((i) => i.kind)).toEqual(["paper", "message", "ask"]);
   });
 });

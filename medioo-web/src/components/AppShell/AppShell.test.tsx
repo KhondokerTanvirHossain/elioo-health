@@ -15,9 +15,9 @@ import { AppShell } from "./AppShell";
  * the names and the wiring.
  */
 
-const ONE: MeJson = onePatient.body;
-const TWO: MeJson = twoPatients.body;
-const LONG: MeJson = longName.body;
+const ONE = onePatient.body as MeJson;
+const TWO = twoPatients.body as MeJson;
+const LONG = longName.body as MeJson;
 const assign = vi.fn();
 let calls: { url: string; init: RequestInit }[] = [];
 
