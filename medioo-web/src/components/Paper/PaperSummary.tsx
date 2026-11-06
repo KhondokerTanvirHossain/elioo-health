@@ -20,23 +20,14 @@ import "./Paper.css";
 /**
  * Where the paper is drawn: `page`, today's paper page (`/app/documents/{id}`); `panel`, the desktop's details panel over
  * the conversation (plan desktop-parity Task 8, PaperPanel), which is the same content with five differences and no
- * other: no back link and no patient line in the head, whose title is not the screen's heading; on a NOW paper only, no
- * band on the card (the NOW bar and the card the panel covers carry Java's sentence; a this_week paper has no bar, so
- * its band stays: panelBand); the released wording without its link lines (webText, Java's web_body rule, as the
- * conversation's card shows it); every in-range value, not the first and a link to the rest; and each anchor id
- * prefixed `ids`, because the panel and today's page (below 900 px) are one document.
+ * other: no back link and no patient line in the head, whose title is not the screen's heading; the released wording
+ * without its link lines (webText, Java's web_body rule, as the conversation's card shows it); every in-range value,
+ * not the first and a link to the rest; and each anchor id prefixed `ids`, because the panel and today's page (below
+ * 900 px) are one document. The urgency band stays on every level (P19: no safety block dropped): the panel lies over
+ * the paper's card, and a NOW paper's bar can be gone, already seen or dismissed while the panel is open.
  */
 type Frame = "page" | "panel";
 type Ctx = { lang: Lang; preview: boolean; words: PaperWords; frame: Frame; ids: string };
-
-/**
- * Whether the panel draws the paper's urgency band: always, except on a NOW paper, whose sentence the NOW bar carries
- * (P19: the warning is in the bar and on that paper's card, nowhere else). A this_week paper has no bar, and the panel
- * lies over its card, so without the band its sentence and calendar would be nowhere on the screen.
- */
-export function panelBand(paper: PaperResultJson): boolean {
-  return paper.banner?.level !== "now";
-}
 
 /** The anchor id prefix of the panel's parts. */
 const PANEL_IDS = "panel-";
@@ -141,7 +132,7 @@ function Result({ paper, ctx }: { paper: PaperResultJson; ctx: Ctx }) {
   return (
     <>
       <Head paper={paper} ctx={ctx} title={typeText(lang, paper.document_type)} meta={metaLine(lang, paper.date, paper.date_is_upload_day, paper.facility)} />
-      <VerdictCard paper={paper} lang={lang} wording={false} band={!panel || panelBand(paper)} />
+      <VerdictCard paper={paper} lang={lang} wording={false} band />
       {paper.filed && <p className="paper__meta">{t(lang, "result.filed")}</p>}
       {paper.now && (
         <NowBlock

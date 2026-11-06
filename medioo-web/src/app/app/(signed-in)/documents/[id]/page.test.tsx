@@ -34,6 +34,7 @@ const ctx = { lang: "bn" as const, preview: true, here: `/app/preview/documents/
 let reads: string[] = [];
 let marker: string | undefined;
 let me: MeJson = ME;
+let bannerSeen = false;
 
 vi.mock("@/api/request", () => ({ requestContext: async () => ctx }));
 vi.mock("next/headers", () => ({
@@ -57,7 +58,7 @@ vi.mock("@/api/java", async (actual) => ({
   javaGet: async (path: string): Promise<JavaAnswer<unknown>> => {
     reads.push(path);
     if (path === "/app/api/me") return { status: 200, body: me };
-    if (path === "/app/api/now-banner") return { status: 200, body: me === ME ? nowBanner.body : acked.body };
+    if (path === "/app/api/now-banner") return { status: 200, body: me === ME && !bannerSeen ? nowBanner.body : acked.body };
     if (path === `/app/api/documents/${READING.id}`) return { status: 200, body: READING };
     if (path.startsWith(`/app/api/patients/${MA.id}/thread`)) return { status: 200, body: { items: [] } };
     if (path === `/app/api/patients/${MA.id}/attention`) return { status: 200, body: { items: [] } };
@@ -76,11 +77,19 @@ beforeEach(() => {
   reads = [];
   marker = undefined;
   me = ME;
+  bannerSeen = false;
   refresh.mockClear();
   apiGet.mockClear();
   ctx.preview = true;
   ctx.here = `/app/preview/documents/${POTAS.id}`;
   vi.stubGlobal("location", { pathname: ctx.here, search: "", assign: vi.fn(), reload: vi.fn() });
+  // jsdom has no scrollIntoView, which the conversation uses to open on the selected paper.
+  if (!Element.prototype.scrollIntoView) {
+    Element.prototype.scrollIntoView = vi.fn();
+    onTestFinished(() => {
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    });
+  }
 });
 afterEach(() => {
   cleanup();
@@ -136,16 +145,22 @@ describe("/app/documents/{id} on the desktop layout", () => {
       href(`/app/home?patient=${ABBU.id}&paper=${POTAS.id}`, true),
     );
 
-    // The warning twice on the screen, the bar and the card: the panel's NOW block uses its own keys, and the
-    // attention stack's urgent card is not drawn in any column (this paper is in the stack: its card carries it). Counted as warning lines, each an element saying the
-    // sentence and nothing else: Medioo's released message quotes it among its own lines, on the card and in the panel
-    // as on today's page, and that message is the gate's block, never dropped.
+    // The warning on the screen: the bar, the panel's band, and the card's band under the panel. The panel is opaque and
+    // lies over the conversation (DesktopShell.css .desktop-shell__panel), so what can be seen is the bar and the panel;
+    // the card's band is there for when the panel is closed. The panel keeps the band on a NOW paper too (P19: no safety
+    // block dropped): the bar can be gone, already seen, or dismissed while the panel is open. Counted as warning lines,
+    // each an element saying the sentence and nothing else: Medioo's released message quotes it among its own lines, on
+    // the card and in the panel as on today's page, and that message is the gate's block, never dropped.
     const lines = warningLines(desk!, sentence);
-    expect(lines.length, "warning lines on the desktop screen").toBe(2);
-    expect(bar!.contains(lines[0]!) || bar!.contains(lines[1]!), "one is the bar's").toBe(true);
-    expect(card!.contains(lines[0]!) || card!.contains(lines[1]!), "one is the card's").toBe(true);
+    expect(lines.length, "warning lines on the desktop screen: bar, panel, covered card").toBe(3);
+    expect(lines.filter((l) => bar!.contains(l)).length, "one is the bar's").toBe(1);
+    expect(lines.filter((l) => panel!.contains(l)).length, "one is the panel's").toBe(1);
+    expect(lines.filter((l) => card!.contains(l)).length, "one is the card's, under the panel").toBe(1);
+    const talk = desk!.querySelector<HTMLElement>(".desktop-shell__talk")!;
+    const seen = lines.filter((l) => !(talk.contains(l) && !panel!.contains(l)));
+    expect(seen.length, "warning lines not covered by the panel: the bar and the panel").toBe(2);
     expect(count(desk!.textContent ?? "", sentence), "and the released message is shown where today's page shows it").toBe(
-      2 + count(POTAS.wording ?? "", sentence) * 2,
+      3 + count(POTAS.wording ?? "", sentence) * 2,
     );
     expect(desk!.querySelector(".attention-stack, [data-attention]"), "no attention card on the desktop").toBeNull();
 
@@ -156,6 +171,24 @@ describe("/app/documents/{id} on the desktop layout", () => {
     expect(ids.filter((id, i) => ids.indexOf(id) !== i), "ids said twice").toEqual([]);
     // One read of the paper: the thread's card is not a second DOCUMENT_VIEW.
     expect(reads.filter((r) => r.startsWith("/app/api/documents/")).length).toBe(1);
+  });
+
+  it("aNowPaperWhoseBarIsAlreadySeenKeepsItsWarningInThePanel", async () => {
+    // The family tapped "seen" on the bar before: Java answers show:false, no bar is drawn, and the panel covers the card. The
+    // panel is then the one place on the screen Java's sentence can be seen, so it carries the band, with its shape.
+    bannerSeen = true;
+    const container = await open();
+    const desk = container.querySelector<HTMLElement>(".desktop-shell")!;
+    expect(desk.querySelector(".desktop-shell__bar [role=alert]"), "no bar: the banner is seen").toBeNull();
+    const panel = desk.querySelector<HTMLElement>(".desktop-shell__panel");
+    expect(panel, "the details panel, open").not.toBeNull();
+    const sentence = t("bn", POTAS.banner!.line_key as CopyKey);
+    const inPanel = warningLines(panel!, sentence);
+    expect(inPanel.length, "Java's NOW sentence in the panel").toBe(1);
+    const band = panel!.querySelector<HTMLElement>("[data-safety=band]");
+    expect(band, "the panel's band").not.toBeNull();
+    expect(band!.contains(inPanel[0]!) || band === inPanel[0], "the sentence is the band's").toBe(true);
+    expect(band!.querySelector("svg"), "its shape, not colour alone").not.toBeNull();
   });
 
   it("aPaperBeingReadIsCheckedOnceAndRefreshedOnce", async () => {

@@ -64,57 +64,51 @@ const safetyOf = (root: ParentNode) => [...root.querySelectorAll("[data-safety]"
 describe("PaperPanel", () => {
   it("panelCarriesEverySafetyBlockThePaperPageCarries", () => {
     let blocks = 0;
-    let carried = 0;
+    let nowBandsCompared = 0;
     let weekBandsCompared = 0;
     for (const { file, paper } of PAPERS) {
       const today = safetyOf(page(paper));
       cleanup();
       const shown = safetyOf(panel(paper));
       cleanup();
-      // The urgency band (Java's sentence) is left to the card and the NOW bar only on a NOW paper (P19: the warning
-      // appears in the bar and on that paper's card, and nowhere else on the screen). Keyed on the fixture's own level,
-      // never on a list: a this_week paper has no bar, so its band is compared like every other block.
+      // Every block, the urgency band included, on every level (P19: no safety block dropped). The panel lies over the
+      // card, and on a NOW paper the bar can be gone (seen, or dismissed while the panel is open), so the panel can be
+      // the one place on the screen Java's sentence is seen.
       const level = isReadingPaper(paper) ? null : (paper.banner?.level ?? null);
-      const expected = level === "now" ? today.filter((name) => name !== "band") : today;
-      carried += today.length - expected.length;
+      const expected = today;
+      if (level === "now" && today.includes("band") && shown.includes("band")) nowBandsCompared++;
       if (level === "this_week" && today.includes("band") && shown.includes("band")) weekBandsCompared++;
       expect(difference(expected, shown), `${file}: blocks today's page has and the panel dropped`).toEqual([]);
       expect(difference(shown, expected), `${file}: blocks the panel has and today's page does not`).toEqual([]);
       blocks += expected.length;
     }
-    // Not vacuous: the page has safety blocks to compare, the band the card carries was really on some NOW page, and a
-    // this_week band was compared, not carried.
+    // Not vacuous: the page has safety blocks to compare, and a NOW band and a this_week band were really compared.
     expect(PAPERS.length, "paper fixtures walked").toBeGreaterThan(10);
     expect(blocks, "safety blocks compared").toBeGreaterThan(20);
-    expect(carried, "NOW bands left to the card and the bar").toBeGreaterThan(0);
+    expect(nowBandsCompared, "NOW bands compared on the page and in the panel").toBeGreaterThan(0);
     expect(weekBandsCompared, "this_week bands compared on the page and in the panel").toBeGreaterThan(0);
     const now = safetyOf(page(byFile("now-bd.json")));
     for (const name of ["now-block", "call-999", "not-a-doctor", "band"]) expect(now, `now-bd.json carries ${name}`).toContain(name);
   });
 
-  it("aThisWeekPaperKeepsItsBandInThePanelAndANowPaperLeavesItToTheBar", () => {
-    // A this_week paper has no NOW bar, and the panel covers its card: the panel is the one place on the screen its
-    // sentence and calendar can be. A NOW paper's sentence is in the bar and on the card, so the panel leaves it out.
-    let week = 0;
+  it("everyUrgentPaperKeepsItsBandInThePanel", () => {
+    // The panel covers the paper's card. A this_week paper has no bar, and a NOW paper's bar can be gone (already seen,
+    // or dismissed while the panel is open), so the panel always carries Java's sentence with its shape.
+    const walked = { now: 0, this_week: 0 };
     for (const { file, paper } of PAPERS) {
-      if (isReadingPaper(paper) || paper.banner?.level !== "this_week") continue;
-      week++;
-      const sentence = t("bn", paper.banner.line_key as CopyKey);
+      if (isReadingPaper(paper)) continue;
+      const level = paper.banner?.level;
+      if (level !== "now" && level !== "this_week") continue;
+      walked[level]++;
+      const sentence = t("bn", paper.banner!.line_key as CopyKey);
       const band = panel(paper).querySelector("[data-safety=band]");
-      expect(band, `${file}: the panel has the this_week band`).not.toBeNull();
+      expect(band, `${file}: the panel has the ${level} band`).not.toBeNull();
       expect(band!.textContent, `${file}: Java's sentence in the band`).toBe(sentence);
-      expect(band!.querySelector("svg"), `${file}: the calendar shape, not colour alone`).not.toBeNull();
+      expect(band!.querySelector("svg"), `${file}: the shape, not colour alone`).not.toBeNull();
       cleanup();
     }
-    expect(week, "this_week fixtures walked").toBeGreaterThanOrEqual(3);
-    let now = 0;
-    for (const { file, paper } of PAPERS) {
-      if (isReadingPaper(paper) || paper.banner?.level !== "now") continue;
-      now++;
-      expect(panel(paper).querySelector("[data-safety=band]"), `${file}: a NOW paper's band is the bar's and the card's`).toBeNull();
-      cleanup();
-    }
-    expect(now, "NOW fixtures walked").toBeGreaterThanOrEqual(3);
+    expect(walked.this_week, "this_week fixtures walked").toBeGreaterThanOrEqual(3);
+    expect(walked.now, "NOW fixtures walked").toBeGreaterThanOrEqual(3);
   });
 
   it("noRawLinkIsShownInThePanel", () => {
@@ -136,16 +130,19 @@ describe("PaperPanel", () => {
     expect(linked, "fixtures whose released wording holds a link line").toBeGreaterThan(0);
   });
 
-  it("theBandIsLeftOnlyToTheCard", () => {
-    // In the other direction: the panel never draws Java's urgency sentence as a warning line of its own (it would be the
-    // third on the screen). Medioo's released message quotes the sentence as one of its lines, and stays: that is the
-    // gate's block, which today's page shows too, and dropping it would drop a safety block.
+  it("thePanelSaysTheNowSentenceOnceAsItsBand", () => {
+    // The panel draws Java's urgency sentence as one warning line, its band, as today's page does: never two (the
+    // released message quotes the sentence as one of its lines, and that is the gate's block, which today's page shows
+    // too), never none (the panel covers the card, and the bar can be gone).
     const potas = byFile("proto-potas.json") as PaperResultJson;
     expect(potas.banner?.level).toBe("now");
     const sentence = t("bn", potas.banner!.line_key as CopyKey);
     const el = panel(potas);
-    expect(warningLines(el, sentence), "warning lines in the panel").toEqual([]);
-    expect(el.querySelector("[data-safety=band]")).toBeNull();
+    const lines = warningLines(el, sentence);
+    expect(lines.length, "warning lines in the panel").toBe(1);
+    const band = el.querySelector("[data-safety=band]");
+    expect(band, "the panel's band").not.toBeNull();
+    expect(band === lines[0] || band!.contains(lines[0]!), "the line is the band's").toBe(true);
     // The other direction: today's page draws it as a line of its own, so the check can see one.
     cleanup();
     expect(warningLines(page(potas), sentence).length, "today's page has the band").toBe(1);

@@ -10,8 +10,8 @@ import { PaperPanelStyles } from "./desk-load";
  * itself (PaperSummary, frame "panel"), so a block added to the page is in the panel with no change here: the card with
  * the not-a-doctor line and 999 (only on `call_999`), the NOW block, the outside, check-on-paper and inside groups with
  * every value beside its crop and range, the doctor's notes, the medicines, the next step, the pages, and delete for
- * the owner. Not its back link or its patient line, and, on a NOW paper only, not the band (panelBand: the NOW bar and
- * the card carry Java's sentence; a this_week paper has no bar, so its band stays). The released wording without its
+ * the owner, and the urgency band on every level: the panel covers the card, and a NOW bar can be gone (seen, or
+ * dismissed while the panel is open). Not its back link or its patient line. The released wording without its
  * link lines, as the conversation's card shows it (webText). Its close (`sheet.close`: the bn
  * "close" imperative is a forbidden phrase, so the panel says what every sheet says) goes to `closeHref`, the same
  * screen without the panel.
