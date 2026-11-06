@@ -1721,8 +1721,8 @@ questions (P16, quoted at the end); the rest is engineering within the rulings:*
   comes to the PO for approval BEFORE it ships; the RULES sentence, "No, keep it strict (Recommended)": the proposed
   sentence ("a lab reading … is no reason by itself to refuse") is NOT added. Item (ii), the doctor line on a refusal,
   keeps its built default (both kept), except as the lab-neutral follow-up narrows it.
-- **Lab-neutral refusals (P17 follow-up, branch `fix/baymax-chat-lab-refusal`; the wording is a DRAFT, not to ship before
-  the PO approves it).** A check refusal (the check's `refuse`, and every fail-closed path: unparseable, `max_tokens`,
+- **Lab-neutral refusals (P17 follow-up, #175, branch `fix/baymax-chat-lab-refusal`; the wording approved by the PO,
+  P18, 2026-11-06).** A check refusal (the check's `refuse`, and every fail-closed path: unparseable, `max_tokens`,
   error, timeout, no client, `check_marker`; `check_bare_answer` is always a dose or purpose question) keeps
   `chat.check.refused` with `chat.dose.ask_doctor` by default. It is `chat.check.refused.lab`, with no doctor-medicine
   line, only when it is positively about a lab (`ChatAnswerCheck.speaksOfMedicine`; review of #175, findings 1, 7 and
@@ -1736,7 +1736,7 @@ questions (P16, quoted at the end); the rest is engineering within the rulings:*
   a report word such as রিপোর্ট, test or sugar). A refusal about a follow-up date or a doctor's name therefore keeps the
   doctor line. Known limits, each reaching the lab line only when the question names a lab: a medicine no stored line
   holds, written in Bangla script ("নাপা" from an older paper), and an English sentence that opens with such a name, are
-  not read as a medicine. Draft copy, in the voice of
+  not read as a medicine. Copy approved by the PO, P18, 2026-11-06 ("Approve, merge when green"), in the voice of
   `chat.check.refused`: bn "এই প্রশ্নের নিশ্চিত উত্তর আমি দিতে পারি না। কাগজপত্রে যা লেখা আছে দেখুন, আর রিপোর্ট নিয়ে ডাক্তারকে
   জিজ্ঞেস করুন।", en "I can't give a reliable answer to this. See what the papers say under Papers, and ask a doctor
   about the report." The disclaimer, the red-flag line and any NOW/THIS_WEEK urgency line stay exactly as before in both

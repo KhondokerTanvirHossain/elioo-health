@@ -60,8 +60,8 @@ public final class ChatAnswerCheck {
     /**
      * The line a refusal shows when it is positively about a lab (PO ruling P17, "Yes, make lab refusals neutral"): a
      * question about a lab that is neither a dose nor a purpose question, where neither the question nor the refused answer
-     * names or quotes a medicine ({@link #speaksOfMedicine}). No doctor-medicine line follows it. Its wording is a draft
-     * until the PO approves it.
+     * names or quotes a medicine ({@link #speaksOfMedicine}). No doctor-medicine line follows it. Its wording was approved
+     * by the PO, P18, 2026-11-06.
      */
     public static final String REFUSED_LAB_LINE = "chat.check.refused.lab";
 
