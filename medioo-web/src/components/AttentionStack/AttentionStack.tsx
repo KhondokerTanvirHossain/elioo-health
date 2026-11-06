@@ -1,30 +1,10 @@
 import { useId, type ReactNode } from "react";
 import type { AttentionItemJson } from "@/api/types";
-import { formatDate, formatDayMonth, t, type CopyKey, type Lang } from "@/copy";
+import { formatDate, t, type Lang } from "@/copy";
 import { UrgencyCard } from "@/components/safety/VerdictCard/VerdictCard";
 import { href } from "@/routing/paths";
+import { dated, sent, typeLabel } from "./lines";
 import "./AttentionStack.css";
-
-/** A document type's word (TimelineView.typeLabel): `type.<type>` when the copy holds it, else the plain "paper". */
-function typeLabel(lang: Lang, type: string | null): string {
-  if (type !== null) {
-    try {
-      return t(lang, `type.${type}` as CopyKey);
-    } catch {
-      // A type the copy has no word for is a paper.
-    }
-  }
-  return t(lang, "timeline.paper");
-}
-
-const DHAKA_DAY = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Dhaka", year: "numeric", month: "2-digit", day: "2-digit" });
-
-/** "Sent on <day>" for an instant, on the patient's calendar (ChatView.sent: the received instant's Dhaka day). */
-const sent = (lang: Lang, at: string) => t(lang, "timeline.sent", formatDayMonth(lang, DHAKA_DAY.format(new Date(at))));
-
-/** A paper's date as the timeline writes it, with the upload-day note when Java says the paper printed none. */
-const dated = (lang: Lang, date: string, uploadDay: boolean) =>
-  formatDate(lang, date) + (uploadDay ? ` ${t(lang, "timeline.uploaddate")}` : "");
 
 /**
  * The attention stack (plan W5, Java's ChatView.stack) over GET /app/api/patients/{id}/attention, in the order Java

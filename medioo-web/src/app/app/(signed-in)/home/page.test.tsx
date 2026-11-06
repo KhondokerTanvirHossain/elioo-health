@@ -1,14 +1,19 @@
-import { cleanup, render } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, render } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import type { JavaAnswer } from "@/api/java";
-import type { MeJson, PaperJson, ThreadJson } from "@/api/types";
+import type { MeJson, NowBannerJson, PaperJson, ThreadJson } from "@/api/types";
+import { t, type CopyKey } from "@/copy";
 import { href } from "@/routing/paths";
+import { NOW_ALLOWED } from "@/styles/now-usage";
+import abbuAttention from "../../../../../fixtures/api/attention/proto-abbu.json";
 import attention from "../../../../../fixtures/api/attention/proto-amma.json";
 import cbc from "../../../../../fixtures/api/documents/proto-cbc.json";
 import potas from "../../../../../fixtures/api/documents/proto-potas.json";
+import abbuFollowUps from "../../../../../fixtures/api/follow-ups/proto-abbu.json";
 import followUps from "../../../../../fixtures/api/follow-ups/proto-amma.json";
 import proto from "../../../../../fixtures/api/me/proto.json";
 import nowBanner from "../../../../../fixtures/api/now-banner/proto.json";
+import abbuThread from "../../../../../fixtures/api/thread/proto-abbu.json";
 import ammaThread from "../../../../../fixtures/api/thread/proto-amma.json";
 
 /*
@@ -24,9 +29,14 @@ const THREAD = ammaThread.body as ThreadJson;
 const CARDS = THREAD.items.flatMap((i) => (i.kind === "paper" ? [i.card] : []));
 const NEWEST = CARDS[0]!;
 const CBC = cbc.body as PaperJson;
+const POTAS = potas.body as PaperJson;
+const ABBU = ME.patients.find((p) => p.id === POTAS.patient.id)!;
 const ctx = { lang: "bn" as const, preview: true, here: "/app/preview/home" };
 let reads: string[] = [];
 let thread: ThreadJson = THREAD;
+let abbusThread: ThreadJson = abbuThread.body as ThreadJson;
+let shown: { id: string } = AMMA;
+let banner: NowBannerJson = nowBanner.body as NowBannerJson;
 
 vi.mock("@/api/request", () => ({ requestContext: async () => ctx }));
 vi.mock("next/navigation", async (actual) => ({
@@ -38,11 +48,14 @@ vi.mock("@/api/java", async (actual) => ({
   ...(await actual<typeof import("@/api/java")>()),
   javaGet: async (path: string): Promise<JavaAnswer<unknown>> => {
     reads.push(path);
-    if (path === "/app/api/me") return { status: 200, body: { ...ME, active_patient_id: AMMA.id } };
-    if (path === "/app/api/now-banner") return { status: 200, body: nowBanner.body };
+    if (path === "/app/api/me") return { status: 200, body: { ...ME, active_patient_id: shown.id } };
+    if (path === "/app/api/now-banner") return { status: 200, body: banner };
     if (path === `/app/api/patients/${AMMA.id}/attention`) return { status: 200, body: attention.body };
     if (path.startsWith(`/app/api/patients/${AMMA.id}/thread`)) return { status: 200, body: thread };
     if (path === `/app/api/patients/${AMMA.id}/follow-ups`) return { status: 200, body: followUps.body };
+    if (path === `/app/api/patients/${ABBU.id}/attention`) return { status: 200, body: abbuAttention.body };
+    if (path.startsWith(`/app/api/patients/${ABBU.id}/thread`)) return { status: 200, body: abbusThread };
+    if (path === `/app/api/patients/${ABBU.id}/follow-ups`) return { status: 200, body: abbuFollowUps.body };
     if (path === `/app/api/documents/${CBC.id}`) return { status: 200, body: CBC };
     if (path === `/app/api/documents/${potas.body.id}`) return { status: 200, body: potas.body };
     throw new Error(`unexpected read ${path}`);
@@ -54,6 +67,9 @@ const { default: HomePage } = await import("./page");
 beforeEach(() => {
   reads = [];
   thread = THREAD;
+  abbusThread = abbuThread.body as ThreadJson;
+  shown = AMMA;
+  banner = nowBanner.body as NowBannerJson;
   ctx.preview = true;
   ctx.here = "/app/preview/home";
   vi.stubGlobal("location", { pathname: ctx.here, search: "", assign: vi.fn(), reload: vi.fn() });
@@ -63,6 +79,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+const cardsIn = (th: ThreadJson) => th.items.flatMap((i) => (i.kind === "paper" ? [i.card.id] : []));
+
 const home = async (query: Record<string, string> = {}) =>
   render(await HomePage({ searchParams: Promise.resolve(query) })).container;
 
@@ -70,6 +88,12 @@ const inView = (root: ParentNode) => root.querySelector(".desktop-shell__paper [
 const outlined = (root: ParentNode) =>
   [...root.querySelectorAll(".desktop-shell__talk [data-talk-selected]")].map((e) => e.getAttribute("data-paper"));
 const paperLink = (id: string) => href(`/app/home?patient=${AMMA.id}&paper=${id}`, true);
+
+/** The elements whose whole text is `sentence`, innermost: a warning line, not a message that quotes it among others. */
+const warningLines = (root: ParentNode, sentence: string) =>
+  [...root.querySelectorAll<HTMLElement>("*")].filter(
+    (e) => e.textContent?.trim() === sentence && ![...e.children].some((c) => c.textContent?.trim() === sentence),
+  );
 
 describe("/app/home on the desktop layout", () => {
   it("homeWithoutPaperSelectsTheNewest", async () => {
@@ -83,7 +107,7 @@ describe("/app/home on the desktop layout", () => {
       expect(container.querySelector(`.desktop-shell__paper a[href="${paperLink(card.id)}"]`), `strip: ${card.id}`).not.toBeNull();
       expect(container.querySelector(`.desktop-shell__talk a[href="${paperLink(card.id)}"]`), `card: ${card.id}`).not.toBeNull();
     }
-    expect(container.querySelector(".desktop-shell .attention-stack"), "no attention stack on the desktop").toBeNull();
+    expect(container.querySelector(".desktop-shell .attention-stack, .desktop-shell [data-attention]"), "no attention card on the desktop").toBeNull();
   });
 
   it("aNamedPaperIsInTheViewerAndItsPanelOpensAndCloses", async () => {
@@ -119,6 +143,46 @@ describe("/app/home on the desktop layout", () => {
   it("aNamedPaperOnTheFirstPageIsNotReadAgain", async () => {
     await home({ patient: AMMA.id, paper: CBC.id });
     expect(reads.some((r) => r.startsWith("/app/api/documents/")), "the thread's card is the paper").toBe(false);
+  });
+
+  it("aNowPaperBeyondTheThreadsFirstPageStillHasItsWarningAndItsLink", async () => {
+    // Abbu's NOW paper, pushed off the thread's first page by newer papers and messages, and the bar already seen
+    // (`now.banner.seen`): the phone still shows Java's NOW card with its sentence and its link (the attention stack, filtered in
+    // SQL so no number of newer papers can hide it). The desktop must too, in the conversation, and read no paper for it.
+    shown = ABBU;
+    abbusThread = { ...abbusThread, items: abbusThread.items.filter((i) => !(i.kind === "paper" && i.card.id === POTAS.id)) };
+    banner = { ...banner, show: false };
+    const urgent = abbuAttention.body.items.find((i) => i.kind === "urgent" && i.document_id === POTAS.id);
+    expect(urgent?.level, "the attention fixture holds the NOW paper").toBe("now");
+    expect(cardsIn(abbusThread), "the thread does not").not.toContain(POTAS.id);
+    // jsdom has no scrollIntoView: the column's opening scroll is watched instead.
+    const into = vi.fn();
+    const before = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = into;
+    onTestFinished(() => {
+      Element.prototype.scrollIntoView = before;
+    });
+
+    const container = await home();
+    await act(async () => undefined);
+    const desk = container.querySelector<HTMLElement>(".desktop-shell");
+    expect(desk, "the desktop screen").not.toBeNull();
+    expect(desk!.querySelector(".desktop-shell__bar [role=alert]"), "the bar is seen: not shown").toBeNull();
+    const talk = desk!.querySelector<HTMLElement>(".desktop-shell__talk")!;
+    const sentence = t("bn", POTAS.banner!.line_key as CopyKey);
+    expect(warningLines(talk, sentence).length, "the NOW sentence in the conversation").toBe(1);
+    expect(talk.querySelector(`a[href="${href(`/app/documents/${POTAS.id}`, true)}"]`), "and the way to the paper").not.toBeNull();
+    const red = [...talk.querySelectorAll(".verdict-card")].filter((c) => [...c.classList].some((k) => NOW_ALLOWED.test(`.${k}`)));
+    expect(red.length, "on the red card").toBe(1);
+    expect(
+      [...talk.querySelectorAll('[data-attention="urgent"]')].map((e) => e.getAttribute("data-document")),
+      "pinned once, for that paper",
+    ).toEqual([POTAS.id]);
+    // The column opens where that card is, at its top, as the phone does with a NOW card in its stack: it is not
+    // scrolled to the newest paper, and Mio holds still.
+    expect(into, "the column holds still at the NOW card").not.toHaveBeenCalled();
+    expect(talk.querySelector(".conversation__head .mio-avatar--hop, .conversation__head .mio-avatar--wave"), "Mio still").toBeNull();
+    expect(reads.some((r) => r.startsWith("/app/api/documents/")), "no paper read: no DOCUMENT_VIEW nobody asked for").toBe(false);
   });
 
   it("belowNineHundredHomeIsTodaysChat", async () => {

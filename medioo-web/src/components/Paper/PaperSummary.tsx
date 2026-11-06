@@ -361,8 +361,10 @@ function Reading({ paper, ctx }: { paper: PaperReadingJson; ctx: Ctx }) {
  * (DONE), the retake card (NEEDS_RETAKE), the failed page (FAILED), or the reading page (RECEIVED, PROCESSING).
  * Delete and every upload entry only for the owner; a share member is told why.
  *
- * `frame` "panel" is the same paper in the desktop's details panel (Frame, above; PaperPanel). The panel runs no reading
- * check of its own: the viewer beside it does (PaperViewer), and one check per paper is one status read at a time.
+ * `frame` "panel" is the same paper in the desktop's details panel (Frame, above; PaperPanel). The panel mounts no reading
+ * check: the viewer beside it does (PaperViewer). The page frame does, and on the desktop layout the phone shell's page
+ * and the viewer are both mounted for the same paper: ReadingProgress itself makes them one check (one status read at a
+ * time, one refresh on settle), so that rule holds on every path, not by which views remember to leave it out.
  * Every safety line is marked `data-safety` with what it is, so the panel is held to this page block for block.
  */
 export function PaperSummary({

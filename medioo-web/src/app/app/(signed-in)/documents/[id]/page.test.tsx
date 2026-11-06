@@ -1,11 +1,17 @@
-import { cleanup, render } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, render } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import type { JavaAnswer } from "@/api/java";
-import type { MeJson, PaperResultJson } from "@/api/types";
+import type { MeJson, PaperReadingJson, PaperResultJson } from "@/api/types";
+import { waitBefore } from "@/api/reading-check";
 import { t, type CopyKey } from "@/copy";
 import { href } from "@/routing/paths";
 import { NOW_ALLOWED } from "@/styles/now-usage";
+import attention from "../../../../../../fixtures/api/attention/proto-abbu.json";
+import processing from "../../../../../../fixtures/api/documents/processing.json";
 import potas from "../../../../../../fixtures/api/documents/proto-potas.json";
+import noFollowUps from "../../../../../../fixtures/api/follow-ups/none.json";
+import previewOn from "../../../../../../fixtures/api/me/preview-on.json";
+import acked from "../../../../../../fixtures/api/now-banner/acked.json";
 import followUps from "../../../../../../fixtures/api/follow-ups/proto-abbu.json";
 import proto from "../../../../../../fixtures/api/me/proto.json";
 import nowBanner from "../../../../../../fixtures/api/now-banner/proto.json";
@@ -22,28 +28,44 @@ import thread from "../../../../../../fixtures/api/thread/proto-abbu.json";
 const ME = proto.body as MeJson;
 const POTAS = potas.body as PaperResultJson;
 const ABBU = ME.patients.find((p) => p.id === POTAS.patient.id)!;
+const READING = processing.body as PaperReadingJson;
+const MA = (previewOn.body as MeJson).patients.find((p) => p.id === READING.patient.id)!;
 const ctx = { lang: "bn" as const, preview: true, here: `/app/preview/documents/${POTAS.id}` };
 let reads: string[] = [];
 let marker: string | undefined;
+let me: MeJson = ME;
 
 vi.mock("@/api/request", () => ({ requestContext: async () => ctx }));
 vi.mock("next/headers", () => ({
   cookies: async () => ({ get: (name: string) => (name === "baymax_banner_only" && marker !== undefined ? { value: marker } : undefined) }),
 }));
+const { refresh, apiGet } = vi.hoisted(() => ({
+  refresh: vi.fn(),
+  apiGet: vi.fn<(path: string) => Promise<{ kind: string; status: number; body: unknown }>>(async () => ({
+    kind: "ok",
+    status: 200,
+    body: { status: "DONE" },
+  })),
+}));
 vi.mock("next/navigation", async (actual) => ({
   ...(await actual<typeof import("next/navigation")>()),
-  useRouter: () => ({ refresh: () => undefined, push: () => undefined }),
+  useRouter: () => ({ refresh, push: () => undefined }),
 }));
-vi.mock("@/api/browser", () => ({ apiGet: vi.fn(async () => ({ kind: "ok", status: 200, body: { status: "DONE" } })), apiSend: vi.fn() }));
+vi.mock("@/api/browser", () => ({ apiGet, apiSend: vi.fn() }));
 vi.mock("@/api/java", async (actual) => ({
   ...(await actual<typeof import("@/api/java")>()),
   javaGet: async (path: string): Promise<JavaAnswer<unknown>> => {
     reads.push(path);
-    if (path === "/app/api/me") return { status: 200, body: ME };
-    if (path === "/app/api/now-banner") return { status: 200, body: nowBanner.body };
+    if (path === "/app/api/me") return { status: 200, body: me };
+    if (path === "/app/api/now-banner") return { status: 200, body: me === ME ? nowBanner.body : acked.body };
+    if (path === `/app/api/documents/${READING.id}`) return { status: 200, body: READING };
+    if (path.startsWith(`/app/api/patients/${MA.id}/thread`)) return { status: 200, body: { items: [] } };
+    if (path === `/app/api/patients/${MA.id}/attention`) return { status: 200, body: { items: [] } };
+    if (path === `/app/api/patients/${MA.id}/follow-ups`) return { status: 200, body: noFollowUps.body };
     if (path === `/app/api/documents/${POTAS.id}`) return { status: 200, body: POTAS };
     if (path.startsWith(`/app/api/patients/${ABBU.id}/thread`)) return { status: 200, body: thread.body };
     if (path === `/app/api/patients/${ABBU.id}/follow-ups`) return { status: 200, body: followUps.body };
+    if (path === `/app/api/patients/${ABBU.id}/attention`) return { status: 200, body: attention.body };
     throw new Error(`unexpected read ${path}`);
   },
 }));
@@ -53,6 +75,9 @@ const { default: PaperPage } = await import("./page");
 beforeEach(() => {
   reads = [];
   marker = undefined;
+  me = ME;
+  refresh.mockClear();
+  apiGet.mockClear();
   ctx.preview = true;
   ctx.here = `/app/preview/documents/${POTAS.id}`;
   vi.stubGlobal("location", { pathname: ctx.here, search: "", assign: vi.fn(), reload: vi.fn() });
@@ -82,6 +107,7 @@ describe("/app/documents/{id} on the desktop layout", () => {
     const desk = container.querySelector<HTMLElement>(".desktop-shell");
     expect(desk, "the desktop screen, not today's paper page alone").not.toBeNull();
     const sentence = t("bn", POTAS.banner!.line_key as CopyKey);
+    expect(attention.body.items.map((i) => i.document_id), "the stack holds this paper").toContain(POTAS.id);
 
     // The bar: the patient's name first, then Java's sentence verbatim.
     const bar = desk!.querySelector<HTMLElement>(".desktop-shell__bar [role=alert]");
@@ -111,7 +137,7 @@ describe("/app/documents/{id} on the desktop layout", () => {
     );
 
     // The warning twice on the screen, the bar and the card: the panel's NOW block uses its own keys, and the
-    // attention stack's urgent card is not drawn in any column. Counted as warning lines, each an element saying the
+    // attention stack's urgent card is not drawn in any column (this paper is in the stack: its card carries it). Counted as warning lines, each an element saying the
     // sentence and nothing else: Medioo's released message quotes it among its own lines, on the card and in the panel
     // as on today's page, and that message is the gate's block, never dropped.
     const lines = warningLines(desk!, sentence);
@@ -121,7 +147,7 @@ describe("/app/documents/{id} on the desktop layout", () => {
     expect(count(desk!.textContent ?? "", sentence), "and the released message is shown where today's page shows it").toBe(
       2 + count(POTAS.wording ?? "", sentence) * 2,
     );
-    expect(desk!.querySelector(".attention-stack"), "no attention stack on the desktop").toBeNull();
+    expect(desk!.querySelector(".attention-stack, [data-attention]"), "no attention card on the desktop").toBeNull();
 
     // Below 900 px: today's paper page, whole, in the phone shell.
     expect(container.querySelector(".app-shell--phone article.paper [data-now-block]"), "today's page below 900 px").not.toBeNull();
@@ -130,6 +156,32 @@ describe("/app/documents/{id} on the desktop layout", () => {
     expect(ids.filter((id, i) => ids.indexOf(id) !== i), "ids said twice").toEqual([]);
     // One read of the paper: the thread's card is not a second DOCUMENT_VIEW.
     expect(reads.filter((r) => r.startsWith("/app/api/documents/")).length).toBe(1);
+  });
+
+  it("aPaperBeingReadIsCheckedOnceAndRefreshedOnce", async () => {
+    // The desktop screen holds two views of a paper being read, the phone shell's page and the viewer, each with the
+    // reading check. One paper is one check: one GET /status a tick, and one refresh when it is read, so the settle's
+    // re-render is one read of the paper (one open, one view), not one per mounted view.
+    me = previewOn.body as MeJson;
+    ctx.here = `/app/preview/documents/${READING.id}`;
+    vi.useFakeTimers();
+    // jsdom has no scrollIntoView, which the conversation uses to open on the selected paper.
+    const before = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = vi.fn();
+    onTestFinished(() => {
+      vi.useRealTimers();
+      Element.prototype.scrollIntoView = before;
+    });
+    const container = await open(READING.id);
+    expect(container.querySelector(".desktop-shell .paper-viewer"), "the viewer, on the desktop screen").not.toBeNull();
+    expect(container.querySelector(".app-shell--phone article.paper"), "today's page below 900 px").not.toBeNull();
+    const statuses = () => apiGet.mock.calls.filter(([path]) => path === `/app/api/documents/${READING.id}/status`).length;
+    await act(() => vi.advanceTimersByTimeAsync(waitBefore(0)));
+    expect(statuses(), "GET /status once at the first tick, not once per view").toBe(1);
+    expect(refresh, "the paper is read: one refresh").toHaveBeenCalledTimes(1);
+    await act(() => vi.advanceTimersByTimeAsync(10 * 60_000));
+    expect(statuses(), "and no check after").toBe(1);
+    expect(refresh).toHaveBeenCalledTimes(1);
   });
 
   it("aLiveLinkIsTodaysPaperPage", async () => {

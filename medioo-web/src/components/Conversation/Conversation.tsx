@@ -78,8 +78,10 @@ function PaperItem({
  *   - an ask is the question sent and Java's answer as stored, as the phone draws it (AskAnswer);
  *   - an item of a kind this build does not know is left out, never drawn as a paper;
  * - the composer (variant `desk`: the paperclip for the owner only, the field and send).
+ * `pinned` (desk.tsx: PinnedUrgent, an urgent paper the thread's first page does not reach) comes under the header,
+ * before the thread.
  * The column opens on the selected paper's item when there is one, otherwise on the newest (OpenAtNewest), and holds
- * still while the NOW bar is shown (`hold`).
+ * still while a NOW result is shown outside the thread (`hold`: the NOW bar, or a pinned NOW card).
  * Its stylesheets and its client islands (the composer, OpenAtNewest, the tips sheet) come through its loader
  * (desk-load.tsx), so only a page that renders the conversation links them (DR-42).
  */
@@ -91,6 +93,7 @@ export function Conversation({
   selectedId,
   hrefFor,
   hold = false,
+  pinned,
 }: {
   lang: Lang;
   preview: boolean;
@@ -99,6 +102,7 @@ export function Conversation({
   selectedId: string | null;
   hrefFor: (id: string) => string;
   hold?: boolean;
+  pinned?: ReactNode;
 }) {
   const rows: ReactNode[] = [];
   const newestPaper = items.find((i): i is Extract<ThreadItemJson, { kind: "paper" }> => i.kind === "paper")?.card.id ?? null;
@@ -165,6 +169,7 @@ export function Conversation({
           <small className="conversation__sub">{t(lang, "desk.talk.sub", patient.name_possessive)}</small>
         </div>
       </div>
+      {pinned}
       <ol className="conversation__items">{rows}</ol>
       <Composer
         variant="desk"

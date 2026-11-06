@@ -804,12 +804,14 @@ export const SCENARIOS = {
   "paper-not-this-familys": paper(paperAbout("documents/now-bd.json", UNLISTED_PATIENT)),
   // A preview family on the NOW paper from a link (/app/preview/documents/{id}, Review Focus 1), its banner unseen: the
   // desktop layout's talk-and-papers screen with that paper selected, its panel open and the NOW bar, which also reads
-  // the thread and the follow-ups (plan desktop-parity Task 8). The live twin is paper-now-bd's NOW twin.
+  // the thread, the attention stack (an urgent paper with no card on the screen is pinned in the conversation; none
+  // here) and the follow-ups (plan desktop-parity Task 8). The live twin is paper-now-bd's NOW twin.
   "paper-now-bd-preview": paper(
     "documents/now-bd.json",
     {
       "GET /app/api/now-banner": bannerFor("now-banner/one.json", "me/preview-on.json"),
       "GET /app/api/patients/{id}/thread": "thread/default.json",
+      "GET /app/api/patients/{id}/attention": "attention/empty.json",
       "GET /app/api/patients/{id}/follow-ups": "follow-ups/none.json",
     },
     "me/preview-on.json",
