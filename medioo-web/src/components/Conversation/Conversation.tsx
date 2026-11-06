@@ -2,16 +2,14 @@ import type { ReactNode } from "react";
 import { isReadingPaper, type MePatient, type PaperJson, type ThreadItemJson } from "@/api/types";
 import { t, type Lang } from "@/copy";
 import { composerNoJs, composerWords } from "@/app/app/(signed-in)/home/chat-words";
-import { OpenAtNewest } from "@/app/app/(signed-in)/home/OpenAtNewest";
-import { Composer } from "@/components/Composer/Composer";
 import { MessageBubble } from "@/components/MessageBubble/MessageBubble";
 import { MioAvatar } from "@/components/MioAvatar/MioAvatar";
 import { AskAnswer } from "@/components/safety/AskAnswer/AskAnswer";
 import { call999Words } from "@/components/safety/AskAnswer/call999";
 import { DaySeparator, dhakaDay } from "./DaySeparator";
+import { Composer, ConversationStyles, OpenAtNewest } from "./desk-load";
 import { QuickActions } from "./QuickActions";
 import { TalkCard } from "./TalkCard";
-import "./Conversation.css";
 
 /** The column that scrolls (Conversation.css): OpenAtNewest scrolls it, never the window. */
 const COLUMN = ".conversation";
@@ -82,6 +80,8 @@ function PaperItem({
  * - the composer (variant `desk`: the paperclip for the owner only, the field and send).
  * The column opens on the selected paper's item when there is one, otherwise on the newest (OpenAtNewest), and holds
  * still while the NOW bar is shown (`hold`).
+ * Its stylesheets and its client islands (the composer, OpenAtNewest, the tips sheet) come through its loader
+ * (desk-load.tsx), so only a page that renders the conversation links them (DR-42).
  */
 export function Conversation({
   lang,
@@ -157,6 +157,7 @@ export function Conversation({
 
   return (
     <div className="conversation" data-patient={patient.id}>
+      <ConversationStyles />
       <div className="conversation__head">
         <MioAvatar size={32} still={hold} />
         <div className="conversation__title">

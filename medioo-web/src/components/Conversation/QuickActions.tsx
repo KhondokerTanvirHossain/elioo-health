@@ -2,7 +2,7 @@ import type { PaperResultJson } from "@/api/types";
 import { t, type Lang } from "@/copy";
 import { addTips } from "@/app/app/(signed-in)/add/upload-words";
 import { href } from "@/routing/paths";
-import { TipsSheet } from "./TipsSheet";
+import { TipsSheet } from "./desk-load";
 
 /**
  * The actions under a retake card (plan desktop-parity Task 7; desktop.html's `.suggest` under a blurry photo; P19:

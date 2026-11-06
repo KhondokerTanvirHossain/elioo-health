@@ -157,15 +157,21 @@ describe("AppShell", () => {
     expect(shell(ONE).container.querySelector(".app-shell--phone")).toBeNull();
     cleanup();
     expect(shell(ONE, { phone: true }).container.querySelector(".app-shell.app-shell--phone")).not.toBeNull();
-    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "AppShell.css"), "utf8");
-    const hidden: string[] = [];
-    postcss.parse(css).walkRules((rule) => {
-      if (!rule.selectors.map((x) => x.trim()).includes(".app-shell--phone")) return;
-      const media = rule.parent?.type === "atrule" ? (rule.parent as AtRule).params : "";
-      rule.walkDecls("display", (d) => {
-        hidden.push(`${media} ${d.value}`);
+    // The rule that hides it lives with DesktopShell (DesktopShell.css), whose stylesheet a page links exactly when it
+    // renders that shell (its desk-load.tsx; DR-42), and not in this one's, which every signed-in page links.
+    const hiddenBy = (file: string) => {
+      const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), file), "utf8");
+      const hidden: string[] = [];
+      postcss.parse(css).walkRules((rule) => {
+        if (!rule.selectors.map((x) => x.trim()).includes(".app-shell--phone")) return;
+        const media = rule.parent?.type === "atrule" ? (rule.parent as AtRule).params : "";
+        rule.walkDecls("display", (d) => {
+          hidden.push(`${media} ${d.value}`);
+        });
       });
-    });
-    expect(hidden).toEqual(["(min-width: 900px) none"]);
+      return hidden;
+    };
+    expect(hiddenBy("../DesktopShell/DesktopShell.css")).toEqual(["(min-width: 900px) none"]);
+    expect(hiddenBy("AppShell.css")).toEqual([]);
   });
 });

@@ -11,8 +11,8 @@ import { UrgencyTag } from "@/components/safety/UrgencyTag/UrgencyTag";
 import { href } from "@/routing/paths";
 import { PaperStrip } from "./PaperStrip";
 import { viewerDay } from "./viewer-day";
-import { Zoom, type ViewerZoomWords } from "./Zoom";
-import "./PaperViewer.css";
+import { PaperViewerStyles, Zoom } from "./desk-load";
+import type { ViewerZoomWords } from "./Zoom";
 
 const Icon = ({ d }: { d: string }) => (
   <svg className="paper-viewer__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -44,6 +44,7 @@ const digitsOf = (lang: Lang) => (lang === "bn" ? banglaDigits("0123456789") : "
 function FirstVisit({ lang, preview }: { lang: Lang; preview: boolean }) {
   return (
     <div className="paper-viewer paper-viewer--first">
+      <PaperViewerStyles />
       <div className="paper-viewer__first">
         <MioAvatar size={96} />
         <h2 className="paper-viewer__first-title">{t(lang, "desk.first.title")}</h2>
@@ -128,6 +129,7 @@ export function PaperViewer({
 
   return (
     <div className="paper-viewer" data-paper={paper.id}>
+      <PaperViewerStyles />
       <Zoom words={words} start={start} end={end} canvasLabel={title}>
         {reading && (
           <div className="paper-viewer__reading-box">

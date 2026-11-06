@@ -39,6 +39,7 @@ vi.mock("@/api/java", async (actual) => ({
 }));
 
 const { signedInPage } = await import("./shell");
+const { desktopFrame } = await import("./desktop-frame");
 
 beforeEach(() => {
   reads = [];
@@ -57,7 +58,7 @@ const page = (desktop: boolean) =>
     tab: "chat",
     main: <p data-slot="main">main</p>,
     aside: <p data-slot="aside">aside</p>,
-    ...(desktop ? { desktop: { paper: <p data-slot="paper">paper</p>, talk: <p data-slot="talk">talk</p> } } : {}),
+    ...(desktop ? { desktop: { frame: desktopFrame, paper: <p data-slot="paper">paper</p>, talk: <p data-slot="talk">talk</p> } } : {}),
   });
 
 describe("signedInPage's shell", () => {

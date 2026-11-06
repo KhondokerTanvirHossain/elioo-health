@@ -112,29 +112,3 @@
   outline: 3px solid var(--on-now);
   outline-offset: 2px;
 }
-
-/* The desktop bar (variant "bar"; desktop.html `.ban.now`): one slim line across the content columns, never over the
-   sidebar (DesktopShell puts it there): the octagon, the names and the sentence, the paper it is about in a lighter
-   weight, then the block's own actions, outlined on the red. It wraps rather than overflow at 900 px. No radius: the
-   bar runs edge to edge. Kept short: this sheet is on every page, inside the DR-42 route ceiling. */
-.now-banner--bar {
-  flex-flow: row wrap;
-  align-items: center;
-  padding: 10px var(--space-4);
-  border-radius: 0;
-}
-.now-banner__text {
-  flex: 1 1 320px;
-  margin: 0;
-  font-size: var(--text-md);
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-.now-banner--bar .now-banner__title,
-.now-banner--bar .now-banner__line {
-  display: inline;
-  font-size: inherit;
-}
-.now-banner__about {
-  font-weight: 400;
-}

@@ -2,7 +2,7 @@ import type { PaperJson } from "@/api/types";
 import { t, type Lang } from "@/copy";
 import { paperWords } from "@/app/app/(signed-in)/documents/[id]/paper-words";
 import { PaperSummary } from "@/components/Paper/PaperSummary";
-import "./PaperPanel.css";
+import { PaperPanelStyles } from "./desk-load";
 
 /**
  * The safety blocks the panel leaves to the card beside it (PaperPanel.test.tsx compares the rest with today's paper
@@ -26,6 +26,7 @@ export const CARD_CARRIES: readonly string[] = ["band"];
 export function PaperPanel({ lang, preview, paper, closeHref }: { lang: Lang; preview: boolean; paper: PaperJson; closeHref: string }) {
   return (
     <div className="paper-panel" data-panel={paper.id}>
+      <PaperPanelStyles />
       <div className="paper-panel__bar">
         <a className="paper-panel__close" href={closeHref}>
           {t(lang, "sheet.close")}

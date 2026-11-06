@@ -9,6 +9,7 @@ import { MioAvatar } from "@/components/MioAvatar/MioAvatar";
 import { Thread } from "@/components/Thread/Thread";
 import { mergeAsks } from "@/components/Thread/merge";
 import { href } from "@/routing/paths";
+import { desktopFrame } from "../desktop-frame";
 import { signedInPage, type ShellContext } from "../shell";
 import { composerNoJs, composerWords } from "./chat-words";
 import { deskScreen, type DeskScreen } from "./desk";
@@ -136,6 +137,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       return attention.items.length === 0 ? undefined : stack(ctx, "aside", attention, ctx.patient);
     },
     desktop: {
+      frame: desktopFrame,
       paper: async (ctx) => (await desk(ctx)).paper,
       talk: async (ctx) => (await desk(ctx)).talk,
       panel: async (ctx) => (await desk(ctx)).panel,

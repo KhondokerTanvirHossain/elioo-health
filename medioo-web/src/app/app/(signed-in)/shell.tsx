@@ -3,11 +3,9 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { javaGet, signedIn } from "@/api/java";
 import { requestContext } from "@/api/request";
-import type { FollowUpsJson, MeJson, MePatient, NowBannerJson } from "@/api/types";
+import type { MeJson, MePatient, NowBannerJson } from "@/api/types";
 import type { Lang } from "@/copy";
 import { AppShell } from "@/components/AppShell/AppShell";
-import { DesktopShell } from "@/components/DesktopShell/DesktopShell";
-import { DesktopSidebar, nextVisitOf, type DesktopPlace } from "@/components/DesktopSidebar/DesktopSidebar";
 import { PatientChooser } from "@/components/PatientChooser/PatientChooser";
 import { NowBanner } from "@/components/safety/NowBanner/NowBanner";
 import { NowBannerHold } from "@/components/safety/NowBanner/NowBannerHold";
@@ -28,11 +26,25 @@ export type Slot = ReactNode | ((ctx: ShellContext) => ReactNode | Promise<React
 
 const fill = async (slot: Slot | undefined, ctx: ShellContext) => (typeof slot === "function" ? await slot(ctx) : slot);
 
-/** The sidebar's place for a page's tab: the chat is the talk-and-papers screen, the papers tab the calendar. */
-const PLACE: Record<Tab, DesktopPlace> = { chat: "talk", papers: "calendar", health: "labs", family: "settings" };
+/**
+ * What the desktop layout's frame is given (desktop-frame.tsx): the request, whose papers are shown, the page's tab, the
+ * NOW bar (undefined when no banner shows) and the page's three desktop columns, already rendered.
+ */
+export type DesktopFrameInput = {
+  lang: Lang;
+  preview: boolean;
+  here: string;
+  me: MeJson;
+  patient: MePatient | null;
+  tab: Tab | null;
+  bar: ReactNode | undefined;
+  paper: ReactNode;
+  talk: ReactNode;
+  panel: ReactNode | undefined;
+};
 
-/** Today on the patient's calendar (Dhaka), ISO: what the sidebar counts the doctor's next date from. */
-const DHAKA_DAY = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Dhaka", year: "numeric", month: "2-digit", day: "2-digit" });
+/** The desktop layout's frame: DesktopShell and its sidebar around the columns (desktop-frame.tsx's desktopFrame). */
+export type DesktopFrame = (input: DesktopFrameInput) => Promise<ReactNode>;
 
 /** The page's own `?patient=`, read from the address the browser asked for (requestContext().here). */
 function askedPatient(here: string): string | null {
@@ -71,6 +83,8 @@ function askedPatient(here: string): string | null {
  *   and every page that gives no `desktop`, renders today's AppShell alone, exactly as before. With the chooser in
  *   place of `main`, the paper column holds the chooser and the conversation is empty: the sidebar names nobody.
  *   `desktop.panel` (Task 8) is a paper's details over the conversation, when the page has one open (undefined: none).
+ *   `desktop.frame` is desktop-frame.tsx's desktopFrame, which renders DesktopShell and DesktopSidebar: the page passes
+ *   it, so only a page that can render the desktop layout imports them (DR-42), and this module names it as a type.
  *   The NOW banner is the slim bar there (NowBanner variant "bar", across the content columns), the block below 900 px.
  * `everyone` and `asked` are amendments of the plan's Global Constraint "a screen never decides a patient", approved by
  * the PO 2026-10-23 (P2). `patient` (W6) is a third, put to the PO for sight (the plan's Global Constraints): like
@@ -93,7 +107,7 @@ export async function signedInPage({
   everyone?: boolean;
   asked?: string;
   patient?: string | null;
-  desktop?: { paper: Slot; talk: Slot; panel?: Slot };
+  desktop?: { frame: DesktopFrame; paper: Slot; talk: Slot; panel?: Slot };
 }) {
   const { lang, preview, here } = await requestContext();
   const [meAnswer, bannerAnswer] = await Promise.all([javaGet<MeJson>("/app/api/me"), javaGet<NowBannerJson>("/app/api/now-banner")]);
@@ -130,34 +144,22 @@ export async function signedInPage({
   );
   if (!onDesktop) return phone;
 
-  const followUps =
-    patient === null
-      ? null
-      : signedIn(await javaGet<FollowUpsJson>(`/app/api/patients/${encodeURIComponent(patient.id)}/follow-ups`), here);
+  const frame = await desktop.frame({
+    lang,
+    preview,
+    here,
+    me,
+    patient,
+    tab,
+    bar: nowBanner("bar"),
+    paper: chooser ? <PatientChooser lang={lang} patients={me.patients} titleId="desktop-patient-chooser-title" /> : await fill(desktop.paper, ctx),
+    talk: chooser ? null : await fill(desktop.talk, ctx),
+    panel: chooser || desktop.panel === undefined ? undefined : ((await fill(desktop.panel, ctx)) ?? undefined),
+  });
   return (
     <>
       {phone}
-      <DesktopShell
-        lang={lang}
-        preview={preview}
-        sidebar={
-          <DesktopSidebar
-            lang={lang}
-            preview={preview}
-            me={me}
-            active={patient}
-            current={tab === null ? null : PLACE[tab]}
-            nextVisit={followUps === null ? null : nextVisitOf(followUps.items)}
-            today={DHAKA_DAY.format(new Date())}
-          />
-        }
-        bar={nowBanner("bar")}
-        paper={
-          chooser ? <PatientChooser lang={lang} patients={me.patients} titleId="desktop-patient-chooser-title" /> : await fill(desktop.paper, ctx)
-        }
-        talk={chooser ? null : await fill(desktop.talk, ctx)}
-        panel={chooser || desktop.panel === undefined ? undefined : ((await fill(desktop.panel, ctx)) ?? undefined)}
-      />
+      {frame}
     </>
   );
 }

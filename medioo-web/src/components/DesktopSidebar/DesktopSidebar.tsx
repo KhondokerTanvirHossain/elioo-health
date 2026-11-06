@@ -8,7 +8,7 @@ import { ChipShape } from "@/components/StatusChip/StatusChip";
 import { UrgentMark } from "@/components/safety/UrgentMark/UrgentMark";
 import { Wordmark } from "@/components/Wordmark/Wordmark";
 import { href, reachable, servedByNext } from "@/routing/paths";
-import "./DesktopSidebar.css";
+import { DesktopSidebarStyles } from "./desk-load";
 
 /** Which ledger item, or the account row, the page is. */
 export type DesktopPlace = "talk" | "calendar" | "labs" | "meds" | "settings";
@@ -173,6 +173,7 @@ export function DesktopSidebar({
   const days = nextVisit === null ? null : daysUntil(today, nextVisit.due_date);
   return (
     <div className="desktop-sidebar">
+      <DesktopSidebarStyles />
       <div className="desktop-sidebar__brand">
         <Wordmark lang={lang} />
         <MioAvatar size={32} still />

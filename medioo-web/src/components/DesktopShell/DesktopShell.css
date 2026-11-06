@@ -102,6 +102,11 @@
 }
 
 @media (min-width: 900px) {
+  /* Today's phone shell, which a page rendering this one renders too (AppShell's `phone`), steps aside from here. The
+     rule lives with this shell, not in AppShell.css, so that it reaches only a page that renders this shell (DR-42). */
+  .app-shell--phone {
+    display: none;
+  }
   .desktop-shell {
     display: grid;
     grid-template-columns: minmax(0, 1fr);

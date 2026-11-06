@@ -3,6 +3,7 @@ import { requestContext } from "@/api/request";
 import { PaperGone } from "@/components/Paper/PaperShared";
 import { PaperSummary } from "@/components/Paper/PaperSummary";
 import { deskScreen, type DeskScreen } from "../../home/desk";
+import { desktopFrame } from "../../desktop-frame";
 import { signedInPage, type ShellContext } from "../../shell";
 import { bannerOnlyRefresh, heldMain, heldPart, keptMain, keptPart } from "./kept";
 import { paperRead } from "./paper-read";
@@ -38,7 +39,7 @@ export default async function PaperPage({
       tab: null,
       patient: held.patient,
       main: keptMain(held),
-      desktop: { paper: keptPart(held, "paper"), talk: keptPart(held, "talk"), panel: keptPart(held, "panel") },
+      desktop: { frame: desktopFrame, paper: keptPart(held, "paper"), talk: keptPart(held, "talk"), panel: keptPart(held, "panel") },
     });
   }
   const answer = await paperRead(id);
@@ -59,6 +60,7 @@ export default async function PaperPage({
     patient: who,
     main: heldMain(here, who, <PaperSummary paper={paper} lang={lang} preview={preview} words={paperWords(lang)} />),
     desktop: {
+      frame: desktopFrame,
       paper: async (ctx) => heldPart(here, who, "paper", (await desk(ctx)).paper),
       talk: async (ctx) => heldPart(here, who, "talk", (await desk(ctx)).talk),
       panel: async (ctx) => heldPart(here, who, "panel", (await desk(ctx)).panel),

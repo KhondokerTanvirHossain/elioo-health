@@ -162,10 +162,6 @@
 }
 
 @media (min-width: 900px) {
-  /* The page renders DesktopShell too (plan desktop-parity Task 5), which takes over from here. */
-  .app-shell--phone {
-    display: none;
-  }
   .app-shell__tabs {
     display: none;
   }

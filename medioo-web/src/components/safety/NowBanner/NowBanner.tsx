@@ -62,7 +62,9 @@ const OCTAGON = (
  * desktop.html `.ban.now`): the octagon, the patients' names first (the bar's title), then the same sentence, verbatim
  * (DR-45 unchanged), then the type and day of the newest NOW paper not yet seen, then `attn.open` to that paper (inside
  * the preview on a preview page), 999 only on `call_999`, and the same seen button. No Mio: the bar is one line. The
- * block (the default) is unchanged.
+ * block (the default) is unchanged. The bar's own stylesheet (NowBanner.desk.css) comes with the slot that holds it,
+ * DesktopShell's bar, through this folder's loader (desk-load.tsx): this module is on every signed-in page (the block),
+ * so it imports no loader itself, and a page that renders only the block never links the bar's (DR-42).
  */
 export function NowBanner({
   banner,

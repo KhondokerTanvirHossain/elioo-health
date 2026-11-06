@@ -6,7 +6,6 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { MeJson, MePatient } from "../src/api/types";
 import { t, type Lang } from "../src/copy";
-import { DesktopShell } from "../src/components/DesktopShell/DesktopShell";
 
 /*
  * The conversation's header laid out by a real browser (plan desktop-parity Task 7, review finding 1; Review Focus 4).
@@ -25,10 +24,16 @@ const ROOT = join(__dirname, "..");
 
 // `server-only` throws outside a React Server Components build, and the conversation's words are read on the server
 // (chat-words.ts). Here the markup is rendered in the test process, as vitest.config.mts aliases it for unit tests: the
-// module is stood in for before the conversation is first loaded (in mount, below), never in the app.
+// module is stood in for before the conversation and the shell are first loaded (in mount, below), never in the app.
 const load = createRequire(__filename);
 const serverOnly = load.resolve("server-only");
 load.cache[serverOnly] = { id: serverOnly, filename: serverOnly, loaded: true, exports: {} } as NodeJS.Module;
+// The conversation's islands and stylesheets come through next/dynamic loaders (desk-load.tsx, DR-42), which render
+// nothing outside Next's build until their chunk arrives. Here, as under Vitest, next/dynamic is the stand-in that
+// renders each loaded component itself (src/test/next-dynamic.ts), awaited before the markup is rendered (mount).
+const dynamicStandIn = load("../src/test/next-dynamic") as typeof import("../src/test/next-dynamic");
+const nextDynamic = load.resolve("next/dynamic");
+load.cache[nextDynamic] = { id: nextDynamic, filename: nextDynamic, loaded: true, exports: dynamicStandIn } as NodeJS.Module;
 const SRC = join(ROOT, "src");
 const font = (file: string) => `url(data:font/woff2;base64,${readFileSync(join(ROOT, "public", "fonts", file)).toString("base64")})`;
 function stylesheets(dir: string): string[] {
@@ -58,6 +63,7 @@ const LANGS: readonly Lang[] = ["bn", "en"];
 async function mount(page: Page, lang: Lang, width: number) {
   await page.setViewportSize({ width, height: 800 });
   const { Conversation } = load("../src/components/Conversation/Conversation") as typeof import("../src/components/Conversation/Conversation");
+  const { DesktopShell } = load("../src/components/DesktopShell/DesktopShell") as typeof import("../src/components/DesktopShell/DesktopShell");
   const talk = createElement(Conversation, {
     lang,
     preview: true,
@@ -66,6 +72,12 @@ async function mount(page: Page, lang: Lang, width: number) {
     selectedId: null,
     hrefFor: (id: string) => `/app/home?paper=${id}`,
   });
+  // The parts' desk modules, loaded here first: Playwright maps the @/ paths of a module required while the test runs,
+  // not of one a loader's import() reaches later, so the loaders then find them already loaded.
+  load("../src/components/DesktopShell/DesktopShell.desk");
+  load("../src/components/safety/NowBanner/NowBanner.desk");
+  load("../src/components/Conversation/Conversation.desk");
+  await dynamicStandIn.loadedDynamics();
   const shell = renderToStaticMarkup(createElement(DesktopShell, { lang, preview: true, sidebar: null, paper: null, talk }));
   await page.setContent(`<!doctype html><html lang="${lang}"><head><style>${CSS}</style></head><body>${shell}</body></html>`);
   await page.evaluate(() => document.fonts.ready);

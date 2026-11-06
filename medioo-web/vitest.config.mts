@@ -11,10 +11,13 @@ export default defineConfig({
   // tsconfig's @/* path, for the component tests that import @/copy and @/styles like the app does.
   // `server-only` throws outside a React Server Components build, which a unit test of a server module (src/api/java.ts)
   // is; the alias gives those tests an empty module. Next's own build resolves the real package.
+  // `next/dynamic` outside Next's build is test/next-dynamic.ts: a desktop part's loader (desk-load.tsx) renders the
+  // component itself, loaded before each file's tests by test/dynamic-setup.ts, so a test judges what it renders.
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
       "server-only": fileURLToPath(new URL("./src/test/empty-module.ts", import.meta.url)),
+      "next/dynamic": fileURLToPath(new URL("./src/test/next-dynamic.ts", import.meta.url)),
     },
   },
   // tsconfig says jsx "preserve" (Next compiles JSX itself); the tests need it compiled, with React's automatic runtime.
@@ -23,6 +26,7 @@ export default defineConfig({
   // environmentMatchGlobs, so the split is two projects over one include each (plan W2c). Unit tests live beside the
   // code; e2e/*.spec.ts belong to Playwright and are picked up by neither.
   test: {
+    setupFiles: ["./src/test/dynamic-setup.ts"],
     projects: [
       // e2e/support holds the pure rules the specs use (the DR-42 budget arithmetic), judged here without a browser.
       {
