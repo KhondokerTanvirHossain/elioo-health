@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { t, type CopyKey, type Lang } from "@/copy";
 import { RELOAD_SECONDS } from "@/api/reading-check";
 import { isReadingPaper, type PaperJson, type PaperReadingJson, type PaperResultJson, type PaperValueJson } from "@/api/types";
+import { webText } from "@/components/Conversation/web-text";
 import { DeletePaper } from "@/components/DeletePaper/DeletePaper";
 import { MessageBubble } from "@/components/MessageBubble/MessageBubble";
 import { PageImage } from "@/components/PageImage/PageImage";
@@ -18,13 +19,24 @@ import "./Paper.css";
 
 /**
  * Where the paper is drawn: `page`, today's paper page (`/app/documents/{id}`); `panel`, the desktop's details panel over
- * the conversation (plan desktop-parity Task 8, PaperPanel), which is the same content with four differences and no
- * other: no back link and no patient line in the head, whose title is not the screen's heading; no band on the card (the
- * card beside it and the NOW bar carry Java's sentence); every in-range value, not the first and a link to the rest; and
- * each anchor id prefixed `ids`, because the panel and today's page (below 900 px) are one document.
+ * the conversation (plan desktop-parity Task 8, PaperPanel), which is the same content with five differences and no
+ * other: no back link and no patient line in the head, whose title is not the screen's heading; on a NOW paper only, no
+ * band on the card (the NOW bar and the card the panel covers carry Java's sentence; a this_week paper has no bar, so
+ * its band stays: panelBand); the released wording without its link lines (webText, Java's web_body rule, as the
+ * conversation's card shows it); every in-range value, not the first and a link to the rest; and each anchor id
+ * prefixed `ids`, because the panel and today's page (below 900 px) are one document.
  */
 type Frame = "page" | "panel";
 type Ctx = { lang: Lang; preview: boolean; words: PaperWords; frame: Frame; ids: string };
+
+/**
+ * Whether the panel draws the paper's urgency band: always, except on a NOW paper, whose sentence the NOW bar carries
+ * (P19: the warning is in the bar and on that paper's card, nowhere else). A this_week paper has no bar, and the panel
+ * lies over its card, so without the band its sentence and calendar would be nowhere on the screen.
+ */
+export function panelBand(paper: PaperResultJson): boolean {
+  return paper.banner?.level !== "now";
+}
 
 /** The anchor id prefix of the panel's parts. */
 const PANEL_IDS = "panel-";
@@ -84,13 +96,14 @@ function Head({ paper, ctx, title, meta }: { paper: PaperJson; ctx: Ctx; title: 
 }
 
 /** Medioo's released words, labelled as such (F3); "a person is checking" only for PENDING; withheld says so. */
-function GateLine({ paper, lang }: { paper: PaperResultJson; lang: Lang }) {
+function GateLine({ paper, lang, frame }: { paper: PaperResultJson; lang: Lang; frame: Frame }) {
   if (paper.gate === "RELEASED" && paper.wording) {
+    const wording = frame === "panel" ? webText(paper.wording) : paper.wording;
     return (
       <section className="paper__says" aria-label={t(lang, "result.says.label")} data-gate="RELEASED" data-safety="gate">
         <p className="paper__says-label">{t(lang, "result.says.label")}</p>
         <MessageBubble surface="recv" tail>
-          <span data-wording>{paper.wording}</span>
+          <span data-wording>{wording}</span>
         </MessageBubble>
         <p className="paper__note">{t(lang, "result.says.note")}</p>
       </section>
@@ -128,7 +141,7 @@ function Result({ paper, ctx }: { paper: PaperResultJson; ctx: Ctx }) {
   return (
     <>
       <Head paper={paper} ctx={ctx} title={typeText(lang, paper.document_type)} meta={metaLine(lang, paper.date, paper.date_is_upload_day, paper.facility)} />
-      <VerdictCard paper={paper} lang={lang} wording={false} band={!panel} />
+      <VerdictCard paper={paper} lang={lang} wording={false} band={!panel || panelBand(paper)} />
       {paper.filed && <p className="paper__meta">{t(lang, "result.filed")}</p>}
       {paper.now && (
         <NowBlock
@@ -144,7 +157,7 @@ function Result({ paper, ctx }: { paper: PaperResultJson; ctx: Ctx }) {
           }}
         />
       )}
-      <GateLine paper={paper} lang={lang} />
+      <GateLine paper={paper} lang={lang} frame={ctx.frame} />
       {missing > 0 && (
         <p className="paper__note" data-safety="unverified">
           {t(lang, "value.unverified")}

@@ -6,7 +6,7 @@ import { isReadingPaper, type PaperJson, type PaperResultJson } from "@/api/type
 import { t, type CopyKey } from "@/copy";
 import { paperWords } from "@/app/app/(signed-in)/documents/[id]/paper-words";
 import { PaperSummary } from "@/components/Paper/PaperSummary";
-import { CARD_CARRIES, PaperPanel } from "./PaperPanel";
+import { PaperPanel } from "./PaperPanel";
 
 /*
  * A paper's details over the desktop conversation (plan desktop-parity Task 8; ruling P19: `desk.panel.open` opens a side
@@ -65,25 +65,75 @@ describe("PaperPanel", () => {
   it("panelCarriesEverySafetyBlockThePaperPageCarries", () => {
     let blocks = 0;
     let carried = 0;
+    let weekBandsCompared = 0;
     for (const { file, paper } of PAPERS) {
       const today = safetyOf(page(paper));
       cleanup();
       const shown = safetyOf(panel(paper));
       cleanup();
-      // The urgency band (Java's sentence) is the one block the panel leaves to the card beside it and the NOW bar
-      // (P19: the warning appears in the bar and on that paper's card, and nowhere else on the screen).
-      const expected = today.filter((name) => !CARD_CARRIES.includes(name));
+      // The urgency band (Java's sentence) is left to the card and the NOW bar only on a NOW paper (P19: the warning
+      // appears in the bar and on that paper's card, and nowhere else on the screen). Keyed on the fixture's own level,
+      // never on a list: a this_week paper has no bar, so its band is compared like every other block.
+      const level = isReadingPaper(paper) ? null : (paper.banner?.level ?? null);
+      const expected = level === "now" ? today.filter((name) => name !== "band") : today;
       carried += today.length - expected.length;
+      if (level === "this_week" && today.includes("band") && shown.includes("band")) weekBandsCompared++;
       expect(difference(expected, shown), `${file}: blocks today's page has and the panel dropped`).toEqual([]);
       expect(difference(shown, expected), `${file}: blocks the panel has and today's page does not`).toEqual([]);
       blocks += expected.length;
     }
-    // Not vacuous: the page has safety blocks to compare, and the band the card carries was really on some page.
+    // Not vacuous: the page has safety blocks to compare, the band the card carries was really on some NOW page, and a
+    // this_week band was compared, not carried.
     expect(PAPERS.length, "paper fixtures walked").toBeGreaterThan(10);
     expect(blocks, "safety blocks compared").toBeGreaterThan(20);
-    expect(carried, "bands left to the card").toBeGreaterThan(0);
+    expect(carried, "NOW bands left to the card and the bar").toBeGreaterThan(0);
+    expect(weekBandsCompared, "this_week bands compared on the page and in the panel").toBeGreaterThan(0);
     const now = safetyOf(page(byFile("now-bd.json")));
     for (const name of ["now-block", "call-999", "not-a-doctor", "band"]) expect(now, `now-bd.json carries ${name}`).toContain(name);
+  });
+
+  it("aThisWeekPaperKeepsItsBandInThePanelAndANowPaperLeavesItToTheBar", () => {
+    // A this_week paper has no NOW bar, and the panel covers its card: the panel is the one place on the screen its
+    // sentence and calendar can be. A NOW paper's sentence is in the bar and on the card, so the panel leaves it out.
+    let week = 0;
+    for (const { file, paper } of PAPERS) {
+      if (isReadingPaper(paper) || paper.banner?.level !== "this_week") continue;
+      week++;
+      const sentence = t("bn", paper.banner.line_key as CopyKey);
+      const band = panel(paper).querySelector("[data-safety=band]");
+      expect(band, `${file}: the panel has the this_week band`).not.toBeNull();
+      expect(band!.textContent, `${file}: Java's sentence in the band`).toBe(sentence);
+      expect(band!.querySelector("svg"), `${file}: the calendar shape, not colour alone`).not.toBeNull();
+      cleanup();
+    }
+    expect(week, "this_week fixtures walked").toBeGreaterThanOrEqual(3);
+    let now = 0;
+    for (const { file, paper } of PAPERS) {
+      if (isReadingPaper(paper) || paper.banner?.level !== "now") continue;
+      now++;
+      expect(panel(paper).querySelector("[data-safety=band]"), `${file}: a NOW paper's band is the bar's and the card's`).toBeNull();
+      cleanup();
+    }
+    expect(now, "NOW fixtures walked").toBeGreaterThanOrEqual(3);
+  });
+
+  it("noRawLinkIsShownInThePanel", () => {
+    // Java's released wording is its WhatsApp text, with the timeline link line: the panel shows it as the conversation's
+    // card does (webText, Java's web_body rule), so the desktop screen shows no raw link anywhere.
+    let linked = 0;
+    for (const { file, paper } of PAPERS) {
+      const el = panel(paper);
+      const text = el.textContent ?? "";
+      expect(/https?:\/\/\S*/.exec(text)?.[0] ?? null, `${file}: a raw link is shown in the panel`).toBeNull();
+      if (!isReadingPaper(paper) && paper.gate === "RELEASED" && paper.wording) {
+        const lines = paper.wording.split("\n");
+        if (lines.some((l) => /https?:\/\//.test(l))) linked++;
+        const kept = lines.filter((l) => !l.includes("http://") && !l.includes("https://"));
+        expect(el.querySelector("[data-wording]")!.textContent, `${file}: every other line of the wording stays`).toBe(kept.join("\n"));
+      }
+      cleanup();
+    }
+    expect(linked, "fixtures whose released wording holds a link line").toBeGreaterThan(0);
   });
 
   it("theBandIsLeftOnlyToTheCard", () => {
