@@ -64,7 +64,9 @@ async function open(page: Page, scenario: string, path = "/app/home") {
 }
 
 // The banner's alert, not Next's own route announcer (a role="alert" region the App Router adds to every page).
-const alert = (page: Page) => page.locator('section[role="alert"]');
+// The banner the family can see: on a preview page (the desktop layout, plan desktop-parity Task 8) both shells are in the
+// document, the phone's below 900 px and the desktop's NOW bar from 900 px, and the hidden one is not exposed to anyone.
+const alert = (page: Page) => page.locator('section[role="alert"]:visible');
 /** Every tel: link on the page, by its href, so a failure names the number it offered. */
 const telLinks = (page: Page) => page.locator('a[href^="tel:"]').evaluateAll((as) => as.map((a) => a.getAttribute("href")));
 const seenButton = (page: Page) => alert(page).getByRole("button", { name: t("bn", "now.banner.seen") });
@@ -220,7 +222,11 @@ test.describe("the NOW banner", () => {
     // A NOW paper arrives: stub Java's banner now answers one.
     const base = new URL(page.url());
     await page.context().addCookies([{ name: "e2e_scenario", value: "chat-preview-now", domain: base.hostname, path: "/app" }]);
-    await page.locator("a.tab-bar__link:visible", { hasText: t("bn", "tab.chat") }).first().click();
+    // The chat tab below 900 px; from 900 px the sidebar's talk-and-papers link (the desktop layout on a preview page).
+    const chatLink = page
+      .locator("a.tab-bar__link:visible", { hasText: t("bn", "tab.chat") })
+      .or(page.locator(".desktop-sidebar a:visible", { hasText: t("bn", "desk.nav.talk") }));
+    await chatLink.first().click();
     await page.waitForURL((url) => url.pathname === "/app/preview/home" && url.search === "");
     await expect(alert(page)).toHaveCount(1);
     expect(await page.evaluate(() => (window as unknown as { __noHardLoad?: number }).__noHardLoad), "no hard load").toBe(1);

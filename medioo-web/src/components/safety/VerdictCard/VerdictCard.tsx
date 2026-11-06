@@ -64,7 +64,7 @@ export function threadRows(values: PaperValueJson[]): PaperValueJson[] {
 /** The band: the level's shape and its sentence, never colour alone. */
 function Band({ level, line }: { level: BannerLevel; line: string }) {
   return (
-    <p className="verdict-card__band">
+    <p className="verdict-card__band" data-safety="band">
       <svg className="verdict-card__shape" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         {BAND_SHAPE[level]}
       </svg>
@@ -100,6 +100,14 @@ function Band({ level, line }: { level: BannerLevel; line: string }) {
  * safety line: `sub`, the paper's type, day and lab under the title (before the not-a-doctor line and 999, which still
  * come before any row); `selected`, the outline of the card whose paper the viewer shows; and `more`, the link to every
  * detail of the paper (`desk.panel.open`) at the card's foot. A card without them is exactly today's.
+ *
+ * `band` false (the desktop's details panel, plan desktop-parity Task 8) leaves out the band alone: the panel lies over the
+ * conversation beside that paper's card, which carries the band, and the NOW bar carries the sentence too (P19: the
+ * warning is in the bar and on the card, nowhere else on the screen). Every other line stays, the not-a-doctor line and
+ * the 999 link among them, so a panel covering the card never hides the call.
+ *
+ * Every safety line is marked `data-safety` with what it is, so a surface built from this card (the panel) is checked
+ * against today's paper page block for block (PaperPanel.test.tsx).
  */
 export function VerdictCard({
   paper,
@@ -110,6 +118,7 @@ export function VerdictCard({
   sub,
   selected,
   more,
+  band: withBand = true,
 }: {
   paper: PaperJson;
   lang: Lang;
@@ -119,6 +128,7 @@ export function VerdictCard({
   sub?: string | null;
   selected?: boolean;
   more?: { href: string; label: string };
+  band?: boolean;
 }) {
   const banner = paper.banner ?? null;
   const className = ["verdict-card"];
@@ -133,7 +143,7 @@ export function VerdictCard({
   const values = link !== undefined && banner && paper.values ? threadRows(paper.values) : [];
   const card = (
     <article className={className.join(" ")}>
-      {banner && <Band level={banner.level} line={t(lang, banner.line_key)} />}
+      {banner && withBand && <Band level={banner.level} line={t(lang, banner.line_key)} />}
       <div className="verdict-card__meta">
         <p className="verdict-card__title">
           {link === undefined ? (
@@ -145,13 +155,21 @@ export function VerdictCard({
           )}
         </p>
         {sub && <p className="verdict-card__sub">{sub}</p>}
-        {now && <p className="verdict-card__notdoctor">{t(lang, now.notdoctor_key)}</p>}
+        {now && (
+          <p className="verdict-card__notdoctor" data-safety="not-a-doctor">
+            {t(lang, now.notdoctor_key)}
+          </p>
+        )}
         {now?.call_999 === true && (
-          <a className="verdict-card__call" href="tel:999">
+          <a className="verdict-card__call" href="tel:999" data-safety="call-999">
             {t(lang, "now.call999")}
           </a>
         )}
-        {paper.retake && <p className="verdict-card__reason">{t(lang, paper.retake.reason_key)}</p>}
+        {paper.retake && (
+          <p className="verdict-card__reason" data-safety="retake-reason">
+            {t(lang, paper.retake.reason_key)}
+          </p>
+        )}
         {values.length > 0 && (
           <ul className="verdict-card__values">
             {values.map((v, k) => (
@@ -173,7 +191,11 @@ export function VerdictCard({
             ))}
           </ul>
         )}
-        {pending !== null && <p className="verdict-card__pending">{t(lang, "result.gate.pending", pending)}</p>}
+        {pending !== null && (
+          <p className="verdict-card__pending" data-safety="gate-pending">
+            {t(lang, "result.gate.pending", pending)}
+          </p>
+        )}
         {wording && <p className="verdict-card__wording">{wording}</p>}
       </div>
       {more && (
@@ -206,7 +228,11 @@ export function UrgencyCard({ level, lang, children }: { level: string; lang: La
       {known && <Band level={known} line={t(lang, LEVEL_LINE[known])} />}
       <div className="verdict-card__meta">
         {children}
-        {known === "now" && <p className="verdict-card__notdoctor">{t(lang, "now.notdoctor")}</p>}
+        {known === "now" && (
+          <p className="verdict-card__notdoctor" data-safety="not-a-doctor">
+            {t(lang, "now.notdoctor")}
+          </p>
+        )}
       </div>
     </article>
   );

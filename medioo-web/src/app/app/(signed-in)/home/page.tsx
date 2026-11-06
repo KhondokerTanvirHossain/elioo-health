@@ -11,6 +11,7 @@ import { mergeAsks } from "@/components/Thread/merge";
 import { href } from "@/routing/paths";
 import { signedInPage, type ShellContext } from "../shell";
 import { composerNoJs, composerWords } from "./chat-words";
+import { deskScreen, type DeskScreen } from "./desk";
 import { OpenAtNewest } from "./OpenAtNewest";
 import "./home.css";
 
@@ -51,11 +52,21 @@ function greeting(lang: Lang, me: MeJson) {
  * The composer is docked at the foot of the window (home.css) and the page opens on the newest exchange (OpenAtNewest),
  * except while a NOW result is on the page (the banner, or a NOW card in the stack): then it opens at the top, so the
  * NOW result is read first and never scrolled away by the page itself. Mio does not move while the banner is shown.
+ *
+ * On the desktop layout (plan desktop-parity Task 8; desktop.html `app`) the page also gives the shell the
+ * talk-and-papers screen (deskScreen): `?paper=` the paper in the viewer, the newest when none, its card outlined in the
+ * conversation, and `panel=1` its details over the conversation. Below 900 px, and for every request the gate keeps on
+ * today's layout, the page is the chat above, unchanged.
  */
-export default async function HomePage() {
+export default async function HomePage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const { here } = await requestContext();
+  const query = await searchParams;
+  const one = (v: string | string[] | undefined) => (typeof v === "string" && v !== "" ? v : null);
   // main and aside read the same two paths; javaGet's cache() makes that one read each.
   const load = (patient: MePatient) => reads(patient, here);
+  // The desktop's three columns are one screen, built once.
+  let screen: Promise<DeskScreen> | undefined;
+  const desk = (ctx: ShellContext) => (screen ??= deskScreen(ctx, here, { paperId: one(query.paper), panel: one(query.panel) === "1" }));
 
   const stack = (ctx: ShellContext, where: "inline" | "aside", attention: AttentionJson, patient: MePatient) => (
     <div className={`chat__stack chat__stack--${where}`}>
@@ -123,6 +134,11 @@ export default async function HomePage() {
       const { attention } = await load(ctx.patient);
       // No stack, no conversation column: the thread keeps the width.
       return attention.items.length === 0 ? undefined : stack(ctx, "aside", attention, ctx.patient);
+    },
+    desktop: {
+      paper: async (ctx) => (await desk(ctx)).paper,
+      talk: async (ctx) => (await desk(ctx)).talk,
+      panel: async (ctx) => (await desk(ctx)).panel,
     },
   });
 }

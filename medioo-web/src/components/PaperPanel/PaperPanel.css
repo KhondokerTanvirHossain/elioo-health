@@ -1,0 +1,47 @@
+/* A paper's details over the desktop conversation (PaperPanel.tsx; DesktopShell's .desktop-shell__panel holds it over
+   the conversation column, which scrolls it). The close sits in a bar that stays at the top while the paper scrolls, as
+   the conversation's own header does; the paper below keeps today's page styles (Paper.css), at the column's width. */
+.paper-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  background: var(--bg);
+}
+.paper-panel__bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 56px;
+  padding: var(--space-1) var(--space-3);
+  border-bottom: 0.5px solid var(--sep);
+  background: var(--bg);
+}
+.paper-panel__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--target-min);
+  min-height: var(--target-min);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--tint-ink);
+  font-family: var(--font-bn);
+  font-size: var(--text-md);
+  font-weight: 600;
+  text-decoration: none;
+}
+.paper-panel__close:hover {
+  background: var(--hover);
+}
+.paper-panel__close:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+.paper-panel__body {
+  min-width: 0;
+  padding: 0 var(--space-4);
+}

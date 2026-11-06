@@ -524,9 +524,11 @@ export const SCENARIOS = {
     "GET /app/api/patients/{id}/thread": "thread/now.json",
   }),
   // A preview family (BAYMAX_WEB_PREVIEW_FAMILIES) on /app/preview/home, before and after a NOW paper arrived.
-  "chat-preview": chat({ "GET /app/api/me": "me/preview-on.json" }),
+  // On the desktop layout (a preview page, plan desktop-parity Task 8) the sidebar reads the patient's follow-ups.
+  "chat-preview": chat({ "GET /app/api/me": "me/preview-on.json", "GET /app/api/patients/{id}/follow-ups": "follow-ups/none.json" }),
   "chat-preview-now": chat({
     "GET /app/api/me": "me/preview-on.json",
+    "GET /app/api/patients/{id}/follow-ups": "follow-ups/none.json",
     "GET /app/api/now-banner": bannerFor("now-banner/one.json", "me/preview-on.json"),
   }),
   // The composer asks (plan CHAT-web): what Java answers a question, each a body AskApiContractTest wrote. A model

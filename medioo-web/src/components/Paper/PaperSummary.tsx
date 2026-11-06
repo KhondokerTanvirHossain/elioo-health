@@ -16,7 +16,18 @@ import { metaLine, patientLine, typeText } from "./paper-text";
 import { drawsRowsAbove, valueGroups } from "./rows";
 import "./Paper.css";
 
-type Ctx = { lang: Lang; preview: boolean; words: PaperWords };
+/**
+ * Where the paper is drawn: `page`, today's paper page (`/app/documents/{id}`); `panel`, the desktop's details panel over
+ * the conversation (plan desktop-parity Task 8, PaperPanel), which is the same content with four differences and no
+ * other: no back link and no patient line in the head, whose title is not the screen's heading; no band on the card (the
+ * card beside it and the NOW bar carry Java's sentence); every in-range value, not the first and a link to the rest; and
+ * each anchor id prefixed `ids`, because the panel and today's page (below 900 px) are one document.
+ */
+type Frame = "page" | "panel";
+type Ctx = { lang: Lang; preview: boolean; words: PaperWords; frame: Frame; ids: string };
+
+/** The anchor id prefix of the panel's parts. */
+const PANEL_IDS = "panel-";
 
 /** This patient's papers (Java's papers page until F8). */
 function papersHref(patientId: string, preview: boolean): string {
@@ -33,9 +44,9 @@ function PageLinks({ paper, ctx, label }: { paper: PaperResultJson | PaperReadin
   );
 }
 
-function Group({ id, title, why, children }: { id: string; title: string; why?: string; children: ReactNode }) {
+function Group({ id, title, why, children, safety }: { id: string; title: string; why?: string; children: ReactNode; safety?: string }) {
   return (
-    <section id={id} className="paper__group">
+    <section id={id} className="paper__group" data-safety={safety} data-panel-part={id.replace(PANEL_IDS, "")}>
       <h2 className="paper__heading">{title}</h2>
       {why !== undefined && <p className="paper__why">{why}</p>}
       {children}
@@ -44,11 +55,22 @@ function Group({ id, title, why, children }: { id: string; title: string; why?: 
 }
 
 const rows = (values: PaperValueJson[], paper: PaperResultJson, ctx: Ctx, from: From) => (
-  <ValueRows values={values} documentId={paper.id} lang={ctx.lang} preview={ctx.preview} from={from} />
+  <ValueRows values={values} documentId={paper.id} lang={ctx.lang} preview={ctx.preview} from={from} idPrefix={ctx.ids} />
 );
 
-/** The head every paper page shares: back to this patient's papers, whose paper it is, its title and its meta line. */
+/**
+ * The head every paper page shares: back to this patient's papers, whose paper it is, its title and its meta line. In
+ * the panel, the title and the meta line only, under the screen's own heading.
+ */
 function Head({ paper, ctx, title, meta }: { paper: PaperJson; ctx: Ctx; title: string; meta?: string }) {
+  if (ctx.frame === "panel") {
+    return (
+      <header className="paper__head paper__head--panel">
+        <h2 className="paper__title">{title}</h2>
+        {meta !== undefined && <p className="paper__meta">{meta}</p>}
+      </header>
+    );
+  }
   return (
     <header className="paper__head">
       <a className="paper__back" href={papersHref(paper.patient.id, ctx.preview)}>
@@ -65,7 +87,7 @@ function Head({ paper, ctx, title, meta }: { paper: PaperJson; ctx: Ctx; title: 
 function GateLine({ paper, lang }: { paper: PaperResultJson; lang: Lang }) {
   if (paper.gate === "RELEASED" && paper.wording) {
     return (
-      <section className="paper__says" aria-label={t(lang, "result.says.label")} data-gate="RELEASED">
+      <section className="paper__says" aria-label={t(lang, "result.says.label")} data-gate="RELEASED" data-safety="gate">
         <p className="paper__says-label">{t(lang, "result.says.label")}</p>
         <MessageBubble surface="recv" tail>
           <span data-wording>{paper.wording}</span>
@@ -76,7 +98,7 @@ function GateLine({ paper, lang }: { paper: PaperResultJson; lang: Lang }) {
   }
   if (paper.gate === "PENDING") {
     return (
-      <section className="paper__gate" data-gate="PENDING">
+      <section className="paper__gate" data-gate="PENDING" data-safety="gate">
         <span className="paper__review">{t(lang, "result.review.chip")}</span>
         <p className="paper__line">{t(lang, "result.gate.pending", paper.review_hours ?? 0)}</p>
       </section>
@@ -84,7 +106,7 @@ function GateLine({ paper, lang }: { paper: PaperResultJson; lang: Lang }) {
   }
   if (paper.gate === "REJECTED" || paper.gate === "FAILED_SAFETY") {
     return (
-      <section className="paper__gate" data-gate={paper.gate}>
+      <section className="paper__gate" data-gate={paper.gate} data-safety="gate">
         <p className="paper__line">{t(lang, "result.gate.withheld")}</p>
       </section>
     );
@@ -101,10 +123,12 @@ function Result({ paper, ctx }: { paper: PaperResultJson; ctx: Ctx }) {
   const bring = paper.banner !== null;
   const followMissing = unverified(paper, "follow_up");
   const chat = "/app/home";
+  const ids = ctx.ids;
+  const panel = ctx.frame === "panel";
   return (
     <>
       <Head paper={paper} ctx={ctx} title={typeText(lang, paper.document_type)} meta={metaLine(lang, paper.date, paper.date_is_upload_day, paper.facility)} />
-      <VerdictCard paper={paper} lang={lang} wording={false} />
+      <VerdictCard paper={paper} lang={lang} wording={false} band={!panel} />
       {paper.filed && <p className="paper__meta">{t(lang, "result.filed")}</p>}
       {paper.now && (
         <NowBlock
@@ -112,26 +136,34 @@ function Result({ paper, ctx }: { paper: PaperResultJson; ctx: Ctx }) {
           now={paper.now}
           lang={lang}
           proof={{
-            row: (v) => <ValueRow value={v} documentId={paper.id} lang={lang} preview={preview} from="summary" />,
+            row: (v) => <ValueRow value={v} documentId={paper.id} lang={lang} preview={preview} from="summary" idPrefix={ids} />,
             followUp: (f) => <FollowUpQuote line={f} documentId={paper.id} lang={lang} />,
             quote: (l) => <PaperQuote text={l.text} crop={l.crop} documentId={paper.id} lang={lang} />,
             pages: <PageLinks paper={paper} ctx={ctx} label={(n) => t(lang, "now.page", n)} />,
-            outsideHref: g.outside.length > 0 ? "#outside" : null,
+            outsideHref: g.outside.length > 0 ? `#${ids}outside` : null,
           }}
         />
       )}
       <GateLine paper={paper} lang={lang} />
-      {missing > 0 && <p className="paper__note">{t(lang, "value.unverified")}</p>}
-      {g.outside.length > 0 && <Group id="outside" title={t(lang, "value.group.outside")}>{rows(g.outside, paper, ctx, "summary")}</Group>}
+      {missing > 0 && (
+        <p className="paper__note" data-safety="unverified">
+          {t(lang, "value.unverified")}
+        </p>
+      )}
+      {g.outside.length > 0 && (
+        <Group id={`${ids}outside`} title={t(lang, "value.group.outside")} safety="outside">
+          {rows(g.outside, paper, ctx, "summary")}
+        </Group>
+      )}
       {g.unknown.length > 0 && (
-        <Group id="unknown" title={t(lang, "value.group.unknown")} why={t(lang, "value.group.unknown.why")}>
+        <Group id={`${ids}unknown`} title={t(lang, "value.group.unknown")} why={t(lang, "value.group.unknown.why")} safety="unknown">
           {rows(g.unknown, paper, ctx, "summary")}
         </Group>
       )}
       {g.inside.length > 0 && (
-        <Group id="inside" title={t(lang, "value.group.inside")}>
-          {rows(g.inside.slice(0, 1), paper, ctx, "summary")}
-          {g.inside.length > 1 && (
+        <Group id={`${ids}inside`} title={t(lang, "value.group.inside")}>
+          {rows(panel ? g.inside : g.inside.slice(0, 1), paper, ctx, "summary")}
+          {!panel && g.inside.length > 1 && (
             <Link className="paper__more" href={paperHref(paper.id, preview, "/all") + "#values"} prefetch={false}>
               {t(lang, "value.more.inside", g.inside.length - 1)}
             </Link>
@@ -139,23 +171,31 @@ function Result({ paper, ctx }: { paper: PaperResultJson; ctx: Ctx }) {
         </Group>
       )}
       {Object.keys(paper.doctor).length > 0 && (
-        <section id="doctor" className="paper__group">
+        <section id={`${ids}doctor`} className="paper__group" data-panel-part="doctor">
           <h2 className="paper__heading">{t(lang, "doctor.title")}</h2>
           <DoctorLines paper={paper} ctx={ctx} />
         </section>
       )}
       <Medicines paper={paper} ctx={ctx} />
       {(bring || paper.follow_up.length > 0 || followMissing > 0) && (
-        <section id="next" className="paper__group">
+        <section id={`${ids}next`} className="paper__group" data-panel-part="next">
           <h2 className="paper__heading">{t(lang, "next.title")}</h2>
-          {bring && <p className="paper__line">{t(lang, "next.bring")}</p>}
+          {bring && (
+            <p className="paper__line" data-safety="bring">
+              {t(lang, "next.bring")}
+            </p>
+          )}
           {paper.follow_up.map((f, i) => (
             <FollowUpQuote key={i} line={f} documentId={paper.id} lang={lang} />
           ))}
-          {followMissing > 0 && <p className="paper__note">{t(lang, "next.unverified", followMissing)}</p>}
+          {followMissing > 0 && (
+            <p className="paper__note" data-safety="unverified">
+              {t(lang, "next.unverified", followMissing)}
+            </p>
+          )}
         </section>
       )}
-      <section id="pages" className="paper__group">
+      <section id={`${ids}pages`} className="paper__group" data-panel-part="pages">
         <h2 className="paper__heading">{t(lang, "doc.pages")}</h2>
         <PageLinks paper={paper} ctx={ctx} />
       </section>
@@ -190,9 +230,11 @@ function Retake({ paper, ctx }: { paper: PaperResultJson; ctx: Ctx }) {
   return (
     <>
       <Head paper={paper} ctx={ctx} title={t(lang, third ? "retake.title.third" : "retake.title")} meta={meta} />
-      <section id="retake" className="paper__card">
+      <section id={`${ctx.ids}retake`} className="paper__card">
         <p className="paper__lead">{t(lang, "retake.head")}</p>
-        <p className="paper__line">{t(lang, retake.reason_key)}</p>
+        <p className="paper__line" data-safety="retake-reason">
+          {t(lang, retake.reason_key)}
+        </p>
         <PageLinks paper={paper} ctx={ctx} label={(n) => t(lang, "retake.photo", n)} />
         {third ? (
           <p className="paper__line">{t(lang, "retake.third.p")}</p>
@@ -242,7 +284,7 @@ function Failed({ paper, ctx }: { paper: PaperResultJson; ctx: Ctx }) {
   return (
     <>
       <Head paper={paper} ctx={ctx} title={t(lang, "failed.title")} />
-      <section id="failed" className="paper__card">
+      <section id={`${ctx.ids}failed`} className="paper__card">
         <p className="paper__line">{t(lang, "failed.p")}</p>
         {paper.owner ? (
           <a className="paper__action" href={again} data-primary="">
@@ -269,9 +311,13 @@ function Reading({ paper, ctx }: { paper: PaperReadingJson; ctx: Ctx }) {
   const { lang, preview } = ctx;
   const received = paper.status === "RECEIVED";
   return (
-    <section id="progress" className="paper__card" data-status={paper.status}>
-      <p className="paper__patient">{patientLine(lang, paper.patient)}</p>
-      <h1 className="paper__title">{t(lang, "progress.title")}</h1>
+    <section id={`${ctx.ids}progress`} className="paper__card" data-status={paper.status}>
+      {ctx.frame === "page" && <p className="paper__patient">{patientLine(lang, paper.patient)}</p>}
+      {ctx.frame === "page" ? (
+        <h1 className="paper__title">{t(lang, "progress.title")}</h1>
+      ) : (
+        <h2 className="paper__title">{t(lang, "progress.title")}</h2>
+      )}
       <p className="paper__meta">{t(lang, "progress.sent", paper.page_count)}</p>
       <ol className="paper__steps" aria-live="polite">
         <li className={received ? "paper__step paper__step--current" : "paper__step paper__step--done"} aria-current={received ? "step" : undefined}>
@@ -301,16 +347,32 @@ function Reading({ paper, ctx }: { paper: PaperReadingJson; ctx: Ctx }) {
  * One paper's page (plan W6), from GET /app/api/documents/{id} and nothing else, by the status Java sent: the result
  * (DONE), the retake card (NEEDS_RETAKE), the failed page (FAILED), or the reading page (RECEIVED, PROCESSING).
  * Delete and every upload entry only for the owner; a share member is told why.
+ *
+ * `frame` "panel" is the same paper in the desktop's details panel (Frame, above; PaperPanel). The panel runs no reading
+ * check of its own: the viewer beside it does (PaperViewer), and one check per paper is one status read at a time.
+ * Every safety line is marked `data-safety` with what it is, so the panel is held to this page block for block.
  */
-export function PaperSummary({ paper, lang, preview, words }: { paper: PaperJson; lang: Lang; preview: boolean; words: PaperWords }) {
-  const ctx: Ctx = { lang, preview, words };
+export function PaperSummary({
+  paper,
+  lang,
+  preview,
+  words,
+  frame = "page",
+}: {
+  paper: PaperJson;
+  lang: Lang;
+  preview: boolean;
+  words: PaperWords;
+  frame?: Frame;
+}) {
+  const ctx: Ctx = { lang, preview, words, frame, ids: frame === "panel" ? PANEL_IDS : "" };
   // The reading check comes first on every status, so the refresh that swaps the reading page for the result keeps its
   // instance, and what its live region said (ReadingProgress).
   const reading = isReadingPaper(paper);
   const check = reading ? { documentId: paper.id, again: paperHref(paper.id, preview), words: words.reading } : null;
   return (
-    <article className="paper" data-status={reading ? undefined : paper.status}>
-      <ReadingProgress check={check} />
+    <article className="paper" data-status={reading ? undefined : paper.status} data-paper={paper.id}>
+      {frame === "page" && <ReadingProgress check={check} />}
       {reading ? (
         <Reading paper={paper} ctx={ctx} />
       ) : paper.status === "NEEDS_RETAKE" && paper.retake ? (

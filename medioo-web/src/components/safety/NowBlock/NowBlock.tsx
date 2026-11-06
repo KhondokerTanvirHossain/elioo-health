@@ -70,10 +70,10 @@ export function NowBlock({ paper, now, lang, proof }: { paper: PaperResultJson; 
     ? `https://wa.me/?text=${encodeURIComponent(t(lang, "now.remote.share.text", paper.patient.name))}`
     : null;
   return (
-    <section className="now-block" aria-label={t(lang, "result.banner.label")} data-now-block>
+    <section className="now-block" aria-label={t(lang, "result.banner.label")} data-now-block data-safety="now-block">
       {blocks}
       {share !== null && (
-        <div className="now-block__remote">
+        <div className="now-block__remote" data-safety="remote-share">
           <p className="now-block__lead">{t(lang, "now.remote.lead", paper.patient.name)}</p>
           <a className="now-block__share" href={share} rel="noopener">
             {t(lang, "now.remote.share")}
@@ -82,12 +82,16 @@ export function NowBlock({ paper, now, lang, proof }: { paper: PaperResultJson; 
           <p className="now-block__small">{t(lang, "now.remote.999")}</p>
         </div>
       )}
-      <div className="now-block__flags">
+      <div className="now-block__flags" data-safety="red-flags">
         <p className="now-block__lead">{t(lang, "now.flags.q")}</p>
         <p className="now-block__line">{t(lang, now.flags_go_key)}</p>
       </div>
-      <p className="now-block__line">{t(lang, now.bring_key)}</p>
-      <p className="now-block__notdoctor">{t(lang, now.notdoctor_key)}</p>
+      <p className="now-block__line" data-safety="now-bring">
+        {t(lang, now.bring_key)}
+      </p>
+      <p className="now-block__notdoctor" data-safety="not-a-doctor">
+        {t(lang, now.notdoctor_key)}
+      </p>
     </section>
   );
 }

@@ -70,6 +70,8 @@ function askedPatient(here: string): string | null {
  *   from 900 px, and today's AppShell, marked `phone`, below it, so nothing below 900 px changes. Every other request,
  *   and every page that gives no `desktop`, renders today's AppShell alone, exactly as before. With the chooser in
  *   place of `main`, the paper column holds the chooser and the conversation is empty: the sidebar names nobody.
+ *   `desktop.panel` (Task 8) is a paper's details over the conversation, when the page has one open (undefined: none).
+ *   The NOW banner is the slim bar there (NowBanner variant "bar", across the content columns), the block below 900 px.
  * `everyone` and `asked` are amendments of the plan's Global Constraint "a screen never decides a patient", approved by
  * the PO 2026-10-23 (P2). `patient` (W6) is a third, put to the PO for sight (the plan's Global Constraints): like
  * `asked` it resolves through activePatient, so a paper about a patient this family's `me` does not list is not found.
@@ -91,7 +93,7 @@ export async function signedInPage({
   everyone?: boolean;
   asked?: string;
   patient?: string | null;
-  desktop?: { paper: Slot; talk: Slot };
+  desktop?: { paper: Slot; talk: Slot; panel?: Slot };
 }) {
   const { lang, preview, here } = await requestContext();
   const [meAnswer, bannerAnswer] = await Promise.all([javaGet<MeJson>("/app/api/me"), javaGet<NowBannerJson>("/app/api/now-banner")]);
@@ -105,11 +107,12 @@ export async function signedInPage({
   const ctx: ShellContext = { lang, preview, me, patient, nowShown: banner.show };
   const chooser = view.kind === "choose" && !asksItself && everyone !== true;
   const content = chooser ? <PatientChooser lang={lang} patients={me.patients} /> : await fill(main, ctx);
-  const nowBanner = banner.show ? (
-    <NowBannerHold key={JSON.stringify(banner.seen)}>
-      <NowBanner banner={banner} patients={me.patients} lang={lang} live />
-    </NowBannerHold>
-  ) : undefined;
+  const nowBanner = (variant: "block" | "bar") =>
+    banner.show ? (
+      <NowBannerHold key={JSON.stringify(banner.seen)}>
+        <NowBanner banner={banner} patients={me.patients} lang={lang} live variant={variant} preview={preview} />
+      </NowBannerHold>
+    ) : undefined;
   const onDesktop = desktop !== undefined && desktopLayout(ctx);
   const phone = (
     <AppShell
@@ -121,7 +124,7 @@ export async function signedInPage({
       tab={tab}
       main={content}
       aside={aside === undefined || chooser ? undefined : await fill(aside, ctx)}
-      banner={nowBanner}
+      banner={nowBanner("block")}
       phone={onDesktop}
     />
   );
@@ -148,11 +151,12 @@ export async function signedInPage({
             today={DHAKA_DAY.format(new Date())}
           />
         }
-        bar={nowBanner}
+        bar={nowBanner("bar")}
         paper={
           chooser ? <PatientChooser lang={lang} patients={me.patients} titleId="desktop-patient-chooser-title" /> : await fill(desktop.paper, ctx)
         }
         talk={chooser ? null : await fill(desktop.talk, ctx)}
+        panel={chooser || desktop.panel === undefined ? undefined : ((await fill(desktop.panel, ctx)) ?? undefined)}
       />
     </>
   );

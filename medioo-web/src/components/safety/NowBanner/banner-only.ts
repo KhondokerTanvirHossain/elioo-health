@@ -43,22 +43,32 @@ export function markBannerOnly(): boolean {
 
 /** How many pages' mains the tab remembers (a paper, its /all, a sheet and one more), the oldest forgotten first. */
 const SHOWN_PAGES = 4;
-const shown = new Map<string, unknown>();
+const shown = new Map<string, Map<string, unknown>>();
 
 /**
  * What a held page last showed, by its path, for a holder that mounts again with nothing in it: back to a paper after
  * a banner-only refresh and a sheet, the router restores the paper's address from its cache, which holds the
  * refresh's empty main, and the page shows what this tab last showed there, as back did before the refresh. Lives as
  * long as the tab's script does: a hard load starts with nothing kept.
+ *
+ * `part` (the desktop layout, plan desktop-parity Task 8): a page with several holders (the phone's main, the paper,
+ * the conversation, the panel) remembers each under its own part, and counts as one page.
  */
-export function rememberShown(path: string, main: unknown): void {
+export function rememberShown(path: string, main: unknown, part = ""): void {
+  const parts = shown.get(path) ?? new Map<string, unknown>();
+  parts.set(part, main);
   shown.delete(path);
-  shown.set(path, main);
+  shown.set(path, parts);
   if (shown.size > SHOWN_PAGES) shown.delete(shown.keys().next().value!);
 }
 
 export function shownBefore(path: string): unknown {
-  return shown.get(path);
+  return shownPartBefore(path, "");
+}
+
+/** What one part of a held page last showed (`part`, as rememberShown was given it). */
+export function shownPartBefore(path: string, part: string): unknown {
+  return shown.get(path)?.get(part);
 }
 
 export function clearBannerOnly(): void {

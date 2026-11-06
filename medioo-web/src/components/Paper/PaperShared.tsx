@@ -40,14 +40,22 @@ export function DoctorLines({ paper, ctx }: { paper: PaperResultJson; ctx: { lan
 }
 
 /** The medicines section (DocumentPages.medicinesSection): the pharmacy notice once, then each medicine crop first. */
-export function Medicines({ paper, ctx }: { paper: PaperResultJson; ctx: { lang: Lang } }) {
+export function Medicines({ paper, ctx }: { paper: PaperResultJson; ctx: { lang: Lang; ids?: string } }) {
   const missing = unverified(paper, "medicines");
   if (paper.medicines.length === 0 && missing === 0) return null;
   return (
-    <section id="medicines" className="paper__group">
+    <section id={`${ctx.ids ?? ""}medicines`} className="paper__group" data-panel-part="medicines">
       <h2 className="paper__heading">{t(ctx.lang, "med.title")}</h2>
-      {paper.medicines.length > 0 && <p className="paper__note">{t(ctx.lang, "med.pharmacy")}</p>}
-      {missing > 0 && <p className="paper__note">{t(ctx.lang, "med.unverified", missing)}</p>}
+      {paper.medicines.length > 0 && (
+        <p className="paper__note" data-safety="med-pharmacy">
+          {t(ctx.lang, "med.pharmacy")}
+        </p>
+      )}
+      {missing > 0 && (
+        <p className="paper__note" data-safety="unverified">
+          {t(ctx.lang, "med.unverified", missing)}
+        </p>
+      )}
       {paper.medicines.map((m, i) => (
         <MedicineRow key={i} medicine={m} documentId={paper.id} lang={ctx.lang} />
       ))}
