@@ -90,8 +90,37 @@ describe("PaperViewer", () => {
     }
     // No type read: the default word, and no facility: whose paper alone.
     const { container } = viewer({ paper: BLUR, selectedId: BLUR.id });
-    expect(q(container, ".paper-viewer__title")!.textContent).toBe(`${t("bn", "type.default")} · ${formatDayMonth("bn", "2026-10-20")}`);
+    expect(q(container, ".paper-viewer__title")!.textContent).toBe(
+      `${t("bn", "type.default")} · ${t("bn", "trend.date.upload", formatDayMonth("bn", "2026-10-20"))}`,
+    );
     expect(q(container, ".paper-viewer__sub")!.textContent).toBe(t("bn", "desk.viewer.sub", BLUR.patient.name_possessive));
+  });
+
+  it("theTitleSaysWhenItsDayIsTheUploadDayOrUnsure", () => {
+    // F7: a paper with no printed date is filed under its upload day and says so, never passing it off as printed.
+    expect((BLUR as PaperResultJson).date_is_upload_day, "fixture: blur has no printed date").toBe(true);
+    expect((BLUR as PaperResultJson).printed_date).toBeNull();
+    expect(CBC.date_is_upload_day || CBC.date_uncertain, "fixture: cbc's date is printed and sure").toBe(false);
+    for (const lang of ["bn", "en"] as const) {
+      const day = formatDayMonth(lang, "2026-10-20");
+      const upload = t(lang, "trend.date.upload", day);
+      const unsure = t(lang, "trend.date.uncertain", day);
+      const titleOf = (paper: PaperJson) => {
+        const { container } = viewer({ lang, paper, selectedId: paper.id });
+        const title = q(container, ".paper-viewer__title")!.textContent;
+        expect(canvas(container).getAttribute("aria-label"), "the canvas is named as the title").toBe(title);
+        cleanup();
+        return title;
+      };
+      // The upload day, marked.
+      expect(titleOf(BLUR), `${lang}: blur's title`).toBe(`${t(lang, "type.default")} · ${upload}`);
+      // A printed date the model was unsure of, marked as unsure.
+      expect(titleOf({ ...CBC, date_uncertain: true }), `${lang}: an unsure date`).toBe(`${t(lang, "type.lab_report")} · ${unsure}`);
+      // A printed, sure date: the bare day, no marker either way.
+      const cbc = titleOf(CBC);
+      expect(cbc).toBe(`${t(lang, "type.lab_report")} · ${day}`);
+      expect(cbc).not.toContain(t(lang, "timeline.uploaddate"));
+    }
   });
 
   it("prevIsDisabledOnTheOldestAndNextOnTheNewest", () => {
@@ -124,10 +153,17 @@ describe("PaperViewer", () => {
     const items = [...strip.querySelectorAll<HTMLAnchorElement>("a.paper-strip__item")];
     expect(items.length, "every paper of Amma's").toBe(5);
     expect(items.map((a) => a.getAttribute("href"))).toEqual(AMMA.map((p) => hrefFor(p.id)));
-    // The date under each, read off its own element.
-    expect(items.map((a) => q(a, ".paper-strip__date")!.textContent)).toEqual(
-      AMMA.map((p) => formatDayMonth("bn", (p as PaperResultJson).date)),
+    // The date under each, read off its own element: blur's is its upload day and says so (F7); the rest are printed.
+    const dayOf = (p: PaperResultJson) =>
+      p.date_is_upload_day ? t("bn", "trend.date.upload", formatDayMonth("bn", p.date)) : formatDayMonth("bn", p.date);
+    expect(items.map((a) => q(a, ".paper-strip__date")!.textContent)).toEqual(AMMA.map((p) => dayOf(p as PaperResultJson)));
+    expect(q(items[0]!, ".paper-strip__date")!.textContent, "blur's upload day, marked").toBe(
+      t("bn", "trend.date.upload", formatDayMonth("bn", "2026-10-20")),
     );
+    expect(items[0]!.getAttribute("title"), "blur's title names its upload day").toBe(
+      `${t("bn", "type.default")} · ${t("bn", "trend.date.upload", formatDayMonth("bn", "2026-10-20"))}`,
+    );
+    expect(q(items[1]!, ".paper-strip__date")!.textContent, "cbc's printed day, bare").toBe(formatDayMonth("bn", "2026-10-20"));
     // The stored urgency: THIS_WEEK on creat alone (routine and a retake say nothing, D27).
     expect(items.map((a) => q(a, "[data-urgency]")?.getAttribute("data-urgency") ?? null)).toEqual(
       AMMA.map((p) => (p.id === CREAT.id ? "this_week" : null)),
@@ -264,6 +300,45 @@ describe("PaperViewer", () => {
       // A modifier is the browser's (Ctrl - zooms the window), never the viewer's.
       act(() => void fireEvent.keyDown(document.body, { key: "-", ctrlKey: true }));
       expect(canvas(container).getAttribute("data-zoom"), "Ctrl - zoomed the paper").toBe("fit");
+    } finally {
+      document.removeEventListener("click", follow, true);
+    }
+  });
+
+  it("noKeyWorksWhileADialogIsOpenOrOnThePhoneWidth", () => {
+    const followed: string[] = [];
+    const follow = (e: MouseEvent) => {
+      const a = (e.target as Element).closest("a");
+      if (a) {
+        followed.push(a.getAttribute("href")!);
+        e.preventDefault();
+      }
+    };
+    document.addEventListener("click", follow, true);
+    const key = (k: string) => act(() => void fireEvent.keyDown(document.body, { key: k }));
+    try {
+      const { container } = viewer({ paper: RX, selectedId: RX.id });
+      // An open dialog (DeletePaper's sheet, the upload dialog) owns the keys: no zoom, no page turn.
+      const dialog = document.createElement("dialog");
+      dialog.setAttribute("open", "");
+      document.body.append(dialog);
+      key("-");
+      key("ArrowLeft");
+      expect(canvas(container).getAttribute("data-zoom"), "- zoomed the paper under an open dialog").toBe("fit");
+      expect(followed, "← turned the paper under an open dialog").toEqual([]);
+      dialog.remove();
+      // Below 900 px the phone page is showing: the desktop keys are off.
+      vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(max-width: 899px)", media: query }));
+      key("+");
+      key("ArrowRight");
+      expect(canvas(container).getAttribute("data-zoom"), "+ zoomed the paper on the phone width").toBe("fit");
+      expect(followed, "→ turned the paper on the phone width").toEqual([]);
+      // The same keys on the desktop width still work (the guards above are not why nothing happened).
+      vi.stubGlobal("matchMedia", (query: string) => ({ matches: false, media: query }));
+      key("+");
+      key("ArrowRight");
+      expect(canvas(container).getAttribute("data-zoom")).toBe("1.25");
+      expect(followed).toEqual([hrefFor(CBC.id)]);
     } finally {
       document.removeEventListener("click", follow, true);
     }

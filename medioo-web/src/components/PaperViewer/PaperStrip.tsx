@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { isReadingPaper, type PaperJson } from "@/api/types";
-import { formatDayMonth, t, type Lang } from "@/copy";
+import { t, type Lang } from "@/copy";
 import { UrgencyTag } from "@/components/safety/UrgencyTag/UrgencyTag";
 import { typeText } from "@/components/Paper/paper-text";
+import { viewerDay } from "./viewer-day";
 
-/** The strip's words for one paper: its day under the thumbnail (or "being read", which has no day yet), and its type. */
+/** The strip's words for one paper: its day under the thumbnail, marked as the viewer marks it (or "being read", which has no day yet), and its type. */
 function labelOf(lang: Lang, paper: PaperJson): { day: string; type: string } {
   if (isReadingPaper(paper)) return { day: t(lang, "status.PROCESSING"), type: t(lang, "type.default") };
-  return { day: formatDayMonth(lang, paper.date), type: typeText(lang, paper.document_type) };
+  return { day: viewerDay(lang, paper), type: typeText(lang, paper.document_type) };
 }
 
 /**

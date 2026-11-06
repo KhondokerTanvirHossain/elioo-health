@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { isReadingPaper, type PaperJson } from "@/api/types";
-import { banglaDigits, formatDayMonth, t, type Lang } from "@/copy";
+import { banglaDigits, t, type Lang } from "@/copy";
 import { deleteWords, readingWords } from "@/app/app/(signed-in)/documents/[id]/paper-words";
 import { DeletePaper } from "@/components/DeletePaper/DeletePaper";
 import { MioAvatar } from "@/components/MioAvatar/MioAvatar";
@@ -10,6 +10,7 @@ import { ReadingProgress } from "@/components/ReadingProgress/ReadingProgress";
 import { UrgencyTag } from "@/components/safety/UrgencyTag/UrgencyTag";
 import { href } from "@/routing/paths";
 import { PaperStrip } from "./PaperStrip";
+import { viewerDay } from "./viewer-day";
 import { Zoom, type ViewerZoomWords } from "./Zoom";
 import "./PaperViewer.css";
 
@@ -59,7 +60,8 @@ function FirstVisit({ lang, preview }: { lang: Lang; preview: boolean }) {
 /**
  * The paper column of the talk-and-papers screen (desk.nav.talk; plan desktop-parity Task 6; desktop.html `chatView()`'s `.viewer`), from the paper
  * in view and the patient's papers (newest first; the thread's paper cards), and nothing else:
- * - the toolbar: the paper before and after (`hrefFor`, disabled at either end), the paper's type and day, whose paper
+ * - the toolbar: the paper before and after (`hrefFor`, disabled at either end), the paper's type and day (marked when
+ *   it is the upload day or unsure, F7), whose paper
  *   and the lab as printed, its stored urgency (UrgencyTag: NOW and THIS_WEEK only; ROUTINE says nothing, D27), zoom
  *   (Zoom), and delete for the owner only (a share member has none, and Java refuses theirs anyway);
  * - the canvas: every page Java stored, page 1 at once and the rest when scrolled to; a paper still being read shows
@@ -91,7 +93,7 @@ export function PaperViewer({
   const newer = at > 0 ? papers[at - 1] : undefined;
 
   const type = reading ? t(lang, "progress.title") : typeText(lang, paper.document_type);
-  const title = reading ? type : `${type} · ${formatDayMonth(lang, paper.date)}`;
+  const title = reading ? type : `${type} · ${viewerDay(lang, paper)}`;
   const whose = t(lang, "desk.viewer.sub", paper.patient.name_possessive);
   const facility = reading ? null : paper.facility;
   const sub = facility === null || facility.trim() === "" ? whose : `${whose} · ${facility}`;
