@@ -206,6 +206,118 @@ class PostgresChatTurnAdapterTest {
         });
     }
 
+    /**
+     * PO ruling P15 (migration chat_model_check): an answer the refuse-only model check refused is stored as the fixed reply under handler
+     * model_check, with its one check call beside the chat model's calls, and the database holds what that handler means:
+     * a FALLBACK on a counted, modelled turn, never an answer shown. A check call is never on a turn no model answered.
+     */
+    @Test
+    void aModelCheckRefusalIsStoredWithItsCheckCall() {
+        runner().run(context -> {
+            ChatTurnPort turns = context.getBean(ChatTurnPort.class);
+            FamilyAccount f = family(context);
+            PatientProfile p = patient(context, f.id());
+            UUID id = turns.reserveCounted(f.id(), p.id(), "bn", "আম্মার ওষুধ কখন?", dayStart(), 50).block();
+            turns.complete(id, new ChatOutcome("এই প্রশ্নের উত্তর এখন নিশ্চিত করে দিতে পারছি না।", AnswerKind.FALLBACK, "model_check",
+                    List.of("check_refused"), 1, 1300, 160, new BigDecimal("0.00412000"), 2100L, List.of(), 1)).block();
+
+            assertThat(row(id, "handler")).isEqualTo("model_check");
+            assertThat(row(id, "kind")).isEqualTo("fallback");
+            assertThat(row(id, "model_calls")).isEqualTo("1");
+            assertThat(row(id, "check_calls")).isEqualTo("1");
+            assertThat(row(id, "violations")).isEqualTo("check_refused");
+            assertThat(row(id, "document_ids")).as("the refusal cites no paper").isEqualTo("{}");
+        });
+    }
+
+    // Review of #173, finding 4: each of the chat_model_check migration's rules on its own test (four since the second
+    // review), each named by its constraint, so a replay that drops one shows that one red whatever the others do.
+
+    /** chat_turn_check_refusal_is_fallback: the check's refusal is never stored as an answer shown. */
+    @Test
+    void aModelCheckRefusalIsNeverAnAnswer() {
+        runner().run(context -> {
+            UUID id = refusedTurn(context);
+            assertThatThrownBy(() -> sql("UPDATE baymax.chat_turn SET kind = 'answer' WHERE id = '" + id + "'"))
+                    .as("an answer shown under the check's refusal")
+                    .isInstanceOfSatisfying(SQLException.class, e -> assertThat(e.getMessage()).contains("chat_turn_check_refusal_is_fallback"));
+        });
+    }
+
+    /** chat_turn_check_calls_bound: a turn makes at most one check call. */
+    @Test
+    void aTurnMakesAtMostOneCheckCall() {
+        runner().run(context -> {
+            UUID id = refusedTurn(context);
+            assertThatThrownBy(() -> sql("UPDATE baymax.chat_turn SET check_calls = 2 WHERE id = '" + id + "'"))
+                    .as("more than the one check call a turn makes")
+                    .isInstanceOfSatisfying(SQLException.class, e -> assertThat(e.getMessage()).contains("chat_turn_check_calls_bound"));
+            assertThatThrownBy(() -> sql("UPDATE baymax.chat_turn SET check_calls = -1 WHERE id = '" + id + "'"))
+                    .as("a negative count")
+                    .isInstanceOfSatisfying(SQLException.class, e -> assertThat(e.getMessage()).contains("chat_turn_check_calls_bound"));
+        });
+    }
+
+    /** chat_turn_check_after_model: a check call is only on a turn a model answered. */
+    @Test
+    void aCheckCallIsOnlyOnAModelledTurn() {
+        runner().run(context -> {
+            ChatTurnPort turns = context.getBean(ChatTurnPort.class);
+            FamilyAccount f = family(context);
+            PatientProfile p = patient(context, f.id());
+            UUID emergency = turns.reserveUncounted(f.id(), p.id(), "bn", "আম্মার বুকে ব্যথা").block();
+            turns.complete(emergency, new ChatOutcome("জরুরি", AnswerKind.EMERGENCY, "red_flag", List.of(), 0, 0, 0, null, 2L, List.of())).block();
+            assertThat(row(emergency, "check_calls")).isEqualTo("0");
+            assertThatThrownBy(() -> sql("UPDATE baymax.chat_turn SET check_calls = 1 WHERE id = '" + emergency + "'"))
+                    .as("a check call on a turn no model answered")
+                    .isInstanceOfSatisfying(SQLException.class, e -> assertThat(e.getMessage()).contains("chat_turn_check_after_model"));
+        });
+    }
+
+    /**
+     * chat_turn_check_refusal_quotes_nothing (second review of #173, finding 2): a check refusal is the fixed reply, so it
+     * cites no paper and quotes no line. The rule lives in the schema, not only in the one Body the service builds, so no
+     * later writer can store a refusal that draws a crop beside a reply that names no medicine.
+     */
+    @Test
+    void aModelCheckRefusalCitesNoPaperAndQuotesNoLine() {
+        runner().run(context -> {
+            ChatTurnPort turns = context.getBean(ChatTurnPort.class);
+            DocumentRecordPort documents = context.getBean(DocumentRecordPort.class);
+            FamilyAccount f = family(context);
+            PatientProfile p = patient(context, f.id());
+            UUID rx = documents.create(Document.received(p.id(), f.id(), 1, Instant.now())).block().id();
+            List<CitedMedicine> quoted = List.of(new CitedMedicine(rx, "f/p/rx/crop-m1.jpg"));
+            UUID refused = turns.reserveCounted(f.id(), p.id(), "bn", "আম্মার ওষুধ কখন?", dayStart(), 50).block();
+
+            assertThatThrownBy(() -> turns.complete(refused, new ChatOutcome("ঠিক উত্তর", AnswerKind.FALLBACK, "model_check",
+                    List.of("check_refused"), 1, 1300, 160, null, 2100L, List.of(rx), quoted, 1)).block())
+                    .as("a check refusal stored with a quoted line and its crop")
+                    .hasMessageContaining("chat_turn_check_refusal_quotes_nothing");
+            assertThatThrownBy(() -> turns.complete(refused, new ChatOutcome("ঠিক উত্তর", AnswerKind.FALLBACK, "model_check",
+                    List.of("check_refused"), 1, 1300, 160, null, 2100L, List.of(rx), 1)).block())
+                    .as("a check refusal citing a paper")
+                    .hasMessageContaining("chat_turn_check_refusal_quotes_nothing");
+
+            UUID answered = turns.reserveCounted(f.id(), p.id(), "bn", "আম্মার ওষুধ কখন?", dayStart(), 50).block();
+            turns.complete(answered, new ChatOutcome("Tab. A", AnswerKind.ANSWER, "model", List.of(), 1, 1300, 160, null, 2100L,
+                    List.of(rx), quoted, 1)).block();
+            assertThat(row(answered, "medicine_crop_keys")).as("the same line and crop on an answer the check passed")
+                    .isEqualTo("{f/p/rx/crop-m1.jpg}");
+        });
+    }
+
+    /** A counted turn the check refused, stored through the port as the service stores it. */
+    private static UUID refusedTurn(ApplicationContext context) {
+        ChatTurnPort turns = context.getBean(ChatTurnPort.class);
+        FamilyAccount f = family(context);
+        PatientProfile p = patient(context, f.id());
+        UUID id = turns.reserveCounted(f.id(), p.id(), "bn", "আম্মার ওষুধ কখন?", dayStart(), 50).block();
+        turns.complete(id, new ChatOutcome("এই প্রশ্নের উত্তর এখন নিশ্চিত করে দিতে পারছি না।", AnswerKind.FALLBACK, "model_check",
+                List.of("check_refused"), 1, 1300, 160, new BigDecimal("0.00412000"), 2100L, List.of(), 1)).block();
+        return id;
+    }
+
     @Test
     void aRowCannotBeAnsweredWithoutAKind() {
         runner().run(context -> {

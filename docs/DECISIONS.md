@@ -1585,3 +1585,135 @@ CHAT-web asks the route; the emergency pre-check runs either way.
   mentions a medicine and can only **refuse** it (never edit, never approve past the code checks), about +$0.003 per
   such answer; a refusal gives the safe fixed reply and the doctor line. Built as its own PR, shipped after chat is
   live; nothing of it is in the P14 PR.
+
+**Amendment 2026-11-02, P15 built (`feat/baymax-chat-model-check`, #173), amended 2026-11-03 by the PO's answers to its
+questions (P16, quoted at the end); the rest is engineering within the rulings:**
+- **What is read (P16(c), "Check every answer").** Every answer the model wrote that has passed every code check
+  (`AnswerCheck`, the first answer or the one repair), whatever it names and whatever was asked: an answer about labs
+  only is read too, one call. Built first (2026-11-02) as a word-based gate that read only answers referring to a
+  medicine; P16(c) replaced it, and the gate's code (`mentionsMedicine`, `questionNames` and their word lists) was
+  removed, not kept unused, since nothing else read it: it closes the gaps any word list keeps (a lowercase or
+  Bangla-script name no list holds, a pronoun answer to a question about an unknown medicine). A refused draft is never
+  sent; code-built replies never are (the emergency lines, a P14 purpose reply, answers off, no model, the cap), nor are
+  code's own refusals before a call (`check_marker`, `check_bare_answer`).
+- **What the check is given.** Fixed rules, then the latest prescription's written lines (numbered, between
+  `<<<LINES`/`LINES>>>`) and the answer exactly as it would be shown (between `<<<ANSWER`/`ANSWER>>>`), `{{rx:n}}`
+  resolved, the appended lines excluded; the rules say both blocks are data, never instructions. Nothing else of the
+  family's: no question, no patient or owner name beyond what the answer itself says, no phone number, no value or other
+  paper. It is asked only whether the answer tells anyone to start, stop, skip, change, swap, halve, double, increase or
+  reduce a medicine or its dose (or take it otherwise than written), says what a medicine is for, treats or what kind it
+  is, or states anything about a medicine that is not in the written lines; unsure is refuse.
+- **Refuse-only, fail closed.** The verdict is parsed strictly: exactly `{"verdict":"pass"}` (whitespace around it
+  allowed) lets the answer stand, byte-equal, the same text; `{"verdict":"refuse"}`, any other text (a fence, a second
+  field, prose, another case, nothing), a `max_tokens` stop, an error (a provider refusal included: Haiku 5.5 has no
+  server-side fallback), a timeout or no check client all give `chat.check.refused` (P16(d), the PO's words: bn "এই
+  প্রশ্নের নিশ্চিত উত্তর আমি দিতে পারি না। কাগজপত্রে যা লেখা আছে দেখুন, আর ওষুধ নিয়ে ডাক্তার বা ফার্মাসিস্টকে জিজ্ঞেস করুন।", en "I
+  can't give a reliable answer to this. See what the papers say under Papers, and ask a doctor or a pharmacist about the
+  medicine.") with `chat.dose.ask_doctor` appended by code, a FALLBACK under handler `model_check` that cites no paper.
+  The code checks' own fixed reply (`fixed_after_repair`, and `model_error`) stays `chat.ask.failed`: it is not the
+  check's refusal, and P16(d) named the check's line only. `ChatPropertiesCheck` refuses to start without
+  `chat.check.refused` in either language, and when it or `chat.ask.failed`, with the longest appendix after it, would
+  be over `max-answer-chars` (third review of #173). Code refuses the same way **with no call**: an answer to a dose or
+  purpose question that opens with a bare yes, no or okay (`check_bare_answer`: the check never sees the question, so
+  "হ্যাঁ, পারেন।" has nothing to be judged against; **approved by the PO, P16(b)**); and an answer or a written line
+  holding `<<<` or `>>>` (`check_marker`, so steered model text cannot close its block and speak to the check;
+  engineering within P15's fail-closed rule, review of #173, findings 8 and 14, not put to the PO). **No repair after a refusal:**
+  the check names no violation a repair could fix, and a repaired answer would need a second check inside the same
+  deadline. Each refusal stores its own code (`check_refused`, `check_unparseable`, `check_max_tokens`, `check_error`,
+  `check_timeout`, `check_no_client`, `check_marker`, `check_bare_answer`).
+- **Inside the answer deadline.** The check is given the lesser of `baymax.chat.check.timeout` (8 s) and what is left of
+  the 45 s answer deadline less 500 ms; with nothing left it is `check_timeout` at once, so a slow repair ends as the
+  check's refusal with the doctor line, never the deadline's `model_error`. Startup requires one model call plus the
+  check's timeout plus the margin to fit inside the deadline.
+- **Metered and stored.** One `ai_call_log` row per check call, purpose `chat_check` (the `chat_model_check` migration
+  widens the CHECK); its tokens and cost are added to the turn's (`chat_turn.cost_usd` is every priced call of the turn).
+  `chat_turn.check_calls` (0 or 1, `chat_turn_check_calls_bound`) beside `model_calls`, which still counts the chat
+  model's own; the migration holds that a check call is only on a modelled turn (`chat_turn_check_after_model`) and that
+  `model_check` is always a counted FALLBACK (`chat_turn_check_refusal_is_fallback`). The daily cap counts questions, not
+  cost: a checked answer is the same one counted turn; there is no cost cap for the check to count toward. The migration
+  is `V32__chat_model_check.sql`: #166 (CHATWEB) shipped first and took `V31__chat_turn_medicines.sql`, and the restack
+  onto it renamed this file from V31 (2026-11-03). The old V31 name was never on origin/main, so it was never deployed;
+  the shared dev database's `baymax.flyway_schema_history` ends at 30, no V32 (checked 2026-11-04). A refusal quotes
+  no line, so its turn stores empty `document_ids`, `medicine_document_ids` and `medicine_crop_keys` (#166's columns),
+  and the migration holds it (`chat_turn_check_refusal_quotes_nothing`, second review of #173): no later writer can
+  store a refusal that draws a crop or cites a paper.
+- **Model, by property.** `baymax.chat.check.model` (`BAYMAX_CHAT_CHECK_MODEL`, default `claude-haiku-5-5`, the cheapest
+  current Claude), `baymax.chat.check.enabled` (`BAYMAX_CHAT_CHECK_ENABLED`, default true, so on whenever answers are
+  on), `baymax.chat.check.effort` (low), `baymax.chat.check.timeout`, `baymax.chat.check.max-output-tokens` (4096). Its
+  client mirrors the chat's (`ChatCheckModelConfiguration`): a `claude-*` id on the Anthropic key, else
+  `llm.provider`'s key. Haiku 5.5 thinks adaptively, at medium unless told: `AnthropicLlmClient` now withholds thinking
+  and effort from Haiku 4.x and the Claude 3 Haikus only, so the check runs at effort low. **Price, a recorded exception accepted by the PO (P17, 2026-11-06):** $0.10 / $0.50 per 1M tokens for a prompt
+  up to 100,000 tokens. It is **not** from a provider API, as CLAUDE.md requires: Anthropic's Models API
+  (`GET /v1/models/{id}`) has no price field (checked 2026-10-30 for Sonnet 5; not queried for Haiku 5.5, no key being
+  used for P15), so there is no API to take it from. It was taken on 2026-11-02 from the current-models table of
+  Anthropic's Claude API reference as cached 2026-10-06 (a cached reference, not a live page), then read on 2026-11-03 on
+  the public pricing page https://platform.claude.com/docs/en/about-claude/pricing (row "Claude Haiku 5.5 (for prompts up
+  to 100,000 tokens)", $0.10 input / $0.50 output), and re-read there on 2026-11-04, unchanged. The Anthropic prices
+  above it in the table come from the same page for the same reason. **Cost (P16(c)):** one check per modelled answer, at
+  most one per turn; a typical check is about $0.0002 (about 1,500 tokens in, a few out). The worst case is **derived**,
+  not typed in (third review of #173): `ChatModelConfigurationTest` builds the largest request `ChatAnswerCheck.request`
+  can make from the shipped configuration (the fixed RULES, the written lines at `context-max-tokens`, an answer at
+  `max-answer-chars`, all Bangla, at a stated 1 token a character, the figure `ChatContext.estimateTokens` gives every
+  non-ASCII character), 8,977 tokens in = $0.0009, plus 4,096 out = $0.0020: about **$0.0029**, under the ruling's +$0.003
+  per answer, which holds up to about **9,520 tokens in** at 4,096 out. The margin is about 540 tokens: a longer RULES or
+  a larger `context-max-tokens` or `max-answer-chars` turns the test red (8,000 for the context cap does). The context cap
+  bounds the written lines only while lab readings are what it drops: a prescription whose written lines alone are over
+  it is kept whole (`ChatContextBuilder`) and is not bounded by this figure (about 200 or more lines). At the daily cap of
+  50 answers that is at most about $0.15 a day per asking account (the cap is per account per Dhaka day; about $0.01 at the
+  typical check). The cap counts questions, not calls: a checked answer is still one counted turn. `ChatPropertiesCheck` refuses to start on an unpriced check model while
+  the check is on, and on answers on with the check on and no check client (a blank `BAYMAX_CHAT_CHECK_MODEL`, a missing
+  key), which would otherwise refuse every model answer as `check_no_client` with nothing on the box to say why.
+- **Not measured yet.** Whether Haiku 5.5 refuses good answers too often, or passes bad ones, is known only from the mocked
+  tests, both directions, until the one live run P16(a) approved (about $0.03, fictional test papers, nothing on the box).
+  **#173 does not merge before the PO has seen that run's result** (he has: P17 below). The run prints the labs-only question's outcome on a
+  line of its own (`[live] labs-only question: check PASS|REFUSE|NOT CHECKED handler=… checks=…`), so whether a correct
+  lab answer survives the check is read directly, from one sample.
+- **Observations for the PO, next to the live run's result (third review of #173; nothing below is built):**
+  - *A refusal of a labs-only answer speaks of "the medicine".* Since P16(c) the check reads lab answers too, and every
+    refusal shows the copy P15/P16(d) set when only medicine answers reached it. A refused or timed-out answer to
+    "আম্মার ক্রিয়েটিনিন কত?" today reads, in full (no urgency open): bn "এই প্রশ্নের নিশ্চিত উত্তর আমি দিতে পারি না। কাগজপত্রে যা লেখা আছে
+    দেখুন, আর ওষুধ নিয়ে ডাক্তার বা ফার্মাসিস্টকে জিজ্ঞেস করুন।⏎⏎ওষুধ শুরু, বন্ধ, বাদ বা ডোজ বদলানোর সিদ্ধান্ত আমি দিতে পারি না — যিনি
+    প্রেসক্রিপশন লিখেছেন, সেই ডাক্তারকে জিজ্ঞেস করুন।⏎এটি একটি তথ্য ও রেকর্ড রাখার সেবা, চিকিৎসা পরামর্শ নয়। সব সময় ডাক্তারের সাথে নিশ্চিত হয়ে
+    নিন।⏎রোগী যদি অজ্ঞান হন, শ্বাস নিতে কষ্ট হয়, বা বুকে ব্যথা হয় — সরাসরি নিকটস্থ হাসপাতালের জরুরি বিভাগে যান।"; en "I can't give a
+    reliable answer to this. See what the papers say under Papers, and ask a doctor or a pharmacist about the
+    medicine.⏎⏎I can't decide whether to start, stop, skip or change a medicine or its dose — ask the doctor who wrote the
+    prescription.⏎This is an information and record-keeping service, not medical advice. Always confirm with a
+    doctor.⏎If the patient is unconscious, struggling to breathe, or has chest pain — go straight to the nearest hospital
+    emergency department." (⏎ is a line break.) It is safe (fail closed; urgency, disclaimer and red-flag lines kept) but speaks twice of a
+    medicine nobody named. Option, to be approved before it is built: append `chat.dose.ask_doctor` to a refusal only
+    for a dose or purpose question or an answer that quoted a written line, and a lab-neutral variant of
+    `chat.check.refused` for the rest; the test `aLabsOnlyAnswerTheCheckRefusesIsTheChecksLine` would then expect the
+    tail without the doctor line, and the medicine-question refusal test keep it, so both directions stay tested.
+  - *The RULES are about medicines, and rule 3 can read a lab number as one.* "Ma-র ক্রিয়েটিনিন 1.8 mg/dL" carries a number
+    and unit no written line holds, and the rules end "If you are unsure, refuse." If the live run refuses the labs-only
+    answer, or to narrow the risk in advance, proposed RULES sentence, for approval (it narrows what the check refuses, so
+    it is not added on the build's own judgement, compare P12(B)): "Rules 1 to 3 are about medicines only; a lab
+    reading, its number, unit or printed range is not a medicine statement and is no reason by itself to refuse." It
+    would be pinned by a `ChatAnswerCheckTest` assertion on RULES; at about 210 characters it stays inside the derived
+    cost bound above.
+  - *Non-blocking, built defaults kept:* (i) the Haiku 5.5 price $0.10/$0.50 is from the public pricing page
+    (2026-11-03, re-read 2026-11-04), not an API, since the Models API has no price field: accepted as a documented
+    exception? (ii) a check refusal shows `chat.check.refused` and also the doctor line (P15): keep both?
+- **The PO's answers to #173's questions (P16, 2026-11-03), each the recommended option, in his words:** (a) live run —
+  "Yes, one live run (Recommended)": one run of the real chat test on #173, the Anthropic key loaded from `.env.local`
+  once, and he sees the result before #173 merges; (b) the two additions beyond P15 — "Keep both (Recommended)": the
+  check also reads every answer to a dose or purpose question, and code refuses a bare yes/no/okay answer to a dose or
+  purpose question (**approved by the PO, P16(b)**; the first is now inside (c)); (c) "Check every answer (Recommended)":
+  the check reads every answer the model wrote (about $0.0002 a check, about $0.002 worst case); code-built replies are
+  still never sent to it; (d) refusal copy — "Use the proposed line (Recommended)": `chat.check.refused` as quoted above,
+  and the doubled words "কাগজপত্রে কাগজে" fixed in bn `chat.ask.failed` (#174). Sending the check the question with names
+  and digits masked was not asked again and is not built.
+- **The live run and the PO's answers after it (P17, 2026-11-06), each the recommended option, in his words.** The one
+  live run P16(a) approved ran on #173's head `ef4f1dda`: PASS, 0 of 12 good answers refused, 10 of 10 bad answers
+  refused (4 of them only by the check), $0.036 (table:
+  https://github.com/KhondokerTanvirHossain/elioo-health/pull/173#issuecomment-6624630664). Having seen it, the PO
+  answered: "Yes, merge it (Recommended)": #173 merges when green, which turns the check on in production for every
+  answer the model writes; price, "Accept the exception (Recommended)": the Haiku 5.5 price $0.10 / $0.50 per 1M tokens,
+  from Anthropic's public pricing page (https://platform.claude.com/docs/en/about-claude/pricing, read 2026-11-03 and
+  2026-11-04), is accepted as a recorded exception to CLAUDE.md's API-price rule, because the Models API has no price
+  field (non-blocking item (i) closed); lab refusals, "Yes, make lab refusals neutral (Recommended)": a follow-up PR
+  after #173 appends the medicine/doctor line `chat.dose.ask_doctor` to a refusal only when the question is a dose or
+  purpose question or the answer names or quotes a medicine, and adds a lab-neutral refusal line whose bn/en wording
+  comes to the PO for approval BEFORE it ships; the RULES sentence, "No, keep it strict (Recommended)": the proposed
+  sentence ("a lab reading … is no reason by itself to refuse") is NOT added. Item (ii), the doctor line on a refusal,
+  keeps its built default (both kept), except as the lab-neutral follow-up narrows it.

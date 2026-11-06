@@ -513,6 +513,34 @@ public class BaymaxProperties {
         private Duration modelTimeout = Duration.ofSeconds(20);
         /** Both calls of one question together (the web gives up at fifty seconds). */
         private Duration answerDeadline = Duration.ofSeconds(45);
+        /** The refuse-only model check (PO ruling P15). */
+        private Check check = new Check();
+
+        /**
+         * PO rulings P15, "Add a model check, refuse-only", and P16(c), "Check every answer": after every code check has
+         * passed, every answer the model wrote is read by a second, small model call that can only refuse it
+         * ({@code ChatAnswerCheck}). On by default whenever answers are on; blank {@link #model} here, as {@link Chat#model},
+         * so a context without the shipped property has no check client and every model answer is refused (fail closed),
+         * never passed unchecked.
+         */
+        @Data
+        public static class Check {
+            private boolean enabled = true;
+            private String model = "";
+            /**
+             * The check's one call; past it the answer is refused. Never more than what is left of {@link Chat#answerDeadline}
+             * (the service gives the check the lesser of the two), and startup requires one model call plus this to fit inside
+             * the deadline ({@code ChatPropertiesCheck}).
+             */
+            private Duration timeout = Duration.ofSeconds(8);
+            /**
+             * The check's own effort, set on its client: a one-line verdict needs no more than {@code low} (review of #173,
+             * findings 7 and 10; Haiku 5.5 would otherwise think at its default, {@code medium}).
+             */
+            private String effort = "low";
+            /** Room for a model that thinks before its one-line verdict; a {@code max_tokens} stop is a refusal. */
+            private int maxOutputTokens = 4096;
+        }
     }
 
     /** A chronic marker the pipeline recognises by any of its aliases. Config, not code. */

@@ -7,6 +7,7 @@ import com.elioo.baymax.common.error.BaymaxException;
 import com.elioo.baymax.companion.application.port.in.AskUseCase;
 import com.elioo.baymax.companion.application.port.out.ChatCopyPort;
 import com.elioo.baymax.companion.application.port.out.ChatTurnPort;
+import com.elioo.baymax.companion.config.ChatCheckModelConfiguration;
 import com.elioo.baymax.companion.config.ChatModelConfiguration;
 import com.elioo.baymax.companion.domain.AnswerKind;
 import com.elioo.baymax.companion.domain.ChatContext;
@@ -42,6 +43,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 
 /**
@@ -68,6 +70,15 @@ import java.util.function.Function;
  *       one repair call naming the violations, then {@code chat.ask.failed} (FALLBACK). A model error, a timeout, a
  *       {@code max_tokens} stop or the answer deadline goes straight to FALLBACK. The raw text of a refused answer is never
  *       returned and never stored;</li>
+ *   <li>PO rulings P15 and P16(c): every answer the model wrote that passed every code check (the first or the repair) is
+ *       read by the refuse-only model check ({@link ChatAnswerCheck}, one metered call, {@code ai_call_log} purpose
+ *       {@code chat_check}), given at most what is left of the answer deadline. Its pass leaves the answer byte-equal; its
+ *       refusal, and any error, timeout, unreadable verdict or missing check client, gives
+ *       {@value ChatAnswerCheck#REFUSED_LINE} (P16(d)) with {@code chat.dose.ask_doctor} (FALLBACK, handler
+ *       {@value ChatAnswerCheck#HANDLER}), with no repair after it. Code refuses the same way, with no call, a bare yes or
+ *       no to a dose or purpose question (approved by the PO, P16(b)) and an answer or a written line holding a block
+ *       marker ({@code check_marker}; engineering within P15's fail-closed rule, review of #173, findings 8 and 14).
+ *       Code-built replies are never sent to it;</li>
  *   <li>code appends, after the body: {@code chat.dose.ask_doctor} for a dose question, {@code chat.purpose.ask} for a
  *       purpose question, the patient's open urgency line,
  *       {@code disclaimer}, {@code safety.red_flag_line} ({@link ChatAppendix});</li>
@@ -96,11 +107,19 @@ public class ChatAnswerService implements AskUseCase {
     private final MeteredLlmClient metered;
     private final AiCostCalculator costs;
     private final ObjectProvider<BaymaxModelClient> chatClient;
+    private final ObjectProvider<BaymaxModelClient> checkClient;
     private final Clock clock;
+
+    /**
+     * What the check leaves of the answer deadline for the turn's own completion: the check is given the lesser of its own
+     * timeout and the deadline less the time already spent less this (review of #173, findings 5 and 11).
+     */
+    public static final Duration CHECK_MARGIN = Duration.ofMillis(500);
 
     public ChatAnswerService(BaymaxProperties properties, HealthRecordPort records, ChatTurnPort turns, RedFlagMatcher redFlags,
                              ChatContextBuilder contexts, ChatCopyPort copy, AttentionUseCase attention, MeteredLlmClient metered,
                              AiCostCalculator costs, @Qualifier(ChatModelConfiguration.CHAT_CLIENT) ObjectProvider<BaymaxModelClient> chatClient,
+                             @Qualifier(ChatCheckModelConfiguration.CHECK_CLIENT) ObjectProvider<BaymaxModelClient> checkClient,
                              Clock clock) {
         this.properties = properties;
         this.records = records;
@@ -112,24 +131,36 @@ public class ChatAnswerService implements AskUseCase {
         this.metered = metered;
         this.costs = costs;
         this.chatClient = chatClient;
+        this.checkClient = checkClient;
         this.clock = clock;
     }
 
     /** The calls, tokens, cost and violations of one turn's model work; confined to the turn's own chain. */
     private static final class Tally {
         int calls;
+        int checks;
         int in;
         int out;
         BigDecimal usd;
         final List<String> violations = new ArrayList<>();
     }
 
-    /** Where a turn's body came from, before the appendix. */
-    private record Body(String text, AnswerKind kind, String handler, List<UUID> documents, List<CitedMedicine> medicines) {
+    /**
+     * Where a turn's body came from, before the appendix. {@code medicines}: the prescription lines it quotes, each with its
+     * crop (review of #166, finding 5). {@code doctorLine}: the model check refused the answer, so the appendix carries the
+     * ask-the-doctor line whatever the question was (PO ruling P15).
+     */
+    private record Body(String text, AnswerKind kind, String handler, List<UUID> documents, List<CitedMedicine> medicines,
+                        boolean doctorLine) {
+
+        /** A body that quotes the given lines, not refused by the model check. */
+        Body(String text, AnswerKind kind, String handler, List<UUID> documents, List<CitedMedicine> medicines) {
+            this(text, kind, handler, documents, medicines, false);
+        }
 
         /** A body that quotes no prescription line. */
         Body(String text, AnswerKind kind, String handler, List<UUID> documents) {
-            this(text, kind, handler, documents, List.of());
+            this(text, kind, handler, documents, List.of(), false);
         }
     }
 
@@ -218,14 +249,17 @@ public class ChatAnswerService implements AskUseCase {
                 return purposeReply(familyId, patient, q, l, viewer, open, started, startMs);
             }
             boolean purposeLine = purpose != MedicinePurposeGuard.Route.NONE;
-            return byModel(familyId, patient, q, dose, purposeLine, l, viewer, ChatAppendix.tail(dose, purposeLine, open, line), started,
-                    startMs);
+            return byModel(familyId, patient, q, dose, purposeLine, l, viewer, ChatAppendix.tail(dose, purposeLine, open, line),
+                    ChatAppendix.tail(true, purposeLine, open, line), started, startMs);
         });
     }
 
-    /** 5. no model, the cap, then the model: every question code does not answer itself. */
+    /**
+     * 5. no model, the cap, then the model: every question code does not answer itself. {@code checkedTail} is the appendix
+     * of an answer the model check refused: {@code tail} with the ask-the-doctor line.
+     */
     private Mono<AskAnswer> byModel(UUID familyId, PatientProfile patient, String q, boolean dose, boolean purpose, String l,
-                                    ViewerLocale viewer, String tail, long started, long startMs) {
+                                    ViewerLocale viewer, String tail, String checkedTail, long started, long startMs) {
         LlmClient client = BaymaxModelClient.unwrap(chatClient.getIfAvailable());
         if (client == null) {
             return fixed(familyId, patient, q, l, viewer, AnswerKind.DECLINED, "no_model", "chat.ask.reply", tail, started);
@@ -235,7 +269,8 @@ public class ChatAnswerService implements AskUseCase {
                 .map(Optional::of)
                 .defaultIfEmpty(Optional.empty())
                 .flatMap(reserved -> reserved.isPresent()
-                        ? modelled(reserved.get(), client, familyId, patient, q, dose, purpose, l, viewer, tail, started, startMs)
+                        ? modelled(reserved.get(), client, familyId, patient, q, dose, purpose, l, viewer, tail, checkedTail, started,
+                                startMs)
                         : fixed(familyId, patient, q, l, viewer, AnswerKind.LIMIT, "cap", "chat.ask.limit", tail, started));
     }
 
@@ -269,7 +304,7 @@ public class ChatAnswerService implements AskUseCase {
                     if (again != MedicinePurposeGuard.Route.CODE) {
                         boolean purposeLine = again != MedicinePurposeGuard.Route.NONE;
                         return byModel(familyId, patient, q, false, purposeLine, l, viewer, ChatAppendix.tail(false, purposeLine, open, line),
-                                started, startMs);
+                                ChatAppendix.tail(true, purposeLine, open, line), started, startMs);
                     }
                     MedicinePurposeReply.Reply reply = MedicinePurposeReply.of(q, ctx, patient.name(), l, copy,
                             properties.getChat().getMaxAnswerChars() - tail.length());
@@ -310,7 +345,7 @@ public class ChatAnswerService implements AskUseCase {
      * {@code purpose} is likewise the decision that appends {@code chat.purpose.ask} (review of #171, finding 3).
      */
     private Mono<AskAnswer> modelled(UUID turnId, LlmClient client, UUID familyId, PatientProfile patient, String q, boolean dose,
-                                     boolean purpose, String l, ViewerLocale viewer, String tail, long started,
+                                     boolean purpose, String l, ViewerLocale viewer, String tail, String checkedTail, long started,
                                      long startMs) {
         BaymaxProperties.Chat chat = properties.getChat();
         Tally tally = new Tally();
@@ -326,20 +361,20 @@ public class ChatAnswerService implements AskUseCase {
                     return call(client, ctx, labels, patient.name(), q, dose, purpose, bodyChars, List.of(), tally).flatMap(first -> {
                         List<String> v1 = check(first, ctx, tail, asked);
                         if (v1.isEmpty()) {
-                            return Mono.just(new Body(AnswerCheck.resolve(first.strip(), ctx), AnswerKind.ANSWER, "model", ctx.documentIds(),
-                                    AnswerCheck.cited(first.strip(), ctx)));
+                            return checked(turnId, new Body(AnswerCheck.resolve(first.strip(), ctx), AnswerKind.ANSWER, "model",
+                                    ctx.documentIds(), AnswerCheck.cited(first.strip(), ctx)), ctx, dose || purpose, l, tally, startMs);
                         }
                         tally.violations.addAll(v1);
                         log.debug("[baymax] chat turn={} refused first answer: {}", turnId, v1);
-                        return call(client, ctx, labels, patient.name(), q, dose, purpose, bodyChars, v1, tally).map(second -> {
+                        return call(client, ctx, labels, patient.name(), q, dose, purpose, bodyChars, v1, tally).flatMap(second -> {
                             List<String> v2 = check(second, ctx, tail, asked);
                             if (v2.isEmpty()) {
-                                return new Body(AnswerCheck.resolve(second.strip(), ctx), AnswerKind.ANSWER, "repair", ctx.documentIds(),
-                                        AnswerCheck.cited(second.strip(), ctx));
+                                return checked(turnId, new Body(AnswerCheck.resolve(second.strip(), ctx), AnswerKind.ANSWER, "repair",
+                                        ctx.documentIds(), AnswerCheck.cited(second.strip(), ctx)), ctx, dose || purpose, l, tally, startMs);
                             }
                             tally.violations.addAll(v2);
                             log.debug("[baymax] chat turn={} refused the repair: {}", turnId, v2);
-                            return failed;
+                            return Mono.just(failed);
                         });
                     });
                 }));
@@ -352,7 +387,79 @@ public class ChatAnswerService implements AskUseCase {
                     log.warn("[baymax] chat turn={} model failed after {} call(s): {}", turnId, tally.calls, e.getClass().getSimpleName());
                     return Mono.just(new Body(failed.text(), AnswerKind.FALLBACK, "model_error", List.of()));
                 })
-                .flatMap(body -> finish(turnId, patient, q, l, viewer, body, tail, tally, started));
+                .flatMap(body -> finish(turnId, patient, q, l, viewer, body, body.doctorLine() ? checkedTail : tail, tally, started));
+    }
+
+    /**
+     * PO rulings P15 and P16(c), "Check every answer": the refuse-only model check of every answer the model wrote that every
+     * code check passed, whatever it names and whatever was asked; only with the check switched off does an answer stand
+     * unread. Code-built replies never reach here. The check is given the written lines and the answer as shown, nothing
+     * else, for at most what is left of the answer deadline. Only the exact verdict "pass" lets {@code passed} stand, the
+     * same object, byte-equal; anything else is the check's own line ({@value ChatAnswerCheck#REFUSED_LINE}, P16(d)) with the
+     * doctor line, and the code that says why is the turn's violation. Code refuses the same way, with no call: a bare yes
+     * or no to a dose or purpose question ({@code medicineQuestion}; approved by the PO, P16(b)); and, as engineering within
+     * P15's fail-closed rule (review of #173, findings 8 and 14), a block marker in the answer or a written line, no check
+     * client, no time left. Never empty, never an error: a failure of the check is its refusal.
+     */
+    private Mono<Body> checked(UUID turnId, Body passed, ChatContext ctx, boolean medicineQuestion, String l, Tally tally,
+                               long startMs) {
+        BaymaxProperties.Chat.Check check = properties.getChat().getCheck();
+        if (!check.isEnabled()) {
+            return Mono.just(passed);
+        }
+        // the refusal cites no paper and quotes no line: the check's line stands alone (review of #173, finding 20)
+        // nor carries a crop: medicines is empty, so V31's medicine columns store {} (chat_turn_medicine_on_a_cited_paper)
+        Body refused = new Body(copy.line(l, ChatAnswerCheck.REFUSED_LINE), AnswerKind.FALLBACK, ChatAnswerCheck.HANDLER, List.of(),
+                List.of(), true);
+        String byCode = ChatAnswerCheck.hasMarker(passed.text(), ctx.verbatimLines()) ? ChatAnswerCheck.MARKER
+                : medicineQuestion && ChatAnswerCheck.bareReply(passed.text()) ? ChatAnswerCheck.BARE : null;
+        if (byCode != null) {
+            tally.violations.add(byCode);
+            return Mono.just(refused);
+        }
+        LlmClient client = BaymaxModelClient.unwrap(checkClient.getIfAvailable());
+        if (client == null) {
+            tally.violations.add(ChatAnswerCheck.NO_CLIENT);
+            return Mono.just(refused);
+        }
+        // never past the answer deadline: past it the turn would be the deadline's model_error, which hides that the check was
+        // running and drops the doctor line (review of #173, findings 5 and 11)
+        // counted on the clock the answer deadline's own timeout uses, from the request (review of #166, finding 4)
+        Duration left = remaining(properties.getChat().getAnswerDeadline(), startMs).minus(CHECK_MARGIN);
+        Duration budget = left.compareTo(check.getTimeout()) < 0 ? left : check.getTimeout();
+        if (budget.isNegative() || budget.isZero()) {
+            tally.violations.add(ChatAnswerCheck.TIMEOUT);
+            log.warn("[baymax] chat turn={} model check had no time left", turnId);
+            return Mono.just(refused);
+        }
+        return Mono.defer(() -> {
+                    tally.checks++;
+                    return metered.using(client).invoke(AiCallPurpose.CHAT_CHECK, null,
+                            ChatAnswerCheck.request(ctx.verbatimLines(), passed.text(), check.getMaxOutputTokens()));
+                })
+                .timeout(budget)
+                .map(response -> {
+                    count(tally, response);
+                    if (response.isMaxTokensReached()) {
+                        return ChatAnswerCheck.MAX_TOKENS;
+                    }
+                    return ChatAnswerCheck.parse(response.content())
+                            .map(v -> v == ChatAnswerCheck.Verdict.PASS ? "" : ChatAnswerCheck.REFUSED)
+                            .orElse(ChatAnswerCheck.UNPARSEABLE);
+                })
+                .defaultIfEmpty(ChatAnswerCheck.UNPARSEABLE)
+                .onErrorResume(e -> {
+                    log.warn("[baymax] chat turn={} model check failed: {}", turnId, e.getClass().getSimpleName());
+                    return Mono.just(e instanceof TimeoutException ? ChatAnswerCheck.TIMEOUT : ChatAnswerCheck.ERROR);
+                })
+                .map(code -> {
+                    if (code.isEmpty()) {
+                        return passed;
+                    }
+                    tally.violations.add(code);
+                    log.debug("[baymax] chat turn={} model check refused: {}", turnId, code);
+                    return refused;
+                });
     }
 
     /** One metered call under the per-call timeout; a {@code max_tokens} stop is a failure, never a truncated answer. */
@@ -415,13 +522,13 @@ public class ChatAnswerService implements AskUseCase {
         long ms = (System.nanoTime() - started) / 1_000_000;
         List<String> codes = AnswerCheck.forLog(tally.violations);
         ChatOutcome outcome = new ChatOutcome(answer, body.kind(), body.handler(), codes, tally.calls, tally.in, tally.out, tally.usd, ms,
-                body.documents(), body.medicines());
+                body.documents(), body.medicines(), tally.checks);
         boolean call999 = body.kind() == AnswerKind.EMERGENCY && viewer.bangladesh();
         return turns.complete(turnId, outcome)
                 .then(Mono.fromSupplier(() -> {
-                    log.info("[baymax] chat turn={} patient={} kind={} handler={} q_chars={} a_chars={} calls={} in={} out={} usd={} ms={}"
-                                    + " violations={}", turnId, patient.id(), body.kind().dbValue(), body.handler(), q.length(), answer.length(),
-                            tally.calls, tally.in, tally.out, tally.usd, ms, String.join(",", codes));
+                    log.info("[baymax] chat turn={} patient={} kind={} handler={} q_chars={} a_chars={} calls={} checks={} in={} out={} usd={}"
+                                    + " ms={} violations={}", turnId, patient.id(), body.kind().dbValue(), body.handler(), q.length(),
+                            answer.length(), tally.calls, tally.checks, tally.in, tally.out, tally.usd, ms, String.join(",", codes));
                     log.debug("[baymax] chat turn={} question={} answer={}", turnId, q, answer);
                     return new AskAnswer(turnId, body.kind(), q, answer, call999, clock.instant(), body.medicines());
                 }));

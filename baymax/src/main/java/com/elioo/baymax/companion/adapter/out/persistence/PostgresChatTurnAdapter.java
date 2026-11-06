@@ -59,7 +59,7 @@ public class PostgresChatTurnAdapter implements ChatTurnPort {
                SET answer = :answer, kind = :kind, handler = :handler, violations = :violations, model_calls = :calls,
                    input_tokens = :inTokens, output_tokens = :outTokens, cost_usd = :cost, latency_ms = :latency,
                    document_ids = :documents, medicine_document_ids = :medicineDocuments, medicine_crop_keys = :medicineCrops,
-                   answered_at = now()
+                   check_calls = :checkCalls, answered_at = now()
              WHERE id = :id
             """.formatted(S);
 
@@ -106,6 +106,7 @@ public class PostgresChatTurnAdapter implements ChatTurnPort {
                 .bind("kind", outcome.kind().dbValue())
                 .bind("handler", outcome.handler())
                 .bind("calls", outcome.modelCalls())
+                .bind("checkCalls", outcome.checkCalls())
                 .bind("inTokens", outcome.inputTokens())
                 .bind("outTokens", outcome.outputTokens())
                 .bind("latency", outcome.latencyMs())
