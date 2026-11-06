@@ -1,0 +1,313 @@
+/* The desktop sidebar (DesktopSidebar.tsx; desktop.html `.side`, `.si`, `.sgh`, `.nextup`, `.me-row`): the brand, a
+   scrolling list (the family, the patient's ledger, what is coming), the next doctor's date and the account row at the
+   foot. Every row is at least the target size; the current one sits on the selection ground and is bold. Nothing here
+   paints the NOW red (UrgentMark does, inside its own block) or the amber: the this-week word is its shape and word. */
+.desktop-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+}
+.desktop-sidebar__brand {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 56px; /* desktop.html's .brand height, the toolbars' */
+  padding: 0 var(--space-3) 0 var(--space-4);
+}
+.desktop-sidebar__brand .wordmark__img {
+  width: 98px; /* desktop.html's wordmark in the sidebar, 98 × 35 */
+  height: auto;
+}
+.desktop-sidebar__scroll {
+  flex: 1;
+  min-height: 0;
+  padding: 0 var(--space-2) var(--space-2);
+  overflow-y: auto;
+}
+.desktop-sidebar__group {
+  min-width: 0;
+}
+.desktop-sidebar__group-title {
+  margin: 0;
+  padding: var(--space-4) var(--space-2) var(--space-1);
+  color: var(--label2);
+  font-family: var(--font-bn);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.desktop-sidebar__family,
+.desktop-sidebar__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.desktop-sidebar__family-item {
+  min-width: 0;
+}
+
+/* One row: a patient, a ledger page, a soon item. */
+.desktop-sidebar__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  min-width: 0;
+  min-height: var(--target-min);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  color: var(--label);
+  font-family: var(--font-bn);
+  font-size: var(--text-md);
+  line-height: 1.4;
+  text-decoration: none;
+}
+a.desktop-sidebar__item:hover,
+.desktop-sidebar__soon-toggle:hover {
+  background: var(--hover);
+}
+.desktop-sidebar__item[aria-current="page"] {
+  background: var(--selbg);
+}
+.desktop-sidebar__item[aria-current="page"] .desktop-sidebar__label,
+.desktop-sidebar__item[aria-current="page"] .desktop-sidebar__name {
+  font-weight: 600;
+}
+.desktop-sidebar__patient {
+  flex-wrap: wrap;
+}
+.desktop-sidebar__icon {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--tint-ink);
+}
+.desktop-sidebar__label,
+.desktop-sidebar__name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.desktop-sidebar__count {
+  flex: none;
+  margin-inline-start: auto;
+  color: var(--label2);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+.desktop-sidebar__avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--tint-soft);
+  color: var(--tint-ink);
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+.desktop-sidebar__avatar--quiet {
+  border: 1px solid var(--boundary);
+  background: var(--fill);
+  color: var(--label2);
+}
+
+/* The urgency word on a patient's row: right-aligned, wrapping under a long name rather than widening the row. */
+.desktop-sidebar__urgency {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  margin-inline-start: auto;
+}
+.desktop-sidebar__urgency--calendar {
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--label);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  line-height: 1.4;
+}
+.desktop-sidebar__urgency-shape {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.desktop-sidebar__urgency-word {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.desktop-sidebar__status {
+  margin: 0 var(--space-2) var(--space-1);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+/* What is coming: a disclosure, closed until opened; its items are quiet and are not controls. */
+.desktop-sidebar__soon {
+  margin-top: 2px;
+}
+.desktop-sidebar__soon-toggle {
+  color: var(--label2);
+  cursor: pointer;
+  list-style: none;
+}
+.desktop-sidebar__soon-toggle::-webkit-details-marker {
+  display: none;
+}
+.desktop-sidebar__soon-toggle .desktop-sidebar__icon,
+.desktop-sidebar__soon-item .desktop-sidebar__icon {
+  color: var(--label2);
+}
+.desktop-sidebar__chevron {
+  transition: transform 160ms ease-out;
+}
+.desktop-sidebar__soon[open] .desktop-sidebar__chevron {
+  transform: rotate(90deg);
+}
+.desktop-sidebar__soon .desktop-sidebar__list {
+  margin-top: 2px;
+}
+.desktop-sidebar__soon-item {
+  color: var(--label2);
+}
+.desktop-sidebar__badge {
+  flex: none;
+  margin-inline-start: auto;
+  padding: 0 6px;
+  border: 1px solid var(--boundary);
+  border-radius: var(--radius-sm);
+  background: var(--fill);
+  color: var(--label2);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+/* The next doctor's date: a card above the account row. */
+.desktop-sidebar__visit {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-2) var(--space-3);
+  padding: 10px var(--space-3); /* desktop.html's .nextup */
+  border-radius: var(--radius-lg);
+  background: var(--bg3);
+  box-shadow: 0 0 0 0.5px var(--sep);
+  color: var(--label);
+  text-decoration: none;
+}
+.desktop-sidebar__visit:hover {
+  background: var(--hover);
+}
+.desktop-sidebar__calchip {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  min-width: 44px;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--bg3);
+  box-shadow: 0 0 0 0.5px var(--sep);
+  text-align: center;
+}
+.desktop-sidebar__visit-month {
+  padding: 0 var(--space-1);
+  background: var(--tint);
+  color: var(--on-tint);
+  font-size: var(--text-xs); /* the smallest type token; desktop.html's .calchip small is 10 px */
+  font-weight: 600;
+  line-height: 1.8;
+}
+.desktop-sidebar__visit-day {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 1.5;
+}
+.desktop-sidebar__visit-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.desktop-sidebar__visit-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.desktop-sidebar__visit-in {
+  color: var(--label2);
+  font-size: var(--text-xs);
+  font-style: normal;
+  line-height: 1.4;
+}
+
+/* The account row at the foot: whose account, and the way to the family page. */
+.desktop-sidebar__account {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--target-min);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-top: 0.5px solid var(--sep);
+  color: var(--label);
+  font-family: var(--font-bn);
+  text-decoration: none;
+}
+.desktop-sidebar__account:hover {
+  background: var(--hover);
+}
+.desktop-sidebar__account[aria-current="page"] {
+  background: var(--selbg);
+}
+.desktop-sidebar__account-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.desktop-sidebar__owner {
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.desktop-sidebar__account-label {
+  color: var(--label2);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+.desktop-sidebar__gear {
+  color: var(--label2);
+}
+
+.desktop-sidebar__item:focus-visible,
+.desktop-sidebar__visit:focus-visible,
+.desktop-sidebar__account:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: calc(-1 * var(--focus-width));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .desktop-sidebar__chevron {
+    transition: none;
+  }
+}

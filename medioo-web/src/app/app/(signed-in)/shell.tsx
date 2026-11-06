@@ -3,13 +3,16 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { javaGet, signedIn } from "@/api/java";
 import { requestContext } from "@/api/request";
-import type { MeJson, MePatient, NowBannerJson } from "@/api/types";
+import type { FollowUpsJson, MeJson, MePatient, NowBannerJson } from "@/api/types";
 import type { Lang } from "@/copy";
 import { AppShell } from "@/components/AppShell/AppShell";
+import { DesktopShell } from "@/components/DesktopShell/DesktopShell";
+import { DesktopSidebar, nextVisitOf, type DesktopPlace } from "@/components/DesktopSidebar/DesktopSidebar";
 import { PatientChooser } from "@/components/PatientChooser/PatientChooser";
 import { NowBanner } from "@/components/safety/NowBanner/NowBanner";
 import { NowBannerHold } from "@/components/safety/NowBanner/NowBannerHold";
 import type { Tab } from "@/components/TabBar/TabBar";
+import { desktopLayout } from "@/routing/desktop";
 import { activePatient } from "./active-patient";
 import { shellWords } from "./shell-words";
 
@@ -24,6 +27,12 @@ export type ShellContext = { lang: Lang; preview: boolean; me: MeJson; patient: 
 export type Slot = ReactNode | ((ctx: ShellContext) => ReactNode | Promise<ReactNode>);
 
 const fill = async (slot: Slot | undefined, ctx: ShellContext) => (typeof slot === "function" ? await slot(ctx) : slot);
+
+/** The sidebar's place for a page's tab: the chat is the talk-and-papers screen, the papers tab the calendar. */
+const PLACE: Record<Tab, DesktopPlace> = { chat: "talk", papers: "calendar", health: "labs", family: "settings" };
+
+/** Today on the patient's calendar (Dhaka), ISO: what the sidebar counts the doctor's next date from. */
+const DHAKA_DAY = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Dhaka", year: "numeric", month: "2-digit", day: "2-digit" });
 
 /** The page's own `?patient=`, read from the address the browser asked for (requestContext().here). */
 function askedPatient(here: string): string | null {
@@ -56,6 +65,11 @@ function askedPatient(here: string): string | null {
  * - `asked` (plan W10, the profile page): a patient the page's own address names (`/app/patients/{id}/profile`),
  *   resolved through activePatient in place of `?patient=`, as Java's ProfilePages chooses the patient its link names:
  *   the toolbar names that patient, and one this family does not see is the not-found page.
+ * - `desktop` (plan desktop-parity Task 5): the page's two desktop columns, the paper and the conversation. When
+ *   desktopLayout(ctx) says so (a preview request, until the flip) the page renders DesktopShell with DesktopSidebar
+ *   from 900 px, and today's AppShell, marked `phone`, below it, so nothing below 900 px changes. Every other request,
+ *   and every page that gives no `desktop`, renders today's AppShell alone, exactly as before. With the chooser in
+ *   place of `main`, the paper column holds the chooser and the conversation is empty: the sidebar names nobody.
  * `everyone` and `asked` are amendments of the plan's Global Constraint "a screen never decides a patient", approved by
  * the PO 2026-10-23 (P2). `patient` (W6) is a third, put to the PO for sight (the plan's Global Constraints): like
  * `asked` it resolves through activePatient, so a paper about a patient this family's `me` does not list is not found.
@@ -68,6 +82,7 @@ export async function signedInPage({
   everyone,
   asked,
   patient: about,
+  desktop,
 }: {
   tab: Tab | null;
   main: Slot;
@@ -76,6 +91,7 @@ export async function signedInPage({
   everyone?: boolean;
   asked?: string;
   patient?: string | null;
+  desktop?: { paper: Slot; talk: Slot };
 }) {
   const { lang, preview, here } = await requestContext();
   const [meAnswer, bannerAnswer] = await Promise.all([javaGet<MeJson>("/app/api/me"), javaGet<NowBannerJson>("/app/api/now-banner")]);
@@ -89,7 +105,13 @@ export async function signedInPage({
   const ctx: ShellContext = { lang, preview, me, patient, nowShown: banner.show };
   const chooser = view.kind === "choose" && !asksItself && everyone !== true;
   const content = chooser ? <PatientChooser lang={lang} patients={me.patients} /> : await fill(main, ctx);
-  return (
+  const nowBanner = banner.show ? (
+    <NowBannerHold key={JSON.stringify(banner.seen)}>
+      <NowBanner banner={banner} patients={me.patients} lang={lang} live />
+    </NowBannerHold>
+  ) : undefined;
+  const onDesktop = desktop !== undefined && desktopLayout(ctx);
+  const phone = (
     <AppShell
       lang={lang}
       preview={preview}
@@ -99,13 +121,39 @@ export async function signedInPage({
       tab={tab}
       main={content}
       aside={aside === undefined || chooser ? undefined : await fill(aside, ctx)}
-      banner={
-        banner.show ? (
-          <NowBannerHold key={JSON.stringify(banner.seen)}>
-            <NowBanner banner={banner} patients={me.patients} lang={lang} live />
-          </NowBannerHold>
-        ) : undefined
-      }
+      banner={nowBanner}
+      phone={onDesktop}
     />
+  );
+  if (!onDesktop) return phone;
+
+  const followUps =
+    patient === null
+      ? null
+      : signedIn(await javaGet<FollowUpsJson>(`/app/api/patients/${encodeURIComponent(patient.id)}/follow-ups`), here);
+  return (
+    <>
+      {phone}
+      <DesktopShell
+        lang={lang}
+        preview={preview}
+        sidebar={
+          <DesktopSidebar
+            lang={lang}
+            preview={preview}
+            me={me}
+            active={patient}
+            current={tab === null ? null : PLACE[tab]}
+            nextVisit={followUps === null ? null : nextVisitOf(followUps.items)}
+            today={DHAKA_DAY.format(new Date())}
+          />
+        }
+        bar={nowBanner}
+        paper={
+          chooser ? <PatientChooser lang={lang} patients={me.patients} titleId="desktop-patient-chooser-title" /> : await fill(desktop.paper, ctx)
+        }
+        talk={chooser ? null : await fill(desktop.talk, ctx)}
+      />
+    </>
   );
 }

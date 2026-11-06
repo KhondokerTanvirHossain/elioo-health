@@ -1,0 +1,153 @@
+/* The desktop shell (DesktopShell.tsx; desktop.html `.app`, `.side`, `.main`). Three widths, one document:
+   - below 900 px: nothing (today's phone shell, AppShell with app-shell--phone, stands there instead);
+   - 900 to 1199 px: the content region alone; the sidebar hidden until the paper column's button marks it data-open,
+     then lying over the page at its 256 px, the page dimmed by the scrim token (desktop.html's narrow-window overlay);
+   - 1200 px and wider: the sidebar's column at --sidebar-w, then the content region.
+   The content region is the NOW bar across both content columns, then the paper (the rest) and the conversation
+   (--conversation-w); a paper's details lie over the conversation. The window is the shell's height and each column
+   scrolls inside itself, as desktop.html's do. Every size is a token or the design's own; nothing is red. */
+.desktop-shell {
+  display: none;
+  height: 100dvh;
+  background: var(--bg);
+  color: var(--label);
+}
+.desktop-shell__sidebar {
+  display: none;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 0.5px solid var(--sep);
+  background: var(--side);
+}
+.desktop-shell__content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.desktop-shell__bar {
+  flex: none;
+  min-width: 0;
+}
+/* The bar the family marked seen (NowBannerHold renders nothing once Java hid it) leaves no gap. */
+.desktop-shell__bar:empty {
+  display: none;
+}
+.desktop-shell__columns {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr) var(--conversation-w);
+  min-height: 0;
+}
+.desktop-shell__paper {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  background: var(--canvas);
+}
+.desktop-shell__talk {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  border-left: 0.5px solid var(--sep);
+  background: var(--bg);
+}
+.desktop-shell__panel {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  overflow-y: auto;
+  background: var(--bg);
+}
+
+/* The sidebar's button, at the paper column's top start from 900 to 1199 px (desktop.html's .menu-btn, which the
+   viewer's toolbar carries first): the paper's own toolbar leaves --desktop-menu-room for it. */
+.desktop-shell__menu {
+  display: none;
+  position: absolute;
+  top: var(--space-1);
+  left: var(--space-2);
+  z-index: 6;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--target-min);
+  height: var(--target-min);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--label);
+  cursor: pointer;
+}
+.desktop-shell__menu:hover {
+  background: var(--hover);
+}
+.desktop-shell__menu:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+.desktop-shell__menu-icon {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+@media (min-width: 900px) {
+  .desktop-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .desktop-shell__menu {
+    display: inline-flex;
+  }
+  /* desktop.html's --cw below 1200 px: the conversation gives the paper room in a narrower window. */
+  .desktop-shell__columns {
+    grid-template-columns: minmax(0, 1fr) 360px;
+  }
+  .desktop-shell__paper {
+    --desktop-menu-room: calc(var(--target-min) + var(--space-2));
+  }
+  /* Shown by the button: over the page, at its own width, the full height of the window, the page behind it dimmed. */
+  .desktop-shell__sidebar[data-open] {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 20;
+    display: flex;
+    width: var(--sidebar-w);
+    box-shadow: 0 0 0 100vmax var(--scrim);
+  }
+}
+
+@media (min-width: 1200px) {
+  .desktop-shell {
+    grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  }
+  .desktop-shell__menu {
+    display: none;
+  }
+  .desktop-shell__columns {
+    grid-template-columns: minmax(0, 1fr) var(--conversation-w);
+  }
+  .desktop-shell__paper {
+    --desktop-menu-room: 0px;
+  }
+  .desktop-shell__sidebar,
+  .desktop-shell__sidebar[data-open] {
+    position: static;
+    z-index: auto;
+    display: flex;
+    width: auto;
+    box-shadow: none;
+  }
+}
