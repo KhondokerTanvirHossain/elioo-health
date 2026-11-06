@@ -1609,10 +1609,13 @@ questions (P16, quoted at the end); the rest is engineering within the rulings:*
   server-side fallback), a timeout or no check client all give `chat.check.refused` (P16(d), the PO's words: bn "এই
   প্রশ্নের নিশ্চিত উত্তর আমি দিতে পারি না। কাগজপত্রে যা লেখা আছে দেখুন, আর ওষুধ নিয়ে ডাক্তার বা ফার্মাসিস্টকে জিজ্ঞেস করুন।", en "I
   can't give a reliable answer to this. See what the papers say under Papers, and ask a doctor or a pharmacist about the
-  medicine.") with `chat.dose.ask_doctor` appended by code, a FALLBACK under handler `model_check` that cites no paper.
+  medicine.") with `chat.dose.ask_doctor` appended by code, unless the refusal is positively about a lab, which gives the
+  lab-neutral `chat.check.refused.lab` with no medicine line (P17, "Lab-neutral refusals" below), a FALLBACK under handler
+  `model_check` that cites no paper.
   The code checks' own fixed reply (`fixed_after_repair`, and `model_error`) stays `chat.ask.failed`: it is not the
   check's refusal, and P16(d) named the check's line only. `ChatPropertiesCheck` refuses to start without
-  `chat.check.refused` in either language, and when it or `chat.ask.failed`, with the longest appendix after it, would
+  `chat.check.refused` (or, since P17, `chat.check.refused.lab`) in either language, and when any of them or
+  `chat.ask.failed`, with the longest appendix after it, would
   be over `max-answer-chars` (third review of #173). Code refuses the same way **with no call**: an answer to a dose or
   purpose question that opens with a bare yes, no or okay (`check_bare_answer`: the check never sees the question, so
   "হ্যাঁ, পারেন।" has nothing to be judged against; **approved by the PO, P16(b)**); and an answer or a written line
@@ -1684,6 +1687,7 @@ questions (P16, quoted at the end); the rest is engineering within the rulings:*
     for a dose or purpose question or an answer that quoted a written line, and a lab-neutral variant of
     `chat.check.refused` for the rest; the test `aLabsOnlyAnswerTheCheckRefusesIsTheChecksLine` would then expect the
     tail without the doctor line, and the medicine-question refusal test keep it, so both directions stay tested.
+    (Approved, P17; built as "Lab-neutral refusals" below, the test renamed `aLabsOnlyAnswerTheCheckRefusesIsTheLabLine`.)
   - *The RULES are about medicines, and rule 3 can read a lab number as one.* "Ma-র ক্রিয়েটিনিন 1.8 mg/dL" carries a number
     and unit no written line holds, and the rules end "If you are unsure, refuse." If the live run refuses the labs-only
     answer, or to narrow the risk in advance, proposed RULES sentence, for approval (it narrows what the check refuses, so
@@ -1717,3 +1721,26 @@ questions (P16, quoted at the end); the rest is engineering within the rulings:*
   comes to the PO for approval BEFORE it ships; the RULES sentence, "No, keep it strict (Recommended)": the proposed
   sentence ("a lab reading … is no reason by itself to refuse") is NOT added. Item (ii), the doctor line on a refusal,
   keeps its built default (both kept), except as the lab-neutral follow-up narrows it.
+- **Lab-neutral refusals (P17 follow-up, #175, branch `fix/baymax-chat-lab-refusal`; the wording approved by the PO,
+  P18, 2026-11-06).** A check refusal (the check's `refuse`, and every fail-closed path: unparseable, `max_tokens`,
+  error, timeout, no client, `check_marker`; `check_bare_answer` is always a dose or purpose question) keeps
+  `chat.check.refused` with `chat.dose.ask_doctor` by default. It is `chat.check.refused.lab`, with no doctor-medicine
+  line, only when it is positively about a lab (`ChatAnswerCheck.speaksOfMedicine`; review of #175, findings 1, 7 and
+  8), that is when all of these hold: the question is neither a dose nor a purpose question (the same decision that
+  appends their lines); the refused answer, as it would have been shown, quotes no prescription line (no cited line, and
+  no written line inside it); neither the question nor the refused answer refers to a medicine, read as broadly as the
+  other name checks read one (the stored and the unshown medicines' names as a stem, across an inner hyphen
+  "Demo-prol" and by `NameSkeleton`, "ডেমোপ্রল"; a medicine word; or a Latin-letter word the context does not hold,
+  such as "Napa" from an older paper or an invented name, in a Bangla text any such word and in an English one a
+  capitalised word inside a sentence); and the question is about a lab or the report (a lab word, a stored lab's name,
+  a report word such as রিপোর্ট, test or sugar). A refusal about a follow-up date or a doctor's name therefore keeps the
+  doctor line. Known limits, each reaching the lab line only when the question names a lab: a medicine no stored line
+  holds, written in Bangla script ("নাপা" from an older paper), and an English sentence that opens with such a name, are
+  not read as a medicine. Copy approved by the PO, P18, 2026-11-06 ("Approve, merge when green"), in the voice of
+  `chat.check.refused`: bn "এই প্রশ্নের নিশ্চিত উত্তর আমি দিতে পারি না। কাগজপত্রে যা লেখা আছে দেখুন, আর রিপোর্ট নিয়ে ডাক্তারকে
+  জিজ্ঞেস করুন।", en "I can't give a reliable answer to this. See what the papers say under Papers, and ask a doctor
+  about the report." The disclaimer, the red-flag line and any NOW/THIS_WEEK urgency line stay exactly as before in both
+  cases; the check, its gate (every model-written answer) and the code checks are unchanged; the handler stays
+  `model_check`, so V32's constraints hold the row as before. The new key is in `ChatAnswerCheck.KEYS` and
+  `ChatPropertiesCheck.FIXED_BODIES` (startup refuses without it, or when it with the longest appendix is over the cap),
+  and passes `AnswerCheckTest.everyFixedChatBodyPassesTheContentChecks`, `MedicinePurposeGuardTest` and the glossary.

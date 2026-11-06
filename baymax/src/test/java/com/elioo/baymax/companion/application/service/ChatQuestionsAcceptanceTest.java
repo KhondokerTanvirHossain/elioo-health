@@ -321,6 +321,44 @@ class ChatQuestionsAcceptanceTest {
     }
 
     /**
+     * PO ruling P17, both directions on real Postgres: the check refuses an answer about a lab only, naming no medicine, to a
+     * question about a lab, and the row holds the lab-neutral line and no doctor-medicine line. The same family's refused
+     * question about no lab (where the papers are) and refused dose question, just after, each still hold chat.check.refused
+     * and the doctor line (review of #175, finding 7: only a refusal positively about a lab loses it). Each row is read back
+     * from chat_turn and is what was shown.
+     */
+    @Test
+    void aCheckRefusalAboutALabStoresTheLabLineAndAnyOtherTheDoctorLine() {
+        StubModel stub = new StubModel();
+        ScriptedCheck check = new ScriptedCheck("refuse");
+        runner(stub, check).run(context -> {
+            Seeded s = seed(context, "+8801700000776");
+            UUID paper = paper(s.ma(), "lab_report", "routine");
+            sql("INSERT INTO baymax.observation (patient_id, document_id, name, canonical_name, value, unit, ref_low, ref_high, crop_key,"
+                    + " observed_at) VALUES ('" + s.ma().id() + "','" + paper + "','Creatinine','creatinine','1.8','mg/dL','0.7','1.3','k',now())");
+            AskUseCase asks = context.getBean(AskUseCase.class);
+            ChatCopyPort copy = context.getBean(ChatCopyPort.class);
+            String doctor = copy.line("bn", "chat.dose.ask_doctor");
+
+            AskAnswer lab = ask(asks, s.family(), s.ma(), "আম্মার ক্রিয়েটিনিন কত?");
+            AskAnswer papers = ask(asks, s.family(), s.ma(), "আম্মার কাগজগুলো কোথায় আছে?");
+            AskAnswer dose = ask(asks, s.family(), s.ma(), "ওষুধটা অর্ধেক করব?");
+
+            assertThat(check.calls.get()).as("model check calls").isEqualTo(3);
+            for (AskAnswer a : List.of(lab, papers, dose)) {
+                assertThat(path(a)).isEqualTo("model_check/fallback/1/1");
+                assertThat(text("SELECT answer FROM baymax.chat_turn WHERE id = '" + a.turnId() + "'")).isEqualTo(a.answer());
+            }
+            assertThat(lab.answer()).startsWith(copy.line("bn", ChatAnswerCheck.REFUSED_LAB_LINE) + "\n\n")
+                    .doesNotContain(doctor).doesNotContain(copy.line("bn", ChatAnswerCheck.REFUSED_LINE)).doesNotContain("1.8");
+            assertThat(papers.answer()).startsWith(copy.line("bn", ChatAnswerCheck.REFUSED_LINE) + "\n\n").contains(doctor)
+                    .doesNotContain(copy.line("bn", ChatAnswerCheck.REFUSED_LAB_LINE));
+            assertThat(dose.answer()).startsWith(copy.line("bn", ChatAnswerCheck.REFUSED_LINE) + "\n\n").contains(doctor)
+                    .doesNotContain(WRITTEN);
+        });
+    }
+
+    /**
      * A P14 reply is built by code from the stored lines: it is never sent to the model check, and its row keeps the line it
      * shows with that line's crop (#166, {@code MedicinePurposeReply.Reply#quoted}).
      */

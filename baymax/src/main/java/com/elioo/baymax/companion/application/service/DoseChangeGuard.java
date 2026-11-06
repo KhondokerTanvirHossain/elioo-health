@@ -282,6 +282,11 @@ public final class DoseChangeGuard {
         return " " + TextNormaliser.normalise(text) + " ";
     }
 
+    /** {@link #hay} of the text with every inner hyphen dropped ("Demo-prol" to "demoprol"), as {@link #instructs} reads it. */
+    static String joinedHay(String text) {
+        return hay(INNER_HYPHEN.matcher(text == null ? "" : text).replaceAll(""));
+    }
+
     /** A whole word or phrase, or with a trailing {@code *} a stem from the start of a word. */
     static boolean hits(String hay, String term) {
         boolean stem = term.endsWith("*");

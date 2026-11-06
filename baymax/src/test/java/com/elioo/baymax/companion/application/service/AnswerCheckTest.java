@@ -145,7 +145,8 @@ class AnswerCheckTest {
                 }
             }
             assertThat(here).as("chat.ask.* and chat.check.* keys in ui-chat_" + lang).isGreaterThanOrEqualTo(4);
-            assertThat(checkLines).as("chat.check.* keys in ui-chat_" + lang + " (chat.check.refused, P16(d))").isGreaterThanOrEqualTo(1);
+            assertThat(checkLines).as("chat.check.* keys in ui-chat_" + lang + " (chat.check.refused, P16(d); chat.check.refused.lab, P17)")
+                    .isGreaterThanOrEqualTo(2);
             seen += here;
         }
         assertThat(seen).isGreaterThanOrEqualTo(8);

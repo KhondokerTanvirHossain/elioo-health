@@ -63,7 +63,11 @@ class MedicinePurposeGuardTest {
         ChatContext ctx = PurposeCorpus.context();
         List<String> keys = new ArrayList<>(ChatAppendix.KEYS);
         keys.addAll(MedicinePurposeReply.KEYS);
-        keys.addAll(List.of("chat.ask.failed", "chat.ask.reply", "chat.ask.limit", "chat.check.refused"));
+        keys.addAll(List.of("chat.ask.failed", "chat.ask.reply", "chat.ask.limit"));
+        // every refusal line the model check can show, read from ChatAnswerCheck itself, so a key added there is never missed
+        // (review of #175, finding 6); a derived list needs its own guard against emptiness
+        assertThat(ChatAnswerCheck.KEYS).as("the check's refusal keys").isNotEmpty().contains(ChatAnswerCheck.REFUSED_LINE);
+        keys.addAll(ChatAnswerCheck.KEYS);
         int checked = 0;
         for (String lang : List.of("bn", "en")) {
             for (String key : keys) {

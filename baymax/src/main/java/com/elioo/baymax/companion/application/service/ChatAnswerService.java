@@ -74,8 +74,11 @@ import java.util.function.Function;
  *       read by the refuse-only model check ({@link ChatAnswerCheck}, one metered call, {@code ai_call_log} purpose
  *       {@code chat_check}), given at most what is left of the answer deadline. Its pass leaves the answer byte-equal; its
  *       refusal, and any error, timeout, unreadable verdict or missing check client, gives
- *       {@value ChatAnswerCheck#REFUSED_LINE} (P16(d)) with {@code chat.dose.ask_doctor} (FALLBACK, handler
- *       {@value ChatAnswerCheck#HANDLER}), with no repair after it. Code refuses the same way, with no call, a bare yes or
+ *       {@value ChatAnswerCheck#REFUSED_LINE} (P16(d)) with {@code chat.dose.ask_doctor}, unless it is positively about a
+ *       lab (a question about a lab, neither a dose nor a purpose question, where neither the question nor the refused
+ *       answer names or quotes a medicine): then the lab-neutral {@value ChatAnswerCheck#REFUSED_LAB_LINE} with no medicine
+ *       line (P17); FALLBACK, handler
+ *       {@value ChatAnswerCheck#HANDLER}, with no repair after it. Code refuses the same way, with no call, a bare yes or
  *       no to a dose or purpose question (approved by the PO, P16(b)) and an answer or a written line holding a block
  *       marker ({@code check_marker}; engineering within P15's fail-closed rule, review of #173, findings 8 and 14).
  *       Code-built replies are never sent to it;</li>
@@ -147,8 +150,8 @@ public class ChatAnswerService implements AskUseCase {
 
     /**
      * Where a turn's body came from, before the appendix. {@code medicines}: the prescription lines it quotes, each with its
-     * crop (review of #166, finding 5). {@code doctorLine}: the model check refused the answer, so the appendix carries the
-     * ask-the-doctor line whatever the question was (PO ruling P15).
+     * crop (review of #166, finding 5). {@code doctorLine}: the model check refused an answer and the refusal speaks of a
+     * medicine, so the appendix carries the ask-the-doctor line whatever the question was (PO rulings P15, P17).
      */
     private record Body(String text, AnswerKind kind, String handler, List<UUID> documents, List<CitedMedicine> medicines,
                         boolean doctorLine) {
@@ -256,7 +259,7 @@ public class ChatAnswerService implements AskUseCase {
 
     /**
      * 5. no model, the cap, then the model: every question code does not answer itself. {@code checkedTail} is the appendix
-     * of an answer the model check refused: {@code tail} with the ask-the-doctor line.
+     * of an answer the model check refused that speaks of a medicine: {@code tail} with the ask-the-doctor line (P17).
      */
     private Mono<AskAnswer> byModel(UUID familyId, PatientProfile patient, String q, boolean dose, boolean purpose, String l,
                                     ViewerLocale viewer, String tail, String checkedTail, long started, long startMs) {
@@ -362,7 +365,7 @@ public class ChatAnswerService implements AskUseCase {
                         List<String> v1 = check(first, ctx, tail, asked);
                         if (v1.isEmpty()) {
                             return checked(turnId, new Body(AnswerCheck.resolve(first.strip(), ctx), AnswerKind.ANSWER, "model",
-                                    ctx.documentIds(), AnswerCheck.cited(first.strip(), ctx)), ctx, dose || purpose, l, tally, startMs);
+                                    ctx.documentIds(), AnswerCheck.cited(first.strip(), ctx)), ctx, q, dose || purpose, l, tally, startMs);
                         }
                         tally.violations.addAll(v1);
                         log.debug("[baymax] chat turn={} refused first answer: {}", turnId, v1);
@@ -370,7 +373,7 @@ public class ChatAnswerService implements AskUseCase {
                             List<String> v2 = check(second, ctx, tail, asked);
                             if (v2.isEmpty()) {
                                 return checked(turnId, new Body(AnswerCheck.resolve(second.strip(), ctx), AnswerKind.ANSWER, "repair",
-                                        ctx.documentIds(), AnswerCheck.cited(second.strip(), ctx)), ctx, dose || purpose, l, tally, startMs);
+                                        ctx.documentIds(), AnswerCheck.cited(second.strip(), ctx)), ctx, q, dose || purpose, l, tally, startMs);
                             }
                             tally.violations.addAll(v2);
                             log.debug("[baymax] chat turn={} refused the repair: {}", turnId, v2);
@@ -396,21 +399,26 @@ public class ChatAnswerService implements AskUseCase {
      * unread. Code-built replies never reach here. The check is given the written lines and the answer as shown, nothing
      * else, for at most what is left of the answer deadline. Only the exact verdict "pass" lets {@code passed} stand, the
      * same object, byte-equal; anything else is the check's own line ({@value ChatAnswerCheck#REFUSED_LINE}, P16(d)) with the
-     * doctor line, and the code that says why is the turn's violation. Code refuses the same way, with no call: a bare yes
+     * doctor line, or, when it is positively about a lab ({@link ChatAnswerCheck#speaksOfMedicine}, read from {@code q} and
+     * the answer as shown), the lab-neutral {@value ChatAnswerCheck#REFUSED_LAB_LINE} without it (P17), and the code that
+     * says why is the turn's violation. Code refuses the same way, with no call: a bare yes
      * or no to a dose or purpose question ({@code medicineQuestion}; approved by the PO, P16(b)); and, as engineering within
      * P15's fail-closed rule (review of #173, findings 8 and 14), a block marker in the answer or a written line, no check
      * client, no time left. Never empty, never an error: a failure of the check is its refusal.
      */
-    private Mono<Body> checked(UUID turnId, Body passed, ChatContext ctx, boolean medicineQuestion, String l, Tally tally,
+    private Mono<Body> checked(UUID turnId, Body passed, ChatContext ctx, String q, boolean medicineQuestion, String l, Tally tally,
                                long startMs) {
         BaymaxProperties.Chat.Check check = properties.getChat().getCheck();
         if (!check.isEnabled()) {
             return Mono.just(passed);
         }
         // the refusal cites no paper and quotes no line: the check's line stands alone (review of #173, finding 20)
-        // nor carries a crop: medicines is empty, so V31's medicine columns store {} (chat_turn_medicine_on_a_cited_paper)
-        Body refused = new Body(copy.line(l, ChatAnswerCheck.REFUSED_LINE), AnswerKind.FALLBACK, ChatAnswerCheck.HANDLER, List.of(),
-                List.of(), true);
+        // nor carries a crop: medicines is empty, so V31's medicine columns store {} (chat_turn_medicine_on_a_cited_paper).
+        // PO ruling P17: the lab-neutral line and the turn's own appendix, which for such a question holds no medicine line,
+        // only when the refusal is positively about a lab; every other refusal keeps the medicine line and the doctor line
+        boolean medicine = ChatAnswerCheck.speaksOfMedicine(medicineQuestion, q, passed.text(), passed.medicines(), ctx);
+        Body refused = new Body(copy.line(l, medicine ? ChatAnswerCheck.REFUSED_LINE : ChatAnswerCheck.REFUSED_LAB_LINE),
+                AnswerKind.FALLBACK, ChatAnswerCheck.HANDLER, List.of(), List.of(), medicine);
         String byCode = ChatAnswerCheck.hasMarker(passed.text(), ctx.verbatimLines()) ? ChatAnswerCheck.MARKER
                 : medicineQuestion && ChatAnswerCheck.bareReply(passed.text()) ? ChatAnswerCheck.BARE : null;
         if (byCode != null) {
