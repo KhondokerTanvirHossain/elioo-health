@@ -31,7 +31,8 @@ import java.util.Optional;
  *   <li>{@code baymax.chat.max-answer-chars} below the longest set of fixed lines code appends, in either language, plus
  *       {@value #MIN_BODY} characters of body: the length cap runs on the whole assembled text, and a cap the fixed lines
  *       cannot fit would turn every answer, the fixed fallback included, into a refused one;</li>
- *   <li>a fixed body ({@link #FIXED_BODIES}: {@code chat.check.refused}, {@code chat.ask.failed}) that, with the longest
+ *   <li>a fixed body ({@link #FIXED_BODIES}: {@code chat.check.refused}, {@code chat.check.refused.lab},
+ *       {@code chat.ask.failed}) that, with the longest
  *       appendix after it, is over {@code baymax.chat.max-answer-chars} in either language: it would be sent over the cap
  *       (review of #173, third review, finding 2);</li>
  *   <li>{@code baymax.chat.model} with no price for its provider: every chat call would log a NULL cost, and the daily cost
@@ -54,10 +55,12 @@ public class ChatPropertiesCheck implements InitializingBean {
     static final int MIN_BODY = 200;
 
     /**
-     * The fixed bodies a model turn can end in: the model check's refusal ({@link ChatAnswerCheck#REFUSED_LINE}, P16(d))
-     * and the code checks' own fixed reply ({@code chat.ask.failed}); each, plus the longest appendix, must fit the cap.
+     * The fixed bodies a model turn can end in: the model check's refusal ({@link ChatAnswerCheck#REFUSED_LINE}, P16(d)),
+     * its lab-neutral refusal ({@link ChatAnswerCheck#REFUSED_LAB_LINE}, P17) and the code checks' own fixed reply
+     * ({@code chat.ask.failed}); each, plus the longest appendix, must fit the cap.
      */
-    static final List<String> FIXED_BODIES = List.of(ChatAnswerCheck.REFUSED_LINE, "chat.ask.failed");
+    static final List<String> FIXED_BODIES = List.of(ChatAnswerCheck.REFUSED_LINE, ChatAnswerCheck.REFUSED_LAB_LINE,
+            "chat.ask.failed");
 
     /**
      * How long the web composer waits for an answer (medioo-web Composer.tsx {@code ASK_TIMEOUT_MS}, held equal to this by

@@ -266,8 +266,14 @@ class ChatAnswerLiveTest {
         soft.assertThat(a.answer()).as(id + " ends with the disclaimer and the red-flag line").endsWith(tail);
         soft.assertThat(o.answer()).as(id + " stored as shown").isEqualTo(a.answer());
         if (ChatAnswerCheck.HANDLER.equals(o.handler())) {
-            soft.assertThat(a.answer()).as(id + " a check refusal shows chat.check.refused")
-                    .startsWith(copy.line(lang, ChatAnswerCheck.REFUSED_LINE)).contains(copy.line(lang, "chat.dose.ask_doctor"));
+            // PO ruling P17: chat.check.refused with the doctor line, or the lab-neutral line without it, never a mix
+            String doctor = copy.line(lang, "chat.dose.ask_doctor");
+            if (a.answer().startsWith(copy.line(lang, ChatAnswerCheck.REFUSED_LAB_LINE))) {
+                soft.assertThat(a.answer()).as(id + " a lab-neutral check refusal has no doctor line").doesNotContain(doctor);
+            } else {
+                soft.assertThat(a.answer()).as(id + " a check refusal shows chat.check.refused")
+                        .startsWith(copy.line(lang, ChatAnswerCheck.REFUSED_LINE)).contains(doctor);
+            }
         }
         if (o.kind() == AnswerKind.ANSWER) {
             // model text shown: it passed every code check and then the check, which read it

@@ -63,7 +63,8 @@ class MedicinePurposeGuardTest {
         ChatContext ctx = PurposeCorpus.context();
         List<String> keys = new ArrayList<>(ChatAppendix.KEYS);
         keys.addAll(MedicinePurposeReply.KEYS);
-        keys.addAll(List.of("chat.ask.failed", "chat.ask.reply", "chat.ask.limit", "chat.check.refused"));
+        keys.addAll(List.of("chat.ask.failed", "chat.ask.reply", "chat.ask.limit", "chat.check.refused",
+                "chat.check.refused.lab"));
         int checked = 0;
         for (String lang : List.of("bn", "en")) {
             for (String key : keys) {

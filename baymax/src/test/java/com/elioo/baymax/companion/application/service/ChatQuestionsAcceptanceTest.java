@@ -321,6 +321,37 @@ class ChatQuestionsAcceptanceTest {
     }
 
     /**
+     * PO ruling P17, both directions on real Postgres: the check refuses an answer that names no medicine to a question
+     * that is neither a dose nor a purpose question, and the row holds the lab-neutral line and no doctor-medicine line;
+     * the same family's refused dose question, just after, still holds chat.check.refused and the doctor line. Each row is
+     * read back from chat_turn and is what was shown.
+     */
+    @Test
+    void aCheckRefusalAboutNoMedicineStoresTheLabLineAndADoseOneTheDoctorLine() {
+        StubModel stub = new StubModel();
+        ScriptedCheck check = new ScriptedCheck("refuse");
+        runner(stub, check).run(context -> {
+            Seeded s = seed(context, "+8801700000776");
+            AskUseCase asks = context.getBean(AskUseCase.class);
+            ChatCopyPort copy = context.getBean(ChatCopyPort.class);
+            String doctor = copy.line("bn", "chat.dose.ask_doctor");
+
+            AskAnswer lab = ask(asks, s.family(), s.ma(), "আম্মার কাগজগুলো কোথায় আছে?");
+            AskAnswer dose = ask(asks, s.family(), s.ma(), "ওষুধটা অর্ধেক করব?");
+
+            assertThat(check.calls.get()).as("model check calls").isEqualTo(2);
+            assertThat(path(lab)).isEqualTo("model_check/fallback/1/1");
+            assertThat(path(dose)).isEqualTo("model_check/fallback/1/1");
+            assertThat(lab.answer()).startsWith(copy.line("bn", ChatAnswerCheck.REFUSED_LAB_LINE) + "\n\n")
+                    .doesNotContain(doctor).doesNotContain(copy.line("bn", ChatAnswerCheck.REFUSED_LINE));
+            assertThat(dose.answer()).startsWith(copy.line("bn", ChatAnswerCheck.REFUSED_LINE) + "\n\n").contains(doctor)
+                    .doesNotContain(WRITTEN);
+            assertThat(text("SELECT answer FROM baymax.chat_turn WHERE id = '" + lab.turnId() + "'")).isEqualTo(lab.answer());
+            assertThat(text("SELECT answer FROM baymax.chat_turn WHERE id = '" + dose.turnId() + "'")).isEqualTo(dose.answer());
+        });
+    }
+
+    /**
      * A P14 reply is built by code from the stored lines: it is never sent to the model check, and its row keeps the line it
      * shows with that line's crop (#166, {@code MedicinePurposeReply.Reply#quoted}).
      */

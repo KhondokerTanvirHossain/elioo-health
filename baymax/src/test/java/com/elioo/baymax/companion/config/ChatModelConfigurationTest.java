@@ -318,6 +318,8 @@ class ChatModelConfigurationTest {
     void theCheckRefusalLineMissingInEitherLanguageStopsStartupAndNamesTheKey() {
         for (String lang : List.of("bn", "en")) {
             assertStartupRefused(stub(lang, "chat.check.refused", null), lang + ":chat.check.refused");
+            // PO ruling P17: the lab-neutral refusal is read per refusal too
+            assertStartupRefused(stub(lang, "chat.check.refused.lab", null), lang + ":chat.check.refused.lab");
         }
     }
 
@@ -330,7 +332,7 @@ class ChatModelConfigurationTest {
     void aFixedBodyThatCannotFitWithItsAppendixStopsStartupAndNamesTheKey() {
         String longLine = "ক".repeat(1100);
         for (String lang : List.of("bn", "en")) {
-            for (String key : List.of("chat.check.refused", "chat.ask.failed")) {
+            for (String key : List.of("chat.check.refused", "chat.check.refused.lab", "chat.ask.failed")) {
                 assertStartupRefused(stub(lang, key, longLine), lang + ":" + key);
             }
         }

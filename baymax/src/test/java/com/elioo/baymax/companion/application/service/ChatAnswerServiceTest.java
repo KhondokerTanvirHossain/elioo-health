@@ -1230,26 +1230,207 @@ class ChatAnswerServiceTest {
         assertThat(stored().checkCalls()).isEqualTo(1);
     }
 
-    /**
-     * The same kind of labs-only answer, refused by the check: the check's own line with the doctor line, never the answer.
-     * The doctor line on a question about a lab value is the copy P15/P16(d) set when only medicine answers reached the
-     * check; it is put to the PO as an observation (DR-50, third review of #173), not changed here. If he approves the
-     * option there, this test expects {@code tail(false)} and a medicine-question refusal keeps {@code tail(true)}.
-     */
-    @Test
-    void aLabsOnlyAnswerTheCheckRefusesIsTheChecksLine() {
-        String answer = "Ma-র ক্রিয়েটিনিন 1.8, কাগজে ছাপা সীমার বাইরে।";
+    // ---- PO ruling P17, "Yes, make lab refusals neutral": a check refusal carries chat.check.refused and
+    // chat.dose.ask_doctor only when the question is a dose or purpose question or the refused answer names or quotes a
+    // medicine; otherwise it is chat.check.refused.lab with no doctor-medicine line. Both directions, each asserting the path
+    // (handler model_check, the check's own violation code, one check call), so no code-check fallback can pass for either.
+
+    static final String LAB_Q_BN = "আম্মার ক্রিয়েটিনিন কত?";
+    static final String LAB_A_BN = "Ma-র ক্রিয়েটিনিন 1.8, কাগজে ছাপা সীমার বাইরে।";
+    static final String LAB_Q_EN = "What is Ma's creatinine?";
+    static final String LAB_A_EN = "Ma's Creatinine 1.8 mg/dL is above the range, Range printed on the report: 0.7–1.3.";
+
+    /** The appendix in {@code lang}, with or without the doctor line and the purpose line, and no urgency. */
+    private String tailIn(String lang, boolean dose, boolean purpose) {
+        return ChatAppendix.tail(dose, purpose, Optional.empty(), k -> line(lang, k));
+    }
+
+    /** The model's only answer is {@code answer}; the check refuses it. bn reads CTX, en the live test's English context. */
+    private AskAnswer refusedByTheCheck(String lang, String q, String answer) {
+        if ("en".equals(lang)) {
+            when(contexts.build(eq(FAMILY), eq(PATIENT), eq("Ma"), any()))
+                    .thenAnswer(i -> Mono.just(ChatAnswerWordingTest.live(i.getArgument(3))));
+        }
         model(Mono.just(reply(answer, 1, 1)));
         when(judge.invoke(any())).thenReturn(Mono.just(verdict("{\"verdict\":\"refuse\"}")));
+        return service().ask(FAMILY, PATIENT, q, lang).block(Duration.ofSeconds(10));
+    }
 
-        AskAnswer a = ask("আম্মার ক্রিয়েটিনিন কত?");
-
+    /** The turn went through the check and the check refused it: never a code check's or a model error's fallback. */
+    private void theCheckRefused(AskAnswer a) {
         verify(judge, times(1)).invoke(any());
         assertThat(a.kind()).isEqualTo(AnswerKind.FALLBACK);
-        assertThat(a.answer()).isEqualTo(line("bn", "chat.check.refused") + tail(true)).doesNotContain("1.8");
+        ChatOutcome o = stored();
+        assertThat(o.handler()).isEqualTo("model_check");
+        assertThat(o.violationCodes()).containsExactly("check_refused");
+        assertThat(o.checkCalls()).isEqualTo(1);
+        assertThat(o.answer()).isEqualTo(a.answer());
+    }
+
+    /** Neither a dose nor a purpose question, so only what the refused answer says can bring the doctor line. */
+    private static void notAMedicineQuestion(String q) {
+        assertThat(DoseChangeGuard.asksForChange(q, CTX.medicineNames())).as("not a dose question: " + q).isFalse();
+        assertThat(MedicinePurposeGuard.route(q, CTX.medicineNames(), MedicinePurposeGuard.labNames(CTX), "Ma"))
+                .as("not a purpose question: " + q).isEqualTo(MedicinePurposeGuard.Route.NONE);
+    }
+
+    /** The lab line differs from both other fixed bodies in both languages, so an assertion on it says which one ran. */
+    @Test
+    void theLabLineIsItsOwnInBothLanguages() {
+        for (String lang : List.of("bn", "en")) {
+            assertThat(line(lang, "chat.check.refused.lab")).as(lang)
+                    .isNotEqualTo(line(lang, "chat.check.refused")).isNotEqualTo(line(lang, "chat.ask.failed"))
+                    .doesNotContain(line(lang, "chat.dose.ask_doctor"));
+        }
+    }
+
+    /**
+     * PO ruling P17: an answer about labs only, to a question about a lab, that the check refuses is the lab-neutral line
+     * with the plain appendix ({@code tail(false)}): no chat.check.refused, no chat.dose.ask_doctor, so a family who asked
+     * about creatinine is not told twice about a medicine nobody named. The disclaimer and the red-flag line stay.
+     */
+    @Test
+    void aLabsOnlyAnswerTheCheckRefusesIsTheLabLine() {
+        notAMedicineQuestion(LAB_Q_BN);
+
+        AskAnswer a = refusedByTheCheck("bn", LAB_Q_BN, LAB_A_BN);
+
+        theCheckRefused(a);
+        assertThat(a.answer()).isEqualTo(line("bn", "chat.check.refused.lab") + tailIn("bn", false, false))
+                .doesNotContain(line("bn", "chat.dose.ask_doctor")).doesNotContain("1.8")
+                .endsWith(line("bn", "disclaimer") + "\n" + line("bn", "safety.red_flag_line"));
+    }
+
+    @Test
+    void aLabsOnlyAnswerTheCheckRefusesIsTheLabLineInEnglish() {
+        notAMedicineQuestion(LAB_Q_EN);
+
+        AskAnswer a = refusedByTheCheck("en", LAB_Q_EN, LAB_A_EN);
+
+        theCheckRefused(a);
+        assertThat(a.answer()).isEqualTo(line("en", "chat.check.refused.lab") + tailIn("en", false, false))
+                .doesNotContain(line("en", "chat.dose.ask_doctor")).doesNotContain("1.8")
+                .endsWith(line("en", "disclaimer") + "\n" + line("en", "safety.red_flag_line"));
+    }
+
+    /** The patient's open urgency line stays exactly where it is on a lab-neutral refusal, as on every other answer. */
+    @Test
+    void aLabRefusalKeepsTheOpenUrgencyLine() {
+        when(attention.urgent(FAMILY, PATIENT)).thenReturn(Mono.just(List.of(urgent(Urgency.NOW))));
+
+        AskAnswer a = refusedByTheCheck("bn", LAB_Q_BN, LAB_A_BN);
+
+        theCheckRefused(a);
+        assertThat(a.answer()).isEqualTo(line("bn", "chat.check.refused.lab")
+                        + ChatAppendix.tail(false, false, Optional.of(Urgency.NOW), k -> line("bn", k)))
+                .contains(line("bn", "urgency.now")).doesNotContain(line("bn", "chat.dose.ask_doctor"));
+    }
+
+    /**
+     * Fail closed is unchanged, and so is its line choice: a check with no client refuses a labs-only answer, with the
+     * lab-neutral line.
+     */
+    @Test
+    void aLabsOnlyAnswerTheCheckCannotReadIsTheLabLineToo() {
+        when(checkClients.getIfAvailable()).thenReturn(null);
+        model(Mono.just(reply(LAB_A_BN, 1, 1)));
+
+        AskAnswer a = ask(LAB_Q_BN);
+
+        verify(judge, never()).invoke(any());
         assertThat(stored().handler()).isEqualTo("model_check");
-        assertThat(stored().violationCodes()).containsExactly("check_refused");
-        assertThat(stored().checkCalls()).isEqualTo(1);
+        assertThat(stored().violationCodes()).containsExactly("check_no_client");
+        assertThat(a.answer()).isEqualTo(line("bn", "chat.check.refused.lab") + tailIn("bn", false, false));
+    }
+
+    /**
+     * The other direction: a question that asks about a medicine (here what one is for, beside a lab) keeps
+     * chat.check.refused and the doctor line, though the refused answer itself is about the lab only.
+     */
+    @Test
+    void aMedicineQuestionTheCheckRefusesKeepsTheDoctorLine() {
+        String q = "Napa কীসের? আর ক্রিয়েটিনিন কত?";
+        assertThat(MedicinePurposeGuard.route(q, CTX.medicineNames(), MedicinePurposeGuard.labNames(CTX), "Ma"))
+                .as("a purpose question beside a lab one").isEqualTo(MedicinePurposeGuard.Route.MIXED);
+
+        AskAnswer a = refusedByTheCheck("bn", q, "Ma-র ক্রিয়েটিনিন 1.8 mg/dL।");
+
+        theCheckRefused(a);
+        assertThat(a.answer()).isEqualTo(line("bn", "chat.check.refused") + tailIn("bn", true, true))
+                .doesNotContain(line("bn", "chat.check.refused.lab"));
+    }
+
+    @Test
+    void aMedicineQuestionTheCheckRefusesKeepsTheDoctorLineInEnglish() {
+        String q = "What is Napa for? And what is Ma's creatinine?";
+        assertThat(MedicinePurposeGuard.route(q, CTX.medicineNames(), MedicinePurposeGuard.labNames(CTX), "Ma"))
+                .as("a purpose question beside a lab one").isEqualTo(MedicinePurposeGuard.Route.MIXED);
+
+        AskAnswer a = refusedByTheCheck("en", q, LAB_A_EN);
+
+        theCheckRefused(a);
+        assertThat(a.answer()).isEqualTo(line("en", "chat.check.refused") + tailIn("en", true, true))
+                .doesNotContain(line("en", "chat.check.refused.lab"));
+    }
+
+    /** A dose question keeps the doctor line though the refused answer names no medicine at all. */
+    @Test
+    void aDoseQuestionWhoseRefusedAnswerNamesNoMedicineKeepsTheDoctorLine() {
+        String q = "ওষুধটা অর্ধেক করব?";
+        assertThat(DoseChangeGuard.asksForChange(q, CTX.medicineNames())).as("a dose question").isTrue();
+
+        AskAnswer a = refusedByTheCheck("bn", q, LAB_A_BN);
+
+        theCheckRefused(a);
+        assertThat(a.answer()).isEqualTo(line("bn", "chat.check.refused") + tailIn("bn", true, false));
+    }
+
+    @Test
+    void aDoseQuestionWhoseRefusedAnswerNamesNoMedicineKeepsTheDoctorLineInEnglish() {
+        String q = "Should I halve the medicine?";
+        assertThat(DoseChangeGuard.asksForChange(q, CTX.medicineNames())).as("a dose question").isTrue();
+
+        AskAnswer a = refusedByTheCheck("en", q, LAB_A_EN);
+
+        theCheckRefused(a);
+        assertThat(a.answer()).isEqualTo(line("en", "chat.check.refused") + tailIn("en", true, false));
+    }
+
+    /**
+     * A lab question whose refused answer quotes a written line keeps chat.check.refused and the doctor line. Neither the
+     * question nor the refusal's own text decides it here: only the quoted line does.
+     */
+    @Test
+    void anAnswerQuotingAWrittenLineTheCheckRefusesKeepsTheDoctorLine() {
+        notAMedicineQuestion(LAB_Q_BN);
+
+        AskAnswer a = refusedByTheCheck("bn", LAB_Q_BN, RX_ANSWER);
+
+        theCheckRefused(a);
+        assertThat(a.answer()).isEqualTo(line("bn", "chat.check.refused") + tailIn("bn", true, false)).doesNotContain(RX1);
+    }
+
+    @Test
+    void anAnswerQuotingAWrittenLineTheCheckRefusesKeepsTheDoctorLineInEnglish() {
+        notAMedicineQuestion(LAB_Q_EN);
+
+        AskAnswer a = refusedByTheCheck("en", LAB_Q_EN, "Ma's latest prescription says: {{rx:1}}");
+
+        theCheckRefused(a);
+        assertThat(a.answer()).isEqualTo(line("en", "chat.check.refused") + tailIn("en", true, false)).doesNotContain(RX1);
+    }
+
+    /** A lab question whose refused answer names a stored medicine, without quoting its line, keeps the doctor line too. */
+    @Test
+    void anAnswerNamingAStoredMedicineTheCheckRefusesKeepsTheDoctorLine() {
+        notAMedicineQuestion(LAB_Q_BN);
+        String answer = "Ma-র ক্রিয়েটিনিন 1.8 mg/dL। শেষ প্রেসক্রিপশনে Demoprol আছে।";
+        assertThat(AnswerCheck.violations(answer, CTX)).as("the code checks pass it").isEmpty();
+
+        AskAnswer a = refusedByTheCheck("bn", LAB_Q_BN, answer);
+
+        theCheckRefused(a);
+        assertThat(a.answer()).isEqualTo(line("bn", "chat.check.refused") + tailIn("bn", true, false));
     }
 
     /**

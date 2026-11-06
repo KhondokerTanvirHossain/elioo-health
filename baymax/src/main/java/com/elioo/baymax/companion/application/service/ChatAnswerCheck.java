@@ -1,5 +1,7 @@
 package com.elioo.baymax.companion.application.service;
 
+import com.elioo.baymax.companion.domain.ChatContext;
+import com.elioo.baymax.companion.domain.CitedMedicine;
 import com.elioo.baymax.companion.domain.TextNormaliser;
 import com.elioo.healthcare.llm.model.LlmRequest;
 import com.fasterxml.jackson.core.JsonParser;
@@ -32,8 +34,10 @@ import java.util.Optional;
  * </ul>
  * The check can only refuse: it never edits, adds to or approves an answer the code checks refused, since it never sees one.
  * A refusal is the check's own fixed line ({@value #REFUSED_LINE}, PO ruling P16(d)) with the ask-the-doctor line
- * ({@code chat.dose.ask_doctor}), under handler {@value #HANDLER} (migration chat_model_check); the code checks' own fixed
- * reply stays {@code chat.ask.failed}. The one repair does not run after a refusal: the check gives no violation a repair
+ * ({@code chat.dose.ask_doctor}) when it speaks of a medicine ({@link #speaksOfMedicine}: a dose or purpose question, or
+ * a refused answer that names or quotes one), and otherwise the lab-neutral {@value #REFUSED_LAB_LINE} with no
+ * medicine line (PO ruling P17); either under handler {@value #HANDLER} (migration chat_model_check). The code checks' own
+ * fixed reply stays {@code chat.ask.failed}. The one repair does not run after a refusal: the check gives no violation a repair
  * could name, and a repaired answer would need a second check inside the same answer deadline.
  */
 public final class ChatAnswerCheck {
@@ -47,8 +51,15 @@ public final class ChatAnswerCheck {
     /** The line a refusal shows, in the PO's words (P16(d)); never the code checks' {@code chat.ask.failed}. */
     public static final String REFUSED_LINE = "chat.check.refused";
 
+    /**
+     * The line a refusal shows when it speaks of no medicine (PO ruling P17, "Yes, make lab refusals neutral"): neither a
+     * dose nor a purpose question, and a refused answer that names and quotes no medicine. No doctor-medicine line follows
+     * it. Its wording is a draft until the PO approves it.
+     */
+    public static final String REFUSED_LAB_LINE = "chat.check.refused.lab";
+
     /** The bundle keys a refusal reads, checked in both languages at startup ({@code ChatPropertiesCheck}). */
-    public static final List<String> KEYS = List.of(REFUSED_LINE);
+    public static final List<String> KEYS = List.of(REFUSED_LINE, REFUSED_LAB_LINE);
 
     /** Violation codes of a refusal: codes only, never the check's text, so each is fit for a log as it is. */
     static final String REFUSED = "check_refused";
@@ -114,6 +125,25 @@ public final class ChatAnswerCheck {
     static boolean bareReply(String answer) {
         String hay = DoseChangeGuard.hay(answer);
         return BARE_OPENERS.stream().anyMatch(t -> hay.startsWith(" " + TextNormaliser.normalise(t) + " "));
+    }
+
+    /**
+     * PO ruling P17: whether a refusal speaks of a medicine, so it shows {@value #REFUSED_LINE} and the ask-the-doctor line
+     * rather than {@value #REFUSED_LAB_LINE}. True for a dose or purpose question ({@code medicineQuestion}, the decision that
+     * also appends their lines); for a refused answer that quotes a prescription line ({@code quoted}, or any written line
+     * inside the answer as it would be shown, crop or none); and for one that refers to a medicine the way the dose guard
+     * reads it ({@link DoseChangeGuard#refersToMedicine}: a stored medicine's name, a medicine word). When unsure, it speaks of
+     * a medicine: the doctor line is the copy P15 shipped, and only a refusal shown to be about no medicine loses it.
+     */
+    static boolean speaksOfMedicine(boolean medicineQuestion, String shown, List<CitedMedicine> quoted, ChatContext ctx) {
+        if (medicineQuestion || (quoted != null && !quoted.isEmpty())) {
+            return true;
+        }
+        String answer = shown == null ? "" : shown;
+        if (ctx.verbatimLines().stream().anyMatch(written -> written != null && !written.isBlank() && answer.contains(written))) {
+            return true;
+        }
+        return DoseChangeGuard.refersToMedicine(DoseChangeGuard.hay(answer), ctx.medicineNames());
     }
 
     /** Whether the answer or a written line holds either block marker, which code refuses before any call. */

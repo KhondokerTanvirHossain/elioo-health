@@ -73,6 +73,7 @@
   "chat.ask.reply": "I cannot answer questions yet. If you have a question about a medicine or a health problem, ask a doctor.",
   "chat.camera": "Send a photo of a paper",
   "chat.check.refused": "I can't give a reliable answer to this. See what the papers say under Papers, and ask a doctor or a pharmacist about the medicine.",
+  "chat.check.refused.lab": "I can't give a reliable answer to this. See what the papers say under Papers, and ask a doctor about the report.",
   "chat.composer.hint": "Medioo answers only from what your papers say. I am not a doctor.",
   "chat.composer.nojs": "To ask a question, turn on JavaScript for this page. All papers and values are under Papers.",
   "chat.composer.pending": "Medioo is looking at {0} papers…",
