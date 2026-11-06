@@ -147,3 +147,69 @@
   color: var(--label2);
   overflow-wrap: anywhere;
 }
+
+/* The desktop conversation's bar (variant "desk", plan desktop-parity Task 7; desktop.html `.composer`, `.attachb`,
+   `.field`, `.send`): the paperclip in a 34 px grey circle, the field, and send as a round arrow in the sent colour.
+   No camera circle and no line under the bar. The bar's own material is the column's --bg, with no top rule. Whatever
+   paints --fill draws the --boundary edge too (Q1 (A)), the paperclip and the waiting send among them. */
+.composer--desk {
+  padding: var(--space-2) 14px 14px;
+  border-top: 0;
+  background: var(--bg);
+}
+.composer__attach {
+  box-sizing: border-box;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--boundary);
+  border-radius: var(--radius-pill);
+  background: var(--fill);
+  color: var(--label2);
+}
+.composer__attach:hover {
+  background: var(--tint-soft);
+  color: var(--tint-ink);
+}
+.composer__attach:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+.composer__attach-icon,
+.composer__send-icon {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.composer--desk .composer__field {
+  min-height: 34px;
+  padding: var(--space-1) 14px;
+  border-color: var(--sep);
+  background: var(--bg);
+  font-size: var(--text-md);
+}
+.composer--desk .composer__send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0;
+  background: var(--sent);
+  color: var(--sent-ink);
+}
+.composer--desk .composer__send:hover:not([aria-disabled="true"]) {
+  background: var(--sent);
+}
+.composer--desk .composer__send[aria-disabled="true"] {
+  border: 1px solid var(--boundary);
+  background: var(--fill);
+  color: var(--label2);
+}

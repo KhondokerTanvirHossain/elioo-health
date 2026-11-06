@@ -95,6 +95,11 @@ function Band({ level, line }: { level: BannerLevel; line: string }) {
  *
  * `wording` false leaves the wording out (the paper page, W6, shows it in its own labelled bubble below, so it is not
  * said twice); it never shows a wording the gate withheld.
+ *
+ * The desktop conversation's card (TalkCard, plan desktop-parity Task 7) adds three things, none of which touches a
+ * safety line: `sub`, the paper's type, day and lab under the title (before the not-a-doctor line and 999, which still
+ * come before any row); `selected`, the outline of the card whose paper the viewer shows; and `more`, the link to every
+ * detail of the paper (`desk.panel.open`) at the card's foot. A card without them is exactly today's.
  */
 export function VerdictCard({
   paper,
@@ -102,17 +107,24 @@ export function VerdictCard({
   link,
   mio,
   wording: withWording = true,
+  sub,
+  selected,
+  more,
 }: {
   paper: PaperJson;
   lang: Lang;
   link?: string;
   mio?: boolean;
   wording?: boolean;
+  sub?: string | null;
+  selected?: boolean;
+  more?: { href: string; label: string };
 }) {
   const banner = paper.banner ?? null;
   const className = ["verdict-card"];
   if (banner) className.push(BAND_CLASS[banner.level]);
   if (link !== undefined) className.push("verdict-card--link");
+  if (selected) className.push("verdict-card--selected");
   const counts = paper.counts ?? null;
   const title = counts ? t(lang, counts.line_key, counts.values, counts.outside) : t(lang, STATUS_TITLE[paper.status]);
   const wording = withWording && paper.gate === "RELEASED" && paper.wording ? paper.wording : null;
@@ -132,6 +144,7 @@ export function VerdictCard({
             </a>
           )}
         </p>
+        {sub && <p className="verdict-card__sub">{sub}</p>}
         {now && <p className="verdict-card__notdoctor">{t(lang, now.notdoctor_key)}</p>}
         {now?.call_999 === true && (
           <a className="verdict-card__call" href="tel:999">
@@ -163,6 +176,11 @@ export function VerdictCard({
         {pending !== null && <p className="verdict-card__pending">{t(lang, "result.gate.pending", pending)}</p>}
         {wording && <p className="verdict-card__wording">{wording}</p>}
       </div>
+      {more && (
+        <a className="verdict-card__more" href={more.href}>
+          {more.label}
+        </a>
+      )}
     </article>
   );
   if (!mio) return card;

@@ -24,7 +24,8 @@ import "./Composer.css";
  * - `pending`: the bubble while Java answers (`chat.composer.pending`, the patient's possessive in it);
  * - `call999`: the tel:999 link's words under an emergency answer, when Java says `call_999` (`now.call999`);
  * - `crop`: the crop's words, for the crop of a prescription line an answer quotes (`health.crop.alt`, `crop.retry`);
- * - `camera`: the owner's camera link (`chat.camera`).
+ * - `camera`: the owner's camera link (`chat.camera`);
+ * - `attach`: the owner's paperclip on the desktop conversation (`desk.attach`; plan desktop-parity Task 7).
  */
 export type ComposerWords = {
   field: string;
@@ -37,8 +38,12 @@ export type ComposerWords = {
   call999: string;
   crop: CropWords;
   camera: string;
+  attach: string;
 };
 
+
+/** Which bar: the chat page's (`phone`) or the desktop conversation's (`desk`). */
+export type ComposerVariant = "phone" | "desk";
 
 /** What Medioo's side of one exchange shows: the pending bubble, Java's answer as sent, or a fixed line of its own. */
 type Shown =
@@ -72,7 +77,11 @@ function shownFor(result: ApiResult<AskJson>): { shown: Shown; turnId: string | 
  * bar. An answer taller than that space (Java allows 1200 characters): the sent question's top at the toolbar's foot,
  * so the family reads the answer from its first line, not from the disclaimer at its end.
  */
-function bringIntoView(pair: HTMLElement | null, bar: HTMLElement | null, answered: boolean) {
+function bringIntoView(pair: HTMLElement | null, bar: HTMLElement | null, answered: boolean, variant: ComposerVariant) {
+  // The desktop conversation scrolls inside its own column (Conversation.css), not the window. The pending bubble: the
+  // exchange's foot at the column's, above the bar. An answer: the question's top at the column's top, below its header
+  // (scroll-margin-top), so a long answer is read from its first line; a short one stops at the column's end anyway.
+  if (variant === "desk") return pair?.scrollIntoView({ block: answered ? "start" : "end", behavior: "instant" });
   const end = () => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" });
   if (!answered || pair === null || bar === null) return end();
   const toolbar = document.querySelector(".app-shell__toolbar")?.getBoundingClientRect().bottom ?? 0;
@@ -105,6 +114,12 @@ function bringIntoView(pair: HTMLElement | null, bar: HTMLElement | null, answer
  *
  * Two elements, in this order: the exchanges (`.composer__lines`, the live region, empty until the first send) in the
  * conversation's column, then the bar itself (`.composer`), which the chat page docks.
+ *
+ * `variant` (plan desktop-parity Task 7): `phone`, the default, is the chat page's bar above, unchanged. `desk` is the
+ * desktop conversation's (desktop.html `.composer`): the paperclip for the owner (`attach`, the same add page the camera
+ * opens), the field and send, and nothing under the bar: no camera circle and no standing line, because the
+ * conversation's header carries "not a doctor" (X1). A new exchange is brought into view inside the conversation's
+ * column, which scrolls by itself, never by moving the window.
  */
 export function Composer({
   words,
@@ -113,6 +128,7 @@ export function Composer({
   preview,
   answered = [],
   nojs,
+  variant = "phone",
 }: {
   words: ComposerWords;
   owner: boolean;
@@ -120,6 +136,7 @@ export function Composer({
   preview: boolean;
   answered?: readonly string[];
   nojs?: ReactNode;
+  variant?: ComposerVariant;
 }) {
   const [ready, setReady] = useState(false);
   const [text, setText] = useState("");
@@ -131,13 +148,15 @@ export function Composer({
   const lines = useRef<HTMLOListElement>(null);
   const bar = useRef<HTMLDivElement>(null);
   useEffect(() => setReady(true), []);
+  const desk = variant === "desk";
+  const add = href(`/app/add?patient=${encodeURIComponent(patientId)}`, preview);
   const shown = exchanges.filter((e) => e.turnId === null || !answered.includes(e.turnId));
   // Only on a change the family's own press made: nothing moves on mount, where OpenAtNewest decides.
   useEffect(() => {
     if (exchanges.length === 0) return;
     const newest = exchanges[exchanges.length - 1]!;
-    bringIntoView(lines.current?.lastElementChild as HTMLElement | null, bar.current, newest.shown.kind === "answer");
-  }, [exchanges]);
+    bringIntoView(lines.current?.lastElementChild as HTMLElement | null, bar.current, newest.shown.kind === "answer", variant);
+  }, [exchanges, variant]);
 
   async function ask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -208,12 +227,19 @@ export function Composer({
           ))}
         </ol>
       )}
-      <div ref={bar} className="composer">
+      <div ref={bar} className={desk ? "composer composer--desk" : "composer"}>
         <div className="composer__bar">
-          {owner && (
+          {owner && desk && (
+            <a className="composer__attach" href={add} aria-label={words.attach} title={words.attach}>
+              <svg className="composer__attach-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M15.5 8.5l-6.4 6.4a1.8 1.8 0 0 0 2.5 2.5l7.1-7.1a3.5 3.5 0 0 0-5-5l-7.4 7.4a5.3 5.3 0 0 0 7.5 7.5l6-6" />
+              </svg>
+            </a>
+          )}
+          {owner && !desk && (
             <a
               className="composer__camera"
-              href={href(`/app/add?patient=${encodeURIComponent(patientId)}`, preview)}
+              href={add}
               aria-label={words.camera}
             >
               <svg className="composer__camera-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -234,13 +260,21 @@ export function Composer({
                 autoComplete="off"
                 enterKeyHint="send"
               />
-              <button type="submit" className="composer__send" aria-disabled={asking || undefined}>
-                {words.send}
-              </button>
+              {desk ? (
+                <button type="submit" className="composer__send" aria-disabled={asking || undefined} aria-label={words.send} title={words.send}>
+                  <svg className="composer__send-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M12 19V5M6 11l6-6 6 6" />
+                  </svg>
+                </button>
+              ) : (
+                <button type="submit" className="composer__send" aria-disabled={asking || undefined}>
+                  {words.send}
+                </button>
+              )}
             </form>
           )}
         </div>
-        <p className="composer__standing">{words.hint}</p>
+        {!desk && <p className="composer__standing">{words.hint}</p>}
         {nojs}
       </div>
     </>

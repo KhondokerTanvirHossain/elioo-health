@@ -38,6 +38,7 @@ const WORDS: ComposerWords = {
   call999: "call-999-label",
   crop: { retry: "crop-retry", alt: "crop-alt" },
   camera: "camera-label",
+  attach: "attach-label",
 };
 
 const QUESTION = "Is this value all right?";
@@ -451,5 +452,70 @@ describe("Composer", () => {
     expect([...container.querySelectorAll("button")].map((b) => [b.type, b.textContent || b.getAttribute("aria-label")])).toEqual([
       ["submit", WORDS.send],
     ]);
+  });
+  it("theDeskComposerIsThePaperclipTheFieldAndSend", () => {
+    // Plan desktop-parity Task 7 (desktop.html `.composer`): the paperclip, the field and send; no camera circle and no
+    // line under the bar (the conversation's header says "not a doctor", X1).
+    for (const preview of [false, true]) {
+      const container = render(<Composer words={WORDS} owner patientId={PATIENT} preview={preview} variant="desk" />).container;
+      expect([...container.querySelectorAll<HTMLAnchorElement>("a")].map((a) => [a.className, a.getAttribute("href"), a.getAttribute("aria-label")])).toEqual([
+        ["composer__attach", `${preview ? "/app/preview" : "/app"}/add?patient=${PATIENT}`, WORDS.attach],
+      ]);
+      expect(container.querySelector(".composer__camera"), "no camera circle").toBeNull();
+      expect(container.querySelector(".composer__standing"), "no line under the bar").toBeNull();
+      expect(container.textContent).not.toContain(WORDS.hint);
+      expect(container.querySelector(".composer--desk")).not.toBeNull();
+      expect(container.querySelector<HTMLInputElement>(".composer__field")!.getAttribute("aria-label")).toBe(WORDS.field);
+      expect([...container.querySelectorAll("button")].map((b) => [b.type, b.textContent || b.getAttribute("aria-label")])).toEqual([
+        ["submit", WORDS.send],
+      ]);
+      cleanup();
+    }
+    const member = render(<Composer words={WORDS} owner={false} patientId={PATIENT} preview={false} variant="desk" />).container;
+    expect(member.querySelectorAll("a").length, "a share member: no paperclip").toBe(0);
+    expect(member.querySelector(".composer__field"), "but the field").not.toBeNull();
+  });
+
+  it("thePhoneComposerIsUnchanged", () => {
+    const plain = draw().innerHTML;
+    cleanup();
+    const phone = render(<Composer words={WORDS} owner patientId={PATIENT} preview={false} variant="phone" />).container;
+    expect(phone.innerHTML, "variant phone is today's composer").toBe(plain);
+    expect(phone.querySelector(".composer__camera")).not.toBeNull();
+    expect(phone.querySelector(".composer__standing")!.textContent).toBe(WORDS.hint);
+    expect(phone.querySelector(".composer__attach")).toBeNull();
+    expect(phone.textContent).not.toContain(WORDS.attach);
+  });
+
+  it("theDeskComposerBringsTheNewExchangeIntoItsColumn", async () => {
+    // The desk composer sits in the conversation column, which scrolls inside itself; the window does not move.
+    const scrollTo = vi.fn();
+    vi.stubGlobal("scrollTo", scrollTo);
+    const into = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = into;
+    onTestFinished(() => {
+      Element.prototype.scrollIntoView = original;
+    });
+    let resolve: (r: Response) => void = () => undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise<Response>((r) => (resolve = r))),
+    );
+    const container = render(<Composer words={WORDS} owner patientId={PATIENT} preview={false} variant="desk" />).container;
+    scrollTo.mockClear();
+    await ask(container, QUESTION);
+    expect(into).toHaveBeenCalledTimes(1);
+    expect((into.mock.instances[0] as unknown as HTMLElement).classList.contains("composer__pair"), "the new exchange").toBe(true);
+    // The pending bubble: the exchange's foot at the column's foot, above the bar.
+    expect(into.mock.calls[0]![0]).toEqual({ block: "end", behavior: "instant" });
+    await act(async () => resolve(new Response(JSON.stringify(fixture("emergency").body), { status: 200 })));
+    await settle();
+    expect(bubbles(container, "recv")).toEqual([fixture("emergency").body.answer]);
+    // The answer: the question's top at the column's top (under its header, Conversation.css scroll-margin), so a long
+    // answer is read from its first line; a short one ends at the column's foot, where the scroll stops anyway.
+    expect(into).toHaveBeenCalledTimes(2);
+    expect(into.mock.calls[1]![0]).toEqual({ block: "start", behavior: "instant" });
+    expect(scrollTo, "the window stays").not.toHaveBeenCalled();
   });
 });
