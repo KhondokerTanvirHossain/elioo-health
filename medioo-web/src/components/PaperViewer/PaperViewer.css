@@ -125,13 +125,16 @@
   white-space: nowrap;
 }
 
-/* The canvas: the pages one under another, centred, each a paper on the canvas. */
+/* The canvas: the pages one under another, centred, each a paper on the canvas. Centred by the page's auto margins,
+   never by `align-items: center`: a centred flex item wider than the canvas spills past its left edge, where scrolling
+   cannot reach, and a zoomed lab report would lose its test names (e2e/paper-viewer-layout.spec.ts). Auto margins
+   centre a narrower page and fall to zero on a wider one, which then overflows to the right only. */
 .paper-viewer__canvas {
   --paper-zoom: 1;
   display: flex;
   flex: 1;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-4);
   min-height: 0;
   padding: var(--space-6) var(--space-5) var(--space-6);
@@ -142,6 +145,7 @@
   flex: none;
   width: calc(640px * var(--paper-zoom));
   max-width: none;
+  margin-inline: auto;
   height: auto;
   border-radius: var(--radius-sm);
   background: var(--paper);

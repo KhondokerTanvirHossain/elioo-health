@@ -196,6 +196,8 @@ describe("PaperViewer", () => {
   });
 
   it("aReadingPaperShowsItsPagesAndTheReadingLine", () => {
+    // The page comparison below is derived from the fixture: an empty one would pass with nothing in it.
+    expect(READING.pages.length, "fixture: the reading paper has a page").toBeGreaterThan(0);
     const { container } = viewer({ paper: READING, papers: [READING, ...AMMA], selectedId: READING.id });
     const page = canvas(container);
     // Its pages, as Java sent them, never an empty canvas.
@@ -341,6 +343,37 @@ describe("PaperViewer", () => {
       expect(followed).toEqual([hrefFor(CBC.id)]);
     } finally {
       document.removeEventListener("click", follow, true);
+    }
+  });
+
+  it("fitIsMeasuredAgainWhenTheColumnChangesWidthWithoutTheWindow", () => {
+    // The column narrows or widens with no window resize (the 900–1199 menu, the details panel): the canvas is watched
+    // itself, so the percentage fit came to is never stale.
+    const watching: { cb: () => void; el: Element }[] = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(private readonly cb: () => void) {}
+        observe(el: Element) {
+          watching.push({ cb: this.cb, el });
+        }
+        unobserve() {}
+        disconnect() {
+          watching.length = 0;
+        }
+      },
+    );
+    let width = 640;
+    const rect = vi.spyOn(HTMLImageElement.prototype, "getBoundingClientRect").mockImplementation(() => ({ width }) as DOMRect);
+    try {
+      const { container } = viewer();
+      expect(zoomLabel(container), "fit measured at 640 px").toBe(percent("bn", 100));
+      expect(watching.map((w) => w.el), "the canvas is the thing watched").toContain(canvas(container));
+      width = 960;
+      act(() => watching.forEach((w) => w.cb()));
+      expect(zoomLabel(container), "the column widened, with no window resize").toBe(percent("bn", 150));
+    } finally {
+      rect.mockRestore();
     }
   });
 

@@ -81,6 +81,14 @@ export function Zoom({
       setFitted(width > 0 ? width / PAGE_WIDTH : null);
     };
     measure();
+    // The column changes width without the window too (the 900–1199 menu, the details panel): watch the canvas itself
+    // where the browser can, the window where it cannot.
+    const el = canvas.current;
+    if (el !== null && typeof ResizeObserver === "function") {
+      const watch = new ResizeObserver(measure);
+      watch.observe(el);
+      return () => watch.disconnect();
+    }
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
   }, [level]);
