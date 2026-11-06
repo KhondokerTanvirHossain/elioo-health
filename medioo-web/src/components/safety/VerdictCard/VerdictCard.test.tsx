@@ -141,15 +141,19 @@ describe("VerdictCard", () => {
       expect(reason?.textContent, `retake-third (${lang})`).toBe(t(lang, retake.retake!.reason_key));
       cleanup();
     }
-    // And no other paper renders a reason line.
-    const others: string[] = [];
+    // Every other paper: a retake (Java's retake block) shows its own reason, and no paper without one renders a line.
+    const wrong: string[] = [];
+    let others = 0;
     for (const { file, body } of papers()) {
       if (file === "retake-third.json") continue;
-      if (card(body).querySelector(".verdict-card__reason")) others.push(file);
+      others++;
+      const reason = card(body).querySelector(".verdict-card__reason");
+      const key = (body as { retake?: { reason_key: string } }).retake?.reason_key;
+      if (key === undefined ? reason !== null : reason?.textContent !== t("bn", key as CopyKey)) wrong.push(file);
       cleanup();
     }
-    expect(others).toEqual([]);
-    expect(papers().length, "other papers were judged").toBeGreaterThan(1);
+    expect(wrong).toEqual([]);
+    expect(others, "other papers were judged").toBeGreaterThan(1);
   });
 
   it("noNineNineNineAbroad", () => {

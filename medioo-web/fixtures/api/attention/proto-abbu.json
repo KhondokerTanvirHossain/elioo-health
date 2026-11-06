@@ -1,0 +1,22 @@
+{
+  "_meta": {
+    "generated_by": "baymax ProtoFamilyContractTest",
+    "source": "GET /app/api/patients/{id}/attention over the prototype family (desktop.html), case proto-abbu"
+  },
+  "body": {
+    "items": [
+      {
+        "action_key": "attn.open",
+        "date": "2026-10-16",
+        "date_is_upload_day": false,
+        "date_uncertain": false,
+        "document_id": "de867513-f1e6-3d2f-bdaa-fbf5b230bec5",
+        "document_type": "lab_report",
+        "kind": "urgent",
+        "level": "now",
+        "received_at": "2026-10-16T04:05:00Z"
+      }
+    ]
+  },
+  "status": 200
+}

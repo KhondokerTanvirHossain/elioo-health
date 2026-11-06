@@ -998,7 +998,9 @@ class PaperApiContractTest {
     void everyCommittedFixtureIsACurrentCase() throws IOException {
         List<String> committed;
         try (Stream<Path> files = java.nio.file.Files.list(COMMITTED)) {
-            committed = files.map(p -> p.getFileName().toString()).filter(n -> n.endsWith(".json")).sorted().toList();
+            // documents/proto-*.json are ProtoFamilyContractTest's (the prototype's family), checked there
+            committed = files.map(p -> p.getFileName().toString())
+                    .filter(n -> n.endsWith(".json") && !n.startsWith(ProtoFamilyContractTest.PREFIX)).sorted().toList();
         }
         assertThat(committed).as("the committed fixtures in " + COMMITTED.toAbsolutePath()).isNotEmpty();
         assertThat(committed).as("committed fixtures vs the cases").containsExactlyInAnyOrderElementsOf(caseNames().map(n -> n + ".json").toList());

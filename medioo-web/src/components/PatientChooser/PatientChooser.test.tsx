@@ -11,7 +11,7 @@ import { PatientChooser } from "./PatientChooser";
  * press also remembers the choice (PUT /app/api/active-patient) before it goes, so the next tab does not ask again.
  */
 
-const TWO: MeJson = twoPatients.body;
+const TWO = twoPatients.body as MeJson;
 const assign = vi.fn();
 let calls: { url: string; init: RequestInit }[] = [];
 

@@ -202,7 +202,7 @@ class AttentionApiContractTest {
 
     @Test
     void everyCommittedFixtureIsACurrentCase() throws IOException {
-        assertThat(committed(COMMITTED)).as("committed fixtures vs the cases")
+        assertThat(ownCommitted(COMMITTED)).as("committed fixtures vs the cases")
                 .containsExactlyInAnyOrderElementsOf(CASES.stream().map(n -> n + ".json").toList());
     }
 
@@ -266,6 +266,14 @@ class AttentionApiContractTest {
         assertThat(areas).as("the fixture areas under " + COMMITTED.getParent().toAbsolutePath())
                 .isNotEmpty().contains("attention", "timeline", "now-banner", "calendar", "follow-ups");
         return areas;
+    }
+
+    /**
+     * The committed fixtures in {@code dir} that this area's own test writes: all but the prototype family's
+     * ({@link ProtoFamilyContractTest#PREFIX}), which {@link ProtoFamilyContractTest} writes and checks both ways.
+     */
+    static List<String> ownCommitted(Path dir) throws IOException {
+        return committed(dir).stream().filter(n -> !n.startsWith(ProtoFamilyContractTest.PREFIX)).toList();
     }
 
     static List<String> committed(Path dir) throws IOException {

@@ -1,0 +1,42 @@
+{
+  "_meta": {
+    "generated_by": "baymax ProtoFamilyContractTest",
+    "source": "GET /app/api/patients/{id}/attention over the prototype family (desktop.html), case proto-amma"
+  },
+  "body": {
+    "items": [
+      {
+        "action_key": "attn.open",
+        "date": "2026-10-14",
+        "date_is_upload_day": false,
+        "date_uncertain": false,
+        "document_id": "55cc0558-ebee-3050-aea5-d18dcddec5b0",
+        "document_type": "lab_report",
+        "kind": "urgent",
+        "level": "this_week",
+        "received_at": "2026-10-14T03:12:00Z"
+      },
+      {
+        "action_key": "attn.open",
+        "date": "2026-10-20",
+        "date_is_upload_day": true,
+        "document_id": "18418393-805f-3003-a471-a1c43e543c8a",
+        "kind": "retake",
+        "received_at": "2026-10-20T06:20:00Z",
+        "title_key": "attn.retake.title"
+      },
+      {
+        "action_key": "attn.open",
+        "crop": {
+          "src": "/app/documents/4ee8dc9d-41e9-3f40-a299-20baa694dd13/image?key=d29155e3-3319-325b-9d8e-b5ff73b8d2b6%2F75eb5081-4fff-3f99-a3b4-2771844eafef%2F4ee8dc9d-41e9-3f40-a299-20baa694dd13%2Fcrop-fb900376a.jpg"
+        },
+        "document_id": "4ee8dc9d-41e9-3f40-a299-20baa694dd13",
+        "due_date": "2026-10-22",
+        "instruction": "৭ দিন পর আবার আসবেন",
+        "kind": "follow_up",
+        "title_key": "attn.follow.title"
+      }
+    ]
+  },
+  "status": 200
+}

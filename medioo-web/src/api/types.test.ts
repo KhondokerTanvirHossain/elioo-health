@@ -14,6 +14,23 @@ import routineReleased from "../../fixtures/api/documents/routine-released.json"
 import thisWeekPending from "../../fixtures/api/documents/this-week-pending.json";
 import unassessed from "../../fixtures/api/documents/unassessed.json";
 import withheldRejected from "../../fixtures/api/documents/withheld-rejected.json";
+// The prototype's family (baymax ProtoFamilyContractTest, plan desktop-parity Task 3): desktop.html's mother and father,
+// seeded once in Postgres, so every proto body names the same ids.
+import protoBlur from "../../fixtures/api/documents/proto-blur.json";
+import protoCbc from "../../fixtures/api/documents/proto-cbc.json";
+import protoCreat from "../../fixtures/api/documents/proto-creat.json";
+import protoLipid from "../../fixtures/api/documents/proto-lipid.json";
+import protoPotas from "../../fixtures/api/documents/proto-potas.json";
+import protoRx from "../../fixtures/api/documents/proto-rx.json";
+import protoSugar from "../../fixtures/api/documents/proto-sugar.json";
+import protoBanner from "../../fixtures/api/now-banner/proto.json";
+import protoAttentionAbbu from "../../fixtures/api/attention/proto-abbu.json";
+import protoAttentionAmma from "../../fixtures/api/attention/proto-amma.json";
+import protoFollowsAbbu from "../../fixtures/api/follow-ups/proto-abbu.json";
+import protoFollowsAmma from "../../fixtures/api/follow-ups/proto-amma.json";
+import protoMe from "../../fixtures/api/me/proto.json";
+import protoThreadAbbu from "../../fixtures/api/thread/proto-abbu.json";
+import protoThreadAmma from "../../fixtures/api/thread/proto-amma.json";
 // B3's generated GET /app/api/now-banner bodies (baymax NowBannerApiContractTest), imported as JSON so the assignments
 // below are checked by `pnpm typecheck`: a field the type names that a fixture drops or retypes does not compile. A
 // field Java ADDS compiles silently (an imported value gets no excess-property check), so the key sets are pinned at
@@ -185,6 +202,7 @@ const NOW_BANNER: Record<string, NowBannerJson> = {
   "abroad.json": abroad.body,
   "acked.json": acked.body,
   "one.json": one.body,
+  "proto.json": protoBanner.body,
   "two-patients.json": twoPatients.body,
 };
 
@@ -275,6 +293,13 @@ const PAPERS: Record<string, Json<PaperJson>> = {
   "now-abroad.json": nowAbroad.body,
   "now-bd.json": nowBd.body,
   "processing.json": processing.body,
+  "proto-blur.json": protoBlur.body,
+  "proto-cbc.json": protoCbc.body,
+  "proto-creat.json": protoCreat.body,
+  "proto-lipid.json": protoLipid.body,
+  "proto-potas.json": protoPotas.body,
+  "proto-rx.json": protoRx.body,
+  "proto-sugar.json": protoSugar.body,
   "retake-third.json": retakeThird.body,
   "routine-released.json": routineReleased.body,
   "this-week-pending.json": thisWeekPending.body,
@@ -291,6 +316,13 @@ const STATUS: Record<string, number> = {
   "now-abroad.json": nowAbroad.status,
   "now-bd.json": nowBd.status,
   "processing.json": processing.status,
+  "proto-blur.json": protoBlur.status,
+  "proto-cbc.json": protoCbc.status,
+  "proto-creat.json": protoCreat.status,
+  "proto-lipid.json": protoLipid.status,
+  "proto-potas.json": protoPotas.status,
+  "proto-rx.json": protoRx.status,
+  "proto-sugar.json": protoSugar.status,
   "retake-third.json": retakeThird.status,
   "routine-released.json": routineReleased.status,
   "this-week-pending.json": thisWeekPending.status,
@@ -672,6 +704,8 @@ describe("the papers page's reads are the generated fixtures", () => {
   it("everyFollowUpsFixtureIsAFollowUpsJson", () => {
     const bodies: Array<[string, FollowUpsJson]> = [
       ["none", followsNone.body],
+      ["proto-abbu", protoFollowsAbbu.body],
+      ["proto-amma", protoFollowsAmma.body],
       ["some", followsSome.body],
     ];
     expect(readdirSync(join(fixtures, "follow-ups")).filter((f) => f.endsWith(".json")).sort()).toEqual(
@@ -695,6 +729,8 @@ describe("the papers page's reads are the generated fixtures", () => {
       ["empty", attentionEmpty.body],
       ["full-stack", attentionFull.body],
       ["now-only", attentionNow.body],
+      ["proto-abbu", protoAttentionAbbu.body],
+      ["proto-amma", protoAttentionAmma.body],
     ];
     expect(readdirSync(join(fixtures, "attention")).filter((f) => f.endsWith(".json")).sort()).toEqual(
       bodies.map(([name]) => `${name}.json`).sort(),
@@ -732,6 +768,7 @@ const ME_PATIENT_KEYS = [
   "name_possessive",
   "owner",
   "sex",
+  "urgency",
   "urgent",
 ] as const;
 const meKeyListsAreTheTypes: [
@@ -743,7 +780,8 @@ const meKeyListsAreTheTypes: [
 describe("GET /app/api/me", () => {
   it("everyMeFixtureIsAMeJson", () => {
     expect(meKeyListsAreTheTypes.every(Boolean)).toBe(true);
-    const bodies: Array<[string, MeJson, number]> = [
+    // Json<MeJson>: a JSON import widens `urgency` to string, so the union is checked at run time below.
+    const bodies: Array<[string, Json<MeJson>, number]> = [
       ["family-long-name-shared.json", meFamilyLongNameShared.body, meFamilyLongNameShared.status],
       ["family-long-name.json", meFamilyLongName.body, meFamilyLongName.status],
       ["family-owner-no-choice.json", meFamilyOwnerNoChoice.body, meFamilyOwnerNoChoice.status],
@@ -756,6 +794,7 @@ describe("GET /app/api/me", () => {
       ["one-patient.json", meOnePatient.body, meOnePatient.status],
       ["preview-off.json", mePreviewOff.body, mePreviewOff.status],
       ["preview-on.json", mePreviewOn.body, mePreviewOn.status],
+      ["proto.json", protoMe.body, protoMe.status],
       ["two-owned.json", meTwoOwned.body, meTwoOwned.status],
       ["two-owned-long.json", meTwoOwnedLong.body, meTwoOwnedLong.status],
       ["two-patients.json", meTwoPatients.body, meTwoPatients.status],
@@ -775,6 +814,9 @@ describe("GET /app/api/me", () => {
       for (const p of me.patients) {
         expect(keys(p), `${file} ${p.id}`).toEqual([...ME_PATIENT_KEYS]);
         expect(typeof p.urgent, `${file} ${p.id} urgent`).toBe("boolean");
+        // urgency: a level above routine, or null; NOW exactly when the red mark is on (both from one Java read)
+        expect([...BANNER_LEVELS, null], `${file} ${p.id} urgency`).toContain(p.urgency);
+        expect(p.urgency === "now", `${file} ${p.id} urgency now iff urgent`).toBe(p.urgent);
         expect(typeof p.chronic_flags_set, `${file} ${p.id} chronic_flags_set`).toBe("boolean");
         patients++;
       }
@@ -787,6 +829,9 @@ describe("GET /app/api/me", () => {
     expect(bodies.some(([, me]) => me.patients.length > 1 && me.active_patient_id === null), "two and no choice").toBe(true);
     expect(bodies.some(([, me]) => me.preview === false), "a family outside the preview").toBe(true);
     expect(bodies.some(([, me]) => me.patients.some((p) => p.urgent)), "an urgent patient").toBe(true);
+    // the desktop sidebar's three words are all among the fixtures: now, this week, and nothing
+    expect(bodies.some(([, me]) => me.patients.some((p) => p.urgency === "this_week")), "a this-week patient").toBe(true);
+    expect(bodies.some(([, me]) => me.patients.some((p) => p.urgency === null)), "a patient with nothing urgent").toBe(true);
     // The papers page's chronic-flags ask is judged both ways: a patient with none stored, and one with a flag.
     expect(bodies.some(([, me]) => me.patients.some((p) => !p.chronic_flags_set)), "a patient with no flag").toBe(true);
     expect(bodies.some(([, me]) => me.patients.some((p) => p.chronic_flags_set)), "a patient with a flag").toBe(true);
@@ -900,6 +945,8 @@ const THREADS: Record<string, Json<ThreadJson>> = {
   "first-run.json": threadFirstRun.body,
   "now-abroad.json": threadNowAbroad.body,
   "now.json": threadNow.body,
+  "proto-abbu.json": protoThreadAbbu.body,
+  "proto-amma.json": protoThreadAmma.body,
   "retake.json": threadRetake.body,
   "second-page.json": threadSecondPage.body,
   "share-member.json": threadShareMember.body,
@@ -910,8 +957,10 @@ const ATTENTION: Record<string, Json<AttentionJson>> = {
   "empty.json": attentionEmpty.body,
   "full-stack.json": attentionFull.body,
   "now-only.json": attentionNow.body,
+  "proto-abbu.json": protoAttentionAbbu.body,
+  "proto-amma.json": protoAttentionAmma.body,
 };
-const THREAD_MESSAGE_KEYS = ["at", "body", "document_id", "kind", "message_kind"];
+const THREAD_MESSAGE_KEYS = ["at", "body", "document_id", "kind", "message_kind", "web_body"];
 const THREAD_PAPER_KEYS = ["at", "card", "kind"];
 const THREAD_ASK_KEYS = ["answer", "answer_kind", "at", "call_999", "kind", "medicines", "question", "turn_id"];
 // ATTENTION_KEYS is the papers page's, above: one key list per kind, typed against AttentionJson.
@@ -956,6 +1005,7 @@ describe("the chat page's bodies", () => {
     const kinds = new Set<string>();
     let papers = 0;
     let asks = 0;
+    let linked = 0;
     for (const [file, thread] of Object.entries(THREADS)) {
       expect(keys(thread), file).toEqual(["items", "next_cursor"]);
       for (const item of thread.items) {
@@ -964,6 +1014,15 @@ describe("the chat page's bodies", () => {
           const kind = (item as { message_kind: string }).message_kind;
           expect(MESSAGE_KINDS as readonly string[], `${file} message_kind`).toContain(kind);
           kinds.add(kind);
+          // web_body: body's lines in order, the link lines left out, every other line exactly as sent
+          const { body, web_body: web } = item as { body: string; web_body: string };
+          expect(web, `${file} ${kind} web_body`).toBe(
+            body
+              .split("\n")
+              .filter((line) => !line.includes("http://") && !line.includes("https://"))
+              .join("\n"),
+          );
+          if (/https?:\/\//.test(body)) linked++;
         } else if (item.kind === "ask") {
           expect(keys(item), file).toEqual(THREAD_ASK_KEYS);
           for (const m of (item as { medicines: { crop: object }[] }).medicines)
@@ -982,6 +1041,7 @@ describe("the chat page's bodies", () => {
     // Guards: papers and asks were walked, and the failure notice (V23) is among the kinds the fixtures carry.
     expect(papers).toBeGreaterThan(0);
     expect(asks, "ask items walked").toBeGreaterThan(0);
+    expect(linked, "messages with a link, so web_body was seen to drop one").toBeGreaterThan(0);
     expect([...kinds]).toEqual(expect.arrayContaining(["failure", "nudge", "detail", "retake"]));
   });
 

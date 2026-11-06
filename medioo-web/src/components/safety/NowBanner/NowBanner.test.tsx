@@ -10,6 +10,7 @@ import { t, type Lang } from "@/copy";
 import abroad from "../../../../fixtures/api/now-banner/abroad.json";
 import acked from "../../../../fixtures/api/now-banner/acked.json";
 import one from "../../../../fixtures/api/now-banner/one.json";
+import proto from "../../../../fixtures/api/now-banner/proto.json";
 import twoPatients from "../../../../fixtures/api/now-banner/two-patients.json";
 import catalogNames from "../../../../fixtures/catalog/names.json";
 import { signInPath } from "@/routing/paths";
@@ -40,6 +41,7 @@ const FIXTURES: Record<string, NowBannerJson> = {
   "abroad.json": abroad.body,
   "acked.json": acked.body,
   "one.json": one.body,
+  "proto.json": proto.body,
   "two-patients.json": twoPatients.body,
 };
 

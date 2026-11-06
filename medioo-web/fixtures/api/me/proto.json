@@ -1,0 +1,45 @@
+{
+  "_meta": {
+    "generated_by": "baymax ProtoFamilyContractTest",
+    "source": "GET /app/api/me over the prototype family (desktop.html), case proto"
+  },
+  "body": {
+    "active_patient_id": "75eb5081-4fff-3f99-a3b4-2771844eafef",
+    "family": {
+      "id": "d29155e3-3319-325b-9d8e-b5ff73b8d2b6",
+      "owner_name": "Tanvir"
+    },
+    "patients": [
+      {
+        "age": 68,
+        "chronic_flags_set": true,
+        "documents": 5,
+        "id": "75eb5081-4fff-3f99-a3b4-2771844eafef",
+        "last_document_at": "2026-10-20T06:20:00Z",
+        "name": "আম্মা",
+        "name_objective": "আম্মাকে",
+        "name_possessive": "আম্মার",
+        "owner": true,
+        "sex": "female",
+        "urgency": "this_week",
+        "urgent": false
+      },
+      {
+        "age": 74,
+        "chronic_flags_set": false,
+        "documents": 2,
+        "id": "080346b0-47d2-3bf7-9e43-7926eaba3536",
+        "last_document_at": "2026-10-16T04:05:00Z",
+        "name": "আব্বু",
+        "name_objective": "আব্বুকে",
+        "name_possessive": "আব্বুর",
+        "owner": true,
+        "sex": "male",
+        "urgency": "now",
+        "urgent": true
+      }
+    ],
+    "preview": true
+  },
+  "status": 200
+}

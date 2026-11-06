@@ -1,0 +1,107 @@
+{
+  "_meta": {
+    "generated_by": "baymax ProtoFamilyContractTest",
+    "source": "GET /app/api/documents/{id} over the prototype family (desktop.html), case proto-lipid"
+  },
+  "body": {
+    "banner": null,
+    "counts": {
+      "line_key": "result.counts.none",
+      "outside": 0,
+      "values": 3
+    },
+    "date": "2026-10-13",
+    "date_is_upload_day": false,
+    "date_uncertain": false,
+    "doctor": { },
+    "document_type": "lab_report",
+    "facility": "Shapla Diagnostics",
+    "filed": true,
+    "follow_up": [ ],
+    "gate": "RELEASED",
+    "id": "83a4c9d9-9ffa-33fc-a3c1-325ede176a7a",
+    "medicines": [ ],
+    "owner": true,
+    "page_count": 1,
+    "pages": [
+      {
+        "n": 1,
+        "src": "/app/documents/83a4c9d9-9ffa-33fc-a3c1-325ede176a7a/page/1"
+      }
+    ],
+    "patient": {
+      "age": 68,
+      "id": "75eb5081-4fff-3f99-a3b4-2771844eafef",
+      "name": "আম্মা",
+      "name_objective": "আম্মাকে",
+      "name_possessive": "আম্মার"
+    },
+    "printed_date": "2026-10-13",
+    "reasons": [ ],
+    "received_at": "2026-10-13T05:02:00Z",
+    "status": "DONE",
+    "unverified": null,
+    "urgency": "routine",
+    "values": [
+      {
+        "chip_key": "value.chip.unknown",
+        "crop": {
+          "height": null,
+          "src": "/app/documents/83a4c9d9-9ffa-33fc-a3c1-325ede176a7a/image?key=d29155e3-3319-325b-9d8e-b5ff73b8d2b6%2F75eb5081-4fff-3f99-a3b4-2771844eafef%2F83a4c9d9-9ffa-33fc-a3c1-325ede176a7a%2Fcrop-00881890.jpg",
+          "width": null
+        },
+        "display_kind": "unknown",
+        "id": "00881890-d113-3be9-97b1-61b26f2ad4b9",
+        "in_now_block": false,
+        "name": "HDL Cholesterol",
+        "pin": null,
+        "ref_high": null,
+        "ref_low": "40",
+        "side": null,
+        "unit": "mg/dL",
+        "value": "52"
+      },
+      {
+        "chip_key": "value.chip.unknown",
+        "crop": {
+          "height": null,
+          "src": "/app/documents/83a4c9d9-9ffa-33fc-a3c1-325ede176a7a/image?key=d29155e3-3319-325b-9d8e-b5ff73b8d2b6%2F75eb5081-4fff-3f99-a3b4-2771844eafef%2F83a4c9d9-9ffa-33fc-a3c1-325ede176a7a%2Fcrop-3d7c5d41.jpg",
+          "width": null
+        },
+        "display_kind": "unknown",
+        "id": "3d7c5d41-873c-396c-a69e-ae593a4e042d",
+        "in_now_block": false,
+        "name": "LDL Cholesterol",
+        "pin": null,
+        "ref_high": "100",
+        "ref_low": null,
+        "side": null,
+        "unit": "mg/dL",
+        "value": "90"
+      },
+      {
+        "chip_key": "value.chip.unknown",
+        "crop": {
+          "height": null,
+          "src": "/app/documents/83a4c9d9-9ffa-33fc-a3c1-325ede176a7a/image?key=d29155e3-3319-325b-9d8e-b5ff73b8d2b6%2F75eb5081-4fff-3f99-a3b4-2771844eafef%2F83a4c9d9-9ffa-33fc-a3c1-325ede176a7a%2Fcrop-6c4867d4.jpg",
+          "width": null
+        },
+        "display_kind": "unknown",
+        "id": "6c4867d4-2897-381b-9453-9bda23d23713",
+        "in_now_block": false,
+        "name": "Triglycerides",
+        "pin": null,
+        "ref_high": "150",
+        "ref_low": null,
+        "side": null,
+        "unit": "mg/dL",
+        "value": "120"
+      }
+    ],
+    "viewer": {
+      "bangladesh": true
+    },
+    "wording": "রিপোর্টটি পেয়েছি — ল্যাব রিপোর্ট, ১৩ অক্টোবর।\nআম্মা-এর টাইমলাইনে রেখে দিলাম: https://baymax.eliooo.org/app/documents/83a4c9d9-9ffa-33fc-a3c1-325ede176a7a\nকাগজে যা লেখা আছে নিচে তুলে দিলাম।\nবিস্তারিত জানতে চাইলে লিখুন \"বিস্তারিত\"।"
+  },
+  "status": 200
+}

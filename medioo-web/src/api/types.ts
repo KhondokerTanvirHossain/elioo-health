@@ -215,6 +215,11 @@ export type MePatient = {
   name_possessive: string;
   name_objective: string;
   urgent: boolean;
+  /**
+   * The highest level the patient's attention stack holds (plan desktop-parity Task 3: AttentionUrgentJson.level, from
+   * the same Java read as `urgent`): "now", "this_week", or null when the stack holds no urgent paper. Never "routine".
+   */
+  urgency: UrgencyLevel | null;
   /** Whether any chronic flag is stored (BMX-8): the papers page asks for them exactly when this is false, as Java's does. */
   chronic_flags_set: boolean;
 };
@@ -465,13 +470,18 @@ export type MessageKind = (typeof MESSAGE_KINDS)[number];
 /** A paper in the thread: `at` is its `received_at`, `card` the body GET /app/api/documents/{id} sends for it. */
 export type ThreadPaperJson = { kind: "paper"; at: string; card: PaperJson };
 
-/** A message WhatsApp delivered: `body` is the text as sent, `document_id` the paper it is about (null for a nudge). */
+/**
+ * A message WhatsApp delivered: `body` is the text as sent, `document_id` the paper it is about (null for a nudge).
+ * `web_body` is `body` with every line holding an http(s) link removed and nothing else changed (ThreadJson.webBody,
+ * plan desktop-parity Task 3): what the desktop conversation shows. The phone pages keep reading `body`.
+ */
 export type ThreadMessageJson = {
   kind: "message";
   at: string;
   message_kind: MessageKind;
   document_id: string | null;
   body: string;
+  web_body: string;
 };
 
 /**
