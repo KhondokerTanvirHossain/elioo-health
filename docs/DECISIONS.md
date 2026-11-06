@@ -1642,7 +1642,7 @@ questions (P16, quoted at the end); the rest is engineering within the rulings:*
   on), `baymax.chat.check.effort` (low), `baymax.chat.check.timeout`, `baymax.chat.check.max-output-tokens` (4096). Its
   client mirrors the chat's (`ChatCheckModelConfiguration`): a `claude-*` id on the Anthropic key, else
   `llm.provider`'s key. Haiku 5.5 thinks adaptively, at medium unless told: `AnthropicLlmClient` now withholds thinking
-  and effort from Haiku 4.x and the Claude 3 Haikus only, so the check runs at effort low. **Price, a documented exception for the PO:** $0.10 / $0.50 per 1M tokens for a prompt
+  and effort from Haiku 4.x and the Claude 3 Haikus only, so the check runs at effort low. **Price, a recorded exception accepted by the PO (P17, 2026-11-06):** $0.10 / $0.50 per 1M tokens for a prompt
   up to 100,000 tokens. It is **not** from a provider API, as CLAUDE.md requires: Anthropic's Models API
   (`GET /v1/models/{id}`) has no price field (checked 2026-10-30 for Sonnet 5; not queried for Haiku 5.5, no key being
   used for P15), so there is no API to take it from. It was taken on 2026-11-02 from the current-models table of
@@ -1665,7 +1665,7 @@ questions (P16, quoted at the end); the rest is engineering within the rulings:*
   key), which would otherwise refuse every model answer as `check_no_client` with nothing on the box to say why.
 - **Not measured yet.** Whether Haiku 5.5 refuses good answers too often, or passes bad ones, is known only from the mocked
   tests, both directions, until the one live run P16(a) approved (about $0.03, fictional test papers, nothing on the box).
-  **#173 does not merge before the PO has seen that run's result.** The run prints the labs-only question's outcome on a
+  **#173 does not merge before the PO has seen that run's result** (he has: P17 below). The run prints the labs-only question's outcome on a
   line of its own (`[live] labs-only question: check PASS|REFUSE|NOT CHECKED handler=… checks=…`), so whether a correct
   lab answer survives the check is read directly, from one sample.
 - **Observations for the PO, next to the live run's result (third review of #173; nothing below is built):**
@@ -1703,3 +1703,17 @@ questions (P16, quoted at the end); the rest is engineering within the rulings:*
   still never sent to it; (d) refusal copy — "Use the proposed line (Recommended)": `chat.check.refused` as quoted above,
   and the doubled words "কাগজপত্রে কাগজে" fixed in bn `chat.ask.failed` (#174). Sending the check the question with names
   and digits masked was not asked again and is not built.
+- **The live run and the PO's answers after it (P17, 2026-11-06), each the recommended option, in his words.** The one
+  live run P16(a) approved ran on #173's head `ef4f1dda`: PASS, 0 of 12 good answers refused, 10 of 10 bad answers
+  refused (4 of them only by the check), $0.036 (table:
+  https://github.com/KhondokerTanvirHossain/elioo-health/pull/173#issuecomment-6624630664). Having seen it, the PO
+  answered: "Yes, merge it (Recommended)": #173 merges when green, which turns the check on in production for every
+  answer the model writes; price, "Accept the exception (Recommended)": the Haiku 5.5 price $0.10 / $0.50 per 1M tokens,
+  from Anthropic's public pricing page (https://platform.claude.com/docs/en/about-claude/pricing, read 2026-11-03 and
+  2026-11-04), is accepted as a recorded exception to CLAUDE.md's API-price rule, because the Models API has no price
+  field (non-blocking item (i) closed); lab refusals, "Yes, make lab refusals neutral (Recommended)": a follow-up PR
+  after #173 appends the medicine/doctor line `chat.dose.ask_doctor` to a refusal only when the question is a dose or
+  purpose question or the answer names or quotes a medicine, and adds a lab-neutral refusal line whose bn/en wording
+  comes to the PO for approval BEFORE it ships; the RULES sentence, "No, keep it strict (Recommended)": the proposed
+  sentence ("a lab reading … is no reason by itself to refuse") is NOT added. Item (ii), the doctor line on a refusal,
+  keeps its built default (both kept), except as the lab-neutral follow-up narrows it.
