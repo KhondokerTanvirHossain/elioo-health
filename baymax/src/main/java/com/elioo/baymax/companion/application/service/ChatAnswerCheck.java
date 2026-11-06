@@ -10,8 +10,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * PO ruling P15, "Add a model check, refuse-only", widened by P16(c), "Check every answer": a second, independent reading of
@@ -34,9 +39,10 @@ import java.util.Optional;
  * </ul>
  * The check can only refuse: it never edits, adds to or approves an answer the code checks refused, since it never sees one.
  * A refusal is the check's own fixed line ({@value #REFUSED_LINE}, PO ruling P16(d)) with the ask-the-doctor line
- * ({@code chat.dose.ask_doctor}) when it speaks of a medicine ({@link #speaksOfMedicine}: a dose or purpose question, or
- * a refused answer that names or quotes one), and otherwise the lab-neutral {@value #REFUSED_LAB_LINE} with no
- * medicine line (PO ruling P17); either under handler {@value #HANDLER} (migration chat_model_check). The code checks' own
+ * ({@code chat.dose.ask_doctor}), unless the refusal is positively about a lab ({@link #speaksOfMedicine}: a question
+ * about a lab that is neither a dose nor a purpose question, where neither the question nor the refused answer names or
+ * quotes a medicine), which shows the lab-neutral {@value #REFUSED_LAB_LINE} with no medicine line (PO ruling P17); either
+ * under handler {@value #HANDLER} (migration chat_model_check). The code checks' own
  * fixed reply stays {@code chat.ask.failed}. The one repair does not run after a refusal: the check gives no violation a repair
  * could name, and a repaired answer would need a second check inside the same answer deadline.
  */
@@ -52,9 +58,10 @@ public final class ChatAnswerCheck {
     public static final String REFUSED_LINE = "chat.check.refused";
 
     /**
-     * The line a refusal shows when it speaks of no medicine (PO ruling P17, "Yes, make lab refusals neutral"): neither a
-     * dose nor a purpose question, and a refused answer that names and quotes no medicine. No doctor-medicine line follows
-     * it. Its wording is a draft until the PO approves it.
+     * The line a refusal shows when it is positively about a lab (PO ruling P17, "Yes, make lab refusals neutral"): a
+     * question about a lab that is neither a dose nor a purpose question, where neither the question nor the refused answer
+     * names or quotes a medicine ({@link #speaksOfMedicine}). No doctor-medicine line follows it. Its wording is a draft
+     * until the PO approves it.
      */
     public static final String REFUSED_LAB_LINE = "chat.check.refused.lab";
 
@@ -128,22 +135,126 @@ public final class ChatAnswerCheck {
     }
 
     /**
-     * PO ruling P17: whether a refusal speaks of a medicine, so it shows {@value #REFUSED_LINE} and the ask-the-doctor line
-     * rather than {@value #REFUSED_LAB_LINE}. True for a dose or purpose question ({@code medicineQuestion}, the decision that
-     * also appends their lines); for a refused answer that quotes a prescription line ({@code quoted}, or any written line
-     * inside the answer as it would be shown, crop or none); and for one that refers to a medicine the way the dose guard
-     * reads it ({@link DoseChangeGuard#refersToMedicine}: a stored medicine's name, a medicine word). When unsure, it speaks of
-     * a medicine: the doctor line is the copy P15 shipped, and only a refusal shown to be about no medicine loses it.
+     * What a family calls a report or a common reading, beside {@link MedicinePurposeGuard#LAB_WORDS} and the stored labs'
+     * names: a question holding one is about a lab or the report ({@link #aboutALab}).
      */
-    static boolean speaksOfMedicine(boolean medicineQuestion, String shown, List<CitedMedicine> quoted, ChatContext ctx) {
+    static final List<String> REPORT_WORDS = List.of("রিপোর্ট*", "report*", "টেস্ট*", "test*", "পরীক্ষা*", "result*", "রেজাল্ট*",
+            "ফলাফল*", "ল্যাব*", "lab", "labs", "সুগার*", "sugar*", "গ্লুকোজ*", "glucose*", "প্রেসার*", "pressure*", "রক্তচাপ*", "bp");
+
+    /** A word in Latin letters, as written: a name candidate in a Bangla text, or a capitalised one inside an English sentence. */
+    private static final Pattern LATIN_WORD = Pattern.compile("\\p{IsLatin}[\\p{IsLatin}\\p{M}]*");
+
+    /** Any Bangla letter: in a text that holds one, a word in Latin letters is a name, a lab or a unit. */
+    private static final Pattern BANGLA = Pattern.compile("[\\u0980-\\u09FF]");
+
+    /**
+     * PO ruling P17: whether a refusal speaks of a medicine, so it shows {@value #REFUSED_LINE} and the ask-the-doctor line
+     * rather than {@value #REFUSED_LAB_LINE}. The lab line is the exception, never the default (review of #175, finding 7): a
+     * refusal is lab-neutral only when it is positively about a lab, and every other refusal keeps the doctor line. So this
+     * is false only when all of these hold:
+     * <ul>
+     *   <li>the question is neither a dose nor a purpose question ({@code medicineQuestion}, the decision that also appends
+     *       their lines);</li>
+     *   <li>the refused answer, as it would have been shown, quotes no prescription line ({@code quoted}, or any written line
+     *       inside it, crop or none);</li>
+     *   <li>neither the question nor the refused answer refers to a medicine ({@link #namesAMedicine}): a stored or unshown
+     *       medicine's name as a stem, across an inner hyphen ("Demo-prol") or by skeleton ("ডেমোপ্রল", "Demopral"), a
+     *       medicine word, or a Latin-letter word the context does not hold ("Napa" from an older paper, or an invented
+     *       name);</li>
+     *   <li>the question is about a lab or the report ({@link #aboutALab}): a lab word, a stored lab's name, a report word.
+     *       A refusal about a follow-up date or a doctor's name is not, and keeps the doctor line.</li>
+     * </ul>
+     * Known limits, each failing towards the lab line only when the question names a lab: a medicine no stored line holds,
+     * written in Bangla script ("নাপা" from an older paper), and an English sentence that opens with such a name, are not
+     * read as a medicine.
+     */
+    static boolean speaksOfMedicine(boolean medicineQuestion, String question, String shown, List<CitedMedicine> quoted,
+                                    ChatContext ctx) {
         if (medicineQuestion || (quoted != null && !quoted.isEmpty())) {
             return true;
         }
         String answer = shown == null ? "" : shown;
+        String q = question == null ? "" : question;
         if (ctx.verbatimLines().stream().anyMatch(written -> written != null && !written.isBlank() && answer.contains(written))) {
             return true;
         }
-        return DoseChangeGuard.refersToMedicine(DoseChangeGuard.hay(answer), ctx.medicineNames());
+        if (namesAMedicine(q, ctx) || namesAMedicine(answer, ctx)) {
+            return true;
+        }
+        return !aboutALab(q, ctx);
+    }
+
+    /**
+     * Whether a text refers to a medicine, read as broadly as the repo's name checks read one (review of #175, findings 1
+     * and 8): the stored and the unshown medicines' names ({@code AnswerCheck}'s set for the purpose rule), each as a stem in
+     * the text and in its inner-hyphen-joined form ({@link DoseChangeGuard#instructs}), or by {@link NameSkeleton}
+     * ({@code MedicinePurposeGuard.linesNamed}, {@code namesUnshown}); a medicine word ({@link DoseChangeGuard#refersToMedicine});
+     * or a name code cannot place ({@link #unplacedName}).
+     */
+    static boolean namesAMedicine(String text, ChatContext ctx) {
+        Set<String> names = new LinkedHashSet<>(ctx.medicineNames());
+        names.addAll(ctx.unshownNames());
+        String hay = DoseChangeGuard.hay(text);
+        String joined = DoseChangeGuard.joinedHay(text);
+        return DoseChangeGuard.refersToMedicine(hay, names) || DoseChangeGuard.refersToMedicine(joined, names)
+                || NameSkeleton.anyWord(hay, names) || NameSkeleton.anyWord(joined, names) || unplacedName(text, ctx);
+    }
+
+    /**
+     * Whether a text holds a word in Latin letters, three or more, that the context does not hold (no fact line, no stored lab's
+     * name, no label): in a Bangla text any such word, in an English one a capitalised word that does not open a sentence.
+     * Such a word is a name code cannot place, most likely a medicine the stored lines do not hold ("Napa" from an older
+     * paper, or one the model invented), so it counts as one (review of #175, finding 7). A doctor's or a place's name counts
+     * too: that only keeps the doctor line.
+     */
+    static boolean unplacedName(String text, ChatContext ctx) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        boolean bangla = BANGLA.matcher(text).find();
+        Set<String> known = new HashSet<>();
+        List<String> placed = new ArrayList<>(ctx.factLines());
+        placed.addAll(MedicinePurposeGuard.labNames(ctx));
+        placed.addAll(ctx.foreignLabels());
+        for (String line : placed) {
+            known.addAll(List.of(TextNormaliser.normalise(line).split(" ")));
+        }
+        Matcher m = LATIN_WORD.matcher(text);
+        while (m.find()) {
+            String w = m.group();
+            if (w.codePointCount(0, w.length()) < 3) {
+                continue;
+            }
+            if (!bangla && (!Character.isUpperCase(w.codePointAt(0)) || opensASentence(text, m.start()))) {
+                continue;
+            }
+            if (!known.contains(TextNormaliser.normalise(w))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Whether the word at {@code at} opens the text or a sentence: only spaces, quotes or brackets after a sentence break. */
+    private static boolean opensASentence(String text, int at) {
+        int i = at - 1;
+        while (i >= 0 && (Character.isWhitespace(text.charAt(i)) || "\"'“‘([".indexOf(text.charAt(i)) >= 0)) {
+            i--;
+        }
+        return i < 0 || ".!?।\n".indexOf(text.charAt(i)) >= 0;
+    }
+
+    /**
+     * Whether a question is about a lab or the report (PO ruling P17, review of #175, finding 7): a lab word
+     * ({@link MedicinePurposeGuard#LAB_WORDS}), a stored lab's name as a word or by skeleton, or a report word
+     * ({@link #REPORT_WORDS}). Only such a question's refusal can be lab-neutral.
+     */
+    static boolean aboutALab(String question, ChatContext ctx) {
+        String hay = DoseChangeGuard.hay(question);
+        Set<String> labs = MedicinePurposeGuard.labNames(ctx);
+        return MedicinePurposeGuard.LAB_WORDS.stream().anyMatch(t -> DoseChangeGuard.hits(hay, t))
+                || REPORT_WORDS.stream().anyMatch(t -> DoseChangeGuard.hits(hay, t))
+                || labs.stream().anyMatch(n -> DoseChangeGuard.hits(hay, n)) || NameSkeleton.anyWord(hay, labs);
     }
 
     /** Whether the answer or a written line holds either block marker, which code refuses before any call. */

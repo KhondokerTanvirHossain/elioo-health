@@ -316,10 +316,12 @@ class ChatModelConfigurationTest {
      */
     @Test
     void theCheckRefusalLineMissingInEitherLanguageStopsStartupAndNamesTheKey() {
+        // every refusal line, read from ChatAnswerCheck itself (P17 added the lab-neutral one), never a list written by hand
+        assertThat(ChatAnswerCheck.KEYS).as("the check's refusal keys").contains(ChatAnswerCheck.REFUSED_LINE, ChatAnswerCheck.REFUSED_LAB_LINE);
         for (String lang : List.of("bn", "en")) {
-            assertStartupRefused(stub(lang, "chat.check.refused", null), lang + ":chat.check.refused");
-            // PO ruling P17: the lab-neutral refusal is read per refusal too
-            assertStartupRefused(stub(lang, "chat.check.refused.lab", null), lang + ":chat.check.refused.lab");
+            for (String key : ChatAnswerCheck.KEYS) {
+                assertStartupRefused(stub(lang, key, null), lang + ":" + key);
+            }
         }
     }
 
@@ -331,8 +333,10 @@ class ChatModelConfigurationTest {
     @Test
     void aFixedBodyThatCannotFitWithItsAppendixStopsStartupAndNamesTheKey() {
         String longLine = "ক".repeat(1100);
+        assertThat(ChatPropertiesCheck.FIXED_BODIES).as("the fixed bodies, read from the check itself")
+                .contains("chat.ask.failed").containsAll(ChatAnswerCheck.KEYS);
         for (String lang : List.of("bn", "en")) {
-            for (String key : List.of("chat.check.refused", "chat.check.refused.lab", "chat.ask.failed")) {
+            for (String key : ChatPropertiesCheck.FIXED_BODIES) {
                 assertStartupRefused(stub(lang, key, longLine), lang + ":" + key);
             }
         }

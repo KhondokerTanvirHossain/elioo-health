@@ -1397,8 +1397,10 @@ class ChatAnswerServiceTest {
     }
 
     /**
-     * A lab question whose refused answer quotes a written line keeps chat.check.refused and the doctor line. Neither the
-     * question nor the refusal's own text decides it here: only the quoted line does.
+     * A lab question whose refused answer quotes a written line keeps chat.check.refused and the doctor line. The quoted line
+     * here holds the stored name "demoprol", so the name path sees it too: this test alone does not show the quote path works
+     * (review of #175, finding 2). {@link #anAnswerQuotingANamelessLineKeepsTheDoctorLine} and
+     * {@link #anAnswerCitingANamelessLineKeepsTheDoctorLine} do, over a line that holds no name and no medicine word.
      */
     @Test
     void anAnswerQuotingAWrittenLineTheCheckRefusesKeepsTheDoctorLine() {
@@ -1431,6 +1433,173 @@ class ChatAnswerServiceTest {
 
         theCheckRefused(a);
         assertThat(a.answer()).isEqualTo(line("bn", "chat.check.refused") + tailIn("bn", true, false));
+    }
+
+    // ---- review of #175: the dangerous direction. A refused answer that names a medicine in any form code reads a name in
+    // elsewhere (Bangla script or a vowel off, across an inner hyphen, an unshown line's name, a medicine word, a name the
+    // stored lines do not hold), or a refusal not about a lab at all, keeps chat.check.refused and the doctor line.
+
+    /** The model's only answer is {@code answer} over {@code ctx}; the check refuses it. */
+    private AskAnswer refusedOver(ChatContext ctx, String q, String answer) {
+        when(contexts.build(eq(FAMILY), eq(PATIENT), eq("Ma"), any())).thenReturn(Mono.just(ctx));
+        when(contexts.medicineNames(FAMILY, PATIENT)).thenReturn(Mono.just(ctx.medicineNames()));
+        return refusedByTheCheck("bn", q, answer);
+    }
+
+    /** Asserts the code checks pass {@code answer} over {@code ctx}, so only the model check can refuse it. */
+    private static void theCodeChecksPass(String answer, ChatContext ctx) {
+        assertThat(AnswerCheck.violations(answer, ctx)).as("the code checks pass it: " + answer).isEmpty();
+    }
+
+    /** chat.check.refused and the doctor line, never the lab line: what every test below expects. */
+    private void keepsTheDoctorLine(AskAnswer a) {
+        theCheckRefused(a);
+        assertThat(a.answer()).isEqualTo(line("bn", "chat.check.refused") + tailIn("bn", true, false))
+                .doesNotContain(line("bn", "chat.check.refused.lab"));
+    }
+
+    /** Review of #175, findings 1 and 7: the stored name typed in Bangla script ("ডেমোপ্রল" for "demoprol"), NameSkeleton. */
+    @Test
+    void aLabRefusalNamingAStoredMedicineInBanglaScriptKeepsTheDoctorLine() {
+        notAMedicineQuestion(LAB_Q_BN);
+        String answer = "Ma-র ক্রিয়েটিনিন 1.8, কাগজে ছাপা সীমার বাইরে। শেষ প্রেসক্রিপশনে ডেমোপ্রল আছে।";
+        theCodeChecksPass(answer, CTX);
+        assertThat(DoseChangeGuard.refersToMedicine(DoseChangeGuard.hay(answer), CTX.medicineNames()))
+                .as("the stem match alone does not see it").isFalse();
+
+        keepsTheDoctorLine(refusedByTheCheck("bn", LAB_Q_BN, answer));
+    }
+
+    /** Review of #175, findings 1, 7 and 8: the stored name with an inner hyphen ("Demo-prol"), as the dose guard joins it. */
+    @Test
+    void aLabRefusalNamingAStoredMedicineAcrossAHyphenKeepsTheDoctorLine() {
+        notAMedicineQuestion(LAB_Q_BN);
+        String answer = "Ma-র ক্রিয়েটিনিন 1.8, কাগজে ছাপা সীমার বাইরে। শেষ প্রেসক্রিপশনে Demo-prol আছে।";
+        theCodeChecksPass(answer, CTX);
+        assertThat(DoseChangeGuard.refersToMedicine(DoseChangeGuard.hay(answer), CTX.medicineNames()))
+                .as("the stem match alone does not see it").isFalse();
+
+        keepsTheDoctorLine(refusedByTheCheck("bn", LAB_Q_BN, answer));
+    }
+
+    /**
+     * Review of #175, finding 8, the joined form alone: an English sentence that opens with "Demo-prol" holds no capitalised
+     * word inside a sentence, so only the inner-hyphen-joined form reads the stored name.
+     */
+    @Test
+    void aLabRefusalOpeningWithAHyphenatedNameKeepsTheDoctorLineInEnglish() {
+        notAMedicineQuestion(LAB_Q_EN);
+        String answer = LAB_A_EN + " Demo-prol is on the latest prescription.";
+
+        AskAnswer a = refusedByTheCheck("en", LAB_Q_EN, answer);
+
+        theCheckRefused(a);
+        assertThat(a.answer()).isEqualTo(line("en", "chat.check.refused") + tailIn("en", true, false))
+                .doesNotContain(line("en", "chat.check.refused.lab"));
+    }
+
+    /**
+     * Review of #175, finding 1: a medicine of the latest prescription whose line is never shown (DR-16), named in Bangla
+     * script: it is in {@code unshownNames}, never in {@code medicineNames}.
+     */
+    @Test
+    void aLabRefusalNamingAnUnshownMedicineKeepsTheDoctorLine() {
+        ChatContext ctx = CTX.withPrescription(PAPER, Set.of("losartan"));
+        assertThat(ctx.medicineNames()).doesNotContain("losartan");
+        notAMedicineQuestion(LAB_Q_BN);
+        String answer = "Ma-র ক্রিয়েটিনিন 1.8, কাগজে ছাপা সীমার বাইরে। শেষ প্রেসক্রিপশনে লোসারটান আছে।";
+        theCodeChecksPass(answer, ctx);
+
+        keepsTheDoctorLine(refusedOver(ctx, LAB_Q_BN, answer));
+    }
+
+    /** Review of #175, finding 7: a medicine the stored lines do not hold ("Napa", an older paper's or an invented one). */
+    @Test
+    void aLabRefusalNamingAMedicineTheLinesDoNotHoldKeepsTheDoctorLine() {
+        notAMedicineQuestion(LAB_Q_BN);
+        String answer = "Ma-র ক্রিয়েটিনিন 1.8, কাগজে ছাপা সীমার বাইরে। আগের কাগজে Napa ছিল।";
+        theCodeChecksPass(answer, CTX);
+        assertThat(CTX.medicineNames()).doesNotContain("napa");
+
+        keepsTheDoctorLine(refusedByTheCheck("bn", LAB_Q_BN, answer));
+    }
+
+    /** Review of #175, finding 3: a medicine word ("ওষুধ") and no name at all. */
+    @Test
+    void aLabRefusalSayingAMedicineWordKeepsTheDoctorLine() {
+        notAMedicineQuestion(LAB_Q_BN);
+        String answer = "Ma-র ক্রিয়েটিনিন 1.8 mg/dL। ওষুধের কথা কাগজে আছে।";
+        theCodeChecksPass(answer, CTX);
+
+        keepsTheDoctorLine(refusedByTheCheck("bn", LAB_Q_BN, answer));
+    }
+
+    /**
+     * Review of #175, finding 7: the question is read too. A lab question that also names a medicine, neither a dose nor a
+     * purpose question, keeps the doctor line though the refused answer is about the lab only.
+     */
+    @Test
+    void aLabQuestionThatNamesAMedicineKeepsTheDoctorLine() {
+        String q = "আম্মার ক্রিয়েটিনিন কত? প্রেসক্রিপশনে ডেমোপ্রল আছে।";
+        notAMedicineQuestion(q);
+        theCodeChecksPass(LAB_A_BN, CTX);
+
+        keepsTheDoctorLine(refusedByTheCheck("bn", q, LAB_A_BN));
+    }
+
+    /**
+     * Review of #175, finding 7: a refusal about no lab at all (a follow-up date) keeps the doctor line. The lab line says
+     * "ask a doctor about the report", which is the wrong subject for it; only a question about a lab gets that line.
+     */
+    @Test
+    void aRefusalAboutAFollowUpDateKeepsTheDoctorLine() {
+        String q = "আবার কবে ডাক্তার দেখাতে হবে?";
+        notAMedicineQuestion(q);
+        String answer = "Ma-র কাগজে পরের দেখা করার তারিখ লেখা নেই।";
+        theCodeChecksPass(answer, CTX);
+
+        keepsTheDoctorLine(refusedByTheCheck("bn", q, answer));
+    }
+
+    /**
+     * A prescription line holding neither a stored name nor a medicine word ({@code medicineNames} empty): only the quote
+     * can say the refused answer speaks of a medicine (review of #175, finding 2).
+     */
+    static final String XR = "XR-7 · 1+0+1";
+    static final ChatContext CTX_NO_NAME = new ChatContext(
+            List.of("PATIENT Ma", "VALUE Creatinine: 1.8 mg/dL | printed range 0.7–1.3 | OUTSIDE high | paper 2026-09-12",
+                    "PRESCRIPTION 2026-09-20", "{{rx:1}} = " + XR),
+            Set.of("1.8", "0.7", "1.3", "2026", "9", "12", "20"), List.of(XR), List.of(PAPER), false, List.of(), Set.of(), Set.of());
+
+    /**
+     * Review of #175, finding 2: a lab question whose refused answer quotes a written line that holds no stored name and no
+     * medicine word, with no crop known, so nothing is cited: the line inside the answer as shown is what decides it.
+     */
+    @Test
+    void anAnswerQuotingANamelessLineKeepsTheDoctorLine() {
+        assertThat(CTX_NO_NAME.medicineNames()).isEmpty();
+        assertThat(DoseChangeGuard.refersToMedicine(DoseChangeGuard.hay(XR), Set.of())).as("the line names nothing").isFalse();
+        assertThat(AnswerCheck.cited(RX_ANSWER, CTX_NO_NAME)).as("no crop known: nothing cited").isEmpty();
+        theCodeChecksPass(RX_ANSWER, CTX_NO_NAME);
+
+        AskAnswer a = refusedOver(CTX_NO_NAME, LAB_Q_BN, RX_ANSWER);
+
+        keepsTheDoctorLine(a);
+        assertThat(a.answer()).doesNotContain(XR);
+    }
+
+    /** The same with a crop known and the prescription's paper named: the cited line decides it (review of #175, finding 2). */
+    @Test
+    void anAnswerCitingANamelessLineKeepsTheDoctorLine() {
+        ChatContext ctx = new ChatContext(CTX_NO_NAME.factLines(), CTX_NO_NAME.numbers(), CTX_NO_NAME.verbatimLines(),
+                List.of(PAPER, RX_PAPER), false, List.of(), Set.of(), Set.of(), Set.of(), RX_PAPER, Set.of(), List.of(RX1_CROP));
+        assertThat(AnswerCheck.cited(RX_ANSWER, ctx)).as("the line is cited with its crop").hasSize(1);
+        theCodeChecksPass(RX_ANSWER, ctx);
+
+        AskAnswer a = refusedOver(ctx, LAB_Q_BN, RX_ANSWER);
+
+        keepsTheDoctorLine(a);
+        assertThat(a.answer()).doesNotContain(XR);
     }
 
     /**

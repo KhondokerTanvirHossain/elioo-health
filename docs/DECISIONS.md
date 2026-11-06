@@ -1609,8 +1609,8 @@ questions (P16, quoted at the end); the rest is engineering within the rulings:*
   server-side fallback), a timeout or no check client all give `chat.check.refused` (P16(d), the PO's words: bn "এই
   প্রশ্নের নিশ্চিত উত্তর আমি দিতে পারি না। কাগজপত্রে যা লেখা আছে দেখুন, আর ওষুধ নিয়ে ডাক্তার বা ফার্মাসিস্টকে জিজ্ঞেস করুন।", en "I
   can't give a reliable answer to this. See what the papers say under Papers, and ask a doctor or a pharmacist about the
-  medicine.") with `chat.dose.ask_doctor` appended by code when the refusal speaks of a medicine, else the lab-neutral
-  `chat.check.refused.lab` with no medicine line (P17, "Lab-neutral refusals" below), a FALLBACK under handler
+  medicine.") with `chat.dose.ask_doctor` appended by code, unless the refusal is positively about a lab, which gives the
+  lab-neutral `chat.check.refused.lab` with no medicine line (P17, "Lab-neutral refusals" below), a FALLBACK under handler
   `model_check` that cites no paper.
   The code checks' own fixed reply (`fixed_after_repair`, and `model_error`) stays `chat.ask.failed`: it is not the
   check's refusal, and P16(d) named the check's line only. `ChatPropertiesCheck` refuses to start without
@@ -1723,12 +1723,20 @@ questions (P16, quoted at the end); the rest is engineering within the rulings:*
   keeps its built default (both kept), except as the lab-neutral follow-up narrows it.
 - **Lab-neutral refusals (P17 follow-up, branch `fix/baymax-chat-lab-refusal`; the wording is a DRAFT, not to ship before
   the PO approves it).** A check refusal (the check's `refuse`, and every fail-closed path: unparseable, `max_tokens`,
-  error, timeout, no client, `check_marker`; `check_bare_answer` is always a dose or purpose question) speaks of a
-  medicine, and keeps `chat.check.refused` with `chat.dose.ask_doctor`, when the question is a dose or purpose question
-  (the same decision that appends their lines) **or** the refused answer, as it would have been shown, quotes a
-  prescription line (a cited line, or any written line inside it) or refers to a medicine the way `DoseChangeGuard`
-  reads one (a stored medicine's name, a medicine word). Otherwise it is `chat.check.refused.lab` with no doctor-medicine
-  line (`ChatAnswerCheck.speaksOfMedicine`); when unsure, it speaks of a medicine. Draft copy, in the voice of
+  error, timeout, no client, `check_marker`; `check_bare_answer` is always a dose or purpose question) keeps
+  `chat.check.refused` with `chat.dose.ask_doctor` by default. It is `chat.check.refused.lab`, with no doctor-medicine
+  line, only when it is positively about a lab (`ChatAnswerCheck.speaksOfMedicine`; review of #175, findings 1, 7 and
+  8), that is when all of these hold: the question is neither a dose nor a purpose question (the same decision that
+  appends their lines); the refused answer, as it would have been shown, quotes no prescription line (no cited line, and
+  no written line inside it); neither the question nor the refused answer refers to a medicine, read as broadly as the
+  other name checks read one (the stored and the unshown medicines' names as a stem, across an inner hyphen
+  "Demo-prol" and by `NameSkeleton`, "ডেমোপ্রল"; a medicine word; or a Latin-letter word the context does not hold,
+  such as "Napa" from an older paper or an invented name, in a Bangla text any such word and in an English one a
+  capitalised word inside a sentence); and the question is about a lab or the report (a lab word, a stored lab's name,
+  a report word such as রিপোর্ট, test or sugar). A refusal about a follow-up date or a doctor's name therefore keeps the
+  doctor line. Known limits, each reaching the lab line only when the question names a lab: a medicine no stored line
+  holds, written in Bangla script ("নাপা" from an older paper), and an English sentence that opens with such a name, are
+  not read as a medicine. Draft copy, in the voice of
   `chat.check.refused`: bn "এই প্রশ্নের নিশ্চিত উত্তর আমি দিতে পারি না। কাগজপত্রে যা লেখা আছে দেখুন, আর রিপোর্ট নিয়ে ডাক্তারকে
   জিজ্ঞেস করুন।", en "I can't give a reliable answer to this. See what the papers say under Papers, and ask a doctor
   about the report." The disclaimer, the red-flag line and any NOW/THIS_WEEK urgency line stay exactly as before in both

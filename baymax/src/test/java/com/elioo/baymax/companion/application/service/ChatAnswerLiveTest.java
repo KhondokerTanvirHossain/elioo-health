@@ -266,13 +266,30 @@ class ChatAnswerLiveTest {
         soft.assertThat(a.answer()).as(id + " ends with the disclaimer and the red-flag line").endsWith(tail);
         soft.assertThat(o.answer()).as(id + " stored as shown").isEqualTo(a.answer());
         if (ChatAnswerCheck.HANDLER.equals(o.handler())) {
-            // PO ruling P17: chat.check.refused with the doctor line, or the lab-neutral line without it, never a mix
+            // PO ruling P17: which refusal is expected is worked out from the case and the answer the check read, never from the
+            // reply (review of #175, findings 4 and 12). A dose or purpose question, an answer that quotes a written line or
+            // names a stored medicine, and a question about no lab each must keep chat.check.refused and the doctor line,
+            // decided here without speaksOfMedicine; only the rest may be the lab-neutral line
+            ChatContext ctx = context(ChatLabels.of(lang, copy));
             String doctor = copy.line(lang, "chat.dose.ask_doctor");
-            if (a.answer().startsWith(copy.line(lang, ChatAnswerCheck.REFUSED_LAB_LINE))) {
-                soft.assertThat(a.answer()).as(id + " a lab-neutral check refusal has no doctor line").doesNotContain(doctor);
+            String refusedLine = copy.line(lang, ChatAnswerCheck.REFUSED_LINE);
+            String labLine = copy.line(lang, ChatAnswerCheck.REFUSED_LAB_LINE);
+            String read = !checkSeen.isEmpty() ? answerOf(checkSeen.get(checkSeen.size() - 1).user())
+                    : injected == null ? "" : AnswerCheck.resolve(injected.strip(), ctx);
+            boolean medicineQuestion = DoseChangeGuard.asksForChange(q, ctx.medicineNames())
+                    || MedicinePurposeGuard.route(q, ctx.medicineNames(), MedicinePurposeGuard.labNames(ctx), "Ma")
+                    != MedicinePurposeGuard.Route.NONE;
+            boolean quotesOrNames = ctx.verbatimLines().stream().anyMatch(read::contains)
+                    || ctx.medicineNames().stream().anyMatch(n -> DoseChangeGuard.hits(DoseChangeGuard.hay(read), n + "*"));
+            boolean keepsDoctor = medicineQuestion || quotesOrNames || !ChatAnswerCheck.aboutALab(q, ctx)
+                    || ChatAnswerCheck.namesAMedicine(q, ctx) || ChatAnswerCheck.namesAMedicine(read, ctx);
+            if (keepsDoctor) {
+                soft.assertThat(a.answer()).as(id + " a check refusal of a medicine or non-lab case shows chat.check.refused"
+                                + " and the doctor line (medicine question " + medicineQuestion + ", quotes or names " + quotesOrNames + ")")
+                        .startsWith(refusedLine).contains(doctor).doesNotContain(labLine);
             } else {
-                soft.assertThat(a.answer()).as(id + " a check refusal shows chat.check.refused")
-                        .startsWith(copy.line(lang, ChatAnswerCheck.REFUSED_LINE)).contains(doctor);
+                soft.assertThat(a.answer()).as(id + " a check refusal about a lab only is the lab-neutral line, no doctor line")
+                        .startsWith(labLine).doesNotContain(doctor).doesNotContain(refusedLine);
             }
         }
         if (o.kind() == AnswerKind.ANSWER) {
