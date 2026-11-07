@@ -61,15 +61,15 @@ final class TimelineJson {
         return m;
     }
 
-    /** Only the days that hold a paper or a follow-up, ascending; papers in the timeline's order within a day. */
-    static Map<String, Object> calendar(CalendarMonth month) {
+    /**
+     * Only the days that hold a paper or a follow-up, ascending; papers in the timeline's order within a day. Each paper
+     * is the timeline's own {@link #entry} for it (plan desktop-calendar: the desktop's chosen-day panel shows its page,
+     * facility, counts and state), so the calendar and the list can never describe one paper two ways.
+     */
+    static Map<String, Object> calendar(CalendarMonth month, Function<String, String> retakeKey) {
         TreeMap<LocalDate, Map<String, List<Map<String, Object>>>> days = new TreeMap<>();
         for (TimelineEntry e : month.papers()) {
-            Map<String, Object> paper = new LinkedHashMap<>();
-            paper.put("document_id", e.documentId().toString());
-            paper.put("document_type", e.documentType());
-            paper.put("chip", chip(e));
-            day(days, e.date()).get("papers").add(paper);
+            day(days, e.date()).get("papers").add(entry(e, retakeKey));
         }
         for (AttentionItem.FollowUp f : month.followUps()) {
             Map<String, Object> follow = new LinkedHashMap<>();

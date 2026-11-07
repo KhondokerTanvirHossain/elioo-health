@@ -4,6 +4,7 @@ import { banglaDigits, t, type CopyKey } from "../src/copy";
 import { useScenario } from "./support/browser-api";
 import { FIXTURES, PROTO_PAPERS, PROTO_PATIENTS, longNameOf } from "./support/scenarios.mjs";
 import { axeReport, cspViolations, expectSchemeIsPainted, installCspHook, rendersOwnText } from "./support/screen-checks";
+import { SCHEMES, WIDTHS, deskOverflow, showSidebar } from "./support/desk-checks";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -16,16 +17,6 @@ import { join } from "node:path";
  * the NOW bar's seen button takes the bar away and leaves the card red, and a NOW paper from a link opens with its warning
  * and its panel (Review Focus 1). Below 900 px the same preview page is today's phone page (the phone project).
  */
-
-const WIDTHS = {
-  w1440: { width: 1440, height: 900 },
-  w1280: { width: 1280, height: 800 },
-  w1024: { width: 1024, height: 768 },
-  w900: { width: 900, height: 800 },
-} as const;
-const SCHEMES = ["light", "dark"] as const;
-/** From this width the sidebar is a column of its own; below it, behind the paper column's button (DesktopShell.css). */
-const SIDEBAR_COLUMN = 1200;
 
 const body = <T>(file: string): T => (JSON.parse(readFileSync(join(FIXTURES, file), "utf8")) as { body: T }).body;
 const PROTO = body<MeJson>("me/proto.json");
@@ -47,48 +38,6 @@ async function open(page: Page, scenario: string, path: string) {
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
   // The desktop layout is the one drawn: its shell is shown and the phone's is not.
   await expect(page.locator(".desktop-shell"), "the desktop layout is drawn").toBeVisible();
-}
-
-/**
- * Every element of the desktop shell whose content is wider than its box, but for three that are not overflow:
- * - a scroller (overflow-x auto or scroll: the strip, the page canvas), which is meant to scroll sideways;
- * - a line cut with an ellipsis (text-overflow: ellipsis on one line), which desktop.html declares for the viewer's title
- *   and whose-paper line (`.tb .t b`, `.tb .t small`) and the strip's labels: returned as `truncated`, so a caller can
- *   require that none of them is a place a name must wrap;
- * - text read out and not drawn (a 1 px box clipped to nothing: the screen's h1, the strip's words).
- * A box that clips without saying so, or spills, is reported. Also returned: the scrollers that do scroll, how many
- * elements were measured, and the page's own width.
- */
-function deskOverflow(page: Page) {
-  return page.evaluate(() => {
-    const over: string[] = [];
-    const scrolling: string[] = [];
-    const truncated: Array<{ label: string; where: string[] }> = [];
-    const NAMED = [".desktop-sidebar", ".conversation__head", ".now-banner--bar"];
-    let measured = 0;
-    for (const el of document.querySelectorAll<HTMLElement>(".desktop-shell, .desktop-shell *")) {
-      if (el.getClientRects().length === 0) continue;
-      measured++;
-      if (el.scrollWidth <= el.clientWidth + 1) continue;
-      const style = getComputedStyle(el);
-      const label = `<${el.tagName.toLowerCase()} class="${el.getAttribute("class") ?? ""}"> ${el.scrollWidth} > ${el.clientWidth}`;
-      const box = el.getBoundingClientRect();
-      if (style.overflowX === "auto" || style.overflowX === "scroll") scrolling.push(el.className);
-      else if (style.clipPath === "inset(50%)" && box.width <= 1 && box.height <= 1) continue;
-      else if (style.textOverflow === "ellipsis" && style.whiteSpace === "nowrap") {
-        truncated.push({ label, where: NAMED.filter((s) => el.closest(s) !== null) });
-      } else over.push(label);
-    }
-    const root = document.documentElement;
-    return { over, scrolling, truncated, measured, page: [root.scrollWidth, root.clientWidth] as [number, number] };
-  });
-}
-
-/** Opens the sidebar where it lies behind the paper column's button (900 to 1199 px), so its names are measured too. */
-async function showSidebar(page: Page, width: number) {
-  if (width >= SIDEBAR_COLUMN) return;
-  await page.locator(".desktop-shell__menu").click();
-  await expect(page.locator(".desktop-shell__sidebar[data-open]")).toBeVisible();
 }
 
 /** The paper the viewer shows, the card the conversation outlines, and the strip item marked current. */
@@ -412,26 +361,8 @@ test.describe("talk-and-papers on the desktop layout", () => {
       expect(new Set(tops).size, "every thumbnail at the same height").toBe(1);
     });
   });
-
-  test("theOldPapersPageWithFortyFivePapersAndTheLongestNameDoesNotOverflowOnAPreviewPage", async ({ page }) => {
-    // /app/preview/timeline is not on the desktop layout yet (Phase 2): it is today's page at every width. Review Focus
-    // 4's forty-five papers and the longest name are judged there at the narrow desktop and the wide window.
-    for (const viewport of [WIDTHS.w900, WIDTHS.w1024, WIDTHS.w1440]) {
-      await page.setViewportSize(viewport);
-      await useScenario(page, "papers-forty-five-long");
-      const response = await page.goto("/app/preview/timeline");
-      expect(response?.status()).toBe(200);
-      await page.evaluate(() => document.fonts.ready.then(() => undefined));
-      expect(await rendersOwnText(page, longNameOf("papers-forty-five-long")), "the long name is drawn").toBe(true);
-      const over = await page.evaluate(() =>
-        [...document.querySelectorAll<HTMLElement>("body *")]
-          .filter((el) => el.getClientRects().length > 0 && el.scrollWidth > el.clientWidth + 1)
-          .filter((el) => !["auto", "scroll"].includes(getComputedStyle(el).overflowX))
-          .map((el) => `${viewport.width}px <${el.tagName.toLowerCase()} class="${el.getAttribute("class") ?? ""}"> ${el.scrollWidth} > ${el.clientWidth}`),
-      );
-      expect(over).toEqual([]);
-    }
-  });
+  // The papers page on a preview page is the desktop calendar now (plan desktop-parity C1): desk-calendar.spec.ts judges
+  // it, Review Focus 4's forty-five papers under the longest name included.
 });
 
 test.describe("below 900 px", () => {

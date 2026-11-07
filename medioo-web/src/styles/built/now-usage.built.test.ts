@@ -111,8 +111,8 @@ describe("the built CSS", () => {
     expect(usesOf(/var\(\s*--week-soft\b/, /^\.urgency-tag/), "UrgencyTag's THIS_WEEK wash").toEqual([".urgency-tag--week background"]);
     expect(usesOf(/var\(\s*--week\s*[,)]/, /^\.urgency-tag/), "UrgencyTag's THIS_WEEK amber").toEqual([".urgency-tag--week color"]);
     expect(
-      usesOf(/var\(\s*--week\b/, /./).filter((u) => !/^\.(verdict-card--week|month-calendar__(alert|key)--week|urgency-tag--week) /.test(u)),
-      "--week used outside .verdict-card--week, the calendar's THIS_WEEK marks and the papers' THIS_WEEK tag",
+      usesOf(/var\(\s*--week\b/, /./).filter((u) => !/^\.(verdict-card--week|month-calendar__(alert|key)--week|desk-cal__ev--week|urgency-tag--week) /.test(u)),
+      "--week used outside .verdict-card--week, the calendars' THIS_WEEK marks and the papers' THIS_WEEK tag",
     ).toEqual([]);
 
     expect(nowUsageViolations(css, NOW_ALLOWED)).toEqual([]);

@@ -433,6 +433,15 @@ function protoFamily() {
       [PROTO_AMMA]: "follow-ups/proto-amma.json",
       [PROTO_ABBU]: "follow-ups/proto-abbu.json",
     }),
+    // desktop.html's October (plan desktop-parity C1): the desktop calendar's month and its list view.
+    "GET /app/api/patients/{id}/calendar": byId("GET /app/api/patients/{id}/calendar", {
+      [PROTO_AMMA]: "calendar/proto-amma.json",
+      [PROTO_ABBU]: "calendar/proto-abbu.json",
+    }),
+    "GET /app/api/patients/{id}/timeline": byId("GET /app/api/patients/{id}/timeline", {
+      [PROTO_AMMA]: "timeline/proto-amma.json",
+      [PROTO_ABBU]: "timeline/proto-abbu.json",
+    }),
     [PAPER]: byId(PAPER, Object.fromEntries(Object.entries(PROTO_PAPERS).map(([name, id]) => [id, `documents/proto-${name}.json`]))),
     [STATUS]: "document-status/done.json",
   };

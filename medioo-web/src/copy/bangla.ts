@@ -70,6 +70,12 @@ export function formatMonthYear(lang: Lang, isoDate: string): string {
   return `${ENGLISH_MONTH.format(Date.UTC(2000, d.month - 1, 1))} ${d.year}`;
 }
 
+/** The month alone, as a calendar chip heads its day (desktop.html's `.calchip small`): the Bangla month on bn, "October" on en. */
+export function formatMonth(lang: Lang, isoDate: string): string {
+  const d = isoDay(isoDate);
+  return lang === "bn" ? monthName(d) : ENGLISH_MONTH.format(Date.UTC(2000, d.month - 1, 1));
+}
+
 /**
  * A date as printed on the paper (UiCopy.date(Lang, String)): on bn an ISO date is written as a Bangla date and any other
  * text is kept exactly as printed, never re-dated; on en the text as written.

@@ -11,7 +11,7 @@ import type { Lang } from "./lang";
 
 export type { Lang } from "./lang";
 export { langOf } from "./lang";
-export { banglaDigits, formatDate, formatDayMonth, formatMonthYear, formatPrinted, formatTime } from "./bangla";
+export { banglaDigits, formatDate, formatDayMonth, formatMonth, formatMonthYear, formatPrinted, formatTime } from "./bangla";
 
 export type CopyKey = Exclude<keyof typeof bnCopy, "_meta">;
 

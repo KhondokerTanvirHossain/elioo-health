@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import vectors from "./generated/bangla-vectors.json";
-import { banglaDigits, formatDate, formatDayMonth, formatMonthYear, formatPrinted, formatTime } from "./bangla";
+import { banglaDigits, formatDate, formatDayMonth, formatMonth, formatMonthYear, formatPrinted, formatTime } from "./bangla";
 import type { Lang } from "./index";
 
 /*
@@ -30,6 +30,12 @@ export function banglaVectorTests() {
     expect(formatDayMonth(lang, iso)).toBe(out);
   });
 
+  // The month alone (a calendar chip, desktop.html's `.calchip small`): each month-year vector less its year.
+  it.each(withLang(vectors.month_years))("formatMonth($lang, $iso)", ({ lang, iso, out }) => {
+    const year = iso.slice(0, 4);
+    expect(`${formatMonth(lang, iso)} ${lang === "bn" ? banglaDigits(year) : year}`).toBe(out);
+    expect(formatMonth(lang, iso)).not.toMatch(/\d|[\u09E6-\u09EF]/);
+  });
   it.each(withLang(vectors.month_years))("formatMonthYear($lang, $iso)", ({ lang, iso, out }) => {
     expect(formatMonthYear(lang, iso)).toBe(out);
   });

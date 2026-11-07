@@ -130,6 +130,20 @@ describe("DesktopShell", () => {
     expect(container.querySelector(".desktop-shell__columns")!.contains(divider), "a track of the columns grid").toBe(true);
   });
 
+  it("aScreenWithNoConversationIsOneColumnWithNoDivider", async () => {
+    // The calendar (plan desktop-calendar; desktop.html `calView()`): its own grid and day panel fill the content region,
+    // so the shell draws no conversation column and no divider to drag towards one. The menu button stays.
+    const { container } = shell({ talk: undefined, panel: undefined });
+    await Promise.resolve();
+    const columns = container.querySelector(".desktop-shell__columns")!;
+    expect(columns.classList.contains("desktop-shell__columns--one"), "one column").toBe(true);
+    expect(container.querySelector(".desktop-shell__talk"), "no conversation column").toBeNull();
+    expect(container.querySelector("[role=separator]"), "no divider").toBeNull();
+    expect(columns.querySelector(".desktop-shell__paper [data-slot=paper]"), "the screen fills the column").not.toBeNull();
+    expect(columns.querySelector(".desktop-shell__menu"), "the sidebar's button is still there").not.toBeNull();
+    expect(declared(".desktop-shell__columns--one", "grid-template-columns")).toEqual({ "": "minmax(0, 1fr)" });
+  });
+
   it("noFooterDisclaimerOnDesktop", () => {
     // X1: the footer disclaimer is removed on desktop; the conversation header says "not a doctor" (Task 7).
     for (const lang of ["bn", "en"] as const) {

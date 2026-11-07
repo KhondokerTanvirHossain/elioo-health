@@ -39,7 +39,8 @@ export type DesktopFrameInput = {
   tab: Tab | null;
   bar: ReactNode | undefined;
   paper: ReactNode;
-  talk: ReactNode;
+  /** undefined: a screen of one column (the calendar), drawn with no conversation and no divider. */
+  talk: ReactNode | undefined;
   panel: ReactNode | undefined;
 };
 
@@ -83,6 +84,8 @@ function askedPatient(here: string): string | null {
  *   and every page that gives no `desktop`, renders today's AppShell alone, exactly as before. With the chooser in
  *   place of `main`, the paper column holds the chooser and the conversation is empty: the sidebar names nobody.
  *   `desktop.panel` (Task 8) is a paper's details over the conversation, when the page has one open (undefined: none).
+ *   A page that gives no `desktop.talk` (the calendar, plan desktop-calendar) is one column: its `paper` slot holds a
+ *   screen that lays itself out, and the chooser, when it stands in, fills that column alone.
  *   `desktop.frame` is desktop-frame.tsx's desktopFrame, which renders DesktopShell and DesktopSidebar: the page passes
  *   it, so only a page that can render the desktop layout imports them (DR-42), and this module names it as a type.
  *   The NOW banner is the slim bar there (NowBanner variant "bar", across the content columns), the block below 900 px.
@@ -107,7 +110,7 @@ export async function signedInPage({
   everyone?: boolean;
   asked?: string;
   patient?: string | null;
-  desktop?: { frame: DesktopFrame; paper: Slot; talk: Slot; panel?: Slot };
+  desktop?: { frame: DesktopFrame; paper: Slot; talk?: Slot; panel?: Slot };
 }) {
   const { lang, preview, here } = await requestContext();
   const [meAnswer, bannerAnswer] = await Promise.all([javaGet<MeJson>("/app/api/me"), javaGet<NowBannerJson>("/app/api/now-banner")]);
@@ -153,7 +156,7 @@ export async function signedInPage({
     tab,
     bar: nowBanner("bar"),
     paper: chooser ? <PatientChooser lang={lang} patients={me.patients} titleId="desktop-patient-chooser-title" /> : await fill(desktop.paper, ctx),
-    talk: chooser ? null : await fill(desktop.talk, ctx),
+    talk: desktop.talk === undefined ? undefined : chooser ? null : await fill(desktop.talk, ctx),
     panel: chooser || desktop.panel === undefined ? undefined : ((await fill(desktop.panel, ctx)) ?? undefined),
   });
   return (

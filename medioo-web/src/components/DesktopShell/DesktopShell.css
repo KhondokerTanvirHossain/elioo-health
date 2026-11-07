@@ -55,6 +55,10 @@
   grid-template-columns: minmax(0, 1fr) 0 clamp(320px, var(--talk-w), calc(100% - 420px));
   min-height: 0;
 }
+/* A screen of one column that lays itself out (the calendar: its month and its day panel): no conversation track. */
+.desktop-shell__columns--one {
+  grid-template-columns: minmax(0, 1fr);
+}
 /* The divider: on the conversation's hairline, 8 px wide and pulled 4 px into each column by its margins, so its
    track takes no width and nothing spills from its box; a 2 px tint line on hover, while dragged, and the focus colour
    when focused. The pointer is captured while it drags, so nothing under it is selected or hit. */

@@ -220,6 +220,25 @@ class PatientTimelineApiContractTest {
             assertThat(body.get("days").get(0).get("papers").get(0).get("chip").asText()).isEqualTo("now");
             assertThat(body.get("days").get(1).get("papers")).isEmpty();
             assertThat(body.get("days").get(1).get("follow_ups").get(0).get("instruction").asText()).isEqualTo("Bring the sugar chart");
+            // Plan desktop-calendar: a paper on the calendar is the timeline's own entry for it, field for field (the
+            // desktop's chosen-day panel draws its thumbnail, facility, counts and state), derived from the timeline's
+            // answer rather than from a list of fields typed here, so a field the timeline gains reaches the calendar.
+            JsonNode entries = ok(client, s.session(), timeline(s.patient())).get("entries");
+            int compared = 0;
+            for (JsonNode day : body.get("days")) {
+                for (JsonNode paper : day.get("papers")) {
+                    JsonNode same = null;
+                    for (JsonNode e : entries) {
+                        if (e.get("document_id").equals(paper.get("document_id"))) {
+                            same = e;
+                        }
+                    }
+                    assertThat(same).as("the timeline holds " + paper.get("document_id")).isNotNull();
+                    assertThat(paper).as("the calendar's paper is the timeline's entry").isEqualTo(same);
+                    compared++;
+                }
+            }
+            assertThat(compared).as("papers compared (none would pass vacuously)").isEqualTo(2);
             for (String bad : List.of("2026-13", "2026-1", "october", "")) {
                 EntityExchangeResult<byte[]> r = get(client, s.session(), "/app/api/patients/" + s.patient().id() + "/calendar?month=" + bad);
                 assertThat(r.getStatus().value()).as("month=" + bad).isEqualTo(400);
@@ -532,9 +551,9 @@ class PatientTimelineApiContractTest {
 
     @Test
     void everyCommittedFixtureIsACurrentCase() throws IOException {
-        assertThat(AttentionApiContractTest.committed(FIXTURES.resolve("timeline")))
+        assertThat(AttentionApiContractTest.ownCommitted(FIXTURES.resolve("timeline")))
                 .containsExactlyInAnyOrderElementsOf(TIMELINE.stream().map(n -> n + ".json").toList());
-        assertThat(AttentionApiContractTest.committed(FIXTURES.resolve("calendar")))
+        assertThat(AttentionApiContractTest.ownCommitted(FIXTURES.resolve("calendar")))
                 .containsExactlyInAnyOrderElementsOf(CALENDAR.stream().map(n -> n + ".json").toList());
         assertThat(AttentionApiContractTest.ownCommitted(FIXTURES.resolve("follow-ups")))
                 .containsExactlyInAnyOrderElementsOf(FOLLOW_UPS.stream().map(n -> n + ".json").toList());

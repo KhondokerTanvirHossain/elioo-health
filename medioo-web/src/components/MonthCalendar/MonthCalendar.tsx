@@ -43,6 +43,16 @@ const STATUS_KEY: Record<"now" | "week" | "none", CopyKey> = {
 };
 
 /**
+ * What a screen reader hears for a day (`calendar.day.status*`): its date, its papers and its doctor's dates, one key
+ * per urgency. The phone's month and the desktop's (DeskCalendar) say a day alike.
+ */
+export function dayStatus(lang: Lang, date: string, day: CalendarDayJson | undefined): string {
+  const papers = day?.papers.length ?? 0;
+  const follows = day?.follow_ups.length ?? 0;
+  return t(lang, STATUS_KEY[dayUrgency(day) ?? "none"], formatDate(lang, date), counted(lang, "papers", papers), counted(lang, "follows", follows));
+}
+
+/**
  * The urgency's shape and word: the NOW octagon and the this-week calendar the paper's band draws, never a direction.
  * And its colour (PO ruling R2, DR-48): the modifier that paints the cell's mark and the legend's key, the NOW red for
  * NOW and the amber for THIS_WEEK. The colour is never the only signal: the shape and the word stay.
@@ -72,7 +82,7 @@ function Mark({ shape }: { shape: "dot" | "ring" }) {
  * back with UTC getters, so a viewer west of UTC (an abroad share member) sees 1 October on the Thursday it is, never the
  * Wednesday `new Date("2026-10-01").getDay()` gives there. A month that is not `YYYY-MM` throws: Java sends only that.
  */
-function monthDays(month: string): { dates: string[]; firstColumn: number } {
+export function monthDays(month: string): { dates: string[]; firstColumn: number } {
   const m = /^(\d{4})-(\d{2})$/.exec(month);
   if (!m || Number(m[2]) < 1 || Number(m[2]) > 12) throw new Error(`not a month: ${month}`);
   const year = Number(m[1]);
@@ -127,7 +137,7 @@ export function MonthCalendar({ month, days, caption, lang }: { month: string; d
                 const papers = day?.papers.length ?? 0;
                 const follows = day?.follow_ups.length ?? 0;
                 const urgency = dayUrgency(day);
-                const status = t(lang, STATUS_KEY[urgency ?? "none"], formatDate(lang, date), counted(lang, "papers", papers), counted(lang, "follows", follows));
+                const status = dayStatus(lang, date, day);
                 const dayNumber = String(Number(date.slice(8)));
                 return (
                   <td key={column} className={fri ? "month-calendar__day month-calendar__day--fri" : "month-calendar__day"} data-date={date}>

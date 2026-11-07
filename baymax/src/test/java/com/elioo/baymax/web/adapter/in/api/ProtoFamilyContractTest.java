@@ -89,13 +89,20 @@ class ProtoFamilyContractTest {
         Map<String, String> attention = new LinkedHashMap<>();
         Map<String, String> follows = new LinkedHashMap<>();
         Map<String, String> thread = new LinkedHashMap<>();
+        Map<String, String> calendar = new LinkedHashMap<>();
+        Map<String, String> timeline = new LinkedHashMap<>();
         for (Map.Entry<String, UUID> p : patients().entrySet()) {
+            // desktop.html's month (calView(): October 2026), and the papers list the calendar's list view shows
+            calendar.put(PREFIX + "-" + p.getKey(), "/app/api/patients/" + p.getValue() + "/calendar?month=2026-10");
+            timeline.put(PREFIX + "-" + p.getKey(), "/app/api/patients/" + p.getValue() + "/timeline");
             attention.put(PREFIX + "-" + p.getKey(), "/app/api/patients/" + p.getValue() + "/attention");
             follows.put(PREFIX + "-" + p.getKey(), "/app/api/patients/" + p.getValue() + "/follow-ups");
             // read as the web's home page reads it (plan CHAT-web)
             thread.put(PREFIX + "-" + p.getKey(), "/app/api/patients/" + p.getValue() + "/thread?asks=1");
         }
         cases.put("attention", attention);
+        cases.put("calendar", calendar);
+        cases.put("timeline", timeline);
         cases.put("follow-ups", follows);
         cases.put("me", Map.of(PREFIX, "/app/api/me"));
         cases.put("thread", thread);
@@ -121,6 +128,8 @@ class ProtoFamilyContractTest {
     static final Map<String, String> SOURCES = Map.of(
             "now-banner", "GET /app/api/now-banner",
             "attention", "GET /app/api/patients/{id}/attention",
+            "calendar", "GET /app/api/patients/{id}/calendar",
+            "timeline", "GET /app/api/patients/{id}/timeline",
             "follow-ups", "GET /app/api/patients/{id}/follow-ups",
             "me", "GET /app/api/me",
             "thread", "GET /app/api/patients/{id}/thread?asks=1",
@@ -383,6 +392,22 @@ class ProtoFamilyContractTest {
         assertThat(follows).hasSize(1);
         assertThat(follows.get(0).get("due_date").asText()).isEqualTo("2026-10-22");
         assertThat(body("follow-ups/" + PREFIX + "-abbu").get("items")).isEmpty();
+
+        // desktop.html's calendar (calView(), October 2026): every paper of each patient on its October day, and আম্মা's
+        // doctor's date on the 22nd, ringed (plan desktop-parity C1).
+        for (Map.Entry<String, UUID> p : patients().entrySet()) {
+            JsonNode month = body("calendar/" + PREFIX + "-" + p.getKey());
+            assertThat(month.get("month").asText()).isEqualTo("2026-10");
+            List<String> onCalendar = new ArrayList<>();
+            List<String> visits = new ArrayList<>();
+            month.get("days").forEach(d -> {
+                d.get("papers").forEach(x -> onCalendar.add(x.get("document_id").asText()));
+                d.get("follow_ups").forEach(x -> visits.add(d.get("date").asText()));
+            });
+            assertThat(onCalendar).as(p.getKey() + "'s October").containsExactlyInAnyOrderElementsOf(PAPERS.stream()
+                    .filter(x -> x.patient().equals(p.getValue())).map(x -> x.id().toString()).toList());
+            assertThat(visits).as(p.getKey() + "'s doctor's dates").isEqualTo("amma".equals(p.getKey()) ? List.of("2026-10-22") : List.of());
+        }
 
         // every paper is on its patient's thread, as a card
         for (Map.Entry<String, UUID> p : patients().entrySet()) {

@@ -55,27 +55,41 @@ const NOT_READ: Record<string, { title: CopyKey; state: CopyKey }> = {
 };
 const READING = { title: "timeline.reading.title", state: "timeline.reading" } as const satisfies { title: CopyKey; state: CopyKey };
 
-function Row({ e, lang, preview }: { e: TimelineEntryJson; lang: Lang; preview: boolean }) {
+/**
+ * What a paper's row says, by its state (the list's and the desktop calendar's day panel's alike): its title, where it
+ * is when it is not read, the retake's reason, the counts line, and how many readings are not verified.
+ */
+export function paperWords(lang: Lang, e: TimelineEntryJson): { title: string; state: string | null; retake: string | null; line: string; unverified: string | null } {
   const done = e.status === "DONE";
   const notRead = done ? null : (NOT_READ[e.status] ?? READING);
-  const line = done ? summary(lang, e.document_type, e.counts, e.date_is_upload_day) : "";
+  return {
+    title: notRead ? t(lang, notRead.title) : typeLabel(lang, e.document_type),
+    state: notRead ? t(lang, notRead.state) : null,
+    retake: e.status === "NEEDS_RETAKE" && e.retake_reason_key ? t(lang, e.retake_reason_key as CopyKey) : null,
+    line: done ? summary(lang, e.document_type, e.counts, e.date_is_upload_day) : "",
+    unverified: done && e.counts.unverified > 0 ? t(lang, "timeline.unverified", e.counts.unverified) : null,
+  };
+}
+
+function Row({ e, lang, preview }: { e: TimelineEntryJson; lang: Lang; preview: boolean }) {
+  const done = e.status === "DONE";
+  const words = paperWords(lang, e);
+  const line = words.line;
   return (
     <a className="month-list__row" href={href(`/app/documents/${e.document_id}`, preview)}>
       <svg className="month-list__thumb" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <path d="M6.5 3.5h8l3 3v14h-11zM9 10h6M9 13.5h6M9 17h4" />
       </svg>
       <span className="month-list__body">
-        <span className="month-list__title">{notRead ? t(lang, notRead.title) : typeLabel(lang, e.document_type)}</span>
+        <span className="month-list__title">{words.title}</span>
         <span className="month-list__meta">
           <span className="month-list__date">{filedDay(lang, e)}</span>
           {e.facility && <span className="month-list__facility">{e.facility}</span>}
         </span>
-        {notRead && <span className="month-list__state">{t(lang, notRead.state)}</span>}
-        {e.status === "NEEDS_RETAKE" && e.retake_reason_key && (
-          <span className="month-list__line">{t(lang, e.retake_reason_key as CopyKey)}</span>
-        )}
+        {words.state && <span className="month-list__state">{words.state}</span>}
+        {words.retake && <span className="month-list__line">{words.retake}</span>}
         {line && <span className="month-list__summary">{line}</span>}
-        {done && e.counts.unverified > 0 && <span className="month-list__line">{t(lang, "timeline.unverified", e.counts.unverified)}</span>}
+        {words.unverified && <span className="month-list__line">{words.unverified}</span>}
         {done && (e.chip !== null || e.review_pending) && (
           <span className="month-list__tags">
             {/* The stored level first; the review state beside it, never instead of it. */}
