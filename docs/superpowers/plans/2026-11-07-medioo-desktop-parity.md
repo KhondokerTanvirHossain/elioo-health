@@ -374,7 +374,8 @@ Tried on a 1710 px window; three changes, built on `feat/desktop-viewer-details`
   the column (PinnedUrgent) holds it, and Mio stays still while any NOW result shows. This closes board finding 10.
 - **A divider between the paper and the conversation** (new; desktop.html has a fixed `--cw`): drag, arrow keys
   (Shift ×4), Home/End, Enter or double-click to reset; remembered per browser (`medioo.desk.talk-w`); the CSS clamps
-  the conversation to ≥ 320 px and the paper to ≥ 420 px whatever was remembered. Copy key `desk.resize`.
+  the conversation to ≥ 320 px and the paper to ≥ 420 px whatever was remembered. Copy key `desk.resize`;
+  its Bangla is the PO's own wording (asked 2026-11-07; desktop.html has no divider): "কাগজ আর কথার মাপ বদলান".
 - Detail: the strip's label is two fixed lines, the day then its F7 mark, never wrapped (full text kept).
 - Detail: a card taller than the column (a NOW card with its crops) comes in at its top, below the sticky header, so
   its band and Java's sentence are in sight; centred, they sat under the header (`bringIntoView`).
