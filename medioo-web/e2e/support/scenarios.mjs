@@ -374,6 +374,83 @@ export const UNLISTED_PATIENT = "5e9edf6d-0a2a-4913-8675-9d07a4100999";
 /** A value's sheet (W6-api) under `me`. */
 const sheet = (fixture, me = "me/one-patient.json") => ({ ...NO_NOW, "GET /app/api/me": me, [SHEET]: fixture });
 
+/**
+ * A route answered per id the path names (`/app/api/patients/{id}/…`, `/app/api/documents/{id}`: the path's fifth
+ * segment), each from the fixture Java wrote for that route, and 404 NOT_FOUND for an id it does not list, as Java
+ * answers one this family does not see. Every fixture is checked against the route when the table is built.
+ */
+function byId(route, files) {
+  const read = Object.fromEntries(
+    Object.entries(files).map(([id, fixture]) => {
+      const parsed = javaWrote(fixture, route);
+      return [id, { status: parsed.status, body: parsed.body }];
+    }),
+  );
+  return ({ path }) => read[path.split("/")[4] ?? ""] ?? NOT_FOUND;
+}
+
+/**
+ * The prototype family (desktop.html's pretend family, plan desktop-parity Task 3's `proto-*` fixtures): amma (the
+ * mother: a retake, a blood test, a prescription, a creatinine due this week and a lipid profile) and abbu (the
+ * father: a NOW potassium and a routine sugar), in me/proto.json, which is a preview family (`preview: true`).
+ */
+const PROTO_ME = "me/proto.json";
+const [PROTO_AMMA, PROTO_ABBU] = bodyOf(PROTO_ME).patients.map((p) => p.id);
+/** The prototype's papers by name, each the id its documents fixture holds. */
+export const PROTO_PAPERS = Object.fromEntries(
+  ["blur", "cbc", "creat", "lipid", "potas", "rx", "sugar"].map((name) => [name, bodyOf(`documents/proto-${name}.json`).id]),
+);
+/** The prototype's two patients' ids: the mother (me/proto.json's active patient) and the father (the NOW one). */
+export const PROTO_PATIENTS = { amma: PROTO_AMMA, abbu: PROTO_ABBU };
+const THREAD = "GET /app/api/patients/{id}/thread";
+const ASKED = `${THREAD}?asks=1`;
+
+/**
+ * The prototype family's reads, per patient and per paper: each patient's thread (Java read it with asks=1; without it,
+ * the same page with its asks left out, as withAsks serves one), attention stack and follow-ups, and each paper.
+ */
+function protoFamily() {
+  const threads = { [PROTO_AMMA]: "thread/proto-amma.json", [PROTO_ABBU]: "thread/proto-abbu.json" };
+  const asked = byId(ASKED, threads);
+  return {
+    "GET /app/api/me": PROTO_ME,
+    "PUT /app/api/active-patient": NO_CONTENT,
+    "GET /app/api/now-banner": "now-banner/proto.json",
+    // The seen tap: Java answers the banner re-read, now with nothing unseen (show: false).
+    "PUT /app/api/now-banner/ack": reRead("now-banner/acked.json"),
+    [THREAD]: {
+      byQuery: [{ when: { asks: "1" }, answer: asked }],
+      otherwise: (request) => {
+        const answer = asked(request);
+        return answer.status !== 200 ? answer : { ...answer, body: { ...answer.body, items: answer.body.items.filter((i) => i.kind !== "ask") } };
+      },
+    },
+    "GET /app/api/patients/{id}/attention": byId("GET /app/api/patients/{id}/attention", {
+      [PROTO_AMMA]: "attention/proto-amma.json",
+      [PROTO_ABBU]: "attention/proto-abbu.json",
+    }),
+    "GET /app/api/patients/{id}/follow-ups": byId("GET /app/api/patients/{id}/follow-ups", {
+      [PROTO_AMMA]: "follow-ups/proto-amma.json",
+      [PROTO_ABBU]: "follow-ups/proto-abbu.json",
+    }),
+    [PAPER]: byId(PAPER, Object.fromEntries(Object.entries(PROTO_PAPERS).map(([name, id]) => [id, `documents/proto-${name}.json`]))),
+    [STATUS]: "document-status/done.json",
+  };
+}
+
+/**
+ * A thread fixture whose paper cards are about the first patient of a `me` fixture (its id and its names, as `me` lists
+ * them), the way paperAbout re-addresses one paper: the longest name then reaches the viewer's and the cards' lines too.
+ * Only the patient is changed, never a word or a flag of a paper.
+ */
+function threadAbout(fixture, meFixture) {
+  const parsed = javaWrote(fixture, THREAD);
+  const patient = bodyOf(meFixture).patients[0];
+  const about = { id: patient.id, name: patient.name, name_objective: patient.name_objective, name_possessive: patient.name_possessive };
+  const items = parsed.body.items.map((i) => (i.kind === "paper" ? { ...i, card: { ...i.card, patient: { ...i.card.patient, ...about } } } : i));
+  return { status: parsed.status, body: { ...parsed.body, items } };
+}
+
 export const SCENARIOS = {
   // The sign-in page (W3): nobody signed in.
   "signed-out": { ...SIGN_IN, "GET /app/api/me": "me/unauthenticated.json" },
@@ -828,6 +905,29 @@ export const SCENARIOS = {
   "sheet-unknown": sheet("value-sheet/unknown-one-sided.json"),
   "sheet-not-found": sheet("value-sheet/not-found.json"),
   "sheet-earlier-three-long": sheet("value-sheet/earlier-three.json", "me/long-name.json"),
+
+  // The desktop layout on a preview page (plan desktop-parity Task 9): desktop.html's pretend family, its father's NOW
+  // potassium unseen (the bar, call_999 true), each patient's thread, stack and follow-ups, and each paper by its id.
+  proto: protoFamily(),
+  // The same family once the NOW paper was seen: no bar, the paper's card still red.
+  "proto-seen": { ...protoFamily(), "GET /app/api/now-banner": "now-banner/acked.json" },
+  // A preview family's first visit (a patient with no paper yet): the viewer's invitation, Mio's introduction.
+  "desk-first": chat({
+    "GET /app/api/me": "me/preview-on.json",
+    "GET /app/api/patients/{id}/thread": "thread/first-run.json",
+    "GET /app/api/patients/{id}/follow-ups": "follow-ups/none.json",
+  }),
+  // The longest name (me/long-name.json, a preview family) over the longest thread page Java writes (ten papers in the
+  // strip, its cards re-addressed to that patient), with a NOW paper unseen, so the bar carries the long name too.
+  "proto-long": {
+    "GET /app/api/me": "me/long-name.json",
+    "PUT /app/api/active-patient": NO_CONTENT,
+    "GET /app/api/now-banner": bannerFor("now-banner/one.json", "me/long-name.json"),
+    [THREAD]: threadAbout("thread/second-page.json", "me/long-name.json"),
+    "GET /app/api/patients/{id}/attention": "attention/empty.json",
+    "GET /app/api/patients/{id}/follow-ups": "follow-ups/some.json",
+    [STATUS]: "document-status/done.json",
+  },
 };
 
 export { UNAUTHENTICATED };

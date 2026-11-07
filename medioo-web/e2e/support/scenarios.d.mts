@@ -35,3 +35,6 @@ export function firstRunAsked(firstRun: string, asked: string): ByQuery;
 export function withNow(name: string, table?: Record<string, Value>): Record<string, Value>;
 export function withNowName(name: string): string;
 export function withStaleNowName(name: string): string;
+/** desktop.html's pretend family (plan desktop-parity Task 3): its papers by name and its two patients' ids. */
+export const PROTO_PAPERS: Record<"blur" | "cbc" | "creat" | "lipid" | "potas" | "rx" | "sugar", string>;
+export const PROTO_PATIENTS: { amma: string; abbu: string };

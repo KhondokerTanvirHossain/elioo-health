@@ -25,16 +25,25 @@
 :where(:root) {
   --desktop-menu-room: 0px;
 }
+/* One row of 56 px where everything fits (desktop.html's `.tb`); where it does not, the controls wrap to a second row
+   rather than squeeze the urgency word (below), so Java's word is never broken or hung out of the toolbar: it is longer
+   than desktop.html's chip, and delete is a word here, not an icon (e2e/talk-and-papers.spec.ts measures it at 900 to
+   1440 px). The title and whose-paper line still give way first, with an ellipsis, as the design's do. */
 .paper-viewer__toolbar {
   display: flex;
   flex: none;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-1);
   min-width: 0;
-  height: 56px;
-  padding: 0 var(--space-3) 0 calc(var(--space-3) + var(--desktop-menu-room));
+  min-height: 56px;
+  padding: var(--space-1) var(--space-3) var(--space-1) calc(var(--space-3) + var(--desktop-menu-room));
   border-bottom: 0.5px solid var(--sep);
   background: var(--bg);
+}
+.paper-viewer__toolbar .urgency-tag {
+  flex: none;
+  white-space: nowrap;
 }
 .paper-viewer__heading {
   min-width: 0;

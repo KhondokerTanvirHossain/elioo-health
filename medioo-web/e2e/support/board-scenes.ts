@@ -5,7 +5,7 @@ import { MAX_CHECKS, RELOAD_SECONDS, waitBefore } from "../../src/api/reading-ch
 import type { AskJson } from "../../src/api/types";
 import { t } from "../../src/copy";
 import { pngFor } from "./png.mjs";
-import { FIXTURES, SCENARIOS, familyPatientId } from "./scenarios.mjs";
+import { FIXTURES, PROTO_PAPERS, PROTO_PATIENTS, SCENARIOS, familyPatientId } from "./scenarios.mjs";
 
 /*
  * The screenshot board's scenes (plan A7; board.spec.ts takes them). Kept apart from the spec, which registers
@@ -622,6 +622,80 @@ BOARD_SCENES.push(
     await page.locator("dialog:modal [role=status]:not(:empty)").waitFor();
   }),
   paperScene("gone", "paper-gone", "app"),
+);
+
+// The desktop layout, Phase 1 (plan desktop-parity Task 9): talk-and-papers (desk.nav.talk) on preview pages (/app/preview/..., the only
+// requests it renders for until the flip) over desktop.html's pretend family (the `proto` scenarios), each capture beside
+// desktop.html's own scene with the same patient and the same paper: the mother's five papers one by one, the father's
+// NOW paper (the bar, the red card), the NOW paper from a link with its panel, a panel over the conversation, the bar
+// seen, the longest name over the longest strip, and a first visit; at 1440 and 1280, and the narrow desktop (1024 and
+// 900, the sidebar behind its button) for the main states.
+const DESK_WIDE = { w1440: { width: 1440, height: 900 }, w1280: { width: 1280, height: 800 } };
+const DESK_NARROW = { w1024: { width: 1024, height: 768 }, w900: { width: 900, height: 800 } };
+const AMMA = PROTO_PATIENTS.amma;
+const ABBU = PROTO_PATIENTS.abbu;
+/** desktop.html's NOW bar's "seen" for the father's potassium, once the bar is on (the prototype's own control). */
+const deskSeen = async (proto: Page) => {
+  await deskNow(proto);
+  await proto.waitForTimeout(300);
+  await pressAll(proto, ['[data-seen="abbu:potas"]']);
+};
+/** desktop.html's sidebar, opened by its own menu button (900 to 1199 px). */
+const deskSide = (then?: (proto: Page) => Promise<void>) => async (proto: Page) => {
+  if (then) await then(proto);
+  await proto.waitForTimeout(300);
+  await pressAll(proto, ['.menu-btn[data-action="openside"]']);
+};
+const desk = (state: string, scenario: string, route: string, proto: ProtoScene, extra: Partial<Scene> = {}): Scene => ({
+  screen: "desk",
+  state,
+  route,
+  scenario,
+  viewports: DESK_WIDE,
+  proto: { file: "desktop.html", ...proto },
+  ...extra,
+});
+const deskHome = (query: string) => `/app/preview/home?${query}`;
+const seeBarGo = async (page: Page) => {
+  await page.locator(".desktop-shell .now-banner--bar").getByRole("button", { name: t("bn", "now.banner.seen") }).click();
+  await page.locator(".desktop-shell .now-banner--bar").waitFor({ state: "detached" });
+};
+BOARD_SCENES.push(
+  desk("amma-newest-retake", "proto", deskHome(`patient=${AMMA}`), { scene: "app", act: deskPaper("blur") }),
+  desk("amma-cbc", "proto", deskHome(`patient=${AMMA}&paper=${PROTO_PAPERS.cbc}`), DESK_CHAT),
+  desk("amma-creat-this-week", "proto", deskHome(`patient=${AMMA}&paper=${PROTO_PAPERS.creat}`), { scene: "app", act: deskPaper("creat") }),
+  desk("amma-rx", "proto", deskHome(`patient=${AMMA}&paper=${PROTO_PAPERS.rx}`), { scene: "app", act: deskPaper("rx") }),
+  desk("amma-lipid", "proto", deskHome(`patient=${AMMA}&paper=${PROTO_PAPERS.lipid}`), { scene: "app", act: deskPaper("lipid") }),
+  desk("abbu-now", "proto", deskHome(`patient=${ABBU}`), { scene: "app", act: deskNow }),
+  desk("abbu-sugar", "proto", deskHome(`patient=${ABBU}&paper=${PROTO_PAPERS.sugar}`), {
+    scene: "app",
+    act: async (proto) => {
+      await deskNow(proto);
+      await proto.waitForTimeout(300);
+      await pressAll(proto, ['.film [data-pick="sugar"]']);
+    },
+  }),
+  desk("now-link-panel", "proto", `/app/preview/documents/${PROTO_PAPERS.potas}`, { scene: "app", act: deskNow }),
+  desk("amma-cbc-panel", "proto", deskHome(`patient=${AMMA}&paper=${PROTO_PAPERS.cbc}&panel=1`), DESK_CHAT),
+  desk("abbu-now-seen", "proto", deskHome(`patient=${ABBU}`), { scene: "app", act: deskSeen }, { act: seeBarGo }),
+  desk("long-name-long-strip", "proto-long", "/app/preview/home", DESK_CHAT),
+  desk("first-visit", "desk-first", "/app/preview/home", DESK_FIRST),
+  desk("narrow-amma-cbc", "proto", deskHome(`patient=${AMMA}&paper=${PROTO_PAPERS.cbc}`), DESK_CHAT, { viewports: DESK_NARROW }),
+  desk("narrow-abbu-now", "proto", deskHome(`patient=${ABBU}`), { scene: "app", act: deskNow }, { viewports: DESK_NARROW }),
+  desk("narrow-now-link-panel", "proto", `/app/preview/documents/${PROTO_PAPERS.potas}`, { scene: "app", act: deskNow }, { viewports: DESK_NARROW }),
+  desk(
+    "narrow-sidebar-open",
+    "proto",
+    deskHome(`patient=${AMMA}&paper=${PROTO_PAPERS.cbc}`),
+    { scene: "app", act: deskSide(deskPaper("cbc")) },
+    {
+      viewports: { w1024: DESK_NARROW.w1024 },
+      act: async (page) => {
+        await page.locator(".desktop-shell__menu").click();
+        await page.locator(".desktop-shell__sidebar[data-open]").waitFor();
+      },
+    },
+  ),
 );
 
 export const VIEWPORTS = { phone: { width: 390, height: 844 }, desktop: { width: 1280, height: 800 } } as const;
