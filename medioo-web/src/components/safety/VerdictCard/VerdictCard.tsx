@@ -101,10 +101,8 @@ function Band({ level, line }: { level: BannerLevel; line: string }) {
  * come before any row); `selected`, the outline of the card whose paper the viewer shows; and `more`, the link to every
  * detail of the paper (`desk.panel.open`) at the card's foot. A card without them is exactly today's.
  *
- * `band` false (the desktop's details panel, plan desktop-parity Task 8) leaves out the band alone: the panel lies over the
- * conversation beside that paper's card, which carries the band, and the NOW bar carries the sentence too (P19: the
- * warning is in the bar and on the card, nowhere else on the screen). Every other line stays, the not-a-doctor line and
- * the 999 link among them, so a panel covering the card never hides the call.
+ * There is no way to leave the band out: every card with a banner draws it (P19; the desktop panel lies over the card and
+ * the NOW bar can be gone, so a dropped band was a sentence nowhere on the screen, 70dcac00).
  *
  * Every safety line is marked `data-safety` with what it is, so a surface built from this card (the panel) is checked
  * against today's paper page block for block (PaperPanel.test.tsx).
@@ -118,7 +116,6 @@ export function VerdictCard({
   sub,
   selected,
   more,
-  band: withBand = true,
 }: {
   paper: PaperJson;
   lang: Lang;
@@ -128,7 +125,6 @@ export function VerdictCard({
   sub?: string | null;
   selected?: boolean;
   more?: { href: string; label: string };
-  band?: boolean;
 }) {
   const banner = paper.banner ?? null;
   const className = ["verdict-card"];
@@ -143,7 +139,7 @@ export function VerdictCard({
   const values = link !== undefined && banner && paper.values ? threadRows(paper.values) : [];
   const card = (
     <article className={className.join(" ")}>
-      {banner && withBand && <Band level={banner.level} line={t(lang, banner.line_key)} />}
+      {banner && <Band level={banner.level} line={t(lang, banner.line_key)} />}
       <div className="verdict-card__meta">
         <p className="verdict-card__title">
           {link === undefined ? (

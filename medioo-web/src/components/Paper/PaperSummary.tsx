@@ -132,7 +132,7 @@ function Result({ paper, ctx }: { paper: PaperResultJson; ctx: Ctx }) {
   return (
     <>
       <Head paper={paper} ctx={ctx} title={typeText(lang, paper.document_type)} meta={metaLine(lang, paper.date, paper.date_is_upload_day, paper.facility)} />
-      <VerdictCard paper={paper} lang={lang} wording={false} band />
+      <VerdictCard paper={paper} lang={lang} wording={false} />
       {paper.filed && <p className="paper__meta">{t(lang, "result.filed")}</p>}
       {paper.now && (
         <NowBlock
