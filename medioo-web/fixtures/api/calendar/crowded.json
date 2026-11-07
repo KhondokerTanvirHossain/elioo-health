@@ -19,13 +19,49 @@
         "papers": [
           {
             "chip": null,
+            "counts": {
+              "follow_ups": 1,
+              "medicines": 0,
+              "outside": 0,
+              "unverified": 0,
+              "values": 0
+            },
+            "date": "2026-10-08",
+            "date_is_upload_day": false,
+            "date_uncertain": false,
             "document_id": "78c1aaf8-613b-3686-82e3-1223fe31cd18",
-            "document_type": "prescription"
+            "document_type": "prescription",
+            "facility": "Shapla Diagnostics",
+            "month": "2026-10",
+            "page_one": {
+              "src": "/app/documents/78c1aaf8-613b-3686-82e3-1223fe31cd18/page/1"
+            },
+            "retake_reason_key": null,
+            "review_pending": false,
+            "status": "DONE"
           },
           {
             "chip": "now",
+            "counts": {
+              "follow_ups": 0,
+              "medicines": 0,
+              "outside": 0,
+              "unverified": 0,
+              "values": 0
+            },
+            "date": "2026-10-08",
+            "date_is_upload_day": false,
+            "date_uncertain": false,
             "document_id": "ee4cb600-692c-3dc1-bd7b-76df8941eb87",
-            "document_type": "lab_report"
+            "document_type": "lab_report",
+            "facility": "Shapla Diagnostics",
+            "month": "2026-10",
+            "page_one": {
+              "src": "/app/documents/ee4cb600-692c-3dc1-bd7b-76df8941eb87/page/1"
+            },
+            "retake_reason_key": null,
+            "review_pending": false,
+            "status": "DONE"
           }
         ]
       },
@@ -35,8 +71,26 @@
         "papers": [
           {
             "chip": "this_week",
+            "counts": {
+              "follow_ups": 0,
+              "medicines": 0,
+              "outside": 0,
+              "unverified": 0,
+              "values": 0
+            },
+            "date": "2026-10-14",
+            "date_is_upload_day": false,
+            "date_uncertain": false,
             "document_id": "8c620861-ad0a-3c72-b48e-9791f3838847",
-            "document_type": "lab_report"
+            "document_type": "lab_report",
+            "facility": "Shapla Diagnostics",
+            "month": "2026-10",
+            "page_one": {
+              "src": "/app/documents/8c620861-ad0a-3c72-b48e-9791f3838847/page/1"
+            },
+            "retake_reason_key": null,
+            "review_pending": false,
+            "status": "DONE"
           }
         ]
       },
@@ -46,13 +100,49 @@
         "papers": [
           {
             "chip": "now",
+            "counts": {
+              "follow_ups": 0,
+              "medicines": 0,
+              "outside": 0,
+              "unverified": 0,
+              "values": 0
+            },
+            "date": "2026-10-22",
+            "date_is_upload_day": false,
+            "date_uncertain": false,
             "document_id": "b63087bc-b4ac-3cc2-97af-2481679fd18d",
-            "document_type": "lab_report"
+            "document_type": "lab_report",
+            "facility": "Shapla Diagnostics",
+            "month": "2026-10",
+            "page_one": {
+              "src": "/app/documents/b63087bc-b4ac-3cc2-97af-2481679fd18d/page/1"
+            },
+            "retake_reason_key": null,
+            "review_pending": false,
+            "status": "DONE"
           },
           {
             "chip": "this_week",
+            "counts": {
+              "follow_ups": 0,
+              "medicines": 0,
+              "outside": 0,
+              "unverified": 0,
+              "values": 0
+            },
+            "date": "2026-10-22",
+            "date_is_upload_day": false,
+            "date_uncertain": false,
             "document_id": "315ce0be-f6c8-3f6f-aa2d-67ccc678f6cd",
-            "document_type": "lab_report"
+            "document_type": "lab_report",
+            "facility": "Shapla Diagnostics",
+            "month": "2026-10",
+            "page_one": {
+              "src": "/app/documents/315ce0be-f6c8-3f6f-aa2d-67ccc678f6cd/page/1"
+            },
+            "retake_reason_key": null,
+            "review_pending": false,
+            "status": "DONE"
           }
         ]
       }

@@ -218,10 +218,14 @@ const LIVE = NEXT_PAGES.flatMap((pattern) => {
   return signedOut(scenario) ? [{ path, scenario }] : [{ path, scenario }, { path, scenario: withNowName(scenario) }];
 });
 
-/** The desktop layout's pages, each the preview twin of a live page: home, and a NOW paper opened from a link. */
+/**
+ * The desktop layout's pages, each the preview twin of a live page: home, a NOW paper opened from a link, and the
+ * calendar (plan desktop-parity C1) over the live page's own scenario, so only the layout differs from its twin.
+ */
 const PREVIEW = [
   { path: previewPath("/app/home"), scenario: "chat-preview" },
   { path: previewPath(concretePath("/app/documents/{id}", PAGE_PATHS)), scenario: "paper-now-bd-preview" },
+  { path: previewPath("/app/timeline"), scenario: "papers-busy" },
 ];
 
 describe("the desktop layout's CSS and JavaScript reach only the pages that render it", () => {

@@ -12,6 +12,9 @@ const PLACE: Record<Tab, DesktopPlace> = { chat: "talk", papers: "calendar", hea
 /** Today on the patient's calendar (Dhaka), ISO: what the sidebar counts the doctor's next date from. */
 const DHAKA_DAY = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Dhaka", year: "numeric", month: "2-digit", day: "2-digit" });
 
+/** Today on the patient's calendar (Dhaka), ISO (`YYYY-MM-DD`): the sidebar's and the desktop calendar's today. */
+export const dhakaToday = (): string => DHAKA_DAY.format(new Date());
+
 /**
  * The desktop layout's frame (plan desktop-parity Tasks 5 and 8): DesktopShell around the page's desktop columns, with
  * DesktopSidebar (the patient's next visit read from their follow-ups) and the NOW bar. signedInPage calls it when
@@ -38,7 +41,7 @@ export const desktopFrame: DesktopFrame = async ({ lang, preview, here, me, pati
           active={patient}
           current={tab === null ? null : PLACE[tab]}
           nextVisit={followUps === null ? null : nextVisitOf(followUps.items)}
-          today={DHAKA_DAY.format(new Date())}
+          today={dhakaToday()}
         />
       }
       bar={bar}

@@ -45,6 +45,8 @@ import crowded from "../../fixtures/api/calendar/crowded.json";
 import empty from "../../fixtures/api/calendar/empty.json";
 import fortyFive from "../../fixtures/api/calendar/forty-five.json";
 import september from "../../fixtures/api/calendar/september.json";
+import calendarProtoAbbu from "../../fixtures/api/calendar/proto-abbu.json";
+import calendarProtoAmma from "../../fixtures/api/calendar/proto-amma.json";
 // B3's generated timeline pages, doctor's dates and attention stacks (plan W8).
 import attentionEmpty from "../../fixtures/api/attention/empty.json";
 import attentionFull from "../../fixtures/api/attention/full-stack.json";
@@ -64,6 +66,8 @@ import timelineLab from "../../fixtures/api/timeline/lab-only.json";
 import timelineLast from "../../fixtures/api/timeline/last-page.json";
 import timelineRxNone from "../../fixtures/api/timeline/rx-none.json";
 import timelineRx from "../../fixtures/api/timeline/rx-only.json";
+import timelineProtoAbbu from "../../fixtures/api/timeline/proto-abbu.json";
+import timelineProtoAmma from "../../fixtures/api/timeline/proto-amma.json";
 import bp from "../../fixtures/api/health/bp.json";
 import bpFlagged from "../../fixtures/api/health/bp-flagged.json";
 import labsNonNumeric from "../../fixtures/api/health/labs-non-numeric.json";
@@ -418,7 +422,6 @@ const fixtures = join(__dirname, "..", "..", "fixtures", "api");
 // to its type alone cannot see an extra field: only this runtime walk does.
 const CALENDAR_KEYS = ["days", "month"] as const;
 const DAY_KEYS = ["date", "follow_ups", "papers"] as const;
-const PAPER_KEYS = ["chip", "document_id", "document_type"] as const;
 const FOLLOW_KEYS = ["crop", "document_id", "instruction"] as const;
 const LABS_KEYS = ["bp", "series"] as const;
 const SERIES_KEYS = ["canonical_name", "name", "points", "unit"] as const;
@@ -441,7 +444,8 @@ const PAIR_KEYS = ["date", "date_is_upload_day", "date_uncertain", "diastolic", 
 const keyListsAreTheTypes: [
   Equal<(typeof CALENDAR_KEYS)[number], keyof CalendarJson>,
   Equal<(typeof DAY_KEYS)[number], keyof CalendarDayJson>,
-  Equal<(typeof PAPER_KEYS)[number], keyof CalendarPaperJson>,
+  // A calendar paper is the timeline's entry (plan desktop-calendar): the same keys, ENTRY_KEYS below.
+  Equal<(typeof ENTRY_KEYS)[number], keyof CalendarPaperJson>,
   Equal<(typeof FOLLOW_KEYS)[number], keyof CalendarFollowUpJson>,
   Equal<(typeof LABS_KEYS)[number], keyof LabsJson>,
   Equal<(typeof SERIES_KEYS)[number], keyof LabSeriesJson>,
@@ -469,6 +473,8 @@ describe("the API types are the generated fixtures", () => {
       ["empty", empty.body],
       ["forty-five", fortyFive.body],
       ["september", september.body],
+      ["proto-abbu", calendarProtoAbbu.body],
+      ["proto-amma", calendarProtoAmma.body],
     ];
     // Every committed calendar fixture is assigned above, so a new case cannot go unchecked.
     expect(readdirSync(join(fixtures, "calendar")).filter((f) => f.endsWith(".json")).sort()).toEqual(
@@ -481,7 +487,7 @@ describe("the API types are the generated fixtures", () => {
       for (const day of c.days) {
         expect(keys(day), `${name} ${day.date}`).toEqual([...DAY_KEYS]);
         for (const p of day.papers) {
-          expect(keys(p), `${name} ${day.date} paper`).toEqual([...PAPER_KEYS]);
+          expect(keys(p), `${name} ${day.date} paper`).toEqual([...ENTRY_KEYS]);
           papers++;
         }
         for (const f of day.follow_ups) {
@@ -661,6 +667,8 @@ describe("the papers page's reads are the generated fixtures", () => {
       ["lab-only", timelineLab.body],
       ["last-page", timelineLast.body],
       ["rx-none", timelineRxNone.body],
+      ["proto-abbu", timelineProtoAbbu.body],
+      ["proto-amma", timelineProtoAmma.body],
       ["rx-only", timelineRx.body],
     ];
     expect(readdirSync(join(fixtures, "timeline")).filter((f) => f.endsWith(".json")).sort()).toEqual(

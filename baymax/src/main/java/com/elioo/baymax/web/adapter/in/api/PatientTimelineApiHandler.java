@@ -60,7 +60,7 @@ public class PatientTimelineApiHandler {
         WebSession session = SessionAuthFilter.session(request);
         UUID patientId = AttentionApiHandler.patientId(request);
         YearMonth month = month(request.queryParam("month"));
-        return timeline.calendar(session.familyId(), patientId, month).flatMap(m -> json(TimelineJson.calendar(m)));
+        return timeline.calendar(session.familyId(), patientId, month).flatMap(m -> json(TimelineJson.calendar(m, code -> DocumentPages.retakeReasonKey(copy, code))));
     }
 
     public Mono<ServerResponse> followUps(ServerRequest request) {

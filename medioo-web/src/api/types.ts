@@ -245,8 +245,12 @@ export type MeJson = {
 /** An image the API names: a crop or a page, served by Java (ImageRefs). */
 export type ImageJson = { src: string };
 
-/** A paper filed on a calendar day (B3, TimelineJson.calendar): `chip` is the stored urgency ("now", …) or null. */
-export type CalendarPaperJson = { document_id: string; document_type: string; chip: string | null };
+/**
+ * A paper filed on a calendar day (B3, TimelineJson.calendar): the timeline's own entry for it, field for field (plan
+ * desktop-calendar: the desktop's chosen-day panel shows its page, facility, counts and state). `chip` is the stored
+ * urgency ("now", "this_week") or null.
+ */
+export type CalendarPaperJson = TimelineEntryJson;
 
 /** A doctor's date due on a calendar day, the instruction as written on the prescription and its crop. */
 export type CalendarFollowUpJson = { document_id: string; instruction: string; crop: ImageJson };

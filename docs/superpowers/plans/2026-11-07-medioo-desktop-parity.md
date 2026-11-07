@@ -381,3 +381,35 @@ Tried on a 1710 px window; three changes, built on `feat/desktop-viewer-details`
   its band and Java's sentence are in sight; centred, they sat under the header (`bringIntoView`).
 - Detail: delete in the viewer's toolbar is desktop.html's trash icon, named `desk.viewer.delete`, so the toolbar
   keeps one row at 1024 px (board finding 9, in part: on a NOW or this-week paper the longer urgency word can still wrap a narrow toolbar).
+
+## Phase 2, C1 — the calendar (2026-11-07)
+
+Built on `feat/desktop-calendar`, behind preview (`/app/preview/timeline`), as desktop.html's `calView()`:
+
+- **Data.** A paper on `GET …/calendar` is now the timeline's own entry for it (`TimelineJson.entry`: page one,
+  facility, counts, status, chip, review, retake reason), so the day panel needs no other read and the calendar and the
+  list can never describe a paper two ways. `PatientTimelineApiContractTest` asserts each calendar paper equals the
+  timeline's entry field for field (derived, not a key list). The prototype family's October is now a fixture
+  (`calendar/proto-*`, `timeline/proto-*`, `ProtoFamilyContractTest`).
+- **Screen** (`DeskCalendar`, one column of the shell: no conversation, no divider). The toolbar: the month, মাস /
+  তালিকা, ‹ আজ ›. The month: Saturday first, each day a link to itself (`?day=`) naming its papers by urgency (NOW,
+  THIS_WEEK, the doctor's dates, the rest; three, then `+n`), the chosen day marked, a doctor's day ringed, the weeks
+  sharing the window's height (≥ 96 px). The panel (340 px at every width, as desktop.html): each paper with its page,
+  facility, stored level, counts line and "কাগজ ও কথা খুলুন" (the talk-and-papers screen on that paper); each doctor's
+  date with the doctor's words quoted, their crop, and "কাগজটা দেখুন". তালিকা: the phone page's filters, list, "more" and
+  the chronic-flags ask. The sidebar's next-visit card opens the calendar on its day.
+- **Words.** Every `desk.cal.*` Bangla is desktop.html's own (`DesktopWordsTest`); Thursday is desktop.html's
+  "বৃহস্পতি" in full (`desk.cal.thu`), the phone keeps its short form.
+- **Not as desktop.html, on purpose:**
+  - The doctor's-date card does not say "আগের দিন সন্ধ্যায় WhatsApp-এ মনে করিয়ে দেব।": the nudge engine reminds two
+    days before, gated and capped (`NudgeRules.follow_up_due`), so the screen promises nothing it cannot keep. If the
+    PO wants a reminder line, it needs wording that matches the engine.
+  - Today's numeral is filled in the tint with its ink, not desktop.html's label-on-background inversion, which the
+    token roles refuse (text in a surface token).
+  - A day's paper says its type ("ল্যাব রিপোর্ট"), not the prototype's test name ("রক্ত পরীক্ষা"): the calendar has
+    the stored type, not a title.
+  - Every grey fill (the views, আজ, the quiet buttons, a day's event) carries the app's drawn boundary (Q1 (A)).
+- **Safety colours.** The day events' NOW and THIS_WEEK marks join R2's calendar marks in `NOW_ALLOWED` /
+  `WEEK_ALLOWED` and the TS class guard (`desk-cal__ev--now|week`, only in `src/components/DeskCalendar/`); each is
+  drawn with its shape (octagon, calendar) and its paper's name, never the colour alone; the NOW name is in `--now-ink`
+  (axe contrast at 12 px), the octagon in `--now`.

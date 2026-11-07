@@ -17,8 +17,11 @@ const src = join(dirname(fileURLToPath(import.meta.url)), "..");
 // MonthCalendar's colour modifiers (PO ruling R2, DR-48) end in --now / --week like a token; they are not the tokens,
 // and have their own rule below, so the token patterns skip exactly them. UrgencyTag's (PO ruling P5) likewise.
 const CAL_MARK = "month-calendar__(?:alert|key)";
+// The desktop calendar's day events (plan desktop-parity C1; desktop.html `.ev.now`, `.ev.week`): R2's calendar marks,
+// drawn with their shape and name, so held to the desktop calendar's directory as MonthCalendar's are to its own.
+const DESK_EV = "desk-cal__ev";
 const TAG = "urgency-tag";
-const MODIFIER_BLOCKS = `${CAL_MARK}|${TAG}`;
+const MODIFIER_BLOCKS = `${CAL_MARK}|${DESK_EV}|${TAG}`;
 const RULES: { names: [label: string, pattern: RegExp][]; allowed: RegExp[] }[] = [
   {
     names: [
@@ -43,6 +46,14 @@ const RULES: { names: [label: string, pattern: RegExp][]; allowed: RegExp[] }[] 
   {
     names: [["month-calendar__(alert|key)--week", new RegExp(`${CAL_MARK}--week(?![A-Za-z0-9_])`)]],
     allowed: [/^src\/components\/MonthCalendar\//, /^src\/styles\//, /^src\/lint\//],
+  },
+  {
+    names: [["desk-cal__ev--now", new RegExp(`${DESK_EV}--now(?![A-Za-z0-9_])`)]],
+    allowed: [/^src\/components\/DeskCalendar\//, /^src\/styles\//, /^src\/lint\//],
+  },
+  {
+    names: [["desk-cal__ev--week", new RegExp(`${DESK_EV}--week(?![A-Za-z0-9_])`)]],
+    allowed: [/^src\/components\/DeskCalendar\//, /^src\/styles\//, /^src\/lint\//],
   },
   {
     names: [["urgency-tag--now", new RegExp(`${TAG}--now(?![A-Za-z0-9_])`)]],
@@ -124,6 +135,15 @@ describe("NOW and THIS_WEEK class names in TypeScript", () => {
     for (const text of classes) expect(scanFile("src/components/Probe/Probe.tsx", text), text).toEqual(["src/components/Probe/Probe.tsx now-banner"]);
     // A path and a class in one file is still the class.
     expect(scanFile("src/catalog/states.tsx", `${paths[0]}\n${classes[0]}`)).toEqual(["src/catalog/states.tsx now-banner"]);
+  });
+
+  it("theDesktopCalendarsEventModifiersLiveOnlyInDeskCalendar", () => {
+    const text = 'className="desk-cal__ev desk-cal__ev--now" + "desk-cal__ev--week"';
+    expect(scanFile("src/components/DeskCalendar/DeskCalendar.test.tsx", text)).toEqual([]);
+    expect(scanFile("src/components/Probe/Probe.tsx", text)).toEqual([
+      "src/components/Probe/Probe.tsx desk-cal__ev--now",
+      "src/components/Probe/Probe.tsx desk-cal__ev--week",
+    ]);
   });
 
   it("theCalendarsColourModifiersLiveOnlyInMonthCalendar", () => {

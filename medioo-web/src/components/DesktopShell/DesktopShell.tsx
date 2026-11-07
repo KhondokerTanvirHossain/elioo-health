@@ -15,7 +15,9 @@ const SIDEBAR_ID = "desktop-shell-sidebar";
  * - the content region beside it: `bar` (the NOW bar) across the two content columns and never over the sidebar, then
  *   `paper` (the paper column, filling the rest) and `talk` (the conversation, at --conversation-w), with the divider
  *   between them (ColumnResizer: the family drags it to give either more room, PO 2026-11-07);
- * - `panel`, a paper's details, lies over the conversation column (P19: `desk.panel.open` opens it over the conversation).
+ * - `panel`, a paper's details, lies over the conversation column (P19: `desk.panel.open` opens it over the conversation);
+ * - no `talk` at all (undefined, never null): a screen of one column that lays itself out, the calendar (plan
+ *   desktop-calendar; desktop.html `calView()`, its month and its day panel), so no conversation and no divider.
  * There is no footer disclaimer here (X1): the conversation's header says "not a doctor" (Task 7), and the NOW block
  * keeps its own line. `preview` is carried for the record of which page this is: the slots hold their own links.
  * Its stylesheet comes through its loader (desk-load.tsx), so only a page that renders this shell links it (DR-42); the
@@ -34,10 +36,11 @@ export function DesktopShell({
   sidebar: ReactNode;
   bar?: ReactNode;
   paper: ReactNode;
-  talk: ReactNode;
+  talk?: ReactNode;
   panel?: ReactNode;
 }) {
   const menu = t(lang, "tabs.label");
+  const one = talk === undefined;
   return (
     <div className="desktop-shell">
       <DesktopShellStyles />
@@ -51,16 +54,20 @@ export function DesktopShell({
             {bar}
           </div>
         )}
-        <div className="desktop-shell__columns">
+        <div className={one ? "desktop-shell__columns desktop-shell__columns--one" : "desktop-shell__columns"}>
           <section className="desktop-shell__paper">
             <SidebarToggle label={menu} controls={SIDEBAR_ID} className="desktop-shell__menu" />
             {paper}
           </section>
-          <ColumnResizer label={t(lang, "desk.resize")} />
-          <section className="desktop-shell__talk">
-            {talk}
-            {panel !== undefined && <div className="desktop-shell__panel">{panel}</div>}
-          </section>
+          {!one && (
+            <>
+              <ColumnResizer label={t(lang, "desk.resize")} />
+              <section className="desktop-shell__talk">
+                {talk}
+                {panel !== undefined && <div className="desktop-shell__panel">{panel}</div>}
+              </section>
+            </>
+          )}
         </div>
       </main>
     </div>

@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FollowUpItemJson, FollowUpsJson, MeJson, MePatient } from "@/api/types";
-import { banglaDigits, t } from "@/copy";
+import { banglaDigits, formatMonth, t } from "@/copy";
 import longName from "../../../fixtures/api/me/long-name.json";
 import proto from "../../../fixtures/api/me/proto.json";
 import protoAmmaFollowUps from "../../../fixtures/api/follow-ups/proto-amma.json";
@@ -178,6 +178,12 @@ describe("DesktopSidebar", () => {
     expect(card.querySelector(".desktop-sidebar__visit-in")!.textContent).toBe(t("bn", "desk.visit.in", 2));
     expect(card.querySelector(".desktop-sidebar__visit-in")!.textContent, "in Bangla digits").toContain(banglaDigits("2"));
     expect(card.querySelector(".desktop-sidebar__visit-day")!.textContent).toBe(banglaDigits("22"));
+    // The chip names the month alone, as desktop.html's `.calchip small` does.
+    expect(card.querySelector(".desktop-sidebar__visit-month")!.textContent).toBe(formatMonth("bn", "2026-10-22"));
+    // It opens the calendar on that day (desktop.html's `.nextup`: data-view="papers" data-day="22"), for this patient.
+    const to = new URL(card.getAttribute("href")!, "http://medioo.invalid");
+    expect(to.pathname).toBe("/app/timeline");
+    expect(Object.fromEntries(to.searchParams)).toEqual({ patient: AMMA.id, month: "2026-10", day: "2026-10-22" });
     cleanup();
     expect(sidebar({ nextVisit: null }).container.querySelector(".desktop-sidebar__visit")).toBeNull();
     cleanup();

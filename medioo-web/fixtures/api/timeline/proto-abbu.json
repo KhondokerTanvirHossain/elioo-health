@@ -1,0 +1,58 @@
+{
+  "_meta": {
+    "generated_by": "baymax ProtoFamilyContractTest",
+    "source": "GET /app/api/patients/{id}/timeline over the prototype family (desktop.html), case proto-abbu"
+  },
+  "body": {
+    "entries": [
+      {
+        "chip": "now",
+        "counts": {
+          "follow_ups": 0,
+          "medicines": 0,
+          "outside": 1,
+          "unverified": 0,
+          "values": 2
+        },
+        "date": "2026-10-16",
+        "date_is_upload_day": false,
+        "date_uncertain": false,
+        "document_id": "de867513-f1e6-3d2f-bdaa-fbf5b230bec5",
+        "document_type": "lab_report",
+        "facility": "Shapla Diagnostics",
+        "month": "2026-10",
+        "page_one": {
+          "src": "/app/documents/de867513-f1e6-3d2f-bdaa-fbf5b230bec5/page/1"
+        },
+        "retake_reason_key": null,
+        "review_pending": false,
+        "status": "DONE"
+      },
+      {
+        "chip": null,
+        "counts": {
+          "follow_ups": 0,
+          "medicines": 0,
+          "outside": 0,
+          "unverified": 0,
+          "values": 2
+        },
+        "date": "2026-10-10",
+        "date_is_upload_day": false,
+        "date_uncertain": false,
+        "document_id": "eecfbbd8-218e-343d-be45-25692233e73a",
+        "document_type": "lab_report",
+        "facility": "Shapla Diagnostics",
+        "month": "2026-10",
+        "page_one": {
+          "src": "/app/documents/eecfbbd8-218e-343d-be45-25692233e73a/page/1"
+        },
+        "retake_reason_key": null,
+        "review_pending": false,
+        "status": "DONE"
+      }
+    ],
+    "next_cursor": null
+  },
+  "status": 200
+}

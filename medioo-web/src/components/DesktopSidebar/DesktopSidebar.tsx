@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type { FollowUpItemJson, MeJson, MePatient } from "@/api/types";
-import { banglaDigits, formatMonthYear, t, type CopyKey, type Lang } from "@/copy";
+import { banglaDigits, formatMonth, t, type CopyKey, type Lang } from "@/copy";
 import { MioAvatar } from "@/components/MioAvatar/MioAvatar";
 import { ChooseLink } from "@/components/PatientChooser/ChooseLink";
 import { ChipShape } from "@/components/StatusChip/StatusChip";
@@ -247,9 +247,15 @@ export function DesktopSidebar({
         )}
       </div>
       {active !== null && nextVisit !== null && days !== null && (
-        <PageLink path="/app/timeline" preview={preview} current={false} className="desktop-sidebar__visit">
+        // The calendar on the visit's day, for this patient (desktop.html's `.nextup`: data-view="papers" data-day="22").
+        <PageLink
+          path={`/app/timeline?patient=${encodeURIComponent(active.id)}&month=${nextVisit.due_date.slice(0, 7)}&day=${nextVisit.due_date}`}
+          preview={preview}
+          current={false}
+          className="desktop-sidebar__visit"
+        >
           <span className="desktop-sidebar__calchip">
-            <small className="desktop-sidebar__visit-month">{formatMonthYear(lang, nextVisit.due_date)}</small>
+            <small className="desktop-sidebar__visit-month">{formatMonth(lang, nextVisit.due_date)}</small>
             <span className="desktop-sidebar__visit-day">{count(lang, Number(nextVisit.due_date.slice(8, 10)))}</span>
           </span>
           <span className="desktop-sidebar__visit-text">

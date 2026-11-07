@@ -1,0 +1,449 @@
+/* The desktop calendar (DeskCalendar.tsx; desktop.html `.view.cal`, `.calwrap`, `.mhead`, `.month`, `.mday`, `.ev`,
+   `.insp`, `.ic`): the month and its toolbar on the left, filling the window's height, the chosen day's panel at 340 px
+   on the right; the list view takes the whole width. Every size is a token or the design's own. NOW's red marks only a
+   NOW paper, and never alone: its octagon and its name go with it. */
+.desk-cal {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+  color: var(--label);
+  font-family: var(--font-bn);
+}
+.desk-cal[data-view="list"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+.desk-cal__main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* None anywhere but the shell's column from 900 to 1199 px (DesktopShell.css), inherited from the root (PaperViewer.css's). */
+:where(:root) {
+  --desktop-menu-room: 0px;
+}
+/* The toolbar (desktop.html's `.tb`): the month, then the views, then ‹ today ›. It leaves the shell's menu button its room
+   from 900 to 1199 px (--desktop-menu-room, which DesktopShell.css sets on the column). */
+.desk-cal__bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  min-height: 56px;
+  padding: 0 var(--space-3) 0 calc(var(--space-3) + var(--desktop-menu-room));
+  border-bottom: 0.5px solid var(--sep);
+  background: var(--bg);
+}
+.desk-cal__title {
+  margin: 0 6px;
+  font-size: var(--text-xl);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.desk-cal__space {
+  flex: 1;
+}
+.desk-cal__views {
+  display: inline-grid;
+  grid-auto-flow: column;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--fill);
+  box-shadow: inset 0 0 0 1px var(--boundary);
+}
+.desk-cal__view {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 14px;
+  border-radius: 6px;
+  color: var(--label);
+  font-size: var(--text-xs); /* the smallest type token; desktop.html's .seg is 13 px */
+  font-weight: 500;
+  text-decoration: none;
+}
+.desk-cal__view[aria-current="true"] {
+  background: var(--bg3);
+  box-shadow: 0 0 0 0.5px var(--sep);
+  font-weight: 600;
+}
+.desk-cal__sep {
+  width: 0.5px;
+  height: 20px;
+  margin: 0 4px;
+  background: var(--sep);
+}
+.desk-cal__button {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  color: var(--label2);
+}
+.desk-cal__button:hover,
+.desk-cal__view:hover:not([aria-current="true"]) {
+  background: var(--hover);
+  color: var(--label);
+}
+.desk-cal__icon {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.desk-cal__today,
+.desk-cal__open {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+/* The quiet buttons (desktop.html's `.pbtn.ghost`), with the app's drawn boundary round the fill (Q1 (A)). */
+.desk-cal__today,
+.desk-cal__open--quiet {
+  background: var(--fill);
+  box-shadow: inset 0 0 0 1px var(--boundary);
+  color: var(--label);
+}
+.desk-cal__open:not(.desk-cal__open--quiet) {
+  background: var(--tint);
+  color: var(--on-tint);
+}
+.desk-cal__today:hover,
+.desk-cal__open:hover {
+  filter: brightness(1.06);
+}
+.desk-cal__view:focus-visible,
+.desk-cal__button:focus-visible,
+.desk-cal__today:focus-visible,
+.desk-cal__open:focus-visible,
+.desk-cal__day:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: calc(var(--focus-width) * -1);
+}
+
+/* The month: the weekday heads, then the weeks sharing what height is left, each at least 96 px (desktop.html's
+   `grid-auto-rows: minmax(96px, 1fr)`); the month scrolls inside itself where the window is shorter. */
+.desk-cal__month {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.desk-cal__grid {
+  width: 100%;
+  height: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.desk-cal__wd {
+  height: 30px;
+  padding: 8px 10px 6px;
+  border-bottom: 0.5px solid var(--sep);
+  color: var(--label2);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  text-align: right;
+}
+.desk-cal__grid tbody tr {
+  height: 96px;
+}
+.desk-cal__cell {
+  position: relative;
+  padding: 0;
+  border-right: 0.5px solid var(--sep);
+  border-bottom: 0.5px solid var(--sep);
+  vertical-align: top;
+}
+/* Before the 1st: a quieter cell (desktop.html's `.mday.blank`, the second background at 60%). After the month's last
+   day: nothing, as desktop.html's grid ends there. */
+.desk-cal__cell--before::before {
+  position: absolute;
+  inset: 0;
+  background: var(--bg2);
+  content: "";
+  opacity: 0.6;
+}
+.desk-cal__cell--after {
+  border-color: transparent;
+}
+/* The day fills its cell: the whole cell is the link. */
+.desk-cal__day {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 5px 6px;
+  overflow: hidden;
+  color: var(--label);
+  text-decoration: none;
+}
+.desk-cal__day:hover {
+  background: var(--hover);
+}
+.desk-cal__day--chosen,
+.desk-cal__day--chosen:hover {
+  background: var(--selbg);
+}
+/* The day's sentence (dayStatus): its name, read out and not drawn. */
+.desk-cal__status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.desk-cal__n {
+  display: grid;
+  flex: none;
+  align-self: flex-end;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  font-size: var(--text-xl);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.desk-cal__day--fri .desk-cal__n,
+.desk-cal__wd--fri {
+  color: var(--label2);
+}
+/* Today filled (desktop.html's `.mday.today .dn`), in the app's tint and its ink: desktop.html's label-on-background
+   inversion paints text with a surface token, which the token roles refuse. A doctor's day is ringed; today's ring
+   stands off its fill by a gap, so the two stay told apart on one day. */
+.desk-cal__day--today .desk-cal__n {
+  background: var(--tint);
+  color: var(--on-tint);
+  font-weight: 700;
+}
+.desk-cal__day--ring .desk-cal__n {
+  box-shadow: 0 0 0 2px var(--tint);
+}
+.desk-cal__day--today.desk-cal__day--ring .desk-cal__n {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--tint);
+}
+.desk-cal__events {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.desk-cal__ev {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 1px 6px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--fill);
+  box-shadow: inset 0 0 0 1px var(--boundary);
+  color: var(--label);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.desk-cal__ev-mark {
+  flex: none;
+  width: 10px;
+  height: 10px;
+}
+/* A paper with no urgency: desktop.html's grey dot. */
+.desk-cal__ev-mark--dot {
+  fill: var(--label3);
+  stroke: none;
+}
+/* NOW's octagon and THIS_WEEK's calendar, outlined as MonthCalendar draws them: in the event's ink, NOW's in its red. */
+.desk-cal__ev-mark--shape {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.desk-cal__ev--week {
+  background: var(--week-soft);
+  box-shadow: none;
+  color: var(--week);
+}
+/* The name in the ink on the soft fill (desktop.html's `.chip.now`: --now-ink, which reads at 12 px); the octagon red. */
+.desk-cal__ev--now {
+  background: var(--now-soft);
+  box-shadow: none;
+  color: var(--now-ink);
+}
+.desk-cal__ev--now .desk-cal__ev-mark--shape {
+  stroke: var(--now);
+}
+.desk-cal__ev--visit {
+  background: none;
+  box-shadow: inset 0 0 0 1.5px var(--tint);
+  color: var(--tint-ink);
+  font-weight: 600;
+}
+.desk-cal__more {
+  padding: 0 6px;
+  color: var(--label2);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+/* The chosen day (desktop.html's `.insp` and its `.ic` cards). */
+.desk-cal__panel {
+  min-height: 0;
+  padding: 18px var(--space-4) 28px;
+  overflow-y: auto;
+  border-left: 0.5px solid var(--sep);
+  background: var(--bg2);
+}
+.desk-cal__panel-title {
+  margin: 2px 4px var(--space-3);
+  font-size: var(--text-xl);
+  font-weight: 700;
+}
+.desk-cal__card {
+  margin-bottom: var(--space-3);
+  padding: var(--space-3);
+  border-radius: 14px;
+  background: var(--bg3);
+  box-shadow: 0 0 0 0.5px var(--sep);
+}
+.desk-cal__card-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+.desk-cal__mini {
+  flex: none;
+  width: 60px;
+  height: 76px;
+  border-radius: 4px;
+  background: var(--paper);
+  box-shadow: 0 0 0 0.5px var(--sep);
+  object-fit: cover;
+  object-position: top;
+}
+.desk-cal__card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.desk-cal__card-title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: 1.4;
+}
+.desk-cal__card-sub {
+  color: var(--label2);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.desk-cal__tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: 6px;
+}
+.desk-cal__review {
+  color: var(--label2);
+  font-size: var(--text-xs);
+}
+.desk-cal__line {
+  margin: var(--space-2) 0 0;
+  color: var(--label2);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+.desk-cal__line--strong {
+  margin: 10px 0;
+  color: var(--label);
+  font-weight: 600;
+}
+.desk-cal__crop {
+  display: block;
+  max-width: 100%;
+  max-height: 72px;
+  margin-top: 10px;
+  border-radius: 6px;
+  background: var(--paper);
+  box-shadow: 0 0 0 0.5px var(--sep);
+}
+.desk-cal__acts {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+.desk-cal__calchip {
+  flex: none;
+  min-width: 44px;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--bg3);
+  box-shadow: 0 0 0 0.5px var(--sep);
+  text-align: center;
+}
+.desk-cal__calchip-month {
+  display: block;
+  padding: 0 var(--space-1);
+  background: var(--tint);
+  color: var(--on-tint);
+  font-size: var(--text-xs); /* the smallest type token; desktop.html's .calchip small is 10 px */
+  font-weight: 600;
+  line-height: 1.8;
+  white-space: nowrap;
+}
+.desk-cal__calchip-day {
+  display: block;
+  font-size: var(--text-xl);
+  font-weight: 600;
+  line-height: 1.5;
+}
+.desk-cal__none {
+  padding: var(--space-5) var(--space-3);
+  color: var(--label2);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+/* The list view: the page's list, its width held to a readable measure. */
+.desk-cal__list {
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-4) var(--space-5) var(--space-6);
+  overflow-y: auto;
+}
+.desk-cal__list > * {
+  max-width: 760px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .desk-cal__day,
+  .desk-cal__view,
+  .desk-cal__button {
+    transition: background-color 120ms ease-out;
+  }
+}
