@@ -37,6 +37,8 @@ let thread: ThreadJson = THREAD;
 let abbusThread: ThreadJson = abbuThread.body as ThreadJson;
 let shown: { id: string } = AMMA;
 let banner: NowBannerJson = nowBanner.body as NowBannerJson;
+/** Amma is the viewer's own (true) or shared with them (false: a share member). */
+let ammaOwned = true;
 
 vi.mock("@/api/request", () => ({ requestContext: async () => ctx }));
 vi.mock("next/navigation", async (actual) => ({
@@ -48,7 +50,10 @@ vi.mock("@/api/java", async (actual) => ({
   ...(await actual<typeof import("@/api/java")>()),
   javaGet: async (path: string): Promise<JavaAnswer<unknown>> => {
     reads.push(path);
-    if (path === "/app/api/me") return { status: 200, body: { ...ME, active_patient_id: shown.id } };
+    if (path === "/app/api/me") {
+      const patients = ME.patients.map((p) => (p.id === AMMA.id ? { ...p, owner: ammaOwned } : p));
+      return { status: 200, body: { ...ME, patients, active_patient_id: shown.id } };
+    }
     if (path === "/app/api/now-banner") return { status: 200, body: banner };
     if (path === `/app/api/patients/${AMMA.id}/attention`) return { status: 200, body: attention.body };
     if (path.startsWith(`/app/api/patients/${AMMA.id}/thread`)) return { status: 200, body: thread };
@@ -70,6 +75,7 @@ beforeEach(() => {
   abbusThread = abbuThread.body as ThreadJson;
   shown = AMMA;
   banner = nowBanner.body as NowBannerJson;
+  ammaOwned = true;
   ctx.preview = true;
   ctx.here = "/app/preview/home";
   vi.stubGlobal("location", { pathname: ctx.here, search: "", assign: vi.fn(), reload: vi.fn() });
@@ -116,6 +122,24 @@ describe("/app/home on the desktop layout", () => {
     const container = await home();
     const h1s = [...container.querySelectorAll(".desktop-shell h1")].map((h) => h.textContent);
     expect(h1s).toEqual([t("bn", "desk.talk.title", AMMA.name_possessive)]);
+  });
+
+  it("aShareMemberWithNoPaperHasNoUploadButton", async () => {
+    // Review Focus 2: a share member never sees the paperclip. A shared patient whose thread holds no paper puts the
+    // first visit in the viewer; for a share member it says view-only (add.viewonly) and links nowhere to /app/add.
+    ammaOwned = false;
+    thread = { items: [], next_cursor: null };
+    const container = await home();
+    const viewer = container.querySelector(".desktop-shell__paper")!;
+    expect(viewer.querySelector(".paper-viewer__first"), "the first visit is in the viewer").not.toBeNull();
+    expect(viewer.querySelector("a.paper-viewer__pick"), "a share member is offered the upload link").toBeNull();
+    expect(container.querySelector(`.desktop-shell a[href*="/app/add"]`), "a share member has a way to /app/add").toBeNull();
+    expect(viewer.querySelector(".paper-viewer__first p")!.textContent).toBe(t("bn", "add.viewonly"));
+    cleanup();
+    // The owner of the same empty thread keeps the invitation.
+    ammaOwned = true;
+    const own = await home();
+    expect(own.querySelector(".desktop-shell__paper a.paper-viewer__pick")!.getAttribute("href")).toBe(href("/app/add", true));
   });
 
   it("aNamedPaperIsInTheViewerAndItsPanelOpensAndCloses", async () => {

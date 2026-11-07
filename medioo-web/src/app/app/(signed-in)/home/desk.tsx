@@ -78,7 +78,8 @@ export async function deskScreen(ctx: ShellContext, here: string, ask: DeskAsk):
   const { lang, preview, patient } = ctx;
   if (patient === null) {
     const hrefFor = deskHref(null, preview);
-    return { paper: <PaperViewer lang={lang} preview={preview} paper={null} papers={[]} selectedId={null} hrefFor={hrefFor} />, talk: null, panel: undefined };
+    // No patient yet: the family is the viewer's own, so the first visit invites the first paper.
+    return { paper: <PaperViewer lang={lang} preview={preview} owner paper={null} papers={[]} selectedId={null} hrefFor={hrefFor} />, talk: null, panel: undefined };
   }
   const id = encodeURIComponent(patient.id);
   const [plain, asked, attention] = await Promise.all([
@@ -111,7 +112,7 @@ export async function deskScreen(ctx: ShellContext, here: string, ask: DeskAsk):
     paper: (
       <>
         <h1 className="desktop-shell__title">{t(lang, "desk.talk.title", patient.name_possessive)}</h1>
-        <PaperViewer lang={lang} preview={preview} paper={selected} papers={papers} selectedId={selectedId} hrefFor={hrefFor} />
+        <PaperViewer lang={lang} preview={preview} owner={patient.owner} paper={selected} papers={papers} selectedId={selectedId} hrefFor={hrefFor} />
       </>
     ),
     talk: (

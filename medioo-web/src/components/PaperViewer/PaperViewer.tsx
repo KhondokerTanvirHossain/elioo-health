@@ -40,19 +40,29 @@ function Step({ which, target, label, hrefFor }: { which: "prev" | "next"; targe
 /** The ten digits the page writes numbers in: Bangla on bn (the zoom island takes them as a word; it imports no copy). */
 const digitsOf = (lang: Lang) => (lang === "bn" ? banglaDigits("0123456789") : "0123456789");
 
-/** No paper yet (desktop.html's first visit): Mio, the invitation, and the way to send the first one. */
-function FirstVisit({ lang, preview }: { lang: Lang; preview: boolean }) {
+/**
+ * No paper yet (desktop.html's first visit). The owner: Mio, the invitation, and the way to send the first one. A share
+ * member (`owner` false): Mio and the view-only line (add.viewonly) only, no invitation and no link to the add page;
+ * Java refuses their upload (shared_patient_read_only), and no screen offers a send it refuses (Review Focus 2).
+ */
+function FirstVisit({ lang, preview, owner }: { lang: Lang; preview: boolean; owner: boolean }) {
   return (
     <div className="paper-viewer paper-viewer--first">
       <PaperViewerStyles />
       <div className="paper-viewer__first">
         <MioAvatar size={96} />
-        <h2 className="paper-viewer__first-title">{t(lang, "desk.first.title")}</h2>
-        <p className="paper-viewer__first-body">{t(lang, "desk.first.body")}</p>
-        <a className="paper-viewer__pick" href={href("/app/add", preview)}>
-          <Icon d="M15.5 8.5l-6.4 6.4a1.8 1.8 0 0 0 2.5 2.5l7.1-7.1a3.5 3.5 0 0 0-5-5l-7.4 7.4a5.3 5.3 0 0 0 7.5 7.5l6-6" />
-          {t(lang, "desk.first.pick")}
-        </a>
+        {owner ? (
+          <>
+            <h2 className="paper-viewer__first-title">{t(lang, "desk.first.title")}</h2>
+            <p className="paper-viewer__first-body">{t(lang, "desk.first.body")}</p>
+            <a className="paper-viewer__pick" href={href("/app/add", preview)}>
+              <Icon d="M15.5 8.5l-6.4 6.4a1.8 1.8 0 0 0 2.5 2.5l7.1-7.1a3.5 3.5 0 0 0-5-5l-7.4 7.4a5.3 5.3 0 0 0 7.5 7.5l6-6" />
+              {t(lang, "desk.first.pick")}
+            </a>
+          </>
+        ) : (
+          <p className="paper-viewer__first-body">{t(lang, "add.viewonly")}</p>
+        )}
       </div>
     </div>
   );
@@ -68,11 +78,13 @@ function FirstVisit({ lang, preview }: { lang: Lang; preview: boolean }) {
  * - the canvas: every page Java stored, page 1 at once and the rest when scrolled to; a paper still being read shows
  *   its pages under the reading line, with the quiet check that moves it on (ReadingProgress), never an empty canvas;
  * - the strip of the patient's papers (PaperStrip).
- * No paper at all: the first-visit invitation, which sends the family to the add page.
+ * No paper at all: the first-visit invitation, which sends the family to the add page, when `owner` (the patient is the
+ * viewer's own, or there is no patient yet); for a share member, the view-only line and no link.
  */
 export function PaperViewer({
   lang,
   preview,
+  owner,
   paper,
   papers,
   selectedId,
@@ -80,12 +92,14 @@ export function PaperViewer({
 }: {
   lang: Lang;
   preview: boolean;
+  /** The patient in view is the viewer's own (MePatient.owner); true when there is no patient yet. */
+  owner: boolean;
   paper: PaperJson | null;
   papers: PaperJson[];
   selectedId: string | null;
   hrefFor: (id: string) => string;
 }) {
-  if (paper === null) return <FirstVisit lang={lang} preview={preview} />;
+  if (paper === null) return <FirstVisit lang={lang} preview={preview} owner={owner} />;
 
   const reading = isReadingPaper(paper);
   const at = papers.findIndex((p) => p.id === paper.id);

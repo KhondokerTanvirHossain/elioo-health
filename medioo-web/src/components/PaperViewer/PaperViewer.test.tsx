@@ -53,7 +53,7 @@ afterEach(() => {
 });
 
 function viewer(extra: Partial<Parameters<typeof PaperViewer>[0]> = {}) {
-  return render(<PaperViewer lang="bn" preview={false} paper={CBC} papers={AMMA} selectedId={CBC.id} hrefFor={hrefFor} {...extra} />);
+  return render(<PaperViewer lang="bn" preview={false} owner paper={CBC} papers={AMMA} selectedId={CBC.id} hrefFor={hrefFor} {...extra} />);
 }
 
 const q = (root: ParentNode, selector: string) => root.querySelector<HTMLElement>(selector);
@@ -227,7 +227,7 @@ describe("PaperViewer", () => {
 
   it("noPaperShowsTheFirstVisitDropZone", () => {
     for (const preview of [false, true]) {
-      const { container } = viewer({ paper: null, papers: [], selectedId: null, preview });
+      const { container } = viewer({ paper: null, papers: [], selectedId: null, preview, owner: true });
       const zone = q(container, ".paper-viewer__first")!;
       expect(zone, "the drop zone").not.toBeNull();
       expect(q(zone, "h2")!.textContent).toBe(t("bn", "desk.first.title"));
@@ -241,6 +241,24 @@ describe("PaperViewer", () => {
       cleanup();
     }
     expect(href("/app/add", false)).toBe("/app/add");
+  });
+
+  it("aShareMemberWithNoPaperHasNoUploadButton", () => {
+    // Review Focus 2: a share member never sees the paperclip. Java refuses their upload (shared_patient_read_only), so
+    // the first visit offers no way to send one: Mio and the view-only line (add.viewonly), no invitation, no link.
+    for (const lang of ["bn", "en"] as const) {
+      const { container } = viewer({ lang, paper: null, papers: [], selectedId: null, owner: false });
+      const zone = q(container, ".paper-viewer__first")!;
+      expect(zone, "the first-visit column still renders").not.toBeNull();
+      expect(q(zone, "a.paper-viewer__pick"), `${lang}: a share member is offered the upload link`).toBeNull();
+      expect(q(container, `a[href*="/app/add"]`), `${lang}: a share member has a way to /app/add`).toBeNull();
+      expect(q(zone, "h2"), `${lang}: a share member is invited to drag the first paper`).toBeNull();
+      expect(q(zone, "p")!.textContent).toBe(t(lang, "add.viewonly"));
+      cleanup();
+    }
+    // The owner keeps the invitation and the link.
+    const { container } = viewer({ paper: null, papers: [], selectedId: null, owner: true });
+    expect(q(container, "a.paper-viewer__pick")!.getAttribute("href")).toBe(href("/app/add", false));
   });
 
   it("zoomStepsAndClamps", () => {
