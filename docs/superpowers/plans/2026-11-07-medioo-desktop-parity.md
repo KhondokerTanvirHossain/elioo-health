@@ -360,3 +360,23 @@ New routes (`/app/labs`, `/app/medicines`) also need `FLIPPED`, `docs/infra/Cadd
 | V1 | Voice and sounds | Marked "later" by the PO. |
 
 After Phase 2: the **mobile gap list**, marked by the PO the same way, then its plan.
+
+## Amendment 2026-11-07 — the PO's first look at the preview
+
+Tried on a 1710 px window; three changes, built on `feat/desktop-viewer-details`, still behind preview:
+
+- **Fit stops at 100%.** Task 6 said fit sets the page to the canvas width; desktop.html's `fitZoom()` is
+  `min(1, canvas / 640)`, so a wide window blew the page up to 149%. Fit is now the canvas width up to 640 px,
+  centred beyond it (`paper-viewer-layout.spec.ts` checks both directions). The steps (25%, 50–300%) are unchanged.
+- **The conversation follows the viewer** (desktop.html's `select()`): a change of paper (strip, arrows, keys, card)
+  scrolls its card into view (`nearest`, smooth unless reduced motion) and pulses it once (`FollowPaper`). The NOW bar
+  no longer holds the desktop column still: it lies across both columns and stays in sight; only a NOW card pinned in
+  the column (PinnedUrgent) holds it, and Mio stays still while any NOW result shows. This closes board finding 10.
+- **A divider between the paper and the conversation** (new; desktop.html has a fixed `--cw`): drag, arrow keys
+  (Shift ×4), Home/End, Enter or double-click to reset; remembered per browser (`medioo.desk.talk-w`); the CSS clamps
+  the conversation to ≥ 320 px and the paper to ≥ 420 px whatever was remembered. Copy key `desk.resize`.
+- Detail: the strip's label is two fixed lines, the day then its F7 mark, never wrapped (full text kept).
+- Detail: a card taller than the column (a NOW card with its crops) comes in at its top, below the sticky header, so
+  its band and Java's sentence are in sight; centred, they sat under the header (`bringIntoView`).
+- Detail: delete in the viewer's toolbar is desktop.html's trash icon, named `desk.viewer.delete`, so the toolbar
+  keeps one row at 1024 px (board finding 9, in part: on a NOW or this-week paper the longer urgency word can still wrap a narrow toolbar).

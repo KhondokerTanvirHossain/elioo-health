@@ -109,7 +109,25 @@ describe("DesktopShell", () => {
     });
     expect(declared(".desktop-shell__sidebar[data-open]", "position")["(min-width: 900px)"]).toBe("fixed");
     expect(declared(".desktop-shell", "grid-template-columns")["(min-width: 1200px)"]).toBe("var(--sidebar-w) minmax(0, 1fr)");
-    expect(declared(".desktop-shell__columns", "grid-template-columns")[""]).toBe("minmax(0, 1fr) var(--conversation-w)");
+    // The paper, the divider (no width of its own), the conversation: the design's width, or the family's, held so
+    // the conversation keeps 320 px and the paper 420 px.
+    expect(declared(".desktop-shell__columns", "grid-template-columns")).toEqual({
+      "": "minmax(0, 1fr) 0 clamp(320px, var(--talk-w), calc(100% - 420px))",
+    });
+    // desktop.html's --cw: 360 px from 900 to 1199, 400 (--conversation-w) from 1200.
+    expect(declared(".desktop-shell__columns", "--talk-w")).toEqual({
+      "": "var(--conversation-w)",
+      "(min-width: 900px)": "360px",
+      "(min-width: 1200px)": "var(--conversation-w)",
+    });
+  });
+
+  it("theDividerSitsBetweenThePaperAndTheConversation", async () => {
+    const { container, findByRole } = shell();
+    const divider = await findByRole("separator", { name: t("bn", "desk.resize") });
+    expect(divider.previousElementSibling?.classList.contains("desktop-shell__paper"), "after the paper").toBe(true);
+    expect(divider.nextElementSibling?.classList.contains("desktop-shell__talk"), "before the conversation").toBe(true);
+    expect(container.querySelector(".desktop-shell__columns")!.contains(divider), "a track of the columns grid").toBe(true);
   });
 
   it("noFooterDisclaimerOnDesktop", () => {

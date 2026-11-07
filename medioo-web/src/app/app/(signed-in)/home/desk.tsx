@@ -63,7 +63,8 @@ export function deskHref(patientId: string | null, preview: boolean): (id: strin
  * (GET /app/api/documents/{id}, the paper page's own read) and shown only when it is this patient's. A paper of another
  * patient, one that is gone and an id that is not one are not shown: the newest is, as with no paper named.
  * - the viewer (PaperViewer) shows the selected paper among this patient's papers;
- * - the conversation (Conversation) outlines its card, and holds still while the NOW bar is shown;
+ * - the conversation (Conversation) outlines its card, opens on it and follows the viewer to the next one; Mio holds
+ *   still while the NOW bar is shown, and the column holds at the top only for a pinned NOW card (below);
  * - the panel (PaperPanel) shows its details when `panel` asks, its close the same address without the panel.
  * The attention stack is not drawn here: the NOW bar and the paper's card carry its urgent item (P19), the sidebar the
  * next visit, the retake card its actions, the viewer a paper being read. But for one case: an urgent item (NOW or
@@ -101,6 +102,9 @@ export async function deskScreen(ctx: ShellContext, here: string, ask: DeskAsk):
   const unseen = signedIn(attention, here).items.filter(
     (i): i is AttentionUrgentJson => i.kind === "urgent" && !onScreen.has(i.document_id),
   );
+  // A NOW card pinned at the head of the conversation holds the column there, as the phone's stack does. The NOW bar
+  // does not: it lies across both columns, outside the conversation, in sight whatever the column does (PO 2026-11-07).
+  const pinnedNow = unseen.some((i) => i.level === "now");
   const pinned =
     unseen.length === 0 ? undefined : <PinnedUrgent items={unseen} lang={lang} preview={preview} possessive={patient.name_possessive} />;
   const selected = named ?? papers[0] ?? null;
@@ -124,7 +128,8 @@ export async function deskScreen(ctx: ShellContext, here: string, ask: DeskAsk):
         selectedId={selectedId}
         hrefFor={hrefFor}
         pinned={pinned}
-        hold={ctx.nowShown || unseen.some((i) => i.level === "now")}
+        hold={pinnedNow}
+        still={ctx.nowShown || pinnedNow}
       />
     ),
     panel:

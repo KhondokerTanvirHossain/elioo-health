@@ -228,7 +228,33 @@
 .conversation > .composer__lines {
   padding: 0 0 var(--space-2);
 }
-/* An answered exchange is brought to the column's top (Composer, variant desk): below the sticky header, not under it. */
-.conversation .composer__pair {
+/* An answered exchange is brought to the column's top (Composer, variant desk), and a paper's item or card to wherever
+   the viewer's choice puts it (bringIntoView): below the sticky header and above the composer, never under either. */
+.conversation .composer__pair,
+.conversation__item--paper,
+.conversation__item--paper .verdict-card {
   scroll-margin-top: 64px;
+}
+.conversation__item--paper,
+.conversation__item--paper .verdict-card {
+  scroll-margin-bottom: 80px;
+}
+
+/* The paper the viewer moved to (FollowPaper): its card pulses once, a ring of the tint widening and fading
+   (desktop.html's `.card.pulse`, 900 ms). Not where the family asked for less motion: the outline alone says it. */
+.conversation__item--pulse .verdict-card {
+  animation: conversation-pulse 900ms ease-out;
+}
+@keyframes conversation-pulse {
+  from {
+    box-shadow: 0 0 0 0 var(--tint);
+  }
+  to {
+    box-shadow: 0 0 0 12px transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .conversation__item--pulse .verdict-card {
+    animation: none;
+  }
 }

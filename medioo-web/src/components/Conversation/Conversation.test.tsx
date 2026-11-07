@@ -416,12 +416,95 @@ describe("Conversation", () => {
     expect(scroll(root).scrollTop, "the newest, at the column's end").toBe(4321);
     cleanup();
 
-    // A NOW bar is shown: the column holds still, whatever is selected.
+    // A NOW card pinned at the head of the column (PinnedUrgent): the column holds still there, whatever is selected.
     root = draw(items, { selectedId: cbc.id, hold: true });
     await act(async () => undefined);
     expect(into).not.toHaveBeenCalled();
     expect(scroll(root).scrollTop).toBe(0);
     height.mockRestore();
     Element.prototype.scrollIntoView = noScroll;
+  });
+
+  it("theConversationFollowsThePaperTheViewerShows", async () => {
+    // desktop.html's select(): moving to another paper (the strip, the arrows, the keys) brings its card into view,
+    // the shortest way (`nearest`), smoothly unless the family asked for less motion, and pulses it once. The family
+    // chose that paper, so it follows even where the column held still on opening (`hold`).
+    const into = vi.fn();
+    Element.prototype.scrollIntoView = into;
+    const items = thread("proto-amma");
+    const papers = papersOf(items);
+    const [a, b] = [papers[0]!, papers[2]!];
+    const view = (selectedId: string, hold = false) => (
+      <Conversation lang="bn" preview={false} patient={patientOf(items)} items={items} selectedId={selectedId} hrefFor={hrefFor} hold={hold} />
+    );
+    const { rerender, container } = render(view(a.id, true));
+    await act(async () => undefined);
+    expect(into, "held on opening").not.toHaveBeenCalled();
+
+    rerender(view(b.id, true));
+    await act(async () => undefined);
+    expect(into.mock.instances.map((el) => (el as HTMLElement).dataset.paper), "the chosen paper's item").toEqual([b.id]);
+    expect(into.mock.calls[0]![0]).toEqual({ block: "nearest", behavior: "smooth" });
+    expect(itemOfPaper(container, b.id).classList.contains("conversation__item--pulse"), "its card pulses").toBe(true);
+
+    // The same paper again (a refresh of the screen): nothing moves.
+    into.mockClear();
+    rerender(view(b.id, true));
+    await act(async () => undefined);
+    expect(into).not.toHaveBeenCalled();
+
+    // Less motion asked for: the jump, not the glide.
+    vi.stubGlobal("matchMedia", (q: string) => ({ matches: q.includes("reduce"), media: q, addEventListener() {}, removeEventListener() {} }));
+    rerender(view(a.id, true));
+    await act(async () => undefined);
+    expect(into.mock.calls[0]![0]).toEqual({ block: "nearest", behavior: "auto" });
+    vi.unstubAllGlobals();
+    Element.prototype.scrollIntoView = noScroll;
+  });
+
+  it("aCardTallerThanTheColumnIsBroughtInAtItsTopWhereItsWarningIs", async () => {
+    // A NOW card with its crops is taller than the column: centred, its band and Java's sentence sat above the fold
+    // (seen on the board at 1440 px). Taller than the column, the card itself is brought in at its top, opening and
+    // following alike; one that fits is brought in whole, as before.
+    const into = vi.fn();
+    Element.prototype.scrollIntoView = into;
+    const items = thread("proto-amma");
+    const [a, b] = [papersOf(items)[0]!, papersOf(items)[2]!];
+    const column = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains("conversation") ? 700 : 0;
+    });
+    const rect = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const h = this.classList.contains("verdict-card") ? 1500 : this.dataset.talkItem === "paper" ? 1700 : 0;
+      return { height: h, width: 300, top: 0, left: 0, bottom: h, right: 300, x: 0, y: 0, toJSON: () => ({}) } as DOMRect;
+    });
+    const view = (selectedId: string) => (
+      <Conversation lang="bn" preview={false} patient={patientOf(items)} items={items} selectedId={selectedId} hrefFor={hrefFor} />
+    );
+    const { rerender } = render(view(a.id));
+    await act(async () => undefined);
+    const opened = into.mock.instances[0] as HTMLElement;
+    expect(opened.classList.contains("verdict-card"), "the card, not the photo above it").toBe(true);
+    expect(opened.closest("[data-paper]")!.getAttribute("data-paper")).toBe(a.id);
+    expect(into.mock.calls[0]![0]).toEqual({ block: "start", behavior: "instant" });
+    into.mockClear();
+    rerender(view(b.id));
+    await act(async () => undefined);
+    expect((into.mock.instances[0] as HTMLElement).closest("[data-paper]")!.getAttribute("data-paper")).toBe(b.id);
+    expect(into.mock.calls[0]![0]).toEqual({ block: "start", behavior: "smooth" });
+    column.mockRestore();
+    rect.mockRestore();
+    Element.prototype.scrollIntoView = noScroll;
+  });
+
+  it("mioHoldsStillWhileANowResultIsShownEvenWhenTheColumnScrolls", () => {
+    const items = thread("proto-amma");
+    const root = render(
+      <Conversation lang="bn" preview={false} patient={patientOf(items)} items={items} selectedId={null} hrefFor={hrefFor} still />,
+    ).container;
+    expect(root.querySelector(".conversation__head .mio-avatar--hop, .conversation__head .mio-avatar--wave"), "Mio still").toBeNull();
+    cleanup();
+    // The other direction: with no NOW result, Mio moves, so the check above can fail.
+    const calm = render(<Conversation lang="bn" preview={false} patient={patientOf(items)} items={items} selectedId={null} hrefFor={hrefFor} />).container;
+    expect(calm.querySelector(".conversation__head .mio-avatar--hop, .conversation__head .mio-avatar--wave"), "Mio moves").not.toBeNull();
   });
 });

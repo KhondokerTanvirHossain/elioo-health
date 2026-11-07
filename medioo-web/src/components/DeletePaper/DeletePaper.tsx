@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { apiGet, apiSend } from "@/api/browser";
 import type { DeleteReportJson, DeleteTokenJson } from "@/api/types";
 import { SheetDialog } from "@/components/Sheet/SheetDialog";
@@ -39,7 +39,8 @@ export type DeleteWords = {
  * A delete raced by another member (404) says `gone`. It needs JavaScript, so without it nothing is rendered (DR-42:
  * every mutation needs JavaScript and is never a form that posts somewhere).
  */
-export function DeletePaper({ documentId, words }: { documentId: string; words: DeleteWords }) {
+/** `icon`: drawn in place of the word, which then names the button (the desktop viewer's toolbar). */
+export function DeletePaper({ documentId, words, icon }: { documentId: string; words: DeleteWords; icon?: ReactNode }) {
   const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -92,12 +93,14 @@ export function DeletePaper({ documentId, words }: { documentId: string; words: 
       <button
         type="button"
         className="delete-paper__open"
+        aria-label={icon ? words.open : undefined}
+        title={icon ? words.open : undefined}
         onClick={() => {
           setInSheet("");
           setOpen(true);
         }}
       >
-        {words.open}
+        {icon ?? words.open}
       </button>
       <SheetDialog title={words.question} closeLabel={words.no} open={open} onClose={() => setOpen(false)}>
         <p className="delete-paper__warn">{words.warn}</p>

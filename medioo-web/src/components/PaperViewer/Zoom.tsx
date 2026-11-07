@@ -5,14 +5,14 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 /** What the zoom says, resolved by its server parent: each button's name, and the ten digits the percentage is written in. */
 export type ViewerZoomWords = { out: string; in: string; fit: string; digits: string };
 
-/** desktop.html's zoom steps: 50% to 300% by 25%. */
+/** The zoom steps: 50% to 300% by 25% (desktop.html steps by 10% to 180%; a phone photo of small print needs more). */
 export const ZOOM_MIN = 0.5;
 export const ZOOM_MAX = 3;
 export const ZOOM_STEP = 0.25;
 /** The page's width at 100% (desktop.html's `.page`, 640 px): what a percentage is a percentage of. */
 const PAGE_WIDTH = 640;
 
-/** `fit`: the page as wide as the canvas. A number: one of the steps. */
+/** `fit`: the page as wide as the canvas, up to 100%. A number: one of the steps. */
 export type ZoomLevel = number | "fit";
 
 const clamp = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
@@ -45,7 +45,8 @@ const Icon = ({ d }: { d: string }) => (
  * The viewer's zoom and keys (plan desktop-parity Task 6; desktop.html's zout / zin / zfit and its keydown), a client
  * island around the server-rendered toolbar parts and pages:
  * - − / the percentage / + / fit, between `start` (prev, next, the title, the urgency) and `end` (delete); steps of
- *   25% from 50% to 300%, held at either end; fit makes the page as wide as the canvas, and is where it opens;
+ *   25% from 50% to 300%, held at either end; fit makes the page as wide as the canvas up to 100% (desktop.html's
+ *   fitZoom(): never blown up past the page's own width), and is where it opens;
  * - the keys: `-` smaller, `+` (or `=`) larger, `0` fit; ← the paper before, → the paper after (the toolbar's own
  *   links, followed as a click). Never while the family types in a field, with a modifier held (Ctrl - is the
  *   browser's), with a dialog open, or below 900 px, where the phone page is the one showing.

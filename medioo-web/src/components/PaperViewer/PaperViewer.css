@@ -27,8 +27,8 @@
 }
 /* One row of 56 px where everything fits (desktop.html's `.tb`); where it does not, the controls wrap to a second row
    rather than squeeze the urgency word (below), so Java's word is never broken or hung out of the toolbar: it is longer
-   than desktop.html's chip, and delete is a word here, not an icon (e2e/talk-and-papers.spec.ts measures it at 900 to
-   1440 px). The title and whose-paper line still give way first, with an ellipsis, as the design's do. */
+   than desktop.html's chip (e2e/talk-and-papers.spec.ts measures it at 900 to 1440 px). Delete is desktop.html's
+   icon. The title and whose-paper line still give way first, with an ellipsis, as the design's do. */
 .paper-viewer__toolbar {
   display: flex;
   flex: none;
@@ -129,9 +129,21 @@
 .paper-viewer__delete {
   flex: none;
 }
+/* Delete: desktop.html's trash icon, a 34 px toolbar button like the rest, its words its name (DeletePaper `icon`). */
 .paper-viewer__delete .delete-paper__open {
-  font-size: var(--text-sm);
-  white-space: nowrap;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  min-height: 0;
+  padding: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--label2);
+}
+.paper-viewer__delete .delete-paper__open:hover {
+  background: var(--hover);
+  color: var(--label);
 }
 
 /* The canvas: the pages one under another, centred, each a paper on the canvas. Centred by the page's auto margins,
@@ -160,11 +172,14 @@
   background: var(--paper);
   box-shadow: 0 0 0 0.5px var(--sep);
 }
+/* Fit (where the viewer opens): as wide as the canvas, but never past the page's own 640 px; a wide window shows it
+   at 100%, centred, as desktop.html's fitZoom() does (min(1, canvas / 640)). */
 .paper-viewer__canvas[data-zoom="fit"] {
   align-items: stretch;
 }
 .paper-viewer__canvas[data-zoom="fit"] .paper-viewer__page {
   width: 100%;
+  max-width: 640px;
 }
 .paper-viewer__canvas[data-zoom="0.5"] { --paper-zoom: 0.5; }
 .paper-viewer__canvas[data-zoom="0.75"] { --paper-zoom: 0.75; }
@@ -252,7 +267,9 @@
   justify-items: center;
   gap: var(--space-1);
   position: relative;
-  width: 76px;
+  width: max-content;
+  min-width: 76px;
+  max-width: 128px;
   padding: 3px 0 0;
   border-radius: var(--radius-md);
   color: var(--label2);
@@ -277,6 +294,26 @@
   height: 100%;
   object-fit: cover;
   object-position: top;
+}
+/* Two lines under every thumbnail, whatever the mark: the day, then "(upload date)" or "(date unsure)" when Java set
+   one; each on one line, never wrapped. The item is desktop.html's 76 px, widening to its label up to 128 px so the
+   mark is read whole (F7); past that, an ellipsis, the whole label being the item's title. The two-line
+   box keeps the thumbnails in a row when some papers have a mark and some do not. */
+.paper-strip__date {
+  display: grid;
+  width: 100%;
+  min-height: calc(2em * 1.3);
+  align-content: start;
+}
+.paper-strip__day,
+.paper-strip__mark {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.paper-strip__mark {
+  color: var(--label2);
+  font-weight: 400;
 }
 .paper-strip__item[aria-current="true"] {
   color: var(--label);

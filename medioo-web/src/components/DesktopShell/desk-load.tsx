@@ -9,3 +9,5 @@ import dynamic from "next/dynamic";
  * manifest) only on a page that renders the shell, never on a live page. desktop-chunks.built.test.ts holds that.
  */
 export const DesktopShellStyles = dynamic(() => import("./DesktopShell.desk"));
+/** The divider between the paper and the conversation: a client island, in the same desk-only chunk. */
+export const ColumnResizer = dynamic(() => import("./DesktopShell.desk").then((m) => m.ColumnResizer));
