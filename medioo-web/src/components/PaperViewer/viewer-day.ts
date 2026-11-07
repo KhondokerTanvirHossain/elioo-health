@@ -13,3 +13,14 @@ export function viewerDay(lang: Lang, paper: Pick<PaperResultJson, "date" | "dat
   if (paper.date_uncertain) return t(lang, "trend.date.uncertain", day);
   return day;
 }
+
+/**
+ * viewerDay in two parts, for the strip's two lines: the day, and what the mark adds after it (" (upload date)"; empty
+ * for a printed day). Joined, they are viewerDay's text exactly, so the mark is never dropped (F7), only set on a line
+ * of its own.
+ */
+export function viewerDayParts(lang: Lang, paper: Pick<PaperResultJson, "date" | "date_is_upload_day" | "date_uncertain">): [string, string] {
+  const day = formatDayMonth(lang, paper.date);
+  const whole = viewerDay(lang, paper);
+  return whole.startsWith(day) ? [day, whole.slice(day.length)] : [whole, ""];
+}

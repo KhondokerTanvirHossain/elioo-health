@@ -74,7 +74,8 @@ function FirstVisit({ lang, preview, owner }: { lang: Lang; preview: boolean; ow
  * - the toolbar: the paper before and after (`hrefFor`, disabled at either end), the paper's type and day (marked when
  *   it is the upload day or unsure, F7), whose paper
  *   and the lab as printed, its stored urgency (UrgencyTag: NOW and THIS_WEEK only; ROUTINE says nothing, D27), zoom
- *   (Zoom), and delete for the owner only (a share member has none, and Java refuses theirs anyway);
+ *   (Zoom), and delete for the owner only, desktop.html's trash icon named by its words (a share member has none,
+ *   and Java refuses theirs anyway);
  * - the canvas: every page Java stored, page 1 at once and the rest when scrolled to; a paper still being read shows
  *   its pages under the reading line, with the quiet check that moves it on (ReadingProgress), never an empty canvas;
  * - the strip of the patient's papers (PaperStrip).
@@ -135,7 +136,11 @@ export function PaperViewer({
     <>
       <span className="paper-viewer__sep" aria-hidden="true" />
       <span className="paper-viewer__delete">
-        <DeletePaper documentId={paper.id} words={{ ...deleteWords(lang), open: t(lang, "desk.viewer.delete") }} />
+        <DeletePaper
+          documentId={paper.id}
+          words={{ ...deleteWords(lang), open: t(lang, "desk.viewer.delete") }}
+          icon={<Icon d="M4 7h16M10 11v6M14 11v6M5.5 7l1 12a2 2 0 0 0 2 1.8h7a2 2 0 0 0 2-1.8l1-12M9 7V4.8A.8.8 0 0 1 9.8 4h4.4a.8.8 0 0 1 .8.8V7" />}
+        />
       </span>
     </>
   ) : null;

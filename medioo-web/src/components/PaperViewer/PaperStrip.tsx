@@ -3,12 +3,13 @@ import { isReadingPaper, type PaperJson } from "@/api/types";
 import { t, type Lang } from "@/copy";
 import { UrgencyTag } from "@/components/safety/UrgencyTag/UrgencyTag";
 import { typeText } from "@/components/Paper/paper-text";
-import { viewerDay } from "./viewer-day";
+import { viewerDayParts } from "./viewer-day";
 
 /** The strip's words for one paper: its day under the thumbnail, marked as the viewer marks it (or "being read", which has no day yet), and its type. */
-function labelOf(lang: Lang, paper: PaperJson): { day: string; type: string } {
-  if (isReadingPaper(paper)) return { day: t(lang, "status.PROCESSING"), type: t(lang, "type.default") };
-  return { day: viewerDay(lang, paper), type: typeText(lang, paper.document_type) };
+function labelOf(lang: Lang, paper: PaperJson): { day: string; mark: string; type: string } {
+  if (isReadingPaper(paper)) return { day: t(lang, "status.PROCESSING"), mark: "", type: t(lang, "type.default") };
+  const [day, mark] = viewerDayParts(lang, paper);
+  return { day, mark, type: typeText(lang, paper.document_type) };
 }
 
 /**
@@ -35,7 +36,7 @@ export function PaperStrip({
     <nav className="paper-strip" aria-label={label}>
       <ol className="paper-strip__list">
         {papers.map((paper) => {
-          const { day, type } = labelOf(lang, paper);
+          const { day, mark, type } = labelOf(lang, paper);
           const first = paper.pages[0];
           const current = paper.id === selectedId;
           return (
@@ -44,7 +45,7 @@ export function PaperStrip({
                 className="paper-strip__item"
                 href={hrefFor(paper.id)}
                 aria-current={current ? "true" : undefined}
-                title={`${type} · ${day}`}
+                title={`${type} · ${day}${mark}`}
                 prefetch={false}
               >
                 <span className="paper-strip__thumb">
@@ -59,7 +60,11 @@ export function PaperStrip({
                   )}
                 </span>
                 <span className="paper-strip__type">{type}</span>
-                <span className="paper-strip__date">{day}</span>
+                {/* The day, and the mark on a line of its own under it: one line each, never wrapped. */}
+                <span className="paper-strip__date">
+                  <span className="paper-strip__day">{day}</span>
+                  {mark !== "" && <span className="paper-strip__mark">{mark}</span>}
+                </span>
               </Link>
             </li>
           );

@@ -23,7 +23,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>A {@code {n}} placeholder stands for whatever the prototype puts there: a template expression
  * ({@code ${gen(st.patient)}}) or a short literal ({@code ২}). The only words not in the prototype are the ones the PO
- * worded in ruling P19, which the plan records; each is held to that record instead.
+ * worded, in ruling P19 or in the plan's amendment of 2026-11-07 (the divider, which the prototype does not have), which
+ * the plan records; each is held to that record instead.
  */
 class DesktopWordsTest {
 
@@ -32,6 +33,9 @@ class DesktopWordsTest {
 
     /** Keys whose Bangla the PO gave in ruling P19 rather than the prototype ("সব দেখুন" opens the side panel). */
     static final Set<String> WORDED_IN_P19 = Set.of("desk.panel.open");
+
+    /** Keys the PO worded in the plan's amendment of 2026-11-07 (the divider between the paper and the conversation). */
+    static final Set<String> WORDED_2026_11_07 = Set.of("desk.resize");
 
     /** What a {@code {n}} stands for in the prototype: a {@code ${...}} expression, or a short literal on one line. */
     private static final String PLACEHOLDER = "(?:\\$\\{[^}]*\\}|[^<>\"`\\n]{1,40}?)";
@@ -43,7 +47,7 @@ class DesktopWordsTest {
         String design = Files.readString(DESIGN, StandardCharsets.UTF_8);
         Map<String, String> notInDesign = new TreeMap<>();
         for (Map.Entry<String, String> word : deskWords(Lang.BN).entrySet()) {
-            if (WORDED_IN_P19.contains(word.getKey())) {
+            if (WORDED_IN_P19.contains(word.getKey()) || WORDED_2026_11_07.contains(word.getKey())) {
                 continue;
             }
             if (!asPrototypeText(word.getValue()).matcher(design).find()) {
@@ -65,6 +69,17 @@ class DesktopWordsTest {
     }
 
     @Test
+    void theAmendmentWordsAreThePOsOwn() throws IOException {
+        String plan = Files.readString(PLAN, StandardCharsets.UTF_8);
+        String amendment = plan.substring(plan.indexOf("## Amendment 2026-11-07"));
+        Map<String, String> bn = deskWords(Lang.BN);
+        for (String key : WORDED_2026_11_07) {
+            assertThat(bn).as("an exemption for a key that does not exist").containsKey(key);
+            assertThat(amendment).as(key + " is the PO's wording of 2026-11-07").contains("\"" + bn.get(key) + "\"");
+        }
+    }
+
+    @Test
     void theCheckIsNotVacuous() {
         Map<String, String> bn = deskWords(Lang.BN);
         assertThat(bn).as("desk.* words in ui-shell_bn (an empty set would pass the check above vacuously)")
@@ -72,7 +87,9 @@ class DesktopWordsTest {
         assertThat(deskWords(Lang.EN).keySet()).as("bn and en hold the same desk.* keys").isEqualTo(bn.keySet());
         Set<String> checked = new TreeSet<>(bn.keySet());
         checked.removeAll(WORDED_IN_P19);
-        assertThat(checked).as("the P19 exemption may not swallow the prototype's words").hasSizeGreaterThan(WORDED_IN_P19.size());
+        checked.removeAll(WORDED_2026_11_07);
+        assertThat(checked).as("the exemptions may not swallow the prototype's words")
+                .hasSizeGreaterThan(WORDED_IN_P19.size() + WORDED_2026_11_07.size());
     }
 
     private Map<String, String> deskWords(Lang lang) {

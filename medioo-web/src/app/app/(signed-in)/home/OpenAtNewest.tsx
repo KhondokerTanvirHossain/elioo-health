@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { bringIntoView } from "@/components/Conversation/bring-into-view";
 
 /**
  * Opens the chat page on the newest exchange (the direction contract: "the thread ends on the newest exchange"): once,
@@ -14,7 +15,7 @@ import { useEffect } from "react";
  *
  * `within` (the desktop conversation, plan desktop-parity Task 7): the selector of a column that scrolls inside itself,
  * which is scrolled instead of the window, to its end; or, when `at` names an element inside it (the selected paper's
- * item), to that element, centred. The same `load` rule and the same `hold`.
+ * item), to that element, centred, or a card taller than the column at its top (bringIntoView). The same `load` rule and the same `hold`.
  */
 export function OpenAtNewest({ hold, within, at }: { hold: boolean; within?: string; at?: string | null }) {
   useEffect(() => {
@@ -24,7 +25,7 @@ export function OpenAtNewest({ hold, within, at }: { hold: boolean; within?: str
       const column = document.querySelector<HTMLElement>(within);
       if (column === null) return;
       const target = at ? column.querySelector<HTMLElement>(at) : null;
-      if (target !== null) return target.scrollIntoView({ block: "center", behavior: "instant" });
+      if (target !== null) return bringIntoView(target, column, "open", "instant");
       column.scrollTop = column.scrollHeight;
     };
     end();

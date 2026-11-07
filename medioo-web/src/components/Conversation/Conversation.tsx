@@ -7,7 +7,7 @@ import { MioAvatar } from "@/components/MioAvatar/MioAvatar";
 import { AskAnswer } from "@/components/safety/AskAnswer/AskAnswer";
 import { call999Words } from "@/components/safety/AskAnswer/call999";
 import { DaySeparator, dhakaDay } from "./DaySeparator";
-import { Composer, ConversationStyles, OpenAtNewest } from "./desk-load";
+import { Composer, ConversationStyles, FollowPaper, OpenAtNewest } from "./desk-load";
 import { QuickActions } from "./QuickActions";
 import { TalkCard } from "./TalkCard";
 
@@ -81,7 +81,10 @@ function PaperItem({
  * `pinned` (desk.tsx: PinnedUrgent, an urgent paper the thread's first page does not reach) comes under the header,
  * before the thread.
  * The column opens on the selected paper's item when there is one, otherwise on the newest (OpenAtNewest), and holds
- * still while a NOW result is shown outside the thread (`hold`: the NOW bar, or a pinned NOW card).
+ * still at the top while a NOW card is pinned there (`hold`: PinnedUrgent). The NOW bar does not hold it: the bar lies
+ * across both columns, outside this one, and stays in sight whatever the column does (PO 2026-11-07). When the paper
+ * in view changes, the column follows it to its card (FollowPaper). Mio holds still while any NOW result is shown
+ * (`still`, or `hold`).
  * Its stylesheets and its client islands (the composer, OpenAtNewest, the tips sheet) come through its loader
  * (desk-load.tsx), so only a page that renders the conversation links them (DR-42).
  */
@@ -93,6 +96,7 @@ export function Conversation({
   selectedId,
   hrefFor,
   hold = false,
+  still = false,
   pinned,
 }: {
   lang: Lang;
@@ -102,6 +106,8 @@ export function Conversation({
   selectedId: string | null;
   hrefFor: (id: string) => string;
   hold?: boolean;
+  /** A NOW result is shown on the screen (the bar, or a pinned NOW card): Mio does not move. */
+  still?: boolean;
   pinned?: ReactNode;
 }) {
   const rows: ReactNode[] = [];
@@ -163,7 +169,7 @@ export function Conversation({
     <div className="conversation" data-patient={patient.id}>
       <ConversationStyles />
       <div className="conversation__head">
-        <MioAvatar size={32} still={hold} />
+        <MioAvatar size={32} still={still || hold} />
         <div className="conversation__title">
           <b className="conversation__name">{t(lang, "app.title")}</b>
           <small className="conversation__sub">{t(lang, "desk.talk.sub", patient.name_possessive)}</small>
@@ -185,6 +191,7 @@ export function Conversation({
         }
       />
       <OpenAtNewest hold={hold} within={COLUMN} at={selected ? SELECTED : null} />
+      <FollowPaper within={COLUMN} paperId={selected ? selectedId : null} />
     </div>
   );
 }

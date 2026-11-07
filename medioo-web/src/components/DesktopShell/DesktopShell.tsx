@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { t, type Lang } from "@/copy";
 import { SidebarToggle } from "@/components/AppShell/SidebarToggle";
 import { NowBarStyles } from "@/components/safety/NowBanner/desk-load";
-import { DesktopShellStyles } from "./desk-load";
+import { ColumnResizer, DesktopShellStyles } from "./desk-load";
 
 /** One desktop shell per page, so one sidebar: the id the toolbar's button names in aria-controls (AppShell's differs). */
 const SIDEBAR_ID = "desktop-shell-sidebar";
@@ -13,7 +13,8 @@ const SIDEBAR_ID = "desktop-shell-sidebar";
  * - `sidebar` (DesktopSidebar) in a column of its own from 1200 px, at --sidebar-w; from 900 to 1199 px behind the
  *   toolbar's button (SidebarToggle, reused from AppShell), lying over the page at its own width when shown;
  * - the content region beside it: `bar` (the NOW bar) across the two content columns and never over the sidebar, then
- *   `paper` (the paper column, filling the rest) and `talk` (the conversation, at --conversation-w);
+ *   `paper` (the paper column, filling the rest) and `talk` (the conversation, at --conversation-w), with the divider
+ *   between them (ColumnResizer: the family drags it to give either more room, PO 2026-11-07);
  * - `panel`, a paper's details, lies over the conversation column (P19: `desk.panel.open` opens it over the conversation).
  * There is no footer disclaimer here (X1): the conversation's header says "not a doctor" (Task 7), and the NOW block
  * keeps its own line. `preview` is carried for the record of which page this is: the slots hold their own links.
@@ -55,6 +56,7 @@ export function DesktopShell({
             <SidebarToggle label={menu} controls={SIDEBAR_ID} className="desktop-shell__menu" />
             {paper}
           </section>
+          <ColumnResizer label={t(lang, "desk.resize")} />
           <section className="desktop-shell__talk">
             {talk}
             {panel !== undefined && <div className="desktop-shell__panel">{panel}</div>}

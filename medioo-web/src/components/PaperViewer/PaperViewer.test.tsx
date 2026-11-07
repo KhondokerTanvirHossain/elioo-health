@@ -164,6 +164,20 @@ describe("PaperViewer", () => {
       `${t("bn", "type.default")} · ${t("bn", "trend.date.upload", formatDayMonth("bn", "2026-10-20"))}`,
     );
     expect(q(items[1]!, ".paper-strip__date")!.textContent, "cbc's printed day, bare").toBe(formatDayMonth("bn", "2026-10-20"));
+    // Each on a line of its own (PO 2026-11-07: "2026-10-18 (upload date)" wrapped over three ragged lines): the day,
+    // then the mark under it, in both languages; a printed day has no mark line.
+    for (const lang of ["bn", "en"] as const) {
+      cleanup();
+      const blur = q(viewer({ lang }).container, `a.paper-strip__item[href="${hrefFor(BLUR.id)}"]`)!;
+      const day = formatDayMonth(lang, "2026-10-20");
+      expect(q(blur, ".paper-strip__day")!.textContent, `${lang}: the day alone`).toBe(day);
+      expect(q(blur, ".paper-strip__mark")!.textContent!.trim(), `${lang}: the mark alone`).toBe(
+        t(lang, "trend.date.upload", day).replace(day, "").trim(),
+      );
+      expect(q(blur, ".paper-strip__mark")!.textContent!.trim(), `${lang}: a mark, not nothing`).not.toBe("");
+      const cbc = q(viewer({ lang }).container, `a.paper-strip__item[href="${hrefFor(CBC.id)}"]`)!;
+      expect(q(cbc, ".paper-strip__mark"), `${lang}: cbc's printed day has no mark`).toBeNull();
+    }
     // The stored urgency: THIS_WEEK on creat alone (routine and a retake say nothing, D27).
     expect(items.map((a) => q(a, "[data-urgency]")?.getAttribute("data-urgency") ?? null)).toEqual(
       AMMA.map((p) => (p.id === CREAT.id ? "this_week" : null)),
@@ -185,7 +199,12 @@ describe("PaperViewer", () => {
     const owner = viewer().container;
     const button = q(owner, ".paper-viewer__toolbar .delete-paper__open");
     expect(button, "the owner's delete").not.toBeNull();
-    expect(button!.textContent).toBe(t("bn", "desk.viewer.delete"));
+    // desktop.html's toolbar: a trash icon, named by the desktop's words (read out and shown on hover), so the
+    // toolbar keeps one row where the word took a second (board finding 9).
+    expect(button!.getAttribute("aria-label")).toBe(t("bn", "desk.viewer.delete"));
+    expect(button!.getAttribute("title")).toBe(t("bn", "desk.viewer.delete"));
+    expect(button!.querySelector("svg[aria-hidden=true]"), "the icon").not.toBeNull();
+    expect(button!.textContent, "no word drawn").toBe("");
     cleanup();
     // A share member (owner: false): no delete at all, while the paper and the strip stay.
     const member = viewer({ paper: { ...CBC, owner: false } }).container;

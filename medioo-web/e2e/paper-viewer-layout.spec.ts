@@ -23,7 +23,7 @@ const COLUMN = 600;
 const steps: number[] = [];
 for (let z = ZOOM_MIN; z <= ZOOM_MAX + 1e-9; z += ZOOM_STEP) steps.push(Math.round(z * 100) / 100);
 
-async function mount(page: Page) {
+async function mount(page: Page, column = COLUMN) {
   const zoom = renderToStaticMarkup(
     createElement(
       // The page goes in as createElement's child argument, which the props type cannot see.
@@ -34,7 +34,7 @@ async function mount(page: Page) {
   );
   await page.setContent(
     `<!doctype html><html><head><style>${CSS}</style></head><body>` +
-      `<div id="column" style="width:${COLUMN}px;height:700px"><div class="paper-viewer">${zoom}</div></div></body></html>`,
+      `<div id="column" style="width:${column}px;height:700px"><div class="paper-viewer">${zoom}</div></div></body></html>`,
   );
   await page.locator(".paper-viewer__page").evaluate((img: HTMLImageElement) => img.decode());
 }
@@ -90,11 +90,19 @@ test.describe("the paper viewer's canvas", () => {
     }
   });
 
-  test("fitMakesThePageAsWideAsTheCanvas", async ({ page }) => {
+  test("fitMakesThePageAsWideAsTheCanvasUpToItsOwnWidth", async ({ page }) => {
+    // desktop.html's fitZoom(): min(1, canvas / 640). A canvas narrower than the page: the page fills it.
     await mount(page);
-    const m = await at(page, "fit");
-    expect(m.inner).toBeGreaterThan(0);
-    expect(m.leftGap).toBeCloseTo(0, 0);
-    expect(m.pageWidth, "fit: the page fills the canvas's width").toBeCloseTo(m.inner, 0);
+    const narrow = await at(page, "fit");
+    expect(narrow.inner, "the canvas is narrower than a page at 100%").toBeLessThan(640);
+    expect(narrow.leftGap).toBeCloseTo(0, 0);
+    expect(narrow.pageWidth, "fit: the page fills the canvas's width").toBeCloseTo(narrow.inner, 0);
+    // A canvas wider than the page (a wide window): the page stays at 100%, 640 px, centred; never blown up past it
+    // (PO 2026-11-07: "the images are bigger than the original design").
+    await mount(page, 1200);
+    const wide = await at(page, "fit");
+    expect(wide.inner, "the canvas is wider than a page at 100%").toBeGreaterThan(700);
+    expect(wide.pageWidth, "fit: the page stops at its own width").toBeCloseTo(640, 0);
+    expect(Math.abs(wide.leftGap - wide.rightGap), `centred (left ${wide.leftGap}, right ${wide.rightGap})`).toBeLessThanOrEqual(1);
   });
 });

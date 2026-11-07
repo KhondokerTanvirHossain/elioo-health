@@ -44,11 +44,54 @@
 .desktop-shell__bar:empty {
   display: none;
 }
+/* Three tracks: the paper, the divider (no width of its own; ColumnResizer), the conversation. The conversation is
+   --talk-w: the design's width per window (below), or the family's where they dragged the divider (ColumnResizer sets
+   it on this element, over the stylesheet's), held between 320 px and what leaves the paper 420 px (TALK_MIN and
+   PAPER_MIN), so a width remembered on a wide window never squeezes the paper on a narrow one. */
 .desktop-shell__columns {
+  --talk-w: var(--conversation-w);
   display: grid;
   flex: 1;
-  grid-template-columns: minmax(0, 1fr) var(--conversation-w);
+  grid-template-columns: minmax(0, 1fr) 0 clamp(320px, var(--talk-w), calc(100% - 420px));
   min-height: 0;
+}
+/* The divider: on the conversation's hairline, 8 px wide and pulled 4 px into each column by its margins, so its
+   track takes no width and nothing spills from its box; a 2 px tint line on hover, while dragged, and the focus colour
+   when focused. The pointer is captured while it drags, so nothing under it is selected or hit. */
+.desktop-shell__resizer {
+  position: relative;
+  z-index: 4;
+  width: 8px;
+  margin-inline: -4px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.desktop-shell__resizer::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+  background: transparent;
+  content: "";
+  pointer-events: none;
+  transition: background-color 120ms ease-out;
+}
+.desktop-shell__resizer:hover::after,
+.desktop-shell[data-resizing] .desktop-shell__resizer::after {
+  background: var(--tint);
+}
+.desktop-shell__resizer:focus-visible {
+  outline: none;
+}
+.desktop-shell__resizer:focus-visible::after {
+  left: calc(4px - var(--focus-width) / 2);
+  width: var(--focus-width);
+  background: var(--focus);
+}
+.desktop-shell[data-resizing] {
+  cursor: col-resize;
+  user-select: none;
 }
 .desktop-shell__paper {
   position: relative;
@@ -126,7 +169,7 @@
   }
   /* desktop.html's --cw below 1200 px: the conversation gives the paper room in a narrower window. */
   .desktop-shell__columns {
-    grid-template-columns: minmax(0, 1fr) 360px;
+    --talk-w: 360px;
   }
   .desktop-shell__paper {
     --desktop-menu-room: calc(var(--target-min) + var(--space-2));
@@ -152,7 +195,7 @@
     display: none;
   }
   .desktop-shell__columns {
-    grid-template-columns: minmax(0, 1fr) var(--conversation-w);
+    --talk-w: var(--conversation-w);
   }
   .desktop-shell__paper {
     --desktop-menu-room: 0px;

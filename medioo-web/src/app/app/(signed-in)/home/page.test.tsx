@@ -79,6 +79,13 @@ beforeEach(() => {
   ctx.preview = true;
   ctx.here = "/app/preview/home";
   vi.stubGlobal("location", { pathname: ctx.here, search: "", assign: vi.fn(), reload: vi.fn() });
+  // jsdom has no scrollIntoView, which the conversation calls to open on the paper in view; a test that watches it
+  // sets its own.
+  const had = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = () => undefined;
+  onTestFinished(() => {
+    Element.prototype.scrollIntoView = had;
+  });
 });
 afterEach(() => {
   cleanup();
@@ -215,6 +222,26 @@ describe("/app/home on the desktop layout", () => {
     expect(into, "the column holds still at the NOW card").not.toHaveBeenCalled();
     expect(talk.querySelector(".conversation__head .mio-avatar--hop, .conversation__head .mio-avatar--wave"), "Mio still").toBeNull();
     expect(reads.some((r) => r.startsWith("/app/api/documents/")), "no paper read: no DOCUMENT_VIEW nobody asked for").toBe(false);
+  });
+
+  it("theNowBarDoesNotHoldTheDesktopConversation", async () => {
+    // The bar lies across both columns, outside the conversation, and stays in sight whatever the column does, so the
+    // column opens on the paper in view (desktop.html's goto: the card centred), as with no bar (PO 2026-11-07: the
+    // conversation follows the papers). Mio still holds still while the bar is shown.
+    expect(banner.show, "the prototype's NOW bar is shown").toBe(true);
+    const into = vi.fn();
+    const before = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = into;
+    onTestFinished(() => {
+      Element.prototype.scrollIntoView = before;
+    });
+    const container = await home({ patient: AMMA.id, paper: CBC.id });
+    await act(async () => undefined);
+    expect(container.querySelector(".desktop-shell__bar [role=alert]"), "the bar is there").not.toBeNull();
+    expect(into.mock.instances.map((el) => (el as HTMLElement).dataset.paper), "the column opens on the paper in view").toEqual([CBC.id]);
+    expect(into.mock.calls[0]![0]).toEqual({ block: "center", behavior: "instant" });
+    const talk = container.querySelector(".desktop-shell__talk")!;
+    expect(talk.querySelector(".conversation__head .mio-avatar--hop, .conversation__head .mio-avatar--wave"), "Mio still").toBeNull();
   });
 
   it("belowNineHundredHomeIsTodaysChat", async () => {

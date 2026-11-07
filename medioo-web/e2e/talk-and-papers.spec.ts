@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { MeJson, NowBannerJson, PaperJson } from "../src/api/types";
-import { t, type CopyKey } from "../src/copy";
+import { banglaDigits, t, type CopyKey } from "../src/copy";
 import { useScenario } from "./support/browser-api";
 import { FIXTURES, PROTO_PAPERS, PROTO_PATIENTS, longNameOf } from "./support/scenarios.mjs";
 import { axeReport, cspViolations, expectSchemeIsPainted, installCspHook, rendersOwnText } from "./support/screen-checks";
@@ -273,6 +273,145 @@ test.describe("talk-and-papers on the desktop layout", () => {
       });
     });
   }
+
+  // The PO's first look at the preview (2026-11-07): the page larger than the design, no way to give the paper or the
+  // conversation more room, and the conversation not following the papers.
+  test.describe("the PO's details (2026-11-07)", () => {
+    /** Whether an element's box overlaps the conversation column's visible area. */
+    const inColumn = (page: Page, selector: string) =>
+      page.evaluate((sel) => {
+        const column = document.querySelector(".desktop-shell .conversation")!.getBoundingClientRect();
+        const el = document.querySelector(sel);
+        if (el === null) return false;
+        const box = el.getBoundingClientRect();
+        return box.bottom > column.top + 1 && box.top < column.bottom - 1;
+      }, selector);
+    const width = (page: Page, selector: string) => page.locator(selector).first().evaluate((e) => e.getBoundingClientRect().width);
+    const item = (id: string) => `.desktop-shell [data-talk-item="paper"][data-paper="${id}"] .verdict-card`;
+
+    test("theFittedPageNeverGrowsPastItsOwnWidth", async ({ page }) => {
+      // The PO's window (1710 CSS px): the canvas is far wider than a page, which stays at 100%, 640 px.
+      await page.setViewportSize({ width: 1710, height: 1000 });
+      await open(page, "proto", AMMA_HOME);
+      expect(await width(page, ".desktop-shell__paper .paper-viewer__canvas"), "the canvas is wider than a page").toBeGreaterThan(800);
+      expect(await width(page, ".desktop-shell__paper .paper-viewer__page"), "the page at its own width").toBeCloseTo(640, 0);
+      await expect(page.locator(".desktop-shell .paper-viewer__zoom-level"), "and says so").toHaveText(banglaDigits("100%"));
+      // A narrow window: the page fills the canvas, smaller than 100%.
+      await page.setViewportSize(WIDTHS.w900);
+      await expect.poll(() => width(page, ".desktop-shell__paper .paper-viewer__page")).toBeLessThan(640);
+    });
+
+    test("theConversationFollowsThePaperInTheViewer", async ({ page }) => {
+      await page.setViewportSize(WIDTHS.w1440);
+      await open(page, "proto", AMMA_HOME);
+      // The column at its end (the newest), where the oldest paper's card is out of sight, so only a follow brings it.
+      // Set here, not left to the opening, so this checks the following alone.
+      await page.locator(".desktop-shell .conversation").evaluate((c) => {
+        c.scrollTop = c.scrollHeight;
+      });
+      expect(await inColumn(page, item(PROTO_PAPERS.lipid)), "the oldest card starts out of sight").toBe(false);
+      await page.locator(".desktop-shell .paper-strip__item").filter({ has: page.locator(`img[src*="${PROTO_PAPERS.lipid}"]`) }).click();
+      await page.waitForURL((u) => u.searchParams.get("paper") === PROTO_PAPERS.lipid);
+      await expect.poll(() => inColumn(page, item(PROTO_PAPERS.lipid)), { message: "the conversation came to the chosen paper's card" }).toBe(true);
+      // And back, with the keys: → the newer papers, until the newest; the column follows each time.
+      for (const id of [PROTO_PAPERS.creat, PROTO_PAPERS.rx, PROTO_PAPERS.cbc, PROTO_PAPERS.blur]) {
+        await page.locator("body").press("ArrowRight");
+        await page.waitForURL((u) => u.searchParams.get("paper") === id);
+        await expect.poll(() => inColumn(page, item(id)), { message: `followed to ${id}` }).toBe(true);
+      }
+    });
+
+    test("theNowBarLeavesTheConversationOnThePaperInView", async ({ page }) => {
+      // Finding 10 of the board: the bar held the column at its oldest item, so the red card could sit below the fold.
+      // The bar lies across both columns and stays in sight; the column opens on the paper in view.
+      await page.setViewportSize(WIDTHS.w1440);
+      // The mother's newest paper, at the foot of a thread taller than the column, while the father's NOW bar is shown.
+      await open(page, "proto", `${AMMA_HOME}&paper=${PROTO_PAPERS.blur}`);
+      await expect(page.locator(".desktop-shell .now-banner--bar"), "the bar").toBeVisible();
+      const column = page.locator(".desktop-shell .conversation");
+      expect(await column.evaluate((c) => c.scrollHeight > c.clientHeight * 2), "a thread the column cannot show at once").toBe(true);
+      await expect.poll(() => inColumn(page, item(PROTO_PAPERS.blur)), { message: "the paper in view's card in sight" }).toBe(true);
+      // The father's red card, opened from his page, in sight with its sentence.
+      await open(page, "proto", `${ABBU_HOME}&paper=${PROTO_PAPERS.potas}`);
+      await expect.poll(() => inColumn(page, item(PROTO_PAPERS.potas)), { message: "the red card in sight" }).toBe(true);
+      await expect(page.locator(`${item(PROTO_PAPERS.potas)}.verdict-card--now [data-safety="band"]`)).toHaveText(CARD_LINE);
+      // Its band, Java's sentence, is in sight itself: below the column's sticky header and above its composer, not
+      // under either (the card is taller than the column, so it comes in at its top).
+      const band = () =>
+        page.evaluate((sel) => {
+          const column = document.querySelector(".desktop-shell .conversation")!;
+          const head = column.querySelector(".conversation__head")!.getBoundingClientRect();
+          const foot = column.querySelector(":scope > .composer")!.getBoundingClientRect();
+          const b = document.querySelector(sel)!.getBoundingClientRect();
+          return b.top >= head.bottom - 1 && b.bottom <= foot.top + 1;
+        }, `${item(PROTO_PAPERS.potas)} [data-safety="band"]`);
+      await expect.poll(band, { message: "the band is under neither the header nor the composer" }).toBe(true);
+    });
+
+    test("theDividerGivesEitherColumnRoomAndIsRemembered", async ({ page }) => {
+      await page.setViewportSize(WIDTHS.w1440);
+      await open(page, "proto", AMMA_HOME);
+      const divider = page.getByRole("separator", { name: t("bn", "desk.resize") });
+      const talk = () => width(page, ".desktop-shell__talk");
+      const paper = () => width(page, ".desktop-shell__paper");
+      const columns = await width(page, ".desktop-shell__columns");
+      expect(await talk(), "the design's width").toBeCloseTo(400, 0);
+      const paperBefore = await paper();
+      // Dragged 120 px to the left: the conversation 120 wider, the paper 120 narrower, and the page fitted again.
+      const box = (await divider.boundingBox())!;
+      const x = box.x + box.width / 2;
+      const y = box.y + box.height / 2;
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.mouse.move(x - 60, y, { steps: 4 });
+      await page.mouse.move(x - 120, y, { steps: 4 });
+      await page.mouse.up();
+      expect(await talk()).toBeCloseTo(520, 0);
+      expect(await paper()).toBeCloseTo(paperBefore - 120, 0);
+      await expect.poll(() => width(page, ".desktop-shell__paper .paper-viewer__page")).toBeLessThanOrEqual(
+        (await width(page, ".desktop-shell__paper .paper-viewer__canvas")) + 0.5,
+      );
+      // Remembered on this browser.
+      await page.reload();
+      await page.waitForLoadState("load");
+      await expect.poll(talk, { message: "the width comes back" }).toBeCloseTo(520, 0);
+      // The keys: End, the widest, leaving the paper 420 px; Home, the narrowest; Enter, the design's width again.
+      await divider.focus();
+      await divider.press("End");
+      expect(await talk()).toBeCloseTo(columns - 420, 0);
+      expect(await paper()).toBeCloseTo(420, 0);
+      await divider.press("Home");
+      expect(await talk()).toBeCloseTo(320, 0);
+      await divider.press("End");
+      // A narrower window never lets a remembered width squeeze the paper below 420 px.
+      await page.setViewportSize(WIDTHS.w900);
+      await expect.poll(paper).toBeGreaterThanOrEqual(419.5);
+      expect(await talk()).toBeGreaterThanOrEqual(319.5);
+      await divider.press("Enter");
+      await expect.poll(talk, { message: "Enter: the design's 360 px below 1200" }).toBeCloseTo(360, 0);
+      await page.setViewportSize(WIDTHS.w1440);
+      await expect.poll(talk, { message: "and 400 from 1200" }).toBeCloseTo(400, 0);
+    });
+
+    test("everyStripLabelIsOneLineAndTheThumbnailsStayInARow", async ({ page }) => {
+      await page.setViewportSize(WIDTHS.w1440);
+      await open(page, "proto", AMMA_HOME);
+      const lines = await page.locator(".desktop-shell .paper-strip__day, .desktop-shell .paper-strip__mark").evaluateAll((els) =>
+        els.map((e) => ({
+          text: e.textContent,
+          height: e.getBoundingClientRect().height,
+          font: parseFloat(getComputedStyle(e).fontSize),
+          cut: e.scrollWidth > e.clientWidth + 1,
+        })),
+      );
+      expect(lines.some((l) => l.text?.trim().startsWith("(")), "a mark line is among them").toBe(true);
+      for (const l of lines) expect(l.height, `"${l.text}" on one line`).toBeLessThan(l.font * 1.6);
+      // And whole: F7's mark is read, never cut to "(upload…".
+      for (const l of lines) expect(l.cut, `"${l.text}" is cut`).toBe(false);
+      const tops = await page.locator(".desktop-shell .paper-strip__thumb").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
+      expect(new Set(tops).size, "every thumbnail at the same height").toBe(1);
+    });
+  });
 
   test("theOldPapersPageWithFortyFivePapersAndTheLongestNameDoesNotOverflowOnAPreviewPage", async ({ page }) => {
     // /app/preview/timeline is not on the desktop layout yet (Phase 2): it is today's page at every width. Review Focus
