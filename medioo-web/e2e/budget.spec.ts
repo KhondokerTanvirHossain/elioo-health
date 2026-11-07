@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, type Page, type Response, type TestInfo } from "@playwright/test";
+import { DESKTOP_DEFAULT } from "../src/routing/desktop";
 import { NEXT_PAGES } from "../src/routing/paths";
 import {
   FIRST_WRITE_HEADER,
@@ -13,7 +14,7 @@ import {
   unencodedByCaddy,
 } from "./support/budget";
 import { useScenario } from "./support/browser-api";
-import { PAGE_MARKERS, PAGE_PATHS, PAGE_SCENARIOS } from "./support/scenarios.mjs";
+import { PAGE_MARKERS, PAGE_PATHS, PAGE_SCENARIOS, PAPER_ID } from "./support/scenarios.mjs";
 
 type Kind = "document" | "script" | "stylesheet" | "font" | "rsc" | "other";
 type Row = {
@@ -267,6 +268,38 @@ for (const { encoding, label, acceptEncoding } of ENCODINGS) {
         if (await enforcedHere(page, testInfo)) {
           expect(total, ceilingMessage("route", path, total, route)).toBeLessThanOrEqual(route);
         }
+      });
+    }
+
+    // The desktop layout (plan desktop-parity, Review Focus 5) on the two pages that render it, measured as a preview
+    // family gets them (/app/preview/..., the only requests it renders for until the flip): both shells are in the
+    // document and the desktop parts' CSS and JS come with it, at any width. Until DESKTOP_DEFAULT is true (Task 10, the
+    // flip) no live request is answered with it, so the route ceiling is enforced on it only from then; before that each
+    // load is measured whole, recorded, and its margin noted (an open PO decision before the flip). Once it is true the
+    // live /app/home and /app/documents/{id} above render it too, and this holds the preview twins to the same ceiling.
+    for (const [path, scenario] of [
+      ["/app/preview/home", "chat-preview"],
+      [`/app/preview/documents/${PAPER_ID}`, "paper-now-bd-preview"],
+    ] as const) {
+      test(`desktop layout ${path}: a cold first load, within the route ceiling once the layout is live${label}`, async ({ page, baseURL }, testInfo) => {
+        const origin = new URL(baseURL!).origin;
+        await useScenario(page, scenario);
+        const load = await coldLoad(page, origin, path);
+        const total = routeTotal(load.rows);
+        record(testInfo, `budget-desktop${path.replace(/[^a-zA-Z0-9]+/g, "-")}${suffix}`, baseURL!, load, {
+          path,
+          scenario,
+          encoding,
+          routeTotal: total,
+        });
+        expectAWholeMeasurement(load, origin, path, encoding);
+        // The desktop layout itself was measured, not today's page alone.
+        expect(await load.document!.text(), `${path}: the document holds the desktop layout`).toContain('class="desktop-shell"');
+        const { route } = readCeilings();
+        if (!(await enforcedHere(page, testInfo))) return;
+        const message = ceilingMessage("route", path, total, route);
+        testInfo.annotations.push({ type: "DR-42 desktop layout", description: message });
+        if (DESKTOP_DEFAULT) expect(total, message).toBeLessThanOrEqual(route);
       });
     }
   });

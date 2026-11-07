@@ -1,0 +1,32 @@
+/* VerdictCard's desktop additions, apart from VerdictCard.css so that only a page rendering the desktop conversation
+   links them (Conversation's desk-load.tsx; DR-42). They follow VerdictCard.css in the cascade, as they did inside it. */
+
+/* The desktop conversation's card (TalkCard, plan desktop-parity Task 7; desktop.html `.card`): the type, day and lab
+   under the title; the outline of the card whose paper the viewer shows (`.card.sel`, 2.5 px of the tint); and the
+   link to every detail at the foot (`.card .open`), above the title's whole-card target like the 999 link. */
+.verdict-card__sub {
+  margin: 1px 0 0;
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  color: var(--label2);
+}
+.verdict-card--selected {
+  box-shadow: 0 0 0 2.5px var(--tint);
+}
+.verdict-card__more {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  min-height: var(--target-min);
+  padding: 0 14px;
+  border-top: 0.5px solid var(--sep);
+  color: var(--tint-ink);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  text-decoration: none;
+}
+.verdict-card__more:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: calc(-1 * var(--focus-width));
+}

@@ -158,3 +158,60 @@ describe("ReadingProgress (PO ruling P6, reading-check.ts)", () => {
     expect(atRefresh[0], "the marker was on the result's refresh").toBeNull();
   });
 });
+
+// One paper is one check, however many views of it a page mounts (review of plan desktop-parity Task 8, finding 2: the
+// desktop screen's viewer beside the phone shell's paper page), and two papers are still two checks.
+describe("ReadingProgress: one check per paper", () => {
+  const OTHER: ReadingCheck = { ...CHECK, documentId: "5e9edf6d-0a2a-4913-8675-9d07a4100009" };
+  const asked = (id: string) => apiGet.mock.calls.filter((c) => c[0] === `/app/api/documents/${id}/status`).length;
+
+  it("twoViewsOfOnePaperShareOneCheckAndOneRefreshAndBothSayIt", async () => {
+    const { container } = render(
+      <>
+        <div data-view="a">
+          <ReadingProgress check={CHECK} />
+        </div>
+        <div data-view="b">
+          <ReadingProgress check={CHECK} />
+        </div>
+      </>,
+    );
+    await pass(waitBefore(0));
+    expect(asked(DOC), "one status read a tick").toBe(1);
+    apiGet.mockResolvedValue(status("DONE"));
+    await pass(waitBefore(1));
+    expect(asked(DOC)).toBe(2);
+    expect(refresh, "one refresh").toHaveBeenCalledTimes(1);
+    for (const view of ["a", "b"]) {
+      expect(live(container.querySelector<HTMLElement>(`[data-view=${view}]`)!)?.textContent, `view ${view} says it`).toBe("Read");
+    }
+  });
+
+  it("twoPapersAreTwoChecks", async () => {
+    render(
+      <>
+        <ReadingProgress check={CHECK} />
+        <ReadingProgress check={OTHER} />
+      </>,
+    );
+    await pass(waitBefore(0));
+    expect(asked(DOC)).toBe(1);
+    expect(asked(OTHER.documentId)).toBe(1);
+  });
+
+  it("theCheckGoesOnWhileAnyViewOfThePaperIsMounted", async () => {
+    const { rerender } = render(
+      <>
+        <ReadingProgress key="a" check={CHECK} />
+        <ReadingProgress key="b" check={CHECK} />
+      </>,
+    );
+    await pass(waitBefore(0));
+    rerender(<ReadingProgress key="b" check={CHECK} />);
+    await pass(waitBefore(1));
+    expect(asked(DOC), "the first view left; the second still checks").toBe(2);
+    cleanup();
+    await pass(10 * 60_000);
+    expect(asked(DOC), "no view left: no check").toBe(2);
+  });
+});

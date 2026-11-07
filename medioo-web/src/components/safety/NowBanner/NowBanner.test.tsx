@@ -4,14 +4,18 @@ import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MePatient, NowBannerJson } from "@/api/types";
 import { STATES } from "@/catalog/states";
-import { t, type Lang } from "@/copy";
+import { t, type CopyKey, type Lang } from "@/copy";
 // B3's generated bodies (baymax NowBannerApiContractTest), never a hand fixture; the names are the catalog's
 // fictional ones (baymax CatalogFixturesExportTest), so no Bangla is typed here.
 import abroad from "../../../../fixtures/api/now-banner/abroad.json";
 import acked from "../../../../fixtures/api/now-banner/acked.json";
 import one from "../../../../fixtures/api/now-banner/one.json";
+import proto from "../../../../fixtures/api/now-banner/proto.json";
 import twoPatients from "../../../../fixtures/api/now-banner/two-patients.json";
 import catalogNames from "../../../../fixtures/catalog/names.json";
+import protoMe from "../../../../fixtures/api/me/proto.json";
+import { typeText } from "@/components/Paper/paper-text";
+import { viewerDay } from "@/components/PaperViewer/viewer-day";
 import { signInPath } from "@/routing/paths";
 import { NowBanner } from "./NowBanner";
 import { BANNER_ONLY_COOKIE, holdOnBannerRefresh } from "./banner-only";
@@ -40,6 +44,7 @@ const FIXTURES: Record<string, NowBannerJson> = {
   "abroad.json": abroad.body,
   "acked.json": acked.body,
   "one.json": one.body,
+  "proto.json": proto.body,
   "two-patients.json": twoPatients.body,
 };
 
@@ -512,5 +517,100 @@ describe("NowBanner", () => {
 
   it("everyCommittedFixtureIsReadHere", () => {
     expect(Object.keys(FIXTURES).sort()).toEqual(readdirSync(fixtureDir).filter((f) => f.endsWith(".json")).sort());
+  });
+});
+
+/*
+ * The desktop NOW bar (plan desktop-parity Task 8; ruling P19: one slim bar across the content columns): the patient's
+ * name first, then Java's `line_key` sentence verbatim (DR-45 unchanged), then the newest NOW paper's type and date, then
+ * `attn.open`, 999 only when `call_999`, and `now.banner.seen`. Over the prototype family's banner (fixtures/api/now-banner/proto.json)
+ * and the names GET /app/api/me gives that family (fixtures/api/me/proto.json).
+ */
+describe("NowBanner variant bar", () => {
+  const PROTO_PATIENTS = protoMe.body.patients as MePatient[];
+  const bar = (banner: NowBannerJson, patients: Pick<MePatient, "id" | "name">[], lang: Lang, preview = false) =>
+    render(
+      <NowBannerHold>
+        <NowBanner banner={banner} patients={patients} lang={lang} live variant="bar" preview={preview} />
+      </NowBannerHold>,
+    );
+
+  it("theBarNamesThePatientFirstAndQuotesJavaVerbatim", async () => {
+    for (const lang of LANGS) {
+      const { container } = bar(proto.body, PROTO_PATIENTS, lang);
+      const alert = alertOf(container);
+      expect(alert.classList.contains("now-banner--bar"), "the bar, not the block").toBe(true);
+      const abbu = PROTO_PATIENTS.find((p) => p.id === proto.body.documents[0]!.patient_id)!;
+      const text = alert.textContent ?? "";
+      const sentence = t(lang, proto.body.line_key as CopyKey);
+      expect(count(text, sentence), `${lang}: Java's sentence, once and verbatim`).toBe(1);
+      expect(alert.querySelector(".now-banner__line")!.textContent, `${lang}: the line is the sentence alone`).toBe(sentence);
+      expect(titleOf(alert).textContent, `${lang}: the name is the bar's title`).toBe(abbu.name);
+      expect(text.indexOf(abbu.name), `${lang}: the name comes first`).toBeLessThan(text.indexOf(sentence));
+      // Then the paper the bar is about: its type and its day, as the viewer writes them.
+      const doc = proto.body.documents[0]!;
+      const about = alert.querySelector(".now-banner__about")!.textContent;
+      expect(about).toBe(`${typeText(lang, doc.document_type)} · ${viewerDay(lang, doc)}`);
+      expect(text.indexOf(sentence)).toBeLessThan(text.indexOf(about!));
+      // The actions in the design's order: open the paper, 999, seen.
+      const open = alert.querySelector<HTMLAnchorElement>("a.now-banner__open")!;
+      expect(open.textContent).toBe(t(lang, "attn.open"));
+      expect(open.getAttribute("href")).toBe(`/app/documents/${doc.document_id}`);
+      const call = alert.querySelector<HTMLAnchorElement>('a[href="tel:999"]')!;
+      expect(call.textContent).toBe(t(lang, "now.call999"));
+      await waitFor(() => expect(alert.querySelector("button.now-banner__seen")).not.toBeNull());
+      const actions = [...alert.querySelectorAll(".now-banner__open, .now-banner__call, .now-banner__seen")];
+      expect(actions.map((a) => a.className.split(" ")[0])).toEqual(["now-banner__open", "now-banner__call", "now-banner__seen"]);
+      // No Mio and no second sentence: the bar is one slim line.
+      expect(alert.querySelector(".mio-avatar")).toBeNull();
+      cleanup();
+    }
+  });
+
+  it("theBarOpensThePaperInsideThePreview", () => {
+    const { container } = bar(proto.body, PROTO_PATIENTS, "bn", true);
+    const doc = proto.body.documents[0]!;
+    expect(container.querySelector("a.now-banner__open")!.getAttribute("href")).toBe(`/app/preview/documents/${doc.document_id}`);
+  });
+
+  it("theBarIsAboutTheNewestUnseenNowPaper", () => {
+    // Two unseen NOW papers, the older first in Java's list: the bar names the newer one, and opens it.
+    const two = twoPatients.body as NowBannerJson;
+    const unseen = two.documents.filter((d) => !d.acked);
+    expect(unseen.length, "two-patients.json holds two unseen papers").toBeGreaterThanOrEqual(2);
+    const shuffled: NowBannerJson = {
+      ...two,
+      documents: [
+        { ...unseen[0]!, date: "2026-10-01" },
+        { ...unseen[1]!, date: "2026-10-09", document_type: "prescription" },
+      ],
+    };
+    const { container } = bar(shuffled, patientsOf(shuffled, [names.short, names.long]), "bn");
+    expect(container.querySelector(".now-banner__about")!.textContent).toBe(
+      `${typeText("bn", "prescription")} · ${viewerDay("bn", shuffled.documents[1]!)}`,
+    );
+    expect(container.querySelector("a.now-banner__open")!.getAttribute("href")).toBe(`/app/documents/${unseen[1]!.document_id}`);
+  });
+
+  it("theBarHasNo999WhenCall999IsFalse", () => {
+    expect(abroad.body.call_999, "abroad.json is the case without 999").toBe(false);
+    for (const lang of LANGS) {
+      const { container } = bar(abroad.body, patientsOf(abroad.body, [names.short]), lang);
+      const alert = alertOf(container);
+      expect(alert.querySelector('a[href^="tel:"]'), `${lang}: no call link abroad`).toBeNull();
+      expect(alert.textContent, `${lang}: no 999 word abroad`).not.toContain(t(lang, "now.call999"));
+      // The sentence is still there, verbatim: abroad changes the call, never the warning.
+      expect(alert.querySelector(".now-banner__line")!.textContent).toBe(t(lang, abroad.body.line_key as CopyKey));
+      cleanup();
+    }
+    // The other direction: the same bar in Bangladesh has the call.
+    const { container } = bar(one.body, patientsOf(one.body, [names.short]), "bn");
+    expect(one.body.call_999).toBe(true);
+    expect(container.querySelector('a[href="tel:999"]')).not.toBeNull();
+  });
+
+  it("theBarIsHiddenWhenShowIsFalse", () => {
+    const { container } = bar(acked.body, patientsOf(acked.body, [names.short]), "bn");
+    expect(container.innerHTML).toBe("");
   });
 });

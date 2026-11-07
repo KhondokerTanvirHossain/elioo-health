@@ -7,9 +7,10 @@ import { useEffect, useRef, useState } from "react";
  * only there, at the toolbar's far end, where the 256 px sidebar lying over the page never covers it). It names the
  * sidebar it controls (`aria-controls`), says whether it is shown (`aria-expanded`), and marks the sidebar
  * `data-open`, which is what the stylesheet reads. Escape closes it and puts the focus back on the button. `label` is
- * resolved by the server: no copy ships here.
+ * resolved by the server: no copy ships here. `className` names the stylesheet block that places it (AppShell's
+ * `app-shell__menu` by default; DesktopShell's `desktop-shell__menu`), and its icon is `<className>-icon`.
  */
-export function SidebarToggle({ label, controls }: { label: string; controls: string }) {
+export function SidebarToggle({ label, controls, className = "app-shell__menu" }: { label: string; controls: string; className?: string }) {
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
 
@@ -29,13 +30,13 @@ export function SidebarToggle({ label, controls }: { label: string; controls: st
     <button
       ref={button}
       type="button"
-      className="app-shell__menu"
+      className={className}
       aria-label={label}
       aria-controls={controls}
       aria-expanded={open}
       onClick={() => setOpen(!open)}
     >
-      <svg className="app-shell__menu-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <svg className={`${className}-icon`} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <path d="M4 7h16M4 12h16M4 17h16" />
       </svg>
     </button>

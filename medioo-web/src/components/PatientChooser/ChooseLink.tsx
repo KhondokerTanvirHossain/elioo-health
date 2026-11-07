@@ -7,18 +7,26 @@ import { choosePatient, samePageFor } from "@/components/PatientSwitcher/choose"
  * One name in the chooser (plan W4): a plain link to `?patient=<id>`, which opens that patient's papers without
  * JavaScript. With JavaScript the press first has Java remember the choice (PUT /app/api/active-patient), so the next
  * tab does not ask again, then goes. A refusal or a failed send is said under the name (`refused`, `failed`: resolved by
- * the server parent) and goes nowhere; a 401 goes to sign-in holding this page.
+ * the server parent) and goes nowhere; a 401 goes to sign-in holding this page. `className` and `data` let another
+ * list draw the same link as its own row (the desktop sidebar's family, plan desktop-parity Task 5); `current` marks
+ * the patient in view (`aria-current="page"`).
  */
 export function ChooseLink({
   patientId,
   refused,
   failed,
   children,
+  className = "patient-chooser__link",
+  statusClassName = "patient-chooser__status",
+  current = false,
 }: {
   patientId: string;
   refused: string;
   failed: string;
   children: ReactNode;
+  className?: string;
+  statusClassName?: string;
+  current?: boolean;
 }) {
   const [said, setSaid] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -38,11 +46,18 @@ export function ChooseLink({
 
   return (
     <>
-      <a className="patient-chooser__link" href={`?patient=${encodeURIComponent(patientId)}`} onClick={onClick} aria-busy={sending || undefined}>
+      <a
+        className={className}
+        href={`?patient=${encodeURIComponent(patientId)}`}
+        onClick={onClick}
+        aria-busy={sending || undefined}
+        aria-current={current ? "page" : undefined}
+        data-patient={patientId}
+      >
         {children}
       </a>
       {said !== null && (
-        <p className="patient-chooser__status" role="status">
+        <p className={statusClassName} role="status">
           {said}
         </p>
       )}

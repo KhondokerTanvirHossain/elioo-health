@@ -8,14 +8,23 @@ import "./PatientChooser.css";
  * The chooser (plan W4): what a signed-in page shows in place of its own content when this family sees two or more
  * patients and Java remembers no choice. It asks (`switch.title`, `switch.hint`: "Medioo will not guess") and lists every
  * patient this family may see, in GET /app/api/me's order, none marked: a screen never decides a patient. An urgent
- * patient carries its red mark (shape and word). Each name is a link to `?patient=<id>` (ChooseLink).
+ * patient carries its red mark (shape and word). Each name is a link to `?patient=<id>` (ChooseLink). `titleId` names its
+ * heading: the desktop layout renders a second chooser beside the phone shell's (shell.tsx), and an id is said once.
  */
-export function PatientChooser({ lang, patients }: { lang: Lang; patients: MePatient[] }) {
+export function PatientChooser({
+  lang,
+  patients,
+  titleId = "patient-chooser-title",
+}: {
+  lang: Lang;
+  patients: MePatient[];
+  titleId?: string;
+}) {
   const refused = t(lang, "app.err.notfound");
   const failed = t(lang, "app.err.generic");
   return (
-    <section className="patient-chooser" aria-labelledby="patient-chooser-title">
-      <h1 className="patient-chooser__title" id="patient-chooser-title">
+    <section className="patient-chooser" aria-labelledby={titleId}>
+      <h1 className="patient-chooser__title" id={titleId}>
         {t(lang, "switch.title")}
       </h1>
       <p className="patient-chooser__hint">{t(lang, "switch.hint")}</p>

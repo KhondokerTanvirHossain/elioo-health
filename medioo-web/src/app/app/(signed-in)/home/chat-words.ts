@@ -30,6 +30,7 @@ export function composerWords(lang: Lang, possessive: string): ComposerWords {
     call999: call999Words(lang),
     crop: { retry: t(lang, "crop.retry"), alt: t(lang, "health.crop.alt") },
     camera: t(lang, "chat.camera"),
+    attach: t(lang, "desk.attach"),
   };
 }
 

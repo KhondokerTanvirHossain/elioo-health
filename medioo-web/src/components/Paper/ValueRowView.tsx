@@ -25,6 +25,11 @@ export type ValueRowsShared = {
   retry: string;
   /** The chip's word for every kind (CHIP_KEY, resolved on the server). */
   chipWords: Record<ChipKind, string>;
+  /**
+   * Before each row's anchor id (`v-{id}`): the desktop's details panel draws the paper's rows in the same document as
+   * today's paper page (below 900 px), and an id is said once (plan desktop-parity Task 8). None on every other page.
+   */
+  idPrefix?: string;
 };
 
 /**
@@ -48,7 +53,7 @@ function ValueRowView({ row, shared }: { row: ValueRowFields; shared: ValueRowsS
     </>
   );
   return (
-    <div className={`value-row value-row--${row.display_kind}`} data-value-row id={row.id === null ? undefined : `v-${row.id}`}>
+    <div className={`value-row value-row--${row.display_kind}`} data-value-row id={row.id === null ? undefined : `${shared.idPrefix ?? ""}v-${row.id}`}>
       {row.id === null ? (
         <p className="value-row__head">{reading}</p>
       ) : (

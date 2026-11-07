@@ -1,7 +1,10 @@
-import { useId } from "react";
-import type { MePatient, NowBannerJson } from "@/api/types";
+import { useId, type ReactNode } from "react";
+import type { MePatient, NowBannerDocumentJson, NowBannerJson } from "@/api/types";
 import { t, type CopyKey, type Lang } from "@/copy";
 import { MioAvatar } from "@/components/MioAvatar/MioAvatar";
+import { typeText } from "@/components/Paper/paper-text";
+import { viewerDay } from "@/components/PaperViewer/viewer-day";
+import { href } from "@/routing/paths";
 import { NowBannerSeen } from "./NowBannerSeen";
 import "./NowBanner.css";
 
@@ -25,6 +28,22 @@ function lineKey(lang: Lang, key: string): CopyKey {
 export type NowBannerPatient = Pick<MePatient, "id" | "name">;
 
 /**
+ * The paper the desktop bar is about: the newest by its date of the papers not yet seen (all of them when every one is
+ * seen and Java still shows the banner), the first in Java's order on a tie. ISO days compare as strings.
+ */
+function newest(documents: NowBannerDocumentJson[]): NowBannerDocumentJson | undefined {
+  return documents.reduce<NowBannerDocumentJson | undefined>((best, d) => (best === undefined || d.date > best.date ? d : best), undefined);
+}
+
+/** The octagon: NOW's shape, so the bar and the block are never colour alone. */
+const OCTAGON = (
+  <svg className="now-banner__shape" viewBox="0 0 24 24" aria-hidden="true" focusable="false" data-shape="octagon">
+    <path d="M8.2 3h7.6L21 8.2v7.6L15.8 21H8.2L3 15.8V8.2z" />
+    <path d="M12 7.5v5.5M12 16.2v.01" />
+  </svg>
+);
+
+/**
  * The global NOW banner (plan W2d-b), over GET /app/api/now-banner as Java sent it. Nothing when `show` is false.
  * Otherwise an alert: the octagon, the names of the patients whose NOW papers this viewer has not yet seen in the
  * title (Part B decision 3: the name is the title's, never inside the safety sentence), the sentence `line_key` names,
@@ -38,17 +57,29 @@ export type NowBannerPatient = Pick<MePatient, "id" | "name">;
  * set by a signed-in page (shell.tsx), which renders this inside NowBannerHold; the hold receives Java's answer to the
  * acknowledgement and renders it (a 2xx is not "hidden": a stale tap answers `show: true`). Without `live` the button
  * is inert and sends nothing (the catalog).
+ *
+ * `variant` "bar" is the desktop's one slim bar across the content columns (plan desktop-parity Task 8; ruling P19;
+ * desktop.html `.ban.now`): the octagon, the patients' names first (the bar's title), then the same sentence, verbatim
+ * (DR-45 unchanged), then the type and day of the newest NOW paper not yet seen, then `attn.open` to that paper (inside
+ * the preview on a preview page), 999 only on `call_999`, and the same seen button. No Mio: the bar is one line. The
+ * block (the default) is unchanged. The bar's own stylesheet (NowBanner.desk.css) comes with the slot that holds it,
+ * DesktopShell's bar, through this folder's loader (desk-load.tsx): this module is on every signed-in page (the block),
+ * so it imports no loader itself, and a page that renders only the block never links the bar's (DR-42).
  */
 export function NowBanner({
   banner,
   patients,
   lang,
   live,
+  variant = "block",
+  preview = false,
 }: {
   banner: NowBannerJson;
   patients: NowBannerPatient[];
   lang: Lang;
   live?: boolean;
+  variant?: "block" | "bar";
+  preview?: boolean;
 }) {
   const titleId = useId();
   if (!banner.show) return null;
@@ -61,44 +92,69 @@ export function NowBanner({
     if (p && !named.includes(p)) named.push(p);
   }
   const first = unseen[0] ?? banner.documents[0];
+  const bar = variant === "bar";
+  const about = bar ? newest(unseen.length > 0 ? unseen : banner.documents) : first;
 
+  const names: ReactNode =
+    named.length === 0
+      ? t(lang, "attn.strip")
+      : named.map((p) => (
+          <span key={p.id} className="now-banner__name">
+            {p.name}
+          </span>
+        ));
+  const line = t(lang, lineKey(lang, banner.line_key));
+  const opens = (d: NowBannerDocumentJson) => {
+    const path = `/app/documents/${encodeURIComponent(d.document_id)}`;
+    return bar ? href(path, preview) : path;
+  };
+  const actions = (
+    <div className="now-banner__actions">
+      {about && (
+        <a className="now-banner__open" href={opens(about)}>
+          {t(lang, "attn.open")}
+        </a>
+      )}
+      {banner.call_999 && (
+        <a className="now-banner__call" href="tel:999">
+          {t(lang, "now.call999")}
+        </a>
+      )}
+      <NowBannerSeen seen={banner.seen} label={t(lang, "now.banner.seen")} failedLabel={t(lang, "app.err.generic")} live={live === true} />
+    </div>
+  );
+
+  if (bar) {
+    return (
+      <section className="now-banner now-banner--bar" role="alert" aria-labelledby={titleId}>
+        {OCTAGON}
+        <p className="now-banner__text">
+          <b className="now-banner__title" id={titleId}>
+            {names}
+          </b>{" "}
+          <span className="now-banner__line">{line}</span>
+          {about && (
+            <>
+              {" "}
+              <small className="now-banner__about">{`${typeText(lang, about.document_type)} · ${viewerDay(lang, about)}`}</small>
+            </>
+          )}
+        </p>
+        {actions}
+      </section>
+    );
+  }
   return (
     <section className="now-banner" role="alert" aria-labelledby={titleId}>
       <div className="now-banner__head">
-        <svg className="now-banner__shape" viewBox="0 0 24 24" aria-hidden="true" focusable="false" data-shape="octagon">
-          <path d="M8.2 3h7.6L21 8.2v7.6L15.8 21H8.2L3 15.8V8.2z" />
-          <path d="M12 7.5v5.5M12 16.2v.01" />
-        </svg>
+        {OCTAGON}
         <h2 className="now-banner__title" id={titleId}>
-          {named.length === 0
-            ? t(lang, "attn.strip")
-            : named.map((p) => (
-                <span key={p.id} className="now-banner__name">
-                  {p.name}
-                </span>
-              ))}
+          {names}
         </h2>
         <MioAvatar size={32} still />
       </div>
-      <p className="now-banner__line">{t(lang, lineKey(lang, banner.line_key))}</p>
-      <div className="now-banner__actions">
-        {first && (
-          <a className="now-banner__open" href={`/app/documents/${encodeURIComponent(first.document_id)}`}>
-            {t(lang, "attn.open")}
-          </a>
-        )}
-        {banner.call_999 && (
-          <a className="now-banner__call" href="tel:999">
-            {t(lang, "now.call999")}
-          </a>
-        )}
-        <NowBannerSeen
-          seen={banner.seen}
-          label={t(lang, "now.banner.seen")}
-          failedLabel={t(lang, "app.err.generic")}
-          live={live === true}
-        />
-      </div>
+      <p className="now-banner__line">{line}</p>
+      {actions}
     </section>
   );
 }

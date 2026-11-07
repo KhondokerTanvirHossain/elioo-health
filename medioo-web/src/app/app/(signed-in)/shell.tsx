@@ -10,6 +10,7 @@ import { PatientChooser } from "@/components/PatientChooser/PatientChooser";
 import { NowBanner } from "@/components/safety/NowBanner/NowBanner";
 import { NowBannerHold } from "@/components/safety/NowBanner/NowBannerHold";
 import type { Tab } from "@/components/TabBar/TabBar";
+import { desktopLayout } from "@/routing/desktop";
 import { activePatient } from "./active-patient";
 import { shellWords } from "./shell-words";
 
@@ -24,6 +25,26 @@ export type ShellContext = { lang: Lang; preview: boolean; me: MeJson; patient: 
 export type Slot = ReactNode | ((ctx: ShellContext) => ReactNode | Promise<ReactNode>);
 
 const fill = async (slot: Slot | undefined, ctx: ShellContext) => (typeof slot === "function" ? await slot(ctx) : slot);
+
+/**
+ * What the desktop layout's frame is given (desktop-frame.tsx): the request, whose papers are shown, the page's tab, the
+ * NOW bar (undefined when no banner shows) and the page's three desktop columns, already rendered.
+ */
+export type DesktopFrameInput = {
+  lang: Lang;
+  preview: boolean;
+  here: string;
+  me: MeJson;
+  patient: MePatient | null;
+  tab: Tab | null;
+  bar: ReactNode | undefined;
+  paper: ReactNode;
+  talk: ReactNode;
+  panel: ReactNode | undefined;
+};
+
+/** The desktop layout's frame: DesktopShell and its sidebar around the columns (desktop-frame.tsx's desktopFrame). */
+export type DesktopFrame = (input: DesktopFrameInput) => Promise<ReactNode>;
 
 /** The page's own `?patient=`, read from the address the browser asked for (requestContext().here). */
 function askedPatient(here: string): string | null {
@@ -56,6 +77,15 @@ function askedPatient(here: string): string | null {
  * - `asked` (plan W10, the profile page): a patient the page's own address names (`/app/patients/{id}/profile`),
  *   resolved through activePatient in place of `?patient=`, as Java's ProfilePages chooses the patient its link names:
  *   the toolbar names that patient, and one this family does not see is the not-found page.
+ * - `desktop` (plan desktop-parity Task 5): the page's two desktop columns, the paper and the conversation. When
+ *   desktopLayout(ctx) says so (a preview request, until the flip) the page renders DesktopShell with DesktopSidebar
+ *   from 900 px, and today's AppShell, marked `phone`, below it, so nothing below 900 px changes. Every other request,
+ *   and every page that gives no `desktop`, renders today's AppShell alone, exactly as before. With the chooser in
+ *   place of `main`, the paper column holds the chooser and the conversation is empty: the sidebar names nobody.
+ *   `desktop.panel` (Task 8) is a paper's details over the conversation, when the page has one open (undefined: none).
+ *   `desktop.frame` is desktop-frame.tsx's desktopFrame, which renders DesktopShell and DesktopSidebar: the page passes
+ *   it, so only a page that can render the desktop layout imports them (DR-42), and this module names it as a type.
+ *   The NOW banner is the slim bar there (NowBanner variant "bar", across the content columns), the block below 900 px.
  * `everyone` and `asked` are amendments of the plan's Global Constraint "a screen never decides a patient", approved by
  * the PO 2026-10-23 (P2). `patient` (W6) is a third, put to the PO for sight (the plan's Global Constraints): like
  * `asked` it resolves through activePatient, so a paper about a patient this family's `me` does not list is not found.
@@ -68,6 +98,7 @@ export async function signedInPage({
   everyone,
   asked,
   patient: about,
+  desktop,
 }: {
   tab: Tab | null;
   main: Slot;
@@ -76,6 +107,7 @@ export async function signedInPage({
   everyone?: boolean;
   asked?: string;
   patient?: string | null;
+  desktop?: { frame: DesktopFrame; paper: Slot; talk: Slot; panel?: Slot };
 }) {
   const { lang, preview, here } = await requestContext();
   const [meAnswer, bannerAnswer] = await Promise.all([javaGet<MeJson>("/app/api/me"), javaGet<NowBannerJson>("/app/api/now-banner")]);
@@ -89,7 +121,14 @@ export async function signedInPage({
   const ctx: ShellContext = { lang, preview, me, patient, nowShown: banner.show };
   const chooser = view.kind === "choose" && !asksItself && everyone !== true;
   const content = chooser ? <PatientChooser lang={lang} patients={me.patients} /> : await fill(main, ctx);
-  return (
+  const nowBanner = (variant: "block" | "bar") =>
+    banner.show ? (
+      <NowBannerHold key={JSON.stringify(banner.seen)}>
+        <NowBanner banner={banner} patients={me.patients} lang={lang} live variant={variant} preview={preview} />
+      </NowBannerHold>
+    ) : undefined;
+  const onDesktop = desktop !== undefined && desktopLayout(ctx);
+  const phone = (
     <AppShell
       lang={lang}
       preview={preview}
@@ -99,13 +138,28 @@ export async function signedInPage({
       tab={tab}
       main={content}
       aside={aside === undefined || chooser ? undefined : await fill(aside, ctx)}
-      banner={
-        banner.show ? (
-          <NowBannerHold key={JSON.stringify(banner.seen)}>
-            <NowBanner banner={banner} patients={me.patients} lang={lang} live />
-          </NowBannerHold>
-        ) : undefined
-      }
+      banner={nowBanner("block")}
+      phone={onDesktop}
     />
+  );
+  if (!onDesktop) return phone;
+
+  const frame = await desktop.frame({
+    lang,
+    preview,
+    here,
+    me,
+    patient,
+    tab,
+    bar: nowBanner("bar"),
+    paper: chooser ? <PatientChooser lang={lang} patients={me.patients} titleId="desktop-patient-chooser-title" /> : await fill(desktop.paper, ctx),
+    talk: chooser ? null : await fill(desktop.talk, ctx),
+    panel: chooser || desktop.panel === undefined ? undefined : ((await fill(desktop.panel, ctx)) ?? undefined),
+  });
+  return (
+    <>
+      {phone}
+      {frame}
+    </>
   );
 }

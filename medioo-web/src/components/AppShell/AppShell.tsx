@@ -41,6 +41,8 @@ export type ShellWords = {
  * - from 1200 px: three columns, sidebar 256 · main · aside 400 (the tokens --sidebar-w, --conversation-w).
  * `active` is the patient whose papers are shown (active-patient.ts decided it, never this file): with none, the
  * toolbar names nobody and the page's main is the chooser. `words` are shell-words.ts's. Every link stays inside the preview on a preview page.
+ * `phone` (plan desktop-parity Task 5): the page also renders DesktopShell, which takes over from 900 px, so this shell
+ * is shown only below 900 px (`app-shell--phone`); without it, this shell is the page at every width, as before.
  */
 export function AppShell({
   lang,
@@ -52,6 +54,7 @@ export function AppShell({
   main,
   aside,
   banner,
+  phone = false,
 }: {
   lang: Lang;
   preview: boolean;
@@ -62,8 +65,9 @@ export function AppShell({
   main: ReactNode;
   aside?: ReactNode;
   banner?: ReactNode;
+  phone?: boolean;
 }) {
-  const classes = ["app-shell", aside !== undefined ? "app-shell--aside" : null].filter(Boolean).join(" ");
+  const classes = ["app-shell", aside !== undefined ? "app-shell--aside" : null, phone ? "app-shell--phone" : null].filter(Boolean).join(" ");
   return (
     <div className={classes}>
       {banner !== undefined && <div className="app-shell__banner">{banner}</div>}

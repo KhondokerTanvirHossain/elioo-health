@@ -25,6 +25,13 @@ import fiftyEightValues from "../../fixtures/api/documents/fifty-eight-values-mu
 import nowAbroad from "../../fixtures/api/documents/now-abroad.json";
 import nowBd from "../../fixtures/api/documents/now-bd.json";
 import processing from "../../fixtures/api/documents/processing.json";
+import protoBlur from "../../fixtures/api/documents/proto-blur.json";
+import protoCbc from "../../fixtures/api/documents/proto-cbc.json";
+import protoCreat from "../../fixtures/api/documents/proto-creat.json";
+import protoLipid from "../../fixtures/api/documents/proto-lipid.json";
+import protoPotas from "../../fixtures/api/documents/proto-potas.json";
+import protoRx from "../../fixtures/api/documents/proto-rx.json";
+import protoSugar from "../../fixtures/api/documents/proto-sugar.json";
 import retakeThird from "../../fixtures/api/documents/retake-third.json";
 import routineReleased from "../../fixtures/api/documents/routine-released.json";
 import thisWeekPending from "../../fixtures/api/documents/this-week-pending.json";
@@ -62,6 +69,14 @@ export const PAPER_FIXTURES: Record<string, Json<PaperJson>> = {
   "now-abroad": nowAbroad.body,
   "now-bd": nowBd.body,
   processing: processing.body,
+  // the prototype's family (ProtoFamilyContractTest): desktop.html's papers, as Java serves them
+  "proto-blur": protoBlur.body,
+  "proto-cbc": protoCbc.body,
+  "proto-creat": protoCreat.body,
+  "proto-lipid": protoLipid.body,
+  "proto-potas": protoPotas.body,
+  "proto-rx": protoRx.body,
+  "proto-sugar": protoSugar.body,
   "retake-third": retakeThird.body,
   "routine-released": routineReleased.body,
   "this-week-pending": thisWeekPending.body,

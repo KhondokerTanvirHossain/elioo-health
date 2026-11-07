@@ -1,0 +1,242 @@
+import { act, cleanup, render } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import type { JavaAnswer } from "@/api/java";
+import type { MeJson, PaperReadingJson, PaperResultJson } from "@/api/types";
+import { waitBefore } from "@/api/reading-check";
+import { t, type CopyKey } from "@/copy";
+import { href } from "@/routing/paths";
+import { NOW_ALLOWED } from "@/styles/now-usage";
+import attention from "../../../../../../fixtures/api/attention/proto-abbu.json";
+import processing from "../../../../../../fixtures/api/documents/processing.json";
+import potas from "../../../../../../fixtures/api/documents/proto-potas.json";
+import noFollowUps from "../../../../../../fixtures/api/follow-ups/none.json";
+import previewOn from "../../../../../../fixtures/api/me/preview-on.json";
+import acked from "../../../../../../fixtures/api/now-banner/acked.json";
+import followUps from "../../../../../../fixtures/api/follow-ups/proto-abbu.json";
+import proto from "../../../../../../fixtures/api/me/proto.json";
+import nowBanner from "../../../../../../fixtures/api/now-banner/proto.json";
+import thread from "../../../../../../fixtures/api/thread/proto-abbu.json";
+
+/*
+ * `/app/documents/{id}` on the desktop layout (plan desktop-parity Task 8; Review Focus 1): a paper opened from a
+ * WhatsApp link lands on the talk-and-papers screen with that paper in the viewer, its card outlined in the
+ * conversation and its details panel already open, under the NOW bar. Never just the image. Below 900 px, and for
+ * every live request until the flip, today's paper page, unchanged. Over the prototype family as Java wrote it: Abbu's
+ * potassium paper is NOW, with call_999 (fixtures/api/documents/proto-potas.json).
+ */
+
+const ME = proto.body as MeJson;
+const POTAS = potas.body as PaperResultJson;
+const ABBU = ME.patients.find((p) => p.id === POTAS.patient.id)!;
+const READING = processing.body as PaperReadingJson;
+const MA = (previewOn.body as MeJson).patients.find((p) => p.id === READING.patient.id)!;
+const ctx = { lang: "bn" as const, preview: true, here: `/app/preview/documents/${POTAS.id}` };
+let reads: string[] = [];
+let marker: string | undefined;
+let me: MeJson = ME;
+let bannerSeen = false;
+
+vi.mock("@/api/request", () => ({ requestContext: async () => ctx }));
+vi.mock("next/headers", () => ({
+  cookies: async () => ({ get: (name: string) => (name === "baymax_banner_only" && marker !== undefined ? { value: marker } : undefined) }),
+}));
+const { refresh, apiGet } = vi.hoisted(() => ({
+  refresh: vi.fn(),
+  apiGet: vi.fn<(path: string) => Promise<{ kind: string; status: number; body: unknown }>>(async () => ({
+    kind: "ok",
+    status: 200,
+    body: { status: "DONE" },
+  })),
+}));
+vi.mock("next/navigation", async (actual) => ({
+  ...(await actual<typeof import("next/navigation")>()),
+  useRouter: () => ({ refresh, push: () => undefined }),
+}));
+vi.mock("@/api/browser", () => ({ apiGet, apiSend: vi.fn() }));
+vi.mock("@/api/java", async (actual) => ({
+  ...(await actual<typeof import("@/api/java")>()),
+  javaGet: async (path: string): Promise<JavaAnswer<unknown>> => {
+    reads.push(path);
+    if (path === "/app/api/me") return { status: 200, body: me };
+    if (path === "/app/api/now-banner") return { status: 200, body: me === ME && !bannerSeen ? nowBanner.body : acked.body };
+    if (path === `/app/api/documents/${READING.id}`) return { status: 200, body: READING };
+    if (path.startsWith(`/app/api/patients/${MA.id}/thread`)) return { status: 200, body: { items: [] } };
+    if (path === `/app/api/patients/${MA.id}/attention`) return { status: 200, body: { items: [] } };
+    if (path === `/app/api/patients/${MA.id}/follow-ups`) return { status: 200, body: noFollowUps.body };
+    if (path === `/app/api/documents/${POTAS.id}`) return { status: 200, body: POTAS };
+    if (path.startsWith(`/app/api/patients/${ABBU.id}/thread`)) return { status: 200, body: thread.body };
+    if (path === `/app/api/patients/${ABBU.id}/follow-ups`) return { status: 200, body: followUps.body };
+    if (path === `/app/api/patients/${ABBU.id}/attention`) return { status: 200, body: attention.body };
+    throw new Error(`unexpected read ${path}`);
+  },
+}));
+
+const { default: PaperPage } = await import("./page");
+
+beforeEach(() => {
+  reads = [];
+  marker = undefined;
+  me = ME;
+  bannerSeen = false;
+  refresh.mockClear();
+  apiGet.mockClear();
+  ctx.preview = true;
+  ctx.here = `/app/preview/documents/${POTAS.id}`;
+  vi.stubGlobal("location", { pathname: ctx.here, search: "", assign: vi.fn(), reload: vi.fn() });
+  // jsdom has no scrollIntoView, which the conversation uses to open on the selected paper.
+  if (!Element.prototype.scrollIntoView) {
+    Element.prototype.scrollIntoView = vi.fn();
+    onTestFinished(() => {
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    });
+  }
+});
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+const open = async (id = POTAS.id) =>
+  render(await PaperPage({ params: Promise.resolve({ id }), searchParams: Promise.resolve({}) })).container;
+
+/** The NOW banner's bar modifier (NowBanner variant "bar"), read off the class list the safety stylesheet allows. */
+const BAR = ["now", "banner--bar"].join("-");
+
+const count = (text: string, part: string) => text.split(part).length - 1;
+
+/** The elements whose whole text is `sentence`, innermost: a warning line, not a message that quotes it among others. */
+const warningLines = (root: ParentNode, sentence: string) =>
+  [...root.querySelectorAll<HTMLElement>("*")].filter(
+    (e) => e.textContent?.trim() === sentence && ![...e.children].some((c) => c.textContent?.trim() === sentence),
+  );
+
+describe("/app/documents/{id} on the desktop layout", () => {
+  it("aNowPaperFromALinkOpensWithItsPanelAndItsWarning", async () => {
+    const container = await open();
+    const desk = container.querySelector<HTMLElement>(".desktop-shell");
+    expect(desk, "the desktop screen, not today's paper page alone").not.toBeNull();
+    const sentence = t("bn", POTAS.banner!.line_key as CopyKey);
+    expect(attention.body.items.map((i) => i.document_id), "the stack holds this paper").toContain(POTAS.id);
+
+    // The bar: the patient's name first, then Java's sentence verbatim.
+    const bar = desk!.querySelector<HTMLElement>(".desktop-shell__bar [role=alert]");
+    expect(bar, "the NOW bar").not.toBeNull();
+    expect(bar!.classList.contains(BAR), "the bar, not the block").toBe(true);
+    const said = bar!.textContent ?? "";
+    expect(said.indexOf(ABBU.name), "the name is in the bar").toBeGreaterThanOrEqual(0);
+    expect(said.indexOf(ABBU.name), "the name before the sentence").toBeLessThan(said.indexOf(sentence));
+
+    // The viewer shows this paper; the conversation outlines its red card, with 999.
+    expect(desk!.querySelector(".desktop-shell__paper [data-paper]")!.getAttribute("data-paper")).toBe(POTAS.id);
+    const item = desk!.querySelector<HTMLElement>(`.desktop-shell__talk [data-talk-item="paper"][data-paper="${POTAS.id}"]`);
+    expect(item, "the paper's card in the conversation").not.toBeNull();
+    const card = item!.querySelector<HTMLElement>(".verdict-card");
+    expect(card, "the paper's card").not.toBeNull();
+    expect([...card!.classList].some((c) => NOW_ALLOWED.test(`.${c}`)), "the red card").toBe(true);
+    expect(card!.classList.contains("verdict-card--selected"), "outlined: it is the paper in view").toBe(true);
+    expect(card!.querySelector(".verdict-card__band")!.textContent).toBe(sentence);
+    expect(card!.querySelector('a[href="tel:999"]'), "999 on the card").not.toBeNull();
+
+    // The panel is already open, with the paper's NOW block, and its close link keeps the paper in view.
+    const panel = desk!.querySelector<HTMLElement>(".desktop-shell__panel");
+    expect(panel, "the details panel, open").not.toBeNull();
+    expect(panel!.querySelector("[data-now-block]"), "the panel's NOW block").not.toBeNull();
+    expect(panel!.querySelector("a.paper-panel__close")!.getAttribute("href")).toBe(
+      href(`/app/home?patient=${ABBU.id}&paper=${POTAS.id}`, true),
+    );
+
+    // The warning on the screen: the bar, the panel's band, and the card's band under the panel. The panel is opaque and
+    // lies over the conversation (DesktopShell.css .desktop-shell__panel), so what can be seen is the bar and the panel;
+    // the card's band is there for when the panel is closed. The panel keeps the band on a NOW paper too (P19: no safety
+    // block dropped): the bar can be gone, already seen, or dismissed while the panel is open. Counted as warning lines,
+    // each an element saying the sentence and nothing else: Medioo's released message quotes it among its own lines, on
+    // the card and in the panel as on today's page, and that message is the gate's block, never dropped.
+    const lines = warningLines(desk!, sentence);
+    expect(lines.length, "warning lines on the desktop screen: bar, panel, covered card").toBe(3);
+    expect(lines.filter((l) => bar!.contains(l)).length, "one is the bar's").toBe(1);
+    expect(lines.filter((l) => panel!.contains(l)).length, "one is the panel's").toBe(1);
+    expect(lines.filter((l) => card!.contains(l)).length, "one is the card's, under the panel").toBe(1);
+    const talk = desk!.querySelector<HTMLElement>(".desktop-shell__talk")!;
+    const seen = lines.filter((l) => !(talk.contains(l) && !panel!.contains(l)));
+    expect(seen.length, "warning lines not covered by the panel: the bar and the panel").toBe(2);
+    expect(count(desk!.textContent ?? "", sentence), "and the released message is shown where today's page shows it").toBe(
+      3 + count(POTAS.wording ?? "", sentence) * 2,
+    );
+    expect(desk!.querySelector(".attention-stack, [data-attention]"), "no attention card on the desktop").toBeNull();
+
+    // Below 900 px: today's paper page, whole, in the phone shell.
+    expect(container.querySelector(".app-shell--phone article.paper [data-now-block]"), "today's page below 900 px").not.toBeNull();
+    const ids = [...container.querySelectorAll("[id]")].map((e) => e.id);
+    expect(ids.length).toBeGreaterThan(5);
+    expect(ids.filter((id, i) => ids.indexOf(id) !== i), "ids said twice").toEqual([]);
+    // One read of the paper: the thread's card is not a second DOCUMENT_VIEW.
+    expect(reads.filter((r) => r.startsWith("/app/api/documents/")).length).toBe(1);
+  });
+
+  it("aNowPaperWhoseBarIsAlreadySeenKeepsItsWarningInThePanel", async () => {
+    // The family tapped "seen" on the bar before: Java answers show:false, no bar is drawn, and the panel covers the card. The
+    // panel is then the one place on the screen Java's sentence can be seen, so it carries the band, with its shape.
+    bannerSeen = true;
+    const container = await open();
+    const desk = container.querySelector<HTMLElement>(".desktop-shell")!;
+    expect(desk.querySelector(".desktop-shell__bar [role=alert]"), "no bar: the banner is seen").toBeNull();
+    const panel = desk.querySelector<HTMLElement>(".desktop-shell__panel");
+    expect(panel, "the details panel, open").not.toBeNull();
+    const sentence = t("bn", POTAS.banner!.line_key as CopyKey);
+    const inPanel = warningLines(panel!, sentence);
+    expect(inPanel.length, "Java's NOW sentence in the panel").toBe(1);
+    const band = panel!.querySelector<HTMLElement>("[data-safety=band]");
+    expect(band, "the panel's band").not.toBeNull();
+    expect(band!.contains(inPanel[0]!) || band === inPanel[0], "the sentence is the band's").toBe(true);
+    expect(band!.querySelector("svg"), "its shape, not colour alone").not.toBeNull();
+  });
+
+  it("aPaperBeingReadIsCheckedOnceAndRefreshedOnce", async () => {
+    // The desktop screen holds two views of a paper being read, the phone shell's page and the viewer, each with the
+    // reading check. One paper is one check: one GET /status a tick, and one refresh when it is read, so the settle's
+    // re-render is one read of the paper (one open, one view), not one per mounted view.
+    me = previewOn.body as MeJson;
+    ctx.here = `/app/preview/documents/${READING.id}`;
+    vi.useFakeTimers();
+    // jsdom has no scrollIntoView, which the conversation uses to open on the selected paper.
+    const before = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = vi.fn();
+    onTestFinished(() => {
+      vi.useRealTimers();
+      Element.prototype.scrollIntoView = before;
+    });
+    const container = await open(READING.id);
+    expect(container.querySelector(".desktop-shell .paper-viewer"), "the viewer, on the desktop screen").not.toBeNull();
+    expect(container.querySelector(".app-shell--phone article.paper"), "today's page below 900 px").not.toBeNull();
+    const statuses = () => apiGet.mock.calls.filter(([path]) => path === `/app/api/documents/${READING.id}/status`).length;
+    await act(() => vi.advanceTimersByTimeAsync(waitBefore(0)));
+    expect(statuses(), "GET /status once at the first tick, not once per view").toBe(1);
+    expect(refresh, "the paper is read: one refresh").toHaveBeenCalledTimes(1);
+    await act(() => vi.advanceTimersByTimeAsync(10 * 60_000));
+    expect(statuses(), "and no check after").toBe(1);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("aLiveLinkIsTodaysPaperPage", async () => {
+    ctx.preview = false;
+    ctx.here = `/app/documents/${POTAS.id}`;
+    const container = await open();
+    expect(container.querySelector(".desktop-shell"), "no desktop for a live request").toBeNull();
+    expect(container.querySelector(".app-shell--phone"), "today's shell at every width").toBeNull();
+    expect(container.querySelector("article.paper [data-now-block]")).not.toBeNull();
+    expect(reads.some((r) => r.includes("/thread")), "no read only the desktop needs").toBe(false);
+  });
+
+  it("aBannerOnlyRefreshKeepsTheDesktopAndReadsNoPaper", async () => {
+    // A stale "seen" tap re-reads the page banner-only (banner-only.ts): no paper read, no thread read, and the desktop
+    // screen stays, holding what it showed, under the banner as Java now says it.
+    marker = encodeURIComponent(JSON.stringify({ path: ctx.here, patient: ABBU.id }));
+    const container = await open();
+    expect(reads.some((r) => r.startsWith("/app/api/documents/")), "no paper read").toBe(false);
+    expect(reads.some((r) => r.includes("/thread")), "no thread read").toBe(false);
+    const desk = container.querySelector(".desktop-shell");
+    expect(desk, "the desktop screen stays").not.toBeNull();
+    expect(desk!.querySelector(".desktop-shell__bar [role=alert]")?.classList.contains(BAR), "the bar, re-read").toBe(true);
+    expect(desk!.querySelector(".desktop-shell__panel"), "the panel's place is kept").not.toBeNull();
+  });
+});

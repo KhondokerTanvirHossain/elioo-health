@@ -1,0 +1,10 @@
+{
+  "_meta": {
+    "generated_by": "baymax ProtoFamilyContractTest",
+    "source": "GET /app/api/patients/{id}/follow-ups over the prototype family (desktop.html), case proto-abbu"
+  },
+  "body": {
+    "items": [ ]
+  },
+  "status": 200
+}

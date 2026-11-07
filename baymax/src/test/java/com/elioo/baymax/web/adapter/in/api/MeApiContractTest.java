@@ -118,14 +118,29 @@ class MeApiContractTest {
         }
     }
 
-    /** One case: who is signed in (null: nobody), whom they see, which of them has a NOW paper, and the allowlist. */
-    record Case(List<PatientSummary> patients, List<UUID> urgent, boolean preview, boolean session) {
+    /**
+     * One case: who is signed in (null: nobody), whom they see, the levels each one's attention stack holds (a patient
+     * not named holds none), and the allowlist.
+     */
+    record Case(List<PatientSummary> patients, Map<UUID, List<Urgency>> levels, boolean preview, boolean session) {
         static Case of(boolean preview, PatientSummary... patients) {
-            return new Case(List.of(patients), List.of(), preview, true);
+            return new Case(List.of(patients), Map.of(), preview, true);
         }
 
+        /** Each of these patients' stacks holds one NOW paper. */
         Case urgent(UUID... ids) {
-            return new Case(patients, List.of(ids), preview, session);
+            Case c = this;
+            for (UUID id : ids) {
+                c = c.levels(id, Urgency.NOW);
+            }
+            return c;
+        }
+
+        /** This patient's stack holds one urgent card per level, in the order given. */
+        Case levels(UUID id, Urgency... levels) {
+            Map<UUID, List<Urgency>> all = new LinkedHashMap<>(this.levels);
+            all.put(id, List.of(levels));
+            return new Case(patients, all, preview, session);
         }
     }
 
@@ -166,7 +181,7 @@ class MeApiContractTest {
         // plan W8 review: a patient whose chronic flags were answered, so the papers page's BMX-8 ask is judged both ways
         cases.put("flags-set", Case.of(true, new PatientSummary(new PatientProfile(PaperFixtures.MA_ID, FAMILY, "Ma", 64,
                 PatientProfile.Sex.FEMALE, List.of("diabetes"), NOW, NOW), true, 1, NOW)));
-        cases.put("unauthenticated", new Case(List.of(), List.of(), false, false));
+        cases.put("unauthenticated", new Case(List.of(), Map.of(), false, false));
         return cases;
     }
 
@@ -177,10 +192,9 @@ class MeApiContractTest {
     private EntityExchangeResult<byte[]> serve(Case c) {
         when(timeline.me(FAMILY)).thenReturn(Mono.just(new FamilyOverview(
                 new FamilyAccount(FAMILY, NUMBER, "Tanvir", FamilyAccount.Plan.FAMILY, NOW, NOW), c.patients())));
-        for (UUID id : c.urgent()) {
-            when(attention.urgent(FAMILY, id)).thenReturn(Mono.just(List.of(new AttentionItem.Urgent(PaperFixtures.DOC, Urgency.NOW,
-                    "lab_report", LocalDate.parse("2026-10-19"), false, NOW, false))));
-        }
+        c.levels().forEach((id, levels) -> when(attention.urgent(FAMILY, id)).thenReturn(Mono.just(levels.stream()
+                .map(level -> new AttentionItem.Urgent(PaperFixtures.DOC, level, "lab_report", LocalDate.parse("2026-10-19"), false, NOW, false))
+                .toList())));
         properties.getWeb().setPreviewFamilyIds(c.preview() ? new ArrayList<>(List.of(FAMILY.toString())) : new ArrayList<>());
         WebTestClient.RequestHeadersSpec<?> spec = client().get().uri("/app/api/me");
         if (c.session()) {
@@ -210,12 +224,15 @@ class MeApiContractTest {
     void everyCommittedFixtureIsACurrentCase() throws IOException {
         List<String> committed;
         try (Stream<Path> files = Files.list(COMMITTED)) {
-            // me/family-*.json are FamilyApiContractTest's (each family scenario's me, read from its seeded family), checked there
+            // me/family-*.json are FamilyApiContractTest's (each family scenario's me, read from its seeded family), and
+            // me/proto*.json ProtoFamilyContractTest's (the prototype's family), each checked there
             committed = files.map(p -> p.getFileName().toString())
-                    .filter(n -> n.endsWith(".json") && !n.startsWith(FamilyApiContractTest.ME_PREFIX)).sorted().toList();
+                    .filter(n -> n.endsWith(".json") && !n.startsWith(FamilyApiContractTest.ME_PREFIX)
+                            && !n.startsWith(ProtoFamilyContractTest.PREFIX)).sorted().toList();
         }
         assertThat(committed).as("the committed fixtures in " + COMMITTED.toAbsolutePath()).isNotEmpty();
         assertThat(caseNames()).as("no case here takes the family scenarios' prefix").noneMatch(n -> n.startsWith(FamilyApiContractTest.ME_PREFIX));
+        assertThat(caseNames()).as("no case here takes the prototype family's prefix").noneMatch(n -> n.startsWith(ProtoFamilyContractTest.PREFIX));
         assertThat(committed).as("committed fixtures vs the cases").containsExactlyInAnyOrderElementsOf(caseNames().map(n -> n + ".json").toList());
     }
 
@@ -259,6 +276,52 @@ class MeApiContractTest {
         EntityExchangeResult<byte[]> unauthenticated = serve(cases.get("unauthenticated"));
         assertThat(unauthenticated.getStatus().value() + " " + new String(unauthenticated.getResponseBody(), StandardCharsets.UTF_8))
                 .isEqualTo("401 {\"reason\":\"UNAUTHENTICATED\"}");
+    }
+
+    // ---- urgency: the level the patient's attention stack carries (plan desktop-parity Task 3) ---------------------------
+
+    /** The patient's {@code urgency}, read by id from the body served for {@code c}; a missing field fails, never reads as null. */
+    private JsonNode urgencyOf(Case c, UUID patient) throws IOException {
+        for (JsonNode p : body(c).at("/patients")) {
+            if (patient.toString().equals(p.get("id").asText())) {
+                assertThat(p.has("urgency")).as("$.patients[" + patient + "] carries urgency").isTrue();
+                return p.get("urgency");
+            }
+        }
+        throw new AssertionError("no patient " + patient);
+    }
+
+    /** NOW outranks THIS_WEEK whatever order the cards come in; the red mark agrees. */
+    @Test
+    void aPatientWithANowPaperIsNow() throws IOException {
+        Case c = Case.of(true, ma(), baba()).levels(PaperFixtures.MA_ID, Urgency.THIS_WEEK, Urgency.NOW);
+        assertThat(urgencyOf(c, PaperFixtures.MA_ID).asText()).as("Ma: a THIS_WEEK and a NOW paper").isEqualTo("now");
+        assertThat(urgentOf(c, PaperFixtures.MA_ID)).as("Ma's red mark").isTrue();
+    }
+
+    /** THIS_WEEK alone is this_week, never now, and is still not the red mark (red is reserved for NOW). */
+    @Test
+    void aPatientWithOnlyThisWeekIsThisWeek() throws IOException {
+        Case c = Case.of(true, ma(), baba()).levels(PaperFixtures.MA_ID, Urgency.THIS_WEEK, Urgency.THIS_WEEK);
+        assertThat(urgencyOf(c, PaperFixtures.MA_ID).asText()).as("Ma: two THIS_WEEK papers").isEqualTo("this_week");
+        assertThat(urgentOf(c, PaperFixtures.MA_ID)).as("Ma's red mark").isFalse();
+    }
+
+    /** Nothing in the stack is a JSON null, present: the field is never dropped. */
+    @Test
+    void aPatientWithNothingUrgentIsNull() throws IOException {
+        Case c = Case.of(true, ma(), baba()).levels(PaperFixtures.MA_ID, Urgency.NOW);
+        assertThat(urgencyOf(c, BABA_ID).isNull()).as("Karim: nothing urgent").isTrue();
+        assertThat(urgencyOf(c, PaperFixtures.MA_ID).asText()).as("Ma beside him, so the case is not empty").isEqualTo("now");
+    }
+
+    private boolean urgentOf(Case c, UUID patient) throws IOException {
+        for (JsonNode p : body(c).at("/patients")) {
+            if (patient.toString().equals(p.get("id").asText())) {
+                return p.get("urgent").asBoolean();
+            }
+        }
+        throw new AssertionError("no patient " + patient);
     }
 
     /** Derived, not written down: remove {@code preview} from both and the two bodies are the same tree. */

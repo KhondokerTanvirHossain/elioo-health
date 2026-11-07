@@ -689,7 +689,7 @@ class NowBannerApiTest {
 
         @Test
         void everyCommittedFixtureIsACurrentCase() throws Exception {
-            assertThat(AttentionApiContractTest.committed(COMMITTED))
+            assertThat(AttentionApiContractTest.ownCommitted(COMMITTED))
                     .containsExactlyInAnyOrderElementsOf(CASES.stream().map(n -> n + ".json").toList());
         }
     }

@@ -1,4 +1,8 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import postcss, { type AtRule } from "postcss";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MeJson } from "@/api/types";
 import { t } from "@/copy";
@@ -15,9 +19,9 @@ import { AppShell } from "./AppShell";
  * the names and the wiring.
  */
 
-const ONE: MeJson = onePatient.body;
-const TWO: MeJson = twoPatients.body;
-const LONG: MeJson = longName.body;
+const ONE = onePatient.body as MeJson;
+const TWO = twoPatients.body as MeJson;
+const LONG = longName.body as MeJson;
 const assign = vi.fn();
 let calls: { url: string; init: RequestInit }[] = [];
 
@@ -145,5 +149,29 @@ describe("AppShell", () => {
     expect(headers.get("content-type")).toBe("application/json");
     // A preview page signs out to the preview's sign-in page.
     expect(assign).toHaveBeenCalledWith("/app/preview/");
+  });
+
+  it("thePhoneShellGivesWayToTheDesktopFrom900", () => {
+    // plan desktop-parity Task 5: on the desktop layout the page renders DesktopShell too; this shell is then marked
+    // `phone` and is shown below 900 px only. Unmarked, it is the page at every width, as before.
+    expect(shell(ONE).container.querySelector(".app-shell--phone")).toBeNull();
+    cleanup();
+    expect(shell(ONE, { phone: true }).container.querySelector(".app-shell.app-shell--phone")).not.toBeNull();
+    // The rule that hides it lives with DesktopShell (DesktopShell.css), whose stylesheet a page links exactly when it
+    // renders that shell (its desk-load.tsx; DR-42), and not in this one's, which every signed-in page links.
+    const hiddenBy = (file: string) => {
+      const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), file), "utf8");
+      const hidden: string[] = [];
+      postcss.parse(css).walkRules((rule) => {
+        if (!rule.selectors.map((x) => x.trim()).includes(".app-shell--phone")) return;
+        const media = rule.parent?.type === "atrule" ? (rule.parent as AtRule).params : "";
+        rule.walkDecls("display", (d) => {
+          hidden.push(`${media} ${d.value}`);
+        });
+      });
+      return hidden;
+    };
+    expect(hiddenBy("../DesktopShell/DesktopShell.css")).toEqual(["(min-width: 900px) none"]);
+    expect(hiddenBy("AppShell.css")).toEqual([]);
   });
 });

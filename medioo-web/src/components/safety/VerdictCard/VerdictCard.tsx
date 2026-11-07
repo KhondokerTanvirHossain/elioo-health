@@ -64,7 +64,7 @@ export function threadRows(values: PaperValueJson[]): PaperValueJson[] {
 /** The band: the level's shape and its sentence, never colour alone. */
 function Band({ level, line }: { level: BannerLevel; line: string }) {
   return (
-    <p className="verdict-card__band">
+    <p className="verdict-card__band" data-safety="band">
       <svg className="verdict-card__shape" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         {BAND_SHAPE[level]}
       </svg>
@@ -95,6 +95,17 @@ function Band({ level, line }: { level: BannerLevel; line: string }) {
  *
  * `wording` false leaves the wording out (the paper page, W6, shows it in its own labelled bubble below, so it is not
  * said twice); it never shows a wording the gate withheld.
+ *
+ * The desktop conversation's card (TalkCard, plan desktop-parity Task 7) adds three things, none of which touches a
+ * safety line: `sub`, the paper's type, day and lab under the title (before the not-a-doctor line and 999, which still
+ * come before any row); `selected`, the outline of the card whose paper the viewer shows; and `more`, the link to every
+ * detail of the paper (`desk.panel.open`) at the card's foot. A card without them is exactly today's.
+ *
+ * There is no way to leave the band out: every card with a banner draws it (P19; the desktop panel lies over the card and
+ * the NOW bar can be gone, so a dropped band was a sentence nowhere on the screen, 70dcac00).
+ *
+ * Every safety line is marked `data-safety` with what it is, so a surface built from this card (the panel) is checked
+ * against today's paper page block for block (PaperPanel.test.tsx).
  */
 export function VerdictCard({
   paper,
@@ -102,17 +113,24 @@ export function VerdictCard({
   link,
   mio,
   wording: withWording = true,
+  sub,
+  selected,
+  more,
 }: {
   paper: PaperJson;
   lang: Lang;
   link?: string;
   mio?: boolean;
   wording?: boolean;
+  sub?: string | null;
+  selected?: boolean;
+  more?: { href: string; label: string };
 }) {
   const banner = paper.banner ?? null;
   const className = ["verdict-card"];
   if (banner) className.push(BAND_CLASS[banner.level]);
   if (link !== undefined) className.push("verdict-card--link");
+  if (selected) className.push("verdict-card--selected");
   const counts = paper.counts ?? null;
   const title = counts ? t(lang, counts.line_key, counts.values, counts.outside) : t(lang, STATUS_TITLE[paper.status]);
   const wording = withWording && paper.gate === "RELEASED" && paper.wording ? paper.wording : null;
@@ -132,13 +150,22 @@ export function VerdictCard({
             </a>
           )}
         </p>
-        {now && <p className="verdict-card__notdoctor">{t(lang, now.notdoctor_key)}</p>}
+        {sub && <p className="verdict-card__sub">{sub}</p>}
+        {now && (
+          <p className="verdict-card__notdoctor" data-safety="not-a-doctor">
+            {t(lang, now.notdoctor_key)}
+          </p>
+        )}
         {now?.call_999 === true && (
-          <a className="verdict-card__call" href="tel:999">
+          <a className="verdict-card__call" href="tel:999" data-safety="call-999">
             {t(lang, "now.call999")}
           </a>
         )}
-        {paper.retake && <p className="verdict-card__reason">{t(lang, paper.retake.reason_key)}</p>}
+        {paper.retake && (
+          <p className="verdict-card__reason" data-safety="retake-reason">
+            {t(lang, paper.retake.reason_key)}
+          </p>
+        )}
         {values.length > 0 && (
           <ul className="verdict-card__values">
             {values.map((v, k) => (
@@ -160,9 +187,18 @@ export function VerdictCard({
             ))}
           </ul>
         )}
-        {pending !== null && <p className="verdict-card__pending">{t(lang, "result.gate.pending", pending)}</p>}
+        {pending !== null && (
+          <p className="verdict-card__pending" data-safety="gate-pending">
+            {t(lang, "result.gate.pending", pending)}
+          </p>
+        )}
         {wording && <p className="verdict-card__wording">{wording}</p>}
       </div>
+      {more && (
+        <a className="verdict-card__more" href={more.href}>
+          {more.label}
+        </a>
+      )}
     </article>
   );
   if (!mio) return card;
@@ -188,7 +224,11 @@ export function UrgencyCard({ level, lang, children }: { level: string; lang: La
       {known && <Band level={known} line={t(lang, LEVEL_LINE[known])} />}
       <div className="verdict-card__meta">
         {children}
-        {known === "now" && <p className="verdict-card__notdoctor">{t(lang, "now.notdoctor")}</p>}
+        {known === "now" && (
+          <p className="verdict-card__notdoctor" data-safety="not-a-doctor">
+            {t(lang, "now.notdoctor")}
+          </p>
+        )}
       </div>
     </article>
   );

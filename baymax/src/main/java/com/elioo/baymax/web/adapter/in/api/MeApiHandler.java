@@ -9,6 +9,7 @@ import com.elioo.baymax.web.adapter.in.PatientJson;
 import com.elioo.baymax.web.adapter.in.router.SessionAuthFilter;
 import com.elioo.baymax.web.application.port.in.AttentionUseCase;
 import com.elioo.baymax.web.application.port.in.TimelineUseCase;
+import com.elioo.baymax.web.domain.AttentionItem;
 import com.elioo.baymax.web.domain.FamilyOverview;
 import com.elioo.baymax.web.domain.PatientSummary;
 import com.elioo.baymax.web.domain.WebSession;
@@ -34,7 +35,8 @@ import java.util.UUID;
  *
  * <p>{@code urgent} is true when the patient's attention stack holds a NOW paper ({@link AttentionUseCase#urgent}: stored
  * F1 levels, the same 30-day window as the চ্যাট stack and the কাগজপত্র strip), so the switcher's red mark and the stack
- * never disagree. THIS_WEEK alone is not urgent here: red is reserved for NOW.
+ * never disagree. THIS_WEEK alone is not urgent here: red is reserved for NOW. {@code urgency} is the highest level that
+ * same stack holds ({@code "now"}, {@code "this_week"}, or {@code null} when it holds none), read in the same call.
  *
  * <p>{@code chronic_flags_set} is true when the patient has any chronic flag stored: the papers page's BMX-8 ask
  * (AppTabs.papersBody) shows exactly when it is false.
@@ -53,8 +55,7 @@ public class MeApiHandler {
     public Mono<ServerResponse> me(ServerRequest request) {
         WebSession session = SessionAuthFilter.session(request);
         return timeline.me(session.familyId()).flatMap(me -> Flux.fromIterable(me.patients())
-                .concatMap(p -> attention.urgent(session.familyId(), p.patient().id())
-                        .map(cards -> cards.stream().anyMatch(c -> c.level() == Urgency.NOW)))
+                .concatMap(p -> attention.urgent(session.familyId(), p.patient().id()).map(MeApiHandler::mark))
                 .collectList()
                 // a read writes nothing: the active-patient cookie is set by PUT /app/api/active-patient only (plan B1).
                 // A Next server component cannot pass a Set-Cookie on, so a sliding re-set here would expire the
@@ -78,7 +79,18 @@ public class MeApiHandler {
     record Choice(@JsonProperty("patient_id") String patientId) {
     }
 
-    private Map<String, Object> body(FamilyOverview me, List<Boolean> urgent, ActivePatient active, UUID familyId) {
+    /** One patient's stack, read once: the red mark (a NOW paper) and the highest level it holds ({@code null}: none). */
+    record Mark(boolean urgent, Urgency level) {
+    }
+
+    static Mark mark(List<AttentionItem.Urgent> cards) {
+        Urgency level = cards.stream().map(AttentionItem.Urgent::level)
+                .filter(l -> l == Urgency.NOW || l == Urgency.THIS_WEEK)
+                .reduce(Urgency::max).orElse(null);
+        return new Mark(level == Urgency.NOW, level);
+    }
+
+    private Map<String, Object> body(FamilyOverview me, List<Mark> urgent, ActivePatient active, UUID familyId) {
         Map<String, Object> family = new LinkedHashMap<>();
         family.put("id", me.family().id().toString());
         family.put("owner_name", me.family().ownerName());
@@ -94,13 +106,16 @@ public class MeApiHandler {
         return body;
     }
 
-    /** {@link PatientJson}'s fields (shared with {@code /api/v1/baymax/me}), then the name forms, the red mark and whether flags are set. */
-    private static Map<String, Object> patient(PatientSummary p, boolean urgent) {
+    /** {@link PatientJson}'s fields (shared with {@code /api/v1/baymax/me}), then the name forms, the red mark, the level and whether flags are set. */
+    private static Map<String, Object> patient(PatientSummary p, Mark mark) {
         Map<String, Object> m = PatientJson.fields(p);
         String name = p.patient().name();
         m.put("name_possessive", NameGrammar.possessive(name));
         m.put("name_objective", NameGrammar.objective(name));
-        m.put("urgent", urgent);
+        m.put("urgent", mark.urgent());
+        // plan desktop-parity Task 3: the level the stack's urgent card carries (AttentionUrgentJson.level), from the same
+        // read as the red mark, so the sidebar's word and the mark never disagree; null when the stack holds none
+        m.put("urgency", mark.level() == null ? null : mark.level().dbValue());
         // BMX-8 (PO option 1): whether any chronic flag is stored, so the papers page asks exactly when Java's does
         // (AppTabs.papersBody: none stored is asked). A fact, never the flags themselves; /app/api/family carries those.
         List<String> flags = p.patient().chronicFlags();

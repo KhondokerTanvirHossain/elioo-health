@@ -1,0 +1,305 @@
+/* The paper column (PaperViewer.tsx, Zoom.tsx, PaperStrip.tsx; desktop.html `.viewer`, `.tb`, `.canvas`, `.film`): the
+   toolbar at 56 px, the canvas filling the rest and scrolling inside itself, the strip along the foot scrolling sideways.
+   A page is 640 px wide at 100% (desktop.html's `.page`); the zoom is a `data-zoom` attribute on the canvas, never an
+   inline style (style-src 'self'). Nothing here is red: the one urgency colour is UrgencyTag's own. */
+.paper-viewer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  background: var(--canvas);
+  color: var(--label);
+  font-family: var(--font-bn);
+}
+.paper-viewer__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* The toolbar. At 900–1199 px it leaves the shell's menu button its room: --desktop-menu-room, which DesktopShell.css
+   sets on the paper column; none anywhere else (the default below, inherited from the root and overridden there). */
+:where(:root) {
+  --desktop-menu-room: 0px;
+}
+/* One row of 56 px where everything fits (desktop.html's `.tb`); where it does not, the controls wrap to a second row
+   rather than squeeze the urgency word (below), so Java's word is never broken or hung out of the toolbar: it is longer
+   than desktop.html's chip, and delete is a word here, not an icon (e2e/talk-and-papers.spec.ts measures it at 900 to
+   1440 px). The title and whose-paper line still give way first, with an ellipsis, as the design's do. */
+.paper-viewer__toolbar {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  min-height: 56px;
+  padding: var(--space-1) var(--space-3) var(--space-1) calc(var(--space-3) + var(--desktop-menu-room));
+  border-bottom: 0.5px solid var(--sep);
+  background: var(--bg);
+}
+.paper-viewer__toolbar .urgency-tag {
+  flex: none;
+  white-space: nowrap;
+}
+.paper-viewer__heading {
+  min-width: 0;
+  padding: 0 var(--space-1);
+}
+.paper-viewer__title,
+.paper-viewer__sub {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.paper-viewer__title {
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: 1.3;
+}
+.paper-viewer__sub {
+  color: var(--label2);
+  font-size: var(--text-xs);
+  line-height: 1.3;
+}
+.paper-viewer__spacer {
+  flex: 1;
+}
+.paper-viewer__sep {
+  flex: none;
+  width: 0.5px;
+  height: 20px;
+  margin: 0 var(--space-1);
+  background: var(--sep);
+}
+.paper-viewer__button {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--label2);
+  cursor: pointer;
+}
+.paper-viewer__button:hover {
+  background: var(--hover);
+  color: var(--label);
+}
+.paper-viewer__button:focus-visible,
+.paper-viewer__canvas:focus-visible,
+.paper-viewer__pick:focus-visible,
+.paper-strip__item:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+.paper-viewer__button[aria-disabled="true"] {
+  opacity: 0.3;
+  cursor: default;
+  pointer-events: none;
+}
+.paper-viewer__button[aria-pressed="true"] {
+  color: var(--tint-ink);
+}
+.paper-viewer__icon {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.paper-viewer__zoom-level {
+  flex: none;
+  min-width: 40px;
+  color: var(--label2);
+  font-family: var(--font-sys);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.paper-viewer__delete {
+  flex: none;
+}
+.paper-viewer__delete .delete-paper__open {
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+/* The canvas: the pages one under another, centred, each a paper on the canvas. Centred by the page's auto margins,
+   never by `align-items: center`: a centred flex item wider than the canvas spills past its left edge, where scrolling
+   cannot reach, and a zoomed lab report would lose its test names (e2e/paper-viewer-layout.spec.ts). Auto margins
+   centre a narrower page and fall to zero on a wider one, which then overflows to the right only. */
+.paper-viewer__canvas {
+  --paper-zoom: 1;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+  min-height: 0;
+  padding: var(--space-6) var(--space-5) var(--space-6);
+  overflow: auto;
+}
+.paper-viewer__page {
+  display: block;
+  flex: none;
+  width: calc(640px * var(--paper-zoom));
+  max-width: none;
+  margin-inline: auto;
+  height: auto;
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  box-shadow: 0 0 0 0.5px var(--sep);
+}
+.paper-viewer__canvas[data-zoom="fit"] {
+  align-items: stretch;
+}
+.paper-viewer__canvas[data-zoom="fit"] .paper-viewer__page {
+  width: 100%;
+}
+.paper-viewer__canvas[data-zoom="0.5"] { --paper-zoom: 0.5; }
+.paper-viewer__canvas[data-zoom="0.75"] { --paper-zoom: 0.75; }
+.paper-viewer__canvas[data-zoom="1"] { --paper-zoom: 1; }
+.paper-viewer__canvas[data-zoom="1.25"] { --paper-zoom: 1.25; }
+.paper-viewer__canvas[data-zoom="1.5"] { --paper-zoom: 1.5; }
+.paper-viewer__canvas[data-zoom="1.75"] { --paper-zoom: 1.75; }
+.paper-viewer__canvas[data-zoom="2"] { --paper-zoom: 2; }
+.paper-viewer__canvas[data-zoom="2.25"] { --paper-zoom: 2.25; }
+.paper-viewer__canvas[data-zoom="2.5"] { --paper-zoom: 2.5; }
+.paper-viewer__canvas[data-zoom="2.75"] { --paper-zoom: 2.75; }
+.paper-viewer__canvas[data-zoom="3"] { --paper-zoom: 3; }
+
+/* A paper being read: the line above its pages. */
+.paper-viewer__reading-box {
+  align-self: stretch;
+  text-align: center;
+}
+.paper-viewer__reading {
+  margin: 0;
+  color: var(--label2);
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+/* No paper yet (desktop.html's `.dropzone`). */
+.paper-viewer--first {
+  justify-content: center;
+}
+.paper-viewer__first {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2);
+  width: min(560px, 90%);
+  margin: auto;
+  padding: var(--space-6) var(--space-5);
+  border: 2px dashed var(--boundary);
+  border-radius: var(--radius-xl);
+  background: var(--bg);
+  text-align: center;
+}
+.paper-viewer__first-title {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: 700;
+  line-height: 1.35;
+}
+.paper-viewer__first-body {
+  margin: 0 0 var(--space-2);
+  color: var(--label2);
+}
+.paper-viewer__pick {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--target-min);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--tint);
+  color: var(--on-tint);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+/* The strip (desktop.html's `.film`): 64 × 80 thumbnails, the day under each, sideways scrolling. */
+.paper-strip {
+  flex: none;
+  min-width: 0;
+  border-top: 0.5px solid var(--sep);
+  background: var(--bg);
+}
+.paper-strip__list {
+  display: flex;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  overflow-x: auto;
+  list-style: none;
+}
+.paper-strip__entry {
+  flex: none;
+}
+.paper-strip__item {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-1);
+  position: relative;
+  width: 76px;
+  padding: 3px 0 0;
+  border-radius: var(--radius-md);
+  color: var(--label2);
+  font-size: var(--text-xs);
+  line-height: 1.3;
+  text-align: center;
+  text-decoration: none;
+}
+.paper-strip__thumb {
+  position: relative;
+  display: block;
+  width: 64px;
+  height: 80px;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  box-shadow: 0 0 0 0.5px var(--sep);
+}
+.paper-strip__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+}
+.paper-strip__item[aria-current="true"] {
+  color: var(--label);
+  font-weight: 600;
+}
+.paper-strip__item[aria-current="true"] .paper-strip__thumb {
+  box-shadow: 0 0 0 2.5px var(--tint);
+}
+/* The stored urgency in the thumbnail's corner: UrgencyTag's shape and colour, its word read out but not drawn. */
+.paper-strip__urgency {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+}
+.paper-strip__urgency .urgency-tag {
+  padding: 2px;
+}
+.paper-strip__type,
+.paper-strip__urgency .urgency-tag__word {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

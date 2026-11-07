@@ -62,6 +62,14 @@ export type UploadWords = {
   digits: string;
 };
 
+/**
+ * The sheet's tips for a clear photo (add.tips and its three lines), one source for the add sheet and for the desktop
+ * conversation's "tips for a good photo" sheet under a retake card (plan desktop-parity Task 7).
+ */
+export function addTips(lang: Lang): { title: string; items: string[] } {
+  return { title: t(lang, "add.tips"), items: [t(lang, "add.tip.flat"), t(lang, "add.tip.light"), t(lang, "add.tip.frame")] };
+}
+
 export function uploadWords(lang: Lang, options: UploadOptionsJson): UploadWords {
   const a = options.allowance;
   const only = options.can_send.find((p) => p.id === options.preselected_patient_id) ?? null;
@@ -90,7 +98,7 @@ export function uploadWords(lang: Lang, options: UploadOptionsJson): UploadWords
       gallery: { label: t(lang, "add.gallery"), sub: t(lang, "add.gallery.sub") },
       pdf: { label: t(lang, "add.pdf"), sub: t(lang, "add.pdf.sub") },
     },
-    tips: { title: t(lang, "add.tips"), items: [t(lang, "add.tip.flat"), t(lang, "add.tip.light"), t(lang, "add.tip.frame")] },
+    tips: addTips(lang),
     send: t(lang, "add.send"),
     group: {
       question: t(lang, "add.group.q"),

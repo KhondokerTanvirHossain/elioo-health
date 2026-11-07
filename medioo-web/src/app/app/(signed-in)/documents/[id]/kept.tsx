@@ -30,3 +30,21 @@ export function heldMain(here: string, patient: string | null, main: ReactNode):
 export function keptMain(held: HeldPage): ReactNode {
   return <KeptOnBannerRefresh path={held.path} patient={held.patient} />;
 }
+
+/** The desktop columns a paper page holds (plan desktop-parity Task 8), each kept on its own across a banner-only refresh. */
+export const DESK_PARTS = ["paper", "talk", "panel"] as const;
+export type DeskPart = (typeof DESK_PARTS)[number];
+
+/** One desktop column of a paper page, held as its main is (heldMain), under its own part. */
+export function heldPart(here: string, patient: string | null, part: DeskPart, node: ReactNode): ReactNode {
+  return (
+    <KeptOnBannerRefresh path={pathOf(here)} patient={patient} part={part}>
+      {node ?? null}
+    </KeptOnBannerRefresh>
+  );
+}
+
+/** The column a banner-only refresh sends: its holder, empty, so the column keeps what it shows. */
+export function keptPart(held: HeldPage, part: DeskPart): ReactNode {
+  return <KeptOnBannerRefresh path={held.path} patient={held.patient} part={part} />;
+}

@@ -1,0 +1,20 @@
+{
+  "_meta": {
+    "generated_by": "baymax ProtoFamilyContractTest",
+    "source": "GET /app/api/patients/{id}/follow-ups over the prototype family (desktop.html), case proto-amma"
+  },
+  "body": {
+    "items": [
+      {
+        "crop": {
+          "src": "/app/documents/4ee8dc9d-41e9-3f40-a299-20baa694dd13/image?key=d29155e3-3319-325b-9d8e-b5ff73b8d2b6%2F75eb5081-4fff-3f99-a3b4-2771844eafef%2F4ee8dc9d-41e9-3f40-a299-20baa694dd13%2Fcrop-fb900376a.jpg"
+        },
+        "document_id": "4ee8dc9d-41e9-3f40-a299-20baa694dd13",
+        "due_date": "2026-10-22",
+        "instruction": "৭ দিন পর আবার আসবেন",
+        "overdue": false
+      }
+    ]
+  },
+  "status": 200
+}

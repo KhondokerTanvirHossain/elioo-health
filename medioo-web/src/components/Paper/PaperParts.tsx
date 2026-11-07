@@ -55,12 +55,14 @@ export function ValueRows({
   lang,
   preview,
   from,
+  idPrefix,
 }: {
   values: PaperValueJson[];
   documentId: string;
   lang: Lang;
   preview: boolean;
   from: From;
+  idPrefix?: string;
 }) {
   if (values.length === 0) return null;
   return (
@@ -69,6 +71,7 @@ export function ValueRows({
       documentId={documentId}
       from={from}
       preview={preview}
+      idPrefix={idPrefix}
       retry={t(lang, "crop.retry")}
       chipWords={Object.fromEntries(CHIP_KINDS.map((k) => [k, t(lang, CHIP_KEY[k])])) as Record<ChipKind, string>}
     />
@@ -76,7 +79,17 @@ export function ValueRows({
 }
 
 /** One value row (a NOW block's row, a sheet's): ValueRows of one. */
-export function ValueRow({ value, ...rest }: { value: PaperValueJson; documentId: string; lang: Lang; preview: boolean; from: From }) {
+export function ValueRow({
+  value,
+  ...rest
+}: {
+  value: PaperValueJson;
+  documentId: string;
+  lang: Lang;
+  preview: boolean;
+  from: From;
+  idPrefix?: string;
+}) {
   return <ValueRows values={[value]} {...rest} />;
 }
 
