@@ -63,6 +63,15 @@ describe("ColumnResizer", () => {
     expect(handle.getAttribute("aria-valuemax")).toBe(String(COLUMNS - PAPER_MIN));
   });
 
+  it("itHasAValueBeforeAnythingIsMeasured", async () => {
+    // A focusable separator must say its value (axe aria-required-attr). Before layout (the server's HTML, a page axe
+    // reads before the island measures) it says the design's width, never nothing.
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(() => ({ width: 0, height: 0 }) as DOMRect);
+    const { handle } = mount();
+    await act(async () => undefined);
+    expect(handle.getAttribute("aria-valuenow"), "a value, unmeasured").toBe("400");
+  });
+
   it("theKeysMoveItAndEnterPutsItBack", () => {
     const { handle, width } = mount();
     // The divider moves the way the arrow points: left widens the conversation, right narrows it.

@@ -8,6 +8,8 @@ export const TALK_MIN = 320;
 export const PAPER_MIN = 420;
 /** One arrow press; Shift moves four. */
 const STEP = 16;
+/** The design's width (--conversation-w), said as the value until the island has measured the real one. */
+const DESIGN_WIDTH = 400;
 /** Where this browser remembers the width (a per-viewer convenience: nothing breaks when it is gone). */
 export const STORE_KEY = "medioo.desk.talk-w";
 
@@ -145,7 +147,7 @@ export function ColumnResizer({ label }: { label: string }) {
       aria-label={label}
       title={label}
       tabIndex={0}
-      aria-valuenow={now ?? undefined}
+      aria-valuenow={now ?? DESIGN_WIDTH}
       aria-valuemin={TALK_MIN}
       aria-valuemax={max ?? undefined}
       onKeyDown={onKeyDown}
