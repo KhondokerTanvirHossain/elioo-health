@@ -10,6 +10,7 @@ import {
   type ThreadJson,
   type ThreadPaperJson,
 } from "@/api/types";
+import { t } from "@/copy";
 import { Conversation } from "@/components/Conversation/Conversation";
 import { PinnedUrgent } from "@/components/Conversation/PinnedUrgent";
 import { PaperPanel } from "@/components/PaperPanel/PaperPanel";
@@ -105,7 +106,14 @@ export async function deskScreen(ctx: ShellContext, here: string, ask: DeskAsk):
   const hrefFor = deskHref(patient.id, preview);
   const selectedId = selected?.id ?? null;
   return {
-    paper: <PaperViewer lang={lang} preview={preview} paper={selected} papers={papers} selectedId={selectedId} hrefFor={hrefFor} />,
+    // The screen's level-one heading, out of sight (desktop.html's chatView() `h1.sr-only`): the phone's own is not drawn
+    // from 900 px.
+    paper: (
+      <>
+        <h1 className="desktop-shell__title">{t(lang, "desk.talk.title", patient.name_possessive)}</h1>
+        <PaperViewer lang={lang} preview={preview} paper={selected} papers={papers} selectedId={selectedId} hrefFor={hrefFor} />
+      </>
+    ),
     talk: (
       <Conversation
         lang={lang}

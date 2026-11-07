@@ -12,6 +12,16 @@
   background: var(--bg);
   color: var(--label);
 }
+/* The screen's h1 (desk.talk.title), read out and not drawn: desktop.html's `h1.sr-only`. */
+.desktop-shell__title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 .desktop-shell__sidebar {
   display: none;
   flex-direction: column;

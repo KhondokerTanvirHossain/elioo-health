@@ -110,6 +110,14 @@ describe("/app/home on the desktop layout", () => {
     expect(container.querySelector(".desktop-shell .attention-stack, .desktop-shell [data-attention]"), "no attention card on the desktop").toBeNull();
   });
 
+  it("theScreenHasOneHeadingOneNamingThePatient", async () => {
+    // desktop.html's chatView(): an h1 for the screen, out of sight (desk.talk.title over the possessive). The phone's own
+    // h1 is not drawn from 900 px, so without it the desktop page has no level-one heading (axe page-has-heading-one).
+    const container = await home();
+    const h1s = [...container.querySelectorAll(".desktop-shell h1")].map((h) => h.textContent);
+    expect(h1s).toEqual([t("bn", "desk.talk.title", AMMA.name_possessive)]);
+  });
+
   it("aNamedPaperIsInTheViewerAndItsPanelOpensAndCloses", async () => {
     const container = await home({ patient: AMMA.id, paper: CBC.id, panel: "1" });
     expect(inView(container)).toBe(CBC.id);
