@@ -474,3 +474,28 @@ Built on `feat/desktop-medicines`, behind preview (`/app/preview/health?show=med
   - Only the newest prescription, not every one (Q3, decision 9: what is shown is the latest, dated, never "current").
   - The prescription's header is Java's heading and date; the medicines read carries no facility or type title.
   - "কাগজে দেখুন" opens the prescription, not the medicine's own line on it (the viewer has no per-line mark yet).
+
+## Phase 2, F1 — the family and account page (2026-11-09)
+
+Built on `feat/desktop-family`, behind preview (`/app/preview/family`, the sidebar's account row), as desktop.html's
+`settingsView()`:
+
+- **Data.** Nothing new: `GET /app/api/family`, the family tab's read; each person's paper count is `me`'s. The prototype
+  family's family body is a fixture (`family/proto.json`, `ProtoFamilyContractTest`).
+- **Screen** (`DeskFamily`, one column of grouped rows under "পরিবার ও অ্যাকাউন্ট"): "যাঁদের কাগজ রাখছেন", every person
+  with their initial, name, "{age} বছর · {n}টি কাগজ" (and "shared" for a person shared with the viewer), each a way to
+  them that keeps this page (`ChooseLink`), the one in view ticked; "{possessive} দীর্ঘমেয়াদি অসুখ", the family tab's own
+  tick list and save for that person (a share member's read only); "মনে করিয়ে দেওয়া", desktop.html's "WhatsApp-এ মনে করিয়ে
+  দেওয়া" and its line over the family tab's own stop; then the family tab's own account (number, language, theme, the
+  family's stop for an owner, sign out). Every working part is the family tab's island, so every rule it keeps is kept.
+- **Words.** Every new `desk.fam.*` Bangla is desktop.html's own (`DesktopWordsTest`).
+- **Not as desktop.html, on purpose:**
+  - No "কাউকে যোগ করুন", no "একসাথে দেখছেন" or the invite (Phase 3: no add-a-person or share-members API yet), and no
+    "সব কাগজ মুছে দিন" (no family delete, S7).
+  - The conditions are the family tab's tick list with its question, hint and Save, not desktop.html's tap-to-tick rows:
+    a tap is not a save, and the hint is the app's ("ডাক্তার যা বলেছেন, শুধু তা-ই টিক দিন। Medioo নিজে থেকে কিছু অনুমান
+    করে না।"), not desktop.html's "Medioo এগুলো দেখে কোন পরীক্ষা কবে আসার কথা মনে করায়", which promises more than the
+    one rule that reads the conditions does (`NudgeRules.silence`: no paper for a while).
+  - The reminders are a stop with a confirm, never desktop.html's switch: the web cannot turn them back on (E1/E2), and
+    nothing may look as if it could.
+  - The number is shown whole, as the family tab shows it, not masked; the account's title is the tab's "আপনার অ্যাকাউন্ট".
