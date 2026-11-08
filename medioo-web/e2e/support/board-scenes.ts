@@ -6,6 +6,7 @@ import type { AskJson } from "../../src/api/types";
 import { t } from "../../src/copy";
 import { pngFor } from "./png.mjs";
 import { FIXTURES, PROTO_PAPERS, PROTO_PATIENTS, SCENARIOS, familyPatientId } from "./scenarios.mjs";
+import { showSidebar } from "./desk-checks";
 
 /*
  * The screenshot board's scenes (plan A7; board.spec.ts takes them). Kept apart from the spec, which registers
@@ -690,10 +691,7 @@ BOARD_SCENES.push(
     { scene: "app", act: deskSide(deskPaper("cbc")) },
     {
       viewports: { w1024: DESK_NARROW.w1024 },
-      act: async (page) => {
-        await page.locator(".desktop-shell__menu").click();
-        await page.locator(".desktop-shell__sidebar[data-open]").waitFor();
-      },
+      act: (page) => showSidebar(page, DESK_NARROW.w1024.width),
     },
   ),
 );
