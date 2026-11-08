@@ -138,6 +138,7 @@ import familyMixed from "../../fixtures/api/family/mixed.json";
 import familyOwner from "../../fixtures/api/family/owner.json";
 import familyRemindersOff from "../../fixtures/api/family/reminders-off.json";
 import familyShareMember from "../../fixtures/api/family/share-member.json";
+import familyProto from "../../fixtures/api/family/proto.json";
 // W6-api's generated value sheets (baymax ValueSheetApiContractTest), plan W6.
 import sheetEarlierNone from "../../fixtures/api/value-sheet/earlier-none.json";
 import sheetEarlierOtherUnit from "../../fixtures/api/value-sheet/earlier-other-unit.json";
@@ -1115,6 +1116,7 @@ describe("GET /app/api/family", () => {
       ["owner.json", familyOwner.body, familyOwner.status],
       ["reminders-off.json", familyRemindersOff.body, familyRemindersOff.status],
       ["share-member.json", familyShareMember.body, familyShareMember.status],
+      ["proto.json", familyProto.body, familyProto.status],
     ];
     expect(readdirSync(join(fixtures, "family")).filter((f) => f.endsWith(".json")).sort()).toEqual(bodies.map(([file]) => file).sort());
     let patients = 0;

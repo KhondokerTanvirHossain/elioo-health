@@ -112,6 +112,8 @@ class ProtoFamilyContractTest {
         cases.put("health", health);
         cases.put("follow-ups", follows);
         cases.put("me", Map.of(PREFIX, "/app/api/me"));
+        // the desktop's family and account page (plan desktop-parity F1)
+        cases.put("family", Map.of(PREFIX, "/app/api/family"));
         cases.put("thread", thread);
         Map<String, String> documents = new LinkedHashMap<>();
         PAPERS.forEach(p -> documents.put(PREFIX + "-" + p.key(), "/app/api/documents/" + p.id()));
@@ -139,6 +141,7 @@ class ProtoFamilyContractTest {
             "timeline", "GET /app/api/patients/{id}/timeline",
             "follow-ups", "GET /app/api/patients/{id}/follow-ups",
             "me", "GET /app/api/me",
+            "family", "GET /app/api/family",
             "thread", "GET /app/api/patients/{id}/thread?asks=1",
             "documents", "GET /app/api/documents/{id}");
 

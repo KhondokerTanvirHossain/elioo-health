@@ -251,6 +251,8 @@ const familyWrites = (fixture) => ({
   // After signing out, the sign-in page asks where to go and Java says there is no session.
   "GET /app/api/sign-in/next": UNAUTHENTICATED,
   "GET /app/api/sign-in/state": "sign-in/state-none.json",
+  // The desktop layout's sidebar reads the person in view's follow-ups (plan desktop-parity F1): none here.
+  "GET /app/api/patients/{id}/follow-ups": "follow-ups/none.json",
 });
 
 /** The open sign-in routes every signed-out scenario answers (AppApiGuard.OPEN, W3-api). */
@@ -415,6 +417,9 @@ function protoFamily() {
   const threads = { [PROTO_AMMA]: "thread/proto-amma.json", [PROTO_ABBU]: "thread/proto-abbu.json" };
   const asked = byId(ASKED, threads);
   return {
+    // The family page's writes as Java answers an owner (plan desktop-parity F1), first, so every read below (the
+    // follow-ups above all: the mother's doctor's date) is the prototype family's own and not familyWrites' none.
+    ...familyWrites("family/proto.json"),
     "GET /app/api/me": PROTO_ME,
     "PUT /app/api/active-patient": NO_CONTENT,
     "GET /app/api/now-banner": "now-banner/proto.json",
@@ -444,6 +449,8 @@ function protoFamily() {
       [PROTO_AMMA]: "timeline/proto-amma.json",
       [PROTO_ABBU]: "timeline/proto-abbu.json",
     }),
+    // desktop.html's family and account page (plan desktop-parity F1); its writes are spread first, above.
+    "GET /app/api/family": "family/proto.json",
     // desktop.html's lab values (plan desktop-parity L1) and the phone's health tab drawn beside them on the same page.
     "GET /app/api/patients/{id}/labs": byId("GET /app/api/patients/{id}/labs", {
       [PROTO_AMMA]: "health/proto-labs-amma.json",

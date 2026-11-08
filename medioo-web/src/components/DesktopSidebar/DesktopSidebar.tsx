@@ -62,7 +62,7 @@ const Icon = ({ children }: { children: ReactNode }) => (
 const count = (lang: Lang, n: number) => (lang === "bn" ? banglaDigits(String(n)) : String(n));
 
 /** The first letter a reader sees (a grapheme, so a Bangla conjunct stays whole), for the avatar. */
-function initialOf(name: string): string {
+export function initialOf(name: string): string {
   const first = new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(name)[Symbol.iterator]().next();
   return first.done ? "" : first.value.segment;
 }

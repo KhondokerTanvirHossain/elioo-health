@@ -1,0 +1,71 @@
+{
+  "_meta": {
+    "generated_by": "baymax ProtoFamilyContractTest",
+    "source": "GET /app/api/family over the prototype family (desktop.html), case proto"
+  },
+  "body": {
+    "account": {
+      "language": "bn",
+      "number": "+880 1700-000171",
+      "owner_name": "Tanvir",
+      "reminders_stopped": false,
+      "terms_date": "2026-09-01"
+    },
+    "flags_offered": [
+      {
+        "id": "diabetes",
+        "label_key": "flag.diabetes"
+      },
+      {
+        "id": "hypertension",
+        "label_key": "flag.hypertension"
+      },
+      {
+        "id": "kidney",
+        "label_key": "flag.kidney"
+      },
+      {
+        "id": "thyroid",
+        "label_key": "flag.thyroid"
+      },
+      {
+        "id": "heart",
+        "label_key": "flag.heart"
+      }
+    ],
+    "patients": [
+      {
+        "age": 68,
+        "chronic_flags": [
+          {
+            "label_key": "flag.diabetes",
+            "value": "diabetes"
+          },
+          {
+            "label_key": "flag.hypertension",
+            "value": "hypertension"
+          }
+        ],
+        "consent_date": "2026-09-01",
+        "id": "75eb5081-4fff-3f99-a3b4-2771844eafef",
+        "name": "আম্মা",
+        "name_possessive": "আম্মার",
+        "owner": true,
+        "reminders": "on",
+        "sex_key": "sex.FEMALE"
+      },
+      {
+        "age": 74,
+        "chronic_flags": [ ],
+        "consent_date": "2026-09-01",
+        "id": "080346b0-47d2-3bf7-9e43-7926eaba3536",
+        "name": "আব্বু",
+        "name_possessive": "আব্বুর",
+        "owner": true,
+        "reminders": "on",
+        "sex_key": "sex.MALE"
+      }
+    ]
+  },
+  "status": 200
+}
