@@ -117,7 +117,9 @@ test.describe("the health tab", () => {
       await expect(link).toHaveAttribute("href", "/app/health");
       await expect(link).toHaveAttribute("aria-current", "page");
     }
-    // A preview page: the tab, inside the preview, marked as this page.
+    // A preview page: the tab, inside the preview, marked as this page. Below 900 px: from 900 px a preview page is the
+    // desktop layout (plan desktop-parity L1), where this page is the sidebar's lab values item (desk-labs.spec.ts).
+    await page.setViewportSize({ width: 390, height: 844 });
     await open(page, "health-preview", "/app/preview/health");
     const links = page.getByRole("link", { name: tab });
     expect(await links.count(), "the tab is drawn").toBeGreaterThan(0);

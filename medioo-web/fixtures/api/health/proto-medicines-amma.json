@@ -1,0 +1,38 @@
+{
+  "_meta": {
+    "generated_by": "baymax ProtoFamilyContractTest",
+    "source": "GET /app/api/patients/{id}/medicines over the prototype family (desktop.html), case proto-medicines-amma"
+  },
+  "body": {
+    "date": "2026-10-15",
+    "date_is_upload_day": false,
+    "date_uncertain": false,
+    "document_id": "4ee8dc9d-41e9-3f40-a299-20baa694dd13",
+    "heading_key": "health.medicines.as_written",
+    "medicines": [
+      {
+        "crop": {
+          "src": "/app/documents/4ee8dc9d-41e9-3f40-a299-20baa694dd13/image?key=d29155e3-3319-325b-9d8e-b5ff73b8d2b6%2F75eb5081-4fff-3f99-a3b4-2771844eafef%2F4ee8dc9d-41e9-3f40-a299-20baa694dd13%2Fmed-177613d2.jpg"
+        },
+        "dose_text": "5 mg",
+        "duration_text": "১ মাস",
+        "frequency_text": "১+০+১",
+        "name": "Tab. Demoprol",
+        "timing_text": "খাবার পরে"
+      },
+      {
+        "crop": {
+          "src": "/app/documents/4ee8dc9d-41e9-3f40-a299-20baa694dd13/image?key=d29155e3-3319-325b-9d8e-b5ff73b8d2b6%2F75eb5081-4fff-3f99-a3b4-2771844eafef%2F4ee8dc9d-41e9-3f40-a299-20baa694dd13%2Fmed-58a9539f.jpg"
+        },
+        "dose_text": "500",
+        "duration_text": "১৪ দিন",
+        "frequency_text": "০+০+১",
+        "name": "Tab. Exampin",
+        "timing_text": "রাতে খাবার পরে"
+      }
+    ],
+    "newer_document_id": null,
+    "newer_prescription_not_read": false
+  },
+  "status": 200
+}

@@ -304,7 +304,8 @@ export const UPLOAD_REFUSED = Object.fromEntries(
 
 /**
  * The health tab (W9) on /app/health: one patient, no unseen NOW, and the labs and medicines bodies HealthApiContractTest
- * wrote (fixtures/api/health/), by case name.
+ * wrote (fixtures/api/health/), by case name. On the desktop layout (the lab values, plan desktop-parity L1) the
+ * sidebar also reads the patient's follow-ups: none here.
  */
 const health = (labs, medicines = "medicines-latest", me = "me/one-patient.json") => ({
   ...NO_NOW,
@@ -312,6 +313,7 @@ const health = (labs, medicines = "medicines-latest", me = "me/one-patient.json"
   "PUT /app/api/active-patient": NO_CONTENT,
   "GET /app/api/patients/{id}/labs": `health/${labs}.json`,
   "GET /app/api/patients/{id}/medicines": `health/${medicines}.json`,
+  "GET /app/api/patients/{id}/follow-ups": "follow-ups/none.json",
 });
 
 /** The network dies under the request (browser-api.ts aborts it after the guard, java-stub.mjs drops the socket). */
@@ -441,6 +443,15 @@ function protoFamily() {
     "GET /app/api/patients/{id}/timeline": byId("GET /app/api/patients/{id}/timeline", {
       [PROTO_AMMA]: "timeline/proto-amma.json",
       [PROTO_ABBU]: "timeline/proto-abbu.json",
+    }),
+    // desktop.html's lab values (plan desktop-parity L1) and the phone's health tab drawn beside them on the same page.
+    "GET /app/api/patients/{id}/labs": byId("GET /app/api/patients/{id}/labs", {
+      [PROTO_AMMA]: "health/proto-labs-amma.json",
+      [PROTO_ABBU]: "health/proto-labs-abbu.json",
+    }),
+    "GET /app/api/patients/{id}/medicines": byId("GET /app/api/patients/{id}/medicines", {
+      [PROTO_AMMA]: "health/proto-medicines-amma.json",
+      [PROTO_ABBU]: "health/proto-medicines-abbu.json",
     }),
     [PAPER]: byId(PAPER, Object.fromEntries(Object.entries(PROTO_PAPERS).map(([name, id]) => [id, `documents/proto-${name}.json`]))),
     [STATUS]: "document-status/done.json",

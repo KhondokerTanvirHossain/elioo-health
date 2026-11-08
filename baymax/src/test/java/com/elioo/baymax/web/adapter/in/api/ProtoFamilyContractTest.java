@@ -1,5 +1,7 @@
 package com.elioo.baymax.web.adapter.in.api;
 
+import com.elioo.baymax.extraction.application.service.MarkerMatcher;
+import com.elioo.baymax.extraction.application.service.MarkerMatchingIsWholeWordTest;
 import com.elioo.baymax.outbound.application.port.in.DocumentUrgencyUseCase;
 import com.elioo.baymax.outbound.application.service.ComposedBodies;
 import com.elioo.baymax.web.adapter.in.ActivePatient;
@@ -91,7 +93,11 @@ class ProtoFamilyContractTest {
         Map<String, String> thread = new LinkedHashMap<>();
         Map<String, String> calendar = new LinkedHashMap<>();
         Map<String, String> timeline = new LinkedHashMap<>();
+        Map<String, String> health = new LinkedHashMap<>();
         for (Map.Entry<String, UUID> p : patients().entrySet()) {
+            // the desktop's lab values (plan desktop-parity L1) and the phone health tab beside them on the same page
+            health.put(PREFIX + "-labs-" + p.getKey(), "/app/api/patients/" + p.getValue() + "/labs");
+            health.put(PREFIX + "-medicines-" + p.getKey(), "/app/api/patients/" + p.getValue() + "/medicines");
             // desktop.html's month (calView(): October 2026), and the papers list the calendar's list view shows
             calendar.put(PREFIX + "-" + p.getKey(), "/app/api/patients/" + p.getValue() + "/calendar?month=2026-10");
             timeline.put(PREFIX + "-" + p.getKey(), "/app/api/patients/" + p.getValue() + "/timeline");
@@ -103,6 +109,7 @@ class ProtoFamilyContractTest {
         cases.put("attention", attention);
         cases.put("calendar", calendar);
         cases.put("timeline", timeline);
+        cases.put("health", health);
         cases.put("follow-ups", follows);
         cases.put("me", Map.of(PREFIX, "/app/api/me"));
         cases.put("thread", thread);
@@ -134,6 +141,17 @@ class ProtoFamilyContractTest {
             "me", "GET /app/api/me",
             "thread", "GET /app/api/patients/{id}/thread?asks=1",
             "documents", "GET /app/api/documents/{id}");
+
+    /**
+     * The route a case answers, as its area's own contract test writes it: {@link #SOURCES}, except the health area,
+     * which holds two routes (HealthApiContractTest's labs-* and medicines-*), told apart by the case's name.
+     */
+    static String sourceOf(String area, String name) {
+        if ("health".equals(area)) {
+            return name.startsWith(PREFIX + "-medicines-") ? "GET /app/api/patients/{id}/medicines" : "GET /app/api/patients/{id}/labs";
+        }
+        return SOURCES.get(area);
+    }
 
     // ---- the family, seeded once ---------------------------------------------------------------------------------
 
@@ -244,16 +262,23 @@ class ProtoFamilyContractTest {
         return new Row(name, value, unit, low, high, flag);
     }
 
-    /** A DONE lab report with its values (each with its crop), assessed by the real urgency writer. */
+    /**
+     * A DONE lab report with its values (each with its crop), assessed by the real urgency writer. Each value's canonical
+     * name is the one extraction would store, from the real {@link MarkerMatcher} over the shipped markers.properties (never typed
+     * here): what puts a value in the patient's lab series (plan desktop-parity L1), and a value no marker matches stays
+     * out of them, as in production.
+     */
     static void lab(ApplicationContext context, String key, UUID patient, String printed, String uploaded, List<Row> rows) throws Exception {
         UUID doc = FixedPapers.paper(POSTGRES, FixedPapers.id(K, key), profile(patient), "lab_report", "DONE", printed,
                 Instant.parse(uploaded), null);
+        MarkerMatcher markers = MarkerMatchingIsWholeWordTest.shippedMatcher();
         for (int i = 0; i < rows.size(); i++) {
             Row r = rows.get(i);
             UUID obs = FixedPapers.id(K, key + "-value-" + (i + 1));
-            FixedPapers.exec(POSTGRES, "INSERT INTO baymax.observation (id, patient_id, document_id, name, value, unit, ref_low, ref_high,"
-                            + " flag, crop_key, observed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", obs, patient, doc, r.name(), r.value(),
-                    r.unit(), r.low(), r.high(), r.flag(), FAMILY + "/" + patient + "/" + doc + "/crop-" + obs.toString().substring(0, 8) + ".jpg",
+            FixedPapers.exec(POSTGRES, "INSERT INTO baymax.observation (id, patient_id, document_id, name, canonical_name, value, unit,"
+                            + " ref_low, ref_high, flag, crop_key, observed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", obs, patient, doc,
+                    r.name(), markers.canonicalFor(r.name(), null).orElse(null), r.value(), r.unit(), r.low(), r.high(), r.flag(),
+                    FAMILY + "/" + patient + "/" + doc + "/crop-" + obs.toString().substring(0, 8) + ".jpg",
                     Timestamp.from(Instant.parse(uploaded)));
         }
         assess(context, doc);
@@ -292,7 +317,7 @@ class ProtoFamilyContractTest {
         EntityExchangeResult<byte[]> r = served().get(areaAndName);
         assertThat(r.getStatus().value()).as(areaAndName + " answered").isEqualTo(200);
         AttentionApiContractTest.write(ProtoFamilyContractTest.class, FIXTURES.resolve(area), WRITTEN.resolve(area), area, name,
-                SOURCES.get(area) + " over the prototype family (desktop.html), case " + name, r);
+                sourceOf(area, name) + " over the prototype family (desktop.html), case " + name, r);
     }
 
     /** Both ways: every committed {@code proto*} file in any area is a current case, and every case is committed. */
@@ -322,7 +347,7 @@ class ProtoFamilyContractTest {
      * sidebar's level per patient, the NOW banner naming potas with 999, and the doctor's date of 22 October.
      */
     @Test
-    void theFamilyIsDesktopHtmls() throws IOException {
+    void theFamilyIsDesktopHtmls() throws Exception {
         JsonNode me = body("me/" + PREFIX);
         Map<String, JsonNode> byName = new LinkedHashMap<>();
         me.get("patients").forEach(p -> byName.put(p.get("name").asText(), p));
@@ -408,6 +433,24 @@ class ProtoFamilyContractTest {
                     .filter(x -> x.patient().equals(p.getValue())).map(x -> x.id().toString()).toList());
             assertThat(visits).as(p.getKey() + "'s doctor's dates").isEqualTo("amma".equals(p.getKey()) ? List.of("2026-10-22") : List.of());
         }
+
+        // the desktop's lab values (plan desktop-parity L1): every value a marker tracks is in its patient's series, asked of
+        // the database rather than listed here, and the prototype's two levels are the series' own (creat, potas)
+        for (Map.Entry<String, UUID> p : patients().entrySet()) {
+            List<String> inSeries = new ArrayList<>();
+            body("health/" + PREFIX + "-labs-" + p.getKey()).get("series")
+                    .forEach(x -> x.get("points").forEach(pt -> inSeries.add(pt.get("observation_id").asText())));
+            List<String> tracked = FixedPapers.rows(POSTGRES, "SELECT id FROM baymax.observation WHERE patient_id = '" + p.getValue()
+                    + "' AND canonical_name IS NOT NULL").stream().map(r -> r.get(0)).toList();
+            assertThat(tracked).as(p.getKey() + "'s tracked values (none would pass the sweep vacuously)").isNotEmpty();
+            assertThat(inSeries).as(p.getKey() + "'s lab series").containsExactlyInAnyOrderElementsOf(tracked);
+        }
+        Map<String, String> levelOf = new LinkedHashMap<>();
+        for (Map.Entry<String, UUID> p : patients().entrySet()) {
+            body("health/" + PREFIX + "-labs-" + p.getKey()).get("series").forEach(x -> levelOf.put(p.getKey() + ":"
+                    + x.get("canonical_name").asText(), x.get("points").get(0).get("kind").asText()));
+        }
+        assertThat(levelOf).containsEntry("amma:creatinine", "outside").containsEntry("abbu:potassium", "critical");
 
         // every paper is on its patient's thread, as a card
         for (Map.Entry<String, UUID> p : patients().entrySet()) {

@@ -4,7 +4,10 @@ import type { LabsJson, MedicinesJson } from "@/api/types";
 import { t } from "@/copy";
 import { LabList } from "@/components/LabList/LabList";
 import { MedicinesAsWritten } from "@/components/MedicinesAsWritten/MedicinesAsWritten";
+import { servedByNext } from "@/routing/paths";
+import { desktopFrame } from "../desktop-frame";
 import { signedInPage } from "../shell";
+import { labsScreen } from "./desk";
 import "./health.css";
 
 /**
@@ -15,8 +18,12 @@ import "./health.css";
  * nothing else); nothing is joined, judged or derived here. The patient is the shell's (`?patient=` honoured; the
  * chooser when two or more and nobody chosen). The disclaimer is the shell's (AppShell, plan W8 review): under `main` on
  * every signed-in page, so this page does not say it a second time.
+ *
+ * On the desktop layout (from 900 px, preview only until the flip) the page is the lab values screen (health/desk.tsx,
+ * plan desktop-parity L1): the sidebar's desk.nav.labs; the medicines get their own desktop screen in M1.
  */
 export default async function HealthPage() {
+  const { here } = await requestContext();
   return signedInPage({
     tab: "health",
     main: async ({ lang, preview, patient }) => {
@@ -29,7 +36,6 @@ export default async function HealthPage() {
           </div>
         );
       }
-      const { here } = await requestContext();
       const id = encodeURIComponent(patient.id);
       const [labsAnswer, medicinesAnswer] = await Promise.all([
         javaGet<LabsJson>(`/app/api/patients/${id}/labs`),
@@ -54,6 +60,10 @@ export default async function HealthPage() {
           </section>
         </div>
       );
+    },
+    desktop: {
+      frame: desktopFrame,
+      paper: (ctx) => labsScreen(ctx, here, { soft: servedByNext("/app/health", ctx.preview) }),
     },
   });
 }

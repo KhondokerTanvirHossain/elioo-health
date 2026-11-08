@@ -50,9 +50,18 @@ export function deskOverflow(page: Page) {
   });
 }
 
-/** Opens the sidebar where it lies behind the paper column's button (900 to 1199 px), so its names are measured too. */
+/**
+ * Opens the sidebar where it lies behind the paper column's button (900 to 1199 px), so its names are measured too. The
+ * button is a client island (SidebarToggle): a click that lands before React hydrates it does nothing, which a slow CI
+ * runner hit (PR 179). So the click is repeated until the button itself says it is open (`aria-expanded`, which only
+ * React sets); a click after hydration opens it at once, so the loop never toggles it shut again.
+ */
 export async function showSidebar(page: Page, width: number) {
   if (width >= SIDEBAR_COLUMN) return;
-  await page.locator(".desktop-shell__menu").click();
+  const menu = page.locator(".desktop-shell__menu");
+  await expect(async () => {
+    if ((await menu.getAttribute("aria-expanded")) !== "true") await menu.click();
+    await expect(menu).toHaveAttribute("aria-expanded", "true", { timeout: 1_000 });
+  }).toPass({ timeout: 10_000 });
   await expect(page.locator(".desktop-shell__sidebar[data-open]")).toBeVisible();
 }

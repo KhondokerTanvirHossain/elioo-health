@@ -1,0 +1,330 @@
+/* The desktop lab values (DeskLabs.tsx; desktop.html `.view.labs`, `.list`, `.lr`, `.detail`, `.panel`, `.src`): the list
+   of values on the left (340 px, 300 px from 900 to 1199 px), the chosen value on the right, each column scrolling on
+   its own. A status is its chip (shape and word, StatusChip's own colours), never a colour of the row or the figure.
+   Every size is a token or the design's own. */
+.desk-labs {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+  color: var(--label);
+  font-family: var(--font-bn);
+}
+@media (max-width: 1199px) {
+  .desk-labs {
+    grid-template-columns: 300px minmax(0, 1fr);
+  }
+}
+
+/* None anywhere but the shell's column from 900 to 1199 px (DesktopShell.css), inherited from the root (PaperViewer.css's). */
+:where(:root) {
+  --desktop-menu-room: 0px;
+}
+
+/* The list (desktop.html's `.list` and `.lr`). */
+.desk-labs__list {
+  min-height: 0;
+  padding: 0 10px 20px;
+  overflow-y: auto;
+  border-right: 0.5px solid var(--sep);
+}
+/* The heading sits where desktop.html's toolbar does, and leaves the shell's menu button its room from 900 to 1199 px. */
+.desk-labs__title {
+  display: flex;
+  align-items: center;
+  min-height: 56px;
+  margin: 0 0 var(--space-1);
+  padding-left: calc(var(--space-1) + var(--desktop-menu-room));
+  font-size: var(--text-xl);
+  font-weight: 700;
+}
+.desk-labs__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: var(--space-2) 10px;
+  border-radius: 10px;
+  color: var(--label);
+  text-decoration: none;
+}
+.desk-labs__row:hover {
+  background: var(--hover);
+}
+.desk-labs__row[aria-current="true"] {
+  background: var(--selbg);
+}
+.desk-labs__nm {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-sys);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.desk-labs__when {
+  display: block;
+  margin-top: 2px;
+  color: var(--label2);
+  font-family: var(--font-bn);
+  font-size: var(--text-xs);
+  font-weight: 400;
+}
+/* The reading and its chip keep one line each (a chip's word never breaks); the name beside them wraps instead. */
+.desk-labs__vv {
+  display: grid;
+  flex: none;
+  justify-items: end;
+  gap: 2px;
+  text-align: right;
+  white-space: nowrap;
+}
+.desk-labs__v {
+  font-family: var(--font-sys);
+  font-size: var(--text-md);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.desk-labs__u {
+  color: var(--label2);
+  font-family: var(--font-sys);
+  font-size: var(--text-xs);
+  font-weight: 400;
+}
+/* A blood-pressure pair's two chips, the systolic's over the diastolic's, in the order the reading names them. */
+.desk-labs__chips {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-1);
+}
+
+/* The chosen value (desktop.html's `.detail`, `.big`, `.sub`). */
+.desk-labs__pane {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--bg2);
+}
+.desk-labs__detail {
+  max-width: 760px;
+  padding: 26px 34px 40px;
+}
+.desk-labs__name {
+  margin: 0;
+  color: var(--label2);
+  font-family: var(--font-sys);
+  font-size: var(--text-md);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.desk-labs__figure {
+  margin: 0;
+  font-family: var(--font-sys);
+  font-size: var(--text-figure);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+.desk-labs__figure-u {
+  margin-left: var(--space-1);
+  color: var(--label2);
+  font-size: var(--text-lg);
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.desk-labs__sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0 18px;
+  color: var(--label2);
+  font-size: var(--text-sm);
+}
+
+/* The panels (desktop.html's `.panel`, `.ph`, `.foot`, `.src`). */
+.desk-labs__panel {
+  margin-bottom: var(--space-4);
+  padding: 18px;
+  border-radius: var(--radius-lg);
+  background: var(--bg3);
+  box-shadow: 0 0 0 0.5px var(--sep);
+}
+.desk-labs__ph {
+  margin: 0 0 10px;
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+.desk-labs__note {
+  margin: 0;
+  color: var(--label2);
+  font-size: var(--text-md);
+  line-height: 1.5;
+}
+.desk-labs__foot {
+  margin: 10px 0 0;
+  color: var(--label2);
+  font-size: var(--text-xs);
+  line-height: 1.55;
+}
+.desk-labs__readings {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.desk-labs__reading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: 10px 0;
+  border-top: 0.5px solid var(--sep);
+}
+.desk-labs__reading:first-child {
+  border-top: 0;
+}
+.desk-labs__reading-date {
+  flex: 1 1 160px;
+  min-width: 0;
+  color: var(--label2);
+  font-size: var(--text-sm);
+}
+.desk-labs__reading-v {
+  font-family: var(--font-sys);
+  font-size: var(--text-md);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.desk-labs__halves {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.desk-labs__half {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.desk-labs__slash {
+  color: var(--label2);
+}
+.desk-labs__src {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 10px 6px;
+  border-top: 0.5px solid var(--sep);
+  color: var(--label);
+  text-decoration: none;
+}
+.desk-labs__ph + .desk-labs__src {
+  border-top: 0;
+}
+.desk-labs__src:hover {
+  background: var(--hover);
+}
+/* A paper's crops side by side (a blood-pressure pair's two halves), its date under them. */
+.desk-labs__src-body {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+.desk-labs__crop {
+  display: block;
+  max-width: 100%;
+  max-height: 72px;
+  border-radius: 6px;
+  background: var(--paper);
+  box-shadow: 0 0 0 0.5px var(--sep);
+}
+.desk-labs__src-date {
+  flex-basis: 100%;
+  color: var(--label2);
+  font-size: var(--text-xs);
+}
+.desk-labs__chev {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: var(--label3);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Nothing read yet (desktop.html's `emptyCol`, `.soonpage`). */
+.desk-labs--none {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+.desk-labs__title--bar {
+  flex: none;
+  padding-left: calc(var(--space-4) + var(--desktop-menu-room));
+}
+.desk-labs__empty {
+  max-width: 46ch;
+  margin: auto;
+  padding: 80px 28px;
+  text-align: center;
+}
+.desk-labs__empty-mark {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  margin: 0 auto 18px;
+  border-radius: 18px;
+  background: var(--tint);
+  color: var(--on-tint);
+}
+.desk-labs__empty-mark svg {
+  width: 36px;
+  height: 36px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.desk-labs__empty-title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-xl);
+  font-weight: 700;
+  line-height: 1.35;
+}
+.desk-labs__empty-text {
+  margin: 0 auto var(--space-4);
+  color: var(--label2);
+}
+.desk-labs__send {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--tint);
+  color: var(--on-tint);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .desk-labs__row,
+  .desk-labs__src {
+    transition: background-color 120ms ease-out;
+  }
+}

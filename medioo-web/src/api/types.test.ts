@@ -81,6 +81,10 @@ import medicinesNewerUnread from "../../fixtures/api/health/medicines-newer-unre
 import medicinesNone from "../../fixtures/api/health/medicines-none.json";
 import medicinesNoneNewerUnread from "../../fixtures/api/health/medicines-none-newer-unread.json";
 import labsWithUnknown from "../../fixtures/api/health/labs-with-unknown.json";
+import labsProtoAbbu from "../../fixtures/api/health/proto-labs-abbu.json";
+import labsProtoAmma from "../../fixtures/api/health/proto-labs-amma.json";
+import medicinesProtoAbbu from "../../fixtures/api/health/proto-medicines-abbu.json";
+import medicinesProtoAmma from "../../fixtures/api/health/proto-medicines-amma.json";
 // B1's generated GET /app/api/me bodies (baymax MeApiContractTest), plan W4: the shell reads every field it renders here.
 import meFlagsSet from "../../fixtures/api/me/flags-set.json";
 import meLongName from "../../fixtures/api/me/long-name.json";
@@ -415,6 +419,9 @@ describe("the /app/api types", () => {
  */
 
 const fixtures = join(__dirname, "..", "..", "fixtures", "api");
+/** The health area's two routes, told apart by name (ProtoFamilyContractTest.sourceOf names the proto family's the same way). */
+const isLabsFixture = (f: string) => /^(proto-)?labs-.*\.json$|^bp(-.*)?\.json$/.test(f);
+const isMedicinesFixture = (f: string) => /^(proto-)?medicines-.*\.json$/.test(f);
 
 // Each list is held to its type by the compiler, as the banner's are above (a key missing from a list, or one the type
 // does not have, fails `pnpm typecheck`); the test then holds every fixture's objects to the list, so a field Java adds,
@@ -501,6 +508,13 @@ describe("the API types are the generated fixtures", () => {
     expect(follows, "follow-ups walked").toBeGreaterThan(0);
   });
 
+  it("everyHealthFixtureIsALabsOrAMedicinesFixture", () => {
+    // The two checks below each take their own files by name; a file neither takes would be checked by nothing.
+    const files = readdirSync(join(fixtures, "health")).filter((f) => f.endsWith(".json"));
+    expect(files.length, "health fixtures").toBeGreaterThan(10);
+    expect(files.filter((f) => isLabsFixture(f) === isMedicinesFixture(f))).toEqual([]);
+  });
+
   it("everyLabsFixtureIsALabsJson", () => {
     const labs: Array<[string, LabsJson]> = [
       ["labs-some", labsSome.body],
@@ -511,13 +525,11 @@ describe("the API types are the generated fixtures", () => {
       ["labs-two-units", labsTwoUnits.body],
       ["bp", bp.body],
       ["bp-flagged", bpFlagged.body],
+      ["proto-labs-amma", labsProtoAmma.body],
+      ["proto-labs-abbu", labsProtoAbbu.body],
     ];
     // Every committed labs fixture is assigned above, so a case B6 or W9 adds fails here until it is listed.
-    expect(
-      readdirSync(join(fixtures, "health"))
-        .filter((f) => f.startsWith("labs-") || f === "bp.json" || f.startsWith("bp-"))
-        .sort(),
-    ).toEqual(labs.map(([name]) => `${name}.json`).sort());
+    expect(readdirSync(join(fixtures, "health")).filter(isLabsFixture).sort()).toEqual(labs.map(([name]) => `${name}.json`).sort());
     const points: TrendPointJson[] = [];
     let pairs = 0;
     for (const [name, l] of labs) {
@@ -557,13 +569,11 @@ describe("the API types are the generated fixtures", () => {
       ["medicines-newer-unread", medicinesNewerUnread.body],
       ["medicines-none", medicinesNone.body],
       ["medicines-none-newer-unread", medicinesNoneNewerUnread.body],
+      ["proto-medicines-amma", medicinesProtoAmma.body],
+      ["proto-medicines-abbu", medicinesProtoAbbu.body],
     ];
     // Every committed medicines fixture is assigned above, so a case B6 or W9 adds fails here until it is listed.
-    expect(
-      readdirSync(join(fixtures, "health"))
-        .filter((f) => f.startsWith("medicines-"))
-        .sort(),
-    ).toEqual(bodies.map(([name]) => `${name}.json`).sort());
+    expect(readdirSync(join(fixtures, "health")).filter(isMedicinesFixture).sort()).toEqual(bodies.map(([name]) => `${name}.json`).sort());
     let lines = 0;
     for (const [name, m] of bodies) {
       const dated = m.document_id !== null;
