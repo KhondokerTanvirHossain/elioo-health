@@ -247,9 +247,11 @@ describe("family", () => {
     fireEvent.click(view.getByRole("button", { name: t("bn", "profile.nudges.stop", poss) }));
     fireEvent.click(buttonNamed(openDialog(view.container)!, t("bn", "optout.patient"))!);
     await waitFor(() => expect(region().textContent).toContain(t("bn", "profile.nudges.off", poss)));
-    // The stop button is gone, so the focus moves to the line that says what is true now.
+    // The stop button is gone, so the focus moves to the line that says what is true now. ReminderSwitch moves it in an
+    // effect, which can run after the text is drawn: wait for the focus itself, not only for the text (a slow CI
+    // runner read it in between, PR 180). Focus left on the page body still fails here, once the wait runs out.
     const line = region().querySelector<HTMLElement>(".family-reminders__line")!;
-    expect(document.activeElement, "focus after the stop").toBe(line);
+    await waitFor(() => expect(document.activeElement, "focus after the stop").toBe(line));
     expect(calls).toEqual([{ url: `/app/api/patients/${patient.id}/reminders`, method: "PUT", body: { on: false } }]);
     expect(
       [...region().querySelectorAll("button, input, [role=switch]")].map((e) => e.outerHTML),

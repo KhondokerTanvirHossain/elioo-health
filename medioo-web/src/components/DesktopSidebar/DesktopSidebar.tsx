@@ -13,8 +13,8 @@ import { DesktopSidebarStyles } from "./desk-load";
 /** Which ledger item, or the account row, the page is. */
 export type DesktopPlace = "talk" | "calendar" | "labs" | "meds" | "settings";
 
-// The ledger in desktop.html's order. Phase 1 sends each to the page that holds it today: the calendar is the papers
-// page, the lab values and the medicines are the health page (its medicines heading is `#health-medicines`).
+// The ledger in desktop.html's order, each to the page that holds it: the calendar is the papers page, the lab values
+// and the medicines are the health page, the medicines on `?show=medicines` (plan desktop-parity L1, M1).
 const LEDGER: { place: Exclude<DesktopPlace, "settings">; path: string; key: CopyKey; icon: ReactNode }[] = [
   {
     place: "talk",
@@ -36,7 +36,7 @@ const LEDGER: { place: Exclude<DesktopPlace, "settings">; path: string; key: Cop
   },
   {
     place: "meds",
-    path: "/app/health#health-medicines",
+    path: "/app/health?show=medicines",
     key: "desk.nav.meds",
     icon: <path d="M6.4 17.6a3.5 3.5 0 0 1 0-5l6.2-6.2a3.5 3.5 0 0 1 5 5l-6.2 6.2a3.5 3.5 0 0 1-5 0zM9.5 9.5l5 5" />,
   },

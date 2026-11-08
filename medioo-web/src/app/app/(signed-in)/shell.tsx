@@ -10,6 +10,7 @@ import { PatientChooser } from "@/components/PatientChooser/PatientChooser";
 import { NowBanner } from "@/components/safety/NowBanner/NowBanner";
 import { NowBannerHold } from "@/components/safety/NowBanner/NowBannerHold";
 import type { Tab } from "@/components/TabBar/TabBar";
+import type { DesktopPlace } from "@/components/DesktopSidebar/DesktopSidebar";
 import { desktopLayout } from "@/routing/desktop";
 import { activePatient } from "./active-patient";
 import { shellWords } from "./shell-words";
@@ -37,6 +38,8 @@ export type DesktopFrameInput = {
   me: MeJson;
   patient: MePatient | null;
   tab: Tab | null;
+  /** The sidebar's item this screen is, when the tab alone does not say (the health page's medicines); else the tab's. */
+  place: DesktopPlace | undefined;
   bar: ReactNode | undefined;
   paper: ReactNode;
   /** undefined: a screen of one column (the calendar), drawn with no conversation and no divider. */
@@ -86,6 +89,8 @@ function askedPatient(here: string): string | null {
  *   `desktop.panel` (Task 8) is a paper's details over the conversation, when the page has one open (undefined: none).
  *   A page that gives no `desktop.talk` (the calendar, plan desktop-calendar) is one column: its `paper` slot holds a
  *   screen that lays itself out, and the chooser, when it stands in, fills that column alone.
+ *   `desktop.place` is the sidebar's item the screen is, where one tab holds two (the health page: the lab values, or
+ *   the medicines on `?show=medicines`, plan desktop-parity M1); without it the tab's.
  *   `desktop.frame` is desktop-frame.tsx's desktopFrame, which renders DesktopShell and DesktopSidebar: the page passes
  *   it, so only a page that can render the desktop layout imports them (DR-42), and this module names it as a type.
  *   The NOW banner is the slim bar there (NowBanner variant "bar", across the content columns), the block below 900 px.
@@ -110,7 +115,7 @@ export async function signedInPage({
   everyone?: boolean;
   asked?: string;
   patient?: string | null;
-  desktop?: { frame: DesktopFrame; paper: Slot; talk?: Slot; panel?: Slot };
+  desktop?: { frame: DesktopFrame; paper: Slot; talk?: Slot; panel?: Slot; place?: DesktopPlace };
 }) {
   const { lang, preview, here } = await requestContext();
   const [meAnswer, bannerAnswer] = await Promise.all([javaGet<MeJson>("/app/api/me"), javaGet<NowBannerJson>("/app/api/now-banner")]);
@@ -154,6 +159,7 @@ export async function signedInPage({
     me,
     patient,
     tab,
+    place: desktop.place,
     bar: nowBanner("bar"),
     paper: chooser ? <PatientChooser lang={lang} patients={me.patients} titleId="desktop-patient-chooser-title" /> : await fill(desktop.paper, ctx),
     talk: desktop.talk === undefined ? undefined : chooser ? null : await fill(desktop.talk, ctx),

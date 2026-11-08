@@ -24,7 +24,7 @@ export const dhakaToday = (): string => DHAKA_DAY.format(new Date());
  * which never renders the desktop layout does not carry it at all: not DesktopShell, not the sidebar, not their loaders
  * (desk-load.tsx) nor next/dynamic's runtime (DR-42; owner decision 2026-11-07).
  */
-export const desktopFrame: DesktopFrame = async ({ lang, preview, here, me, patient, tab, bar, paper, talk, panel }) => {
+export const desktopFrame: DesktopFrame = async ({ lang, preview, here, me, patient, tab, place, bar, paper, talk, panel }) => {
   const followUps =
     patient === null
       ? null
@@ -39,7 +39,7 @@ export const desktopFrame: DesktopFrame = async ({ lang, preview, here, me, pati
           preview={preview}
           me={me}
           active={patient}
-          current={tab === null ? null : PLACE[tab]}
+          current={place ?? (tab === null ? null : PLACE[tab])}
           nextVisit={followUps === null ? null : nextVisitOf(followUps.items)}
           today={dhakaToday()}
         />

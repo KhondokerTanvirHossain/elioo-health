@@ -450,3 +450,27 @@ Built on `feat/desktop-labs`, behind preview (`/app/preview/health`), as desktop
     desktop.html's wider sketch; the earlier months desktop.html invents (`HISTORY`) are not in the prototype family.
   - Blood pressure (not in desktop.html) is one value: the newest pair as the figure, each half with its own chip, each
     pair's two crops side by side.
+
+## Phase 2, M1 — the medicines (2026-11-09)
+
+Built on `feat/desktop-medicines`, behind preview (`/app/preview/health?show=medicines`), as desktop.html's `medsView()`:
+
+- **Address.** The health page's second desktop screen, at `?show=medicines`, as L1 kept the lab values on the page
+  itself: no new route, no `FLIPPED` entry, no Caddy change. The sidebar's ওষুধ goes there (it was the phone section's
+  anchor) and is marked current there: a page whose tab holds two screens names its sidebar item (`desktop.place`).
+  Below 900 px the same address is today's phone health tab.
+- **Data.** Nothing new: `GET …/medicines`, the phone's read (the newest prescription only, under Java's heading).
+- **Screen** (`DeskMedicines`): the bar "ওষুধ"; "{possessive} ওষুধ" and desktop.html's lede; Java's heading and the
+  prescription's date; each line its own crop, the line as written (the name, a dash, then each written field, Java's
+  strings as sent), "প্রেসক্রিপশনে যেমন লেখা, তেমনই" and "কাগজে দেখুন" (the prescription on the talk-and-papers
+  screen); an empty newest prescription is its date alone; a newer one being read is said and linked; none yet is
+  desktop.html's "এখনো কোনো প্রেসক্রিপশন পাঠানো হয়নি।". No chip, colour or status on a medicine.
+- **Words.** Every new `desk.meds.*` Bangla is desktop.html's own (`DesktopWordsTest`).
+- **Not as desktop.html, on purpose:**
+  - Under the medicines, the app's pharmacy and doctor lines (`med.pharmacy`, `health.medicines.doctor_only`, what the
+    phone says), not desktop.html's "ফার্মেসিতে মূল প্রেসক্রিপশনটাই দেখান। ওষুধ বদলানো, কমানো বা বন্ধ করা শুধু ডাক্তার
+    ঠিক করবেন — Medioo এ নিয়ে কিছু বলে না।": the two disagree (the app allows showing this photo at the pharmacy, the
+    design only the original), and that is safety wording for the PO and its owner, not for a screen to change.
+  - Only the newest prescription, not every one (Q3, decision 9: what is shown is the latest, dated, never "current").
+  - The prescription's header is Java's heading and date; the medicines read carries no facility or type title.
+  - "কাগজে দেখুন" opens the prescription, not the medicine's own line on it (the viewer has no per-line mark yet).
