@@ -127,12 +127,13 @@ describe("DesktopSidebar", () => {
     expect(none.querySelector(".desktop-sidebar__ledger")).toBeNull();
   });
 
-  it("menuLinksGoWhereTheyShouldInPhase1", () => {
+  it("menuLinksGoWhereTheyShould", () => {
+    // The medicines are the health page's own desktop screen (plan desktop-parity M1), no longer its heading's anchor.
     const want = (prefix: string) => [
       [t("bn", "desk.nav.talk"), `${prefix}/home`],
       [t("bn", "desk.nav.calendar"), `${prefix}/timeline`],
       [t("bn", "desk.nav.labs"), `${prefix}/health`],
-      [t("bn", "desk.nav.meds"), `${prefix}/health#health-medicines`],
+      [t("bn", "desk.nav.meds"), `${prefix}/health?show=medicines`],
     ];
     const links = (preview: boolean) =>
       [...sidebar({ preview }).container.querySelectorAll<HTMLAnchorElement>(".desktop-sidebar__ledger a")].map((a) => [
@@ -142,8 +143,6 @@ describe("DesktopSidebar", () => {
     expect(links(true)).toEqual(want("/app/preview"));
     cleanup();
     expect(links(false)).toEqual(want("/app"));
-    // The fragment names a heading the health page really has.
-    expect(want("/app")[3]![1]).toContain("#health-medicines");
   });
 
   it("theCurrentLedgerItemIsMarked", () => {

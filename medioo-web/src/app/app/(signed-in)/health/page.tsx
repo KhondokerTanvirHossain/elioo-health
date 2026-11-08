@@ -7,7 +7,7 @@ import { MedicinesAsWritten } from "@/components/MedicinesAsWritten/MedicinesAsW
 import { servedByNext } from "@/routing/paths";
 import { desktopFrame } from "../desktop-frame";
 import { signedInPage } from "../shell";
-import { labsScreen } from "./desk";
+import { labsScreen, medicinesScreen, shows } from "./desk";
 import "./health.css";
 
 /**
@@ -20,7 +20,8 @@ import "./health.css";
  * every signed-in page, so this page does not say it a second time.
  *
  * On the desktop layout (from 900 px, preview only until the flip) the page is the lab values screen (health/desk.tsx,
- * plan desktop-parity L1): the sidebar's desk.nav.labs; the medicines get their own desktop screen in M1.
+ * plan desktop-parity L1): the sidebar's desk.nav.labs; at `?show=medicines` it is the medicines screen (M1), the
+ * sidebar's desk.nav.meds.
  */
 export default async function HealthPage() {
   const { here } = await requestContext();
@@ -63,7 +64,9 @@ export default async function HealthPage() {
     },
     desktop: {
       frame: desktopFrame,
-      paper: (ctx) => labsScreen(ctx, here, { soft: servedByNext("/app/health", ctx.preview) }),
+      paper: (ctx) =>
+        shows(here) === "medicines" ? medicinesScreen(ctx, here) : labsScreen(ctx, here, { soft: servedByNext("/app/health", ctx.preview) }),
+      place: shows(here) === "medicines" ? "meds" : "labs",
     },
   });
 }
