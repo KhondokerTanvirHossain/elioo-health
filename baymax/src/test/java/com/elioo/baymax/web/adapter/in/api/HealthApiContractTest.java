@@ -388,13 +388,13 @@ class HealthApiContractTest {
                 "cp baymax/" + WRITTEN.resolve(file) + " medioo-web/fixtures/api/health/" + file);
     }
 
-    /** Both ways: every committed fixture is a current case, so a renamed or removed case leaves no stale body for MSW. */
+    /**
+     * Both ways: every committed fixture is a current case, so a renamed or removed case leaves no stale body for MSW.
+     * The prototype family's {@code proto*} files are ProtoFamilyContractTest's, held there the same way.
+     */
     @Test
     void everyCommittedFixtureIsACurrentCase() throws IOException {
-        List<String> committed;
-        try (Stream<Path> files = java.nio.file.Files.list(COMMITTED)) {
-            committed = files.map(p -> p.getFileName().toString()).filter(n -> n.endsWith(".json")).sorted().toList();
-        }
+        List<String> committed = AttentionApiContractTest.ownCommitted(COMMITTED);
         assertThat(committed).as("the committed fixtures in " + COMMITTED.toAbsolutePath()).isNotEmpty();
         assertThat(committed).containsExactlyInAnyOrderElementsOf(caseNames().map(n -> n + ".json").toList());
     }

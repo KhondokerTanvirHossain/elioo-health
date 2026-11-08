@@ -30,10 +30,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * A boundary rule that is too strict silently stops recognising "S-POTASSIUM", and the potassium threshold
  * goes back to never firing — the exact defect this work exists to fix.</p>
  */
-class MarkerMatchingIsWholeWordTest {
+public class MarkerMatchingIsWholeWordTest {
 
     /** The real shipped alias table, so this tests what production matches. */
-    private static MarkerMatcher shippedMatcher() {
+    /** The matcher production runs: over markers.properties as shipped (production imports the file; a context runner does not). */
+    public static MarkerMatcher shippedMatcher() {
         BaymaxProperties properties = new BaymaxProperties();
         properties.setMarkers(loadShippedMarkers());
         return new MarkerMatcher(properties);

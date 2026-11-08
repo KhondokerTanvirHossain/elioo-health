@@ -413,3 +413,40 @@ Built on `feat/desktop-calendar`, behind preview (`/app/preview/timeline`), as d
   `WEEK_ALLOWED` and the TS class guard (`desk-cal__ev--now|week`, only in `src/components/DeskCalendar/`); each is
   drawn with its shape (octagon, calendar) and its paper's name, never the colour alone; the NOW name is in `--now-ink`
   (axe contrast at 12 px), the octagon in `--now`.
+
+## Phase 2, L1 — the lab values (2026-11-08)
+
+Built on `feat/desktop-labs`, behind preview (`/app/preview/health`), as desktop.html's `labsView()`:
+
+- **No new route.** The sidebar's ল্যাবের মান already is the health page (`DesktopSidebar`'s `labs` place, Phase 1), so
+  the lab values are `/app/health`'s desktop layout (`health/desk.tsx`). This replaces the table's `/app/labs`: no
+  `FLIPPED` entry, no Caddy block, nothing to change on the shared box. The phone's health tab is unchanged below 900 px.
+  M1 decides the medicines' own address when it starts.
+- **Data.** Nothing new from Java: `GET …/labs` already carries each reading's value, unit, chip, date, printed range
+  numbers and crop. The prototype family's values are now a fixture (`health/proto-labs-*`, `health/proto-medicines-*`,
+  `ProtoFamilyContractTest`): each value's canonical name is the one the shipped `markers.properties` gives it through
+  the real `MarkerMatcher` (production stores the same), and the test asks the database, not a list, that every tracked
+  value is in its patient's series. With canonical names the NOW banner's `reasons_digest` changed (potassium is now
+  judged by its per-marker threshold, as in production); its level did not.
+- **Screen** (`DeskLabs`, one column of the shell). The list (340 px; 300 px from 900 to 1199 px, as desktop.html):
+  every value in Java's order, then the blood pressure, each a link to itself (`?lab=`, any of its readings' ids, so an
+  old link still opens it) with its name, its newest paper's date and "{n}টি কাগজে", its newest reading, unit and chip.
+  The chosen value: the newest reading as a figure (`--text-figure`, 44 px, desktop.html's `.big`), its chip, "সর্বশেষ
+  {date}" and the range its paper printed; "সময়ের সাথে" (TrendChart for plain numbers with desktop.html's line under it,
+  one reading's sentence, or the readings as written for a bound like ">500"); "কাগজে যেমন লেখা", each reading's own
+  crop, a link to the talk-and-papers screen on that paper. Nothing read yet: desktop.html's empty page under the
+  screen's heading, with কাগজ পাঠান to the add page.
+- **Words.** Every new `desk.labs.*` Bangla is desktop.html's own (`DesktopWordsTest`); "এখনো কোনো ল্যাবের মান নেই"
+  and "কাগজ পাঠান" reuse `health.labs.none` and `desk.attach`.
+- **Not as desktop.html, on purpose:**
+  - The values are in Java's order (the newest paper first), not desktop.html's by status (critical, out, unknown,
+    in): the web never re-orders Java's series (W9). If the PO wants the most pressing first, the order belongs in Java,
+    for the phone too.
+  - The range is written in the paper page's words from the numbers Java kept for the reading (`value.range`,
+    `value.range.one`), in the paper's own digits ("4.0", not "4"); when Java kept none (a one-sided or unplaced range)
+    nothing is said, never `ref_text` (DR-48: not written until the PO accepts its form) and never "no range printed".
+  - A source row says the paper's date, not the prototype's test title: the labs read carries no title.
+  - The chart is TrendChart, the phone's (printed-range band, a shape per chip, every reading's words under it), not
+    desktop.html's wider sketch; the earlier months desktop.html invents (`HISTORY`) are not in the prototype family.
+  - Blood pressure (not in desktop.html) is one value: the newest pair as the figure, each half with its own chip, each
+    pair's two crops side by side.
