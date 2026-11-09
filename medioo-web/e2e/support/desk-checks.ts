@@ -79,3 +79,17 @@ export const BELOW_DESKTOP = {
     use: (v: { width: number; height: number } | null) => Promise<void>,
   ) => use(isMobile || viewport === null || viewport.width < 900 ? viewport : { width: BELOW_DESKTOP_WIDTH, height: viewport.height }),
 };
+
+/**
+ * Waits until React has hydrated the desktop layout: the sidebar's menu button, a client island on every desktop page,
+ * carries React's props. A key or click that lands before then reaches no handler (the paper keys, a soft link), which a
+ * slow CI runner hit (PR 182: an arrow key and the panel's link, each waiting for an address that never came).
+ */
+export async function hydrated(page: Page, island = ".desktop-shell__menu") {
+  await expect
+    .poll(() => page.locator(island).first().evaluate((el) => Object.keys(el).some((k) => k.startsWith("__reactProps$"))), {
+      message: "React has hydrated the desktop layout",
+      timeout: 15_000,
+    })
+    .toBe(true);
+}
