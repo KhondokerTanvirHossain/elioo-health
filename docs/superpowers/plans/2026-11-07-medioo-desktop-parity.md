@@ -499,3 +499,13 @@ Built on `feat/desktop-family`, behind preview (`/app/preview/family`, the sideb
   - The reminders are a stop with a confirm, never desktop.html's switch: the web cannot turn them back on (E1/E2), and
     nothing may look as if it could.
   - The number is shown whole, as the family tab shows it, not masked; the account's title is the tab's "আপনার অ্যাকাউন্ট".
+
+## Task 10 done — the flip (2026-11-09)
+
+The PO turned the desktop layout on for every family (DR-51): `DESKTOP_DEFAULT` true, with the calendar, lab values,
+medicines and family pages built. The route ceiling is 294,604 B (+11%, DR-42 item 2 amended). The tests of today's
+pages (chat, paper, papers, health, family) now test them where a desktop browser still shows them, just below 900 px
+(`BELOW_DESKTOP`), and judge only the copy of a page that is drawn (a page holds the phone and the desktop copy); the
+shared screen checks run on the desktop layout from 900 px, with WCAG 2.5.8's 24 px target floor inside it (desktop.html
+draws 28–34 px controls), to the PO for sight. `desktop-chunks.built.test.ts` tells a page that draws the desktop from
+one that does not by its own response. Next: U1 (sending a paper), I1, S4.

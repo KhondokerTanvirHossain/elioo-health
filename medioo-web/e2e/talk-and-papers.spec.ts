@@ -4,7 +4,7 @@ import { banglaDigits, t, type CopyKey } from "../src/copy";
 import { useScenario } from "./support/browser-api";
 import { FIXTURES, PROTO_PAPERS, PROTO_PATIENTS, longNameOf } from "./support/scenarios.mjs";
 import { axeReport, cspViolations, expectSchemeIsPainted, installCspHook, rendersOwnText } from "./support/screen-checks";
-import { SCHEMES, WIDTHS, deskOverflow, showSidebar } from "./support/desk-checks";
+import { SCHEMES, WIDTHS, deskOverflow, hydrated, showSidebar } from "./support/desk-checks";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -38,6 +38,8 @@ async function open(page: Page, scenario: string, path: string) {
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
   // The desktop layout is the one drawn: its shell is shown and the phone's is not.
   await expect(page.locator(".desktop-shell"), "the desktop layout is drawn").toBeVisible();
+  // Keys and soft links reach a handler only once React owns the page.
+  await hydrated(page);
 }
 
 /** The paper the viewer shows, the card the conversation outlines, and the strip item marked current. */

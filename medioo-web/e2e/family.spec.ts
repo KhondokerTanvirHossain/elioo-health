@@ -6,6 +6,7 @@ import { t } from "../src/copy";
 import { useScenario } from "./support/browser-api";
 import { FIXTURES } from "./support/scenarios.mjs";
 import { screenChecks } from "./support/screen-checks";
+import { BELOW_DESKTOP } from "./support/desk-checks";
 
 /*
  * family and settings (plan W10) on the production build, against stub Java answering the bodies FamilyApiContractTest
@@ -38,6 +39,11 @@ async function setCookie(page: Page, name: string, value: string) {
   const base = new URL(test.info().project.use.baseURL!);
   await page.context().addCookies([{ name, value, domain: base.hostname, path: "/app" }]);
 }
+
+
+// Today's page, which a desktop browser shows below 900 px since the flip (DR-51); from 900 px it is the desktop layout,
+// tested by talk-and-papers.spec.ts and the desk-*.spec.ts files.
+test.use(BELOW_DESKTOP);
 
 test.describe("the theme", () => {
   test("theThemeCookieIsReadOnTheServer", async ({ page }) => {
@@ -242,7 +248,8 @@ test.describe("the segmented choice", () => {
             }
             return parse(getComputedStyle(document.body).backgroundColor);
           };
-          return [...document.querySelectorAll<HTMLElement>('.family-choice__option[aria-pressed="true"]')].map((option) => {
+          // The drawn copy's (DR-51: the page holds the phone and the desktop copy, one display:none).
+          return [...document.querySelectorAll<HTMLElement>('.family-choice__option[aria-pressed="true"]')].filter((o) => o.getClientRects().length > 0).map((option) => {
             const track = option.closest<HTMLElement>(".family-choice")!;
             const trackPaint = over(parse(getComputedStyle(track).backgroundColor), opaqueBehind(track.parentElement));
             const shadow = getComputedStyle(option).boxShadow;

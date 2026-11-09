@@ -10,10 +10,9 @@ describe("desktopLayout, the preview gate for the desktop layout (plan 2026-11-0
     expect(desktopLayout({ preview: false })).toBe(DESKTOP_DEFAULT);
   });
 
-  // Task 10 (the flip, only after the PO approves Phase 1 in preview) changes this test to `true` first and watches it
-  // fail; until then live users see no change.
-  it("DESKTOP_DEFAULT is false, so a live request does not get the desktop layout", () => {
-    expect(DESKTOP_DEFAULT).toBe(false);
-    expect(desktopLayout({ preview: false })).toBe(false);
+  // Task 10, the flip (PO, 2026-11-09, DR-51): every family gets the desktop layout from 900 px, not only the preview.
+  it("DESKTOP_DEFAULT is true, so a live request gets the desktop layout", () => {
+    expect(DESKTOP_DEFAULT).toBe(true);
+    expect(desktopLayout({ preview: false })).toBe(true);
   });
 });

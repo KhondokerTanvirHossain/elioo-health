@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { t } from "../src/copy";
 import { useScenario } from "./support/browser-api";
-import { SCHEMES, WIDTHS, deskOverflow, showSidebar } from "./support/desk-checks";
+import { SCHEMES, WIDTHS, deskOverflow, hydrated, showSidebar } from "./support/desk-checks";
 import { PROTO_PATIENTS, longNameOf } from "./support/scenarios.mjs";
 import { axeReport, cspViolations, expectSchemeIsPainted, installCspHook, rendersOwnText } from "./support/screen-checks";
 
@@ -26,6 +26,8 @@ async function open(page: Page, scenario: string, path: string) {
   await page.waitForLoadState("load");
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
   await expect(page.locator(".desktop-shell .desk-fam"), "the desktop family page is drawn").toBeVisible();
+  // Keys and soft links reach a handler only once React owns the page.
+  await hydrated(page);
 }
 
 const row = (page: Page, id: string) => page.locator(`.desktop-shell .desk-fam [data-patient="${id}"]`);

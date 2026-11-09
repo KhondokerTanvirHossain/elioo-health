@@ -65,3 +65,31 @@ export async function showSidebar(page: Page, width: number) {
   }).toPass({ timeout: 10_000 });
   await expect(page.locator(".desktop-shell__sidebar[data-open]")).toBeVisible();
 }
+
+/**
+ * Since the flip (DR-51) the talk-and-papers, papers, health and family pages draw the desktop layout from 900 px, which
+ * talk-and-papers.spec.ts and the desk-*.spec.ts files test. The specs of today's page (chat, paper, papers, health,
+ * family) keep testing that page in the desktop project too, as a desktop browser shows it: just below 900 px. A spec
+ * opts in with `test.use(BELOW_DESKTOP)`; the phone project keeps its own viewport.
+ */
+export const BELOW_DESKTOP_WIDTH = 899;
+export const BELOW_DESKTOP = {
+  viewport: async (
+    { viewport, isMobile }: { viewport: { width: number; height: number } | null; isMobile: boolean },
+    use: (v: { width: number; height: number } | null) => Promise<void>,
+  ) => use(isMobile || viewport === null || viewport.width < 900 ? viewport : { width: BELOW_DESKTOP_WIDTH, height: viewport.height }),
+};
+
+/**
+ * Waits until React has hydrated the desktop layout: the sidebar's menu button, a client island on every desktop page,
+ * carries React's props. A key or click that lands before then reaches no handler (the paper keys, a soft link), which a
+ * slow CI runner hit (PR 182: an arrow key and the panel's link, each waiting for an address that never came).
+ */
+export async function hydrated(page: Page, island = ".desktop-shell__menu") {
+  await expect
+    .poll(() => page.locator(island).first().evaluate((el) => Object.keys(el).some((k) => k.startsWith("__reactProps$"))), {
+      message: "React has hydrated the desktop layout",
+      timeout: 15_000,
+    })
+    .toBe(true);
+}

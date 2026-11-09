@@ -245,16 +245,19 @@ describe("/app/home on the desktop layout", () => {
   });
 
   it("belowNineHundredHomeIsTodaysChat", async () => {
-    // Live: today's chat and nothing else.
+    // Live, since the flip (DR-51): the desktop screen, and below 900 px today's chat in the phone shell.
     ctx.preview = false;
     ctx.here = "/app/home";
     const live = await home();
-    expect(live.querySelector(".desktop-shell")).toBeNull();
+    expect(live.querySelector(".desktop-shell"), "the desktop screen for a live request").not.toBeNull();
+    const livePhone = live.querySelector(".app-shell--phone [data-page=chat]");
+    expect(livePhone, "today's chat below 900 px").not.toBeNull();
+    expect(live.querySelector(".desktop-shell [data-page=chat]"), "not inside the desktop screen").toBeNull();
     // React's own ids (useId) count the components rendered before; they are the only other difference.
     const ids = (html: string) => html.replace(/_r_\w+_/g, "_r_");
-    const today = ids(live.querySelector("[data-page=chat]")!.outerHTML);
+    const today = ids(livePhone!.outerHTML);
     cleanup();
-    // Preview: the same chat, in the phone shell that stands below 900 px. Only the preview's own links differ.
+    // Preview: the very same chat in the same phone shell. Only the preview's own links differ.
     ctx.preview = true;
     ctx.here = "/app/preview/home";
     const desk = await home();
@@ -262,6 +265,5 @@ describe("/app/home on the desktop layout", () => {
     expect(phone, "today's chat below 900 px").not.toBeNull();
     const unpreviewed = ids(phone!.outerHTML.replaceAll('href="/app/preview/', 'href="/app/'));
     expect(unpreviewed).toBe(today);
-    expect(desk.querySelector(".desktop-shell [data-page=chat]"), "not inside the desktop screen").toBeNull();
   });
 });

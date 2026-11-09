@@ -82,6 +82,13 @@ export function overflowReport(page: Page, scope: string) {
       // renders nothing by design.
       if (!section.hasAttribute("data-catalog-empty") && section.querySelectorAll("*").length < 2) empty.push(label);
       for (const el of [section, ...section.querySelectorAll("*")]) {
+        // Not drawn (the copy of the page the viewer's width hides: since the flip, DR-51, a page holds the phone shell
+        // and the desktop shell, one of them display:none), or text read out and not drawn (a 1 px box clipped to
+        // nothing): neither is a box that overflows.
+        if (el.getClientRects().length === 0) continue;
+        const style = getComputedStyle(el);
+        const box = el.getBoundingClientRect();
+        if (style.clipPath === "inset(50%)" && box.width <= 1 && box.height <= 1) continue;
         if (el.scrollWidth > el.clientWidth + 1) {
           over.push(`${label} <${el.tagName.toLowerCase()} class="${el.getAttribute("class") ?? ""}"> ${el.scrollWidth} > ${el.clientWidth}`);
         }
@@ -161,8 +168,9 @@ export async function boundaryReport(page: Page, scope: string) {
   const controls = await page.evaluate(
     ({ fields, controlClass, scope }) => {
       const re = new RegExp(controlClass);
+      // Only what is drawn: since the flip (DR-51) a page holds the phone and the desktop copy, one display:none.
       const found = [...document.querySelectorAll<HTMLElement>(`${scope} *`)].filter(
-        (el) => el.matches(fields) || [...el.classList].some((c) => re.test(`.${c}`)),
+        (el) => el.getClientRects().length > 0 && (el.matches(fields) || [...el.classList].some((c) => re.test(`.${c}`))),
       );
       return found.map((el, i) => {
         el.setAttribute("data-boundary-check", String(i));
@@ -323,7 +331,11 @@ export async function imagesReport(page: Page, scope: string) {
   );
 }
 
-/** Every link, button and input smaller than the 44 px floor, and every `[data-primary]` action under 48 px. */
+/**
+ * Every link, button and input smaller than the 44 px floor, and every `[data-primary]` action under 48 px. Inside the
+ * desktop layout (`.desktop-shell`, from 900 px, used with a pointer) the floor is WCAG 2.5.8's 24 px: desktop.html, the
+ * approved prototype, draws its toolbar and composer buttons at 28 to 34 px (DR-51). A primary action keeps 48 px.
+ */
 export function targetReport(page: Page) {
   return page.evaluate(() => {
     const small: string[] = [];
@@ -334,7 +346,8 @@ export function targetReport(page: Page) {
       if (!(el as HTMLElement).checkVisibility()) continue;
       measured++;
       const r = el.getBoundingClientRect();
-      const min = el.matches("[data-primary], .now-banner__call, .now-banner__open") ? 48 : 44;
+      const primary = el.matches("[data-primary], .now-banner__call, .now-banner__open");
+      const min = primary ? 48 : el.closest(".desktop-shell") !== null ? 24 : 44;
       if (r.width < min - 0.5 || r.height < min - 0.5) small.push(`${describe(el, r)} under ${min} px`);
     }
     const primaries = [...document.querySelectorAll("[data-primary]")].filter((el) => (el as HTMLElement).checkVisibility()).length;
@@ -353,12 +366,16 @@ export async function cropRowsReport(page: Page, rows: readonly CropRow[]): Prom
   const widths = rows.map((r) => expectedWidth(r));
   if (rows.length === 0) problems.push("no rows in the fixture: nothing would be checked");
   if (new Set(widths).size !== widths.length) problems.push("this fixture cannot detect a swap: two rows share a width");
-  const rendered = await page.locator("[data-value-row]").count();
+  // The rows of the copy the viewer sees: since the flip (DR-51) a paper link from 900 px is the desktop layout, whose
+  // paper panel holds every value beside its crop (the conversation's card names some of them again, without crops);
+  // below it, today's paper page. The other copy is display:none and is not judged.
+  const scope = (await page.locator(".desktop-shell").isVisible()) ? ".desktop-shell__panel [data-value-row]" : "[data-value-row]";
+  const rendered = await page.$$eval(scope, (els) => els.filter((el) => (el as HTMLElement).checkVisibility()).length);
   if (rendered !== rows.length) problems.push(`${rendered} value rows rendered, the fixture has ${rows.length}`);
   // Wait for every row image to load before reading natural widths.
-  await imagesReport(page, "[data-value-row]");
-  const perRow = await page.$$eval("[data-value-row]", (els) =>
-    els.map((el) =>
+  await imagesReport(page, scope);
+  const perRow = await page.$$eval(scope, (els) =>
+    els.filter((el) => (el as HTMLElement).checkVisibility()).map((el) =>
       [...el.querySelectorAll("img")]
         .filter((i) => i.checkVisibility())
         .map((i) => ({ src: i.getAttribute("src") ?? "", natural: i.naturalWidth })),
@@ -422,7 +439,7 @@ export async function trackReport(page: Page, scope: string) {
           const boundary = resolved("--boundary");
           swatch.remove();
           return [...document.querySelectorAll<HTMLElement>(`${scope} [role=group]`)]
-            .filter((el) => getComputedStyle(el).backgroundColor === fill)
+            .filter((el) => el.getClientRects().length > 0 && getComputedStyle(el).backgroundColor === fill)
             .map((el, i) => {
               el.setAttribute("data-track-check", String(i));
               return { i, classes: [...el.classList].join("."), fill, boundary };
@@ -617,6 +634,8 @@ export function screenChecks(
             .filter((i) => {
               if (!i.complete || i.natural === 0) return true;
               if (BRAND.includes(i.path)) return false;
+              // A paper's own page, decoded (the desktop's viewer and strip draw the photographed pages, DR-51).
+              if (/^\/app\/documents\/[^/]+\/page\/\d+$/.test(i.path)) return false;
               const width = crops.get(i.src);
               return width === undefined || i.natural !== width;
             })
