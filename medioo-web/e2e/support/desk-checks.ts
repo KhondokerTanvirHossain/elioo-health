@@ -65,3 +65,17 @@ export async function showSidebar(page: Page, width: number) {
   }).toPass({ timeout: 10_000 });
   await expect(page.locator(".desktop-shell__sidebar[data-open]")).toBeVisible();
 }
+
+/**
+ * Since the flip (DR-51) the talk-and-papers, papers, health and family pages draw the desktop layout from 900 px, which
+ * talk-and-papers.spec.ts and the desk-*.spec.ts files test. The specs of today's page (chat, paper, papers, health,
+ * family) keep testing that page in the desktop project too, as a desktop browser shows it: just below 900 px. A spec
+ * opts in with `test.use(BELOW_DESKTOP)`; the phone project keeps its own viewport.
+ */
+export const BELOW_DESKTOP_WIDTH = 899;
+export const BELOW_DESKTOP = {
+  viewport: async (
+    { viewport, isMobile }: { viewport: { width: number; height: number } | null; isMobile: boolean },
+    use: (v: { width: number; height: number } | null) => Promise<void>,
+  ) => use(isMobile || viewport === null || viewport.width < 900 ? viewport : { width: BELOW_DESKTOP_WIDTH, height: viewport.height }),
+};

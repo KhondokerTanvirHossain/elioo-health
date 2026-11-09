@@ -62,13 +62,23 @@ const page = (desktop: boolean) =>
   });
 
 describe("signedInPage's shell", () => {
-  it("aLiveRequestKeepsTodaysShellEvenWithDesktopSlots", async () => {
-    // The gate: preview false and DESKTOP_DEFAULT false is today's AppShell and nothing else, whatever the page gives.
+  it("aLiveRequestWithDesktopSlotsRendersTheDesktopShellBesideThePhoneShell", async () => {
+    // Since the flip (Task 10, DR-51: DESKTOP_DEFAULT true) a live request is what a preview one was: the desktop shell
+    // from 900 px, today's AppShell below it, and the read only the desktop needs (the sidebar's follow-ups).
     const { container } = render(await page(true));
-    expect(container.querySelector(".desktop-shell"), "no desktop shell for a live request").toBeNull();
-    expect(container.querySelector("[data-slot=paper], [data-slot=talk]"), "the desktop slots are not rendered").toBeNull();
+    const desk = container.querySelector(".desktop-shell");
+    expect(desk, "the desktop shell for a live request").not.toBeNull();
+    expect(desk!.querySelector("[data-slot=paper]")).not.toBeNull();
+    expect(container.querySelector(".app-shell--phone"), "today's shell, marked for below 900 px").not.toBeNull();
+    expect(reads.some((r) => r.endsWith("/follow-ups")), "the sidebar's read").toBe(true);
+  });
+
+  it("aLivePageWithoutDesktopSlotsKeepsTodaysShell", async () => {
+    // A page that gives no desktop slots is today's AppShell alone, live as in the preview, shown at every width.
+    const { container } = render(await page(false));
+    expect(container.querySelector(".desktop-shell")).toBeNull();
     expect(container.querySelector(".app-shell")).not.toBeNull();
-    expect(container.querySelector(".app-shell--phone"), "today's shell, unchanged: shown at every width").toBeNull();
+    expect(container.querySelector(".app-shell--phone")).toBeNull();
     expect(reads.some((r) => r.endsWith("/follow-ups")), "no read the desktop alone needs").toBe(false);
   });
 

@@ -355,6 +355,10 @@ const paper = (fixture, extra = {}, me = "me/one-patient.json") => ({
     body: { confirm_token: "e2e-confirm-token", expires_at: "2026-10-20T04:10:00Z" },
   },
   "DELETE /app/api/documents/{id}": { status: 200, body: { objects_deleted: 3, rows_deleted: 9 } },
+  // Since the flip (DR-51) a paper link is the desktop's talk-and-papers screen from 900 px, which also reads the
+  // patient's conversation and attention stack (plan desktop-parity Task 8), as the preview twin always did.
+  "GET /app/api/patients/{id}/thread": "thread/default.json",
+  "GET /app/api/patients/{id}/attention": "attention/empty.json",
   ...extra,
 });
 
@@ -956,6 +960,14 @@ export const SCENARIOS = {
     [STATUS]: "document-status/done.json",
   },
 };
+
+/*
+ * Since the flip (Task 10, DR-51) every signed-in page that has a desktop layout draws, from 900 px, the sidebar, which
+ * reads the person in view's follow-ups (its next doctor's date). A scenario that does not answer that read itself
+ * answers it as Java does for a patient with no doctor's date: none. One that does keeps its own answer.
+ */
+const FOLLOW_UPS = "GET /app/api/patients/{id}/follow-ups";
+for (const table of Object.values(SCENARIOS)) if (!Object.hasOwn(table, FOLLOW_UPS)) table[FOLLOW_UPS] = "follow-ups/none.json";
 
 export { UNAUTHENTICATED };
 

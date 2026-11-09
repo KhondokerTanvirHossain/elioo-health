@@ -871,7 +871,9 @@ are unchanged. Records the direction contract's 2026-10-21 amendments in
    form still posts to the Java path, and Caddy keeps that path on Java. A family must never need JavaScript to stop
    reminders from WhatsApp on a weak phone. This releases W3 (sign-in). Caddy moves `/app/`, `/app/login` and
    `/app/verify` to `medioo-web` only when W3's routes flip, after its on-device step, as for any other route.
-2. **First-load wire budget per routed page: ≤ 265,409 B.** That is the measured probe, 203,969 B, plus 60 KB
+2. **First-load wire budget per routed page: ≤ 294,604 B.** *(Amended by DR-51, 2026-11-09, PO: +11% for the desktop
+   layout, which every page with one now carries; it was ≤ 265,409 B, the figure the rest of this item explains.)* That
+   was the measured probe, 203,969 B, plus 60 KB
    (61,440 B). Every routed page is measured as `medioo-web/e2e/budget.spec.ts` measured the probe: a cold first load on
    the phone profile (Pixel 7, 390×844), both self-hosted Noto subsets fetched and counted, encoded body bytes from the
    browser's network stack (`responseBodySize`), headers not counted. The route's own code, CSS, copy and data get the
@@ -1744,3 +1746,33 @@ questions (P16, quoted at the end); the rest is engineering within the rulings:*
   `model_check`, so V32's constraints hold the row as before. The new key is in `ChatAnswerCheck.KEYS` and
   `ChatPropertiesCheck.FIXED_BODIES` (startup refuses without it, or when it with the longest appendix is over the cap),
   and passes `AnswerCheckTest.everyFixedChatBodyPassesTheContentChecks`, `MedicinePurposeGuardTest` and the glossary.
+
+## DR-51 | 2026-11-09 | The desktop layout goes live for every family, the route ceiling takes it, and three wording rulings
+
+**Ruling (PO, 2026-11-09, Tanvir, in the session), in his own words:** "swith it to live everyone should see the
+desktop layout we fixed just now. turn it on now." and, on the page weight, "6–11% is not an issue".
+
+**What changes (plan 2026-11-07 desktop parity, Task 10, the flip):**
+- `DESKTOP_DEFAULT` is true (`medioo-web/src/routing/desktop.ts`, held by `desktop.test.ts`): from 900 px every family
+  gets the desktop layout on the pages that have one, at their normal addresses — the talk-and-papers screen (`/app/home`,
+  a paper link), the calendar (`/app/timeline`), the lab values and the medicines (`/app/health`, `?show=medicines`) and
+  the family and account page (`/app/family`). Below 900 px nothing changes: the same response holds today's phone page.
+  Every one of those addresses was already routed to Next (DR-49), so no Caddy change. Undoing it is the one constant.
+- Pages with no desktop layout (sign-in, the add sheet, a paper's every value, one value's sheet, a profile) carry none
+  of it: `desktop-chunks.built.test.ts` now tells the two kinds of page apart by their own response (the desktop shell
+  in the document), not by the preview prefix, and still fails a page that never draws the desktop and links its files.
+- **DR-42's route ceiling is 294,604 B** (was 265,409 B), +11%, the PO's bound. The pages that draw the desktop layout
+  measured 270–294 KB on the wire (the heaviest a paper link, 293,836 B gzip), 6–11% over; the probe ceiling
+  (214,167 B) and every other rule of DR-42 are unchanged. A later screen that would pass 294,604 B comes back to the PO.
+
+**Wording rulings of the same day:**
+- **Pharmacy line (M1):** the desktop medicines keep the app's `med.pharmacy` ("…মূল প্রেসক্রিপশন বা এই ছবিটা দেখান —
+  টাইপ করা লেখা নয়") and `health.medicines.doctor_only`, not desktop.html's, which allowed the original only.
+- **Calendar reminder line (C1):** none. Asked for a recommendation, the PO took it: a doctor's-date reminder goes out
+  two days before only while that person's reminders are on, after review, and within the daily and weekly caps
+  (`NudgeRules.follow_up_due`, `NudgePolicy.capReason`), so the calendar promises nothing it cannot always keep.
+  desktop.html's "আগের দিন সন্ধ্যায় WhatsApp-এ মনে করিয়ে দেব।" stays out.
+- **Page weight:** above.
+
+**Supersedes:** the "preview only until the PO approves" gate of plan desktop-parity Task 2 for the pages listed, and
+DR-42's route number (265,409 B); the plan's Task 10 asked for this record as DR-46, a number already taken.

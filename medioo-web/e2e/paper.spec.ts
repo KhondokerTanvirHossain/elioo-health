@@ -10,6 +10,7 @@ import { useScenario, type CropRow, type Recorder } from "./support/browser-api"
 import { expectedWidth } from "./support/png.mjs";
 import { FIXTURES, PAPER_ID, SHEET_OBS, UNLISTED_PATIENT, withStaleNowName } from "./support/scenarios.mjs";
 import { cropRowsReport, imagesReport, screenChecks } from "./support/screen-checks";
+import { BELOW_DESKTOP } from "./support/desk-checks";
 
 /*
  * The paper (plan W6): its summary, /all and one value's sheet, against stub Java serving the fixtures Java's contract
@@ -73,6 +74,11 @@ async function switchScenario(page: Page, name: string) {
 /** The decoded crop key of a row, as the stub's image routes match it. */
 const keyOf = (row: CropRow) => new URL(row.crop.src, "http://e2e.invalid").searchParams.get("key")!;
 
+
+// Today's page, which a desktop browser shows below 900 px since the flip (DR-51); from 900 px it is the desktop layout,
+// tested by talk-and-papers.spec.ts and the desk-*.spec.ts files.
+test.use(BELOW_DESKTOP);
+
 test.describe("each value beside its own crop", () => {
   for (const [scenario, path, rows] of [
     ["paper-now-bd", PAPER, summaryRows(doc("now-bd.json"))],
@@ -90,7 +96,7 @@ test.describe("each value beside its own crop", () => {
     const rows = summaryRows(p);
     const broken = rows[1]!;
     await open(page, "paper-now-bd", PAPER, [...rows, ...otherImages(p, false)], { [keyOf(broken)]: [403] });
-    const cells = page.locator("[data-value-row]");
+    const cells = page.locator("[data-value-row]:visible");
     await expect(cells).toHaveCount(rows.length);
     await cells.nth(1).scrollIntoViewIfNeeded();
     await expect(cells.nth(1).getByRole("button", { name: t("bn", "crop.retry") })).toBeVisible();
@@ -205,7 +211,7 @@ test.describe("one open is one read of the paper (Review Focus 4)", () => {
     await page.waitForTimeout(1_500);
     expect(await paperReads(recorder), "after hovering and scrolling").toBe(1);
     await back.click();
-    await page.locator("[data-now-block]").waitFor();
+    await page.locator("[data-now-block]:visible").waitFor();
     expect(await paperReads(recorder), "back to the paper").toBe(2);
     await page.locator(".paper__action").first().hover();
     await page.waitForTimeout(1_500);
@@ -259,7 +265,7 @@ test.describe("one open is one read of the paper (Review Focus 4)", () => {
       const recorder = await open(page, withStaleNowName(own), path);
       expect(await reads(recorder), `${path}: the open`).toBe(1);
       const refreshed = page.waitForRequest((r) => r.headers()["rsc"] === "1" && new URL(r.url()).pathname === path);
-      const banner = page.locator('section[role="alert"]');
+      const banner = page.locator('section[role="alert"]:visible');
       await banner.getByRole("button", { name: t("bn", "now.banner.seen") }).click();
       await refreshed;
       await page.waitForLoadState("networkidle");
@@ -267,11 +273,11 @@ test.describe("one open is one read of the paper (Review Focus 4)", () => {
       expect((await recorder.java()).map((r) => r.path), `${path}: the banner re-read`).toContain("/app/api/now-banner");
       expect(await reads(recorder), `${path}: read by the refresh`).toBe(1);
       await expect(banner, `${path}: the stale banner stays`).toHaveCount(1);
-      await expect(page.locator(mark), `${path}: the page still shows itself`).toHaveCount(1);
+      await expect(page.locator(`${mark}:visible`), `${path}: the page still shows itself`).toHaveCount(1);
       const left = (await page.context().cookies()).filter((c) => c.name === BANNER_ONLY_COOKIE);
       expect(left, `${path}: the marker served one refresh`).toEqual([]);
       await page.reload();
-      await page.locator(mark).waitFor();
+      await page.locator(`${mark}:visible`).waitFor();
       expect(await reads(recorder), `${path}: the next open reads it`).toBe(2);
     }
   });
@@ -296,7 +302,7 @@ test.describe("one open is one read of the paper (Review Focus 4)", () => {
     await page.waitForLoadState("networkidle");
     await page.waitForTimeout(1_000);
     expect(await page.evaluate(() => "__sameDocument" in window), "back restored the paper without reloading the page").toBe(true);
-    await expect(page.locator("[data-now-block]"), "back shows the paper, not an empty main").toHaveCount(1);
+    await expect(page.locator("[data-now-block]:visible"), "back shows the paper, not an empty main").toHaveCount(1);
     expect(await paperReads(recorder), "back read the paper again").toBe(1);
   });
 
@@ -362,7 +368,7 @@ test.describe("whose paper (W6's `patient`, for PO sight)", () => {
     const second = me.patients[1]!;
     await open(page, "paper-two-no-choice");
     await expect(page.locator(".patient-chooser"), "the chooser stood in for the paper").toHaveCount(0);
-    await expect(page.locator("[data-now-block]")).toBeVisible();
+    await expect(page.locator("[data-now-block]:visible")).toBeVisible();
     await expect(page.locator(".patient-switcher__label"), "the toolbar names the paper's patient").toHaveText(
       t("bn", "switch.label", second.name),
     );
@@ -379,7 +385,7 @@ test.describe("whose paper (W6's `patient`, for PO sight)", () => {
 test.describe("a share member (Review Focus 5)", () => {
   test("aShareMemberSeesNoDeleteAndNoRetakeUpload", async ({ page }) => {
     await open(page, "paper-retake-share");
-    await expect(page.getByText(t("bn", "retake.viewonly"))).toBeVisible();
+    await expect(page.getByText(t("bn", "retake.viewonly")).filter({ visible: true })).toBeVisible();
     await expect(page.getByRole("link", { name: t("bn", "retake.again") })).toHaveCount(0);
     await expect(page.getByRole("link", { name: t("bn", "retake.again.same") })).toHaveCount(0);
     await expect(page.getByRole("link", { name: t("bn", "retake.other") })).toHaveCount(0);
@@ -402,9 +408,9 @@ test.describe("without JavaScript (DR-42 item 1)", () => {
     const p = doc("now-bd.json");
     const rows = summaryRows(p);
     await open(page, "paper-now-bd", PAPER, [...rows, ...otherImages(p, false)]);
-    await expect(page.locator("[data-now-block]")).toBeVisible();
-    await expect(page.locator("[data-value-row]")).toHaveCount(rows.length);
-    await expect(page.locator("[data-value-row] .status-chip")).toHaveCount(rows.length);
+    await expect(page.locator("[data-now-block]:visible")).toBeVisible();
+    await expect(page.locator("[data-value-row]:visible")).toHaveCount(rows.length);
+    await expect(page.locator("[data-value-row]:visible .status-chip")).toHaveCount(rows.length);
     expect(await cropRowsReport(page, rows)).toEqual([]);
     await expect(page.getByRole("button", { name: t("bn", "detail.delete") })).toHaveCount(0);
     expect(await page.locator("form").count(), "no form that posts somewhere").toBe(0);

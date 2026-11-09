@@ -8,6 +8,7 @@ import { formatDate, formatMonthYear, t, type CopyKey, type Lang } from "../src/
 import { useScenario, type CropRow, type Recorder } from "./support/browser-api";
 import { FIXTURES, longNameOf } from "./support/scenarios.mjs";
 import { axeReport, cropRowsReport, expectSchemeIsPainted, overflowReport, rendersOwnText, screenChecks } from "./support/screen-checks";
+import { BELOW_DESKTOP } from "./support/desk-checks";
 
 /*
  * The papers page (plan W8) at /app/timeline, against the production build and stub Java: the wall calendar, the doctor's dates
@@ -51,8 +52,15 @@ async function open(page: Page, scenario: string, path = "/app/timeline") {
 const listed = (page: Page) =>
   page.locator(".month-list a[href^='/app/documents/']").evaluateAll((as) => as.map((a) => a.getAttribute("href")!.split("/")[3]!));
 
+
+// Today's page, which a desktop browser shows below 900 px since the flip (DR-51); from 900 px it is the desktop layout,
+// tested by talk-and-papers.spec.ts and the desk-*.spec.ts files.
+test.use(BELOW_DESKTOP);
+
 test.describe("forty-five papers and the longest name (master Review Focus 1)", () => {
-  for (const width of [390, 1440]) {
+  // From 900 px the papers page is the desktop calendar (DR-51), which desk-calendar.spec.ts judges under the same
+  // forty-five papers and longest name at four widths; this is today's page, at a phone's width and just below 900 px.
+  for (const width of [390, 899]) {
     test.describe(`at ${width} px`, () => {
       test.use({ viewport: { width, height: 900 } });
 
@@ -335,7 +343,7 @@ test.describe("with JavaScript, the page checks quietly (PO ruling P6)", () => {
       await page.clock.install();
       await open(page, "papers-in-flight");
       await mark(page);
-      const banner = page.locator("section[role='alert'].now-banner");
+      const banner = page.locator("section[role='alert'].now-banner:visible");
       const nowInStrip = page.locator(".papers__strip .urgency-tag--now");
       await expect(banner, "no banner before the paper is read").toHaveCount(0);
       await expect(nowInStrip, "no NOW in the strip before").toHaveCount(0);

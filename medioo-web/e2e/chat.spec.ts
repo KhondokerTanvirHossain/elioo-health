@@ -18,6 +18,7 @@ import {
   type Value,
 } from "./support/scenarios.mjs";
 import { screenChecks } from "./support/screen-checks";
+import { BELOW_DESKTOP } from "./support/desk-checks";
 
 /*
  * The chat page (plan W5) on /app/home against the production build and stub Java: the global NOW banner and its seen button, the
@@ -78,7 +79,7 @@ const seenButton = (page: Page) => alert(page).getByRole("button", { name: t("bn
  * together in one paragraph on screen and textContent still reads them as three lines (review of PR 166, finding 3).
  */
 async function ask(page: Page, question: string): Promise<string> {
-  await page.locator(".composer__field").fill(question);
+  await page.locator(".composer__field:visible").fill(question);
   await page.getByRole("button", { name: t("bn", "add.send") }).click();
   const pending = t("bn", "chat.composer.pending", ONE.patients[0]!.name_possessive);
   const bubble = page.locator(".composer__lines .message-bubble--recv .message-bubble__body").last();
@@ -115,6 +116,11 @@ function drawnAsSent(drawn: string, answer: string, what: string) {
     t("bn", "safety.red_flag_line"),
   ]);
 }
+
+
+// Today's page, which a desktop browser shows below 900 px since the flip (DR-51); from 900 px it is the desktop layout,
+// tested by talk-and-papers.spec.ts and the desk-*.spec.ts files.
+test.use(BELOW_DESKTOP);
 
 test.describe("the NOW banner", () => {
   test("theNowLineIsShippedVerbatimAndTheNameIsTheTitles", async ({ page }) => {
@@ -204,7 +210,7 @@ test.describe("the NOW banner", () => {
       // The page itself, not a not-found page carrying the shell's banner: its PAGE_MARKERS attribute is rendered.
       const marker = PAGE_MARKERS[pattern];
       expect(marker, `PAGE_MARKERS["${pattern}"]`).toBeDefined();
-      await expect(page.locator(`[${marker}]`), `${path} rendered itself`).toHaveCount(1);
+      await expect(page.locator(`[${marker}]:visible`), `${path} rendered itself`).toHaveCount(1);
     }
     // And on the shell's own catalog page (the catalog build, W4).
     await useScenario(page, "chat-now");
@@ -237,7 +243,8 @@ test.describe("the NOW banner", () => {
     // first-run patient's introduction is on a NOW page while the family has a NOW paper for someone else.
     const mios = (scope: Page | ReturnType<typeof alert>) =>
       scope.locator("img.mio-avatar").evaluateAll((imgs) =>
-        imgs.map((i) => `${i.closest("[class]")?.className ?? "?"}: ${getComputedStyle(i).animationName}`),
+        // Only a drawn Mio: the copy of the page this width hides (DR-51) moves no one.
+        imgs.filter((i) => i.getClientRects().length > 0).map((i) => `${i.closest("[class]")?.className ?? "?"}: ${getComputedStyle(i).animationName}`),
       );
     const cases: Array<[string, string, string]> = [
       ["chat-now", "/app/home", "[data-thread-item='paper'] img.mio-avatar"],
@@ -250,7 +257,7 @@ test.describe("the NOW banner", () => {
       const all = await mios(page);
       expect(inBanner.length, `${scenario}: Mio is on the banner`).toBeGreaterThan(0);
       // Guard: the page's Mios include the one beyond the banner, or this only re-checked the banner.
-      await expect(page.locator(beyond), `${scenario}: ${beyond}`).toHaveCount(1);
+      await expect(page.locator(`${beyond}:visible`), `${scenario}: ${beyond}`).toHaveCount(1);
       expect(all.length, `${scenario}: Mios beyond the banner's`).toBeGreaterThan(inBanner.length);
       moving.push(...all.filter((m) => !m.endsWith(": none")).map((m) => `${scenario} ${m}`));
     }
@@ -293,7 +300,7 @@ test.describe("the thread and the composer", () => {
     expect(abroad.card.now, "a NOW paper").not.toBeNull();
     expect(abroad.card.now!.call_999, "a viewer outside Bangladesh").toBe(false);
     await open(page, "chat-thread-abroad");
-    await expect(page.locator("article.verdict-card")).toHaveCount(1);
+    await expect(page.locator("article.verdict-card:visible")).toHaveCount(1);
     expect(await telLinks(page), "tel: links on the page").toEqual([]);
 
     // The other direction, in the thread alone (not the banner's): a viewer in Bangladesh has exactly the 999 link there.
@@ -339,7 +346,9 @@ test.describe("the thread and the composer", () => {
     const items = answerOf<AttentionJson>("chat-stack", "GET /app/api/patients/{id}/attention").items;
     expect(items.length, "full-stack holds cards").toBeGreaterThan(0);
     await open(page, "chat-stack");
-    for (const width of [899, 900, 1199, 1280]) {
+    // From 900 px the page is the desktop layout (DR-51), whose stack talk-and-papers.spec.ts tests; below it, both
+    // copies of today's page are still in the DOM, the inline stack shown.
+    for (const width of [600, 899]) {
       await page.setViewportSize({ width, height: 800 });
       await expect(page.locator("[data-attention]:visible"), `visible attention cards at ${width} px`).toHaveCount(items.length);
     }
@@ -404,7 +413,7 @@ test.describe("the thread and the composer", () => {
     const recorder = await open(page, "chat-ask-answer");
     // The field appears once the page has hydrated, after the App Router's own same-document replaceState of the address
     // (a framenavigated event of its own): navigations are counted from there, so only the press's can be seen.
-    await page.locator(".composer__field").waitFor();
+    await page.locator(".composer__field:visible").waitFor();
     const before = new URL(page.url());
     const navigations: string[] = [];
     page.on("framenavigated", (frame) => {
@@ -420,7 +429,7 @@ test.describe("the thread and the composer", () => {
     expect(posts.map((r) => `${r.method} ${r.path} ${r.answered}`)).toEqual([`POST /app/api/patients/${ONE.patients[0]!.id}/ask 200`]);
     expect(posts[0]!.body, "the parsed body").toEqual({ question: answer.question });
     expect(posts[0]!.headers["x-medioo"]).toBe("1");
-    await expect(page.locator(".composer__send"), "send is back for the next question").toBeEnabled();
+    await expect(page.locator(".composer__send:visible"), "send is back for the next question").toBeEnabled();
   });
 
   test("aFailedAskShowsTheReplyNeverAnEmptyBubble", async ({ page }) => {
@@ -502,8 +511,8 @@ test.describe("the thread and the composer", () => {
       ["chat-ask-answer", true],
     ] as const) {
       await open(page, scenario);
-      await page.locator(".composer__field").fill(answerOf<AskJson>("chat-ask-answer", "POST /app/api/patients/{id}/ask").question);
-      await page.locator(".composer__field").press("Tab");
+      await page.locator(".composer__field:visible").fill(answerOf<AskJson>("chat-ask-answer", "POST /app/api/patients/{id}/ask").question);
+      await page.locator(".composer__field:visible").press("Tab");
       const send = page.getByRole("button", { name: t("bn", "add.send") });
       await expect(send, `${scenario}: on send`).toBeFocused();
       await page.keyboard.press("Enter");
@@ -524,7 +533,7 @@ test.describe("the thread and the composer", () => {
     // session ended never reaches the emergency line. The reply, ending with the red-flag line, stays readable, with the
     // sign-in link beside it; the page does not leave by itself.
     await open(page, "chat-ask-401");
-    await page.locator(".composer__field").waitFor();
+    await page.locator(".composer__field:visible").waitFor();
     const navigations: string[] = [];
     page.on("framenavigated", (frame) => {
       if (frame === page.mainFrame()) navigations.push(frame.url());
@@ -606,7 +615,7 @@ test.describe("the thread and the composer", () => {
   test("aFirstRunPatientGetsTheIntroAndOneCamera", async ({ page }) => {
     await open(page, "chat-first");
     await expect(page.locator(".message-bubble__body", { hasText: t("bn", "chat.intro") })).toHaveCount(1);
-    const cameras = page.locator('a[href^="/app/add"]');
+    const cameras = page.locator('a[href^="/app/add"]:visible');
     await expect(cameras).toHaveCount(1);
     await expect(cameras).toHaveAttribute("aria-label", t("bn", "chat.camera"));
     // A share member's patient: the introduction, and no camera at all.
@@ -625,7 +634,7 @@ test.describe("the thread and the composer", () => {
     expect(answerOf<ThreadJson>("chat-first-with-asks", "GET /app/api/patients/{id}/thread", "").items, "and no paper").toEqual([]);
     await open(page, "chat-first-with-asks");
     await expect(page.locator(".message-bubble__body", { hasText: t("bn", "chat.intro") })).toHaveCount(1);
-    await expect(page.locator('a[href^="/app/add"]')).toHaveCount(1);
+    await expect(page.locator('a[href^="/app/add"]:visible')).toHaveCount(1);
     await expect(page.locator(".chat__papers-link")).toHaveCount(0);
     await expect(page.locator("[data-thread-item='ask']")).toHaveCount(1);
     // The other direction: a patient with a paper (and asks) gets no introduction and the link to the papers.
@@ -679,14 +688,14 @@ test.describe("without JavaScript", () => {
   test("aNowResultIsReadableWithoutJavaScript", async ({ page }) => {
     const banner = answerOf<NowBannerJson>("chat-now", "GET /app/api/now-banner");
     await open(page, "chat-now");
-    await expect(page.locator(".now-banner__line")).toHaveText(t("bn", banner.line_key as CopyKey));
+    await expect(page.locator(".now-banner__line:visible")).toHaveText(t("bn", banner.line_key as CopyKey));
     const card = page.locator("[data-thread-item='paper'] article.verdict-card");
     await expect(card.locator(".verdict-card__band")).toHaveCount(1);
     await expect(card).toContainText(t("bn", "now.notdoctor"));
     await expect(page.getByRole("button", { name: t("bn", "now.banner.seen") }), "no seen button without JavaScript").toHaveCount(0);
     // And the composer is no form that could post the typed text anywhere.
     expect(await page.locator("form").count()).toBe(0);
-    await expect(page.locator(".composer__nojs")).toHaveText(t("bn", "chat.composer.nojs"));
+    await expect(page.locator(".composer__nojs:visible")).toHaveText(t("bn", "chat.composer.nojs"));
   });
 
   test("withoutJavaScriptThereIsNoFieldAndTheLineSaysHow", async ({ page }) => {
@@ -695,7 +704,7 @@ test.describe("without JavaScript", () => {
     const recorder = await open(page, "chat-with-asks");
     expect(await page.locator("input").count(), "inputs").toBe(0);
     expect(await page.locator("form").count(), "forms").toBe(0);
-    await expect(page.locator(".composer__nojs")).toHaveText(t("bn", "chat.composer.nojs"));
+    await expect(page.locator(".composer__nojs:visible")).toHaveText(t("bn", "chat.composer.nojs"));
     const stored = answerOf<ThreadJson>("chat-with-asks", "GET /app/api/patients/{id}/thread").items.find((i) => i.kind === "ask");
     expect(stored?.kind, "with-asks holds an ask").toBe("ask");
     if (stored?.kind !== "ask") return;

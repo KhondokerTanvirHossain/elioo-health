@@ -12,10 +12,15 @@ import { NEXT_PAGES, previewPath } from "../paths";
 /*
  * Runs on the production build (pnpm build && pnpm run test:built). The desktop layout (DesktopShell, the sidebar, the
  * NOW bar, the paper viewer, the conversation and the details panel; plan desktop-parity) renders only where
- * desktopLayout(ctx) says so: on preview requests, until the flip (Task 10). Everything it alone needs must therefore
- * reach only a page that renders it, or every live page pays for it inside the DR-42 route ceiling, which is never
- * raised (owner decision 2026-11-07, option a): each desktop part's stylesheets and client islands sit behind its
+ * desktopLayout(ctx) says so and the page gives desktop slots: since the flip (Task 10, DR-51) on every request to such a
+ * page. Everything it alone needs must therefore reach only a page that renders it, or a page that never shows it (the
+ * sign-in pages, the add sheet, a paper's every value, one value's sheet, a profile) pays for it inside the DR-42 route
+ * ceiling (owner decision 2026-11-07, option a): each desktop part's stylesheets and client islands sit behind its
  * loader (a `desk-load.tsx`, next/dynamic), and react-loadable-manifest links them only when the part renders.
+ *
+ * Which pages render it is read off each response (`class="desktop-shell"` in the document), never listed here: below,
+ * "live" is every measured page that does NOT, and "preview" every page that does (the preview twins and, since the
+ * flip, the live pages with desktop slots). theFlipLeavesPagesOnBothSides guards both groups against being empty.
  *
  * Two checks over the standalone server (what the image runs), behind stub Java, on every routed page as budget.spec.ts
  * measures it (NEXT_PAGES, under PAGE_SCENARIOS, and each page's NOW twin):
@@ -36,6 +41,9 @@ import { NEXT_PAGES, previewPath } from "../paths";
  *   desk stylesheet is imported statically.
  * Each list is guarded against being empty: an empty list would pass its check vacuously.
  */
+/** The desktop shell in a response: what tells a page that draws the desktop layout from one that does not. */
+const DRAWS_DESKTOP = /class="desktop-shell"/;
+
 const web = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const src = join(web, "src");
 const standalone = join(web, ".next", "standalone");
@@ -128,6 +136,16 @@ function entryOf(html: string): Set<string> {
 /** The class names a page's markup renders (its `class` attributes). */
 function classesOf(html: string): Set<string> {
   return new Set([...html.matchAll(/\sclass="([^"]*)"/g)].flatMap((m) => m[1]!.split(/\s+/).filter(Boolean)));
+}
+
+/**
+ * A page's markup split where the desktop layout starts: signedInPage renders today's phone shell first and DesktopShell
+ * after it (shell.tsx: `{phone}{frame}`), so everything from `class="desktop-shell"` on is the desktop's, and what is
+ * before it the phone's (all of it, for a page that never draws the desktop).
+ */
+function halves(html: string): { phone: string; desktop: string } {
+  const at = html.search(DRAWS_DESKTOP);
+  return at < 0 ? { phone: html, desktop: "" } : { phone: html.slice(0, at), desktop: html.slice(at) };
 }
 
 /** A class's component, its BEM block: `paper-viewer` for `paper-viewer__toolbar` and `paper-viewer--wide`. */
@@ -234,15 +252,32 @@ const PREVIEW = [
 
 describe("the desktop layout's CSS and JavaScript reach only the pages that render it", () => {
   let run: Run;
+  /** Every measured page that does not draw the desktop layout. */
   const live: { path: string; scenario: string; html: string }[] = [];
+  /** Every page that draws it: the preview twins, and the live pages that do since the flip. */
   const preview: { path: string; scenario: string; html: string }[] = [];
+  const liveDesktop: string[] = [];
   beforeAll(async () => {
     run = await start();
-    for (const p of LIVE) live.push({ ...p, html: await page(run, p.path, p.scenario) });
+    for (const p of LIVE) {
+      const html = await page(run, p.path, p.scenario);
+      // A page that draws the desktop layout is judged with the preview pages, whatever its address.
+      (DRAWS_DESKTOP.test(html) ? preview : live).push({ ...p, html });
+      if (DRAWS_DESKTOP.test(html)) liveDesktop.push(p.path);
+    }
     for (const p of PREVIEW) preview.push({ ...p, html: await page(run, p.path, p.scenario) });
-  }, 60_000);
+  }, 90_000);
   afterAll(() => {
     for (const child of run?.children ?? []) child.kill();
+  });
+
+  it("theFlipLeavesPagesOnBothSides", () => {
+    // Since the flip the live pages with desktop slots draw the layout; the others still must not carry it. Either group
+    // empty would pass every check below vacuously (no page to leak into, or no page to see the files on).
+    expect(liveDesktop, "live pages that draw the desktop layout (DESKTOP_DEFAULT true)").toEqual(
+      expect.arrayContaining(["/app/home", "/app/timeline", "/app/health", "/app/family"]),
+    );
+    expect(live.map((p) => p.path), "measured pages that never draw it").toEqual(expect.arrayContaining(["/app/add", "/app/verify"]));
   });
 
   it("desktopLoaderFilesReachOnlyThePreview", () => {
@@ -301,8 +336,12 @@ describe("the desktop layout's CSS and JavaScript reach only the pages that rend
   it("noLivePageStylesTheDesktopsMarkup", () => {
     // By component (BEM block: `paper-viewer` for `paper-viewer__toolbar`), not by class: a modifier a phone page also
     // renders under a state no measured scenario shows (`mio-avatar--hop`, a first-run patient) is not the desktop's.
-    const liveBlocks = new Set(live.flatMap(({ html }) => [...classesOf(html)].map(blockOf)));
-    const desktopBlocks = [...new Set(preview.flatMap(({ html }) => [...classesOf(html)].map(blockOf)))].filter((b) => !liveBlocks.has(b)).sort();
+    // Every block drawn outside the desktop layout: on the pages that never draw it, and in the phone half of those
+    // that do (since the flip a live family or paper page draws today's phone page below 900 px as well).
+    const liveBlocks = new Set([...live, ...preview].flatMap(({ html }) => [...classesOf(halves(html).phone)].map(blockOf)));
+    const desktopBlocks = [...new Set(preview.flatMap(({ html }) => [...classesOf(halves(html).desktop)].map(blockOf)))]
+      .filter((b) => !liveBlocks.has(b))
+      .sort();
     console.log(`components only the desktop layout renders (${desktopBlocks.length}): ${desktopBlocks.join(" ")}`);
     expect(desktopBlocks, "components only the desktop layout renders (the preview pages' markup, minus every live page's)").not.toEqual([]);
 
@@ -347,7 +386,7 @@ describe("the desktop layout's CSS and JavaScript reach only the pages that rend
     expect([...own.keys()], "classes only the desk stylesheets name").not.toEqual([]);
     // Not vacuous for what the BEM check above cannot see: some of these classes are modifiers or elements of a block a
     // live page renders (the NOW bar's, the desktop composer's, the outlined card's), derived from the live markup.
-    const liveBlocks = new Set(live.flatMap(({ html }) => [...classesOf(html)].map(blockOf)));
+    const liveBlocks = new Set([...live, ...preview].flatMap(({ html }) => [...classesOf(halves(html).phone)].map(blockOf)));
     const ofLiveBlocks = [...own.keys()].filter((cls) => cls !== blockOf(cls) && liveBlocks.has(blockOf(cls))).sort();
     console.log(`of them, modifiers and elements of a block live pages render (${ofLiveBlocks.length}): ${ofLiveBlocks.join(" ")}`);
     expect(ofLiveBlocks, "desk stylesheets' own classes that are a modifier or element of a block live pages render").not.toEqual([]);

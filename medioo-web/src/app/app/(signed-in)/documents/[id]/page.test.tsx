@@ -217,14 +217,15 @@ describe("/app/documents/{id} on the desktop layout", () => {
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 
-  it("aLiveLinkIsTodaysPaperPage", async () => {
+  it("aLiveLinkIsTheDesktopAndTodaysPaperPageBelowNineHundred", async () => {
+    // Since the flip (DR-51) a live link to a paper is what a preview one was: the talk-and-papers screen from 900 px
+    // (the conversation is read for it), and today's paper page, its NOW block first, in the phone shell below 900 px.
     ctx.preview = false;
     ctx.here = `/app/documents/${POTAS.id}`;
     const container = await open();
-    expect(container.querySelector(".desktop-shell"), "no desktop for a live request").toBeNull();
-    expect(container.querySelector(".app-shell--phone"), "today's shell at every width").toBeNull();
-    expect(container.querySelector("article.paper [data-now-block]")).not.toBeNull();
-    expect(reads.some((r) => r.includes("/thread")), "no read only the desktop needs").toBe(false);
+    expect(container.querySelector(".desktop-shell"), "the desktop for a live request").not.toBeNull();
+    expect(container.querySelector(".app-shell--phone article.paper [data-now-block]"), "today's paper below 900 px").not.toBeNull();
+    expect(reads.some((r) => r.includes("/thread")), "the conversation the desktop shows").toBe(true);
   });
 
   it("aBannerOnlyRefreshKeepsTheDesktopAndReadsNoPaper", async () => {

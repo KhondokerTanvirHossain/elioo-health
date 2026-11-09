@@ -326,7 +326,7 @@ const asking =
       typeof value === "string"
         ? (JSON.parse(readFileSync(join(FIXTURES, value), "utf8")) as { body: AskJson }).body.question
         : "Is this value all right?";
-    await page.locator(".composer__field").fill(question);
+    await page.locator(".composer__field:visible").fill(question);
     await page.locator(".composer__send").click();
     const recv = page.locator(".composer__lines .message-bubble--recv .message-bubble__body").last();
     await recv.waitFor();

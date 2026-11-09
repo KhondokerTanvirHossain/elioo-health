@@ -9,6 +9,7 @@ import { useScenario, type CropRow } from "./support/browser-api";
 import { expectedWidth } from "./support/png.mjs";
 import { FIXTURES } from "./support/scenarios.mjs";
 import { cropRowsReport, screenChecks } from "./support/screen-checks";
+import { BELOW_DESKTOP } from "./support/desk-checks";
 
 /*
  * The health tab (plan W9) on /app/health against the production build and stub Java answering the bodies
@@ -50,6 +51,11 @@ async function open(page: Page, scenario: string, path = "/app/health") {
 
 /** Every Java read the Next server made in this test, as `METHOD path`. */
 const javaReads = async (recorder: Awaited<ReturnType<typeof useScenario>>) => (await recorder.java()).map((r) => `${r.method} ${r.path}`);
+
+
+// Today's page, which a desktop browser shows below 900 px since the flip (DR-51); from 900 px it is the desktop layout,
+// tested by talk-and-papers.spec.ts and the desk-*.spec.ts files.
+test.use(BELOW_DESKTOP);
 
 test.describe("the health tab", () => {
   test("everyValueAndMedicineCropIsItsOwn", async ({ page }) => {
@@ -131,7 +137,7 @@ test.describe("the health tab", () => {
 
   test("twoPatientsAndNoChoiceShowTheChooserAndReadNoLabs", async ({ page }) => {
     const recorder = await open(page, "health-two-no-choice");
-    await expect(page.getByText(t("bn", "switch.title"))).toBeVisible();
+    await expect(page.getByText(t("bn", "switch.title")).filter({ visible: true })).toBeVisible();
     await expect(page.locator("[data-page=health]")).toHaveCount(0);
     const reads = await javaReads(recorder);
     expect(reads.filter((r) => r.endsWith("/labs") || r.endsWith("/medicines")), "the page decided nobody, so read nobody's").toEqual([]);
@@ -140,9 +146,12 @@ test.describe("the health tab", () => {
   test("theReadsAreTheShownPatientsOnly", async ({ page }) => {
     const recorder = await open(page, "health-some");
     const reads = (await javaReads(recorder)).filter((r) => r.includes("/app/api/patients/"));
-    // me/one-patient.json's one patient, each route read once.
+    // me/one-patient.json's one patient, each route read once; since the flip (DR-51) the desktop sidebar's follow-ups too,
+    // the same patient's.
     const id = body<{ patients: { id: string }[] }>("me/one-patient.json").patients[0]!.id;
-    expect(reads.sort()).toEqual([`GET /app/api/patients/${id}/labs`, `GET /app/api/patients/${id}/medicines`]);
+    expect(reads.sort()).toEqual(
+      [`GET /app/api/patients/${id}/follow-ups`, `GET /app/api/patients/${id}/labs`, `GET /app/api/patients/${id}/medicines`].sort(),
+    );
   });
 
   test("theReadsAreTheChosenPatientsNotTheFirst", async ({ page }) => {
