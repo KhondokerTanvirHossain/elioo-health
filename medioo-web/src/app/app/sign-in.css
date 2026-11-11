@@ -25,6 +25,110 @@
   width: 100%;
   max-width: 420px;
 }
+/* desktop.html's `.hero`, `.demo`, `.fine`: drawn from 900 px only (the media query below). */
+.sign-in__hero {
+  display: none;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: 40px 64px;
+  background: var(--bg2);
+  border-right: 1px solid var(--sep);
+}
+.sign-in__hero-title {
+  max-width: 16ch;
+  margin: 0;
+  font-family: var(--font-bn);
+  font-size: var(--text-figure);
+  font-weight: 700;
+  line-height: 1.25;
+  text-wrap: balance;
+}
+.sign-in__hero-lede {
+  max-width: 44ch;
+  margin: 0;
+  color: var(--label2);
+  font-family: var(--font-bn);
+  font-size: var(--text-lg);
+  line-height: 1.6;
+}
+.sign-in__demo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  max-width: 440px;
+  padding: var(--space-4) var(--space-5);
+  border-radius: 22px;
+  background: var(--bg);
+  box-shadow: 0 0 0 0.5px var(--sep);
+}
+.sign-in__demo-me {
+  align-self: flex-end;
+}
+.sign-in__demo-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--bg3);
+  box-shadow: 0 0 0 0.5px var(--sep);
+}
+.sign-in__demo-band {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-family: var(--font-bn);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.sign-in__demo-verdict {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  font-family: var(--font-bn);
+  font-size: var(--text-md);
+}
+.sign-in__demo-verdict small {
+  color: var(--label2);
+  font-size: var(--text-xs);
+}
+.sign-in__demo-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sign-in__demo-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  font-family: var(--font-sys);
+  font-size: var(--text-sm);
+}
+.sign-in__demo-row + .sign-in__demo-row {
+  border-top: 0.5px solid var(--sep);
+}
+.sign-in__demo-value {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-variant-numeric: tabular-nums;
+}
+.sign-in__trust {
+  max-width: 52ch;
+  margin: 0;
+  color: var(--label2);
+  font-family: var(--font-bn);
+  font-size: var(--text-xs);
+  line-height: 1.55;
+}
 .sign-in__side {
   display: flex;
   flex-direction: column;
@@ -156,15 +260,12 @@ a.sign-in__primary {
     grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
     align-content: stretch;
   }
+  /* desktop.html's `.hero` stands in for the phone's welcome from 900 px (SignInHero). */
   .sign-in__welcome {
-    align-items: flex-start;
-    justify-content: center;
-    padding: var(--space-6);
-    background: var(--bg2);
-    border-right: 1px solid var(--sep);
+    display: none;
   }
-  .sign-in__mio {
-    align-items: flex-start;
+  .sign-in__hero {
+    display: flex;
   }
   .sign-in__side {
     justify-content: center;
