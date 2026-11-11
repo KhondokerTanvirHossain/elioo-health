@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 import type { JavaAnswer } from "@/api/java";
 import type { MeJson, NowBannerJson, PaperJson, ThreadJson } from "@/api/types";
 import { t, type CopyKey } from "@/copy";
-import { href } from "@/routing/paths";
+import { deskAddHref, href } from "@/routing/paths";
 import { NOW_ALLOWED } from "@/styles/now-usage";
 import abbuAttention from "../../../../../fixtures/api/attention/proto-abbu.json";
 import attention from "../../../../../fixtures/api/attention/proto-amma.json";
@@ -15,6 +15,7 @@ import proto from "../../../../../fixtures/api/me/proto.json";
 import nowBanner from "../../../../../fixtures/api/now-banner/proto.json";
 import abbuThread from "../../../../../fixtures/api/thread/proto-abbu.json";
 import ammaThread from "../../../../../fixtures/api/thread/proto-amma.json";
+import uploadOptions from "../../../../../fixtures/api/upload-options/owner-one.json";
 
 /*
  * `/app/home` on the desktop layout (plan desktop-parity Task 8): the talk-and-papers screen. `?paper=` names the paper
@@ -63,6 +64,7 @@ vi.mock("@/api/java", async (actual) => ({
     if (path === `/app/api/patients/${ABBU.id}/follow-ups`) return { status: 200, body: abbuFollowUps.body };
     if (path === `/app/api/documents/${CBC.id}`) return { status: 200, body: CBC };
     if (path === `/app/api/documents/${potas.body.id}`) return { status: 200, body: potas.body };
+    if (path.startsWith("/app/api/upload-options")) return { status: 200, body: uploadOptions.body };
     throw new Error(`unexpected read ${path}`);
   },
 }));
@@ -141,12 +143,15 @@ describe("/app/home on the desktop layout", () => {
     expect(viewer.querySelector(".paper-viewer__first"), "the first visit is in the viewer").not.toBeNull();
     expect(viewer.querySelector("a.paper-viewer__pick"), "a share member is offered the upload link").toBeNull();
     expect(container.querySelector(`.desktop-shell a[href*="/app/add"]`), "a share member has a way to /app/add").toBeNull();
+    expect(container.querySelector(`.desktop-shell a[href*="add=1"]`), "a share member has a way to the add dialog").toBeNull();
+    expect(container.querySelector(".desk-drop"), "nor a drop frame").toBeNull();
     expect(viewer.querySelector(".paper-viewer__first p")!.textContent).toBe(t("bn", "add.viewonly"));
     cleanup();
     // The owner of the same empty thread keeps the invitation.
     ammaOwned = true;
     const own = await home();
-    expect(own.querySelector(".desktop-shell__paper a.paper-viewer__pick")!.getAttribute("href")).toBe(href("/app/add", true));
+    // The owner's pick opens the add sheet as a dialog over this screen (plan desktop-parity U1).
+    expect(own.querySelector(".desktop-shell__paper a.paper-viewer__pick")!.getAttribute("href")).toBe(deskAddHref(AMMA.id, null, true));
   });
 
   it("aNamedPaperIsInTheViewerAndItsPanelOpensAndCloses", async () => {
@@ -265,5 +270,39 @@ describe("/app/home on the desktop layout", () => {
     expect(phone, "today's chat below 900 px").not.toBeNull();
     const unpreviewed = ids(phone!.outerHTML.replaceAll('href="/app/preview/', 'href="/app/'));
     expect(unpreviewed).toBe(today);
+  });
+});
+
+describe("the add sheet as a dialog (plan desktop-parity U1; desktop.html uploadDlg)", () => {
+  it("addOpensTheSheetOverTheScreenWithItsOwnReadAndClosesBackToThePaper", async () => {
+    ctx.here = `/app/preview/home?patient=${AMMA.id}&paper=${CBC.id}&add=1`;
+    const container = await home({ patient: AMMA.id, paper: CBC.id, add: "1" });
+    const dialog = container.querySelector<HTMLDialogElement>(".desktop-shell dialog.desk-upload");
+    expect(dialog, "the dialog over the desktop screen").not.toBeNull();
+    expect(dialog!.getAttribute("aria-label")).toBe(t("bn", "add.title"));
+    // Today's sheet, every rule of it: the add page's own read, for the patient in view (Java decides whom it opens on).
+    expect(dialog!.querySelector("[data-upload-sheet]"), "the add sheet").not.toBeNull();
+    expect(reads.filter((r) => r.startsWith("/app/api/upload-options"))).toEqual([`/app/api/upload-options?patient=${AMMA.id}`]);
+    // Its close is the same screen on the same paper, without the dialog.
+    expect(dialog!.querySelector(".upload-sheet__close")!.getAttribute("href")).toBe(`/app/preview/home?patient=${AMMA.id}&paper=${CBC.id}`);
+    // The screen is still drawn behind it, on that paper.
+    expect(inView(container)).toBe(CBC.id);
+  });
+
+  it("noAddNoDialogAndNoRead", async () => {
+    const container = await home();
+    expect(container.querySelector("dialog.desk-upload")).toBeNull();
+    expect(reads.some((r) => r.startsWith("/app/api/upload-options")), "no options read for a dialog nobody asked for").toBe(false);
+  });
+
+  it("theOwnerCanDropAPaperAnywhereAShareMemberCannot", async () => {
+    const own = await home();
+    const frame = own.querySelector(".desktop-shell .desk-drop");
+    expect(frame, "the drop frame for the owner").not.toBeNull();
+    expect(frame!.textContent).toBe(t("bn", "desk.drop"));
+    cleanup();
+    ammaOwned = false;
+    const member = await home();
+    expect(member.querySelector(".desk-drop"), "no drop frame for a share member").toBeNull();
   });
 });

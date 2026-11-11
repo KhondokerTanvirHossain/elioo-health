@@ -129,6 +129,7 @@ export function Composer({
   answered = [],
   nojs,
   variant = "phone",
+  addHref,
 }: {
   words: ComposerWords;
   owner: boolean;
@@ -137,6 +138,8 @@ export function Composer({
   answered?: readonly string[];
   nojs?: ReactNode;
   variant?: ComposerVariant;
+  /** The desktop paperclip's address (deskAddHref): the sheet as a dialog over the talk-and-papers screen. */
+  addHref?: string;
 }) {
   const [ready, setReady] = useState(false);
   const [text, setText] = useState("");
@@ -150,6 +153,8 @@ export function Composer({
   useEffect(() => setReady(true), []);
   const desk = variant === "desk";
   const add = href(`/app/add?patient=${encodeURIComponent(patientId)}`, preview);
+  // The desktop paperclip opens the sheet as a dialog over this screen (deskAddHref); the phone's camera, the add page.
+  const attach = addHref ?? add;
   const shown = exchanges.filter((e) => e.turnId === null || !answered.includes(e.turnId));
   // Only on a change the family's own press made: nothing moves on mount, where OpenAtNewest decides.
   useEffect(() => {
@@ -230,7 +235,7 @@ export function Composer({
       <div ref={bar} className={desk ? "composer composer--desk" : "composer"}>
         <div className="composer__bar">
           {owner && desk && (
-            <a className="composer__attach" href={add} aria-label={words.attach} title={words.attach}>
+            <a className="composer__attach" href={attach} aria-label={words.attach} title={words.attach}>
               <svg className="composer__attach-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                 <path d="M15.5 8.5l-6.4 6.4a1.8 1.8 0 0 0 2.5 2.5l7.1-7.1a3.5 3.5 0 0 0-5-5l-7.4 7.4a5.3 5.3 0 0 0 7.5 7.5l6-6" />
               </svg>

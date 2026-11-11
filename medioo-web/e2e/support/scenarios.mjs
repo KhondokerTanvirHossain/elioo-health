@@ -564,6 +564,12 @@ export const SCENARIOS = {
   },
   // The chat page (W5), /app/home: the thread, the attention stack and the NOW banner, each a body Java's contract tests wrote.
   "chat-default": chat({}),
+  // The desktop's add dialog over the talk-and-papers screen (plan desktop-parity U1): the one-patient family's chat with
+  // Java's options for its one patient (owner-one names the same patient) and a press that makes one paper.
+  "chat-upload": chat({
+    "GET /app/api/upload-options": "upload-options/owner-one.json",
+    "POST /app/api/uploads": "uploads/one-document.json",
+  }),
   "chat-stack": chat({ "GET /app/api/patients/{id}/attention": "attention/full-stack.json" }),
   "chat-now": chat({
     "GET /app/api/now-banner": bannerFor("now-banner/one.json", "me/one-patient.json"),
@@ -633,7 +639,12 @@ export const SCENARIOS = {
   }),
   // A preview family (BAYMAX_WEB_PREVIEW_FAMILIES) on /app/preview/home, before and after a NOW paper arrived.
   // On the desktop layout (a preview page, plan desktop-parity Task 8) the sidebar reads the patient's follow-ups.
-  "chat-preview": chat({ "GET /app/api/me": "me/preview-on.json", "GET /app/api/patients/{id}/follow-ups": "follow-ups/none.json" }),
+  "chat-preview": chat({
+    "GET /app/api/me": "me/preview-on.json",
+    "GET /app/api/patients/{id}/follow-ups": "follow-ups/none.json",
+    // The add sheet as a dialog over the screen (plan desktop-parity U1, `?add=1`).
+    "GET /app/api/upload-options": "upload-options/owner-one.json",
+  }),
   "chat-preview-now": chat({
     "GET /app/api/me": "me/preview-on.json",
     "GET /app/api/patients/{id}/follow-ups": "follow-ups/none.json",

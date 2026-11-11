@@ -7,6 +7,7 @@ import ownerOne from "../../../fixtures/api/upload-options/owner-one.json";
 import ownerTwo from "../../../fixtures/api/upload-options/owner-two.json";
 import viewOnly from "../../../fixtures/api/upload-options/view-only.json";
 import { uploadWords } from "../../app/app/(signed-in)/add/upload-words";
+import { holdFiles, takeHeldFiles } from "./held";
 import { UploadSheet } from "./UploadSheet";
 
 /*
@@ -53,6 +54,18 @@ const send = () => screen.getByRole("button", { name: t("bn", "add.send") });
 const thumbs = (container: HTMLElement) => [...container.querySelectorAll<HTMLImageElement>(".upload-tray__thumb")].map((i) => i.getAttribute("src"));
 
 describe("the add sheet", () => {
+  it("filesDroppedBeforeTheSheetOpenedAreItsFirstPagesOnce", () => {
+    // DropAnywhere (desktop.html `#drop`) holds the dropped files and opens the sheet: they are its tray, in order.
+    holdFiles([jpeg("first.jpg"), jpeg("second.jpg")]);
+    const { container } = sheet(ownerOne);
+    expect(thumbs(container)).toEqual(["blob:first.jpg#1", "blob:second.jpg#2"]);
+    expect(takeHeldFiles(), "handed over once: nothing left for the next sheet").toEqual([]);
+    cleanup();
+    // A sheet opened any other way starts empty.
+    const plain = sheet(ownerOne).container;
+    expect(thumbs(plain)).toEqual([]);
+  });
+
   it("theSheetNeverGuessesThePatient", () => {
     const two = options(ownerTwo);
     expect(two.can_send.length, "the fixture has two to send for").toBe(2);

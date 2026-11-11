@@ -248,6 +248,8 @@ const PREVIEW = [
   { path: previewPath("/app/health"), scenario: "health-some" },
   { path: `${previewPath("/app/health")}?show=medicines`, scenario: "health-some" },
   { path: previewPath("/app/family"), scenario: "family-owner" },
+  // The add sheet as a dialog over the talk-and-papers screen (U1): its loader's files reach only this page.
+  { path: `${previewPath("/app/home")}?add=1`, scenario: "chat-preview" },
 ];
 
 describe("the desktop layout's CSS and JavaScript reach only the pages that render it", () => {

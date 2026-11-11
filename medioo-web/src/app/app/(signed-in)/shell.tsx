@@ -45,6 +45,8 @@ export type DesktopFrameInput = {
   /** undefined: a screen of one column (the calendar), drawn with no conversation and no divider. */
   talk: ReactNode | undefined;
   panel: ReactNode | undefined;
+  /** A dialog over the screen (the add sheet at `?add=1`), or undefined. */
+  dialog: ReactNode | undefined;
 };
 
 /** The desktop layout's frame: DesktopShell and its sidebar around the columns (desktop-frame.tsx's desktopFrame). */
@@ -115,7 +117,7 @@ export async function signedInPage({
   everyone?: boolean;
   asked?: string;
   patient?: string | null;
-  desktop?: { frame: DesktopFrame; paper: Slot; talk?: Slot; panel?: Slot; place?: DesktopPlace };
+  desktop?: { frame: DesktopFrame; paper: Slot; talk?: Slot; panel?: Slot; place?: DesktopPlace; dialog?: Slot };
 }) {
   const { lang, preview, here } = await requestContext();
   const [meAnswer, bannerAnswer] = await Promise.all([javaGet<MeJson>("/app/api/me"), javaGet<NowBannerJson>("/app/api/now-banner")]);
@@ -164,6 +166,7 @@ export async function signedInPage({
     paper: chooser ? <PatientChooser lang={lang} patients={me.patients} titleId="desktop-patient-chooser-title" /> : await fill(desktop.paper, ctx),
     talk: desktop.talk === undefined ? undefined : chooser ? null : await fill(desktop.talk, ctx),
     panel: chooser || desktop.panel === undefined ? undefined : ((await fill(desktop.panel, ctx)) ?? undefined),
+    dialog: chooser || desktop.dialog === undefined ? undefined : ((await fill(desktop.dialog, ctx)) ?? undefined),
   });
   return (
     <>

@@ -6,7 +6,7 @@ import type { MeJson, MePatient, PaperJson, PaperResultJson, ThreadItemJson, Thr
 import { formatDayMonth, formatTime, t, type CopyKey, type Lang } from "@/copy";
 import { VerdictCard } from "@/components/safety/VerdictCard/VerdictCard";
 import { call999Words } from "@/components/safety/AskAnswer/call999";
-import { href } from "@/routing/paths";
+import { deskAddHref, href } from "@/routing/paths";
 import { NOW_ALLOWED } from "@/styles/now-usage";
 import proto from "../../../fixtures/api/me/proto.json";
 import { Conversation } from "./Conversation";
@@ -321,8 +321,9 @@ describe("Conversation", () => {
     const items = thread("share-member");
     const owner = draw(items, { patient: patientOf(items, { owner: true }) });
     const clips = [...owner.querySelectorAll<HTMLAnchorElement>(".composer__attach")];
+    // The paperclip opens the add sheet as a dialog over this screen (plan desktop-parity U1), for this patient.
     expect(clips.map((a) => [a.getAttribute("href"), a.getAttribute("aria-label")])).toEqual([
-      [`/app/add?patient=${patientOf(items).id}`, t("bn", "desk.attach")],
+      [deskAddHref(patientOf(items).id, null, false), t("bn", "desk.attach")],
     ]);
     cleanup();
     const member = draw(items, { patient: patientOf(items, { owner: false }) });

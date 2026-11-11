@@ -10,6 +10,7 @@ import { DaySeparator, dhakaDay } from "./DaySeparator";
 import { Composer, ConversationStyles, FollowPaper, OpenAtNewest } from "./desk-load";
 import { QuickActions } from "./QuickActions";
 import { TalkCard } from "./TalkCard";
+import { deskAddHref } from "@/routing/paths";
 
 /** The column that scrolls (Conversation.css): OpenAtNewest scrolls it, never the window. */
 const COLUMN = ".conversation";
@@ -179,6 +180,7 @@ export function Conversation({
       <ol className="conversation__items">{rows}</ol>
       <Composer
         variant="desk"
+        addHref={deskAddHref(patient.id, selectedId, preview)}
         words={composerWords(lang, patient.name_possessive)}
         owner={patient.owner}
         patientId={patient.id}

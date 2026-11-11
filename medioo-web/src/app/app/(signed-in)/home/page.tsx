@@ -12,6 +12,7 @@ import { href } from "@/routing/paths";
 import { desktopFrame } from "../desktop-frame";
 import { signedInPage, type ShellContext } from "../shell";
 import { composerNoJs, composerWords } from "./chat-words";
+import { addDialog } from "./add-dialog";
 import { deskScreen, type DeskScreen } from "./desk";
 import { OpenAtNewest } from "./OpenAtNewest";
 import "./home.css";
@@ -141,6 +142,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       paper: async (ctx) => (await desk(ctx)).paper,
       talk: async (ctx) => (await desk(ctx)).talk,
       panel: async (ctx) => (await desk(ctx)).panel,
+      dialog: (ctx) => addDialog(ctx, here, one(query.add) === "1"),
     },
   });
 }

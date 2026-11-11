@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { t, type Lang } from "@/copy";
 import { SidebarToggle } from "@/components/AppShell/SidebarToggle";
 import { NowBarStyles } from "@/components/safety/NowBanner/desk-load";
-import { ColumnResizer, DesktopShellStyles } from "./desk-load";
+import { ColumnResizer, DesktopShellStyles, DropAnywhere } from "./desk-load";
 
 /** One desktop shell per page, so one sidebar: the id the toolbar's button names in aria-controls (AppShell's differs). */
 const SIDEBAR_ID = "desktop-shell-sidebar";
@@ -30,6 +30,8 @@ export function DesktopShell({
   paper,
   talk,
   panel,
+  dialog,
+  drop,
 }: {
   lang: Lang;
   preview: boolean;
@@ -38,6 +40,10 @@ export function DesktopShell({
   paper: ReactNode;
   talk?: ReactNode;
   panel?: ReactNode;
+  /** A dialog over the whole screen (the add sheet at `?add=1`, plan desktop-parity U1), or none. */
+  dialog?: ReactNode;
+  /** Where a paper dropped anywhere opens the add dialog (desktop.html `#drop`), and the frame's words; none for a viewer who may not send. */
+  drop?: { to: string; label: string } | null;
 }) {
   const menu = t(lang, "tabs.label");
   const one = talk === undefined;
@@ -70,6 +76,8 @@ export function DesktopShell({
           )}
         </div>
       </main>
+      {drop && <DropAnywhere to={drop.to} label={drop.label} />}
+      {dialog}
     </div>
   );
 }

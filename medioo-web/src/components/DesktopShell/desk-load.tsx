@@ -11,3 +11,5 @@ import dynamic from "next/dynamic";
 export const DesktopShellStyles = dynamic(() => import("./DesktopShell.desk"));
 /** The divider between the paper and the conversation: a client island, in the same desk-only chunk. */
 export const ColumnResizer = dynamic(() => import("./DesktopShell.desk").then((m) => m.ColumnResizer));
+/** A paper dropped anywhere opens the add dialog (plan desktop-parity U1): in the same desk-only chunk. */
+export const DropAnywhere = dynamic(() => import("./DesktopShell.desk").then((m) => m.DropAnywhere));
