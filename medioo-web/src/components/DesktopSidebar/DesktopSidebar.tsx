@@ -8,7 +8,8 @@ import { ChipShape } from "@/components/StatusChip/StatusChip";
 import { UrgentMark } from "@/components/safety/UrgentMark/UrgentMark";
 import { Wordmark } from "@/components/Wordmark/Wordmark";
 import { href, reachable, servedByNext } from "@/routing/paths";
-import { DesktopSidebarStyles } from "./desk-load";
+import { TYPE_KEY, typeLabel } from "@/components/MonthList/type-label";
+import { DeskSearch, DesktopSidebarStyles } from "./desk-load";
 
 /** Which ledger item, or the account row, the page is. */
 export type DesktopPlace = "talk" | "calendar" | "labs" | "meds" | "settings";
@@ -57,6 +58,14 @@ const Icon = ({ children }: { children: ReactNode }) => (
     {children}
   </svg>
 );
+
+/** The desktop search's words (plan desktop-parity S4): the month names and every paper type's name, as the app writes them. */
+function searchWords(lang: Lang) {
+  const months = Array.from({ length: 12 }, (_, i) => formatMonth(lang, `2026-${String(i + 1).padStart(2, "0")}-01`));
+  const types: Record<string, string> = { other: typeLabel(lang, null) };
+  for (const type of Object.keys(TYPE_KEY)) types[type] = typeLabel(lang, type);
+  return { lang, months, types };
+}
 
 /** A number as the page writes it: Bangla digits on bn. */
 const count = (lang: Lang, n: number) => (lang === "bn" ? banglaDigits(String(n)) : String(n));
@@ -178,6 +187,19 @@ export function DesktopSidebar({
         <Wordmark lang={lang} />
         <MioAvatar size={32} still />
       </div>
+      {active !== null && (
+        <DeskSearch
+          patientId={active.id}
+          preview={preview}
+          words={searchWords(lang)}
+          labels={{
+            label: t(lang, "desk.search.label"),
+            placeholder: t(lang, "desk.search.placeholder"),
+            results: t(lang, "desk.search.results"),
+            none: t(lang, "desk.search.none"),
+          }}
+        />
+      )}
       <div className="desktop-sidebar__scroll">
         <section className="desktop-sidebar__group" aria-labelledby="desktop-sidebar-family">
           <h2 className="desktop-sidebar__group-title" id="desktop-sidebar-family">

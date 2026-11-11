@@ -552,3 +552,20 @@ Built on `feat/desktop-signin`, live on merge:
   - The form keeps today's labels and steps, not the prototype's country row and +880 prefix line; the code step keeps
     the ruling's flow, not the prototype's six boxes and timer.
   - Mio is the 96 px figure the page already uses, not desktop.html's 190 px hero size.
+
+## Phase 2, S4 — search (2026-11-12)
+
+Built on `feat/desktop-search` (on U1), live on merge:
+
+- **The field** (`DeskSearch`, desktop.html's `.search`): under the sidebar's brand, for the patient in view, focused by
+  ⌘K (Ctrl+K). Its words are desktop.html's ("খুঁজুন: কাগজ, মান, ওষুধ", "খুঁজুন", "ফলাফল", "“{0}” কোনো কাগজে পাওয়া
+  যায়নি"). It rides in the sidebar's own desk-only chunk and stylesheet.
+- **What it searches** (`search-index.ts`), no Java search: the app's own reads, made in the browser the first time the
+  field is used (once): the timeline's first page (each paper by its type's name, its day and where it was done; opens
+  the talk-and-papers screen on it), the labs (each value by its name, with its newest reading as written; opens the lab
+  values on it) and the latest prescription (each medicine by its written name; opens the medicines). At most eight
+  results, in that order; Enter opens the first, Escape clears; a read that fails leaves its part out.
+- **Page weight.** The heaviest page measures 297,212 B against the 300,000 B ceiling.
+- **Not as desktop.html, on purpose:** the placeholder is "খুঁজুন" without "বা ⌥ ধরে বলুন" (voice is V1, later) and
+  there is no mic; it searches the patient in view (the plan's row), not every patient; papers past the timeline's first
+  page are not searched; a medicine is from the latest prescription only (Q3).

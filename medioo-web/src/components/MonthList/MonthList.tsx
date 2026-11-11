@@ -5,18 +5,8 @@ import { href } from "@/routing/paths";
 import "./MonthList.css";
 
 /** The paper types the bundle names (Java's TimelineView.typeLabel); any other, or none, is "a paper". */
-const TYPE_KEY: Record<string, CopyKey> = {
-  prescription: "type.prescription",
-  lab_report: "type.lab_report",
-  discharge_summary: "type.discharge_summary",
-  imaging_report: "type.imaging_report",
-};
-
-/** A paper's type as the bundle names it, else the bundle's word for a paper (C4: the strip and the list say it alike). */
-export function typeLabel(lang: Lang, type: string | null): string {
-  const key = type === null ? undefined : TYPE_KEY[type];
-  return t(lang, key ?? "timeline.paper");
-}
+export { TYPE_KEY, typeLabel } from "./type-label";
+import { typeLabel } from "./type-label";
 
 /**
  * The day a paper is filed under, as Java filed it (D2): the day and month (the month header holds the year), an upload
