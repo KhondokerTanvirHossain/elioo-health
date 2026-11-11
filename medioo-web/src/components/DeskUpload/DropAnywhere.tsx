@@ -15,6 +15,7 @@ import { holdFiles } from "@/components/Upload/held";
  */
 export function DropAnywhere({ to, label }: { to: string; label: string }) {
   const [on, setOn] = useState(false);
+  const [live, setLive] = useState(false);
   const depth = useRef(0);
   const router = useRouter();
   useEffect(() => {
@@ -47,6 +48,8 @@ export function DropAnywhere({ to, label }: { to: string; label: string }) {
     window.addEventListener("dragover", over);
     window.addEventListener("dragleave", leave);
     window.addEventListener("drop", drop);
+    // Listening: a drop from here on reaches the sheet (`data-live`, as UploadSheet marks itself once its controls work).
+    setLive(true);
     return () => {
       window.removeEventListener("dragenter", enter);
       window.removeEventListener("dragover", over);
@@ -55,7 +58,7 @@ export function DropAnywhere({ to, label }: { to: string; label: string }) {
     };
   }, [to, router]);
   return (
-    <div className="desk-drop" data-on={on ? "" : undefined} aria-hidden="true">
+    <div className="desk-drop" data-on={on ? "" : undefined} data-live={live ? "" : undefined} aria-hidden="true">
       {label}
     </div>
   );

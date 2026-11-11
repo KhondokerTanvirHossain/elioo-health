@@ -61,6 +61,8 @@ test.describe("sending a paper on the desktop layout", () => {
 
   test("aPaperDroppedAnywhereOpensTheSheetWithItInTheTray", async ({ page }) => {
     await open(page);
+    // The drop frame's listeners are on (they attach a moment after hydration; a slow CI runner dropped before, PR 183).
+    await page.locator(".desk-drop[data-live]").waitFor({ state: "attached" });
     // A file dragged over the window and let go on the conversation, as a browser hands it to the page.
     await page.evaluate(
       async ({ name, bytes }) => {
