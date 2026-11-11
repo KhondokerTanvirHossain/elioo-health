@@ -6,6 +6,7 @@ import type { UploadAnswerJson, UploadOptionsJson } from "@/api/types";
 import type { UploadWords } from "@/app/app/(signed-in)/add/upload-words";
 import { href } from "@/routing/paths";
 import { DropZone } from "./DropZone";
+import { takeHeldFiles } from "./held";
 import { PageTray, type TrayControl, type TrayPage } from "./PageTray";
 import { downscaleOf, isKnown, preparePage, type PreparedPage } from "./prepare";
 import { fillSlots } from "./slots";
@@ -85,6 +86,14 @@ export function UploadSheet({
   const progressTitle = useRef<HTMLDivElement>(null);
 
   useEffect(() => setLive(true), []);
+
+  // Pages dropped on the desktop before the sheet opened (DropAnywhere, desktop.html `#drop`): the tray's first pages,
+  // taken once, exactly as a drop on the open sheet would add them.
+  useEffect(() => {
+    const files = takeHeldFiles();
+    if (files.length > 0) add(files, null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on the sheet's arrival: `add` is this render's
+  }, []);
 
   // The thumbnails' object URLs are the family's photos held in memory: given back when the sheet goes.
   const shown = useRef<TrayPage[]>([]);

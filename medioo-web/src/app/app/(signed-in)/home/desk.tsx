@@ -16,7 +16,7 @@ import { PinnedUrgent } from "@/components/Conversation/PinnedUrgent";
 import { PaperPanel } from "@/components/PaperPanel/PaperPanel";
 import { PaperViewer } from "@/components/PaperViewer/PaperViewer";
 import { mergeAsks } from "@/components/Thread/merge";
-import { href } from "@/routing/paths";
+import { deskAddHref, href } from "@/routing/paths";
 import { paperRead } from "../documents/[id]/paper-read";
 import type { ShellContext } from "../shell";
 
@@ -80,7 +80,12 @@ export async function deskScreen(ctx: ShellContext, here: string, ask: DeskAsk):
   if (patient === null) {
     const hrefFor = deskHref(null, preview);
     // No patient yet: the family is the viewer's own, so the first visit invites the first paper.
-    return { paper: <PaperViewer lang={lang} preview={preview} owner paper={null} papers={[]} selectedId={null} hrefFor={hrefFor} />, talk: null, panel: undefined };
+    const first = deskAddHref(null, null, preview);
+    return {
+      paper: <PaperViewer lang={lang} preview={preview} owner paper={null} papers={[]} selectedId={null} hrefFor={hrefFor} addHref={first} />,
+      talk: null,
+      panel: undefined,
+    };
   }
   const id = encodeURIComponent(patient.id);
   const [plain, asked, attention] = await Promise.all([
@@ -116,7 +121,16 @@ export async function deskScreen(ctx: ShellContext, here: string, ask: DeskAsk):
     paper: (
       <>
         <h1 className="desktop-shell__title">{t(lang, "desk.talk.title", patient.name_possessive)}</h1>
-        <PaperViewer lang={lang} preview={preview} owner={patient.owner} paper={selected} papers={papers} selectedId={selectedId} hrefFor={hrefFor} />
+        <PaperViewer
+          lang={lang}
+          preview={preview}
+          owner={patient.owner}
+          paper={selected}
+          papers={papers}
+          selectedId={selectedId}
+          hrefFor={hrefFor}
+          addHref={deskAddHref(patient.id, selectedId, preview)}
+        />
       </>
     ),
     talk: (
@@ -136,3 +150,4 @@ export async function deskScreen(ctx: ShellContext, here: string, ask: DeskAsk):
       ask.panel && selected !== null ? <PaperPanel lang={lang} preview={preview} paper={selected} closeHref={hrefFor(selected.id)} /> : undefined,
   };
 }
+

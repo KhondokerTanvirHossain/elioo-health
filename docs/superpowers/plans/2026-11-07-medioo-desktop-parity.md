@@ -509,3 +509,25 @@ pages (chat, paper, papers, health, family) now test them where a desktop browse
 shared screen checks run on the desktop layout from 900 px, with WCAG 2.5.8's 24 px target floor inside it (desktop.html
 draws 28–34 px controls), to the PO for sight. `desktop-chunks.built.test.ts` tells a page that draws the desktop from
 one that does not by its own response. Next: U1 (sending a paper), I1, S4.
+
+## Phase 2, U1 — sending a paper (2026-11-12)
+
+Built on `feat/desktop-upload-dialog`, live on merge (the desktop layout is live since the flip):
+
+- **The dialog.** The paperclip, the first visit's pick and the lab values' "কাগজ পাঠান" open `/app/home?…&add=1`
+  (`deskAddHref`, the paper in view kept): today's UploadSheet in desktop.html's dialog (`DeskUploadDialog`, a modal
+  `<dialog>`, the page behind inert). Its read and words are the add page's own (GET /app/api/upload-options for the
+  patient in view, Java deciding whom it opens on; upload-words.ts), so the same API, refusals, cap, kinds, key and
+  retries. Its close and Escape go to the same screen and paper without `add`; a press goes where Java says. The
+  dialog's code and stylesheets load only on that address (its own loader; `home/add-dialog.tsx`, which a paper link's
+  page does not import).
+- **A drop anywhere** (desktop.html `#drop`, its words `desk.drop` "কাগজটা এখানে ছেড়ে দিন"): while files are held over
+  the window a dashed frame shows; a drop holds them in memory (`held.ts`) and opens the dialog, whose tray takes them
+  as its first pages. For a patient the viewer owns only; the open sheet's own drop target takes a drop while it is open.
+  It rides in the desktop shell's own chunk and stylesheet, so no request of its own.
+- **Page weight.** The heaviest desktop page (a paper link, preview twin, gzip) measured 294,598–294,621 B against
+  DR-51's 294,604 B, after folding the drop frame into the shell's chunk and dropping a font line its parent already sets;
+  the PO raised the route ceiling to 300,000 B (2026-11-12, DR-51 amendment, DR-42 item 2) for U1 and S4.
+- **Not as desktop.html, on purpose:** the sheet's own words and controls (today's tray with move and remove, the
+  patient chips, one report or separate, the cap and the free-month count as Java words them), not the design's mock
+  ("সাধারণত ৩০ সেকেন্ডে" is not promised); the dialog's title is the sheet's `add.title`.

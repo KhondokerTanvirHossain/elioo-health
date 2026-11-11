@@ -1,6 +1,8 @@
 import "server-only";
 import { javaGet, signedIn } from "@/api/java";
 import type { FollowUpsJson } from "@/api/types";
+import { t } from "@/copy";
+import { deskAddHref } from "@/routing/paths";
 import { DesktopShell } from "@/components/DesktopShell/DesktopShell";
 import { DesktopSidebar, nextVisitOf, type DesktopPlace } from "@/components/DesktopSidebar/DesktopSidebar";
 import type { Tab } from "@/components/TabBar/TabBar";
@@ -24,7 +26,7 @@ export const dhakaToday = (): string => DHAKA_DAY.format(new Date());
  * which never renders the desktop layout does not carry it at all: not DesktopShell, not the sidebar, not their loaders
  * (desk-load.tsx) nor next/dynamic's runtime (DR-42; owner decision 2026-11-07).
  */
-export const desktopFrame: DesktopFrame = async ({ lang, preview, here, me, patient, tab, place, bar, paper, talk, panel }) => {
+export const desktopFrame: DesktopFrame = async ({ lang, preview, here, me, patient, tab, place, bar, paper, talk, panel, dialog }) => {
   const followUps =
     patient === null
       ? null
@@ -48,6 +50,10 @@ export const desktopFrame: DesktopFrame = async ({ lang, preview, here, me, pati
       paper={paper}
       talk={talk}
       panel={panel}
+      dialog={dialog}
+      // A paper dropped anywhere opens the add dialog for the patient in view, only one the viewer owns (the sheet would
+      // refuse a share member anyway; the frame is not drawn for them at all).
+      drop={patient !== null && patient.owner ? { to: deskAddHref(patient.id, null, preview), label: t(lang, "desk.drop") } : null}
     />
   );
 };

@@ -45,7 +45,7 @@ const digitsOf = (lang: Lang) => (lang === "bn" ? banglaDigits("0123456789") : "
  * member (`owner` false): Mio and the view-only line (add.viewonly) only, no invitation and no link to the add page;
  * Java refuses their upload (shared_patient_read_only), and no screen offers a send it refuses (Review Focus 2).
  */
-function FirstVisit({ lang, preview, owner }: { lang: Lang; preview: boolean; owner: boolean }) {
+function FirstVisit({ lang, preview, owner, addHref }: { lang: Lang; preview: boolean; owner: boolean; addHref?: string }) {
   return (
     <div className="paper-viewer paper-viewer--first">
       <PaperViewerStyles />
@@ -55,7 +55,7 @@ function FirstVisit({ lang, preview, owner }: { lang: Lang; preview: boolean; ow
           <>
             <h2 className="paper-viewer__first-title">{t(lang, "desk.first.title")}</h2>
             <p className="paper-viewer__first-body">{t(lang, "desk.first.body")}</p>
-            <a className="paper-viewer__pick" href={href("/app/add", preview)}>
+            <a className="paper-viewer__pick" href={addHref ?? href("/app/add", preview)}>
               <Icon d="M15.5 8.5l-6.4 6.4a1.8 1.8 0 0 0 2.5 2.5l7.1-7.1a3.5 3.5 0 0 0-5-5l-7.4 7.4a5.3 5.3 0 0 0 7.5 7.5l6-6" />
               {t(lang, "desk.first.pick")}
             </a>
@@ -90,6 +90,7 @@ export function PaperViewer({
   papers,
   selectedId,
   hrefFor,
+  addHref,
 }: {
   lang: Lang;
   preview: boolean;
@@ -99,8 +100,10 @@ export function PaperViewer({
   papers: PaperJson[];
   selectedId: string | null;
   hrefFor: (id: string) => string;
+  /** Where the first visit's pick opens the sheet (deskAddHref, the dialog over this screen); else the add page. */
+  addHref?: string;
 }) {
-  if (paper === null) return <FirstVisit lang={lang} preview={preview} owner={owner} />;
+  if (paper === null) return <FirstVisit lang={lang} preview={preview} owner={owner} addHref={addHref} />;
 
   const reading = isReadingPaper(paper);
   const at = papers.findIndex((p) => p.id === paper.id);

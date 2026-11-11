@@ -871,8 +871,9 @@ are unchanged. Records the direction contract's 2026-10-21 amendments in
    form still posts to the Java path, and Caddy keeps that path on Java. A family must never need JavaScript to stop
    reminders from WhatsApp on a weak phone. This releases W3 (sign-in). Caddy moves `/app/`, `/app/login` and
    `/app/verify` to `medioo-web` only when W3's routes flip, after its on-device step, as for any other route.
-2. **First-load wire budget per routed page: ≤ 294,604 B.** *(Amended by DR-51, 2026-11-09, PO: +11% for the desktop
-   layout, which every page with one now carries; it was ≤ 265,409 B, the figure the rest of this item explains.)* That
+2. **First-load wire budget per routed page: ≤ 300,000 B.** *(Amended by DR-51, 2026-11-09, PO: +11% for the desktop
+   layout, which every page with one now carries, 294,604 B; again 2026-11-12, PO: 300,000 B, about +13%, for sending a
+   paper and search. It was ≤ 265,409 B, the figure the rest of this item explains.)* That
    was the measured probe, 203,969 B, plus 60 KB
    (61,440 B). Every routed page is measured as `medioo-web/e2e/budget.spec.ts` measured the probe: a cold first load on
    the phone profile (Pixel 7, 390×844), both self-hosted Noto subsets fetched and counted, encoded body bytes from the
@@ -1776,3 +1777,8 @@ desktop layout we fixed just now. turn it on now." and, on the page weight, "6�
 
 **Supersedes:** the "preview only until the PO approves" gate of plan desktop-parity Task 2 for the pages listed, and
 DR-42's route number (265,409 B); the plan's Task 10 asked for this record as DR-46, a number already taken.
+
+**Amendment 2026-11-12 (PO, in the session, choosing the recommended option):** the route ceiling is **300,000 B**
+(about +13% over 265,409 B). Sending a paper on the desktop (plan desktop-parity U1: the add dialog and a drop anywhere)
+put the heaviest page, a paper link's preview twin, at 294,598–294,621 B gzip against 294,604 B, the run-to-run spread
+alone enough to fail CI at random, and search (S4) needs room on the same pages. The probe ceiling is unchanged.

@@ -5,7 +5,7 @@ import type { LabsJson, MedicinesJson } from "@/api/types";
 import { t } from "@/copy";
 import { DeskLabs } from "@/components/DeskLabs/DeskLabs";
 import { DeskMedicines } from "@/components/DeskMedicines/DeskMedicines";
-import { href, reachable } from "@/routing/paths";
+import { deskAddHref, href } from "@/routing/paths";
 import type { ShellContext } from "../shell";
 
 /**
@@ -15,7 +15,8 @@ import type { ShellContext } from "../shell";
  * - `?lab=` chooses the value (DeskLabs's chosenLab: a reading's observation id, or `bp`);
  * - a reading's paper opens the talk-and-papers screen on that paper (`/app/home?patient=…&paper=…`, as the calendar's
  *   `open`), written here so this route does not import the conversation's modules;
- * - with nothing read yet, the way to send a paper is the add page, where one is reachable for this viewer.
+ * - with nothing read yet, the way to send a paper is the add dialog over the talk-and-papers screen (deskAddHref, plan
+ *   desktop-parity U1), for a patient the viewer owns; a share member is offered none.
  */
 export async function labsScreen(ctx: ShellContext, here: string, { soft }: { soft: boolean }): Promise<ReactNode> {
   const { lang, preview, patient } = ctx;
@@ -40,7 +41,7 @@ export async function labsScreen(ctx: ShellContext, here: string, { soft }: { so
       at={at}
       soft={soft}
       open={open}
-      send={reachable("/app/add", preview) ? href("/app/add", preview) : null}
+      send={patient.owner ? deskAddHref(patient.id, null, preview) : null}
     />
   );
 }

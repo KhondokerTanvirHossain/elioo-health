@@ -1,0 +1,27 @@
+/* The add sheet as desktop.html's dialog (`.dlg`, `.scrim`): centred over the screen, the page behind dimmed. The sheet
+   inside keeps its own look (Upload.css). Every size is a token or the design's own. */
+.desk-upload {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  padding: 22px;
+  overflow-y: auto;
+  border: 0;
+  border-radius: 18px;
+  background: var(--bg3);
+  box-shadow: 0 0 0 0.5px var(--sep);
+  color: var(--label);
+}
+.desk-upload::backdrop {
+  background: var(--scrim);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .desk-upload[open] {
+    animation: desk-upload-in 200ms ease-out;
+  }
+}
+@keyframes desk-upload-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}

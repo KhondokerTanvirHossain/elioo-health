@@ -120,3 +120,16 @@ export const reachable: (path: string, preview: boolean) => boolean = THIS_BUILD
 
 /** Whether Next answers a link to `path` for this viewer, so the link may navigate softly (plan W5). */
 export const servedByNext: (path: string, preview: boolean) => boolean = THIS_BUILD.servedByNext;
+
+/**
+ * The add sheet on the desktop layout (plan desktop-parity U1; desktop.html `uploadDlg`): the talk-and-papers screen at
+ * `?add=1`, the sheet as a dialog over it, for `patientId` (Java still decides whom it opens on) and over `paperId`, the
+ * paper in view, so closing it comes back to that paper. Below 900 px the same address is today's chat page.
+ */
+export function deskAddHref(patientId: string | null, paperId: string | null, preview: boolean): string {
+  const q = new URLSearchParams();
+  if (patientId !== null) q.set("patient", patientId);
+  if (paperId !== null) q.set("paper", paperId);
+  q.set("add", "1");
+  return href(`/app/home?${q.toString()}`, preview);
+}

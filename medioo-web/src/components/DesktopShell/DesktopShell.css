@@ -213,3 +213,22 @@
     box-shadow: none;
   }
 }
+
+/* desktop.html's `.drop`: a dashed frame over the whole window while files are held over it, saying where to let go. */
+.desk-drop {
+  position: fixed;
+  inset: 10px;
+  z-index: 80;
+  display: none;
+  place-items: center;
+  border: 3px dashed var(--tint);
+  border-radius: 22px;
+  background: var(--selbg);
+  color: var(--tint-ink);
+  font-size: var(--text-xl);
+  font-weight: 700;
+  pointer-events: none;
+}
+.desk-drop[data-on] {
+  display: grid;
+}
