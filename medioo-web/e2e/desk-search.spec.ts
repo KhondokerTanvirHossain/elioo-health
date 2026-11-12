@@ -37,6 +37,8 @@ test.describe("the desktop search", () => {
 
   test("cmdKFocusesTheFieldAndAValueOpensTheLabValuesOnIt", async ({ page }) => {
     await open(page);
+    // The field (and its ⌘K) exists once the search island is live; a key before then reaches nothing (PR 185 CI).
+    await field(page).waitFor();
     await page.keyboard.press("ControlOrMeta+k");
     await expect(field(page)).toBeFocused();
     await page.keyboard.type(CREATININE.name);
