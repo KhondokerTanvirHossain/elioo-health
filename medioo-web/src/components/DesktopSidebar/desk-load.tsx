@@ -8,3 +8,5 @@ import dynamic from "next/dynamic";
  * desktop-chunks.built.test.ts holds that.
  */
 export const DesktopSidebarStyles = dynamic(() => import("./DesktopSidebar.desk"));
+/** The search field (plan desktop-parity S4): a client island in the same desk-only chunk, so no request of its own. */
+export const DeskSearch = dynamic(() => import("./DesktopSidebar.desk").then((m) => m.DeskSearch));

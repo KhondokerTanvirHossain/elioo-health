@@ -311,3 +311,112 @@ a.desktop-sidebar__item:hover,
     transition: none;
   }
 }
+
+/* The search field and its results (DeskSearch; desktop.html `.search`, `.pop`), under the brand. The field itself is
+   washed with --fill and draws the app's boundary (Q1 (A)); the glass and ⌘K sit over it. */
+.desk-search {
+  position: relative;
+  min-height: 34px;
+  margin: 0 12px var(--space-1);
+  color: var(--label2);
+}
+.desk-search__icon {
+  position: absolute;
+  top: 9px;
+  left: 9px;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+.desk-search__field {
+  box-sizing: border-box;
+  width: 100%;
+  height: 34px;
+  padding: 0 40px 0 31px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  outline: 0;
+  background: var(--fill);
+  box-shadow: inset 0 0 0 1px var(--boundary);
+  color: var(--label);
+  font-family: var(--font-bn);
+  font-size: var(--text-sm);
+}
+.desk-search__field:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--tint);
+}
+.desk-search__field::placeholder {
+  color: var(--label2);
+}
+.desk-search__field::-webkit-search-cancel-button {
+  display: none;
+}
+.desk-search__kbd {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 0 var(--space-1);
+  border: 0.5px solid var(--label2);
+  border-radius: 4px;
+  color: var(--label2);
+  font-family: var(--font-sys);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  pointer-events: none;
+}
+.desk-search__pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 70;
+  width: max(100%, 300px);
+  max-width: calc(100vw - 32px);
+  padding: var(--space-1);
+  border-radius: var(--radius-md);
+  background: var(--bg3);
+  box-shadow: 0 0 0 0.5px var(--sep);
+}
+.desk-search__head,
+.desk-search__none {
+  margin: 0;
+  padding: 6px 10px 2px;
+  color: var(--label2);
+  font-family: var(--font-bn);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+.desk-search__none {
+  padding: 10px;
+  font-weight: 400;
+}
+.desk-search__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.desk-search__hit {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  color: var(--label);
+  text-decoration: none;
+}
+.desk-search__hit:hover,
+.desk-search__hit:focus-visible {
+  background: var(--hover);
+}
+.desk-search__title {
+  font-family: var(--font-sys);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+.desk-search__sub {
+  color: var(--label2);
+  font-family: var(--font-bn);
+  font-size: var(--text-xs);
+}

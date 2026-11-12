@@ -202,6 +202,14 @@ describe("DesktopSidebar", () => {
     expect(daysUntil("2026-10-22", "2026-10-22")).toBe(0);
   });
 
+  it("theSearchIsForThePatientInViewOnly", () => {
+    // The desktop search (plan desktop-parity S4) searches the patient in view: drawn with one, absent with none.
+    const { container } = sidebar();
+    expect(container.querySelector(".desk-search input[type=search]")!.getAttribute("aria-label")).toBe(t("bn", "desk.search.label"));
+    cleanup();
+    expect(sidebar({ active: null }).container.querySelector(".desk-search")).toBeNull();
+  });
+
   it("accountRowOpensFamily", () => {
     for (const preview of [false, true]) {
       const { container } = sidebar({ preview });
