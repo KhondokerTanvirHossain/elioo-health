@@ -3,13 +3,15 @@ import { t, type Lang } from "@/copy";
 import { MessageBubble } from "@/components/MessageBubble/MessageBubble";
 import { MioAvatar } from "@/components/MioAvatar/MioAvatar";
 import { Wordmark } from "@/components/Wordmark/Wordmark";
+import { SignInHero } from "./SignInHero";
 import "./sign-in.css";
 
 /**
  * What both sign-in pages share (phone.html scene `welcome`, desktop.html scene `signin`): the wordmark, Mio as drawn
  * with his one line, the title, then the step. Mio's line is `chat.intro` ("I am Medioo — not a doctor. …"): both
  * approved scenes say on the first screen that Medioo is not a doctor, and this approved key says it in his voice.
- * Below 900 px one column; from 900 px the welcome sits beside the form.
+ * Below 900 px one column; from 900 px desktop.html's welcome (SignInHero: the headline, the promise, a sample answer,
+ * the trust line) sits beside the form in place of the phone's (plan desktop-parity I1).
  *
  * `noscript` is the link to Java's no-JavaScript sign-in (S1), with the held place, for a browser that runs no script.
  * It sits above the step and is drawn as large as the primary press, so that browser reaches the way in first; the
@@ -18,6 +20,7 @@ import "./sign-in.css";
 export function SignInFrame({ lang, noscript, children }: { lang: Lang; noscript: string; children: ReactNode }) {
   return (
     <main className="sign-in">
+      <SignInHero lang={lang} />
       <section className="sign-in__welcome">
         <Wordmark lang={lang} />
         <div className="sign-in__mio">

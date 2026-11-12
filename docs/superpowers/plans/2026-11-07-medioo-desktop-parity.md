@@ -531,3 +531,24 @@ Built on `feat/desktop-upload-dialog`, live on merge (the desktop layout is live
 - **Not as desktop.html, on purpose:** the sheet's own words and controls (today's tray with move and remove, the
   patient chips, one report or separate, the cap and the free-month count as Java words them), not the design's mock
   ("সাধারণত ৩০ সেকেন্ডে" is not promised); the dialog's title is the sheet's `add.title`.
+
+## Phase 2, I1 — sign-in (2026-11-12)
+
+Built on `feat/desktop-signin`, live on merge:
+
+- **From 900 px**, both sign-in pages (`/app`, `/app/verify`) draw desktop.html's hero (`SignInHero`) beside today's
+  form: the wordmark, Mio waving, the headline "আম্মা-আব্বার সব কাগজ, এক জায়গায়" and the promise, a sample answer (the
+  family's message, a card with the app's own THIS_WEEK tag, the verdict and two rows with StatusChips, the reply; all
+  `aria-hidden`, as desktop.html draws it), and the trust line, held inside a 1440×900 window. Below 900 px today's
+  welcome, unchanged. The form is today's flow (the number, shown back for a yes, then the code page per the 2026-10-18
+  login ruling).
+- **Words.** Every new `desk.signin.*` Bangla is desktop.html's own (`DesktopWordsTest`).
+- **Not as desktop.html, on purpose:**
+  - The trust line's "চাইলে যেকোনো সময় সব মুছে দিতে পারেন" (delete everything yourself, at any time) is a self-service
+    the app does not offer; the landing page's approved `landing.promise.3` (everything deleted within 24 hours on
+    request) stands in its place, between desktop.html's "শুধু আপনার পরিবার দেখবে" and "Medioo ডাক্তার নয়".
+  - The sample card shows the THIS_WEEK tag but not the urgency sentence: a safety sentence is rendered only from what
+    Java sent, inside the safety components (the lint rule), never on a made-up card.
+  - The form keeps today's labels and steps, not the prototype's country row and +880 prefix line; the code step keeps
+    the ruling's flow, not the prototype's six boxes and timer.
+  - Mio is the 96 px figure the page already uses, not desktop.html's 190 px hero size.
